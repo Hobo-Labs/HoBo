@@ -8,7 +8,6 @@ import {
 describe("runtime-browser persistence policy", () => {
 	it("detects unavailable OPFS without pretending durable success", () => {
 		const result = detectBrowserPersistence({ allowTransient: false });
-		// Node test env has no OPFS
 		expect(["unavailable", "opfs-sahpool", "transient-memory"]).toContain(
 			result.mode,
 		);

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-/** Emit HOBO_RELEASE_* from Nerdbank.GitVersioning (fixed alpha train). */
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";

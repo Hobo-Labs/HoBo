@@ -1,10 +1,3 @@
-/**
- * Which run a report belongs to (ADR-0172): the release gate records a
- * report only when it names a run this invocation of ai-bdd made, and
- * evidence-intact verifies the run the replay judged, not whatever
- * report.json holds by then. Through real processes, with
- * test/helpers/fake-ai-bdd.mts as HOBO_AI_BDD_CMD.
- */
 import { readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -37,7 +30,6 @@ describe("the release gate records only this run's report", () => {
 			expect(replay.evidence.reason).toBe(
 				`report.json names run ${runId}, which was already in .ai-bdd/runs before this run started: it is not this run's report`,
 			);
-			// Nothing of the earlier run is recorded as if this run had produced it.
 			expect(replay.evidence.report_digest).toBeUndefined();
 			expect(replay.evidence.scenarios_total).toBeUndefined();
 			expect(checkOf(run, "acceptance-evidence-intact").status).toBe("skipped");
@@ -142,7 +134,6 @@ describe("the release gate records only this run's report", () => {
 	it("a run that fails to load (exit 1, no report) fails on freshness, not on the old run's data", async () => {
 		const project = newDir();
 		const runId = earlierRun(project);
-		// Node exits 1 when the CLI's entry cannot be loaded, before ai-bdd writes anything.
 		const result = await checkAcceptance(
 			["replay"],
 			{
@@ -176,7 +167,6 @@ describe("the release gate records only this run's report", () => {
 		};
 		const replay = await checkAcceptance(["replay"], env, project);
 		expect(replay.outcome).toBe("passed");
-		// Another run in the same project replaces the latest report.
 		earlierRun(project);
 		const intact = await checkAcceptance(
 			["evidence-intact"],
@@ -248,7 +238,6 @@ describe("the release gate records only this run's report", () => {
 		const replay = await checkAcceptance(["replay"], env, project);
 		const runId = replay.evidence.run_id ?? "";
 		const runDir = join(project, ".ai-bdd", "runs", runId);
-		// The same bytes, moved elsewhere and linked back.
 		const elsewhere = join(newDir(), runId);
 		renameSync(runDir, elsewhere);
 		symlinkSync(elsewhere, runDir, "dir");

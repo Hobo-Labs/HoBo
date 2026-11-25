@@ -1,7 +1,3 @@
-/**
- * The release-gate suites' own helpers (test/helpers/release-gate.ts): what
- * their assertions about processes rest on.
- */
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
@@ -17,7 +13,6 @@ const ZOMBIE_PARENT_PY = [
 	"time.sleep(20)",
 ].join("\n");
 
-/** Ends its main thread (pthread_exit) with a thread that runs for 20 s: /proc says `State: Z`, `Threads: 2`. */
 const LEADER_EXIT_PY = [
 	"import ctypes, threading, time",
 	"threading.Thread(target=time.sleep, args=(20,)).start()",
@@ -66,7 +61,6 @@ describe("gone", () => {
 				while (!/^State:\s+Z/mu.test(status()) && Date.now() < until) {
 					await new Promise((done) => setTimeout(done, 50));
 				}
-				// The premise: zombie by its state line, yet running (two threads).
 				expect(status()).toMatch(/^State:\s+Z/mu);
 				expect(status()).toMatch(/^Threads:\s+2$/mu);
 				expect(await gone(pid, 5)).toBe(false);

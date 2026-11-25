@@ -4,11 +4,6 @@ import { parseJsonValue } from "../src/json.js";
 import { deriveLayout, validateLayout } from "../src/layout.js";
 import { createSimulation } from "../src/simulator.js";
 
-// Regression: validateLayout used to cast untrusted JSON straight to domain
-// records (`as Record<string, TilePoint>` etc.) behind invalid type
-// predicates, which no longer compiled. It now parses every entry. These
-// tests pin both directions: a well-formed layout round-trips, malformed
-// payloads fail closed with reasons instead of throwing or passing.
 describe("validateLayout", () => {
   it("accepts the derived layout after a JSON round-trip", () => {
     const sim = createSimulation(1);

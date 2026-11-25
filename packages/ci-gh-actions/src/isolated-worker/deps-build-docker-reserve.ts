@@ -1,10 +1,5 @@
-/**
- * Measured peak Docker data-root consumption during a keyed deps build (finding 71).
- * Zod-free so pre-install bash/CI paths can import without node_modules.
- */
 export const DEPS_BUILD_MEASURED_DOCKER_INODES = 175_000;
 export const DEPS_BUILD_MEASURED_DOCKER_BYTES = 22 * 1024 * 1024 * 1024;
-/** Volatility margin applied on top of measured (or telemetry) peaks. */
 export const DEPS_BUILD_VOLATILITY_INODES = 1.2;
 export const DEPS_BUILD_VOLATILITY_BYTES = 1.1;
 

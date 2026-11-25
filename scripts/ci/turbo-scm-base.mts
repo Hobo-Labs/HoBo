@@ -1,11 +1,3 @@
-/**
- * Prints the Turbo / git SCM base for CI (one line, no trailing newline semantics
- * matter for $(...) capture). Used by `.github/workflows/hobo-ci.yml`.
- *
- * - merge_group: github.event.merge_group.base_sha (full SHA)
- * - pull_request: origin/<base_ref> (stack parent when gh stack sets PR base)
- * - otherwise: origin/main
- */
 import process from "node:process";
 
 const event = process.env.GITHUB_EVENT_NAME ?? "";

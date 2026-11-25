@@ -148,7 +148,6 @@ function allocateName(base: string, used: Set<string>): string {
 	return `${base}${n}`;
 }
 
-/** A snippet split into the imports it names and the statements it adds. */
 type UnwrappedSnippet = {
 	readonly imports: ReadonlyMap<string, readonly string[]>;
 	readonly statements: readonly ts.Statement[];
@@ -392,11 +391,6 @@ function applyStructural(previous: string, snippet: string): string {
 	return next;
 }
 
-/**
- * `P` is whatever the caller's params hold. `parseApplicationRequest` accepts
- * any scalar and coerces it to a string, and refuses anything else, so the
- * accepted type stays as wide as that parser.
- */
 export function planPatternApplication<P>(input: {
 	readonly catalog: PatternCatalog;
 	readonly patternId: string;

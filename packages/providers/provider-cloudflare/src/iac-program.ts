@@ -1,9 +1,3 @@
-// Local, dependency-free mirror of the @hobo/iac-pulumi published IacProgram wire
-// shape. The package boundary guard forbids adapter -> adapter runtime imports
-// (providers may import only core ports), so realize() emits this plain typed
-// object rather than importing @hobo/iac-pulumi. The real
-// @hobo/iac-pulumi.validateIacProgram() is exercised test-only to prove the two
-// packages compose.
 import {
 	isJsonArray,
 	isJsonObject,
@@ -13,13 +7,16 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
+// public-contract: Cloudflare IaC program API version.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
+// public-contract: Cloudflare IaC program resource kind.
 export const IAC_PROGRAM_KIND = "iac-program";
+// public-contract: default IaC engine provider id.
 export const IAC_PROVIDER = "pulumi";
+// public-contract: Cloudflare-specific IaC provider id.
 export const CLOUDFLARE_IAC_PROVIDER = "cloudflare";
 
 // domain-view: structural mirror of the iac-pulumi resource DTO; the generated
-// wire types live in that adapter, this is the emit-side derived shape.
 export interface IacResource {
 	name: string;
 	type: string;
@@ -29,7 +26,6 @@ export interface IacResource {
 }
 
 // domain-view: structural mirror of the iac-pulumi program DTO validated by
-// validateIacProgram(); kept local so this adapter has no adapter->adapter edge.
 export interface IacProgram {
 	apiVersion: typeof IAC_PROGRAM_API_VERSION;
 	kind: typeof IAC_PROGRAM_KIND;
@@ -43,12 +39,6 @@ export interface IacProgram {
 const OUTPUT_REF =
 	/^\$\{resources\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)\}$/;
 
-/**
- * Parse-don't-validate structural check used by tests as a LOCAL copy of the
- * iac-pulumi program shape. Mirrors @hobo/iac-pulumi.validateIacProgram so the
- * emit side can be asserted without a runtime dependency on that adapter. Returns
- * a frozen parsed derived program or throws.
- */
 export function assertLocalIacProgram(program: IacProgram): IacProgram {
 	if (program.apiVersion !== IAC_PROGRAM_API_VERSION) {
 		throw new Error(`IacProgram apiVersion must be ${IAC_PROGRAM_API_VERSION}`);

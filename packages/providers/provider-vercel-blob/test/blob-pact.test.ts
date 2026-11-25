@@ -1,16 +1,3 @@
-/**
- * Replays `contracts/vercel-blob-ephemeral-state.pact.json` from both sides.
- *
- * Consumer: the binding, driven through the port and the real pinned SDK,
- * must send exactly the pact's binding requests (method, path, query, pinned
- * headers, body) in order, and turn the pact's responses into the results the
- * scenario expects. Provider: the local emulator, given every request in
- * order (including the other writer's), must answer each with the pact's
- * status, ETag and every pinned response field. The provider is a stand-in:
- * nothing here has been replayed against Vercel.
- *
- * `UPDATE_VERCEL_BLOB_PACT=1` re-records the pact from the emulator first.
- */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { startBlobEmulator } from "./fixtures/http-emulator.js";

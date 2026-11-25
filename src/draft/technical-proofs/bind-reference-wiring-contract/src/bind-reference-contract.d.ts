@@ -53,7 +53,6 @@ export interface ContainerHandle<TBindings extends Record<string, BindingDescrip
   waitFor(dependency: ResourceHandle | ServiceHandle | ContainerHandle | string): ContainerHandle<TBindings>;
   waitForCompletion(dependency: ResourceHandle | ServiceHandle | ContainerHandle | string): ContainerHandle<TBindings>;
   withHttpHealthCheck(path: string): ContainerHandle<TBindings>;
-  /** Scope guard: DNS is Yard-level and outside this contract; always throws. */
   withDnsRecord(record?: string): never;
 }
 

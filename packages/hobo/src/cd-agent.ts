@@ -1,23 +1,3 @@
-/**
- * Which realizer `hobo deploy agent run` registers on its host.
- *
- * In order: `--simulate` (the labelled fixture), a runner host
- * (HOBO_CD_RUNNER_HOST names its agent config: the runner-host realizer,
- * `cd-agent-runner-host.ts`), a Kubernetes fleet manager (HOBO_CD_KUBE_FLEET).
- * With none of them the run is refused `compose-realizer-missing`.
- *
- * On a runner host the controller port is the engine CLI (a controller
- * container) or, with `controller.mode` `process`, the worker daemon's
- * supervisor driven through its control files (`createControllerProcessPort`:
- * releases fetched and verified by digest, a desired-release request, the
- * supervisor's status). The job ports are read from the worker's data
- * directory (`createWorkerHostJobs`: its journal read-only, the advert it
- * writes, the admission marker it honours, and a local runner's GitHub
- * presence as its controller reported it). A port a composition leaves
- * unwired is refused `runner-host-interface-missing`, naming each missing
- * method, before any loop starts. Nothing is faked to get past it.
- */
-
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -47,24 +27,13 @@ export type AgentRealizerInput = Readonly<{
 	env: Readonly<Record<string, string | undefined>>;
 	cwd: string;
 	now: () => number;
-	/** How the realizer waits between observations (default: a timer). */
 	sleep?: ((ms: number) => Promise<void>) | undefined;
-	/** The Camps the agent was started for (`--camp`). */
 	campIds: readonly CampId[];
-	/** The labelled fixture realizer (`--simulate` only). */
 	simulated: () => Realizer;
-	/** The Kubernetes fleet realizer, when HOBO_CD_KUBE_FLEET configured one. */
 	kube?: (() => Realizer) | undefined;
-	/**
-	 * Host ports that replace the defaults (tests, another composition). The
-	 * container port defaults to the host's container engine CLI, the job
-	 * ports to the box worker's data directory; a port neither supplies is
-	 * refused by name.
-	 */
 	runnerHost?: RunnerHostPorts | undefined;
 }>;
 
-/** The realizer this agent registers, or a typed refusal naming why none. */
 export async function agentRealizer(
 	input: AgentRealizerInput,
 ): Promise<Outcome<Realizer>> {
@@ -147,7 +116,6 @@ async function runnerHostRealizer(
 			containers:
 				input.runnerHost?.containers ??
 				runnerHost.createCliDockerDriver({
-					// SAFETY: the process env, passed to the engine CLI unchanged.
 					env: input.env as NodeJS.ProcessEnv,
 					...(config.dockerBinary
 						? { binary: config.dockerBinary }

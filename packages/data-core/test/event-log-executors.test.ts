@@ -1,6 +1,3 @@
-// The three patterns that move data through the event log, each run end to
-// end: rebuild-and-swap (projected data), log-pivot (authority moves into the
-// log), and stream-handoff (the journal itself).
 import assert from "node:assert/strict";
 import type { EventEnvelope, PrincipalRef } from "@hobo/core";
 import { describe, test } from "vitest";
@@ -52,8 +49,6 @@ const ORDERS: DatasetSchema = parseDatasetSchema({
 	],
 });
 
-// One point per role: a run holds on a path that leaves out a copy it
-// creates — the relay, a retained change log.
 const PATH = parseCustodyPath({
 	points: CUSTODY_ROLES.map((role) => ({
 		id: role,
@@ -87,14 +82,12 @@ function runtime(
 	};
 }
 
-/** Orders as a fold: Placed creates, Paid updates in place, Cancelled removes. */
 const ordersFold: ProjectionFold = {
 	name: "orders-projection",
 	async project(
 		event: EventEnvelope,
 		read,
 	): Promise<readonly RecordMutation[]> {
-		// SAFETY: test events carry the JSON bodies appended below.
 		const data = event.data as { id: string; total?: string };
 		const key = encodeRecordKey(
 			ORDERS,
@@ -173,7 +166,6 @@ describe("rebuild-and-swap", () => {
 	test("a projected sink moves to another engine by replay, with no capture and no fence", async () => {
 		const log = createMemoryEventStore(() => NOW);
 		await seedLog(log, 40);
-		// The sink being replaced, built by the same fold.
 		const previous = createReferenceEngine({ engine: "old-sink" });
 		const first = await runRebuildAndSwap({
 			runtime: runtime("build-previous"),
@@ -186,14 +178,12 @@ describe("rebuild-and-swap", () => {
 		});
 		assert.equal(first.status, "completed");
 
-		// The new sink declares neither capture nor fence: replay needs neither.
 		const target = createReferenceEngine({
 			engine: "new-sink",
 			omit: ["capture", "fence", "snapshot", "retire"],
 		});
 		const ramps: number[] = [];
 		let retired = false;
-		// Events keep arriving while the rebuild runs.
 		const afterPhase = async (phase: MigrationPhase): Promise<void> => {
 			if (phase === "finalize") return;
 			await emit(log, "order.Placed", `late-${phase}`, "9.99");
@@ -248,7 +238,6 @@ describe("rebuild-and-swap", () => {
 			});
 			return digest(sink);
 		};
-		// Different batch sizes exercise the read-through overlay differently.
 		const a = await build("a", 1);
 		const b = await build("b", 1000);
 		assert.ok(compareDigests(a, b).equal);
@@ -284,7 +273,6 @@ describe("rebuild-and-swap", () => {
 		await seedLog(log, 10);
 		const previous = createReferenceEngine({ engine: "old-sink" });
 		await previous.datasets.ensureDataset(ORDERS);
-		// The old sink is missing everything: digests cannot agree.
 		const ramps: number[] = [];
 		const result = await runRebuildAndSwap({
 			runtime: runtime("swap-mismatch"),
@@ -306,9 +294,7 @@ describe("rebuild-and-swap", () => {
 });
 
 describe("log-pivot", () => {
-	/** The authored re-model: a row change becomes a domain event. */
 	const toEvents = (change: ChangeEnvelope): readonly PivotEvent[] => {
-		// SAFETY: the canonical key of the orders schema is a one-element array.
 		const [id] = JSON.parse(change.key) as [string];
 		return change.op === "delete" || change.record === undefined
 			? [{ streamId: `order:${id}`, type: "order.Removed", data: { id } }]
@@ -328,7 +314,6 @@ describe("log-pivot", () => {
 	const pivotFold: ProjectionFold = {
 		name: "orders-pivot",
 		project(event: EventEnvelope): readonly RecordMutation[] {
-			// SAFETY: pivot events carry the bodies `toEvents` built above.
 			const data = event.data as {
 				id: string;
 				status?: string;
@@ -369,7 +354,6 @@ describe("log-pivot", () => {
 		const log = createMemoryEventStore(() => NOW);
 		const target = createReferenceEngine({ engine: "projected-sink" });
 		let flipped = false;
-		// The store keeps taking writes until the fence.
 		const afterPhase = async (phase: MigrationPhase): Promise<void> => {
 			if (flipped) return;
 			const record = parseCanonicalRecord(ORDERS, {
@@ -420,7 +404,6 @@ describe("log-pivot", () => {
 			(fact) => fact.type === "migration.CutOver",
 		);
 		assert.equal(cutOver?.data.authority, "log");
-		// The old store is fenced: authority does not come back.
 		await assert.rejects(async () => {
 			await source.records.write({
 				dataset: "orders",
@@ -510,7 +493,6 @@ describe("stream-handoff", () => {
 			await eventLogDigest(source),
 			await eventLogDigest(target),
 		);
-		// The honest limit, reported rather than hidden.
 		assert.deepEqual(result.impedance, [HANDOFF_IDENTITY_IMPEDANCE]);
 		const copied: EventEnvelope[] = [];
 		for await (const event of target.read("order:o-0")) copied.push(event);
@@ -525,7 +507,6 @@ describe("stream-handoff", () => {
 			ts: original[0]?.ts,
 			position: "1",
 		});
-		// The new store is writable where the old one left off.
 		await emit(target, "order.Paid", "o-1");
 	});
 
@@ -569,7 +550,6 @@ describe("stream-handoff", () => {
 		const source = createMemoryEventStore(() => NOW);
 		await seedLog(source, 5);
 		const target = createMemoryEventStore(() => NOW);
-		// A stream the source never had: the logs can no longer be equal.
 		await emit(target, "order.Placed", "rogue", "1.00");
 		let quiesced = false;
 		let flipped = false;

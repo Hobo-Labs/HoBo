@@ -1,13 +1,3 @@
-/**
- * A content digest over a derived matrix.
- *
- * The point is attribution: when a cell stops being covered, the digest that
- * changed says so, and the change is traceable to a definition or an expiry
- * rather than to iteration order. Canonicalization is `@hobo/trust`'s — the
- * same bytes that back evidence and verdict digests — so a matrix digest joins
- * against the evidence it was derived from instead of living in its own
- * dialect.
- */
 import { type CanonicalValue, sha256Of } from "@hobo/trust";
 
 import type { CapabilityMatrixCandidate } from "./candidate.js";
@@ -73,10 +63,6 @@ function exclusionBody(exclusion: CapabilityMatrixExclusion): CanonicalValue {
 	};
 }
 
-/**
- * The body a matrix digest is taken over: everything except the digest itself,
- * which is a statement *about* the body.
- */
 export function capabilityMatrixDigestBody(
 	matrix: Omit<CapabilityMatrix, "digest">,
 ): CanonicalValue {

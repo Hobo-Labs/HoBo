@@ -1,9 +1,3 @@
-// The neutral traffic intent of one rollout stage. The orchestrator never
-// knows provider backends: it asks for a weight split between two cohorts,
-// `stable` and `candidate`, as a core RoutingPlan. The Station adapter
-// (adapters/traffic.ts) maps the cohorts onto the Camp's real backends and
-// realizes the split through Station cutover, the only caller of
-// TrafficRoutingPort.apply (D8).
 import {
 	parseRoutingPlan,
 	parseTenantId,
@@ -18,17 +12,14 @@ export const STAGE_BACKENDS = Object.freeze({
 	candidate: "candidate",
 } as const);
 
-/** Deterministic plan id: one per rollout, Camp and percent. */
 export function stagePlanId(
 	rolloutId: RolloutId,
 	campId: CampId,
 	percent: number,
 ): RoutingPlanId {
-	// SAFETY: a RoutingPlanId is any non-empty token; parseRoutingPlan re-checks it below.
 	return `${rolloutId}:${campId}:p${percent}` as RoutingPlanId;
 }
 
-/** The RoutingPlan that puts `percent` of the Camp's traffic on the candidate. */
 export function stageRoutingPlan(
 	input: Readonly<{
 		rolloutId: RolloutId;
@@ -39,7 +30,6 @@ export function stageRoutingPlan(
 	}>,
 ): RoutingPlan {
 	const percent = Math.max(0, Math.min(100, Math.round(input.percent)));
-	// Weights are positive integers on the wire: a cohort at 0% is omitted.
 	const backends = [
 		{ id: STAGE_BACKENDS.stable, service: input.campId, weight: 100 - percent },
 		{ id: STAGE_BACKENDS.candidate, service: input.campId, weight: percent },
@@ -56,7 +46,6 @@ export function stageRoutingPlan(
 	});
 }
 
-/** The candidate share (0–100) a stage plan asks for; undefined when it is not a stage plan. */
 export function stageShare(plan: RoutingPlan): number | undefined {
 	const candidate = plan.backends.find(
 		(backend) => backend.id === STAGE_BACKENDS.candidate,

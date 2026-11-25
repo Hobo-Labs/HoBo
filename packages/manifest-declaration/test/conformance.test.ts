@@ -6,18 +6,6 @@ import {
 	ResourceIntentError,
 } from "../src/index.js";
 
-/**
- * Conformance suite for the parse boundary.
- *
- * Every assertion names the *specific* refusal it means. A bare
- * `expect(...).toThrow()` here would pass whether the boundary refused for the
- * reason under test, for an unrelated reason, or because a typo in the test
- * threw a `TypeError` before the boundary was ever reached — which is how three
- * tests in this repository went green for years while testing nothing. The
- * matcher is therefore always the full message, and each case also asserts the
- * error class and the `path` that names the offending field.
- */
-
 const VALID = {
 	name: "cache",
 	port: "kv",
@@ -208,8 +196,6 @@ describe("placement selector refusals", () => {
 	});
 
 	it("refuses a comparison operator with no operand", () => {
-		// @hobo/cloud's evaluator reads values[0]; with none it compares against
-		// undefined and rejects every candidate without saying why.
 		expect(
 			refusal(withSelector({ key: "region", op: "eq", values: [] })).message,
 		).toBe(

@@ -19,8 +19,6 @@ describe("realize — convex-deploy driver programs", () => {
 			driver.resources.map((resource) => resource.type),
 			["convex:deployment", "convex:document-db"],
 		);
-		// Output refs resolve against declared resource outputs (asserted by
-		// the parse-don't-validate emit gate; spot-check the shape here too).
 		assert.equal(
 			driver.outputs.deploymentUrl,
 			"${resources.deployment.outputs.url}",

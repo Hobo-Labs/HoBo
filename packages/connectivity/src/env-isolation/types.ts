@@ -1,8 +1,3 @@
-/**
- * Environment network isolation classes and parse-don't-validate boundaries.
- * Soft floor always on; hard-overlay / hard-control-plane optional.
- */
-
 // public-contract: environment network isolation class labels.
 import { isJsonString } from "../json.js";
 
@@ -26,11 +21,9 @@ export const ISOLATION_TIERS = Object.freeze([
 
 export type IsolationTier = (typeof ISOLATION_TIERS)[number];
 
-/** Canonical env: tag prefix on subjects/resources. */
 // public-contract: env isolation tag prefix.
 export const ENV_TAG_PREFIX = "env:" as const;
 
-/** Aliases accepted at parse boundary → canonical IsolationClass. */
 const ALIASES: Readonly<Record<string, IsolationClass>> = Object.freeze({
 	local: "local-dev",
 	"local-dev": "local-dev",
@@ -45,10 +38,6 @@ const ALIASES: Readonly<Record<string, IsolationClass>> = Object.freeze({
 	ephemeral: "ephemeral",
 });
 
-/**
- * Parse isolation class from tag list, attributes, or raw string.
- * Returns null when absent (caller decides fail-closed).
- */
 export function parseIsolationClass(
 	input: string | readonly string[] | undefined | null,
 ): IsolationClass | null {
@@ -77,7 +66,6 @@ export function isolationClassTag(
 	return `${ENV_TAG_PREFIX}${cls}`;
 }
 
-/** Default tier recommendation per class. */
 export function defaultTierForClass(cls: IsolationClass): IsolationTier {
 	switch (cls) {
 		case "production":
@@ -85,7 +73,7 @@ export function defaultTierForClass(cls: IsolationClass): IsolationTier {
 		case "staging":
 			return "soft";
 		case "local-dev":
-			return "hard-control-plane"; // air-gap: no remote overlay
+			return "hard-control-plane";
 		case "preview":
 		case "ephemeral":
 			return "soft";
@@ -94,19 +82,15 @@ export function defaultTierForClass(cls: IsolationClass): IsolationTier {
 	}
 }
 
-/** Classes that auto-revoke / short TTL by default. */
 export function isShortLivedClass(cls: IsolationClass): boolean {
 	return cls === "preview" || cls === "ephemeral";
 }
 
-/** Default max membership TTL seconds for short-lived classes. */
-export const SHORT_LIVED_MEMBERSHIP_TTL_SECONDS = 86_400; // 24h
+export const SHORT_LIVED_MEMBERSHIP_TTL_SECONDS = 86_400;
 
-/** Default elevated capability TTL (seconds). */
-export const ELEVATED_CAPABILITY_TTL_SECONDS = 1_800; // 30m
+export const ELEVATED_CAPABILITY_TTL_SECONDS = 1_800;
 
-/** Default break-glass TTL (seconds). */
-export const BREAK_GLASS_TTL_SECONDS = 3_600; // 1h
+export const BREAK_GLASS_TTL_SECONDS = 3_600;
 
 export function isExpired(expiresAt: string | undefined, now: string): boolean {
 	if (!expiresAt) return false;
@@ -117,6 +101,6 @@ export function classesDiffer(
 	a: IsolationClass | null,
 	b: IsolationClass | null,
 ): boolean {
-	if (a === null || b === null) return true; // missing → treat as mismatch (fail-closed)
+	if (a === null || b === null) return true;
 	return a !== b;
 }

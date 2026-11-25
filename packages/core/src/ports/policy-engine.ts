@@ -1,10 +1,3 @@
-/**
- * Extensible PolicyEngine port.
- *
- * Initial implementations wrap overlay ACLs/tags; future engines may use
- * attribute-based rules, Rego/OPA, time windows, etc. without rewriting callers.
- */
-
 import type { JsonObject } from "../json.js";
 import type { TenantId } from "./tenant.js";
 
@@ -13,7 +6,6 @@ export type PolicyDecisionEffect = "allow" | "deny";
 export interface PolicySubject {
 	readonly identity: string;
 	readonly tenantId: TenantId;
-	/** Overlay / capability tags, e.g. `role:junction`, `tenant:acme`. */
 	readonly tags: readonly string[];
 	readonly attributes?: Readonly<Record<string, string>>;
 }

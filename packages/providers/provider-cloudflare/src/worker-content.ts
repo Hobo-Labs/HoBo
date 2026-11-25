@@ -1,7 +1,5 @@
 import { ResolverError } from "@hobo/core";
 
-/** Parse the bounded native GET-script response without normalizing source
- * bytes. The uploaded contract is one ES module; extra modules are refused. */
 export function parseCloudflareWorkerSource(
 	body: string,
 	contentType: string,

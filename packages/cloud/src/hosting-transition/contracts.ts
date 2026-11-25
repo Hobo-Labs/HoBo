@@ -47,7 +47,6 @@ const observationResilience = createResilienceProfile({
 	],
 });
 
-/** Retry timing/deadlines are journaled by the coordinator; these profiles forbid hidden retries. */
 export const hostingTransitionContracts = Object.freeze({
 	plan: { effects: pureEffects() },
 	reserve: {

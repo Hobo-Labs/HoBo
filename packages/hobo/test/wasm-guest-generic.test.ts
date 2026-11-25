@@ -103,7 +103,6 @@ export const payments = {
 				appModulePath: must(resolved.appModulePath),
 				outPath: out,
 			});
-			// Guest is wasi:http fetch-event only (not Node-importable).
 			const text = readFileSync(out, "utf8");
 			expect(text).toContain("addEventListener");
 			expect(text).toContain("x-hobo-bindle-env");
@@ -149,7 +148,6 @@ export const app = {
 			void sandbox.terminate();
 		});
 
-		// Simulate camp mesh env injection.
 		const response = await sandbox.invoke(
 			new Request("http://component.local/items?id=42", {
 				headers: {

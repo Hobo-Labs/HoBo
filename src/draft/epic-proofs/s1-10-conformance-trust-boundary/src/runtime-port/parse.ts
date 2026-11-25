@@ -6,7 +6,6 @@ export function parseRuntimePortReport(raw: JsonValue): RuntimePortConformanceRe
     throw new TypeError("report must be an object");
   }
 
-  // SAFETY: assertion to `raw as JsonObject` is required at this boundary.
   const source = raw as JsonObject;
   const contract = source.contract;
   if (contract !== "hobo.runtime-port-conformance/v1") {
@@ -23,7 +22,6 @@ export function parseRuntimePortReport(raw: JsonValue): RuntimePortConformanceRe
     throw new TypeError("status must be fail iff failures is non-empty");
   }
 
-  // SAFETY: assertion to `source.coverage as { local?: JsonObject } | undefined` is required at this boundary.
   const coverage = source.coverage as { local?: JsonObject } | undefined;
   const local = coverage?.local;
   if (!local || !isJsonObject(local)) {
@@ -37,7 +35,6 @@ export function parseRuntimePortReport(raw: JsonValue): RuntimePortConformanceRe
     throw new TypeError("coverage.local.passed + failed must equal total");
   }
 
-  // SAFETY: assertion to `Object.freeze({ contract, backend: String(source.backend ?? ""), status, checks: Object.freeze(Array.isArray(source.chec` is required at this boundary.
   return Object.freeze({
     contract,
     backend: String(source.backend ?? ""),

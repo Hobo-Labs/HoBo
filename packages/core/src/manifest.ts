@@ -318,7 +318,6 @@ function parseFlows(
 	);
 	const seen = new Set<string>();
 	for (const flow of flows) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const type = flow.type as string;
 		if (seen.has(type)) {
 			throw new ManifestParseError("auth.flows", "unique flow type", type);
@@ -327,9 +326,7 @@ function parseFlows(
 	}
 	return flows.sort(
 		(a, b) =>
-			// SAFETY: assertion required at this I/O or test boundary.
 			FLOW_ORDER.indexOf(a.type as AuthFlowType) -
-			// SAFETY: assertion required at this I/O or test boundary.
 			FLOW_ORDER.indexOf(b.type as AuthFlowType),
 	);
 }
@@ -494,7 +491,6 @@ function parseCost(
 			`cost.unitPrices.${name}`,
 			ManifestParseError,
 		);
-		// SAFETY: assertion required at this I/O or test boundary.
 		if (!Number.isFinite(entry.amount) || (entry.amount as number) <= 0) {
 			throw new ManifestParseError(
 				`cost.unitPrices.${name}.amount`,
@@ -505,7 +501,6 @@ function parseCost(
 	}
 	return {
 		currency: currency(source.currency, "cost.currency", ManifestParseError),
-		// SAFETY: assertion required at this I/O or test boundary.
 		unitPrices: cloneJson(
 			unitPrices,
 		) as CapabilityManifestBundle["cost"]["unitPrices"],

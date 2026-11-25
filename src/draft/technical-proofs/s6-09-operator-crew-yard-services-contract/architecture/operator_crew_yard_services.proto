@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for the S6-09 Operator Crew Yard Services draft
-// package. Design-time contract artifact — not compiled at runtime.
 
 enum OperatorCrewYardServicesEvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

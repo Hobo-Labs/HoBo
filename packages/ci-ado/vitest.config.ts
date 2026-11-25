@@ -3,7 +3,6 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["test/**/*.test.ts", "contracts/**/*.test.ts"],
-		// The repository-wide budget; Vitest's own five seconds is too short on a busy runner.
 		testTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 10_000),
 		hookTimeout: Number(process.env.HOBO_TEST_TIMEOUT ?? 10_000),
 		coverage: {

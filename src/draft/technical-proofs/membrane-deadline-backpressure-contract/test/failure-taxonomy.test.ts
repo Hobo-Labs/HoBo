@@ -26,7 +26,6 @@ test("membrane severed classifies partial-failure with idempotency decision", ()
   assert.equal(result.class, "partial-failure");
   assert.equal(result.requiresIdempotencyDecision, true);
   assert.equal(
-    // SAFETY: assertion to `(result.strategy as { idempotencyRule: string }).idempotencyRule,` is required at this boundary.
     (result.strategy as { idempotencyRule: string }).idempotencyRule,
     "forward-key-or-refresh-before-act",
   );

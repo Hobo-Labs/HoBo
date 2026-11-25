@@ -38,25 +38,15 @@ export class CreditExhaustedError extends Error {
 }
 
 export interface GithubBuildMachineProviderOptions {
-	// The real GitHub Actions client (injected fetch inside).
 	readonly client: GithubActionsClient;
-	// The GHCR owner segment of published image URIs (usually the org).
 	readonly owner: string;
 	readonly id?: string;
 	readonly workflow?: string;
 	readonly ref?: string;
-	// Remaining prepaid/free units — the Dispatcher's reservation against the
-	// CreditLedgerView (Plan 5). Defaults to unbounded.
 	readonly creditBudget?: CreditBudget;
 	readonly tracking?: RunTrackingOptions;
 }
 
-// The REAL GitHub-hosted BuildMachineProvider (`hobo:build-machine`): the
-// BuildProvider engine executes ON a GitHub-hosted machine via a build
-// workflow that publishes to GHCR; `execute(build)` dispatches it, tracks the
-// run, and resolves the published image digest into a pullable ImageRef.
-// Credit exhaustion throws the typed `credit.exhausted` failure BEFORE any
-// dispatch so the Dispatcher can re-route to the next-cheapest host.
 export function createGithubBuildMachineProvider(
 	options: GithubBuildMachineProviderOptions,
 ): BuildMachineProvider {

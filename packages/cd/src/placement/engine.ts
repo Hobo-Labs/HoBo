@@ -1,11 +1,3 @@
-// PlacementEngine (D20): governed Placement definitions and score reports, and
-// `decide` = gather recorded inputs, run the pure `decidePlacement`, record
-// `placement.Decided`.
-//
-// Streams: `cd-placement-<name>` (placement.Defined, placement.Decided) and
-// `cd-placement-score-<score>` (placement.ScoresReported). A decision is
-// keyed by a deterministic id over its inputs, so a retried `decide` with the
-// same inputs is one event (I12) and replay yields the same record (I18).
 import { create, type JsonObject, toJson } from "@bufbuild/protobuf";
 import type { EventInput } from "@hobo/core";
 import {
@@ -51,13 +43,6 @@ export type PlacementEngineDeps = CdBase & {
 	readonly inventory: CampInventory;
 	readonly rails: RailDeliveryReader;
 	readonly authorizer: CdAuthorizer;
-	/**
-	 * The Station's active Rail `approvedProviders` (stations `Rail`). The
-	 * frozen RailDeliveryReader carries only the `delivery` object, so the
-	 * composition (WP18) supplies this; when absent (or it resolves to
-	 * undefined) every decision is refused with `rail-providers-unknown`:
-	 * missing evidence fails closed (I5).
-	 */
 	readonly approvedProviders?: (
 		stationId: string,
 	) => Promise<readonly string[] | undefined>;
@@ -173,7 +158,6 @@ export function createPlacementEngine(d: PlacementEngineDeps): PlacementEngine {
 				CD_STREAMS.placement(record.name),
 				CD_EVENTS.PlacementDefined,
 				body(PlacementRecordSchema, record),
-				// No key: redefining back to an earlier content must append again.
 				undefined,
 				ctx,
 			);

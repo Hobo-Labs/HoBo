@@ -7,7 +7,6 @@ import {
 } from "../../conformance-port-suite-contract/src/conformance-port-suite.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const COVERAGE_REPORT_SCHEMA = "hobo.conformance.wit-coverage-report/v1";
 export const PUBLISH_GATE_SCHEMA = "hobo.conformance.registry-publish-gate/v1";
 export const RECERTIFICATION_SCHEMA = "hobo.conformance.provider-recertification/v1";
@@ -132,7 +131,6 @@ export function parseWitCapabilityCatalog(input: JsonValue): WitCapabilityCatalo
     throw new TypeError("wit capability catalog must be an object");
   }
 
-  // SAFETY: `const record = input as JsonObject;` is required at this I/O or test boundary.
   const record = input as JsonObject;
   const interfaces = record.interfaces;
 
@@ -145,7 +143,6 @@ export function parseWitCapabilityCatalog(input: JsonValue): WitCapabilityCatalo
       throw new TypeError("wit capability catalog entry must be an object");
     }
 
-    // SAFETY: `const item = entry as JsonObject;` is required at this I/O or test boundary.
     const item = entry as JsonObject;
     const wit = item.wit;
     const port = item.port;

@@ -1,6 +1,3 @@
-// data-models/posture.cue agrees with what the posture module writes: every
-// body appended in a full journey vets against its definition, and the
-// constraints reject what the parse boundaries reject.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -163,7 +160,6 @@ describe.skipIf(cue === undefined)("posture.cue", () => {
 		for (const { event } of h.store.all) {
 			const definition = BODY_DEFINITION.get(event.type);
 			if (!definition) continue;
-			// SAFETY: bodies are JSON by construction.
 			expect(
 				vet(definition, event.data as JsonValue),
 				`${event.type} ${JSON.stringify(event.data)}`,

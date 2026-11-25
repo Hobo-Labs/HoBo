@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Backup Restore Launch
-// Drill draft package reasons about. Not compiled at runtime; this is a
-// design-time contract artifact.
 
 enum BackupRestoreDrillEvidenceKind {
   BACKUP_RESTORE_DRILL_EVIDENCE_KIND_UNSPECIFIED = 0;

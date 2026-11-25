@@ -1,13 +1,3 @@
-/**
- * A `.gitmodules` section whose name git refuses is refused by the pins too.
- * git (submodule-config.c, `check_submodule_name`) ignores a section whose
- * name is empty or has a `..` component, splitting on `/` and `\`, and warns
- * "ignoring suspicious submodule name". The pins build the submodule's own
- * repository directory, `<git dir>/modules/<name>`, from that name, so a
- * `../../../sibling/.git` would make another clone's repository pass as the
- * submodule's (status then read its HEAD; fetch and bump were stopped only by
- * its uncommitted changes). git itself is the oracle for which names those are.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";

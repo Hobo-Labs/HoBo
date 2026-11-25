@@ -18,15 +18,11 @@ import { isJsonString, type JsonObject } from "./json.js";
 import { CLOUDFLARE_PROVIDER_ID } from "./manifest.js";
 import type { ResourcePlan } from "./types.js";
 
-// A container/CI image the build machine produces for a realized resource
-// (control-plane.md BuildSpec). Emitted alongside the IacProgram for ports that
-// carry a build artifact (Workers scripts componentized to wasm).
 export interface BuildSpec {
 	kind: "hobo.build-spec/v1";
 	artifacts: Array<{ id: string; source: string; target: string }>;
 }
 
-// Reverse of EQUIVALENCE_CLASSES: capability PortKind -> equivalence class key.
 const PORT_TO_CLASS = {
 	compute: "web/service",
 	kv: "kv",
@@ -37,9 +33,6 @@ const PORT_TO_CLASS = {
 
 export type RealizablePort = keyof typeof PORT_TO_CLASS;
 
-// Output names each Cloudflare resource class publishes. Every class exposes a
-// `binding` output so cross-resource bind edges resolve as
-// `${resources.<dep>.outputs.binding}` references.
 function outputsForClass(resourceClass: string): readonly string[] {
 	switch (resourceClass) {
 		case "cloudflare:workers-script":
@@ -85,11 +78,7 @@ export function resolveEquivalence(port: string) {
 	return EQUIVALENCE_CLASSES[PORT_TO_CLASS[port]];
 }
 
-/** Merge only Cloudflare-owned option blocks; foreign provider blocks drop. */
 export function mergeCloudflareOptions(
-	// Core's ResourcePlan carries opaque option blocks (ADR-0156); every HoBo
-	// `.with(...)` builder emits the shared TypedOptionBlock shape, and
-	// foreign-provider blocks drop below by providerId.
 	options: ResourcePlan["options"] = [],
 ): JsonObject {
 	const merged = {};
@@ -105,7 +94,6 @@ export function mergeCloudflareOptions(
 function buildResource(
 	plan: ResourcePlan,
 	withBindRefs: boolean,
-	/** Each sibling's resource class, so a binding says what it points at. */
 	classOf: ReadonlyMap<string, string> = new Map(),
 ): IacResource {
 	const mapping = resolveEquivalence(plan.port);
@@ -128,8 +116,6 @@ function buildResource(
 		features: [...mapping.features],
 		options: {
 			...mergeCloudflareOptions(plan.options),
-			// A schedule's declared cadence (the Bindle's cadence trait, carried
-			// by the plan) is the Cron Trigger's `cron`.
 			...(plan.port === "schedule" &&
 			isJsonString(plan.realizationParameters?.cron)
 				? { cron: plan.realizationParameters.cron }
@@ -169,11 +155,6 @@ function primaryRef(resource: IacResource): string {
 	return `\${resources.${resource.name}.outputs.${output}}`;
 }
 
-/**
- * Realize a single provider-neutral ResourcePlan into a one-resource Pulumi
- * IacProgram (+ optional BuildSpec). The emitted program matches the shape
- * @hobo/iac-pulumi.validateIacProgram() accepts.
- */
 export function realizeResourcePlan(plan: ResourcePlan): {
 	iac: IacProgram;
 	build?: BuildSpec;
@@ -193,14 +174,6 @@ export function realizeResourcePlan(plan: ResourcePlan): {
 	return build ? { iac, build } : { iac };
 }
 
-/**
- * Realize a whole DeploymentPlan (multiple resources with bind edges) into one
- * multi-resource IacProgram whose bind references resolve across resources.
- */
-/**
- * The ids a plan node names Cloudflare by: the planner records the registered
- * provider (`@hobo/provider-cloudflare`), hand-built plans the short target.
- */
 const CLOUDFLARE_PLAN_PROVIDERS: ReadonlySet<string> = new Set([
 	CLOUDFLARE_PROVIDER_TARGET,
 	CLOUDFLARE_PROVIDER_ID,
@@ -244,7 +217,6 @@ export function realizeResourcePlans(
 		: { iac };
 }
 
-/** Lower a hello-bindle plan to provider-neutral ResourcePlans. */
 export function toResourcePlans(plan: HelloBindlePlan): ResourcePlan[] {
 	return plan.resources.map((resource) => ({
 		name: resource.id,
@@ -260,7 +232,6 @@ export function toResourcePlans(plan: HelloBindlePlan): ResourcePlan[] {
 	}));
 }
 
-/** Realize an entire hello-bindle plan end-to-end. */
 export function realizeHelloBindle(plan: HelloBindlePlan): {
 	iac: IacProgram;
 	build?: BuildSpec;

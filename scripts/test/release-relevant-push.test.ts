@@ -61,8 +61,8 @@ describe("main train release scope", () => {
 		const { dir, git, commit } = repo();
 		commit("README.md");
 		git("tag", "-a", "v0.0.0-alpha.5", "-m", "release");
-		commit("site/index.html"); // its run was cancelled by the next push
-		const head = commit("docs/notes.md"); // the run that went green
+		commit("site/index.html");
+		const head = commit("docs/notes.md");
 		expect(releaseScopeBetween(dir, `${head}^`, head, FILTERS).run).toBe(false);
 		const scope = releaseScopeSinceLastRelease(dir, head, FILTERS);
 		expect(scope).toMatchObject({ run: true, from: "v0.0.0-alpha.5" });

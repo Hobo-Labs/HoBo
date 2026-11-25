@@ -1,13 +1,3 @@
-/**
- * Executable step definitions for transparent-backend-swap.feature.
- *
- * This is the acceptance proof of the platform vision statement: a budget
- * signal drives a backend swap behind a live loopback HTTP proxy while a
- * continuous request stream observes zero failures. It exercises the PROMOTED
- * production slices end to end — @hobo/dispatcher (dispatch.Decided),
- * @hobo/stations control loop + progressive cutover, @hobo/connectivity
- * simple adapter — with no live cloud providers (loopback servers only).
- */
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -44,7 +34,6 @@ function policyDecision(): PolicyDecision {
 function listen(server: Server): Promise<string> {
 	return new Promise((resolve) => {
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: assertion to `er.address() as AddressInfo; ` is required at this boundary.
 			const { port } = server.address() as AddressInfo;
 			resolve(`http://127.0.0.1:${port}`);
 		});
@@ -155,8 +144,6 @@ Given(
 			select: port.select.bind(port),
 		};
 
-		// A real reverse proxy: pick a backend from the ACTIVE routing plan per
-		// request; any routing gap surfaces as a 502 the stream will count.
 		const proxy = createServer(async (req, res) => {
 			try {
 				if (!world.activePlanId) throw new Error("no active routing plan");
@@ -173,7 +160,6 @@ Given(
 		world.servers.push(proxy);
 		world.proxyUrl = await listen(proxy);
 
-		// Seed 100% of traffic on the incumbent.
 		const seedTopology = topology();
 		const synthesis = synthesizeRoutingPlan({
 			topology: {
@@ -284,12 +270,9 @@ When("a budget threshold crossing reaches the routing control loop", async () =>
 			},
 			rampSteps: [10, 50, 100],
 			healthGate: async ({ percent }) => {
-				// Each applied ramp stays active until actual requests observe it.
-				// Elapsed sleeps do not prove a busy concurrent runner sent traffic.
 				assert.ok(world.traffic, "traffic stream not started");
 				await world.traffic.waitForAdditional(5);
 				if (unhealthyAt !== undefined) return percent < unhealthyAt;
-				// SAFETY: assertion to `d.backendBUrl as string); ` is required at this boundary.
 				const probe = await fetch(world.backendBUrl as string);
 				return probe.status === 200;
 			},

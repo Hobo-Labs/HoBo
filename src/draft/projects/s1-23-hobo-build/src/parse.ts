@@ -1,7 +1,6 @@
 import { BuildError } from "./errors.js";
 import { isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const BUILD_MANIFEST_SCHEMA = "hobo.build-manifest/v1" as const;
 export const DEFAULT_SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 
@@ -107,7 +106,6 @@ export function parseServiceDeclaration(raw: JsonValue): ServiceDeclaration {
     throw new BuildError("HOBO_BUILD_SERVICE_INVALID", "Service declaration must be an object.");
   }
 
-  // SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
   const record = raw as JsonObject;
   const name = String(record.name ?? "");
   if (!/^[a-z][a-z0-9-]*$/u.test(name)) {
@@ -133,7 +131,6 @@ export function parseBuildManifest(json: JsonValue): BuildManifest {
     throw new BuildError("HOBO_BUILD_SOURCE_PARSE", "Build manifest must be an object.");
   }
 
-  // SAFETY: `const record = json as JsonObject;` is required at this I/O or test boundary.
   const record = json as JsonObject;
   if (record.schema !== BUILD_MANIFEST_SCHEMA) {
     throw new BuildError("HOBO_BUILD_SOURCE_PARSE", `Unexpected manifest schema "${String(record.schema)}".`);
@@ -157,7 +154,6 @@ function parseBuildArtifact(raw: JsonValue): BuildArtifact {
     throw new BuildError("HOBO_BUILD_SOURCE_PARSE", "Build artifact must be an object.");
   }
 
-  // SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
   const record = raw as JsonObject;
   const kind = String(record.kind ?? "");
   if (kind !== "wasm-component" && kind !== "oci-container") {
@@ -223,7 +219,6 @@ function normalizeServiceRuntime(runtime: string): ServiceDeclaration["runtime"]
 function normalizeTargetRuntime(runtime: string): TargetRuntime {
   const normalized = runtime.toLowerCase();
   if (normalized === "auto" || normalized === "wasm" || normalized === "component" || normalized === "container") {
-    // SAFETY: `return normalized === "component" ? "wasm" : (normalized as TargetRuntime);` is required at this I/O or test boundary.
     return normalized === "component" ? "wasm" : (normalized as TargetRuntime);
   }
   throw new BuildError("HOBO_BUILD_RUNTIME_INVALID", `Invalid build runtime "${runtime}".`, { runtime });

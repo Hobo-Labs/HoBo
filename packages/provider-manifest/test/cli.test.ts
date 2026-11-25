@@ -59,7 +59,6 @@ describe("hobo-provider-manifest", () => {
 			"pets.client.ts",
 			"pets.mcp-server.mjs",
 		]);
-		// Declared, but not a format generation covers: said, not skipped silently.
 		expect(lines.join("\n")).toContain("skipped events");
 	});
 
@@ -108,7 +107,6 @@ describe("hobo-provider-manifest", () => {
 				remote: { type: "http", url: "https://mcp.has-mcp.example.com/mcp" },
 			},
 		});
-		// A published spec is not fetched; the author is told what to do.
 		expect(lines.join("\n")).toContain("skipped published: save https://");
 	});
 

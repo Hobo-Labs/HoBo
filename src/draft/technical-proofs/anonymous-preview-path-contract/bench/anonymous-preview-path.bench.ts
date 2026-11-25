@@ -32,7 +32,6 @@ const options = {
 
 const plan = createAnonymousPreviewPlan(request, options);
 
-// Numbers are advisory; the gate only requires that declared benches EXECUTE.
 describe("anonymous preview path hot path", () => {
 	bench("createAnonymousPreviewPlan (full gate + provision plan)", () => {
 		createAnonymousPreviewPlan(request, options);

@@ -84,7 +84,6 @@ it("holds every other path to the 1 MiB body limit", async () => {
 		method: "POST",
 		body: new Uint8Array(2 * 1024 * 1024),
 	}).catch(() => undefined);
-	// The adapter answers 413 and may close the socket before the upload ends.
 	expect(response?.status ?? 413).toBe(413);
 	expect(reached).toBe(false);
 });
@@ -111,7 +110,6 @@ it("serves plain HTTP only for an explicitly allowed loopback origin", () => {
 });
 
 it("answers a failed request with 503 and the Retry-After its error states", async () => {
-	// The store back-off's error: it knows when the store will be tried again.
 	class StoreUnavailable extends Error {
 		constructor(readonly retryAfterMs: number) {
 			super("store unavailable; not retried yet");
@@ -121,7 +119,6 @@ it("answers a failed request with 503 and the Retry-After its error states", asy
 	const port = await listen(async () => {
 		throw failure;
 	});
-	// Both the buffered path and the streamed one end in the same answer.
 	for (const path of ["/internal/queue-wakeup", "/sandbox/egress/artifact"]) {
 		failure = new Error("anything else");
 		const fallback = await fetch(`http://127.0.0.1:${port}${path}`);
@@ -134,7 +131,6 @@ it("answers a failed request with 503 and the Retry-After its error states", asy
 		expect(stated.status).toBe(503);
 		expect(stated.headers.get("retry-after")).toBe("40");
 		expect(stated.headers.get("cache-control")).toBe("no-store");
-		// The error's text never reaches the caller.
 		expect(await stated.text()).toBe('{"error":"service unavailable"}');
 	}
 });

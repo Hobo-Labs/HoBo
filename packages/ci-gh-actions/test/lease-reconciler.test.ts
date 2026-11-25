@@ -806,7 +806,6 @@ describe("worker lease reconciliation", () => {
 			inventoryKnown: false,
 			liveLeaseIds: new Set([lease.id]),
 		});
-		// Memory in use is still reported when the container list is unknown.
 		expect(result.inUseMemoryMb).toBeGreaterThanOrEqual(0);
 		expect(active).toEqual([lease]);
 		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();
@@ -938,7 +937,6 @@ describe("worker lease reconciliation", () => {
 			runner_name: lease.runnerName,
 			run_attempt: 1,
 		});
-		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
 		const reconciler = createWorkerLeaseReconciler({
 			store,
 			docker: {
@@ -994,7 +992,6 @@ describe("worker lease reconciliation", () => {
 			runner_name: lease.runnerName,
 			run_attempt: 1,
 		});
-		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
 		const reconciler = createWorkerLeaseReconciler({
 			store,
 			docker: {

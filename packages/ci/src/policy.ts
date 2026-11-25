@@ -20,7 +20,6 @@ import {
 import { isGithubLatestLabel } from "./runner-routing/tiers.js";
 
 declare const parsedCiPolicy: unique symbol;
-/** Generated authored intent, parsed and frozen before publishing. */
 export type ParsedCiPolicy = DesiredCiPolicy & {
 	readonly [parsedCiPolicy]: true;
 };
@@ -139,7 +138,6 @@ export function ciBudgetPolicy(value: {
 	return value.budgetPolicy ? parseBudgetPolicy(value.budgetPolicy) : undefined;
 }
 
-/** Exact canonical content identity; it is never a caller-supplied digest. */
 export function ciBudgetPolicyJson(value?: JsonObject): string {
 	return value ? canonicalBudgetPolicyJson(parseBudgetPolicy(value)) : "";
 }
@@ -226,8 +224,6 @@ export function ciBudgetSignalKey(
 		: `broker:${policy.tenantId}:${fraction}`;
 }
 
-/** One parser for hosted control and both Station adapters. Scoped reset cycle
- * zero maps to persisted watermark one; old keys remain in the audit state. */
 export function ciBudgetSignalUpdate(
 	signal: BudgetSignal,
 	expected: CiSignalPolicy,
@@ -321,7 +317,6 @@ export function ciBudgetSignalUpdate(
 	};
 }
 
-/** The core parser has established the complete policy structure beforehand. */
 function freezeBudgetPolicy(value: JsonObject): void {
 	Object.freeze(value.workloads);
 	if (Array.isArray(value.constraints))
@@ -330,7 +325,6 @@ function freezeBudgetPolicy(value: JsonObject): void {
 	Object.freeze(value);
 }
 
-/** Parse a data manifest; provider/Station authority is resolved by the host. */
 export function parseCiPolicy(json: string): ParsedCiPolicy {
 	parseBudgetPolicyDocumentJson(json);
 	const policy = fromJsonString(DesiredCiPolicySchema, json);
@@ -412,11 +406,9 @@ export function parseCiPolicy(json: string): ParsedCiPolicy {
 	Object.freeze(policy.pool);
 	Object.freeze(policy.budget);
 	Object.freeze(policy.routing);
-	// SAFETY: all dependent invariants are established above and the record is frozen.
 	return Object.freeze(policy) as ParsedCiPolicy;
 }
 
-/** Compile deterministic SDK-authored data without resolving or calling providers. */
 export function defineCiPolicy(
 	input: NonNullable<
 		Parameters<typeof create<typeof DesiredCiPolicySchema>>[1]
@@ -425,7 +417,6 @@ export function defineCiPolicy(
 	return parseCiPolicy(JSON.stringify(input));
 }
 
-/** Apply operator intent and active threshold gates without re-enabling runtime-disabled offers. */
 export function effectiveCiAccount(
 	account: Account,
 	policy: ParsedCiPolicy,

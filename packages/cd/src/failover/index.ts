@@ -1,4 +1,3 @@
-// "./failover" (WP23): governed failover and rebalance sagas (D23, I21).
 export {
 	createFailoverController,
 	FAILOVER_METRIC,

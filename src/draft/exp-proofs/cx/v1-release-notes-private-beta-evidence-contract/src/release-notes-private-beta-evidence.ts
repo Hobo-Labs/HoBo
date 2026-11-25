@@ -204,7 +204,6 @@ export interface EvidenceValidation {
 }
 
 export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): EvidenceValidation {
-  // SAFETY: `const record = isRecord(input) ? input as Partial<ReleaseNotesPrivateBetaEvidenc` is required at this I/O or test boundary.
   const record = isRecord(input) ? input as Partial<ReleaseNotesPrivateBetaEvidenceRecord> : {};
   const errors: string[] = [];
 
@@ -221,7 +220,6 @@ export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): Evide
     errors.push("milestone gate must be M2 Private beta proof");
   }
 
-  // SAFETY: `const requiredEvidence = objectArray(record.requiredEvidence, "requiredEvidence"` is required at this I/O or test boundary.
   const requiredEvidence = objectArray(record.requiredEvidence, "requiredEvidence", errors) as Partial<RequiredEvidence>[];
   const evidenceById = new Map(requiredEvidence.map((evidence) => [evidence.id, evidence]));
   const seenEvidenceIds = new Set<JsonValue>();
@@ -252,7 +250,6 @@ export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): Evide
     }
   }
 
-  // SAFETY: `const blockers = objectArray(record.blockers, "blockers", errors) as Partial<Rec` is required at this I/O or test boundary.
   const blockers = objectArray(record.blockers, "blockers", errors) as Partial<RecordedBlocker>[];
   if (blockers.length === 0) {
     errors.push("blockers must be recorded even when none are open");
@@ -263,7 +260,6 @@ export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): Evide
     }
   }
 
-  // SAFETY: `const acceptedRisks = objectArray(record.acceptedRisks, "acceptedRisks", errors)` is required at this I/O or test boundary.
   const acceptedRisks = objectArray(record.acceptedRisks, "acceptedRisks", errors) as Partial<AcceptedRisk>[];
   if (acceptedRisks.length === 0) {
     errors.push("accepted risks must be recorded");
@@ -283,7 +279,6 @@ export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): Evide
     "releaseCutline.dependencies",
     errors
   );
-  // SAFETY: `const releaseCutlineDependencies = releaseCutlineDependenciesRaw as Partial<ReleaseCutlineDependency>[];` is required at this I/O or test boundary.
   const releaseCutlineDependencies = releaseCutlineDependenciesRaw as Partial<ReleaseCutlineDependency>[];
   const cutlineProjects = new Set(releaseCutlineDependencies.map((dependency) => dependency.project));
   for (const evidence of requiredEvidence) {
@@ -292,7 +287,6 @@ export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): Evide
     }
   }
 
-  // SAFETY: `const followUps = objectArray(record.followUps, "followUps", errors) as Partial<` is required at this I/O or test boundary.
   const followUps = objectArray(record.followUps, "followUps", errors) as Partial<FollowUpIssue>[];
   for (const followUp of followUps) {
     const evidence = evidenceById.get(followUp.evidenceId);
@@ -310,7 +304,6 @@ export function validateReleaseNotesPrivateBetaEvidence(input: JsonValue): Evide
 
   let parentInitiativeStatus: Partial<ReleaseNotesPrivateBetaEvidenceRecord["parentInitiativeStatus"]> | undefined;
   if (isRecord(record.parentInitiativeStatus)) {
-    // SAFETY: `parentInitiativeStatus = record.parentInitiativeStatus as Partial<ReleaseNotesPrivateBetaEvidenceRecord["parentInitiativeStatus"]>` is required at this I/O or test boundary.
     parentInitiativeStatus = record.parentInitiativeStatus as Partial<
       ReleaseNotesPrivateBetaEvidenceRecord["parentInitiativeStatus"]
     >;
@@ -342,7 +335,6 @@ export function assertReleaseNotesPrivateBetaEvidence(input: JsonValue): Release
   if (!result.ok) {
     throw new Error(result.errors.join("\n"));
   }
-  // SAFETY: `return input as ReleaseNotesPrivateBetaEvidenceRecord;` is required at this I/O or test boundary.
   return input as ReleaseNotesPrivateBetaEvidenceRecord;
 }
 
@@ -352,7 +344,6 @@ export function canCompletePrivateBetaGate(input: JsonValue): boolean {
     return false;
   }
 
-  // SAFETY: `const record = input as ReleaseNotesPrivateBetaEvidenceRecord;` is required at this I/O or test boundary.
   const record = input as ReleaseNotesPrivateBetaEvidenceRecord;
   return (
     record.requiredEvidence.every((evidence) => isAcceptedEvidence(evidence.status)) &&

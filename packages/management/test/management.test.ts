@@ -121,8 +121,6 @@ describe("@hobo/management", () => {
 		const snap = projectYardSnapshot(ctx, { stationId: "station:local" });
 		expect(snap.data?.connections).toHaveLength(1);
 		expect(snap.data?.metering.trafficRate).toBeGreaterThan(0);
-		// Provenance badges (HIGHBALL "kill or badge"): synthetic/static until
-		// real OTLP signals feed the projection.
 		expect(snap.data?.metering.trafficRateSource).toBe("synthetic");
 		expect(snap.data?.activity[0]?.status).toBe("working");
 		expect(snap.data?.activity[0]?.statusSource).toBe("derived-static");

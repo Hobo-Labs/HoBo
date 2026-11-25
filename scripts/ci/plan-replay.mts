@@ -1,28 +1,3 @@
-/**
- * Replays the dependent-test planner over recent main commits and prints how
- * much each plan runs: one line per commit and a total of whole suites and
- * subsets.
- *
- * Each commit is planned the way CI plans it: its changed paths are
- * `git diff --name-only PARENT COMMIT`, and the root package.json and
- * turbo.json are read at the parent and the commit, as `--base=PARENT` would.
- * Every plan reads the checkout's tree, so the counts compare planners over
- * the same files.
- *
- * `--before=REF` also plans each commit with the planner as it was at REF and
- * prints both. `--check` replays a second import graph, read from the syntax
- * tree by `scripts/lib/test-import-specifiers.mts` and independent of the
- * planner's own edges: every test file whose static or dynamic imports, or its
- * package's vitest config, reach a changed file must be in the plan. An import
- * of a workspace package by name also reaches that package's `package.json`
- * and `tsconfig.json`. The graph holds nothing else: a path literal, a
- * directory or data file a test reads, a spawned program and a tsconfig a
- * script names are edges of the planner that `--check` does not check. A test
- * missing from either plan is printed; the exit status is 1 when the current
- * planner misses one, whatever the planner at `--before` missed.
- *
- * CLI: `node --import tsx scripts/ci/plan-replay.mts [--count=100] [--ref=origin/main] [--before=REF] [--check]`
- */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,7 +31,6 @@ const show = (ref: string, path: string) => {
 	}
 };
 
-/** The planner as it was at `ref`, its sibling imports pointed at this checkout. */
 async function plannerAt(ref: string): Promise<Planner> {
 	const source = show(ref, "scripts/ci/dependent-tests.mts");
 	if (source === undefined) throw new Error(`no planner at ${ref}`);
@@ -85,7 +59,6 @@ const VITEST_CONFIGS = ["ts", "mts", "js", "mjs"].map(
 	(extension) => `vitest.config.${extension}`,
 );
 
-/** Test file → owning package, and file → the files that import it. */
 export function importGraph(repo: Repo) {
 	const byDepth = [...repo.workspaces].sort(
 		(a, b) => b.dir.length - a.dir.length,
@@ -152,8 +125,6 @@ export function importGraph(repo: Repo) {
 				: (parts[0] ?? "");
 			const ws = byName.get(name);
 			if (!ws) continue;
-			// What the importer gets is also made by the package's manifest and
-			// the tsconfig it builds with.
 			for (const input of ["package.json", "tsconfig.json"])
 				if (repo.files.has(`${ws.dir}/${input}`))
 					link(file, `${ws.dir}/${input}`);
@@ -165,8 +136,6 @@ export function importGraph(repo: Repo) {
 				link(file, resolveFile(posix.normalize(posix.join(ws.dir, entry))));
 		}
 	}
-	// A test runs under its package's vitest config: the config's closure is
-	// part of every test's.
 	const tests = new Map<string, string>();
 	for (const file of repo.files) {
 		const owner = ownerOf(file);
@@ -181,7 +150,6 @@ export function importGraph(repo: Repo) {
 			if (repo.files.has(`${owner.dir}/${name}`))
 				link(file, `${owner.dir}/${name}`);
 	}
-	/** Every test whose imports reach one of `changed`. */
 	const reachedTests = (changed: readonly string[]) => {
 		const seen = new Set<string>(changed);
 		const queue = [...changed];
@@ -196,7 +164,6 @@ export function importGraph(repo: Repo) {
 	return { tests, reachedTests };
 }
 
-/** Tests of `reached` the plan does not run. */
 export function missed(
 	plan: TestPlan,
 	reached: readonly string[],
@@ -213,10 +180,8 @@ export function missed(
 	});
 }
 
-/** The planner under test is `after`; `before` is only what it is compared with. */
 const CURRENT = "after";
 
-/** Whether the replay fails: the current planner missed a test. */
 export function replayFailed(
 	totals: ReadonlyMap<string, { readonly misses: number }>,
 ): boolean {

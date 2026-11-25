@@ -1,8 +1,6 @@
-// "@hobo/cd/sources" (WP2): Freight sources and pull discovery (D3, I15).
 import type { CdFactories } from "../ports.js";
 import { createFreightSources as create } from "./sources.js";
 
-/** The frozen factory signature; `telemetry` may be added for metrics. */
 export const createFreightSources: CdFactories["createFreightSources"] &
 	typeof create = create;
 

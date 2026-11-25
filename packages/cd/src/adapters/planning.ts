@@ -1,12 +1,3 @@
-// SetResolver over the same planner path `hobo up` uses (`yard-client.ts`
-// `pureplan`: `plan(bindle, config, registry)` from `@hobo/cloud`). Promote
-// re-runs Matching per target Camp over the Freight's own declaration (D2);
-// the bytes stay the Freight's, infrastructure may differ, and the
-// difference against the source Camp is the Delta's `infrastructure_diff`.
-//
-// The resolved set returned here is a pre-gate candidate: its Gatekeeper
-// field names the plan, not a decision. Promotion re-seals it with the real
-// gate decision before `DeltaLedger.apply` (see `sealResolved`).
 import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
@@ -48,11 +39,9 @@ import {
 } from "../promotion/journal.js";
 import { reason } from "../promotion/reasons.js";
 
-/** The declaration type the planner reads (`@hobo/bindles` ManifestV1). */
 export type Declaration = Parameters<typeof plan>[0];
 
 export type CampPlanning = Readonly<{
-	/** Environment name recorded on the resolved set. */
 	environment: string;
 	/** Same config `pureplan` builds: region, placement, Yard binding, budget evidence. */
 	config: Omit<PlanConfig, "deploymentId">;
@@ -61,15 +50,11 @@ export type CampPlanning = Readonly<{
 export type PlanningDeps = CdBase & {
 	readonly desired: DesiredStateReader;
 	readonly registry: PlannerRegistry;
-	/** The declaration the Freight's `declaration_hash` names. */
 	readonly declaration: (
 		freight: FreightRecord,
 	) => Promise<Declaration | undefined>;
-	/** Per-Camp planning inputs (WP18 builds them from @hobo/camps / @hobo/yards). */
 	readonly camp: (campId: CampId) => Promise<CampPlanning | undefined>;
-	/** Digest the build used for `declaration_hash`; defaults to canonical-JSON sha256. */
 	readonly declarationDigest?: (declaration: Declaration) => Digest;
-	/** Ports whose resources hold data and survive a `depart` (ORPHAN_DATA). */
 	readonly dataPorts?: readonly string[];
 };
 
@@ -101,11 +86,6 @@ function resourceHash(resolved: ResolvedDeploymentSet, name: string): string {
 	return `sha256:${sha256Hex(canonicalJson({ resource, matches }))}`;
 }
 
-/**
- * Resource-level diff between two resolved sets, sorted by resource name: a
- * resource is updated when its plan node or its Matching selection changed.
- * The same rule the desired-state ledger checks a Delta's `changes` against.
- */
 export function diffResolvedSets(
 	before: ResolvedDeploymentSet | undefined,
 	after: ResolvedDeploymentSet,
@@ -144,7 +124,6 @@ export function diffResolvedSets(
 	return changes;
 }
 
-/** Deterministic Delta id (never starts with `set_`). */
 export function deltaIdFor(
 	input: Readonly<{
 		campId: string;
@@ -157,7 +136,6 @@ export function deltaIdFor(
 	return `delta_${sha256Hex(canonicalJson(input)).slice(0, 24)}`;
 }
 
-/** Re-seal a resolved set with the gate decision that admitted it. */
 export function sealResolved(
 	resolved: ResolvedDeploymentSet,
 	gate: Readonly<{
@@ -213,7 +191,6 @@ function emptyResolved(
 	});
 }
 
-/** Keep previously declared nodes when an incremental up omits them. */
 function retainUndeclared(
 	before: ResolvedDeploymentSet,
 	after: ResolvedDeploymentSet,
@@ -270,7 +247,6 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 	): Promise<Outcome<ResolvedDeploymentSet>> {
 		const source = previewSourceOf(campId);
 		const declared = await d.camp(campId);
-		// A preview Camp is planned with its source Camp's inputs (env.Cloned).
 		const inherited = declared ?? (source ? await d.camp(source) : undefined);
 		const camp =
 			declared ??

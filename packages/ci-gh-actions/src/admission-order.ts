@@ -4,7 +4,6 @@ import type { JobDurations } from "./job-durations.js";
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { servedRunnerLabel, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
-/** Where a job's run stands in line for a host: lower `rank` first, then the older run. */
 export type AdmissionKey = Readonly<{
 	rank: number;
 	startedAtMs: number;
@@ -12,10 +11,8 @@ export type AdmissionKey = Readonly<{
 	headSha?: string | undefined;
 }>;
 
-/** The rank of merge_group, push, workflow_run, and workflow_dispatch runs: trunk work. */
 export const TRUNK_RANK = 0;
 
-/** Merge-group checks outrank main-push gates on a shared trunk host. */
 export function trunkEventPriority(event: string): number {
 	switch (event) {
 		case "merge_group":
@@ -29,10 +26,6 @@ export function trunkEventPriority(event: string): number {
 	}
 }
 
-/**
- * Merge-queue entries and trunk runs gate every other merge, so a shared host
- * admits them before pull-request work. A weekly sweep waits for both.
- */
 export function admissionRank(event: string): number {
 	switch (event) {
 		case "merge_group":
@@ -65,7 +58,6 @@ export type AdmissionRef = Readonly<{
 
 const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 
-/** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
 const MAIN_FULL_GATE_JOB = "Main full gate";
 const MAIN_FULL_GATE_FINISH_JOB = "Main full gate (finish)";
@@ -96,7 +88,6 @@ function isMainTrainReleaseRun(event: string): boolean {
 	);
 }
 
-/** Phase within a main-train release workflow run (lower admits first on the host). */
 export function mainTrainReleasePhase(
 	jobName: string | undefined,
 ): number | undefined {
@@ -126,7 +117,6 @@ export function isMainWorkspaceShardJob(jobName: string | undefined): boolean {
 	return mainWorkspaceShardIndex(jobName) !== undefined;
 }
 
-/** Main push / merge_group Fabric trunk jobs eligible for cooperative fleet defer. */
 export function isMainTrunkFleetDeferJob(
 	jobName: string | undefined,
 	runEvent?: string | undefined,
@@ -152,7 +142,6 @@ function mainFabricTrunkPhase(
 ): number {
 	if (jobName === MAIN_WORKSPACE_PLAN_JOB) return 0;
 	if (jobName === CI_DEPS_LAYER_JOB) {
-		// PR runs also build the deps layer, but must not queue ahead of required gates.
 		if (runEvent === "pull_request") return 10;
 		return 1;
 	}
@@ -162,16 +151,6 @@ function mainFabricTrunkPhase(
 	return 4;
 }
 
-/**
- * Orders demand for a host. A run's event and start time never change for an
- * attempt, so a complete entry is looked up once. The rank is remembered before
- * the start time arrives; a failed lookup keeps it, while an unseen run ranks
- * behind pull requests and retries next tick. The trunk-only label proves trunk
- * rank even without run metadata. Within one rank and run age, the job expected
- * to take longest goes first, so the run's long pole is not left to start last
- * on a freed slot; a job with no history expects 0 and the job id breaks
- * remaining ties.
- */
 type MergeGroupSortKey = Readonly<{ position: number; stale: boolean }>;
 
 function mergeGroupSortKey(
@@ -274,9 +253,6 @@ export function createAdmissionOrder(
 						return ga.position - gb.position;
 					return a.jobId - b.jobId;
 				}
-				// Main pushes queue (finding 113), so two push runs hold jobs at once only when
-				// one is winding down after a manual cancel or a re-run; admit the newest first
-				// so slots serve live trunk.
 				if (
 					(a.key.event === "push" && b.key.event === "push") ||
 					(a.key.event === "workflow_run" && b.key.event === "workflow_run")

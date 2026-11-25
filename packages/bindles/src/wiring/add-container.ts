@@ -32,9 +32,6 @@ export function addContainer(
 		},
 	});
 
-	// Bound to a local as well as the handle so `withHttpEndpoint` can call it
-	// directly. Reaching back through `handle.withEndpoint!` asserted away an
-	// optionality the type really does declare.
 	const withEndpoint: NonNullable<typeof handle.withEndpoint> = (endpoint) => {
 		const endpointName = endpoint.name ?? "http";
 		handle.endpoints[endpointName] = {

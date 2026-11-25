@@ -9,18 +9,6 @@ import {
 	ResourcePlanError,
 } from "../src/index.js";
 
-/**
- * Executable PACT verification for the one service boundary this shape crosses.
- *
- * A `DeploymentPlan` travels inside `deployment.Planned` alongside a
- * `planHash`, and every consumer that receives it — the deployment saga, the
- * deployment-view projection, a deployment driver — must be able to recompute
- * that hash from the plan body. That agreement is the boundary contract, and
- * the pact is verified by executing it rather than by reading it: each
- * interaction's plan is parsed and hashed here, and the result is compared to
- * the digest the pact declares.
- */
-
 interface PactInteraction {
 	description: string;
 	request: { body: { plan: PlanParseInput } };
@@ -50,7 +38,6 @@ describe(`PACT ${pact.consumer.name} -> ${pact.provider.name}`, () => {
 		expect(pact.interactions).toHaveLength(5);
 	});
 
-	// Keep the legacy plan and its digest alongside the current golden fixture.
 	const digestCases = pact.interactions.filter(
 		(i) => i.response.body.planHash !== undefined,
 	);

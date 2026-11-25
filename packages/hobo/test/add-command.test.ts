@@ -17,10 +17,6 @@ import {
 } from "../src/index.js";
 import { createProviderFromPorts } from "../src/local-provider.js";
 
-// `hobo add <provider>` installs a Capability-Manifest-bearing provider into the
-// registry (a durable provider.Registered fact); `hobo registry` then folds it
-// into the catalog alongside the base providers.
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -35,11 +31,9 @@ function envelope(stdout: string): any {
 describe("createAddCommand", () => {
 	it("installs the local provider and registry then lists it", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
-		// Not present before install.
 		const before = envelope((await cli.run(["registry", "--json"])).stdout);
 		expect(
 			before.data.providers.some(
@@ -54,7 +48,6 @@ describe("createAddCommand", () => {
 		expect(add.data.provider).toBe("local");
 		expect(add.data.ports.sort()).toEqual(["kv", "objectStore"]);
 
-		// registry now folds the installed provider (source: "installed").
 		const after = envelope((await cli.run(["registry", "--json"])).stdout);
 		const local = after.data.providers.find(
 			(p: { providerId: string }) => p.providerId === "local",
@@ -69,7 +62,6 @@ describe("createAddCommand", () => {
 
 	it("is idempotent when the provider is already installed", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -81,7 +73,6 @@ describe("createAddCommand", () => {
 
 	it("rejects an unknown provider and lists what is available", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -93,7 +84,6 @@ describe("createAddCommand", () => {
 
 	it("requires a provider argument", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -111,13 +101,10 @@ describe("createAddCommand", () => {
 	});
 
 	it("hobo add then hobo plan matches the installed provider with no restart", async () => {
-		// The bindle's `hobo:database` port lowers to the bare `database` token
-		// (lowerManifest), so the provider advertises the lowered port.
 		registerInstallable("pg-local", () =>
 			createProviderFromPorts("pg-local", ["database"]),
 		);
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -145,7 +132,6 @@ describe("createAddCommand", () => {
 		);
 
 		try {
-			// Unsatisfiable before install: no registered provider advertises the port.
 			const before = envelope(
 				(await cli.run(["plan", "--json"], { cwd: dir })).stdout,
 			);
@@ -154,8 +140,6 @@ describe("createAddCommand", () => {
 				"capability.port-unavailable",
 			);
 
-			// Hold: registered but NOT approved -> still rejected, but with the
-			// precise approval remediation naming the held provider.
 			const held = envelope(
 				(await cli.run(["add", "pg-local", "--hold", "--json"], { cwd: dir }))
 					.stdout,
@@ -172,7 +156,6 @@ describe("createAddCommand", () => {
 			);
 			expect(heldPlan.data.remediations[0].suggestedProvider).toBe("pg-local");
 
-			// Approve (re-run add without --hold) -> plan matches, same process.
 			const approved = envelope(
 				(await cli.run(["add", "pg-local", "--json"], { cwd: dir })).stdout,
 			);
@@ -187,7 +170,6 @@ describe("createAddCommand", () => {
 			);
 			expect(ledger.provider).toBe("pg-local");
 
-			// The registry read view agrees: installed + approved.
 			const registry = envelope(
 				(await cli.run(["registry", "--json"], { cwd: dir })).stdout,
 			);
@@ -203,7 +185,6 @@ describe("createAddCommand", () => {
 
 	it("bootstrapDefaultProviders records register+approve facts idempotently", async () => {
 		const runtime = createDefaultYardRuntime();
-		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 
 		const defaults: RegistrableProvider[] = [
@@ -212,7 +193,6 @@ describe("createAddCommand", () => {
 		const first = await bootstrapDefaultProviders(runtime, defaults);
 		expect(first).toEqual(["default-kv"]);
 
-		// Second boot over the same store appends nothing new.
 		const second = await bootstrapDefaultProviders(runtime, defaults);
 		expect(second).toEqual([]);
 
@@ -222,9 +202,7 @@ describe("createAddCommand", () => {
 
 	it("reports unavailable when no runtime is wired", async () => {
 		const result = await createAddCommand().run({
-			// SAFETY: assertion required at this I/O or test boundary.
 			context: { cwd: "/tmp", projectDir: "/tmp" } as CliContext,
-			// SAFETY: assertion required at this I/O or test boundary.
 			flags: { cwd: "/tmp" } as never,
 			args: ["local"],
 			verb: "add",

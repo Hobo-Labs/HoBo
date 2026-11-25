@@ -1,11 +1,3 @@
-// Trails sequencing for data-shape changes (D11). A promotion whose Freight
-// changes data shape runs Trails `expand` before apply and `contract` after
-// soak; rollback past a completed `contract` is refused naming the
-// compensating `expand`. `@hobo/trails` is bound by composition (WP18): its
-// `executeDataMigration` resumes from its journal, so the expand pass runs
-// with a compatibility gate that still names the predecessor as a legacy
-// consumer (the run stops at `contract-blocked` with the dual window open),
-// and the contract pass runs with an empty one.
 import type { FreightRecord } from "../_generated/cd_pb.js";
 import type { CampId, CdContext, Outcome } from "../ports.js";
 import { reason } from "../promotion/reasons.js";
@@ -14,7 +6,6 @@ export type TrailsPhase = "expand" | "contract";
 
 export type TrailsMigration = Readonly<{ migrationId: string }>;
 
-/** Structural mirror of `@hobo/trails` `DataMigrationResult` (the fields read here). */
 export type DataMigrationRun = Readonly<{
 	status: "completed" | "contract-blocked" | "held" | "rolled-back" | "failed";
 	dualWindowOpen: boolean;
@@ -22,7 +13,6 @@ export type DataMigrationRun = Readonly<{
 }>;
 
 export interface TrailsMigrations {
-	/** The migration this Freight needs at a Camp; undefined when its data shape is unchanged. */
 	migrationFor(
 		input: Readonly<{ freight: FreightRecord; campId: CampId }>,
 	): Promise<TrailsMigration | undefined>;
@@ -37,7 +27,6 @@ export interface TrailsMigrations {
 }
 
 // public-contract: Freight manifest label naming the Trails migration its
-// declaration requires (set by the build that changed the data shape).
 export const MIGRATION_LABEL = "hobo.cd/data-migration" as const;
 
 // public-contract: refusal codes of the Trails adapter.
@@ -48,7 +37,6 @@ export const TRAILS_REASON = Object.freeze({
 } as const);
 
 export type TrailsDeps = Readonly<{
-	/** Bound to `@hobo/trails` `executeDataMigration` by composition. */
 	execute: (
 		input: Readonly<{
 			migrationId: string;
@@ -56,7 +44,6 @@ export type TrailsDeps = Readonly<{
 			phase: TrailsPhase;
 		}>,
 	) => Promise<DataMigrationRun>;
-	/** Defaults to the Freight manifest label `hobo.cd/data-migration`. */
 	migrationFor?: TrailsMigrations["migrationFor"];
 }>;
 

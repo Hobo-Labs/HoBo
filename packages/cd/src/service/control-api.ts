@@ -1,10 +1,3 @@
-// `createCdControlApi` — the `/v1/cd/` HTTP surface the control API mounts
-// (WP12). Read routes (pipelines, Freight timeline, promotions, Camps,
-// inventory, placement decisions, fan-outs, failovers, compliance, readiness,
-// OpenAPI, SSE stream) are answered here from the module ports; every other
-// `/v1/cd/` path is handed to the delivery feed unchanged, so one mount
-// serves operators and agents. The surface is read-only: mutations go through
-// the governed commands (`hobo deploy`, MCP), never through this API.
 import type { DurableEventStore } from "@hobo/core";
 import type {
 	ContinuousDelivery,
@@ -66,9 +59,7 @@ export type CdControlApiDeps = Readonly<{
 		| "posture"
 		| "feed"
 	>;
-	/** Declared topology for `/camps/{id}/inventory` (composed by WP18). */
 	topology?: TopologyReader;
-	/** The service host, for `/v1/cd/ready`. Without it readiness is 503. */
 	service?: Readonly<{ health(): HealthReport }>;
 	telemetry?: TelemetrySink;
 	streamPollMs?: number;
@@ -80,11 +71,9 @@ export type CdControlApiDeps = Readonly<{
 export interface CdControlApi {
 	readonly pathPrefix: "/v1/cd/";
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
-	/** The OpenAPI document of the read routes (merged into the control API's). */
 	openapi(): CdOpenApiDocument;
 }
 
-/** Metric label: the first path segment under /v1/cd/ (bounded, no ids). */
 function segmentOf(path: string): string {
 	const pathname = new URL(path, "http://cd.invalid").pathname;
 	return pathname.slice("/v1/cd/".length).split("/")[0] || "root";

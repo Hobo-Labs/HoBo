@@ -10,7 +10,6 @@ import {
 import type { Refusal } from "../ports.js";
 
 // public-contract: refusal and failure codes the promotion saga records. Every
-// reason carries a remediation; the frozen codes from events.ts are reused.
 export const PROMOTION_REASON = Object.freeze({
 	unauthorized: "promotion-unauthorized",
 	invalidRequest: "promotion-request-invalid",
@@ -76,7 +75,6 @@ export const PROMOTION_METRIC = Object.freeze({
 	approvalDecided: "hobo.cd.approval.decided",
 } as const);
 
-/** Build one ReasonRecord; every refusal names a remediation. */
 export function reason(
 	code: string,
 	message: string,

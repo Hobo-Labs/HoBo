@@ -1,11 +1,5 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 
-/**
- * DigitalOcean TrafficRouting offerings declaration (scaffold).
- * A native Load Balancer / App Platform routing adapter may land later;
- * Matching can negotiate these features while realization falls back to
- * inprocess.weighted until then.
- */
 export const DIGITALOCEAN_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	{
 		provider: "other",

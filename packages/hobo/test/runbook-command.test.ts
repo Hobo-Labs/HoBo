@@ -15,10 +15,6 @@ import {
 	RUNBOOK_EXECUTOR_REASON,
 } from "../src/runbook-command.js";
 
-// `hobo runbook <file>` executes an ordered sequence of HoBo diagnostic steps
-// against the live deployment (the shared runtime), then reports per-step
-// outcomes. Read-only steps make it replayable.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -73,7 +69,6 @@ describe("createRunbookCommand", () => {
 		};
 		await withProject(runbook, async (cwd) => {
 			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -91,7 +86,6 @@ describe("createRunbookCommand", () => {
 				"verify",
 				"doctor",
 			]);
-			// inspect reflects the real deployment run just before.
 			const inspect = result.data.steps.find(
 				(s: { verb: string }) => s.verb === "inspect",
 			);
@@ -106,7 +100,6 @@ describe("createRunbookCommand", () => {
 		};
 		await withProject(runbook, async (cwd) => {
 			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 			await cli.run(["up", "--json"], { cwd });
@@ -124,14 +117,12 @@ describe("createRunbookCommand", () => {
 	});
 
 	it("reports a failed runbook when a step fails", async () => {
-		// `claim` with no account fails — the runbook surfaces it.
 		const runbook = {
 			name: "bad",
 			steps: [{ verb: "doctor" }, { verb: "claim" }],
 		};
 		await withProject(runbook, async (cwd) => {
 			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -153,7 +144,6 @@ describe("createRunbookCommand", () => {
 		};
 		await withProject(runbook, async (cwd) => {
 			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -168,7 +158,6 @@ describe("createRunbookCommand", () => {
 	it("errors cleanly on a missing file and no file argument", async () => {
 		await withProject({ name: "x", steps: [] }, async (cwd) => {
 			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -186,9 +175,7 @@ describe("createRunbookCommand", () => {
 
 	it("reports unavailable when no runtime is wired", async () => {
 		const result = await createRunbookCommand().run({
-			// SAFETY: assertion required at this I/O or test boundary.
 			context: { cwd: "/tmp", projectDir: "/tmp" } as CliContext,
-			// SAFETY: assertion required at this I/O or test boundary.
 			flags: { cwd: "/tmp" } as never,
 			args: ["runbook.json"],
 			verb: "runbook",
@@ -199,8 +186,6 @@ describe("createRunbookCommand", () => {
 	});
 });
 
-// The CD RunbookExecutor (WP6, D4): RUNBOOK hooks run the same runbook
-// documents through the same composed CLI; `hobo runbook` is unchanged.
 describe("createRunbookExecutor", () => {
 	function fakeCli(statuses: Record<string, { ok: boolean; status: string }>) {
 		const calls: string[][] = [];
@@ -220,7 +205,6 @@ describe("createRunbookExecutor", () => {
 				throw new Error("not used");
 			},
 		};
-		// SAFETY: the executor only calls `run`; the rest of HoboCli is unused here.
 		return { calls, factory: () => cli as never };
 	}
 
@@ -229,7 +213,6 @@ describe("createRunbookExecutor", () => {
 			{ name: "precheck", steps: [{ verb: "doctor" }, { verb: "verify" }] },
 			async (cwd) => {
 				const runtime = createDefaultYardRuntime();
-				// SAFETY: assertion required at this I/O or test boundary.
 				openStores.push(runtime.store as RuntimeLocalEventStore);
 				const cli = fakeCli({
 					doctor: { ok: true, status: "ok" },
@@ -268,7 +251,6 @@ describe("createRunbookExecutor", () => {
 			{ name: "bad", steps: [{ verb: "doctor" }, { verb: "claim" }] },
 			async (cwd) => {
 				const runtime = createDefaultYardRuntime();
-				// SAFETY: assertion required at this I/O or test boundary.
 				openStores.push(runtime.store as RuntimeLocalEventStore);
 				const cli = fakeCli({
 					doctor: { ok: true, status: "ok" },
@@ -294,7 +276,6 @@ describe("createRunbookExecutor", () => {
 	it("refuses paths outside the project, unreadable runbooks and a missing runtime", async () => {
 		await withProject({ name: "x", steps: [] }, async (cwd) => {
 			const runtime = createDefaultYardRuntime();
-			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const executor = createRunbookExecutor({
 				runtime,

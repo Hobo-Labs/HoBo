@@ -71,10 +71,6 @@ export function optimizeRequest(
 	};
 }
 
-/**
- * A deterministic mock model: always answers with the given category in the
- * ax field format, so optimizer runs are reproducible and offline.
- */
 export function mockModel(category: string) {
 	return new AxMockAIService({
 		name: "mock-classifier",

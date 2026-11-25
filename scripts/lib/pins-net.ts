@@ -1,21 +1,9 @@
-/**
- * How long the pin code waits on the network before it gives up.
- *
- * One bound, HOBO_PINS_NET_TIMEOUT_MS (default 120 s, at most 600 s), applies
- * to every git call that touches the network (the whole call) and to every
- * download (each wait: for the response, and for the next bytes of the body).
- * Running out of it is a NET_TIMEOUT that names the call; nothing is staged,
- * written or kept.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { PinsError } from "./pins.ts";
 
 export const NET_TIMEOUT_ENV = "HOBO_PINS_NET_TIMEOUT_MS";
 export const DEFAULT_NET_TIMEOUT_MS = 120_000;
 export const MAX_NET_TIMEOUT_MS = 600_000;
 
-/** The bound for this run: the variable when set (a positive integer <= 600000), else 120 s. */
 export function netTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
 	const raw = env[NET_TIMEOUT_ENV];
 	if (raw === undefined || raw === "") return DEFAULT_NET_TIMEOUT_MS;
@@ -36,11 +24,6 @@ export function netTimeout(what: string, ms: number): PinsError {
 	);
 }
 
-/**
- * An abort that fires when nothing has happened for `ms`: `touch()` it on
- * every sign of life (a response, a chunk). `fired` tells a timeout from the
- * other reasons a request is aborted.
- */
 export class Watchdog {
 	readonly #controller = new AbortController();
 	#timer: ReturnType<typeof setTimeout> | undefined;

@@ -1,20 +1,5 @@
-/**
- * How a domain type is built on top of a generated protobuf message.
- *
- * The records this package reasons about are declared in
- * `data-models/temporary_redis.proto` and generated into
- * `src/_generated/temporary_redis_pb.ts`. A hand-written parallel interface
- * would drift from them silently, so every domain type is expressed as a
- * {@link DomainView} of its generated wire message: the fields it does not
- * refine come straight from the generated type, and the ones it does refine
- * are named explicitly.
- *
- * The refinement map is key-checked against the wire message, so renaming a
- * proto field breaks the build here instead of at run time.
- */
 import type { Message } from "@bufbuild/protobuf";
 
-/** A generated message without its runtime envelope. */
 export type WireFields<TWire extends Message> = Omit<
 	TWire,
 	"$typeName" | "$unknown"

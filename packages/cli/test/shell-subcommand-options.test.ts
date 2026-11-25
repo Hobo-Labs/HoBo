@@ -9,12 +9,6 @@ import { parseArgv } from "../src/shell/parse.js";
 import { VERB_SUBCOMMANDS } from "../src/shell/subcommands.js";
 import { projectScopedVerbs } from "../src/shell/verbs.js";
 
-/**
- * `hobo deploy`, `hobo incident` and `hobo serve cd` subcommands declare their
- * own flags (packages/hobo/CD.md). The shell accepts exactly the flags the
- * resolved subcommand declares, typed (a value or a switch), and refuses any
- * other with the same `Unknown option` usage error as every other verb.
- */
 describe("subcommand-declared options", () => {
 	it("accepts the flags a deploy subcommand declares, typed", () => {
 		const parsed = parseArgv([
@@ -58,7 +52,6 @@ describe("subcommand-declared options", () => {
 	});
 
 	it("refuses a flag the resolved subcommand does not declare", () => {
-		// `--file` is a deploy flag, but `freight list` takes none.
 		expect(() =>
 			parseArgv(["deploy", "freight", "list", "--file", "x.json"]),
 		).toThrow(/Unknown option "--file"/);
@@ -68,7 +61,6 @@ describe("subcommand-declared options", () => {
 	});
 
 	it("refuses shell flags a strict verb does not declare", () => {
-		// `--force` is a shell flag for other verbs; deploy never takes it.
 		expect(() => parseArgv(["deploy", "status", "--force"])).toThrow(
 			/Unknown option "--force"/,
 		);

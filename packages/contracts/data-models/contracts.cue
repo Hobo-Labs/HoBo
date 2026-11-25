@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the @hobo/contracts wire records (S2-07). One constraint
-// definition per protobuf message/enum in contracts.proto.
 
 #ContractMode: "declared" | "inferred" | "observed" | "promoted"
 

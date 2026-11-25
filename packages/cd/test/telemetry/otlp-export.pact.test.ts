@@ -1,7 +1,3 @@
-// PACT for the OTLP/HTTP JSON export boundary owned by WP19. The consumer is
-// the real `createTelemetrySink`; each interaction answers the recorded
-// response and verifies the request the sink sent (method, path, headers,
-// body keys) and the sink's outcome.
 import { readFileSync } from "node:fs";
 import type { TransportRequest, TransportResponse } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -59,7 +55,6 @@ describe(`PACT ${pact.consumer.name} → ${pact.provider.name}`, () => {
 				request: TransportRequest,
 			): Promise<TransportResponse> => {
 				seen.push(request);
-				// The throttled interaction answers once, then accepts.
 				if (interaction.outcome === "retried" && seen.length > 1)
 					return { status: 200, headers: {}, body: "{}" };
 				return {

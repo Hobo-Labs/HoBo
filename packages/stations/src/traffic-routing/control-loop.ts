@@ -1,5 +1,3 @@
-// One service actor owns routing. Persist the in-flight intent before external
-// effects; replay consumes snapshots/facts and does not repeat provider writes.
 import { create } from "@bufbuild/protobuf";
 import type {
 	ApplyResult,
@@ -125,8 +123,6 @@ export interface RoutingControlLoopOptions {
 	units?: number;
 	clock?: () => string;
 	onFact?: (fact: DispatchFact) => void;
-	/** A durable host restores this generated record and CAS-persists each change
-	 * under its service actor fence. Absent means a process-local adapter only. */
 	initialState?: RoutingControlStateRecord;
 	persistState?: (
 		state: RoutingControlStateRecord,
@@ -138,8 +134,6 @@ export interface RoutingControlLoop {
 	incumbent(): string;
 	revision(): number;
 	snapshot(): RoutingControlStateRecord;
-	/** Observe an interrupted final apply/restore; intermediate ramps remain
-	 * pending for the supervising transition saga to resume or restore. */
 	reconcilePending(): Promise<RoutingControlOutcome>;
 }
 export function createRoutingControlLoop(
@@ -219,8 +213,6 @@ export function createRoutingControlLoop(
 	)
 		throw new Error("invalid routing stability policy");
 	let observations: RoutingObservations | undefined;
-	// A restored intent timestamp does not prove when an uncertain write took
-	// effect. Establish one fresh, persisted baseline per observed pending plan.
 	let observedPendingPlanId = "";
 	let queue: Promise<void> = Promise.resolve();
 	const serialized = <T>(op: () => Promise<T>): Promise<T> => {
@@ -448,8 +440,6 @@ export function createRoutingControlLoop(
 			});
 			return { action: "denied", reasons, facts };
 		}
-		// Dispatcher v1 omits `eligible` for eligible entries; only an explicit
-		// false represents a budget or capacity refusal.
 		const incumbentEligible = decision.ranking.some(
 			(c: { providerId: string; eligible?: boolean }) =>
 				c.providerId === state.incumbentBackendId && c.eligible !== false,

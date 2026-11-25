@@ -1,10 +1,3 @@
-/**
- * The 24-case ephemeral-state conformance suite from
- * `@hobo/kv-redis-compatible`, unchanged, against the libSQL binding on local
- * databases. Nothing here touches a network or Turso: the binding sends the
- * same statements to a `file:` database as to a remote libSQL server, and the
- * server's atomicity is SQLite's.
- */
 import {
 	EPHEMERAL_STATE_CONFORMANCE_CASES,
 	runEphemeralStateConformance,
@@ -32,8 +25,6 @@ const lanes: readonly {
 	},
 	{
 		name: "file:, the database's own clock with real sleeps",
-		// Real time: a TTL long enough that a loaded CI machine's scheduling
-		// delays stay well inside the cases' 0.4–0.6 × TTL margins.
 		open: () => serverClockLane(2_000),
 		timeoutMs: 30_000,
 	},

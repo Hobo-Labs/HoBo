@@ -4,7 +4,6 @@ import type {
 } from "@hobo/core";
 import type { JsonValue } from "../json.js";
 
-/** Minimal capability-host surface exercised by the conformance suite. */
 export interface CapabilityHandle {
 	componentId: string;
 	importInterface: string;

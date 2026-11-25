@@ -47,7 +47,6 @@ describe("parseProviderManifest", () => {
 	it("keeps unquoted YAML decimals exactly as written", () => {
 		const manifest = example();
 		const reservation = manifest.billing?.products[0]?.plans[1]?.charges[0];
-		// `amount: 900.00` — a float decode would yield "900".
 		expect(
 			reservation?.model.case === "recurring" && reservation.model.value.amount,
 		).toBe("900.00");
@@ -83,7 +82,6 @@ describe("parseProviderManifest", () => {
 		expect(issuesOf(doc)).toEqual([]);
 	});
 
-	// The CUE gate and the runtime parser must agree on the same corpus.
 	it.each(fixtures("invalid"))("refuses invalid fixture %s", (_name, doc) => {
 		expect(issuesOf(doc)).not.toEqual([]);
 	});

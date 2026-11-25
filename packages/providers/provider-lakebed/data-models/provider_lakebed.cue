@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Lakebed deploy-target wire records. One constraint
-// per protobuf message in provider_lakebed.proto.
 
 #EquivalenceMapping: {
 	class:           string & !=""

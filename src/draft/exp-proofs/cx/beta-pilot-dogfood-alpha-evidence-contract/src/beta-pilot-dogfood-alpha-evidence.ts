@@ -264,7 +264,6 @@ export function validateDogfoodAlphaEvidence(record: BetaPilotDogfoodAlphaEviden
   }
   const allowedReasons = new Set(record.followUpPolicy?.allowedReasons ?? []);
   for (const followUp of record.followUpPolicy?.proposedFollowUps ?? []) {
-    // SAFETY: `if (!allowedReasons.has(followUp.reason as FollowUpReason)) {` is required at this I/O or test boundary.
     if (!allowedReasons.has(followUp.reason as FollowUpReason)) {
       errors.push(`unsupported follow-up reason: ${followUp.reason}`);
     }

@@ -1,8 +1,3 @@
-/**
- * A JSON document as it arrives at a parser boundary, and the guards that
- * narrow one node of it. The guards read the value's own tag, so a parser
- * branches on what a node is without trusting what it claims to be.
- */
 const tagOf = Object.prototype.toString;
 
 export type JsonObject = { readonly [key: string]: JsonValue };
@@ -43,24 +38,15 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	);
 }
 
-/** Read a JSON document; text that is not JSON is `undefined`. */
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
-		// SAFETY: JSON.parse returns a JSON value; every node is narrowed by the guards above before use.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;
 	}
 }
 
-/**
- * The first key that appears twice in one object of a JSON text, or
- * `undefined`. JSON.parse keeps the last of the two silently, so a document
- * whose meaning depends on which one a reader takes is refused before it is
- * read. Call it on text JSON.parse accepted: the scan assumes valid JSON.
- */
 export function duplicateKeyIn(text: string): string | undefined {
-	// One entry per open container: the keys of an object, or "array".
 	const open: (Set<string> | "array")[] = [];
 	let expectingKey = false;
 	for (let index = 0; index < text.length; index += 1) {

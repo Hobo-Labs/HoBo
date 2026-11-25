@@ -1,12 +1,3 @@
-// CDEvents relay: journal → projection → sinks (ADR-0182 D17).
-//
-// A materialized-view consumer over `readAll`. It folds every event (the
-// projector needs history to tell `deployed` from `upgraded`) but delivers
-// only events after the caller's delivery cursor, so a restart that passes
-// its persisted cursor neither re-sends nor loses anything; at-least-once
-// delivery is tolerated by the deterministic CDEvent ids. Read-only: it never
-// appends to the journal.
-
 import type { DurableEventStore, EventPosition } from "@hobo/core";
 import type { OtelMetricPoint, TelemetrySink } from "../ports.js";
 import type { CdEvent } from "./cdevents.js";
@@ -14,13 +5,11 @@ import { createCdEventsProjector } from "./projection.js";
 import type { CdEventSink } from "./webhook.js";
 
 export type CdEventsRelayOptions = Readonly<{
-	/** Only catch-up reads are used; the relay never appends. */
 	store: Pick<DurableEventStore, "readAll">;
 	tenant: string;
 	source: string;
 	sinks: readonly CdEventSink[];
 	now: () => number;
-	/** Last journal position already delivered (persisted by the caller). */
 	deliveredThrough?: EventPosition;
 	telemetry?: TelemetrySink;
 }>;
@@ -30,12 +19,10 @@ export type RelayPumpResult = Readonly<{
 	emitted: number;
 	delivered: number;
 	deadLettered: number;
-	/** Persist this; pass it back as `deliveredThrough` after a restart. */
 	deliveredThrough: EventPosition | undefined;
 }>;
 
 export interface CdEventsRelay {
-	/** Read new journal events, project them, deliver each to every sink. */
 	pump(): Promise<RelayPumpResult>;
 }
 
@@ -49,9 +36,7 @@ export function createCdEventsRelay(
 	const metrics = async (points: readonly OtelMetricPoint[]): Promise<void> => {
 		try {
 			await options.telemetry?.metrics(points);
-		} catch {
-			// Telemetry is advisory.
-		}
+		} catch {}
 	};
 
 	return {

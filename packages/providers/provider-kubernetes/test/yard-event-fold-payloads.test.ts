@@ -1,9 +1,3 @@
-/**
- * The Kubernetes event-store fold, read through the payloads a cluster sends:
- * which spelling of a field it accepts, what it defaults when a field is
- * absent, and that it keeps the cluster's observation time. The fold's shared
- * event contract is pinned in `yard-event-fold.test.ts`.
- */
 import { describe, expect, it } from "vitest";
 
 import type { JsonObject, JsonValue } from "../src/json.js";
@@ -28,8 +22,6 @@ describe("event-store fold", () => {
 	}
 
 	it("publishes the resolver id stored events are written under", () => {
-		// A rename orphans every fact already written under the old id, so this
-		// string is a migration rather than a label.
 		expect(KUBERNETES_EVENT_STORE_RESOLVER_ID).toBe(
 			"kubernetes.yard.event-store/v1",
 		);
@@ -48,9 +40,6 @@ describe("event-store fold", () => {
 	});
 
 	it("accepts the object's bare name when no namespace field is spelled out", () => {
-		// `p.namespace ?? p.name`. A watch event and a create response spell it
-		// differently, and a fold that knew only one would record an empty
-		// external reference — a fact nothing can join back to the object.
 		const [event] = normalizeKubernetesYardSignal(
 			signal("namespace.created", { name: "hobo-2" }),
 		);
@@ -66,9 +55,6 @@ describe("event-store fold", () => {
 	});
 
 	it("folds an available deployment into the whole registration sequence", () => {
-		// Four events in order. A consumer replaying these rebuilds the yard's
-		// lifecycle; emitting only `Ready` would produce a yard that exists with
-		// no record of being attested.
 		const events = normalizeKubernetesYardSignal(
 			signal("deployment.available", { uid: "u-1", attemptId: "a-1" }),
 		);
@@ -95,9 +81,6 @@ describe("event-store fold", () => {
 
 	it("defaults the region to in-cluster rather than registering none", () => {
 		// A yard with no region cannot be placed against, so it would be
-		// registered and then never selected — present and useless. `in-cluster`
-		// is also the honest answer: a cluster's location is the operator's fact,
-		// not something this provider can discover.
 		const [registered] = normalizeKubernetesYardSignal(
 			signal("deployment.available", { uid: "u-1" }),
 		);
@@ -107,13 +90,9 @@ describe("event-store fold", () => {
 	});
 
 	it("omits optional apiserver and namespace properties when absent", () => {
-		// Conditional spread: an empty-string `kubernetes.apiServerUrl` would look
-		// like a real address to whatever joined on it.
 		const [registered] = normalizeKubernetesYardSignal(
 			signal("deployment.available", { uid: "u-1" }),
 		);
-		// Exact, not a subset: `properties: {}` inside toMatchObject would match
-		// any object, including the empty-string key this test exists to catch.
 		expect(registered?.data.yard).toEqual(
 			expect.objectContaining({
 				layout: expect.objectContaining({ properties: {} }),
@@ -157,8 +136,6 @@ describe("event-store fold", () => {
 	});
 
 	it("defaults a failure that named no code or message", () => {
-		// A fact with an empty code cannot be dispatched on, and a retry policy
-		// reading one would treat every failure identically.
 		const [event] = normalizeKubernetesYardSignal(signal("generation.failed"));
 		expect(event?.data.failure).toMatchObject({
 			code: expect.stringMatching(/./u),
@@ -168,8 +145,6 @@ describe("event-store fold", () => {
 	});
 
 	it("treats anything but a literal true as not retryable", () => {
-		// `=== true`. A truthy `"false"` string from a JSON payload would
-		// otherwise put a permanently-failing generation into a retry loop.
 		const truthy: JsonValue[] = ["true", 1, {}, "false"];
 		for (const retryable of truthy) {
 			const [event] = normalizeKubernetesYardSignal(
@@ -180,8 +155,6 @@ describe("event-store fold", () => {
 	});
 
 	it("normalizes an unrecognised signal rather than dropping it", () => {
-		// A dropped signal is a fact that silently never happened. A normalized
-		// one is at least in the store for whoever adds the case later.
 		const [event] = normalizeKubernetesYardSignal(
 			signal("pod.evicted", { podName: "api-abc" }),
 		);
@@ -191,8 +164,6 @@ describe("event-store fold", () => {
 	});
 
 	it("stamps every event with the observation time it was given", () => {
-		// The cluster's clock, not ours. Restamping with local time would make a
-		// replayed backlog look like it all happened at import.
 		for (const kind of [
 			"namespace.created",
 			"deployment.created",
@@ -207,8 +178,6 @@ describe("event-store fold", () => {
 	});
 
 	it("falls back to now when the signal carried no observation time", () => {
-		// So an event is never written without a time — an undefined `occurredAt`
-		// would sort unpredictably against everything else in the stream.
 		const before = Date.now();
 		const [event] = normalizeKubernetesYardSignal({
 			providerId: "kubernetes",

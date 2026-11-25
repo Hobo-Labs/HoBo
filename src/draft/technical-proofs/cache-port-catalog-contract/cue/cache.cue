@@ -1,8 +1,5 @@
 package cache
 
-// CUE constraints for every ADR-0118 cache protobuf type. Parse, don't validate: these
-// constraints turn the wire shapes into derived domain types (a value is either a valid
-// #CacheEntry or it does not exist).
 
 #CacheReadOutcome: "hit" | "miss"
 

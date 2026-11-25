@@ -13,7 +13,6 @@ import {
 	SkillParseError,
 } from "../src/index.js";
 
-// The real mirrored tree this package distributes.
 const REPO_SKILLS_ROOT = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
 	"../../../.agents/skills",

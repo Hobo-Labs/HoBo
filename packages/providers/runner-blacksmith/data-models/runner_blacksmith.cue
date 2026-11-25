@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Blacksmith.sh execution-host wire records. One
-// constraint per protobuf message in runner_blacksmith.proto.
 
 #BlacksmithCapabilityRecord: {
 	port:      "hobo:runner" | "hobo:build-machine"

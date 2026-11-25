@@ -27,9 +27,6 @@ export type YardInventoryEvent =
 			readonly capacity: YardInstanceRegistration["capacity"];
 	  };
 
-/**
- * Event-sourced Yard inventory read model. Selection pins a snapshot hash.
- */
 export interface YardInventory {
 	readonly apply: (event: YardInventoryEvent) => void;
 	readonly snapshot: () => YardInventorySnapshot;
@@ -171,14 +168,10 @@ export function localYardInstance(options: {
 		layout: Object.freeze({
 			providerId: options.providerId,
 			regions: Object.freeze([...(options.regions ?? ["local"])]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			require: Object.freeze([] as string[]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			prefer: Object.freeze([] as string[]),
 			residency: Object.freeze([...(options.residency ?? [])]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			isolation: Object.freeze([] as string[]),
-			// SAFETY: assertion required at this I/O or test boundary.
 			network: Object.freeze([] as string[]),
 			componentHosts: Object.freeze([
 				...(options.componentHosts ?? ["local", "wasm", "oci"]),

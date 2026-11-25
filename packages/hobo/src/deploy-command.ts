@@ -1,15 +1,3 @@
-/**
- * `hobo deploy` — continuous delivery through `@hobo/cd` (ADR-0182 C2).
- *
- * Every CD subcommand (`freight`, `source`, `pipeline`, `window`, `promote`,
- * `status`, `logs`, `rollback`, `reconcile`, `preview`, `verify`, `agent`,
- * `publisher`, `metrics`, `campset`, `camp`, `placement`, `scores`,
- * `fanout`, `failover`, `rebalance`, `compliance`) runs against the one
- * composed CD runtime (`cd-runtime.ts`). `--simulate` is the only path to a
- * fixture, and every simulated result says so. `hosting-*` supervision of a
- * production hosting execution is kept unchanged.
- */
-
 import type { CredentialResolver, Outcome } from "@hobo/cd";
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { HostingTransitionPhase } from "@hobo/cloud";
@@ -24,7 +12,6 @@ import { defaultHoboHome } from "./hobo-home.js";
 import type { createProductionHostingExecution } from "./hosting-execution.js";
 import { isJsonString, type JsonObject } from "./json.js";
 
-/** A composed CD host for one command, closed after it runs. */
 export type OpenedCdHost = Readonly<{
 	host: CdDeployHost;
 	close(): Promise<void>;
@@ -36,7 +23,6 @@ export type CdHostOpener = (
 		cwd: string;
 		env: Readonly<Record<string, string | undefined>>;
 		home: string;
-		/** Topology files (`--yard`, HOBO_CD_TOPOLOGY, a delivery module being applied). */
 		topologyFiles?: readonly string[];
 		credentials?: CredentialResolver;
 	}>,
@@ -48,16 +34,10 @@ export interface DeployCommandDeps {
 		| undefined;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly hoboHome?: string;
-	/** Open the composed CD host; default opens `cd-runtime.ts` (SQLite under HOBO_HOME). */
 	readonly openCd?: CdHostOpener;
 	readonly credentialsFor?: (cwd: string) => CredentialResolver;
 }
 
-/**
- * Topology files for one CD command: HOBO_CD_TOPOLOGY, `--yard`, and for
- * `pipeline apply --file <module>` the module itself (a delivery module may
- * export `yards`/`camps`). Each file once.
- */
 export function cdTopologyFiles(
 	args: readonly string[],
 	flags: JsonObject,
@@ -75,11 +55,9 @@ export function cdTopologyFiles(
 	return [...new Set(files)];
 }
 
-/** The default opener: the one composed CD runtime. */
 export const openDefaultCdHost: CdHostOpener = async (input) => {
 	const { openCdRuntime } = await import("./cd-runtime.js");
 	const { withOwnerJournalFleet } = await import("./cd-owner-journal.js");
-	// The journal fleet hobo cd up provisioned, from the owner's store.
 	const journal = await withOwnerJournalFleet(input.env, input.cwd);
 	const runtime = await openCdRuntime({
 		env: journal.env,

@@ -1,6 +1,3 @@
-// ArtifactVerifier conformance (ADR-0182 D2/D3, I1, I5). Every artifact in
-// a manifest must resolve, at its coordinate, to exactly its digest. Anything
-// else is a typed refusal; an unreachable coordinate never passes.
 import {
 	type CdConformanceReport,
 	type CdSuiteOptions,
@@ -26,14 +23,12 @@ export const ARTIFACT_VERIFIER_ASSERTIONS = Object.freeze([
 export type ArtifactVerifierAssertion =
 	(typeof ARTIFACT_VERIFIER_ASSERTIONS)[number];
 
-/** What the coordinates serve, as the harness arranges it. */
 export type ArtifactWorld = "intact" | "tampered" | "unreachable";
 
 export interface ArtifactVerifierHarness<TManifest, TCtx> {
 	readonly subject: string;
 	create(world: ArtifactWorld): Promise<ArtifactVerifierLike<TManifest, TCtx>>;
 	manifest(): TManifest;
-	/** The manifest's artifact digests, in manifest order. */
 	digests(manifest: TManifest): readonly string[];
 	ctx(): TCtx;
 }

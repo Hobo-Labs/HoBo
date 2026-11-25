@@ -108,7 +108,6 @@ export function createPrismaClaimableResolver(
 					purpose: "capability-binding",
 				})
 			: undefined;
-		// This surface's observe reads its local CLI journal, not the provider.
 		const projected: ResolveOutcome = {
 			contract: RESOLVER_CONTRACT,
 			action,
@@ -210,8 +209,6 @@ export function createPrismaClaimableResolver(
 			return privateCall(async () => {
 				const resource = await input(request);
 				await nativeId(initial, resource.idempotencyKey);
-				// The durable identity survives restart. This API has no native GET;
-				// a local CLI journal cannot turn that metadata into fresh readiness.
 				return {
 					...initial,
 					action: "adopt",

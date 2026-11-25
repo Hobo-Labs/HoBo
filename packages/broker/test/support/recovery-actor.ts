@@ -6,7 +6,6 @@ import {
 	SqliteJournal,
 } from "@hobo/storage-sqlite";
 
-/** Local durable actor fixture. Production installs a shared actor authority. */
 export function createRecoveryActorFixture(now: string) {
 	const driver = createMemoryNodeSqliteDriver();
 	const journal = new SqliteJournal(driver, {

@@ -4,7 +4,6 @@ import type { Reporter } from "vitest/node";
 const SLOWEST_COUNT = 10;
 const PAUSE_REPORT_MS = 10_000;
 
-// The slices of Vitest's objects this reporter reads; Vitest's own types satisfy them.
 type ReporterHost = {
 	readonly config: { readonly root: string };
 	readonly logger: { log(message: string): void };
@@ -41,12 +40,6 @@ export function formatSlowest(
 	return [`vitest slowest files (of ${files.length}):`, ...lines].join("\n");
 }
 
-/**
- * Names the files a quiet CI run is spending its time in: a heartbeat lists the
- * files still running and their age, and the run ends with the slowest files.
- * A heartbeat that arrives late on the wall clock but not on the monotonic one
- * marks a host pause at that point in the log.
- */
 export default class ProgressReporter implements Reporter {
 	private readonly started = new Map<string, number>();
 	private readonly intervalMs: number;

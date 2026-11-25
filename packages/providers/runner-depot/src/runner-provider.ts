@@ -18,22 +18,14 @@ import {
 export const DEPOT_RUNNER_WORKFLOW_DEFAULT = "hobo-runner-depot.yml";
 
 export interface DepotRunnerProviderOptions {
-	// The real GitHub Actions client (injected fetch inside) — Depot-managed
-	// runners substitute the runs-on substrate of the GitHub Actions job model.
 	readonly client: GithubActionsClient;
 	readonly id?: string;
 	readonly workflow?: string;
 	readonly ref?: string;
-	// The Depot runner class the workflow runs on.
 	readonly runsOn?: string;
 	readonly tracking?: RunTrackingOptions;
 }
 
-// The REAL Depot RunnerProvider (`hobo:runner`): the SAME job spec that runs
-// on runner-github/runner-blacksmith runs unmodified here — dispatched
-// through the shared GitHub job model onto Depot-managed runners
-// (`runs-on: depot-*`), carried as the `runs_on` input so the substitution
-// is recorded on the run itself.
 export function createDepotRunnerProvider(
 	options: DepotRunnerProviderOptions,
 ): RunnerProvider {

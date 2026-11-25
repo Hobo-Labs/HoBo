@@ -60,9 +60,6 @@ describe("self-hosted broker without hosted services", () => {
 		}
 	});
 
-	// The persistent lane (the product's `up`) gives an anonymous or temporary
-	// deployment the configured TTL, and an ordinary one none. The worker start
-	// is stood in for, so this checks what it is asked for without serving.
 	it.each([
 		{ flags: [], ttlSeconds: 0 },
 		{ flags: ["--anonymous"], ttlSeconds: 7 },

@@ -1,11 +1,3 @@
-/**
- * Examples/console Environment Station deploy declaration.
- *
- * This is **not** ADR-0131 `@hobo/stations` `station(name, config)` (control-plane
- * occupancy Bindle — Station does not contain Yards). Pool Code shows the call
- * shape as `station({ yards })` via the local `./station.js` re-export so authors
- * see provider-extension DX: import plugins, list them, deploy.
- */
 type JsonObject = { readonly [key: string]: JsonValue };
 type JsonValue =
 	| string

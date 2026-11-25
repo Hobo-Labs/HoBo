@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-576
-// SDK-to-CLI golden path proof. This is a design-time schema artifact, not a
-// runtime compilation target.
 
 enum SdkToCliProofMode {
   SDK_TO_CLI_PROOF_MODE_UNSPECIFIED = 0;

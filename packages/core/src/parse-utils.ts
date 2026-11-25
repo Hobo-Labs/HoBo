@@ -39,7 +39,6 @@ export function cloneJson<T>(value: T): T {
 	if (value === undefined) {
 		return value;
 	}
-	// SAFETY: JSON round-trip clones a JSON-serializable domain value.
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 

@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the S4 Stage Gate Multi Cloud Contract
-// draft package reasons about.
 
 enum S4StageGateMultiCloudContractEvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

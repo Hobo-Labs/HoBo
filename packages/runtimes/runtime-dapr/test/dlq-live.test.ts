@@ -18,24 +18,17 @@ describe("dapr live exhausted delivery", () => {
 			client: createInMemoryDaprClient(),
 		});
 		await bus.ensureSubscription({
-			// SAFETY: assertion required at this I/O or test boundary.
 			name: "s" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			topic: "fail" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			consumerGroup: "workers" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: "acme" as never,
 			delivery: "at-least-once",
 			maxDeliveryAttempts: 2,
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		await bus.publish("fail" as never, { x: 1 });
 
 		const r1 = await bus.subscribe(
-			// SAFETY: assertion required at this I/O or test boundary.
 			"fail" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			"workers" as never,
 			async () => {
 				throw new Error("boom");

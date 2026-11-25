@@ -1,6 +1,3 @@
-/**
- * Per-host one-shot cooldown (avoid DDoS / quota thrash on free anon lanes).
- */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";

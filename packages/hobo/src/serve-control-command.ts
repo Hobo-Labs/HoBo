@@ -1,12 +1,3 @@
-/**
- * `hobo serve control` — local control-plane HTTP+SSE for the Yard game UI.
- * Same management surface as CLI/MCP (ADR-0150 / ADR-0111 spirit).
- *
- * `hobo serve cd` — the CD conductor service: tick loop,
- * conductor reconciler, `/v1/cd/` read API + agent delivery feed, health and
- * readiness. `--simulate` is its only fixture path and is labelled.
- */
-
 import type { CommandModule, CommandResult } from "@hobo/cli";
 import { createControlApiServer } from "@hobo/control-api";
 import { defaultHoboHome } from "./bare-metal-yard.js";
@@ -19,14 +10,10 @@ export interface ServeControlCommandDeps {
 	readonly hoboHome?: string;
 	readonly port?: number;
 	readonly host?: string;
-	/** When true, return immediately after bind (tests). */
 	readonly once?: boolean;
-	/** Demo mode: feed the world read model from the yard-world simulator (`--demo` / HOBO_CONTROL_DEMO=1). */
 	readonly demo?: boolean;
-	/** Deterministic simulator seed (`--demo-seed` / HOBO_CONTROL_DEMO_SEED). */
 	readonly demoSeed?: number;
 	readonly log?: (line: string) => void;
-	/** `hobo serve cd`: start the CD service (tests inject; default opens cd-runtime + cd-serve). */
 	readonly serveCd?: (input: {
 		readonly env: NodeJS.ProcessEnv;
 		readonly hoboHome: string;
@@ -35,7 +22,6 @@ export interface ServeControlCommandDeps {
 		readonly host: string;
 		readonly port: number;
 		readonly log: (line: string) => void;
-		/** Topology files (`--yard`, HOBO_CD_TOPOLOGY). */
 		readonly topologyFiles?: readonly string[];
 	}) => Promise<
 		| {
@@ -53,13 +39,11 @@ export interface ServeControlCommandDeps {
 	>;
 }
 
-/** Default `hobo serve cd`: open the composed CD runtime and start the service. */
 async function defaultServeCd(
 	input: Parameters<NonNullable<ServeControlCommandDeps["serveCd"]>>[0],
 ): ReturnType<NonNullable<ServeControlCommandDeps["serveCd"]>> {
 	const { openCdRuntime } = await import("./cd-runtime.js");
 	const { withOwnerJournalFleet } = await import("./cd-owner-journal.js");
-	// The journal fleet hobo cd up provisioned, from the owner's store.
 	const journal = await withOwnerJournalFleet(input.env, input.cwd);
 	const runtime = await openCdRuntime({
 		env: journal.env,
@@ -169,7 +153,6 @@ export function createServeControlCommand(
 				};
 			}
 
-			// Hold process open until signal (local serve path).
 			await new Promise<void>((resolve, reject) => {
 				const stop = () => {
 					process.removeListener("SIGINT", stop);

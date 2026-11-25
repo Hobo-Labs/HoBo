@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.stage_6_acceptance_gate.v1;
 
-// Architecture-guard evidence for HOBO-665 Stage-6 acceptance drill.
 
 enum StageGateStatus {
   STAGE_GATE_STATUS_UNSPECIFIED = 0;

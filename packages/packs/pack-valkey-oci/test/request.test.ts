@@ -1,10 +1,3 @@
-/**
- * The parse boundary between a Yard's untrusted request and a container spec.
- *
- * These tests deliberately pass `unknown`-shaped input — the sort of thing an
- * HTTP body or a manifest file actually contains — because the value of the
- * boundary is what it refuses, not what it accepts.
- */
 import { describe, expect, it } from "vitest";
 
 import {

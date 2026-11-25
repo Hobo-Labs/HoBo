@@ -65,7 +65,6 @@ describe("queue planner", () => {
 	});
 
 	it("moves the entry that conflicts with the most waiting work to the back", () => {
-		// 1 conflicts with 2 and 3; 2 and 3 are independent of each other.
 		const result = plan(
 			[{ number: 1 }, { number: 2 }, { number: 3 }],
 			[conflict(1, 2), conflict(1, 3)],
@@ -102,7 +101,6 @@ describe("queue planner", () => {
 	});
 
 	it("does not let an entry that has waited too long be passed by younger work", () => {
-		// 1 would go last on conflicts alone, but it has waited past the limit.
 		const result = plan(
 			[{ number: 1, minutesAgo: 500 }, { number: 2 }, { number: 3 }],
 			[conflict(1, 2), conflict(1, 3)],
@@ -112,13 +110,11 @@ describe("queue planner", () => {
 	});
 
 	it("treats a pair it knows nothing about as a conflict, not as a safe batch", () => {
-		// Both touch the same path and no trial merge was recorded.
 		const result = plan([
 			{ number: 1, paths: ["src/a.ts"] },
 			{ number: 2, paths: ["src/a.ts"] },
 		]);
 		expect(result.batches.map((batch) => batch.numbers)).toEqual([[1], [2]]);
-		// Unknown is not a known conflict, so there is nothing to resolve yet.
 		expect(result.resolutions).toEqual([]);
 	});
 

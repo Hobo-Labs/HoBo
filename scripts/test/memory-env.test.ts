@@ -38,9 +38,6 @@ describe("job memory environment", () => {
 			"HOBO_TEST_MAX_WORKERS=2",
 		]);
 		const root = fileURLToPath(new URL("../..", import.meta.url));
-		// Every workflow, read from disk: a hand-kept list named release-code.yml
-		// after #1772 deleted it, and the case failed on a missing file instead
-		// of checking anything.
 		const workflows = globSync(".github/workflows/*.yml", { cwd: root });
 		expect(workflows).toContain(".github/workflows/hobo-ci.yml");
 		for (const workflow of workflows)
@@ -56,10 +53,6 @@ describe("job memory environment", () => {
 			exclude: ["**/node_modules/**", "**/dist/**", "external/**"],
 		});
 		const pinned: string[] = [];
-		// A pin is one worker always, or one worker in CI only (packages/cli
-		// spreads files across the cores on a developer machine). Both go through
-		// the cap, and both are loaded here with CI set, so either form must come
-		// out at one worker however high the memory-derived cap is.
 		const capped =
 			/capVitestWorkers\((?:1|process\.env\.CI \? 1 : undefined)\)/u;
 		const previous = {

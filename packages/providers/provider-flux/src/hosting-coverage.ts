@@ -11,12 +11,10 @@ import {
 	FLUX_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-/** Every Flux hosting product with a shipped resolver (I14). */
 export const FLUX_RESOLVED_PRODUCT_IDS: readonly string[] = Object.freeze([
 	FLUX_APP_PRODUCT_ID,
 ]);
 
-/** Flux hosting surfaces no resolver realizes. Each is a decision. */
 export const FLUX_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -37,7 +35,6 @@ export const FLUX_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	absent: FLUX_TRAFFIC_ROUTING_ABSENT,
 });
 
-/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Flux does not realize. */
 export function fluxProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

@@ -1,6 +1,3 @@
-// Test doubles for the WP3 artifact store, verifier and provenance tests.
-// Each models a frozen port (ports.ts, @hobo/core eventstore/http-transport);
-// none is reachable from production code.
 import type {
 	AppendOptions,
 	AppendResult,
@@ -39,7 +36,6 @@ export function context(now: () => number = () => T0): CdContext {
 	return { tenant: TENANT, principal: OPERATOR, now };
 }
 
-/** A digest the test knows is well-formed, parsed (never asserted) into the brand. */
 export function pinned(value: string): Digest {
 	const digest = parseDigest(value);
 	if (digest === undefined) throw new Error(`not a sha256 digest: ${value}`);
@@ -50,11 +46,6 @@ export function bytesOf(text: string): Uint8Array {
 	return new TextEncoder().encode(text);
 }
 
-/**
- * In-memory DurableEventStore with the conformance-suite semantics the
- * journal relies on: expected-seq CAS (a stale expectedSeq throws) and
- * per-stream idempotency-key dedup checked before the CAS.
- */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	private readonly all: PositionedEvent[] = [];
@@ -95,7 +86,6 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
-			// SAFETY: test double; positions come from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -178,7 +168,6 @@ export type Route = (
 	request: TransportRequest,
 ) => TransportResponse | undefined;
 
-/** HttpTransport double: answers from routes in order, records every request. */
 export class ScriptedTransport {
 	readonly requests: TransportRequest[] = [];
 	private readonly routes: Route[] = [];

@@ -16,7 +16,6 @@ import {
 } from "../src/sdk-object-graph-manifest-ir-shapes.js";
 import { type JsonValue } from "../src/json.js";
 
-
 test("HOBO-568 proof parses and covers the accepted SDK object graph shape", () => {
   const parsed = parseSdkObjectGraphProof(SDK_OBJECT_GRAPH_MANIFEST_IR_PROOF);
 
@@ -119,7 +118,6 @@ test("architecture artifacts reconcile protobuf, CUE, and Pact evidence for the 
   const architectureDir = join(import.meta.dirname, "..", "architecture");
   const proto = readFileSync(join(architectureDir, "sdk_object_graph_manifest_ir_shapes.proto"), "utf8");
   const cue = readFileSync(join(architectureDir, "sdk_object_graph_manifest_ir_shapes.cue"), "utf8");
-  // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
   const pact = JSON.parse(
     readFileSync(join(architectureDir, "pacts", "sdk_object_graph_manifest_ir_shapes.pact.json"), "utf8"),
   ) as { consumer: { name: string }; provider: { name: string }; interactions: JsonValue[] };

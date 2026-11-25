@@ -235,7 +235,6 @@ function affected(
 
 const ALL = ["hobo-codegen", "hobo-cli", "hobo-mcp", "hobo-site"];
 
-/** One scoped git ls-tree + imageInputs; ~1–15s on CI (was 30s+ full-tree ls-tree). */
 const REPO_MANIFEST_INTEGRATION_TIMEOUT_MS = 60_000;
 
 let repoHeadImageInputs: ReadonlyMap<string, ImageInputs> | undefined;

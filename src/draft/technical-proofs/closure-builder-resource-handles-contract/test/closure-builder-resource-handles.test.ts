@@ -9,7 +9,6 @@ import {
   type ResourceHandle,
 } from "../src/closure-builder-resource-handles.ts";
 
-
 test("closure-builder authoring creates anonymous handles and dependsOn relationships without starting workloads", () => {
   let started = false;
   const myApi = {
@@ -70,10 +69,8 @@ test("builder resource factories reject explicit names at runtime", () => {
   assert.throws(
     () =>
       bindle("shop", (b) => {
-        // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
         const named: (name: string) => ResourceHandle<"cache"> = b.cache as never;
         const cache = named("cache");
-        // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
         return { cache: cache as never };
       }),
     (error) =>
@@ -293,10 +290,8 @@ test("identity ledger rejects alias-derived identity and does not re-enable name
       bindle(
         "shop",
         (b) => {
-          // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
           const named: (name: string) => ResourceHandle<"cache"> = b.cache as never;
         const cache = named("cache");
-          // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
           return { cache: cache as never };
         },
         { identityLedger: ledger },

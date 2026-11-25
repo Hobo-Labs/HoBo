@@ -1,18 +1,3 @@
-/**
- * @hobo/componentize REAL LANE (D13)
- *
- * Toolchain-gated path that produces a real Component Model binary via
- * `@bytecodealliance/componentize-js`. The synthetic contract-shaped path in
- * `componentize.ts` remains the offline floor: it needs no native toolchain and
- * stays byte-deterministic. This lane trades that determinism for a real,
- * runnable component (see the HOBO-603 spike + ADR-0105: componentize-js wasm
- * bytes are NOT byte-stable across builds because of the Wizer/StarlingMonkey
- * snapshot, even under pinned SOURCE_DATE_EPOCH).
- *
- * Availability is probed at factory call time with a dynamic import; when the
- * toolchain is absent the builder fails closed with a typed
- * `ComponentizeToolchainError` naming the synthetic floor as remediation.
- */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,7 +23,6 @@ world hello-bindle {
   export health: func() -> string;
 }
 `;
-// Features disabled for reproducibility parity with the HOBO-603 spike.
 const DISABLED_FEATURES = Object.freeze([
 	"random",
 	"clocks",
@@ -47,13 +31,9 @@ const DISABLED_FEATURES = Object.freeze([
 ] as const);
 
 // public-contract: minimum byte size for a REAL component. The synthetic
-// contract envelope (magic + one custom section) stays far below this floor;
-// real StarlingMonkey-based components are megabytes.
 export const REAL_COMPONENT_MIN_BYTES = 1024;
 
 // public-contract: typed fail-closed error for the real lane. Callers that
-// explicitly requested the real toolchain must surface this, never silently
-// fall back to the synthetic floor.
 export class ComponentizeToolchainError extends Error {
 	readonly code = "componentize.toolchain_unavailable";
 	readonly remediation: string;
@@ -71,7 +51,6 @@ export class ComponentizeToolchainError extends Error {
 }
 
 // public-contract: injected implementation seam. Mirrors the componentize-js
-// object-argument API observed in the HOBO-603 determinism spike.
 export type RealComponentizeImpl = (
 	sourcePath: string,
 	opts: {
@@ -83,13 +62,9 @@ export type RealComponentizeImpl = (
 ) => Promise<{ component: Uint8Array }>;
 
 export interface RealComponentizeOptions {
-	/** Injected builder (tests). When present the toolchain probe is skipped. */
 	componentizeImpl?: RealComponentizeImpl;
-	/** Injected module importer (tests). Defaults to importing componentize-js. */
 	importModule?: () => Promise<JsonValue>;
-	/** Entry file relative to sourceRoot. Defaults to the hello-bindle shape. */
 	entry?: string;
-	/** WIT world override: inline wit text plus world naming. */
 	wit?: {
 		readonly source: string;
 		readonly worldName: string;
@@ -104,7 +79,6 @@ export interface RealComponentizeInput {
 }
 
 // public-contract: output mirrors the CLI ComponentizeFn seam plus the OCI
-// descriptor routed by the real lane.
 export interface RealComponentizeResult {
 	readonly component: WasmComponentArtifact;
 	readonly oci: WasmOciDescriptor;
@@ -118,8 +92,6 @@ export interface RealComponentize {
 }
 
 // public-contract: factory for the real componentize lane. Probes the
-// toolchain at call time; `available: false` yields a builder that fails
-// closed with ComponentizeToolchainError.
 export async function createRealComponentize(
 	options: RealComponentizeOptions = {},
 ): Promise<RealComponentize> {
@@ -149,8 +121,6 @@ export async function createRealComponentize(
 }
 
 // public-contract: structural validation for REAL component binaries. Does not
-// depend on the synthetic `hobo.componentize.contract` custom section; checks
-// wasm magic, the component-model layer bytes, and the synthetic size floor.
 export interface RealWasmComponentSummary {
 	readonly format: "wasm-component";
 	readonly layer: 1;
@@ -169,8 +139,6 @@ export function validateRealWasmComponent(
 	) {
 		throw new Error("componentize.real.invalid_magic: not a wasm binary");
 	}
-	// Component binaries carry layer 0x01 0x00 in bytes 6-7; core modules (and
-	// the synthetic contract envelope, which reuses the core header) carry 0x00.
 	if (bytes[6] !== 0x01 || bytes[7] !== 0x00) {
 		throw new Error(
 			"componentize.real.not_a_component: layer bytes are not component-model (core module or synthetic contract envelope)",
@@ -199,7 +167,6 @@ async function probeToolchain(
 		const module = await (importModule
 			? importModule()
 			: import(COMPONENTIZE_JS_SPECIFIER));
-		// SAFETY: `const componentize = (module as { componentize?: unknown }).componentize;` is required at this I/O or test boundary.
 		const componentize = (module as { componentize?: unknown }).componentize;
 		if (!(componentize instanceof Function)) {
 			return {
@@ -208,8 +175,6 @@ async function probeToolchain(
 			};
 		}
 		const impl: RealComponentizeImpl = async (sourcePath, opts) => {
-			// componentize-js 0.21.x object-argument API (see HOBO-603 spike).
-			// SAFETY: `const output = (await componentize({` is required at this I/O or test boundary.
 			const output = (await componentize({
 				sourcePath,
 				witPath: opts.witPath,
@@ -254,8 +219,6 @@ async function runRealComponentize(
 	const workspace = await mkdtemp(join(tmpdir(), "hobo-real-componentize-"));
 	let bytes: Uint8Array;
 	try {
-		// The entry is written verbatim as ESM JS: the hello-bindle service shape
-		// is JS-compatible TypeScript. Full TS lowering stays out of D13 scope.
 		const jsEntryPath = join(workspace, "src/service.js");
 		await mkdir(dirname(jsEntryPath), { recursive: true });
 		await writeFile(jsEntryPath, source, "utf8");

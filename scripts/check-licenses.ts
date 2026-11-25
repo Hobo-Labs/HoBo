@@ -29,8 +29,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // SPDX identifiers permitted for third-party dependencies. Permissive only:
-// anything copyleft or unrecognised needs an explicit review decision rather
-// than a silent pass.
 const ALLOWED = new Set([
 	"0BSD",
 	"Apache-2.0",
@@ -52,7 +50,6 @@ const ALLOWED = new Set([
 
 // Packages whose manifest metadata does not resolve to a usable SPDX id but
 // whose actual LICENSE text was read by hand on 2026-07-27. In every case the
-// manifest field is unusable, not the licence.
 const REVIEWED_EXCEPTIONS = new Map<string, string>([
 	[
 		"@bytecodealliance/componentize-js",
@@ -85,7 +82,6 @@ function fail(message: string): void {
 	failures.push(message);
 }
 
-/** Legacy licence objects (`{ "type": "MIT", "url": ... }`) still ship in the wild. */
 interface LicenseObject {
 	type?: string;
 }
@@ -108,11 +104,9 @@ function isLicenseText<T>(value: T): value is T & string {
 }
 
 function readManifest(file: string): Manifest {
-	// SAFETY: assertion to `ileSync(file, "utf8")) as Manifest; } /** Workspa` is required at this boundary.
 	return JSON.parse(readFileSync(file, "utf8")) as Manifest;
 }
 
-/** Workspace manifests: packages/<pkg>, packages/<group>/<pkg>, examples/<ex>, site, root. */
 function workspaceManifests(): string[] {
 	const found: string[] = ["package.json"];
 	for (const root of ["packages", "examples"]) {
@@ -124,7 +118,6 @@ function workspaceManifests(): string[] {
 				found.push(join(dir, "package.json"));
 				continue;
 			}
-			// One nesting level (packages/providers/<pkg>, packages/iac/<pkg>, ...).
 			for (const nested of readdirSync(dir)) {
 				const nestedDir = join(dir, nested);
 				if (!statSync(nestedDir).isDirectory()) continue;
@@ -158,7 +151,6 @@ function checkOutbound(): void {
 		if (manifest.private) continue;
 		publishable += 1;
 
-		// A published package must carry the notice MIT itself requires.
 		const licenseFile = join(file.replace(/package\.json$/, ""), "LICENSE");
 		if (!existsSync(licenseFile)) {
 			fail(`${name}: publishable but has no LICENSE file at ${licenseFile}`);
@@ -187,23 +179,14 @@ function licenseIdsOf(manifest: Manifest): string[] {
 	};
 	// Split SPDX expressions ("(MIT OR Apache-2.0)", "MIT AND ISC") into terms,
 	// then drop any `WITH <exception>` suffix: an SPDX exception grants
-	// ADDITIONAL permission over the base licence (e.g. Apache-2.0 WITH
-	// LLVM-exception is strictly more permissive than Apache-2.0), so the base
-	// identifier is what the allowlist should be judged against.
 	return collect(raw)
 		.flatMap((expr) => expr.split(/\s+(?:OR|AND)\s+/i))
 		.map((id) => (id.replace(/[()]/g, "").split(/\s+WITH\s+/i)[0] ?? "").trim())
 		.filter(Boolean);
 }
 
-/**
- * Names reachable through the `dependencies` (never `devDependencies`) of a
- * publishable workspace package — i.e. the set that actually ships to a
- * consumer. Walks the pnpm virtual store transitively from those roots.
- */
 function productionDependencyNames(): Set<string> {
 	const store = join("node_modules", ".pnpm");
-	// name -> its own prod dependency names, built once from the virtual store.
 	const edges = new Map<string, string[]>();
 	if (existsSync(store)) {
 		for (const entry of readdirSync(store)) {
@@ -224,13 +207,10 @@ function productionDependencyNames(): Set<string> {
 						edges.set(
 							manifest.name,
 							Object.keys(
-								// SAFETY: assertion to `encies?: object }).dependencies ?? {}` is required at this boundary.
 								(manifest as { dependencies?: object }).dependencies ?? {},
 							),
 						);
-					} catch {
-						/* unreadable manifest — the inbound scan reports it separately */
-					}
+					} catch {}
 				}
 			}
 		}
@@ -239,10 +219,9 @@ function productionDependencyNames(): Set<string> {
 	const queue: string[] = [];
 	for (const file of workspaceManifests()) {
 		const manifest = readManifest(file);
-		if (manifest.private) continue; // only published packages ship their deps
+		if (manifest.private) continue;
 		queue.push(
 			...Object.keys(
-				// SAFETY: assertion to `cies?: object }).dependencies ?? {}, ` is required at this boundary.
 				(manifest as { dependencies?: object }).dependencies ?? {},
 			),
 		);
@@ -250,7 +229,6 @@ function productionDependencyNames(): Set<string> {
 
 	const seen = new Set<string>();
 	while (queue.length > 0) {
-		// SAFETY: assertion to ` if (seen.has(name)` is required at this boundary.
 		const name = queue.pop() as string;
 		if (seen.has(name)) continue;
 		seen.add(name);
@@ -290,7 +268,6 @@ function checkInbound(): void {
 					continue;
 				}
 				if (!manifest.name || !manifest.version) continue;
-				// Workspace packages are covered by the outbound half.
 				if (manifest.name.startsWith("@hobo/")) continue;
 				checked += 1;
 
@@ -315,13 +292,10 @@ function checkInbound(): void {
 		`inbound: ${checked} third-party packages checked (${production.size} reachable from a publishable package)`,
 	);
 
-	// Distributed code: a licence problem here is a real distribution problem.
 	for (const [id, why] of [...offenders].sort()) {
 		fail(`production dependency ${id}: licence not on the allowlist (${why})`);
 	}
 
-	// Build/dev-only: reported for visibility, but nothing about these ships,
-	// so they do not block. Reviewing them is still worthwhile.
 	if (devOffenders.size > 0) {
 		notes.push(
 			`inbound: ${devOffenders.size} development-only dependencies carry a non-allowlisted licence (not distributed, not blocking):`,

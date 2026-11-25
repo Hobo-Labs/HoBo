@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof -- SAFETY: integration responses are untyped HTTP bodies read for one field. */
-// End-to-end composition of the real @hobo/cd modules through the hobo host.
-// The suite runs once every module's built subpath exists, and reports itself
-// skipped, with the reason, when one is missing.
 import { existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";

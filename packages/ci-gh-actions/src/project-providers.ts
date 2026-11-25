@@ -3,7 +3,6 @@ import { z } from "zod";
 // public-contract: published `$id` editors and the project schema resolve.
 export const CI_PROJECT_PROVIDERS_SCHEMA_ID =
 	"https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project-providers.schema.json";
-/** Relative to `ci-project.schema.json`, so editors resolve the sibling file. */
 // public-contract: the `$ref` shipped inside `ci-project.schema.json`.
 export const CI_PROJECT_PROVIDERS_SCHEMA_REF =
 	"ci-project-providers.schema.json";
@@ -19,10 +18,6 @@ const base = {
 	enabled: z.boolean().optional(),
 };
 
-/**
- * An ARC `AutoscalingRunnerSet` HoBo thinly reconciles. `name` is its
- * `runnerScaleSetName`; HoBo never installs or upgrades the ARC controller.
- */
 export const CiKubernetesScaleSetSchema = z
 	.object({
 		name: kubernetesName,
@@ -33,7 +28,6 @@ export const CiKubernetesScaleSetSchema = z
 	.strict()
 	.refine((scaleSet) => (scaleSet.minRunners ?? 0) <= scaleSet.maxRunners)
 	.meta({ id: "KubernetesScaleSet" });
-/** A Dagger Engine HoBo checks for readiness only; it never installs one. */
 export const CiDaggerEngineSchema = z
 	.object({ name: kubernetesName })
 	.strict()
@@ -210,7 +204,6 @@ export const CiAgent37ProviderSchema = z
 	.strict()
 	.meta({ id: "Agent37Provider" });
 
-/** Closed, kind-discriminated provider shapes for `.hobo/ci.json`. */
 export const CiProjectProviderSchema = z
 	.discriminatedUnion("kind", [
 		plain("local", "LocalProvider"),
@@ -235,7 +228,6 @@ export type CiVercelLocation = CiVercelProvider["location"];
 export type CiAgent37Provider = z.infer<typeof CiAgent37ProviderSchema>;
 export type CiAgent37Pool = z.infer<typeof CiAgent37PoolSchema>;
 
-/** The shipped provider schema, referenced by `ci-project.schema.json`. */
 export function ciProjectProvidersJsonSchema() {
 	return {
 		...z.toJSONSchema(CiProjectProviderSchema, {

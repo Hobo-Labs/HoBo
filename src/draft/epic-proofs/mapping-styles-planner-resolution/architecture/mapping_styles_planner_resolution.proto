@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for HOBO-640 mapping styles + planner resolution POC.
 
 enum MappingStyleKind {
   MAPPING_STYLE_UNSPECIFIED = 0;

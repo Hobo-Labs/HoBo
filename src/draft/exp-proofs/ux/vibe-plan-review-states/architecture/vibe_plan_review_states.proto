@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Design-time schema for HOBO-542 plan review state fixtures. This package is
-// not compiled at runtime; it gives the architecture guard a language-neutral
-// contract for the parsed record.
 
 enum VibePlanReviewProofMode {
   VIBE_PLAN_REVIEW_PROOF_MODE_UNSPECIFIED = 0;

@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * Build controller releases: the box worker daemon and the local runner, each
- * bundled into one self-contained `.mjs` the controller supervisor runs from
- * `controller-releases/<hex>.mjs` (`src/runner-controller-process.ts`;
- * `deploy/runner-fleet/README.md`, "A controller that runs as a process").
- *
- *   pnpm --filter @hobo/ci-gh-actions release:build -- \
- *     [--out <dir>] [--version <release tag>] [--base-url https://…/]
- *
- * Each release is written to `<out>/<hex>.mjs`, named by the sha256 of its
- * bytes, and added to `<out>/index.<artifactName>.json`, the list of
- * `{version, url, digest}` an HTTP_INDEX Freight subscription reads
- * (`runnerFleetDelivery({releaseIndex})`). Give `--version` the worker
- * image's release tag, so the fleet's Freight pairs the image and the release
- * of the same version. Publish the directory as is, or point a host's
- * `controller.releases` at it.
- */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

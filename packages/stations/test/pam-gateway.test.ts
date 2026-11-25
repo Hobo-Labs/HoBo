@@ -136,7 +136,6 @@ describe("Privileged Access Gateway (full secretless)", () => {
 				endpoint: "https://boundary.example.test",
 				authToken: "test-token",
 				fetchImpl: async (url, init) => {
-					// SAFETY: assertion required at this I/O or test boundary.
 					const method = (init as RequestInit | undefined)?.method ?? "GET";
 					calls.push({ url: String(url), method });
 					if (method === "POST") {

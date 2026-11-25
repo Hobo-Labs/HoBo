@@ -1,6 +1,3 @@
-// @hobo/policy/posture (ADR-0182 D25): the observe-phase posture rule
-// profile, the pure evaluator, observe_fields, remediation resolution and the
-// OSCAL assessment-results export.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isJsonObject, type JsonValue } from "../../src/json.js";
@@ -58,7 +55,6 @@ describe("posture rule profile: parse, don't validate", () => {
 			"tls-min-version",
 		]);
 		const forbid = pack.rules[0]?.forbid[0];
-		// Scalars are canonicalised to strings at the boundary.
 		expect(forbid).toEqual({ field: "public", op: "eq", value: "true" });
 		expect(Object.isFrozen(pack.rules)).toBe(true);
 	});
@@ -176,7 +172,6 @@ describe("evaluator golden vectors (every operator)", () => {
 
 	it.each(VECTORS)("%s %j on %j is %s", (op, operand, observed, expected) => {
 		const attributes = observed === undefined ? {} : { f: observed };
-		// The clause goes through the pack boundary, so each vector exercises a parsed clause.
 		const clause = parsePosturePack({
 			...TLS_PACK,
 			observeFields: ["f"],
@@ -241,7 +236,6 @@ describe("evaluatePosture: pure, deterministic, per-rule per-resource", () => {
 			["tls-min-version", "web", "compliant"],
 		]);
 		expect(result.state).toBe("noncompliant");
-		// Unknown counts against compliance (fail closed): 2 of 3 applicable.
 		expect(result.noncompliantRatio).toBeCloseTo(2 / 3);
 		const api = result.findings[1];
 		expect(api?.severity).toBe("high");

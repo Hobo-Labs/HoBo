@@ -1,29 +1,12 @@
-/**
- * Which tables belong to a fleet, parsed once.
- *
- * A fleet copies *data* tables from the writer to the standbys and keeps its
- * own *control* tables on every backend. The two sets must never overlap: a
- * control table that was copied would let one backend overwrite another
- * backend's view of who the writer is.
- */
 import { PostgresDataError } from "../errors.js";
 import { parseFleetIdentifier } from "./sql.js";
 
 export type FleetLayoutInput = {
-	/**
-	 * Every table whose name starts with this belongs to the application. The
-	 * empty prefix copies every table in the schema except the fleet's own
-	 * control tables and `excludedTables`: for an application whose tables
-	 * share no prefix but own their schema (an event store).
-	 */
 	readonly dataPrefix: string;
-	/** Every table whose name starts with this belongs to the fleet. */
 	readonly controlPrefix: string;
-	/** Tables under `dataPrefix` that are not copied, e.g. migration bookkeeping. */
 	readonly excludedTables?: readonly string[];
 };
 
-/** Parsed names. Every string here is a plain identifier safe to interpolate. */
 export type FleetLayout = {
 	readonly dataPrefix: string;
 	readonly controlPrefix: string;
@@ -33,7 +16,6 @@ export type FleetLayout = {
 	readonly usageTable: string;
 };
 
-/** Key class for the fleet's advisory locks, kept apart from single-key locks. */
 export const FLEET_LOCK_CLASS = 1_212_112_710;
 
 export function parseFleetLayout(input: FleetLayoutInput): FleetLayout {
@@ -70,7 +52,6 @@ export function parseFleetLayout(input: FleetLayoutInput): FleetLayout {
 	});
 }
 
-/** True when `table` is copied from the writer to a standby. */
 export function isReplicatedTable(layout: FleetLayout, table: string): boolean {
 	return (
 		table.startsWith(layout.dataPrefix) &&

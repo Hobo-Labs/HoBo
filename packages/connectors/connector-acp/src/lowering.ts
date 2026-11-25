@@ -1,22 +1,12 @@
 import { ACP_PROTOCOL } from "./types.js";
 
-// Connector lowering for `connector(name, { protocol: "acp" })` (HOBO-88
-// seam, promoted from the connector-authoring draft proof): the idiom-layer
-// declaration lowers into a manifest external-dependency entry with
-// usage-inferred `allow` scopes. There is NO public `agent()` factory —
-// protocol use is explicit through the connector declaration
-// (sdk-contracts.md §Protocol connectors; negative conformance vector).
-
 // public-contract: the manifest entry type connector declarations lower to.
 export const CONNECTOR_ENTRY_TYPE = "connector.v1";
 
 export interface AcpConnectorDeclaration {
 	readonly name: string;
 	readonly protocol: typeof ACP_PROTOCOL;
-	// The operations the app's code actually calls (usage observation) —
-	// each maps to exactly one scope.
 	readonly operationScopes: Record<string, string>;
-	// Optional declared narrowing; observed usage may never exceed it.
 	readonly declaredAllow?: readonly string[];
 }
 
@@ -38,8 +28,6 @@ export interface AcpConnectorBinding {
 	call(operation: string): { target: string; operation: string; scope: string };
 }
 
-// Declare an ACP protocol connector. This is the ONLY public entry point for
-// agent-protocol interop — deliberately not named `agent`.
 export function acpConnector(
 	name: string,
 	options: {
@@ -76,9 +64,6 @@ export function acpConnector(
 	});
 }
 
-// Lower a connector declaration + observed usage into the manifest entry:
-// allow is usage-inferred unless a declared narrowing exists, and observed
-// usage exceeding the declared allow is surfaced (the gate fails it).
 export function lowerAcpConnector(
 	binding: AcpConnectorBinding,
 	observedOperations: readonly string[],

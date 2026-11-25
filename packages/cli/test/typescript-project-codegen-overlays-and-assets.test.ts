@@ -18,14 +18,10 @@ import {
 	write,
 } from "./support/typescript-project.js";
 
-// Generated code imported in-process registers trainables in the shared
-// registry; with files sharing a worker (isolate: false), clear it after each test.
 afterEach(() => {
 	resetTrainables();
 });
 
-// One of four files split from typescript-project-codegen.test.ts so the
-// files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: source overlays, assets and CommonJS", {
 	timeout: slow(60_000),
 }, () => {
@@ -72,7 +68,6 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: so
 				await expect(
 					readFile(join(root, "src/_generated/index.ts"), "utf8"),
 				).rejects.toMatchObject({ code: "ENOENT" });
-			// SAFETY: executable generated bundle is built from the trusted canonical seed plus this fixture's app.
 			const generated = (await import(
 				pathToFileURL(
 					join(root, "src/_generated/app-imprint/runtime/appModule0.mjs"),
@@ -174,7 +169,6 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: so
 				).rejects.toMatchObject({ code: "HOBO_CODEGEN_DRIFT" });
 				await runCodegen({ projectRoot: root, check: false }, { engine });
 				await compile(root);
-				// SAFETY: real TS/asset imports above were bundled and the executable client was compiled and packaged.
 				const client = (await import(
 					pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js"))
 						.href

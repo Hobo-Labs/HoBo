@@ -1,4 +1,3 @@
-// CUE constraints for every protobuf type in data-models/hobo_cd.proto.
 package hobo_cd
 
 #SecretStore: "infisical" | "1password"
@@ -18,7 +17,6 @@ package hobo_cd
 
 #VercelJunctionRecord: {
 	junction: =~"^[a-z0-9-]+$"
-	// At least the CD Yard and the Vercel Yard.
 	yards: [string, string, ...string]
 	store: #SecretStore
 }

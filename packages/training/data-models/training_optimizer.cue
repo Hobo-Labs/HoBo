@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in training_optimizer.proto, so
-// the architecture guard can confirm the built-in optimizer's config and
-// trace-record shapes are bounded at parse time.
 
 package training_optimizer
 

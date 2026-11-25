@@ -1,7 +1,3 @@
-// Legacy fold (C1): estates deployed before @hobo/cd recorded
-// `deployment.Requested/Planned/Deployed/RolledBack` on `deployment:<id>`
-// streams. They are folded into a Set with SET_ORIGIN_LEGACY_FOLD so every
-// estate has a current Set and a single desired-state lane.
 import {
 	CLOUD_EVENTS,
 	type DeploymentPlan,
@@ -23,7 +19,6 @@ export type LegacyDeployment = Readonly<{
 	streamId: string;
 	deploymentId: string;
 	tenant: string;
-	/** `config.campId` when the deployment recorded one, else the deployment id. */
 	campId: string;
 	environment: string;
 	plan: DeploymentPlan;
@@ -46,7 +41,6 @@ function isPlan<T>(value: T): value is T & DeploymentPlan {
 	);
 }
 
-/** Pure fold of one legacy deployment stream; undefined when it never planned. */
 export function foldLegacyDeployment(
 	events: readonly EventEnvelope[],
 ): LegacyDeployment | undefined {
@@ -59,8 +53,6 @@ export function foldLegacyDeployment(
 	let plannedAt = "";
 	let state: LegacyDeployment["state"] = "planned";
 	let deployedAtSeq: number | undefined;
-	// The plan in effect at the last Deployed: a later Planned that was never
-	// deployed must not be folded as the deployed estate.
 	let deployed:
 		| { plan: DeploymentPlan; planSeq: number; plannedAt: string }
 		| undefined;

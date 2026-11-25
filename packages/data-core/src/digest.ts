@@ -1,14 +1,3 @@
-/**
- * Dataset digests — the only thing a verification ever carries across a port
- * (ADR-0177 decision 9: counts and digests, never rows).
- *
- * A dataset digest is order-independent. Each record digests on its own, and
- * a bucket combines its records by addition modulo 2^256, so a binding can
- * stream rows in whatever order its engine returns them and two engines with
- * different native orderings still agree. Records land in buckets by a hash of
- * their tenant and key, which lets a mismatch be localised to a bucket and
- * re-checked without re-reading the whole dataset.
- */
 import type { CanonicalRecord } from "./canonical.js";
 import { recordDigest } from "./canonical.js";
 import { DataCoreError } from "./errors.js";
@@ -34,7 +23,6 @@ export interface BucketDigest {
 export interface DatasetDigest {
 	readonly contract: typeof DATASET_DIGEST_CONTRACT;
 	readonly dataset: string;
-	/** Empty string when the digest spans every tenant. */
 	readonly tenant: string;
 	readonly count: number;
 	readonly digest: string;
@@ -56,7 +44,6 @@ export function parseBucketCount(buckets: number): number {
 	return buckets;
 }
 
-/** Deterministic bucket for a record, identical in every engine. */
 export function bucketOf(tenant: string, key: string, buckets: number): number {
 	const head = sha256Hex(canonicalEncode([tenant, key])).slice(0, 8);
 	return Number.parseInt(head, 16) % buckets;
@@ -68,10 +55,6 @@ function addDigests(left: string, right: string): string {
 		.padStart(64, "0");
 }
 
-/**
- * Streaming accumulator a binding feeds rows into. It holds one running sum
- * per bucket — constant memory in the number of rows.
- */
 export class DatasetDigestBuilder {
 	private readonly counts: number[];
 	private readonly sums: string[];
@@ -122,15 +105,9 @@ export interface DigestComparison {
 	readonly equal: boolean;
 	readonly sourceCount: number;
 	readonly targetCount: number;
-	/** Buckets whose count or digest differ; empty when equal. */
 	readonly mismatchedBuckets: readonly number[];
 }
 
-/**
- * Compare two digests bucket by bucket. Digests taken with different bucket
- * counts are never equal — they are not comparable, and saying so loudly is
- * better than a mismatch nobody can localise.
- */
 export function compareDigests(
 	source: DatasetDigest,
 	target: DatasetDigest,

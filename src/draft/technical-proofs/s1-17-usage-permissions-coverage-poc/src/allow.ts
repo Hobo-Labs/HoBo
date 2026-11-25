@@ -49,7 +49,6 @@ export function createResourceHandle(input: {
     ) {
       const options = first;
       const rest = args.slice(1);
-      // SAFETY: remaining args after the dynamic option bag are the verb list.
       const verbs: W = rest as never;
       if (verbs.length === 0) {
         throw new TypeError(".allow() requires at least one verb; omit the call instead.");
@@ -57,7 +56,6 @@ export function createResourceHandle(input: {
       if (!isJsonString(options.reason) || options.reason.trim().length === 0) {
         throw new TypeError("dynamic .allow() grants require a non-empty reason.");
       }
-      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       return createResourceHandle({
         ...input,
         facts: {
@@ -69,10 +67,7 @@ export function createResourceHandle(input: {
       }) as ResourceHandle<W[number]>;
     }
 
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
-    // SAFETY: non-dynamic .allow() args are the verb list.
     const verbs: W = args as never;
-    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     return createResourceHandle({
       ...input,
       facts: {

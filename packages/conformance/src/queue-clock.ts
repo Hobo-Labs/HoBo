@@ -57,7 +57,6 @@ export async function runQueueClockConformance(
 		throw new TypeError("createRuntime must be a function");
 	}
 
-	// SAFETY: assertion to `{} as Record<QueueClockAssertionName, "pass" | "fail">` is required at this boundary.
 	const assertions = {} as Record<QueueClockAssertionName, "pass" | "fail">;
 
 	const runAssertion = async (
@@ -133,9 +132,7 @@ async function provesAtLeastOnceRetry(
 			attempts += 1;
 			throw new Error("transient");
 		});
-	} catch {
-		// Expected retry path.
-	}
+	} catch {}
 	await runtime.queue.handle(queue, async () => {
 		attempts += 1;
 	});

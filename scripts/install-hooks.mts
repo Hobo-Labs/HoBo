@@ -1,10 +1,3 @@
-// Auto-install the repository's git hooks through the pnpm `prepare` lifecycle
-// so a fresh `pnpm install` wires `core.hooksPath` to `.githooks` without a
-// manual step. This must be fail-open: a `prepare` script that throws breaks
-// `pnpm install` for everyone, so every failure path exits 0. Opt out with
-// `HOBO_SKIP_HOOKS=1`, and CI is skipped automatically (it runs gates directly
-// and does not need local commit hooks). Both are booleans: 1, true, yes or on
-// opt out, and 0 or false do not, as in scripts/ensure-hooks-path.sh.
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
@@ -13,7 +6,6 @@ function skip(reason: string): never {
 	process.exit(0);
 }
 
-/** An opt-out flag's value read as a boolean, the way the shell scripts read it. */
 function on(value: string | undefined): boolean {
 	return /^(?:1|true|yes|on)$/iu.test(value ?? "");
 }
@@ -33,8 +25,6 @@ try {
 		console.log("install-hooks: could not set core.hooksPath; skipping.");
 	}
 
-	// Stacked-PR agent defaults (github/gh-stack): remember conflict resolutions
-	// and skip remote pickers in multi-remote clones. Fail-open if git rejects.
 	const stackDefaults: Array<[string, string]> = [
 		["rerere.enabled", "true"],
 		["remote.pushDefault", "origin"],

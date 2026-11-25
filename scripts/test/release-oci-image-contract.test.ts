@@ -100,7 +100,6 @@ function dockerInspectConfig(tag: string): DockerInspectConfig {
 		throw new Error(result.stderr || "docker inspect failed");
 	}
 	const raw: unknown = JSON.parse(result.stdout);
-	// SAFETY: docker emits the `.Config` object shape documented for `docker inspect`.
 	return raw as DockerInspectConfig;
 }
 

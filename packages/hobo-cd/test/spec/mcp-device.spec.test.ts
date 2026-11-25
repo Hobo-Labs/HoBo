@@ -10,22 +10,9 @@ import {
 } from "../../src/index.js";
 import { fakeWorkload, handedOverInfisicalToken } from "../support/workload.js";
 
-// SPEC: `hobo cd up --hand-off` through the HoBo MCP server. The server runs
-// the CLI with --json, so no progress line reaches anyone, and no tool call
-// may block on a person. Derived from the real-binary smoke: the run waited
-// inside the call on a Vercel device code it could only print.
-//
-// So the device grant runs off the request path: the call starts it, shows
-// the link through the owner channel (the host's own link prompt) and
-// returns at once; the grant completes in the server's lifetime and writes
-// the connection to the store; the next call finds it there. Polling is the
-// protocol's (RFC 8628: interval, slow_down, expiry), on a clock this spec
-// drives virtually: no real time passes.
-
 function throughMcp(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
-		// SAFETY: the preparation reads only progress and these output flags.
 		flags: { json: true, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
@@ -34,12 +21,10 @@ function throughMcp(): PrepareInput {
 		whatIf: false,
 		yes: false,
 		handOff: true,
-		// SAFETY: prepareVercelConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 	};
 }
 
-/** Virtual time: a wait advances the clock and returns; nothing really sleeps. */
 function virtualClock() {
 	let at = 0;
 	const waits: number[] = [];
@@ -53,7 +38,6 @@ function virtualClock() {
 	};
 }
 
-/** Vercel's device grant, answering per RFC 8628. */
 function vercel(script: readonly ("pending" | "slow_down" | "denied")[] = []) {
 	let approved = false;
 	let polls = 0;
@@ -88,7 +72,6 @@ function vercel(script: readonly ("pending" | "slow_down" | "denied")[] = []) {
 		return new Response("{}", { status: 404 });
 	};
 	return {
-		// SAFETY: the fake answers every request the device grant makes, by URL.
 		fetch: fetchImpl as typeof fetch,
 		approve: () => {
 			approved = true;
@@ -225,7 +208,6 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 		});
 		expect(JSON.stringify(first)).not.toMatch(/HANDOFF_SILENT|--json/u);
 		expect(h.shown).toEqual([LINK]);
-		// The owner approves; the grant completes in the background.
 		provider.approve();
 		await h.jobs.settled();
 		expect(await h.port.access("HOBO_CD_VERCEL_TOKEN")).toMatchObject({

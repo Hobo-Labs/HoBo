@@ -1,11 +1,3 @@
-// Promoted proof: champion-challenger-promotion-contract (HOBO-344), its
-// acceptance carried into CD promotion semantics. The can-deploy proof's
-// acceptance lives in gate.test.ts ("can-deploy (promoted proof)").
-//   shadow       → a candidate Rail in INFORM is evaluated, the enforced Rail serves
-//   gated        → promotion persists only through a certified gate decision
-//   provenance   → incomplete signed provenance is refused before persistence
-//   idempotent   → a repeated promotion changes nothing; it is reversible from the log
-//   prod → delta → a proposal-only principal yields a Delta proposal, never an apply
 //   region-scoped→ only the targeted Camp's desired state changes
 import { definePolicyRule, type PolicyPack } from "@hobo/contracts";
 import { describe, expect, it } from "vitest";
@@ -61,7 +53,6 @@ function realGate(
 			const binding = await campPolicy.binding(campId);
 			return binding?.candidateRailDigest
 				? {
-						// SAFETY: test fixture; the value is the shape the port declares.
 						railDigest: binding.candidateRailDigest as Digest,
 						policyPack: CHALLENGER,
 					}
@@ -157,7 +148,6 @@ describe("champion-challenger-promotion-contract (promoted)", () => {
 	it("incomplete signed provenance is refused before anything is persisted", async () => {
 		const h = harness({ gate: realGate(new FakeCampPolicy(), []) });
 		h.freight.add("f1", {
-			// SAFETY: test fixture; the value is the shape the port declares.
 			provenance: [{ statementDigest: digest("aa"), verified: false } as never],
 		});
 		const result = await h.service.promote(

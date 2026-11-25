@@ -1,6 +1,3 @@
-// data-models/windows.cue and the parse boundary agree: what the service
-// records vets clean, and the single-record rules the parser refuses, CUE
-// refuses too.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";

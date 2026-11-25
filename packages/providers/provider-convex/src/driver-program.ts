@@ -1,11 +1,5 @@
 import type { JsonObject } from "./json.js";
 
-// Convex realizes resources through its Management API as a DRIVER (Plan 25
-// driver taxonomy: terraform/template/echo/container/custom-webhook), NOT an
-// IaC backend — a closed BaaS exposes a deploy surface, not infrastructure
-// state (ADR-0144 thin-adapter rule). This is the emit-side derived shape of
-// that driver call.
-
 // public-contract: the driver-program schema version this provider emits.
 export const DRIVER_PROGRAM_API_VERSION = "hobo.driver-program/v1";
 // public-contract: the driver-program kind discriminator.
@@ -26,7 +20,6 @@ export interface DriverProgram {
 	kind: typeof DRIVER_PROGRAM_KIND;
 	driver: typeof CONVEX_DRIVER;
 	deploymentId: string;
-	/** The Convex deployment slug the program provisions into. */
 	deployment: string;
 	resources: DriverResource[];
 	outputs: Record<string, string>;
@@ -35,11 +28,6 @@ export interface DriverProgram {
 const OUTPUT_REF =
 	/^\$\{resources\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)\}$/;
 
-/**
- * Parse-don't-validate structural check for emitted driver programs: returns
- * the frozen parsed derived program or throws — the emit side is asserted
- * before anything leaves the package boundary.
- */
 export function assertDriverProgram(program: DriverProgram): DriverProgram {
 	if (program.apiVersion !== DRIVER_PROGRAM_API_VERSION) {
 		throw new Error(

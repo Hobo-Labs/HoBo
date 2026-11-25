@@ -27,7 +27,6 @@ describe("bindle status plans (default-on, ADR-0145)", () => {
 			label: "shop status",
 		});
 		expect(plan.project).toBe(DEFAULT_PROJECT);
-		// App kits become components; infra kits (kv) do not.
 		expect(plan.components.map((c) => c.id).sort()).toEqual([
 			"kit-api",
 			"kit-web",

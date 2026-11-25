@@ -24,17 +24,12 @@ import {
 } from "./cd-delivery-module.js";
 import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 
-// The @hobo/yards contract a topology Yard carries. Typed from `Yard`, so a
-// contract change in @hobo/yards fails to compile here. Not imported at run
-// time: this module stays free of the yards runtime (and its module graph)
-// that only the type is needed from.
 const TOPOLOGY_CONTRACT_VERSION: Yard["contract"] = "hobo.topology-objects/v1";
 
 // public-contract: the Camp label that declares a Camp OBSERVE_ONLY (D5).
 export const CD_MANAGEMENT_LABEL = "hobo.cd/management";
 
 export function campIdOf(yardName: string, campId: string): CampId {
-	// SAFETY: the Yard-scoped id placement and the journal use for a Camp.
 	return `${yardName}/${campId}` as CampId;
 }
 
@@ -51,7 +46,6 @@ export type DeclaredYard = Readonly<{
 	}>[];
 }>;
 
-/** Project Yards (and their Camps) as declared CD topology. */
 export function yardTopology(
 	yards: readonly (Yard | DeclaredYard)[],
 	stationId: string,
@@ -93,7 +87,6 @@ export class TopologyConflictError extends Error {
 	}
 }
 
-/** A static reader over declared Camps. */
 export function staticTopologyReader(
 	camps: readonly CampTopology[],
 ): TopologyReader {
@@ -113,7 +106,6 @@ export function staticTopologyReader(
 	});
 }
 
-/** Merge readers; a Camp declared by two readers refuses (fail closed). */
 export function mergeTopologyReaders(
 	readers: readonly TopologyReader[],
 ): TopologyReader {
@@ -141,8 +133,6 @@ export function mergeTopologyReaders(
 		},
 	});
 }
-
-// ── Topology files (`hobo deploy --yard`, HOBO_CD_TOPOLOGY) ─────────────────
 
 // public-contract: the environment variable naming topology files for every CD command.
 export const CD_TOPOLOGY_ENV = "HOBO_CD_TOPOLOGY";
@@ -173,7 +163,6 @@ function splitFiles(value: unknown): string[] {
 		: [];
 }
 
-/** Topology files a CD command loads: HOBO_CD_TOPOLOGY first, then `--yard`. */
 export function topologyFilesOf(
 	flags: JsonObject,
 	env: Readonly<Record<string, string | undefined>>,
@@ -222,11 +211,8 @@ function invalid(at: string, error: unknown): TopologyParseError {
 function parseYard(item: unknown, at: string): CdTopologyYard {
 	let parsed: CdTopologyYard;
 	try {
-		// A Yard carries more than the topology reads (bindings, properties):
-		// the generated schema reads its fields and ignores the rest.
 		parsed = fromJson(
 			CdTopologyYardSchema,
-			// SAFETY: a JSON round trip; fromJson parses the result.
 			JSON.parse(JSON.stringify(item ?? null)) as ProtoJson,
 			{ ignoreUnknownFields: true },
 		);
@@ -250,7 +236,6 @@ function parseYard(item: unknown, at: string): CdTopologyYard {
 function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 	let parsed: CdTopologyCamp;
 	try {
-		// SAFETY: fromJson parses and rejects anything that is not the schema's JSON form.
 		parsed = fromJson(CdTopologyCampSchema, (item ?? null) as ProtoJson);
 	} catch (error) {
 		throw invalid(at, error);
@@ -312,7 +297,6 @@ function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 	});
 }
 
-/** Parse a topology file's exports once with the generated schemas. */
 export function parseTopologyExports(
 	exports: Readonly<Record<string, unknown>>,
 	options: Readonly<{ stationId: string; source: string }>,
@@ -356,12 +340,6 @@ export function parseTopologyExports(
 	}
 }
 
-/**
- * Load topology files: `.json` (an exports object) or a module (a Yard module
- * such as packages/ci-vercel/deploy/yard.ts, or a delivery module exporting
- * `yards`/`camps`). Other exports of a module are not topology and are left
- * to their own readers. Any refusal refuses the whole set.
- */
 export async function loadTopologyFiles(
 	files: readonly string[],
 	options: Readonly<{

@@ -23,7 +23,6 @@ export function isJsonObject(
 export function parseJsonObject(text: string): JsonObject {
 	let value: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return {};

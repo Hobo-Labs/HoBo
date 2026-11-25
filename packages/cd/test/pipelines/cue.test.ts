@@ -1,6 +1,3 @@
-// data-models/pipelines.cue and the parse boundary agree: what the controller
-// records vets clean, and the single-record rules the parser refuses, CUE
-// refuses too.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { toJson } from "@bufbuild/protobuf";
@@ -22,7 +19,6 @@ import { harness, node, pipeline } from "./harness.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = resolve(here, "../../data-models/pipelines.cue");
-/** The recorded form: subject explicit, as normalizePipeline writes it. */
 const json = (record: PipelineRecord) =>
 	toJson(PipelineRecordSchema, normalizePipeline(record, "user:ops@acme"));
 

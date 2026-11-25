@@ -1,8 +1,3 @@
-// Provider verification of the posture boundaries against the consumer pact
-// beside it: CampPolicy (promotion), ShadowRecorder and conflicts (the gate),
-// PostureSeriesReader (the HOBO_POSTURE health source) and observeFields (the
-// desired-state feed). Digests in the pact are short aliases
-// (`sha256:aaaa` = sha256 of 64 `a`s).
 import { readFileSync } from "node:fs";
 import { create, toJson } from "@bufbuild/protobuf";
 import type { PolicyPack } from "@hobo/contracts";
@@ -53,7 +48,6 @@ function interaction(description: string): Interaction {
 	return found;
 }
 
-/** Real digests → pact aliases, so observed bodies compare with the pact. */
 function alias<T>(value: T): JsonValue {
 	return JSON.parse(
 		JSON.stringify(value ?? null).replace(
@@ -92,7 +86,6 @@ async function qualify(h: PostureHarness, freightId: string) {
 		name: "rail-eu",
 		nodes: [{ name: "shadow", campIds: [PROD], policyMode: PolicyMode.INFORM }],
 	});
-	// SAFETY: toJson of a message is a JSON object.
 	await h.store.put(
 		CD_STREAMS.pipeline("rail-eu"),
 		CD_EVENTS.PipelineApplied,
@@ -106,7 +99,6 @@ async function qualify(h: PostureHarness, freightId: string) {
 		verificationId: "v",
 		qualifiedAt: new Date(T0).toISOString(),
 	});
-	// SAFETY: toJson of a message is a JSON object.
 	await h.store.put(
 		CD_STREAMS.freight(freightId),
 		CD_EVENTS.FreightQualified,

@@ -1,7 +1,3 @@
-// A deterministic run that writes every fan-out event body at least once:
-// Started, Progressed (each outcome), Halted, Resumed, Completed (COMPLETED
-// and SUPERSEDED), RolledBack and camp.Departed. Used by the CUE agreement
-// and golden-corpus tests.
 import { FanoutStrategy } from "../../src/_generated/cd_pb.js";
 import { decisionOf, fanoutOf, freightIdOf, healthy } from "./fakes.js";
 import {

@@ -1,4 +1,3 @@
-// CUE constraints for app_resolver.proto.
 package hobo
 
 #FluxDigest: =~"^sha256:[a-f0-9]{64}$"
@@ -16,7 +15,6 @@ package hobo
 	operationTerminal:  ready
 	absenceConfirmed:   false
 	lifecycleStatus:    "ready" | "pending"
-	// Readiness is observed: never ready with fewer nodes than required.
 	if runningInstances < requiredInstances {
 		ready:           false
 		lifecycleStatus: "pending"

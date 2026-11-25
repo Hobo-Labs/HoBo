@@ -27,7 +27,6 @@ export async function runConformanceSuite(
 	const suite =
 		"schema" in definition ? definition : createConformanceSuite(definition);
 	const seed = options.seed ?? DEFAULT_SEED;
-	// SAFETY: assertion to `["local"] as ConformanceTier[]` is required at this boundary.
 	const tiers = options.tiers ?? (["local"] as ConformanceTier[]);
 	const adapter = resolveAdapter(adapterOrId, options);
 	const adapterId = adapter.id ?? options.adapterId ?? "anonymous-adapter";

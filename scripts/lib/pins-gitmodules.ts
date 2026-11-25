@@ -1,18 +1,10 @@
-/**
- * What `.gitmodules` records for a submodule, read the way git reads it, and
- * the refusals for what git could read differently from the script.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { git, gitFailure, Refusal } from "./pins-git-core.ts";
 
 export interface ModulesEntry {
-	/** The submodule's name in `.gitmodules` (often, not always, its path). */
 	readonly name: string;
 	readonly url: string;
 }
 
-/** A section as written: git matches its path exactly, so `./a` or `a/` registers nothing. */
 export interface ModulesSection {
 	readonly name: string;
 	readonly path: string | undefined;
@@ -26,7 +18,6 @@ function hasControl(value: string): boolean {
 	});
 }
 
-/** `./a//b/` and `a/b` name the same directory. */
 function samePath(left: string, right: string): boolean {
 	const normal = (value: string): string =>
 		value
@@ -36,22 +27,10 @@ function samePath(left: string, right: string): boolean {
 	return normal(left) === normal(right);
 }
 
-/**
- * git 2.43's `check_submodule_name` (submodule-config.c): a name that is
- * empty or has a `..` component, split on `/` and on `\` alike, is ignored
- * with "ignoring suspicious submodule name". git keeps a submodule's
- * repository at `<git dir>/modules/<name>`, so such a name would reach out
- * of that directory.
- */
 export function gitIgnoresName(name: string): boolean {
 	return name === "" || name.split(/[/\\]/u).includes("..");
 }
 
-/**
- * Every `submodule.<name>.<key>` value, NUL-separated so no value can forge a
- * line. A `.gitmodules` git cannot read (an exit other than 0, values, or 1,
- * none) is refused naming where git stopped, never read as "nothing there".
- */
 function modulesValues(root: string): Map<string, Map<string, string[]>> {
 	const read = git(root, [
 		"config",
@@ -94,14 +73,6 @@ function modulesValues(root: string): Map<string, Map<string, string[]>> {
 	return sections;
 }
 
-/**
- * What `.gitmodules` records for the submodule at `path`, read the way git
- * reads it (`git config -z`). Refused (GITMODULES_AMBIGUOUS) when git could
- * pick a repository the script did not compare: two sections naming the path,
- * a path or url set twice in one section, a value with a control character,
- * or a section name git ignores (checked before anything builds the module
- * directory from it).
- */
 export function modulesEntry(root: string, path: string): ModulesEntry | null {
 	const section = modulesSection(root, path);
 	return section?.path === path && section.url !== undefined
@@ -109,7 +80,6 @@ export function modulesEntry(root: string, path: string): ModulesEntry | null {
 		: null;
 }
 
-/** The one section that names `path` in any spelling, as written; refused as `modulesEntry` says. */
 export function modulesSection(
 	root: string,
 	path: string,
@@ -147,12 +117,10 @@ export function modulesSection(
 	return { name, path: values.get("path")?.[0], url: values.get("url")?.[0] };
 }
 
-/** The names of every `[submodule]` section in `.gitmodules`. */
 export function modulesSectionNames(root: string): readonly string[] {
 	return [...modulesValues(root).keys()];
 }
 
-/** The url `.gitmodules` records for the submodule at `path`, if any. */
 export function modulesUrl(root: string, path: string): string | null {
 	return modulesEntry(root, path)?.url ?? null;
 }

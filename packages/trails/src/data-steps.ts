@@ -1,7 +1,3 @@
-/**
- * Schema + data continuous dual steps (Supabase/Atlas/pgroll/Debezium patterns).
- * Offline-capable with contract-asserted dual simulation.
- */
 import { createHash } from "node:crypto";
 
 import type { TrailStep } from "./definition.js";
@@ -16,7 +12,6 @@ export type SchemaApplyResult = Readonly<{
 	mode: "versioned-sql" | "declarative-desired" | "expand-contract";
 	version: string;
 	applied: boolean;
-	/** Expand/contract dual window open when progressive. */
 	dualSchema: boolean;
 	checksum: `sha256:${string}`;
 	dryRun: boolean;
@@ -26,29 +21,20 @@ export type DataDualResult = Readonly<{
 	schemaVersion: typeof DATA_DUAL_SCHEMA;
 	stepId: string;
 	mode: "bulk" | "delta" | "cdc-dual";
-	/** Row/event checksum equivalence between source and target dual. */
 	sourceChecksum: `sha256:${string}`;
 	targetChecksum: `sha256:${string}`;
 	consistent: boolean;
 	zeroLoss: boolean;
-	/** CDC-style dual is continuous until cutover. */
 	continuous: boolean;
 	fidelity: "simulated" | "live";
 }>;
 
-/** Oracle view over a source/target dual — simulated fixture or live stores. */
 export type DataDualView = Readonly<{
 	sourceRows: readonly JsonObject[];
 	targetRows: readonly JsonObject[];
 	fidelity: "simulated" | "live";
 }>;
 
-/**
- * Digest evidence over a source/target dual: counts and digests computed
- * where the data lives. Preferred over `DataDualView` for live stores — a row
- * view makes the oracle a custody point for the data it is checking
- * (ADR-0177 decision 9).
- */
 export type DataDualEvidence = Readonly<{
 	source: Readonly<{ count: number; digest: string }>;
 	target: Readonly<{ count: number; digest: string }>;
@@ -61,10 +47,6 @@ export type DataDualFixture = Readonly<{
 	fidelity: "simulated";
 }>;
 
-/**
- * Apply schema step (dry-run or execute). Expand-contract opens dual schema.
- * Never executes against a live DB in fixtures — returns plan evidence.
- */
 export function applySchemaStep(
 	step: TrailStep,
 	options?: { readonly dryRun?: boolean },
@@ -100,10 +82,6 @@ export function applySchemaStep(
 	});
 }
 
-/**
- * Evaluate data dual consistency (CDC dual / bulk transform checksum).
- * Accepts a simulated fixture or a live port snapshot (`DataDualView`).
- */
 export function evaluateDataDual(
 	step: TrailStep,
 	fixture: DataDualView,
@@ -116,7 +94,6 @@ export function evaluateDataDual(
 	const sourceChecksum = rowsChecksum(fixture.sourceRows);
 	const targetChecksum = rowsChecksum(fixture.targetRows);
 	const consistent = sourceChecksum === targetChecksum;
-	// Zero-loss: same cardinality and consistent checksums.
 	const zeroLoss =
 		consistent && fixture.sourceRows.length === fixture.targetRows.length;
 	return Object.freeze({
@@ -133,10 +110,6 @@ export function evaluateDataDual(
 	});
 }
 
-/**
- * Evaluate data dual consistency from digest evidence. Same verdict shape as
- * `evaluateDataDual`, with no row ever reaching the runner.
- */
 export function evaluateDataDualEvidence(
 	step: TrailStep,
 	evidence: DataDualEvidence,

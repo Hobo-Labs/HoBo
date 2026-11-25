@@ -172,7 +172,6 @@ describe("in-process service emulators", () => {
 	});
 
 	it("refuses an invalid factory instead of silently using a default", async () => {
-		// SAFETY: model an invalid JavaScript caller bypassing the TypeScript contract.
 		await expect(
 			deployInProcess(app(), "test", { queue: null } as never),
 		).rejects.toMatchObject({
@@ -197,7 +196,6 @@ describe("in-process service emulators", () => {
 						closed.push("queue");
 					},
 				}),
-				// SAFETY: deliberately violate the TypeScript factory contract to test the JavaScript parse boundary.
 				topic: () =>
 					({
 						port: {},

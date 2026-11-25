@@ -6,9 +6,6 @@ import { createHoboCli } from "../src/index.js";
 import { copyBuiltStarter } from "./support/built-starter.js";
 import { slow } from "./support/slow.js";
 
-// A build's cheap refusals judge hobo.bindle.json and the generated imprint.
-// When codegen has not produced that imprint (or a clone dropped the
-// gitignored .hobo/), neither is authoritative, so the freshness gate answers.
 describe("hobo build on a project codegen has not generated", {
 	timeout: slow(60_000),
 }, () => {
@@ -49,7 +46,6 @@ describe("hobo build on a project codegen has not generated", {
 			"api",
 			await mkdtemp(join(root, "clone-")),
 		);
-		// .hobo/ is gitignored by every starter, so a clone has none of it.
 		await rm(join(project, ".hobo"), { recursive: true, force: true });
 		expect(await build(project, ...args)).toMatchObject({
 			ok: false,

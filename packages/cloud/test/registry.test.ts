@@ -52,7 +52,6 @@ describe("Registry: catalog from a provider capabilityManifest()", () => {
 		const compute = defs.find((d) => d.port === "compute");
 		expect(compute?.providerId).toBe("@hobo/provider-cloudflare");
 		expect(compute?.features).toContain("http");
-		// Live negotiation is delegated to the provider Capability.satisfies.
 		expect(
 			compute?.satisfies({ port: "compute", features: ["http"] }).kind,
 		).toBe("full");
@@ -69,8 +68,6 @@ describe("Registry: catalog from a provider capabilityManifest()", () => {
 	});
 });
 
-// A minimal Capability-Manifest-bearing provider fixture (the shape `hobo add`
-// installs): one port, deterministic cost, real manifest documents.
 function fixtureProvider(id: string, ports: string[]): RegistrableProvider {
 	return {
 		id,
@@ -144,7 +141,6 @@ describe("Registry: event-backed registry (HOBO-710)", () => {
 			{ expectedSeq: 0, actor, tenant: "yard" },
 		);
 
-		// The sync snapshot only changes on refresh (the read model re-fold).
 		expect(registry.providers()).toEqual(["@hobo/provider-cloudflare"]);
 		await registry.refresh();
 
@@ -157,16 +153,12 @@ describe("Registry: event-backed registry (HOBO-710)", () => {
 		expect(def?.satisfies({ port: "hobo:database", features: [] }).kind).toBe(
 			"full",
 		);
-		// Catalog hash changes when an installed provider lands.
 		expect(registry.catalogHash).not.toBe(baseHash);
 
-		// Rebuildable from zero: a fresh registry over the same store folds the
-		// same snapshot.
 		const rebuilt = createEventBackedRegistry({ store, streamId, base });
 		await rebuilt.refresh();
 		expect(rebuilt.catalogHash).toBe(registry.catalogHash);
 
-		// Matching resolves the installed provider.
 		const outcome = matchResource(intentFor("hobo:database"), registry);
 		expect(outcome.ok).toBe(true);
 		if (outcome.ok) expect(outcome.decision.providerId).toBe("pg-local");
@@ -185,7 +177,6 @@ describe("Registry: event-backed registry (HOBO-710)", () => {
 		});
 		await registry.refresh();
 
-		// Held: visible via held(), invisible to definitions()/providers().
 		expect(registry.providers()).toEqual(["@hobo/provider-cloudflare"]);
 		expect(registry.held()).toEqual([
 			{ providerId: "pg-local", ports: ["hobo:database"] },
@@ -198,7 +189,6 @@ describe("Registry: event-backed registry (HOBO-710)", () => {
 			expect(outcome.remediation.suggestedProvider).toBe("pg-local");
 		}
 
-		// Approving flips it to matchable.
 		await store.append(streamId, [approveProviderFact("pg-local")], {
 			expectedSeq: 1,
 			actor,
@@ -225,7 +215,6 @@ describe("Registry: event-backed registry (HOBO-710)", () => {
 		);
 		await registry.refresh();
 
-		// The live base definition wins; the recorded one is not double-counted.
 		expect(registry.providers()).toEqual(["@hobo/provider-cloudflare"]);
 		expect(registry.definitions()).toHaveLength(5);
 	});

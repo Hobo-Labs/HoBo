@@ -82,7 +82,6 @@ export function parseDevStateSnapshot(raw: JsonValue): DevStateSnapshot {
   if (!raw || !isJsonObject(raw)) {
     throw new DevParseError("HOBO_DEV_STATE_INVALID", "dev state must be an object");
   }
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const record = raw as JsonObject;
   if (record.schema !== STATE_SCHEMA) {
     throw new DevParseError(
@@ -99,7 +98,6 @@ export function parseDevStateSnapshot(raw: JsonValue): DevStateSnapshot {
     eventSequence: isJsonNumber(record.eventSequence) ? record.eventSequence : 0,
     requests: Array.isArray(record.requests)
       ? record.requests.map((entry) => {
-          // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
           const item = entry as JsonObject;
           return {
             path: String(item.path ?? ""),

@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { ForgeIngestionError, sha256Digest } from "./events.js";
 import { type JsonObject } from "./json.js";
 
-
 const fixtureSchema = "hobo.forge.fixture/v1";
 
 export type ForgeFixtureIndex = {
@@ -67,7 +66,6 @@ export async function resolveFixtureDirectory(fixtureUrl: string): Promise<strin
 export async function loadFixtureIndex(fixtureUrl: string): Promise<ForgeFixtureIndex> {
   const directory = await resolveFixtureDirectory(fixtureUrl);
   const indexPath = path.join(directory, "index.json");
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const raw = JSON.parse(await readFile(indexPath, "utf8")) as ForgeFixtureIndex;
 
   if (raw.schema !== fixtureSchema) {
@@ -117,9 +115,7 @@ export function parseIngestionSources(
     throw new ForgeIngestionError("forge.source.required", "$.sources");
   }
 
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const capabilityManifest = JSON.parse(manifestSource.bytes) as JsonObject;
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const openapi = JSON.parse(openapiSource.bytes) as JsonObject;
   const terraformComments = extractHashComments(terraformSource.bytes);
   const docsSummary = summarizeDocs(docsSource.bytes);
@@ -127,7 +123,6 @@ export function parseIngestionSources(
   const equivalenceClasses: JsonObject[] = Array.isArray(rawClasses)
     ? rawClasses.map((entry) => {
         const record: JsonObject =
-          // SAFETY: equivalenceClasses entries are JSON objects from the fixture manifest.
           entry as never;
         return record;
       })

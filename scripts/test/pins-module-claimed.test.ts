@@ -1,14 +1,3 @@
-/**
- * A module directory under another name is not the submodule's own when
- * another live section carries that name. With section `lib` at
- * `external/lib` and section `external/lib` at `external/other`, the clone
- * git made under `modules/external/lib` is the second section's directory:
- * git's own update of `external/other` takes it over (its `core.worktree`
- * becomes that path), and the next pins run refuses the first path. The
- * rename rule ("git made it for this path") must not accept it, and the
- * printed fix moves the checkout aside instead of renaming a section onto a
- * directory that is spoken for.
- */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -32,7 +21,6 @@ function section(name: string, path: string, url: string): string {
 	return `[submodule "${name}"]\n\tpath = ${path}\n\turl = ${url}\n`;
 }
 
-/** The clone git made as `external/lib`, whose section is now `lib`, while `external/lib` names `external/other`. */
 function setUp() {
 	const dir = scratch("claimed");
 	const remote = makeRemote(dir);
@@ -89,7 +77,6 @@ describe("a module directory another live section names", () => {
 
 	it("that is why: git's own update of the other path takes the directory over", () => {
 		const { root, config } = setUp();
-		// Run after the pins: git's update rewrites core.worktree as a side effect.
 		assert.equal(runBootstrap(root, ["--status", "--offline"]).status, 1);
 		const own = spawnSync(
 			"git",

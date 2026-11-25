@@ -7,7 +7,6 @@ import {
 } from "./github.js";
 import { ISOLATED_JIT_QUEUED_BOUND_GRACE_MS } from "./isolated-worker/container-timeout.js";
 
-/** GitHub job statuses that keep a JIT runner registered and busy. */
 export const RUNNER_HELD_JOB_STATUSES = new Set([
 	"queued",
 	"in_progress",
@@ -48,7 +47,6 @@ function runnerMatchesJob(
 	return runnerMatchesGitHubJob({ runnerId, runnerName }, job);
 }
 
-/** Which workflow job on this run GitHub bound to an ephemeral box JIT runner. */
 export function correlateRunnerOnRun(
 	jobs: readonly GithubRunWorkflowJob[],
 	reservedJobId: number,
@@ -183,7 +181,6 @@ export async function evaluateRunnerTeardownGuard(
 	opts?: Readonly<{
 		failClosed?: boolean;
 		queuedBoundGraceMs?: number;
-		/** When false, defer only on resolved assignment (no served-job getJob). */
 		observeServedJob?: boolean;
 	}>,
 ): Promise<boolean> {
@@ -219,7 +216,6 @@ export async function evaluateRunnerTeardownGuard(
 	} catch {
 		if (opts?.failClosed === true) return true;
 		if (!observeServedJob) return false;
-		// Fall through to direct observation of the served workflow job.
 	}
 	try {
 		const job = await getJob(
@@ -251,10 +247,6 @@ export async function evaluateRunnerTeardownGuard(
 	}
 }
 
-/**
- * Resolve which workflow job GitHub assigned to a box JIT runner, including when
- * the job is on another workflow run than the lease's reserved job.
- */
 export async function resolveRunnerAssignedJob(
 	api: GithubTransport,
 	installationId: number,

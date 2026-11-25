@@ -22,7 +22,6 @@ function handler(
 	const fetch = factory();
 	if (!(fetch instanceof Function))
 		throw new Error("Missing HTTP fetch function");
-	// SAFETY: the adapter stores a platform fetch function as the actual Bindle API entrypoint.
 	return fetch as (request: Request) => Response | Promise<Response>;
 }
 
@@ -115,7 +114,6 @@ describe("TypeScript HTTP application deployment loader", () => {
 	it("refuses tampered packaged code and stale available sources before loading a real built starter", async () => {
 		const root = await mkdtemp(join(tmpdir(), "hobo-loader-build-"));
 		try {
-			// `hobo new` without -t scaffolds the api starter; starter-end-to-end builds the same one.
 			const project = await copyBuiltStarter("api", root);
 			await rm(join(project, "src"), { recursive: true, force: true });
 			const bundle = join(project, ".hobo/build/node-app/app.mjs");
@@ -210,7 +208,6 @@ describe("TypeScript HTTP application deployment loader", () => {
 				expect(manifest.sourceDigests[path]).toMatch(/^sha256:/u);
 			for (const path of ["../shared.ts", "../base.json"])
 				expect(manifest.externalSourceDigests[path]).toMatch(/^sha256:/u);
-			// Removing the application entry forces the deployment adapter through its packaged runtime.
 			await rm(join(project, "src/app.ts"));
 			for (const [path, original] of files) {
 				if (path === "src/app.ts") continue;

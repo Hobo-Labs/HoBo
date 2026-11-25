@@ -24,7 +24,6 @@ function main() {
 	const result = spawnSync("git", ["ls-files"], {
 		encoding: "utf8",
 		shell: false,
-		// monorepo tracked-file list exceeds Node's default 1 MiB maxBuffer
 		maxBuffer: 32 * 1024 * 1024,
 	});
 	if (result.error || result.status !== 0) {

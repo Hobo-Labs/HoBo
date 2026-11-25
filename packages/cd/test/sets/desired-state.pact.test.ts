@@ -1,5 +1,3 @@
-// Provider verification of the desired-state boundary (promotion → DeltaLedger,
-// reconcilers/feed → DesiredStateReader) against the consumer pact beside it.
 import { readFileSync } from "node:fs";
 import { create, fromJson } from "@bufbuild/protobuf";
 import type { JsonObject, JsonValue } from "@hobo/core";

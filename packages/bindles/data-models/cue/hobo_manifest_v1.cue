@@ -91,7 +91,6 @@ import (
 	}
 })
 
-// Architecture-guard pairing for protobuf messages in manifest.proto
 ComponentHost: #ComponentHost
 Link:          #Link
 Resource:      #Resource

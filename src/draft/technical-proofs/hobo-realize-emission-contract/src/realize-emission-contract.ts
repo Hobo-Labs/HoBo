@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { cloneAsJson, isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const REALIZE_EMISSION_VERSION = "hobo.realize-emission/v1";
 export const IAC_PROGRAM_VERSION = "hobo.iacProgram/v1";
 export const BUILD_SPEC_VERSION = "hobo.buildSpec/v1";
@@ -27,7 +26,6 @@ export interface OutputPlaceholderInput {
   output: string;
 }
 
-/** A driver-agnostic IacProgram node: one provisionable resource in the resource graph. */
 export interface IacNode {
   id: string;
   type?: string;
@@ -88,7 +86,6 @@ export interface BuildSpec {
   outputs?: BuildOutputEntry[];
 }
 
-/** The driver-agnostic emission a provider realizes from a resource plan: IacProgram + BuildSpec. */
 export interface RealizeEmission {
   apiVersion?: string;
   provider?: string;
@@ -428,7 +425,6 @@ export function validateEmission(emission: RealizeEmission | undefined): Validat
 
 export function wireBuildOutputs(emission: RealizeEmission, imageRefs: Record<string, string>): RealizeEmission {
   const imageRefByArtifact = new Map(Object.entries(imageRefs));
-  // SAFETY: `const iac = replaceBuildRefs(cloneAsJson(emission.iac), imageRefByArtifact) as IacProgram | undefined` is required at this I/O or test boundary.
   const iac = (emission.iac === undefined
     ? undefined
     : replaceBuildRefs(cloneAsJson(emission.iac), imageRefByArtifact)) as IacProgram | undefined;

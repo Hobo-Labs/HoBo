@@ -31,11 +31,7 @@ describe("round trip over the existing corpus", () => {
 			const parsed = parseResourceIntent(entry.value);
 			const decoded = decodeResourceIntent(encodeResourceIntent(parsed));
 
-			// The authoring view of the decoded value is the literal we started
-			// with — same keys, same order-sensitive arrays, same absent fields.
 			expect(toResourceIntent(decoded)).toStrictEqual(entry.value);
-			// And the parsed views agree, which catches a loss that `toResourceIntent`
-			// might paper over by rebuilding defaults.
 			expect(decoded).toStrictEqual(parsed);
 		});
 
@@ -49,8 +45,6 @@ describe("round trip over the existing corpus", () => {
 			const c = canonicalResourceIntentJson(third);
 			expect(b).toBe(a);
 			expect(c).toBe(a);
-			// A canonical form that is not stable byte-for-byte is not canonical,
-			// and any digest taken over it would be a coin flip.
 			expect(Buffer.from(b, "utf8").equals(Buffer.from(a, "utf8"))).toBe(true);
 		});
 	}
@@ -85,11 +79,6 @@ describe("round trip over the existing corpus", () => {
 		expect(withDeps.length).toBe(1);
 		expect(withRequire.length).toBe(5);
 
-		// `region` and `prefer` are the two fields the repository has never
-		// populated. Recording that here means the gap is visible rather than
-		// implied by the absence of a test: everything asserted about them in
-		// this package is asserted against constructed values, and the round trip
-		// has therefore never seen a real one.
 		expect(
 			EXISTING_INTENTS.filter((entry) => entry.value.region !== undefined),
 		).toEqual([]);
@@ -104,9 +93,6 @@ describe("round trip over the existing corpus", () => {
 				(entry) => entry.id === "placement/pick-n-2-region-pinned",
 			)?.value ?? {},
 		);
-		// Written out in full rather than compared to a re-derivation: the point
-		// is to notice if key ordering, field naming, or default omission ever
-		// changes, and a self-referential assertion would not.
 		expect(canonicalResourceIntentJson(parsed)).toBe(
 			'{"name":"cache","negotiation":"require","objective":"min-cost","placement":{"pick_n":{"count":2},"selectors":[{"key":"region","op":"eq","values":["us-east-1"]}]},"port":"kv"}',
 		);
@@ -124,9 +110,6 @@ describe("presence, the thing a proto3 default silently eats", () => {
 		objective: "min-cost",
 	};
 
-	// The proto3 rule for a field WITHOUT explicit presence: omit it from the
-	// JSON whenever it equals the type default. This is what
-	// `packages/cloud/data-models/cloud.proto` declares for `region`
 	// (`string region = 7;`, no `optional`), and it is why this package declares
 	// `optional string region = 7;` instead.
 	type JsonValue = string | number | boolean | null | JsonValue[] | JsonRecord;
@@ -147,9 +130,6 @@ describe("presence, the thing a proto3 default silently eats", () => {
 		const absent = encodeUnderImplicitPresence({ ...base });
 		expect(empty).toStrictEqual(absent);
 		expect("region" in empty).toBe(false);
-		// Both decode to the same value, so under cloud.proto's declaration the
-		// two inputs are one record. That is the loss, measured rather than
-		// argued.
 	});
 
 	it("this package refuses the value that would be lost", () => {
@@ -187,8 +167,6 @@ describe("presence, the thing a proto3 default silently eats", () => {
 			placement: { selectors: [], affinities: [] },
 		});
 		const record = encodeResourceIntent(parsed);
-		// Every field inside is at its default, so proto3 JSON emits `{}` — but
-		// the message itself has presence, so the key is still there.
 		expect(record.placement).toStrictEqual({});
 		const decoded = decodeResourceIntent(record);
 		expect(decoded.placement).toStrictEqual({ selectors: [], affinities: [] });

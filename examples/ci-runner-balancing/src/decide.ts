@@ -1,19 +1,3 @@
-/**
- * Pure credit-aware dispatcher (ADR-0071 `maximize-credits`). No I/O, no
- * clock, no provider names: callers hand in a pinned CreditLedgerView plus
- * the current routed-variable values, and get back `dispatch.Decided`
- * records. Imports are restricted to the generated protobuf module and its
- * runtime constructor (enforced by test/decide.test.ts) so replaying the
- * same input always yields the same decisions.
- *
- * Ranking, per track: candidates are ordered by effective marginal cost
- * (0 while free headroom remains), then declared list price, then stable
- * rung order — free credits are exhausted before realtime billing starts.
- * Hysteresis holds the incumbent: a provider is left at >= flipUpPct of its
- * soft cap and only returned to below flipBackPct (anti-flap). When no rung
- * is eligible the track fails closed instead of guessing.
- */
-
 import { create } from "@bufbuild/protobuf";
 
 import {
@@ -29,19 +13,12 @@ import {
 
 export interface DecideInput {
 	tracks: readonly RunnerTrack[];
-	/** Current variable values (GitHub is the source of truth, never mirrored). */
 	current: Readonly<Record<string, string | undefined>>;
-	/** Pinned ledger view; every decision records ledger.seq for replay. */
 	ledger: CreditLedgerView;
-	/** Variables the operator froze. */
 	pins: ReadonlySet<string>;
-	/** Track-scoped failure evidence (provider-wide blocks live on the ledger). */
 	resourceBlocks?: readonly HardBlockSignal[] | undefined;
-	/** Leave a provider when known spend >= soft cap * flipUpPct. */
 	flipUpPct?: number | undefined;
-	/** Return to a cheaper rung only when its spend < soft cap * flipBackPct. */
 	flipBackPct?: number | undefined;
-	/** Allow leaving rungs marked sticky_reason (non-fungible capability). */
 	allowNonFungibleFallback?: boolean | undefined;
 }
 
@@ -86,9 +63,6 @@ function guardsMet(
 }
 
 function underThreshold(row: LedgerRow, pct: number): boolean {
-	// Unknown usage is treated as available; the decision carries
-	// usageKnown=false so an unverified flip is never presented as
-	// spend-aware routing.
 	if (!row.usageKnown) return true;
 	return row.spendUsd < row.envelopeUsd * pct;
 }
@@ -118,10 +92,6 @@ function rankRungs(
 			return { rung, row, index, blocked };
 		})
 		.sort(
-			// Last-resort rungs (the requesting machine) rank behind every
-			// normal rung regardless of declared cost: first-eligible
-			// selection then reaches them only when nothing else is usable,
-			// and leaves them as soon as a normal rung recovers.
 			(left, right) =>
 				Number(left.rung.lastResort) - Number(right.rung.lastResort) ||
 				left.row.effectiveMarginalCostUsd - right.row.effectiveMarginalCostUsd ||
@@ -206,8 +176,6 @@ export function decide(input: DecideInput): DispatchDecision[] {
 		const movingBack = currentRung !== undefined && eligibleRank < currentRank;
 
 		if (movingBack && !underThreshold(target.row, flipBackPct)) {
-			// Cheaper rung is still inside the flipBack..flipUp band: hold to
-			// avoid flapping between providers on every pass.
 			decisions.push(
 				create(DispatchDecisionSchema, {
 					...baseDecision(track, input),

@@ -9,12 +9,6 @@ import {
 	collectBindleManifest,
 } from "../../src/index.js";
 
-// Consumer pact for the collection boundary: the run-to-collect engine
-// (consumer HoboCollector) against the manifest-IR compile it folds through
-// (provider BindleManifestCompiler). The recorded expectations pin the manifest
-// hash, observed resources/binds, and the emitted event order so drift in the
-// compile boundary is caught here.
-
 const pactPath = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"../../contracts/pacts/collection-engine.pact.json",
@@ -41,8 +35,6 @@ interface CollectInteraction {
 	};
 }
 
-// Replay a pact interaction request into a run-to-collect target: the recorded
-// resource list drives the define closure the engine runs in collection mode.
 function targetFor(interaction: CollectInteraction): CollectionTarget {
 	return {
 		bindleId: interaction.request.bindleId,
@@ -78,7 +70,6 @@ function targetFor(interaction: CollectInteraction): CollectionTarget {
 }
 
 describe("collection boundary pact", () => {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 		consumer: { name: string };
 		provider: { name: string };

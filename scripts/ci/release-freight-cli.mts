@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-/**
- * The hobo CLI every release job runs `hobo deploy` with, built once per run.
- *
- * `release-hobo-cli` (release-hobo.yml) builds `@hobo/hobo...` and packs the
- * `dist/` of every package in that build closure, as turbo's own dry run names
- * it, into one archive with a manifest of the commit it was built from. Its
- * sha256 is the job's `digest` output. Each release job downloads the archive
- * and restores it here, which refuses (fail closed) unless:
- *
- * - the archive's sha256 is the digest the build job published;
- * - the manifest's revision is the commit this job checked out (`git rev-parse
- *   HEAD`), so a CLI built from another tree never releases this one;
- * - every entry lies inside a planned package's `dist/`.
- *
- * Usage:
- *   release-freight-cli.mts pack <out.tgz> [--github-output <path>]
- *   release-freight-cli.mts restore <bundle.tgz> --digest sha256:<hex>
- */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -37,7 +19,6 @@ const root = join(import.meta.dirname, "..", "..");
 const MANIFEST = "hobo-release-cli.json";
 const TOP_PACKAGE = "@hobo/hobo";
 
-/** Where a package of the closure may live: a workspace or vendored package. */
 const directorySchema = z
 	.string()
 	.regex(/^(?:packages|external)\/[A-Za-z0-9._/-]+$/u)
@@ -47,14 +28,12 @@ const directorySchema = z
 			!directory.split("/").includes(".."),
 	);
 
-/** One package of the `@hobo/hobo...` build closure. */
 const entrySchema = z.object({
 	package: z.string().min(1),
 	directory: directorySchema,
 });
 export type CliBundleEntry = Readonly<z.infer<typeof entrySchema>>;
 
-/** The part of `turbo run build --dry=json` the plan reads. */
 const dryRunSchema = z.object({
 	tasks: z
 		.array(
@@ -74,7 +53,6 @@ const manifestSchema = z.object({
 });
 type Manifest = Readonly<z.infer<typeof manifestSchema>>;
 
-/** What packing produced: the archive's sha256, the build job's `digest`. */
 export type PackedCliBundle = Readonly<{ digest: string }>;
 
 function closure(entries: readonly CliBundleEntry[]): CliBundleEntry[] {
@@ -83,7 +61,6 @@ function closure(entries: readonly CliBundleEntry[]): CliBundleEntry[] {
 	return [...entries].sort((a, b) => a.directory.localeCompare(b.directory));
 }
 
-/** The closure from `turbo run build --filter=@hobo/hobo... --dry=json`. */
 export function cliBundlePlan(dryRunJson: string): CliBundleEntry[] {
 	const dryRun = dryRunSchema.safeParse(JSON.parse(dryRunJson));
 	if (!dryRun.success) throw new Error("turbo dry run lists no build tasks");
@@ -120,7 +97,6 @@ function sha256File(path: string): string {
 	return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
 }
 
-/** Pack every planned `dist/` with a manifest naming the commit it was built from. */
 export function packCliBundle(options: {
 	root: string;
 	plan: readonly CliBundleEntry[];
@@ -179,11 +155,6 @@ function readManifest(text: string): Manifest {
 	return { ...manifest.data, packages: closure(manifest.data.packages) };
 }
 
-/**
- * Restore a packed CLI into this checkout. Throws unless the archive is the
- * one the build job published (digest), built from this commit (revision),
- * and writes only inside the planned packages' `dist/`.
- */
 export function restoreCliBundle(options: {
 	root: string;
 	bundle: string;
@@ -213,7 +184,6 @@ export function restoreCliBundle(options: {
 		.split("\n")
 		.map((line) => line.trim().replace(/^\.\//u, ""))
 		.filter((line) => line !== "" && line !== ".");
-	// Only files and directories: a link could point a later entry anywhere.
 	const kinds = run("tar", ["-tvzf", options.bundle], options.root)
 		.split("\n")
 		.filter((line) => line.trim() !== "")

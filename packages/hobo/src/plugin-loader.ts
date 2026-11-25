@@ -19,15 +19,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// The effectful half of the hobo.plugin/v1 story (ADR-0156 §4,
-// extension-points.md §Packaging). `@hobo/core` owns the PURE manifest
-// parser; this module — the composition root — owns dynamic import and
-// registration. Discovery is by EXPLICIT specifier only (config/CLI), never
-// node_modules scanning, and a loaded provider goes through the same
-// `registerInstallable` → `hobo add` → `provider.Registered`/
-// `provider.Approved` lifecycle as a first-party installable: plugin loading
-// never bypasses the approval gate that makes a provider matchable.
-
 export class PluginLoadError extends Error {
 	readonly code: string;
 	constructor(code: string, message: string) {
@@ -40,10 +31,8 @@ export class PluginLoadError extends Error {
 export interface LoadedPluginExtension {
 	readonly point: string;
 	readonly export: string;
-	/** The catalog id the extension registered under (providers). */
 	readonly id?: string;
 	readonly status: "registered" | "skipped";
-	/** Why a `skipped` extension was skipped (unknown point, etc.). */
 	readonly reason?: string;
 }
 
@@ -53,7 +42,6 @@ export interface LoadedPluginReport {
 }
 
 export interface PluginHostHooks {
-	/** Installable-catalog registration seam (default: the real one). */
 	registerInstallable?: (
 		id: string,
 		factory: () => RegistrableProvider,
@@ -175,12 +163,6 @@ function providerFactoryFrom(
 	return { id: declaration.id ?? probe.id, factory };
 }
 
-/**
- * Register a parsed plugin's extensions with the host. Pure in/out apart
- * from the injected registration seam — the import already happened.
- * Unknown extension points are reported `skipped`, never fatal: a newer
- * plugin may declare points this host does not implement yet.
- */
 export function registerPluginExtensions(
 	manifest: PluginPackageManifest,
 	moduleExports: JsonObject,
@@ -222,7 +204,6 @@ export interface PluginModuleNamespace {
 }
 
 export interface LoadPluginOptions extends PluginHostHooks {
-	/** Injection seam for tests: import a module URL/specifier. */
 	importModule?: (specifier: string) => Promise<PluginModuleNamespace>;
 }
 
@@ -239,8 +220,6 @@ function resolvePluginPackage(specifier: string) {
 			: path.resolve(specifier);
 		packageJsonPath = path.join(dir, "package.json");
 	} else {
-		// `<pkg>/package.json` resolution can be blocked by an exports map;
-		// fall back to resolving the package entry and walking up.
 		try {
 			packageJsonPath = require.resolve(`${specifier}/package.json`);
 		} catch {
@@ -249,7 +228,6 @@ function resolvePluginPackage(specifier: string) {
 			for (;;) {
 				const candidate = path.join(dir, "package.json");
 				try {
-					// SAFETY: assertion required at this I/O or test boundary.
 					const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
 						name?: string;
 					};
@@ -257,9 +235,7 @@ function resolvePluginPackage(specifier: string) {
 						packageJsonPath = candidate;
 						break;
 					}
-				} catch {
-					// keep walking
-				}
+				} catch {}
 				const parent = path.dirname(dir);
 				if (parent === dir) {
 					throw new PluginLoadError(
@@ -284,13 +260,6 @@ function resolvePluginPackage(specifier: string) {
 	}
 }
 
-/**
- * Load a plugin package by explicit specifier: resolve its package.json,
- * parse the `hobo` manifest (`hobo.plugin/v1`), import the declared entry,
- * verify the declared exports, and register the extensions. Returns the
- * per-extension report; throws `PluginLoadError` /
- * `PluginManifestParseError` fail-closed on anything malformed.
- */
 export async function loadHoboPlugin(
 	specifier: string,
 	options: LoadPluginOptions = {},
@@ -308,7 +277,6 @@ export async function loadHoboPlugin(
 					`${manifest.packageName}: plugin entry did not evaluate to a module object`,
 				);
 			}
-			// SAFETY: dynamic import yields a module namespace of plugin exports.
 			return imported as PluginModuleNamespace;
 		});
 	let moduleExports: PluginModuleNamespace;

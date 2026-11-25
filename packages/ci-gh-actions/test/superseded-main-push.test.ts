@@ -73,8 +73,6 @@ it("ignores pull requests and other workflows", () => {
 });
 
 it("never starves the running main push for a newer one still waiting its turn", () => {
-	// Main pushes queue on one concurrency group: the newer run stays queued
-	// until the running one finishes, so it must not mark that one superseded.
 	const superseded = supersededMainFabricPushRunIds([
 		{
 			id: 300,

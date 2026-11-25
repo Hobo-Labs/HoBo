@@ -1,5 +1,3 @@
-// Parse boundaries for Placement definitions and score snapshots (parse,
-// don't validate). data-models/placement.cue mirrors these rules.
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	type PlacementRecord,
@@ -23,7 +21,6 @@ export type ParsedScoreSnapshot = ScoreSnapshotRecord & {
 };
 
 export const SCORE_NAME = /^[a-z0-9][a-z0-9._-]{0,62}$/u;
-/** Placement names may not take this prefix: score snapshots share the placement stream family. */
 // public-contract: score-snapshot stream-name prefix within the placement stream family.
 export const SCORE_STREAM_PREFIX = "score-";
 export const SPREAD_KEYS = [
@@ -48,7 +45,6 @@ function invalid(
 	return reason("placement-invalid", message, remediation, subject);
 }
 
-/** `name` or `name=value`; undefined when malformed. */
 export function parseRequiredClaim(
 	entry: string,
 ): Readonly<{ name: string; value?: string }> | undefined {
@@ -248,25 +244,18 @@ export function parsePlacement(
 		);
 	}
 	if (reasons.length > 0) return { ok: false, reasons };
-	// SAFETY: every field was checked above; the brand records that.
 	return {
 		ok: true,
 		value: create(PlacementRecordSchema, placement) as ParsedPlacement,
 	};
 }
 
-/** Content digest of a score snapshot over everything but the digest itself. */
 export function scoreDigest(snapshot: ScoreSnapshotRecord): `sha256:${string}` {
 	return sha256Digest(
 		toJson(ScoreSnapshotRecordSchema, { ...snapshot, digest: "" }),
 	);
 }
 
-/**
- * Parse a reported score snapshot at `atMs`: it must be unexpired, valid for
- * at most `scoreMaxValidityMs`, and carry finite values only. The caller
- * stamps `reported_by`/`reported_at` before computing the digest.
- */
 export function parseScoreSnapshot(
 	snapshot: ScoreSnapshotRecord,
 	atMs: number,
@@ -326,7 +315,6 @@ export function parseScoreSnapshot(
 		);
 	}
 	if (reasons.length > 0) return { ok: false, reasons };
-	// SAFETY: every field was checked above; the brand records that.
 	return {
 		ok: true,
 		value: create(ScoreSnapshotRecordSchema, snapshot) as ParsedScoreSnapshot,

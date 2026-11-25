@@ -1,33 +1,3 @@
-/**
- * The reference Redis store's semantics.
- *
- * This is the oracle the conformance suite measures real adapters against, so
- * its correctness is upstream of every provider's. A reference implementation
- * that quietly diverged from Redis would make the whole suite certify the wrong
- * behaviour — and nothing would fail, because the reference is what "right"
- * means here.
- *
- * The cases worth stating rather than merely listing:
- *
- * **Expiry is lazy, and that is observable.** A key past its TTL is deleted on
- * the next touch, so `EXISTS` after expiry is 0 and `TTL` reports -2. Redis
- * distinguishes -2 (no key) from -1 (no expiry), and collapsing them would make
- * "never expires" indistinguishable from "already gone".
- *
- * **`SET NX` is the lock primitive.** It must fail against a live key and
- * succeed against an expired one, because that difference is exactly what a
- * caller is relying on when it uses NX to take a lease.
- *
- * **`WRONGTYPE` is a distinct answer.** Reading a list with `GET` is not "no
- * value"; returning nil there would let a type confusion pass silently.
- *
- * Note the reply shape: a Redis nil is `{ kind: "value", value: null }` rather
- * than its own kind, so "no value" and "the value null" are the same reply —
- * which is exactly how RESP models it.
- *
- * **Negative range indices count from the end**, so `LRANGE key 0 -1` means the
- * whole list. Getting that wrong truncates every full-list read by one.
- */
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/json.js";
 import {
@@ -36,11 +6,9 @@ import {
 } from "../src/reference-store.js";
 
 const store = (options: JsonObject = {}) =>
-	// SAFETY: `createReferenceRedisStore(options as never);` is required at this I/O or test boundary.
 	createReferenceRedisStore(options as never);
 
 const run = (s: ReturnType<typeof store>, ...command: string[]) =>
-	// SAFETY: `s.execute(command as never);` is required at this I/O or test boundary.
 	s.execute(command as never);
 
 describe("connection commands", () => {
@@ -67,8 +35,6 @@ describe("connection commands", () => {
 	});
 
 	it("records every command it was given", async () => {
-		// The recording is what lets a conformance run assert which calls an
-		// adapter made, not just what it returned.
 		const s = store();
 		await run(s, "PING");
 		await run(s, "GET", "k");
@@ -106,16 +72,12 @@ describe("SET and GET", () => {
 	});
 
 	it("measures the size in bytes rather than characters", async () => {
-		// A multi-byte character counts for its encoded length, which is what a
-		// server enforcing a byte cap will do.
 		const s = store({ maxValueBytes: 3 });
 		expect(await run(s, "SET", "k", "€")).toMatchObject({ kind: "value" });
 		expect(await run(s, "SET", "k", "€€")).toMatchObject({ kind: "error" });
 	});
 
 	it("rejects an unknown SET flag rather than ignoring it", async () => {
-		// Ignoring a flag would silently drop the caller's intent — an unnoticed
-		// KEEPTTL is a key that quietly loses its expiry.
 		const reply = await run(store(), "SET", "k", "v", "KEEPTTL");
 		expect(reply).toMatchObject({ kind: "error" });
 	});
@@ -129,8 +91,6 @@ describe("SET NX", () => {
 	});
 
 	it("refuses a key that already exists", async () => {
-		// The lock primitive: NX failing against a live key is what a caller
-		// taking a lease depends on.
 		const s = store();
 		await run(s, "SET", "k", "a");
 		expect(await run(s, "SET", "k", "b", "NX")).toMatchObject({ value: null });
@@ -144,8 +104,6 @@ describe("SET NX", () => {
 	});
 
 	it("succeeds once the existing key has expired", async () => {
-		// The other half of the lock: a lease whose holder died must become
-		// takeable.
 		const s = store();
 		await run(s, "SET", "k", "a", "EX", "1");
 		await s.advanceTime(2000);
@@ -206,8 +164,6 @@ describe("expiry", () => {
 
 describe("TTL", () => {
 	it("reports -2 for a key that does not exist", async () => {
-		// Redis distinguishes -2 (no key) from -1 (no expiry); collapsing them
-		// makes "never expires" indistinguishable from "already gone".
 		expect(await run(store(), "TTL", "absent")).toMatchObject({ value: -2 });
 	});
 
@@ -271,8 +227,6 @@ describe("DEL and TYPE", () => {
 	});
 
 	it("reports 0 for an already-expired key", async () => {
-		// Expired is gone, even though the entry is still physically present
-		// until something touches it.
 		const s = store();
 		await run(s, "SET", "k", "v", "EX", "1");
 		await s.advanceTime(2000);
@@ -292,7 +246,6 @@ describe("DEL and TYPE", () => {
 		[["ZADD", "k", "1", "m"], "zset"],
 	])("reports the type after %s", async (setup, type) => {
 		const s = store();
-		// SAFETY: `await run(s, ...(setup as string[]));` is required at this I/O or test boundary.
 		await run(s, ...(setup as string[]));
 		expect(await run(s, "TYPE", "k")).toMatchObject({ value: type });
 	});
@@ -320,7 +273,6 @@ describe("INCR and INCRBY", () => {
 	});
 
 	it("refuses to increment a non-numeric string", async () => {
-		// Coercing "abc" to 0 would silently reset a counter someone is reading.
 		const s = store();
 		await run(s, "SET", "c", "abc");
 		expect(await run(s, "INCR", "c")).toMatchObject({ kind: "error" });
@@ -373,7 +325,6 @@ describe("lists", () => {
 	});
 
 	it("returns the whole list for 0 to -1", async () => {
-		// The idiom every caller uses; an off-by-one here truncates every read.
 		const s = store();
 		await run(s, "RPUSH", "l", "a", "b", "c");
 		expect(await run(s, "LRANGE", "l", "0", "-1")).toMatchObject({
@@ -409,10 +360,8 @@ describe("WRONGTYPE", () => {
 		["LLEN", ["LLEN", "k"]],
 		["LRANGE", ["LRANGE", "k", "0", "-1"]],
 	])("refuses %s against the wrong type", async (_label, command) => {
-		// Returning nil here would let a type confusion pass silently.
 		const s = store();
 		await run(s, "HSET", "k", "f", "v");
-		// SAFETY: `expect(await run(s, ...(command as string[]))).toMatchObject({` is required at this I/O or test boundary.
 		expect(await run(s, ...(command as string[]))).toMatchObject({
 			kind: "error",
 		});
@@ -439,8 +388,6 @@ describe("WRONGTYPE", () => {
 
 describe("hashes", () => {
 	it("reports 1 for a new field and 0 for an update", async () => {
-		// The return value distinguishes insert from update, which is what a
-		// caller counting distinct fields relies on.
 		const s = store();
 		expect(await run(s, "HSET", "h", "f", "1")).toMatchObject({ value: 1 });
 		expect(await run(s, "HSET", "h", "f", "2")).toMatchObject({ value: 0 });
@@ -490,7 +437,6 @@ describe("sorted sets", () => {
 	});
 
 	it("breaks a score tie lexically, so the order is deterministic", async () => {
-		// Insertion order would make two identical datasets read differently.
 		const s = store();
 		await run(s, "ZADD", "z", "1", "b");
 		await run(s, "ZADD", "z", "1", "a");
@@ -530,8 +476,6 @@ describe("sorted sets", () => {
 
 describe("the deliberate-break option", () => {
 	it("fails only the named verb", async () => {
-		// The conformance suite needs a store that fails one command on purpose,
-		// to prove a failing run is reported rather than swallowed.
 		const s = store({ breakVerb: "GET" });
 		expect(await run(s, "SET", "k", "v")).toMatchObject({ kind: "value" });
 		expect(await run(s, "GET", "k")).toMatchObject({ kind: "error" });
@@ -546,15 +490,12 @@ describe("the deliberate-break option", () => {
 describe("the timeless store", () => {
 	it("executes commands", async () => {
 		const s = createTimelessReferenceStore();
-		// SAFETY: `expect(await s.execute(["PING"] as never)).toMatchObject({` is required at this I/O or test boundary.
 		expect(await s.execute(["PING"] as never)).toMatchObject({
 			value: "PONG",
 		});
 	});
 
 	it("exposes no time control, which is the point", () => {
-		// Its whole purpose is to exercise the conformance suite's skip path for
-		// adapters that cannot fast-forward a clock.
 		expect(createTimelessReferenceStore()).not.toHaveProperty("advanceTime");
 	});
 });

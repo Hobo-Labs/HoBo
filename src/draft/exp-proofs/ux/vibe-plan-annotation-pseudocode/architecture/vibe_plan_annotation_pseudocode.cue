@@ -1,6 +1,3 @@
-// CUE constraints for each HOBO-543 protobuf shape. The proof keeps plan
-// annotations bounded to deterministic fixtures and fails closed on missing or
-// unknown evidence.
 
 package architecture_evidence
 

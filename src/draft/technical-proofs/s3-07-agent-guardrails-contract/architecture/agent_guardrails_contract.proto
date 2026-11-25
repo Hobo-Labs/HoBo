@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the S3-07 Agent Guardrails
-// Contract draft package reasons about.
 
 enum AgentGuardrailsContractEvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

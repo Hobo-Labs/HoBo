@@ -26,26 +26,12 @@ import type {
 	ResolutionReceipt,
 } from "./types.js";
 
-// The enforcement/execution planes the broker wraps. Each plane is a port so
-// deployments can swap engines (OPA/Rego or Cedar for the policy plane, a
-// Pact broker for the contract plane, a metering service for billing, @hobo/cd
-// for delivery) without touching the brokering pipeline. The defaults below
-// COMPOSE @hobo/contracts — the Gatekeeper (contract compatibility + policy
-// pack + obligations + quota) is imported and RUN, not reinvented.
-
-// The engine-neutral gate verdict every policy engine lowers onto: the same
-// effect vocabulary as the Gatekeeper, per-plane machine-readable reasons,
-// and the decision facts the engine recorded (policy.Decided et al).
 export interface GateDecision {
 	effect: GatekeeperEffect;
 	reasons: RejectionReason[];
 	events: Array<JsonObject>;
 }
 
-// OPA-shaped: a decision request document in, an effect + reasons out. The
-// default runs the @hobo/contracts policy pack + Gatekeeper composition in
-// process; createOpaGatePlane (opa.ts) queries a Rego decision instead.
-// Engines may be remote, so evaluate is allowed to be async.
 export interface GatePlane {
 	evaluate(input: {
 		request: PolicyDecisionRequest;
@@ -53,8 +39,6 @@ export interface GatePlane {
 	}): GateDecision | Promise<GateDecision>;
 }
 
-// Billing enforcement plane: authorize estimated spend against the billing
-// policy (budget + per-resolution spend cap) before any placement happens.
 export interface BillingPlane {
 	authorize(input: {
 		spendEstimateUsd: number;
@@ -65,21 +49,14 @@ export interface BillingPlane {
 		ok: boolean;
 		reasons: RejectionReason[];
 	};
-	/** Only before a side effect has begun; uncertain effects retain funds. */
 	release?(requestId: string, confirmedUnused: true): void;
 }
 
-// Delivery plane: hand an accepted receipt to continuous delivery. Neutral
-// (ADR-0182 D14): the broker never renders a GitOps document, never names a
-// cluster or namespace, and never applies anything itself. A ticket records
-// how the receipt was routed and, through CD, which promotion carries it.
 export interface DeliveryTicket {
 	/** @deprecated display label (DeliveryRouteLabel); never read for routing. */
 	engine: DeliveryRouteLabel;
 	reconcilerMode: ReconcilerModeName;
-	/** The cd-gitops publisher target, in publisher mode. */
 	publisher?: string;
-	/** The CD promotion that carries this receipt, when delivered through CD. */
 	promotionId?: string;
 	target: string;
 	document: JsonObject;
@@ -198,8 +175,6 @@ export const DELIVERY_FAILURES = Object.freeze({
 
 export type DeliveryFailureCode = keyof typeof DELIVERY_FAILURES;
 
-// Live delivery fails closed: a refusal or transport error surfaces as a
-// thrown DeliverySubmissionError, never a silently dropped rollout.
 export class DeliverySubmissionError extends Error {
 	readonly code: DeliveryFailureCode;
 	readonly remediation: string;
@@ -216,11 +191,6 @@ export class DeliverySubmissionError extends Error {
 	}
 }
 
-/**
- * The in-process plane used when no CD is composed. It only runs the
- * in-process conductor; an agent or publisher policy fails closed, because
- * only @hobo/cd can drive those (no silent downgrade).
- */
 export function createDeliveryPlane(): DeliveryPlane {
 	return {
 		submit(receipt, held) {
@@ -242,7 +212,6 @@ export function createDeliveryPlane(): DeliveryPlane {
 	};
 }
 
-/** What the broker asks CD to do with one accepted receipt. */
 export type DeliveryPromotionRequest = Readonly<{
 	receipt: ResolutionReceipt;
 	delivery: NeutralDeliveryPolicy;
@@ -254,27 +223,16 @@ export type DeliveryPromotionReason = Readonly<{
 	remediation?: string;
 }>;
 
-/** CD's answer: the promotion that carries the receipt, or a refusal. */
 export type DeliveryPromotionResult =
 	| Readonly<{ ok: true; promotionId: string; target: string }>
 	| Readonly<{ ok: false; reasons: readonly DeliveryPromotionReason[] }>;
 
 export interface ReconcilerDeliveryPlaneOptions {
-	/**
-	 * Request a promotion from @hobo/cd (composed by the host). CD records the
-	 * Freight and promotes it; a reconciler converges the target by pull, or
-	 * the named cd-gitops publisher commits it and observes the engine.
-	 */
 	requestPromotion: (
 		request: DeliveryPromotionRequest,
 	) => Promise<DeliveryPromotionResult>;
 }
 
-/**
- * The broker delivers through CD (ADR-0182 D14). Every reconciler mode —
- * in-process conductor, pull agent, or GitOps publisher — goes through one
- * promotion request; the broker records the returned ticket and nothing else.
- */
 export function createReconcilerDeliveryPlane(
 	options: ReconcilerDeliveryPlaneOptions,
 ): DeliveryPlane {
@@ -321,8 +279,6 @@ export function createReconcilerDeliveryPlane(
 	};
 }
 
-// A minimal structural fetch so live planes stay testable against
-// pact-derived mocks and never force a global fetch polyfill.
 export type FetchLike = (
 	url: string,
 	init: {
@@ -332,8 +288,6 @@ export type FetchLike = (
 	},
 ) => Promise<{ status: number; json(): Promise<JsonValue> }>;
 
-// Adapt a parsed BrokerRequest into the OPA-shaped policy decision request the
-// gate plane evaluates: the most specific topology id becomes the resource.
 export function toPolicyDecisionRequest(
 	brokerId: string,
 	request: BrokerRequest,
@@ -348,8 +302,6 @@ export function toPolicyDecisionRequest(
 					? { kind: "junction", id: scope.junctionId }
 					: { kind: "bindle", id: scope.bindleId };
 	return {
-		// The broker acts as a control-plane service in the Policy IR's subject
-		// taxonomy (user | service | agent | system).
 		subject: { kind: "service", id: brokerId },
 		action: "hobo:broker:resolve",
 		resource,

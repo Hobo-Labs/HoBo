@@ -1,5 +1,3 @@
-// The pure verdict function: every WP9 Accept bullet that does not need the
-// journal is pinned here (the engine tests repeat them end to end).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

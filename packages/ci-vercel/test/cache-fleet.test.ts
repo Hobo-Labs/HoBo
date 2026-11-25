@@ -1,8 +1,3 @@
-/**
- * The cache fleet: exactly one active backend read from the register, sealed
- * moves, failing closed, and budget routing on the repair tick. Every member
- * is the in-memory engine; the clock is the test's.
- */
 import { parseEphemeralKey, parseEphemeralTtlMs } from "@hobo/core";
 import {
 	createMemoryRedisExecutor,
@@ -24,7 +19,6 @@ import { parseCacheOffers } from "../src/cache-offers.js";
 
 const TTL = 60_000;
 const SEAL = 150_000;
-// Ten days into November 2026.
 const START = Date.UTC(2026, 10, 11);
 const key = parseEphemeralKey("hobo-ci:test:lease:one");
 const ttl = parseEphemeralTtlMs(3_600_000);
@@ -96,7 +90,6 @@ function world(ids: CacheBackendId[] = ["upstash", "valkey", "turso"]) {
 			if (!found) throw new Error(`no member ${id}`);
 			return found;
 		},
-		/** Who holds `key`: the backend the relay's write landed on. */
 		async holders(): Promise<string[]> {
 			const found: string[] = [];
 			for (const entry of members)
@@ -104,7 +97,6 @@ function world(ids: CacheBackendId[] = ["upstash", "valkey", "turso"]) {
 					found.push(entry.binding.id);
 			return found;
 		},
-		/** Pretend a member has already spent `used` commands this month. */
 		async spend(id: CacheBackendId, used: number) {
 			await this.member(id).state.increment(
 				parseEphemeralKey(`hobo-ci:test:fleet:usage:${id}:commands:2026-11`),
@@ -180,7 +172,6 @@ describe("a planned move", () => {
 		const serving = w.instance();
 		await serving.state.putIfAbsent(key, "before", ttl);
 		await deciding.tick();
-		// Upstash has spent 150,000 commands in ten days: 90% projected.
 		await w.spend("upstash", 150_000);
 		const decision = await deciding.tick();
 		expect(decision).toMatchObject({
@@ -201,7 +192,6 @@ describe("a planned move", () => {
 			reasons: ["commands projected 90%"],
 			eligible: ["valkey", "turso"],
 		});
-		// The serving instance's answer is at most a minute old: still upstash.
 		await serving.state.get(key);
 		w.clock.now += TTL;
 		await expect(serving.state.get(key)).rejects.toMatchObject({
@@ -210,14 +200,12 @@ describe("a planned move", () => {
 		await expect(deciding.state.get(key)).rejects.toMatchObject({
 			reason: "sealed",
 		});
-		// Before the wait is over, a tick only reschedules.
 		expect(await deciding.tick()).toMatchObject({ action: "sealed-waiting" });
 		w.clock.now += SEAL;
 		expect(await serving.tick()).toMatchObject({
 			action: "activate",
 			active: "valkey",
 		});
-		// Cold start: the new backend holds nothing until the relay writes it.
 		await serving.state.putIfAbsent(key, "after", ttl);
 		w.clock.now += TTL;
 		expect(await deciding.state.get(key)).toMatchObject({ value: "after" });
@@ -298,8 +286,6 @@ describe("usage, per member, in the units it bills", () => {
 			allowance: { commands: 500_000 },
 			overBudget: false,
 		});
-		// Within the interval nothing is written; after it, the report's own
-		// increment is counted.
 		const before = w.lines.length;
 		await fleet.flushUsage();
 		expect(w.lines).toHaveLength(before);

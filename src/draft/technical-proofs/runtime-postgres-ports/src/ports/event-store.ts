@@ -180,7 +180,6 @@ export function createPostgresEventStore(pool: Pool, clock: Clock) {
       const quarantined: Array<JsonObject> = [];
 
       for (const event of events) {
-        // SAFETY: assertion to `const typed = event as { type: string; seq: number };` is required at this boundary.
         const typed = event as { type: string; seq: number };
         if (typed.type.endsWith(".Quarantined")) {
           continue;
@@ -225,30 +224,25 @@ function createEnvelope({
   clock: Clock;
 }) {
   const type = requireNonEmptyString(input.type, "event.type");
-  // SAFETY: assertion to `const actor = appendOptions.actor as JsonObject;` is required at this boundary.
   const actor = appendOptions.actor as JsonObject;
   return Object.freeze({
     id: `${streamId}:${seq}:${type}`,
     streamId,
     seq,
     type,
-    // SAFETY: assertion to `v: normalizeVersion((input.v as number | undefined) ?? 1),` is required at this boundary.
     v: normalizeVersion((input.v as number | undefined) ?? 1),
     ts: clock.now(),
     actor: clone(actor),
     tenant: requireNonEmptyString(appendOptions.tenant, "appendOptions.tenant"),
     causationId: optionalString(appendOptions.causationId, "appendOptions.causationId"),
     correlationId: optionalString(appendOptions.correlationId, "appendOptions.correlationId"),
-    // SAFETY: assertion to `data: clone((input.data as unknown) ?? {}),` is required at this boundary.
     data: clone((input.data as unknown) ?? {}),
-    // SAFETY: assertion to `meta: Object.freeze(clone((input.meta as JsonObject | undefined) ?? {})),` is required at this boundary.
     meta: Object.freeze(clone((input.meta as JsonObject | undefined) ?? {})),
   });
 }
 
 function publish(subscriptions: Set<Subscription>, envelope: JsonValue) {
   for (const subscription of subscriptions) {
-    // SAFETY: assertion to `if (matches(subscription.filter, envelope as { streamId: string; type: string })` is required at this boundary.
     if (matches(subscription.filter, envelope as { streamId: string; type: string })) {
       subscription.handler(clone(envelope));
     }
@@ -270,7 +264,6 @@ function normalizeHandlers(handlers: JsonValue) {
     throw new TypeError("foldOptions.handlers must be an object");
   }
   return new Map(
-    // SAFETY: assertion to `Object.entries(handlers as JsonObject).filter(` is required at this boundary.
     Object.entries(handlers as JsonObject).filter(
       ([, handler]) => handler instanceof Function,
     ) as Array<[string, (state: JsonValue, event: JsonValue) => JsonValue]>,
@@ -278,7 +271,6 @@ function normalizeHandlers(handlers: JsonValue) {
 }
 
 function getIdempotencyKey(input: JsonValue) {
-  // SAFETY: assertion to `const record = input as { meta?: { idempotencyKey?: string } };` is required at this boundary.
   const record = input as { meta?: { idempotencyKey?: string } };
   const key = record?.meta?.idempotencyKey;
   if (key === undefined) {
@@ -295,7 +287,6 @@ function normalizeEventInputs(events: JsonValue) {
     if (!event || !isJsonObject(event)) {
       throw new TypeError("event must be an object");
     }
-    // SAFETY: assertion to `return event as JsonObject;` is required at this boundary.
     return event as JsonObject;
   });
 }
@@ -308,11 +299,9 @@ function normalizeVersion(value: number) {
 }
 
 function normalizeSeq(value: JsonValue, fieldName: string) {
-  // SAFETY: assertion to `if (!Number.isSafeInteger(value) || (value as number) < 0) {` is required at this boundary.
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw new TypeError(`${fieldName} must be a non-negative safe integer`);
   }
-  // SAFETY: assertion to `return value as number;` is required at this boundary.
   return value as number;
 }
 

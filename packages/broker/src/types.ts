@@ -1,8 +1,3 @@
-// Domain views of the wire contracts in data-models/broker.proto. The parsers
-// in policies.ts / broker.ts / connector-registry.ts apply the protobuf + CUE
-// constraints (parse, don't validate), so these parsed domain types are
-// unrepresentable in an invalid state past the parser boundary.
-
 import type {
 	GuestResolutionEvidence,
 	GuestResolutionInput,
@@ -42,7 +37,6 @@ export const SCALE_DIRECTIONS = ["up", "down", "zero"] as const;
 export type ScaleDirection = (typeof SCALE_DIRECTIONS)[number];
 
 // public-contract: how a Camp converges (ADR-0182 D14). Neutral: the broker
-// names no GitOps engine, cluster or namespace.
 export const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
 export type ReconcilerModeName = (typeof RECONCILER_MODES)[number];
 
@@ -53,11 +47,6 @@ export type LegacyDeliveryEngine = (typeof LEGACY_DELIVERY_ENGINES)[number];
 // public-contract: the cd-gitops publisher a legacy `argo` engine maps to.
 export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
 
-/**
- * Display label for a delivery route, kept for existing readers of the
- * pre-D14 `engine` field: `in-proc` for the in-process conductor, `agent`,
- * or `publisher:<target>`. Derived on parse; never read for routing.
- */
 export type DeliveryRouteLabel = "in-proc" | "agent" | `publisher:${string}`;
 
 // domain-view: branded canonical digest of a parsed BrokerPolicySet; wire form is the policy_hash field of ResolutionReceipt in data-models/broker.proto.
@@ -82,23 +71,19 @@ export interface BillingPolicy {
 	quotaLimit: number;
 	budgetUsd: number;
 	spendCapUsd: number;
-	/** Explicit unlimited mode; numeric zero otherwise means no paid admission. */
 	budgetUnlimited?: boolean;
 	spendCapUnlimited?: boolean;
 }
 
 // domain-view: parsed cd-gitops publisher reference; wire form is DeliveryPublisher in data-models/broker.proto.
 export interface DeliveryPublisher {
-	/** cd-gitops publisher target, e.g. `argo-cd` or `flux`. */
 	readonly target: string;
-	/** GitOps repository the publisher commits to, when the policy names one. */
 	readonly repository?: string;
 }
 
 // domain-view: parsed (neutral) delivery-plane policy; wire form is DeliveryPolicy in data-models/broker.proto.
 export interface NeutralDeliveryPolicy {
 	readonly reconcilerMode: ReconcilerModeName;
-	/** Present exactly when `reconcilerMode` is `publisher`. */
 	readonly publisher?: DeliveryPublisher;
 	readonly syncMode: "auto" | "manual";
 	readonly prune: boolean;
@@ -120,7 +105,6 @@ export interface LegacyDeliveryPolicy {
 	readonly destinationNamespace?: string;
 }
 
-/** A delivery policy as held in a policy set: neutral, or a legacy literal. */
 export type DeliveryPolicy = NeutralDeliveryPolicy | LegacyDeliveryPolicy;
 
 // domain-view: parsed connector registration; wire form is ConnectorConfig in data-models/broker.proto.
@@ -166,7 +150,6 @@ export interface BrokerRequest {
 	scope: TopologyScope;
 	requirements: readonly ResourceRequirement[];
 	spendEstimateUsd: number;
-	/** Anonymous/pre-claim resolution inputs (ADR-0151); absent for an owned deployment. */
 	guest?: GuestResolutionInput;
 }
 
@@ -190,11 +173,8 @@ export interface ResolutionReceipt {
 	policyHash: PolicyHash;
 	placementPolicyId: string;
 	placements: readonly PlacementDecision[];
-	/** Station occupancy — required on every receipt. */
 	stationId: string;
-	/** Content-addressed active Rail hash — required on every receipt. */
 	railHash: string;
-	/** Claim-relevant evidence for a guest deployment (ADR-0151); never bearer material. */
 	guest?: GuestResolutionEvidence;
 }
 
@@ -223,10 +203,6 @@ export interface ScaleDirective {
 	replicas: number;
 }
 
-// Structural mirror of @hobo/cloud's PlannerRegistry / ResourceDefinition
-// (packages/cloud/src/registry/catalog.ts). The broker depends on the
-// catalog's *layout*, not on @hobo/cloud, so a real PlannerRegistry satisfies
-// BrokerCatalog structurally and broker stays inward of cloud.
 export interface BrokerCatalogDefinition {
 	id: string;
 	providerId: string;

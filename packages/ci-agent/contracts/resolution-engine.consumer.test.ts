@@ -73,7 +73,6 @@ describe("resolution engine consumer contract", () => {
 			maxOutputTokens: 1000,
 			signal: new AbortController().signal,
 		};
-		// The request the engine receives is exactly the contract's message.
 		expect(JSON.parse(resolutionPrompt(request))).toEqual(contents);
 
 		const [region] = contents.regions;

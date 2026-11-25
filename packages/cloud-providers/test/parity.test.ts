@@ -33,10 +33,6 @@ import {
 	vercel,
 } from "../src/index.js";
 
-/**
- * The resolved side, imported straight from each provider package — not read
- * back through `PARITY_SOURCES` — so a source wired to the wrong constant fails.
- */
 const RESOLVED_CONSTANTS = {
 	aws: AWS_RESOLVED_PRODUCT_IDS,
 	azure: AZURE_RESOLVED_PRODUCT_IDS,
@@ -49,7 +45,6 @@ const RESOLVED_CONSTANTS = {
 	vercel: VERCEL_RESOLVED_PRODUCT_IDS,
 } as const;
 
-/** Each provider namespace by name, for the bare-`Yard()` recount below. */
 const NAMESPACES = {
 	aws,
 	azure,
@@ -139,7 +134,6 @@ describe("providerParity()", () => {
 
 	it("renders the parity table from code", () => {
 		const table = rows.map(formatParityClaim).join("\n");
-		// Printed so a reviewer sees the projection, not just a green tick.
 		console.log(`\n${table}\n`);
 		expect(table.split("\n")).toHaveLength(PARITY_PROVIDERS.length);
 	});

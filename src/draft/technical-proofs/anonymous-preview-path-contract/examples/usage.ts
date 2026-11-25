@@ -1,12 +1,3 @@
-/**
- * Runnable example for anonymous-preview-path-contract. The draft-artifact gate EXECUTES
- * this with `node --import tsx` and diffs stdout against usage.expected.txt.
- *
- * Proves HOBO-164: a no-identity/no-Camp `npx hobo up` becomes a 24h hosted anonymous
- * preview — unowned, claimable, unguessable URL — that auto-expires with teardown, blocks
- * on abuse caps with no public URL, and denies cross-tenant access. Deterministic clock,
- * ids, and nonce.
- */
 import { strict as assert } from "node:assert";
 
 import {
@@ -40,7 +31,6 @@ const deterministicOptions = () => ({
 	nonceFactory: () => "nonce0123456789abcdef012345",
 });
 
-// 1) Anonymous `npx hobo up` -> hosted 24h preview with a live, unguessable URL.
 const plan = createAnonymousPreviewPlan(baseRequest(), deterministicOptions());
 assert.equal(plan.status, "ready");
 assert.equal(plan.route, "hosted-anonymous-preview");
@@ -57,14 +47,12 @@ console.log(`url: ${plan.deployment.url}`);
 console.log(`ttl: ${plan.deployment.ttl.hours}h expiresAt=${plan.deployment.ttl.expiresAt}`);
 console.log(`events: ${plan.events.map((event: { type: string }) => event.type).join(" -> ")}`);
 
-// 2) The unowned record hands off to `hobo claim` preserving URL + state.
 const handoff = createClaimHandoff(plan.record);
 assert.equal(handoff.claimCommand, `hobo claim ${plan.record.claimRef}`);
 assert.equal(handoff.preserves.url, plan.deployment.url);
 assert.equal(handoff.preserves.stateDigest, plan.deployment.stateDigest);
 console.log(`claim: ${handoff.claimCommand} preservesUrl=${handoff.preserves.url === plan.deployment.url}`);
 
-// 3) TTL: before expiry nothing happens; after expiry teardown is requested server-side.
 const beforeTtl = expireAnonymousPreview(plan.record, { now: "2026-06-27T09:59:59.000Z" });
 assert.equal(beforeTtl.action, "none");
 const expired = expireAnonymousPreview(plan.record, { now: "2026-06-27T10:00:01.000Z" });
@@ -75,7 +63,6 @@ console.log(
 );
 console.log(`expiry events: ${expired.events.map((event: { type: string }) => event.type).join(" -> ")}`);
 
-// 4) Abuse/rate caps block BEFORE provisioning: no deployment, no public URL.
 const blocked = createAnonymousPreviewPlan(
 	{
 		...baseRequest(),
@@ -94,7 +81,6 @@ assert.equal(blocked.deployment, null);
 assert.equal(blocked.events.at(-1).type, "anonymousPreview.Blocked");
 console.log(`abuse cap: status=${blocked.status} code=${blocked.code} url=${blocked.url}`);
 
-// 5) Anonymous previews are tenant-isolated: cross-tenant writes are denied.
 const ownRead = authorizeAnonymousPreviewAccess(plan.deployment, {
 	tenantId: plan.deployment.tenantId,
 	operation: "read",
@@ -110,7 +96,6 @@ console.log(
 	`tenancy: ownRead=${ownRead.decision} foreignWrite=${foreignWrite.decision} code=${foreignWrite.code}`,
 );
 
-// 6) Guessable preview URLs are rejected outright.
 assert.throws(
 	() =>
 		createAnonymousPreviewPlan(baseRequest(), {

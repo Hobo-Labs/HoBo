@@ -1,7 +1,3 @@
-// Event bodies of the desired-state module are the protobuf JSON form of the
-// generated records (cd.proto). Parse, don't validate: these parsers are the
-// only way to obtain the branded `Parsed*` derived types, and they apply the
-// constraints in data-models/sets.cue.
 import { fromJson, type JsonValue, toJson } from "@bufbuild/protobuf";
 import {
 	CampManagement,
@@ -26,9 +22,7 @@ import { isJsonObject, member, toJsonValue } from "./json.js";
 declare const parsedSet: unique symbol;
 declare const parsedDelta: unique symbol;
 
-/** A SetRecord that satisfies #SetRecord in sets.cue. */
 export type ParsedSet = SetRecord & { readonly [parsedSet]: "cd.ParsedSet" };
-/** A DeltaRecord that satisfies #DeltaRecord in sets.cue. */
 export type ParsedDelta = DeltaRecord & {
 	readonly [parsedDelta]: "cd.ParsedDelta";
 };
@@ -68,7 +62,6 @@ function decode<T>(parse: () => T, code: SetsFailureCode, subject: string): T {
 	}
 }
 
-/** Event data crosses the JSON document boundary before protobuf parsing. */
 const asJson = <T>(data: T): JsonValue => toJsonValue(data);
 
 export function encodeSet(set: SetRecord): JsonValue {
@@ -113,7 +106,6 @@ export function checkSet(
 		fail(code, "resolved_set_bytes must be positive", subject);
 	if (Number.isNaN(Date.parse(set.createdAt)))
 		fail(code, "created_at must be an RFC 3339 timestamp", subject);
-	// SAFETY: every #SetRecord constraint was checked above.
 	return Object.freeze(set) as ParsedSet;
 }
 
@@ -162,7 +154,6 @@ export function checkDelta(
 			fail(code, `resource ${change.resource} changes twice`, subject);
 		seen.add(change.resource);
 	}
-	// SAFETY: every #DeltaRecord constraint was checked above.
 	return Object.freeze(delta) as ParsedDelta;
 }
 
@@ -212,17 +203,8 @@ export function parseObservation<T>(data: T): ReconcileObservationRecord {
 }
 
 // public-contract: schema id of the reconcile status envelope; equal to
-// RECONCILE_STATUS_SCHEMA in reconcile/status-events (a test pins the two).
 export const STATUS_ENVELOPE_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
 
-/**
- * The observation a status-stream body carries. The reconcile transport
- * writes `{ schema, observation }` (#ReconcileStatusEvent in reconcile.cue);
- * a body with no `schema` member is the legacy bare record and is read as
- * one. A body naming a schema this module does not know is undefined: it
- * cannot prove what it observed, so it never becomes the Camp's status. A
- * known envelope whose observation does not decode is `journal-invalid`.
- */
 export function parseStatusBody<T>(
 	data: T,
 ): ReconcileObservationRecord | undefined {
@@ -239,7 +221,6 @@ export function parseStatusBody<T>(
 	return parseObservation(observation);
 }
 
-/** Management from a camp.* body (`management` as enum name or number); undefined when absent. */
 export function managementOf<T>(data: T): CampManagement | undefined {
 	const raw = member(data, "management");
 	if (raw === "CAMP_MANAGEMENT_MANAGED" || raw === CampManagement.MANAGED)

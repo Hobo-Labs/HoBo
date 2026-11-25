@@ -7,7 +7,6 @@ export type MergeSegment =
 	| Readonly<{ kind: "text"; text: string }>
 	| Readonly<{
 			kind: "conflict";
-			/** Position among the file's conflict regions, from zero. */
 			id: number;
 			ours: string;
 			base: string;
@@ -24,16 +23,10 @@ const MARKERS = ["<", "|", "=", ">"] as const;
 type Marker = (typeof MARKERS)[number];
 type Side = "ours" | "base" | "theirs";
 
-/** Lines with their terminators kept, so joining them reproduces the input. */
 function lines(text: string): string[] {
 	return text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
 }
 
-/**
- * A marker length no input line can be mistaken for: one more than the
- * longest run of a marker character that starts a line in any side, and at
- * least git's default of seven.
- */
 export function markerSizeFor(sides: readonly string[]): number {
 	let longest = 6;
 	for (const side of sides)
@@ -51,7 +44,6 @@ function markerOf(line: string, size: number): Marker | undefined {
 	const first = line.charAt(0);
 	const marker = MARKERS.find((candidate) => candidate === first);
 	if (!marker || !line.startsWith(marker.repeat(size))) return undefined;
-	// A longer run is file content; a label follows a space.
 	const rest = line.slice(size).replace(/\r?\n$/, "");
 	if (rest === "" || (marker !== "=" && rest.startsWith(" "))) return marker;
 	return undefined;
@@ -69,7 +61,6 @@ export function parseMergeSegments(
 	let settled = "";
 	let side: Side | undefined;
 	let region = { ours: "", base: "", theirs: "" };
-	// The side a marker must close, and the side it opens.
 	const closes = {
 		"<": undefined,
 		"|": "ours",
@@ -138,7 +129,6 @@ export type RegionRefusal =
 	| "oversized-resolution"
 	| "repeated-context";
 
-/** The lines of a text that have anything but whitespace, without terminators. */
 function contentLines(text: string): string[] {
 	return lines(text)
 		.map((line) => line.replace(/\r?\n$/, ""))
@@ -181,7 +171,6 @@ export function fitRegionResolution(
 	context: RegionContext = { before: "", after: "" },
 ): { text: string } | { refusal: RegionRefusal } {
 	const sides = region.ours + region.theirs;
-	// Room to combine both sides and add glue; not room for unrelated code.
 	if (resolution.length > 2 * sides.length + 4096)
 		return { refusal: "oversized-resolution" };
 	if (/^(?:<{7,}|>{7,}|\|{7,})(?: |\r?$)/m.test(resolution))

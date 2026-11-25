@@ -1,8 +1,3 @@
-/**
- * Reruns main-gate jobs still bound to an offline peer box JIT after witness
- * deregister — never cancels a workflow run or touches foreign/ARC runners.
- */
-
 import {
 	type GithubTransport,
 	getJob,
@@ -178,9 +173,7 @@ export function createOfflineJitJobRecovery(options: {
 					rerunWindowMs,
 				);
 				await applyRerunPolicy(record, policy, run);
-			} catch {
-				/* transient GitHub read */
-			}
+			} catch {}
 		}
 	}
 

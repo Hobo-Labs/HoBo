@@ -43,7 +43,7 @@ Changes to referenced experience proofs that this rollup has taken in.
 | `src/draft/exp-proofs/dx/svid-cross-tenant-guard-contract` | `data-models/proof.cue` | none |
 | `src/draft/technical-proofs/hobo-auth-json-contract` | latest validated leaf hardening | Signed manifest and broker fixture behavior unchanged. |
 | `src/draft/technical-proofs/hobo-jwt-svid-contract` | latest validated leaf hardening | Workload SVID trust and claim behavior unchanged. |
-| `src/draft/technical-proofs/hobo-principal-ref-contract` | latest validated leaf hardening | Principal serialization and policy subject behavior unchanged. |
+| `src/draft/technical-proofs/hobo-principal-ref-contract` | comment-cleanup leaf refresh | Principal serialization and policy subject behavior unchanged. |
 
 All of these are the same edit, applied across 58 draft proofs at once. Each
 ships a `data-models/proof.proto` declaring `message ProofIdentity { string
@@ -90,7 +90,9 @@ nothing that validated before stops validating.
 | Referenced proof | Change | Effect on this rollup |
 |---|---|---|
 | `src/draft/technical-proofs/secretless-config-resolution-contract` | final validated leaf hardening | Secretless resolution evidence unchanged. |
-| `src/draft/technical-proofs/static-key-escape-hatch-contract` | final validated leaf hardening | Static escape-hatch boundary evidence unchanged. |
+| `src/draft/technical-proofs/connector-runtime-broker-contract` | comment-cleanup leaf refresh | Connector broker boundary evidence unchanged. |
+| `src/draft/technical-proofs/hobo-relay-contract` | comment-cleanup leaf refresh | Relay SVID attach boundary evidence unchanged. |
+| `src/draft/technical-proofs/static-key-escape-hatch-contract` | comment-cleanup leaf refresh | Static escape-hatch boundary evidence unchanged. |
 | `src/draft/technical-proofs/svid-auto-rotation-contract` | final validated leaf hardening | SVID rotation evidence unchanged. |
 | `src/draft/technical-proofs/svid-partition-grace-spike` | final validated leaf hardening | Partition-grace evidence unchanged. |
 | `src/draft/technical-proofs/token-broker-ha-cache-contract` | final validated leaf hardening | Broker cache evidence unchanged. |

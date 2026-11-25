@@ -1,4 +1,3 @@
-// A composed orchestrator over the real Harness engine adapter and the fakes.
 import { createHarnessRolloutEngine } from "../../src/adapters/harness.js";
 import type { RolloutEngine, RolloutOrchestrator } from "../../src/ports.js";
 import type { CanaryCapacity } from "../../src/rollout/capacity.js";

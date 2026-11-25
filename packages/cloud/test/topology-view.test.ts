@@ -15,12 +15,6 @@ import {
 	topologyViewProjection,
 } from "../src/index.js";
 
-// E21 TopologyView projection: the app-graph read model beside deployment-view,
-// folding the SAME deployment stream into nodes (bindle/resources/yards) and
-// edges (bindings/placements). Deterministic golden: a fixed event fixture
-// folds to byte-stable JSON; rebuild-from-zero equals the live fold (the log
-// is authoritative).
-
 const actor: PrincipalRef = { kind: "user", id: "user/topo-tester" };
 const DEPLOYMENT = "topo-1";
 const STREAM = `deployment:${DEPLOYMENT}`;
@@ -41,7 +35,6 @@ afterEach(() => {
 	stores = [];
 });
 
-// A fixed deployment trail: requested -> matched -> planned -> provisioned.
 function deploymentTrail() {
 	return [
 		{
@@ -141,7 +134,6 @@ async function appendTrail(store: RuntimeLocalEventStore): Promise<void> {
 	});
 }
 
-// The byte-stable golden app graph the fixed trail folds to.
 const GOLDEN_ROW = {
 	deploymentId: DEPLOYMENT,
 	nodes: [
@@ -206,7 +198,6 @@ describe("TopologyView projection: app graph folded from the deployment stream",
 		const row = topologyViewProjection.get(snapshot, DEPLOYMENT);
 		expect(row).toEqual(GOLDEN_ROW);
 
-		// Byte-stable: two independent folds serialize identically.
 		const again = topologyViewProjection.get(
 			topologyViewProjection.fold(events),
 			DEPLOYMENT,

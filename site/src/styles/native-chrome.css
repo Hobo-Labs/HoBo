@@ -1,12 +1,6 @@
-/* ==========================================================================
-   Native chrome — scrollbars, cursors, selects, details, form accents.
-   OS defaults break Rubberhose (grey thumbs, system arrows, bland pointers).
-   Loaded from Base.astro after global.css so tokens re-ink day/night/palettes.
-   ========================================================================== */
 
 :root {
 	--control-radius: 8px;
-	/* Thick-ink cursors. White stroke stays readable on night paper. */
 	--cursor-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23101010' stroke='%23f2f1ec' stroke-width='1.6' stroke-linejoin='round' d='M3.5 2.5 19 11.2l-6.2 1.6 2.8 7.1-2.7 1.1-2.9-7.2L3.5 17.5z'/%3E%3C/svg%3E")
 		4 2,
 		auto;
@@ -24,8 +18,6 @@ html {
 	scrollbar-color: var(--ink) var(--bg-inset);
 }
 
-/* Sticker scrollbar — hard ink thumb on inset track.
-   Declaring width/height opts out of overlay scrollbars so the chrome shows. */
 *::-webkit-scrollbar {
 	width: 14px;
 	height: 14px;
@@ -103,7 +95,6 @@ pre {
 	cursor: not-allowed;
 }
 
-/* Single-selects: strip OS chrome, ink chevron, sticker edge. */
 select:not([multiple]) {
 	appearance: none;
 	-webkit-appearance: none;
@@ -139,7 +130,6 @@ select:not([multiple]):disabled {
 	cursor: not-allowed;
 }
 
-/* Disclosure: ink chevron instead of OS triangle. */
 details > summary {
 	list-style: none;
 	cursor: var(--cursor-point);
@@ -191,7 +181,6 @@ input[type="range"] {
 	cursor: var(--cursor-point);
 }
 
-/* Kill the AI-tell left accent bar on blockquotes — even ink frame instead. */
 .prose blockquote {
 	border: 2.5px dashed color-mix(in srgb, var(--accent) 70%, var(--ink));
 	border-left-width: 2.5px;

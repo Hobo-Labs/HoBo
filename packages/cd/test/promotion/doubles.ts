@@ -1,5 +1,3 @@
-// Test doubles for the frozen ports the promotion saga composes. Each models
-// its port's documented contract; none is reachable from production code.
 import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
@@ -288,7 +286,6 @@ export class FakePipelines implements PipelineController {
 
 type StoredSet = { set: SetRecord; resolved: ResolvedDeploymentSet };
 
-/** DesiredStateReader & DeltaLedger with WP4's documented rules (one open Delta per Camp, diff check, I12). */
 export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	readonly sets = new Map<string, StoredSet>();
 	readonly currentByCamp = new Map<string, string>();
@@ -404,7 +401,6 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 				reasons: [reason("delta-unknown", "unknown Delta", "open it")],
 			};
 		if (entry.status === "applied" && entry.setId)
-			// SAFETY: test fixture; the value is the shape the port declares.
 			return { ok: true, value: (this.sets.get(entry.setId) as StoredSet).set };
 		if (entry.status !== "open")
 			return {
@@ -462,7 +458,6 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	}
 }
 
-/** Builds resolved sets like Matching would: one `web` resource on the Camp's provider. */
 export function resolvedFor(
 	campId: string,
 	provider: string,
@@ -562,7 +557,6 @@ export class FakeResolver implements SetResolver {
 						this.providers.get(input.campId) ?? "alpha",
 						input.freight.freightId,
 					);
-		// SAFETY: test fixture; the value is the shape the port declares.
 		let infrastructureDiff = [] as ReturnType<typeof diffResolvedSets>;
 		if (input.sourceCampId) {
 			const source = await this.desired.current(input.sourceCampId);
@@ -655,7 +649,6 @@ export class FakeRollouts implements RolloutOrchestrator {
 		const plan = this.plans.find((p) => p.rolloutId === rolloutId);
 		const status =
 			this.statusByCamp.get(plan?.targetCampIds[0] ?? "") ?? this.status;
-		// SAFETY: test rollout ids are minted above.
 		return {
 			rolloutId: rolloutId as RolloutId,
 			status,
@@ -699,7 +692,6 @@ export class FakeVerification implements VerificationEngine {
 			freightId: input.freightId,
 			cohortAware: input.cohortAware,
 		});
-		// SAFETY: test verification ids are minted here.
 		return `verif-${this.started.length}` as VerificationId;
 	}
 	async get(id: VerificationId) {
@@ -753,7 +745,6 @@ export class FakeNotify implements NotificationPort {
 	}
 }
 
-/** CampPolicy per WP24's contract: INFORM sets the candidate, ENFORCE replaces the enforced digest. */
 export class FakeCampPolicy implements CampPolicy {
 	readonly bindings = new Map<string, PolicyBindingRecord>();
 	readonly previous = new Map<string, string>();

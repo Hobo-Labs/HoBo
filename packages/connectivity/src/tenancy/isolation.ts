@@ -9,7 +9,6 @@ import { parseTenantId } from "@hobo/core";
 export interface TenantControlPlanePartition {
 	readonly tenantId: TenantId;
 	readonly partitionKey: string;
-	/** Logical stream / store prefix for hard control-plane isolation. */
 	readonly eventStreamPrefix: string;
 	readonly brokerNamespace: string;
 }
@@ -29,10 +28,6 @@ export interface TenantIsolationRegistry {
 		tenantId: TenantId | string,
 	): TenantControlPlanePartition | null;
 	listPlanes(): readonly TenantOverlayPlane[];
-	/**
-	 * Assert two subjects cannot share a hard-isolated plane.
-	 * Soft tenants share the default overlay and rely on PolicyEngine.
-	 */
 	assertNetworkIsolation(
 		a: TenantId | string,
 		b: TenantId | string,
@@ -51,12 +46,6 @@ export interface TenantIsolationRegistryOptions {
 	readonly defaultMode?: TenantIsolationMode;
 }
 
-/**
- * Hard multi-tenant isolation:
- * - soft: shared OverlayNetwork; isolation is PolicyEngine + IDs
- * - hard-overlay: dedicated OverlayNetwork instance + overlayNetworkId tags
- * - hard-control-plane: hard-overlay + dedicated control-plane partition keys
- */
 export function createTenantIsolationRegistry(
 	overlays: TenantOverlays,
 	options: TenantIsolationRegistryOptions = {},

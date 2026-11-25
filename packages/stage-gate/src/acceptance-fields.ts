@@ -1,18 +1,3 @@
-/**
- * Every field RunReport v1 requires, and what `parseAiBddRunReport` does with
- * it: `read` (its value decides the evidence or a refusal) or
- * `ignored: <why>` (it must be present, since v1 requires it and the objects
- * the parser walks are closed, but any value of it leaves the evidence as it
- * is). A read object or array lists its own required fields below it; an
- * ignored one does not, because nothing beneath it is looked at.
- *
- * `test/acceptance-fields.test.ts` walks the schema copied into
- * `test/fixtures/ai-bdd/run-report.v1.schema.json` and fails on a required
- * field this table does not name, on an entry the schema does not require,
- * on a `read` field whose removal the parser accepts, on an `ignored` field
- * whose removal is refused for anything but its absence, and on an `ignored`
- * field whose value changes the evidence.
- */
 const ID =
 	"ignored: identifies the scenario or step; report_digest pins the whole report";
 

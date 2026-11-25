@@ -81,7 +81,9 @@ function main(argv: readonly string[]): number {
 		`plans:guard: ${found.length} plan document(s) ${staged ? "staged for commit" : "tracked by git"}. Plans are never committed.`,
 	);
 	for (const { file, reason } of found) console.error(`  ${file}: ${reason}`);
-	console.error("Finish the work and remove planning or design documents.");
+	console.error(
+		"Remove planning documents and track unfinished work in Linear.",
+	);
 	return 1;
 }
 

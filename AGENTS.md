@@ -7,9 +7,13 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports.
-- Complete unfinished work when practical. Track remaining work in the HoBo
-  Linear team and remove deferred-work markers from the repository.
+  dynamic imports. Preserve comments used as input
+  by comment-driven training and its executable fixtures. Independent
+  submodules follow their own rules unless their work is explicitly requested.
+- Treat TODOs and other deferred markers as flags. Resolve a small in-scope
+  task directly or record genuinely unfinished work in the HoBo Linear team,
+  using an existing issue when possible, before removing its marker. Do not
+  invent feature work or change behavior merely to remove a comment.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
@@ -24,8 +28,8 @@ over conflicting repository workflow guidance.
   and report any contradiction before building. The `hobo-setup` skill covers
   owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
-  Track outstanding work in Linear, then remove them. Keep user and operator
-  documentation about behavior that actually exists.
+  Record genuinely outstanding work in Linear, then remove the artifacts. Keep
+  user and operator documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
 - When work needs an MCP server, check the active host's tools. If the server

@@ -1,13 +1,7 @@
-/**
- * Operator SDK resource definitions for Convex (custom adapter authoring).
- * Uses @hobo/sdk `defineResource` so Matching catalogs the same records
- * provider packages publish — not a second definition shape.
- */
 import { defineResource } from "@hobo/sdk";
 
 import { CONVEX_PROVIDER_ID } from "./manifest.js";
 
-/** Reactive document database port realized on Convex (Cloud or self-host). */
 export const convexReactiveDatabase = defineResource({
 	type: "database",
 	engine: "document",
@@ -35,7 +29,6 @@ export const convexReactiveDatabase = defineResource({
 	},
 });
 
-/** Compute / HTTP actions on a Convex deployment. */
 export const convexWebService = defineResource({
 	type: "compute",
 	class: "function-host",

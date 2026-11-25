@@ -1,5 +1,3 @@
-// Shared wiring for the WP23 failover tests: a completed fan-out over two EU
-// Camps, spares in the US and the EU, and a failover controller over fakes.
 import { create } from "@bufbuild/protobuf";
 import {
 	FailoverPolicyRecordSchema,
@@ -53,7 +51,6 @@ export async function setup(
 	}> = {},
 ) {
 	const h = harness();
-	// Fleet: two serving Camps in the EU, spares in the US (sorted first) and the EU.
 	const decision = decisionOf(2, 2, { prefix: "eu-" });
 	h.inventory.add("eu-000", { regions: ["eu-west-1"], provider: "aws" });
 	h.inventory.add("eu-001", { regions: ["eu-west-1"], provider: "aws" });
@@ -132,7 +129,6 @@ export function taint(s: Setup, campId: string): void {
 	);
 }
 
-/** Tick the failover controller, settling replacement promotions with `outcome`. */
 export async function run(
 	s: Setup,
 	outcome: "pass" | "fail" | "hold" = "pass",
@@ -152,10 +148,8 @@ export const departs = (s: Setup, campId: string) =>
 		(c) => c.request.intent === "depart" && c.request.targets[0] === campId,
 	);
 
-/** The branded id of a failover record the controller returned. */
 export function failoverIdOf(
 	record: Readonly<{ failoverId: string }> | undefined,
 ): FailoverId {
-	// SAFETY: failover ids in records are minted by failoverIdFor.
 	return (record?.failoverId ?? "") as FailoverId;
 }

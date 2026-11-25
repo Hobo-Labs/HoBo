@@ -5,7 +5,6 @@ export type TurboInvoke = Readonly<{
 	prefix: readonly string[];
 }>;
 
-/** How CI invokes turbo: `pnpm exec` in full jobs, `mise exec` in install-free planners. */
 export function resolveTurboInvoke(): TurboInvoke {
 	const mode = process.env.HOBO_TURBO_INVOKER?.trim();
 	if (mode === "mise") {

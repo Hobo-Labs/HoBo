@@ -1,12 +1,3 @@
-/**
- * The origin the check compares is the one git fetches from. git reads
- * `remote.origin.url` through `[include]` and fetches from the first of
- * several values; `git config --get` answers the last and `-f <file>` does not
- * follow an include. With origin `[B, A]` the check saw A, accepted the clone
- * as this upstream's, and `git ls-remote origin` contacted B. The check now
- * reads every value, through includes, and accepts a single value that is the
- * repository `.gitmodules` names.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -26,7 +17,6 @@ import {
 const MOVE_ASIDE =
 	"fix: mv external/lib external/lib.kept && git submodule update --init -- external/lib";
 
-/** external/lib cloned from A, its section renamed to `lib` (so the module directory is under another name). */
 function setUp() {
 	const dir = scratch("origin-values");
 	const a = makeRemote(dir);
@@ -49,7 +39,6 @@ function facts(lib: string) {
 	};
 }
 
-/** The urls git would fetch `origin` from, first one first (through includes). */
 function urlsGitReads(root: string, config: string): string[] {
 	const run = spawnSync(
 		"git",
@@ -81,7 +70,6 @@ const setUrls = (root: string, config: string, urls: readonly string[]) => {
 	}
 };
 
-/** An include of a file that sets origin's url to `url`, placed before or after the file's own sections. */
 const include = (
 	dir: string,
 	config: string,

@@ -1,8 +1,3 @@
-// Two drivers of one migration. Every fact is a compare-and-set on the head
-// the run read, every side effect that moves or releases write authority has
-// a fact in front of it, and a batch from a driver that has been superseded
-// is refused by the store. So the driver that falls behind stops — and stops
-// without touching either store.
 import assert from "node:assert/strict";
 import type { PrincipalRef } from "@hobo/core";
 import { describe, test } from "vitest";
@@ -50,7 +45,6 @@ function journalOf(kind: (typeof JOURNALS)[number]): MigrationJournal {
 			);
 }
 
-/** A point one driver waits at until the test lets it go. */
 function gate() {
 	let open: () => void = () => {};
 	let arrive: () => void = () => {};
@@ -61,7 +55,6 @@ function gate() {
 		arrive = resolve;
 	});
 	return {
-		/** Called by the stalled driver: tell the test, then wait. */
 		async wait(): Promise<void> {
 			arrive();
 			await opened;
@@ -87,10 +80,6 @@ function errorOf(outcome: Settled): Error {
 	return outcome.error;
 }
 
-/**
- * The same stage, with every release of the source's fence recorded. Both
- * drivers in a test are given this source, so a release by either is seen.
- */
 function watchingFence(staged: Stage) {
 	const fence = requirePort(staged.source, "fence");
 	const releases: string[] = [];
@@ -124,7 +113,6 @@ describe("the journal is a compare-and-set on the head a run loaded", () => {
 			});
 			await journal.append("m1", fact(0), 0);
 			await journal.append("m1", fact(1), 1);
-			// A driver that loaded one fact, while another appended the second.
 			await assert.rejects(
 				async () => journal.append("m1", fact(2), 1),
 				(cause) =>
@@ -132,7 +120,6 @@ describe("the journal is a compare-and-set on the head a run loaded", () => {
 					cause.code === "JOURNAL_CONFLICT" &&
 					cause.expectedCount === 1,
 			);
-			// Nor may a driver append past a head it has not seen.
 			await assert.rejects(
 				async () => journal.append("m1", fact(2), 3),
 				JournalConflictError,
@@ -143,7 +130,6 @@ describe("the journal is a compare-and-set on the head a run loaded", () => {
 				(await journal.load("m1")).map((entry) => entry.data.resumedAt),
 				["0", "1", "2"],
 			);
-			// Another migration's stream is another head.
 			await journal.append("m2", fact(0), 0);
 		});
 
@@ -151,7 +137,6 @@ describe("the journal is a compare-and-set on the head a run loaded", () => {
 			const journal = journalOf(kind);
 			const staged = await stage("hub");
 			const loaded = gate();
-			// Both load an empty journal before either appends.
 			const slow: MigrationJournal = {
 				async load(id) {
 					const facts = await journal.load(id);
@@ -190,8 +175,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 				const authority = new Authority();
 				const stall = gate();
 				const ramp: number[] = [];
-				// Driver B: stalls inside shift-reads — a slow router call. It
-				// loaded the journal before A's cutover.
 				const b = settle(
 					runSnapshotAndTail(
 						copyOptions(staged, {
@@ -205,8 +188,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 					),
 				);
 				await stall.arrived;
-				// Driver A — a retry, a second worker — takes the same migration
-				// to the soak window.
 				const a = await runSnapshotAndTail(
 					copyOptions(staged, {
 						flipAuthority: authority.flip,
@@ -216,7 +197,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 				assert.equal(a.status, "held");
 				assert.equal(a.state.cutOver, true);
 				assert.equal(authority.side, "target");
-				// The target is the authority now and takes a write.
 				await staged.target.records.write({
 					dataset: "orders",
 					mutations: [order("post-cutover", "42")],
@@ -228,8 +208,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 				assert.ok(error instanceof JournalConflictError, String(error));
 				assert.ok(isSupersededError(error));
 
-				// B touched neither store: no fence released, reads not sent
-				// home, no fact, no second flip.
 				assert.deepEqual(releases, []);
 				assert.deepEqual(ramp, [10, 50, 100]);
 				assert.equal(authority.side, "target");
@@ -248,8 +226,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 		const { staged, releases } = watchingFence(await stage("hub"));
 		const authority = new Authority();
 		const stall = gate();
-		// B gets as far as raising the fence and reading the tail under it,
-		// then stalls with that batch in hand.
 		let raised = false;
 		let stalled = false;
 		const fence = requirePort(staged.source, "fence");
@@ -282,8 +258,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 					{ ...staged, source: slow },
 					{ flipAuthority: authority.flip, soakDecision: () => "hold" },
 					{
-						// A write lands on the source just before B fences it, so
-						// the tail under the fence has something in it.
 						afterPhase: async (phase) => {
 							if (phase === "shift-reads") {
 								await staged.source.records.write({
@@ -299,7 +273,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 		await stall.arrived;
 		assert.equal(await fenced(staged.source), true, "B raised the fence");
 
-		// A new driver picks the migration up and cuts over.
 		const a = await runSnapshotAndTail(
 			copyOptions(staged, {
 				flipAuthority: authority.flip,
@@ -309,8 +282,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 		assert.equal(a.status, "held");
 		assert.equal(authority.side, "target");
 		assert.equal(await totalOf(staged.target, "late"), "1");
-		// The authority moves on: the record B still holds is changed and
-		// another is erased.
 		await staged.target.records.write({
 			dataset: "orders",
 			mutations: [order("late", "2"), erase("o-2")],
@@ -319,7 +290,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 
 		stall.open();
 		const error = errorOf(await b);
-		// The store refused the batch; the run stopped without compensating.
 		assert.ok(error instanceof StaleApplyError, String(error));
 		assert.deepEqual(releases, [], "the fence was not released");
 		assert.equal(await totalOf(staged.target, "late"), "2");
@@ -339,8 +309,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 		let stalled = false;
 		const fence = requirePort(staged.source, "fence");
 		const verify = requirePort(staged.source, "verify");
-		// B raises the fence, drains (nothing to apply), and stalls just as it
-		// is about to compare the two sides.
 		const slow: EngineBinding = {
 			...staged.source,
 			fence: {
@@ -384,8 +352,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 			}),
 		);
 		assert.equal(a.status, "held");
-		// The target takes a write, so B's comparison will now fail — and what
-		// B used to do about a failed comparison was release the fence.
 		await staged.target.records.write({
 			dataset: "orders",
 			mutations: [order("post-cutover", "42")],
@@ -472,7 +438,6 @@ describe("scenario (a): a driver stalled before the cutover, another cuts over",
 });
 
 describe("scenario (b): a driver still seeding after another cut over", () => {
-	/** A source whose first snapshot chunk is read, then held back. */
 	function slowScan(source: EngineBinding, stall: ReturnType<typeof gate>) {
 		const snapshot = requirePort(source, "snapshot");
 		let first = true;
@@ -519,7 +484,6 @@ describe("scenario (b): a driver still seeding after another cut over", () => {
 		);
 		assert.equal(a.status, "held");
 		assert.equal(authority.side, "target");
-		// An erasure and an update on the authority.
 		await staged.target.records.write({
 			dataset: "orders",
 			mutations: [erase("o-2"), order("o-1", "100")],
@@ -552,12 +516,10 @@ describe("scenario (b): a driver still seeding after another cut over", () => {
 			),
 		);
 		await stall.arrived;
-		// The source changes after B read its chunk…
 		await staged.source.records.write({
 			dataset: "orders",
 			mutations: [order("o-1", "100")],
 		});
-		// …and A's tail carries the change to the target.
 		const a = await runSnapshotAndTail(
 			copyOptions(staged, {}, { pauseAfter: "converge" }),
 		);

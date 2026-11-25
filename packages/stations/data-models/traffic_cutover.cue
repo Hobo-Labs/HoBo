@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in traffic_cutover.proto, so the
-// architecture guard can confirm the cutover saga data shapes are bounded at
-// parse time. Promoted from the domain-cutover-saga-contract draft proof.
 
 package stations
 

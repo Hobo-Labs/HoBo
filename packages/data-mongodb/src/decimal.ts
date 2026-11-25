@@ -1,21 +1,9 @@
-/**
- * Decimal128 text, without a BSON library.
- *
- * The canonical `decimal` is an arbitrary-precision plain decimal string.
- * BSON's Decimal128 is a coefficient of at most 34 digits and an exponent in
- * [-6176, 6111], and a server prints it in scientific notation whenever the
- * exponent is positive or the value is very small. Three pure functions cover
- * the trip: can this canonical value be held exactly, what does the server
- * print for it, and what plain decimal does a printed value denote.
- */
-
 export const DECIMAL128_MAX_DIGITS = 34;
 export const DECIMAL128_MIN_EXPONENT = -6176;
 export const DECIMAL128_MAX_EXPONENT = 6111;
 
 interface DecimalParts {
 	readonly negative: boolean;
-	/** Coefficient digits, no leading zeros (a zero coefficient is `0`). */
 	readonly digits: string;
 	readonly exponent: number;
 }
@@ -32,14 +20,9 @@ function parseDecimalText(text: string): DecimalParts | undefined {
 	return { negative: match[1] === "-", digits, exponent };
 }
 
-/**
- * Fit a coefficient and exponent into Decimal128 without changing the value:
- * trailing zeros may move into the exponent and back, nothing else may move.
- */
 function fitDecimal128(parts: DecimalParts): DecimalParts | undefined {
 	let { digits, exponent } = parts;
 	if (digits === "0") {
-		// Zero has every exponent; clamp into range.
 		exponent = Math.min(
 			Math.max(exponent, DECIMAL128_MIN_EXPONENT),
 			DECIMAL128_MAX_EXPONENT,
@@ -69,11 +52,6 @@ function fitDecimal128(parts: DecimalParts): DecimalParts | undefined {
 	return { negative: parts.negative, digits, exponent };
 }
 
-/**
- * The text to hand a Decimal128 parser for a canonical decimal, or `undefined`
- * when the value cannot be held exactly. The canonical text itself is used
- * whenever it fits, so `1000` is stored as `1000` and not as `1E+3`.
- */
 export function toDecimal128Text(canonical: string): string | undefined {
 	const parts = parseDecimalText(canonical);
 	if (parts === undefined) return undefined;
@@ -86,11 +64,6 @@ export function toDecimal128Text(canonical: string): string | undefined {
 	return `${sign}${fitted.digits}E${fitted.exponent < 0 ? "" : "+"}${fitted.exponent}`;
 }
 
-/**
- * What a MongoDB server prints for a Decimal128 parsed from `text` — the
- * IEEE 754-2008 scientific string. `undefined` when the text is not a finite
- * decimal or would need inexact rounding, which a driver refuses to send.
- */
 export function formatDecimal128(text: string): string | undefined {
 	const parsed = parseDecimalText(text);
 	if (parsed === undefined) return undefined;
@@ -111,11 +84,6 @@ export function formatDecimal128(text: string): string | undefined {
 	return `${sign}${mantissa}E${adjusted < 0 ? "" : "+"}${adjusted}`;
 }
 
-/**
- * The plain decimal a printed Decimal128 denotes, or `undefined` for `NaN`,
- * the infinities, and anything else that is not a finite decimal. The result
- * is plain but not yet normalised; the canonical parser does that.
- */
 export function fromDecimal128Text(text: string): string | undefined {
 	const parts = parseDecimalText(text);
 	if (parts === undefined) return undefined;

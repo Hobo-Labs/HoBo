@@ -1,11 +1,3 @@
-// Builds a Sigstore bundle shaped exactly like one GitHub `actions/attest`
-// (actions/attest-build-provenance) produces — v0.3 bundle, DSSE envelope over
-// an in-toto Statement v1 with an SLSA provenance v1 predicate, a Fulcio-style
-// leaf certificate carrying the GitHub Actions OIDC extensions and an embedded
-// SCT, and a Rekor `dsse` 0.0.1 entry with both an inclusion promise (SET) and
-// an inclusion proof with a signed checkpoint — under a throwaway trust root
-// (CA, CT log and Rekor keys) generated per test run. Every check sigstore's
-// verifier makes against public-good runs unchanged against this root.
 import {
 	createHash,
 	createPublicKey,
@@ -20,7 +12,6 @@ import {
 	type JsonValue,
 } from "../../src/artifacts/json.js";
 
-// ── DER ────────────────────────────────────────────────────────────────────
 function length(n: number): Buffer {
 	if (n < 0x80) return Buffer.from([n]);
 	const bytes: number[] = [];
@@ -76,7 +67,6 @@ const extension = (id: string, value: Buffer, critical = false) =>
 
 const ECDSA_SHA256 = seq(oid("1.2.840.10045.4.3.2"));
 const spki = (key: KeyObject) => key.export({ type: "spki", format: "der" });
-/** RFC 5280 method 1: SHA-1 of the subjectPublicKey BIT STRING contents. */
 const keyId = (key: KeyObject) =>
 	createHash("sha1").update(spki(key).subarray(-65)).digest();
 const logIdOf = (key: KeyObject) =>
@@ -86,7 +76,6 @@ function certificate(tbs: Buffer, issuerKey: KeyObject): Buffer {
 	return seq(tbs, ECDSA_SHA256, bitString(sign("sha256", tbs, issuerKey)));
 }
 
-/** Sorted-key JSON, the canonical form Rekor bodies and SET payloads use. */
 function canonical(value: JsonValue): string {
 	if (isJsonArray(value)) return `[${value.map(canonical).join(",")}]`;
 	if (isJsonObject(value))
@@ -97,7 +86,6 @@ function canonical(value: JsonValue): string {
 	return JSON.stringify(value);
 }
 
-// ── GitHub Actions identity ────────────────────────────────────────────────
 export const GITHUB_ISSUER = "https://token.actions.githubusercontent.com";
 export const GITHUB_BUILDER = "https://github.com/actions/runner/github-hosted";
 export const RELEASE_WORKFLOW =
@@ -239,7 +227,6 @@ export type BundleOptions = Readonly<{
 	issuer?: string;
 }>;
 
-/** Sign `statement` the way actions/attest does and return the serialized v0.3 bundle. */
 export function actionsAttestBundle(
 	root: TestTrustRoot,
 	options: BundleOptions,
@@ -289,7 +276,6 @@ export function actionsAttestBundle(
 			explicit(3, seq(...extensions)),
 		);
 
-	// Embedded SCT over the precertificate TBS (the TBS without the SCT list).
 	const preTbs = head(baseExtensions);
 	const timestamp = Buffer.alloc(8);
 	timestamp.writeBigUInt64BE(BigInt(options.signedAtMs));
@@ -332,7 +318,6 @@ export function actionsAttestBundle(
 	);
 	const leafPem = `-----BEGIN CERTIFICATE-----\n${leafCert.toString("base64").replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----\n`;
 
-	// DSSE envelope.
 	const payloadType = "application/vnd.in-toto+json";
 	const pae = Buffer.concat([
 		Buffer.from(
@@ -347,7 +332,6 @@ export function actionsAttestBundle(
 		signatures: [{ sig: signature.toString("base64"), keyid: "" }],
 	};
 
-	// Rekor dsse entry, SET and a one-leaf inclusion proof with a signed checkpoint.
 	const body = Buffer.from(
 		canonical({
 			apiVersion: "0.0.1",

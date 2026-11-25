@@ -1,8 +1,3 @@
-/**
- * Anonymous Cloudflare Environment Station worker — operator bootstrap only.
- * No Bindle / app code. Serves station health for Pool → Deploy stations.
- * Canonical module also ships in @hobo/provider-cloudflare (ENVIRONMENT_STATION_WORKER_MODULE).
- */
 export default {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);

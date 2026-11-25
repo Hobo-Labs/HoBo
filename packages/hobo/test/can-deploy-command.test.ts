@@ -7,11 +7,6 @@ import { describe, expect, it } from "vitest";
 
 import { createCanDeployCommand } from "../src/index.js";
 
-// `hobo can-deploy` runs the real @hobo/contracts can-deploy engine over the
-// project's manifest: with no declared contracts it is compatible by
-// construction; a candidate that drops a field a deployed consumer depends on is
-// reported as a breaking change.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -47,11 +42,8 @@ async function withProject(
 
 function runInput(cwd: string) {
 	return {
-		// SAFETY: assertion required at this I/O or test boundary.
 		context: { cwd, projectDir: cwd } as CliContext,
-		// SAFETY: assertion required at this I/O or test boundary.
 		flags: { cwd } as never,
-		// SAFETY: assertion required at this I/O or test boundary.
 		args: [] as readonly string[],
 		verb: "can-deploy",
 		emitProgress: () => {},
@@ -75,8 +67,6 @@ const deployed = createBoundaryContract({
 		providedFields: ["id", "tenantId"],
 	},
 });
-// The candidate drops `tenantId` from what it provides — a breaking change for
-// the deployed consumer that requires it.
 const breakingCandidate = createBoundaryContract({
 	id: "orders",
 	version: "2.0.0",
@@ -126,7 +116,6 @@ describe("createCanDeployCommand", () => {
 			expect(result.status).toBe("breaking");
 			expect(result.code).toBe("HOBO_CANNOT_DEPLOY");
 			expect(
-				// SAFETY: assertion required at this I/O or test boundary.
 				(result.data as { reasons: unknown[] }).reasons.length,
 			).toBeGreaterThan(0);
 			expect(Array.isArray(result.remediation)).toBe(true);

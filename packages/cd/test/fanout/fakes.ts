@@ -1,6 +1,3 @@
-// Test doubles for the WP23 fan-out and failover tests. Each models one
-// frozen port (ports.ts, @hobo/core eventstore); none is reachable from
-// production code.
 import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
@@ -91,9 +88,7 @@ export const TENANT = "acme";
 export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
 export const SECOND = 1_000;
 export const MINUTE = 60 * SECOND;
-/** Brand a fixture Freight id. */
 export function freightIdOf(id: string): FreightId {
-	// SAFETY: test fixture Freight ids are literal sha256 ids.
 	return id as FreightId;
 }
 
@@ -102,7 +97,6 @@ export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
 export function camp(id: string): CampId {
-	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
@@ -132,10 +126,6 @@ export function reasonOf(code: string, message = code): ReasonRecord {
 	});
 }
 
-/**
- * In-memory DurableEventStore with conformance semantics: per-stream
- * expected-seq CAS, idempotency-key dedup, and optional durable leases.
- */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	private readonly all: PositionedEvent[] = [];
@@ -145,7 +135,6 @@ export class MemoryEventStore implements DurableEventStore {
 	>();
 	private nextId = 1;
 	private fences = 0n;
-	/** Test hook: runs before the CAS of the next append. */
 	beforeAppend: (() => Promise<void>) | undefined;
 	leaseNow: () => number = () => T0;
 	claimSubscription?: NonNullable<DurableEventStore["claimSubscription"]>;
@@ -172,12 +161,9 @@ export class MemoryEventStore implements DurableEventStore {
 				};
 				this.leases.set(key, lease);
 				return {
-					// SAFETY: test double mints ids from the claim options.
 					subscriptionId: o.subscriptionId as SubscriptionId,
-					// SAFETY: test double mints ids from the claim options.
 					partitionId: o.partitionId as PartitionId,
 					holderId: o.holderId,
-					// SAFETY: test double; monotonic counter.
 					fenceToken: lease.fence as FenceToken,
 					expiresAt: new Date(lease.expiresAt).toISOString(),
 				};
@@ -190,7 +176,6 @@ export class MemoryEventStore implements DurableEventStore {
 		}
 	}
 
-	/** Test helper: take a lease as another holder (simulates a second replica). */
 	async holdLease(
 		subscriptionId: string,
 		holderId: string,
@@ -242,11 +227,9 @@ export class MemoryEventStore implements DurableEventStore {
 				ts: new Date(T0).toISOString(),
 				actor: opts.actor,
 				tenant: opts.tenant,
-				// SAFETY: appended bodies are JSON by construction (protobuf JSON).
 				data: structuredClone(input.data) as EventEnvelope["data"],
 			};
 			if (input.meta) envelope.meta = structuredClone(input.meta);
-			// SAFETY: test double; positions minted from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -310,7 +293,6 @@ export class MemoryEventStore implements DurableEventStore {
 		return this.streams.get(streamId) ?? [];
 	}
 
-	/** Every event, in journal order (golden replay). */
 	journal(): readonly Readonly<{
 		type: string;
 		streamId: string;
@@ -363,7 +345,6 @@ export class FakeAuthorizer implements CdAuthorizer {
 	}
 }
 
-/** Freight ledger: usable unless yanked; qualifications recorded by tests or by FakePromotions. */
 export class FakeFreight
 	implements Pick<FreightLedger, "isUsable" | "qualifications">
 {
@@ -428,10 +409,6 @@ const LIVE: ReadonlySet<PromotionState> = new Set([
 	PromotionState.VERIFYING,
 ]);
 
-/**
- * PromotionService double: idempotent by key; tests settle promotions.
- * Tracks the peak number of live forward promotions (I20 chaos checks).
- */
 export class FakePromotions implements PromotionService {
 	readonly byId = new Map<string, PromotionRecord>();
 	readonly byKey = new Map<string, string>();
@@ -443,7 +420,6 @@ export class FakePromotions implements PromotionService {
 	}[] = [];
 	readonly refuse = new Set<string>();
 	readonly refuseRollback = new Set<string>();
-	/** Chaos: throw a transient error on promote with this probability source. */
 	throwOn: ((request: PromoteRequest) => boolean) | undefined;
 	peakLive = 0;
 	private next = 1;
@@ -500,7 +476,6 @@ export class FakePromotions implements PromotionService {
 		return { ok: true, value: record };
 	}
 
-	/** Settle the latest forward promotion for a Camp. */
 	settle(campId: string, outcome: "pass" | "fail" | "superseded"): void {
 		const record = [...this.byId.values()]
 			.reverse()
@@ -609,7 +584,6 @@ export function healthy(
 	});
 }
 
-/** CampInventory double over a mutable map of topology + status. */
 export class FakeInventory implements CampInventory {
 	readonly camps = new Map<string, CampView>();
 	statusCalls = 0;
@@ -686,7 +660,6 @@ export class FakeWindows implements ChangeWindows {
 	}
 }
 
-/** Desired-state double: current Set, resolved plan and last observation per Camp. */
 export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	readonly sets = new Map<string, SetRecord>();
 	readonly resolvedSets = new Map<string, ResolvedDeploymentSet>();
@@ -702,7 +675,6 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async current(campId: CampId) {
 		return this.sets.get(campId);
 	}
-	// DesiredStateReader.get(SetId) & DeltaLedger.get(DeltaId): WP23 calls neither.
 	async get(_id: string): Promise<undefined> {
 		return undefined;
 	}
@@ -730,7 +702,6 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	async reject(): Promise<void> {}
 }
 
-/** A decision of `n` Camps `c000…` chunked into groups of `size`. */
 export function decisionOf(
 	n: number,
 	size: number,
@@ -789,14 +760,12 @@ export function fanoutOf(
 	});
 }
 
-/** The decision's group at `index`; throws in a malformed fixture. */
 export function groupAt(decision: PlacementDecisionRecord, index: number) {
 	const group = decision.groups[index];
 	if (group === undefined) throw new Error(`fixture has no group ${index}`);
 	return group;
 }
 
-/** A real (Gatekeeper-approved) resolved set over the given plan resources. */
 export function resolvedSet(
 	campId: string,
 	resources: readonly Readonly<{ name: string; port: string }>[],

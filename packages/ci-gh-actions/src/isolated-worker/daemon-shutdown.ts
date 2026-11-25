@@ -1,7 +1,6 @@
 import type { Configuration } from "@hobo/ci";
 import { isIsolatedContainerOffer } from "../isolated-backend.js";
 
-/** Lease states where this worker may still be launching or running a container. */
 export const IN_FLIGHT_WORKER_LEASE_STATES = new Set([
 	"dispatching",
 	"claiming",
@@ -15,17 +14,10 @@ type WorkerLeaseRow = Readonly<{
 	state: string;
 }>;
 
-/** Offer ids are unique per account only, so ownership keys on both. */
 export function workerOfferKey(accountId: string, offerId: string): string {
 	return `${accountId}\0${offerId}`;
 }
 
-/**
- * The offers this worker launches containers for: isolated-container offers
- * whose `providerAccountId` is the worker, disabled ones included (a lease
- * outlives its offer being switched off). A lease's `accountId` is the
- * customer account that owns the job, never the worker.
- */
 export function workerOfferKeys(
 	configuration: Configuration | undefined,
 	workerAccountId: string,
@@ -52,7 +44,6 @@ export function countInFlightWorkerLeases(
 	).length;
 }
 
-/** Running worker containers without a counted lease still block drain. */
 export function mergeDrainInFlightCount(
 	leaseCount: number,
 	runningWorkerContainers: number,
@@ -67,7 +58,6 @@ export type WorkerBackgroundDrainKind =
 	| "gc"
 	| "orphanReconcile";
 
-/** SIGTERM must not wait on poll/tick/inbox longer than this when no job runs. */
 export const DEFAULT_DRAIN_BACKGROUND_BOUND_MS = 30_000;
 
 export async function awaitWorkerBackgroundDrainIdle(options: {
@@ -110,11 +100,6 @@ export async function awaitWorkerBackgroundDrainIdle(options: {
 	return { timedOut: inFlight.length > 0, inFlight };
 }
 
-/**
- * Waits until nothing this worker launched is still in flight, running jobs
- * included. A lease leaves `running` only when a reconcile sees its runner
- * exit, so `reconcile` (a tick that admits nothing) runs before every count.
- */
 export async function waitForIsolatedWorkerDrain(options: {
 	inFlight: () => Promise<number>;
 	reconcile: () => Promise<void>;
@@ -165,7 +150,6 @@ export function parseWorkerStopMode(value: string | undefined): WorkerStopMode {
 	throw new Error("invalid HOBO_CI_WORKER_STOP_MODE");
 }
 
-/** Second drain signal may exit when inventory shows no running worker containers. */
 export async function shouldForceExitDrainOnRepeatSignal(options: {
 	signalCount: number;
 	draining: boolean;

@@ -223,11 +223,8 @@ function normalizeSourceModel(
 	};
 
 	assertValidWitSource(sources.wit, layout.wit);
-	// SAFETY: `const zod = toStableValue(sources.zod) as RawZod;` is required at this I/O or test boundary.
 	const zod = toStableValue(sources.zod) as RawZod;
-	// SAFETY: `const allow = toStableValue(sources.allow) as RawAllow;` is required at this I/O or test boundary.
 	const allow = toStableValue(sources.allow) as RawAllow;
-	// SAFETY: `const bindle = toStableValue(sources.bindle) as RawBindleFile;` is required at this I/O or test boundary.
 	const bindle = toStableValue(sources.bindle) as RawBindleFile;
 
 	const schemas = new Map(

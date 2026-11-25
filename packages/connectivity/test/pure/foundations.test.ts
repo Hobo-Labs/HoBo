@@ -1,11 +1,3 @@
-/**
- * Pure in-process foundations: naming, memory DNS, overlays via CLI stubs
- * (no HTTP fetch), tenancy, named endpoints, config.
- *
- * External HTTP (Cloudflare, Route53, Tailscale API, Netbird API, Stripe, OPA)
- * is covered exclusively by contracts/ consumer + provider PACT suites.
- */
-
 import assert from "node:assert/strict";
 import {
 	createMeteringBus,
@@ -253,7 +245,6 @@ describe("overlay CLI stubs (no HTTP)", () => {
 			nameservers: ["100.100.100.100"],
 		});
 		expect(magic.domains).toContain("hobo.test");
-		// Without API key: local-only path (control plane not applied over HTTP).
 		expect(magic.notes.join(" ")).toMatch(
 			/split-dns|hobo\.test|controlPlaneApplied=false|TS_API_KEY/,
 		);

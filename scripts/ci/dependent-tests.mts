@@ -1,58 +1,3 @@
-/**
- * Which test files of a changed package's dependents can see the change.
- *
- * `turbo run test --filter=...[base]` runs every dependent's whole suite when
- * one of its dependencies changed, though a dependent's test can only notice a
- * change its import closure reaches. That closure is followed file by file and
- * across packages through each package's `exports`, so a dependent importing
- * `@hobo/ci-gh-actions/client` does not see a change to the worker daemon. The
- * plan: every package with a changed file runs its whole suite; each dependent
- * runs only the test files whose closure reaches a changed file, its whole
- * suite when they all do, and nothing when none do.
- *
- * Edges: static and dynamic imports, `resolve("…")` calls, and string literals
- * naming an existing repository path relative to the file, its package or the
- * repository root (`new URL("../dist/bin/hobo.js", import.meta.url)`,
- * `join(here, "../../connectivity/contracts/pacts")`). A bare `"./"` or
- * `"../"` is that directory, unless it only tests a string (the first
- * argument of `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll`,
- * an operand of `===`, a `case` label). A `dist/`
- * path stands for the `src/` file built into it. A literal naming another package's file
- * (`hobo ci serve --with-worker` spawning the worker daemon) is that one file,
- * not its imports: it runs as its own process and its package's suite covers
- * it. Entering a package by importing it or naming one of its files also
- * reaches its `package.json`, its `turbo.json`, its `tsconfig.json`, every
- * tsconfig its scripts name, what those extend inside the package and the
- * config of a bundler its scripts run: they shape what an importer gets. A directory read does not:
- * `join(here, "../../lib/fixtures")` reads data the manifest does not shape.
- * A package entry that maps to no source file stands for the whole package
- * and its workspace dependencies. A dependent's test with a computed `import()`
- * or a relative import that resolves to nothing runs. A dependent runs in full
- * when its `test` script is not plain `vitest run` or its vitest config's
- * closure reaches the change; a package whose script is not plain runs whole
- * or not at all, since its script cannot take a file list.
- *
- * Every other package runs the tests whose closure concretely reaches a
- * changed path: a path outside every package (the root vitest config, a doc a
- * test reads), or a file another package imports by relative path without
- * depending on it. There a give-up does not count, or a docs edit would run
- * every package.
- *
- * Node builtins only.
- *
- * CLI: `git diff --name-only BASE HEAD | node --experimental-strip-types scripts/ci/dependent-tests.mts [--base=BASE] [--run [turbo args…]]`
- * `--base` compares root package.json/turbo.json against the merge base, so
- * scripts-only manifest edits and `//#` task edits stay scoped exactly as
- * the workflow's affected-lanes step scoped them; omitting it widens.
- * prints the plan; `--run` also runs it (one turbo call for the whole suites
- * and every build the subsets need, then each subset's test task alone with
- * its files passed through to vitest; the other arguments go to the first
- * call) and exits non-zero when any of it fails.
- * `--shard=INDEX/COUNT` assigns every whole suite and dependent subset to
- * exactly one zero-based shard; a repo-wide plan covers every workspace.
- * `--plan-shards=MAX` runs nothing: it prints the JSON list of shard indexes
- * this plan needs (`[0]` to `[0, …, MAX-1]`) and the plan itself on stderr.
- */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { availableParallelism, totalmem } from "node:os";
@@ -72,9 +17,7 @@ import {
 	workspaceTestSeconds,
 } from "./workspace-test-durations.mts";
 
-/** Repository access, injectable so tests can describe a tree in memory. */
 export type Repo = Readonly<{
-	/** Tracked files, repository-relative. */
 	files: ReadonlySet<string>;
 	read: (path: string) => string | undefined;
 	workspaces: readonly Workspace[];
@@ -84,14 +27,11 @@ export type TestPlan =
 	| { readonly mode: "all"; readonly reason: string }
 	| {
 			readonly mode: "scoped";
-			/** Package dirs whose whole suite runs. */
 			readonly full: readonly string[];
-			/** Package dir → test files (relative to it) that run. */
 			readonly subsets: ReadonlyMap<string, readonly string[]>;
 			readonly vitestShards?:
 				| ReadonlyMap<string, VitestShardSlices>
 				| undefined;
-			/** Dependents none of whose tests reach the change. */
 			readonly skipped: readonly string[];
 	  };
 
@@ -126,13 +66,6 @@ export function planUnits(
 	].sort();
 }
 
-/**
- * Workspaces Turbo would run for this plan (test tasks only for repo-wide plans).
- *
- * A repo-wide plan reads the test task graph. `graph` is injectable like the
- * workspace list beside it, so a caller that describes a tree in memory
- * describes its graph too instead of being compared with this repository's.
- */
 export function testWorkspaceUnits(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
@@ -164,10 +97,6 @@ function countPackageTestFiles(repo: Repo, packageDir: string): number {
 	return count;
 }
 
-/**
- * Wall seconds one plan unit should contribute to shard balancing: whole suites
- * use the package table; subsets use a per-test-file share of that package.
- */
 export function planUnitLoadSeconds(
 	plan: TestPlan,
 	unit: string,
@@ -295,7 +224,6 @@ export function shardUnitSeconds(
 	return slice ? seconds / slice.count : seconds;
 }
 
-/** Longest-processing-time-first multi-way partition by measured workspace seconds. */
 export function partitionUnitsByWeight(
 	units: readonly string[],
 	durations: WorkspaceDurationTable,
@@ -360,7 +288,6 @@ export function maxShardLoadSeconds(
 	);
 }
 
-/** Partition by workspace so a suite or dependent subset is never split or dropped. */
 export function shardTestPlan(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
@@ -379,7 +306,6 @@ export function shardTestPlan(
 		index >= count
 	)
 		throw new Error("invalid workspace test shard");
-	// Read once: for a repo-wide plan this is a `turbo --dry=json` run.
 	const dirs = testWorkspaceUnits(plan, workspaces, graph);
 	const units = expandShardUnits(plan, dirs, durations, repo);
 	const weightFor = (unit: string) =>
@@ -431,14 +357,8 @@ export function shardTestPlan(
 	};
 }
 
-/**
- * Suites one scoped shard carries when no duration table is used (legacy cap).
- */
 const SUITES_PER_SHARD = 4;
 
-/**
- * How many shards a plan needs so no shard exceeds `targetSeconds` wall budget.
- */
 export function planShardCountBalanced(
 	plan: TestPlan,
 	workspaces: readonly Workspace[],
@@ -481,10 +401,6 @@ export function planShardCountBalanced(
 	return max;
 }
 
-/**
- * How many shards a plan is worth, `max` at most. With `targetSeconds`, uses the
- * duration table; otherwise scoped plans use `SUITES_PER_SHARD`.
- */
 export function planShardCount(
 	plan: TestPlan,
 	max: number,
@@ -524,10 +440,8 @@ export function planShardCount(
 	);
 }
 
-/** Slowest-shard wall budget the main train targets when slots are available. */
 export const MAIN_WORKSPACE_SHARD_TARGET_SECONDS = 180;
 
-/** Many changed paths on main usually mean a cold turbo graph; plan wider shards. */
 export const MAIN_WORKSPACE_COLD_CACHE_PATH_THRESHOLD = 40;
 export const MAIN_WORKSPACE_COLD_CACHE_DURATION_SCALE = 2;
 
@@ -541,16 +455,9 @@ export function scaleWorkspaceDurations(
 	return { defaultSeconds: table.defaultSeconds * factor, seconds };
 }
 
-/**
- * The most a main workspace shard is planned to take. Its tests step stops at
- * 19 minutes and its job at 20 (the workflow-wide job cap); this leaves room
- * for setup and for an estimate that runs short.
- */
 export const MAIN_WORKSPACE_SHARD_BUDGET_SECONDS = 12 * 60;
-/** Most shards a main run plans, however far over budget the work is. */
 export const MAX_MAIN_WORKSPACE_SHARDS = 16;
 
-/** Target gap between slowest and fastest main workspace shard loads. */
 export const MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS = 10;
 
 export type MainWorkspaceShardPlan = Readonly<{
@@ -559,10 +466,6 @@ export type MainWorkspaceShardPlan = Readonly<{
 	peakShardSeconds: number;
 }>;
 
-/**
- * When several whole suites are in scope, use enough shards that each runner
- * does not replay a multi-minute cold turbo graph alone.
- */
 export function minimumScopedShardCount(
 	plan: TestPlan,
 	parallelCap: number,
@@ -573,13 +476,6 @@ export function minimumScopedShardCount(
 	return Math.min(parallelCap, Math.max(2, Math.ceil(units / 2)));
 }
 
-/**
- * Plans main-push workspace shards: at most `parallelCap` jobs, each packing
- * several duration-balanced workspace groups, targeting roughly
- * `targetSeconds` on the slowest shard when capacity allows. Past the cap only
- * when the slowest shard would otherwise exceed
- * `MAIN_WORKSPACE_SHARD_BUDGET_SECONDS`, up to `MAX_MAIN_WORKSPACE_SHARDS`.
- */
 export function planMainWorkspaceShardCount(
 	plan: TestPlan,
 	parallelCap: number,
@@ -621,12 +517,6 @@ export function planMainWorkspaceShardCount(
 		shardUnitSeconds(plan, unit, repo, durations);
 	const peakAt = (shards: number) =>
 		maxShardLoadSeconds(units, durations, shards, weightFor);
-	// A shard job may not run past 20 minutes (the workflow cap, and the box
-	// stops an isolated container at 20 minutes plus grace), so when even
-	// `parallelCap` shards leave the slowest one over budget, plan more: the
-	// extra shards wait for a slot instead of being cancelled (finding 117).
-	// Stop once another shard no longer lowers the slowest one (one workspace
-	// alone over budget).
 	let peak = peakAt(count);
 	while (
 		count < MAX_MAIN_WORKSPACE_SHARDS &&
@@ -674,7 +564,6 @@ const PATH_LITERAL = /["'`]((?:\.\.?\/|packages\/|examples\/)[^"'`\n$]*)["'`]/g;
 const BARE_DIR = /^\.\.?\/$/;
 const TSCONFIG = /(?:[\w.-]+\/)*tsconfig(?:\.[\w-]+)?\.json\b/g;
 const EXTENDS = /"extends"\s*:\s*(\[[^\]]*\]|"[^"\n]*")/;
-/** Bundlers whose config beside the manifest shapes the build, when a script runs one. */
 const BUNDLERS = ["tsup", "vite"];
 const CONFIG_EXTENSIONS = ["ts", "mts", "js", "mjs", "cjs"];
 
@@ -684,20 +573,12 @@ const COMPARED_TO = /[!=]==?\s*$/;
 const COMPARED_WITH = /^\s*[!=]==?/;
 const CASE_LABEL = /\bcase\s+$/;
 
-/**
- * Whether the literal `match` only tests a string: the first argument of
- * `startsWith`, `endsWith`, `includes`, `replace` or `replaceAll` (what is
- * searched for), an operand of an equality, or a `case` label. A replacement
- * (`s.replace("@/", "../")`) is a value that may be a path, and like an
- * array element, a property or a concatenation it stays one.
- */
 function isStringTest(
 	text: string,
 	match: RegExpExecArray | RegExpMatchArray,
 ): boolean {
 	const start = match.index ?? 0;
 	const end = start + match[0].length;
-	// Whole lines, so a comment's `//` is judged from its line's first quote.
 	const from = text.lastIndexOf("\n", Math.max(0, start - 200)) + 1;
 	const before = text
 		.slice(from, start)
@@ -713,11 +594,6 @@ function isStringTest(
 	);
 }
 
-/**
- * `line` without the `//` comment that ends it. A `//` inside a string on
- * the line (`"http://…"`) is not one. Only the text a literal is judged by
- * goes through this: a cut in the wrong place cannot hide a literal.
- */
 function withoutTrailingComment(line: string): string {
 	let quote = "";
 	for (let index = 0; index < line.length; index++) {
@@ -740,12 +616,6 @@ const VITEST_CONFIGS = [
 ];
 const CONDITIONS = ["import", "node", "default", "require"];
 
-/**
- * `source` without the comments that start a line. Only those: `"src/**\/*.ts"`
- * opens and closes a block comment mid-line, and cutting a `//` that sits in a
- * string would lose the literals after it. A literal in a trailing comment is
- * therefore still an edge; `isStringTest` reads past such a comment.
- */
 function withoutComments(source: string): string {
 	return source
 		.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "")
@@ -769,7 +639,6 @@ function parseManifest(source: string | undefined): JsonObject | undefined {
 	}
 }
 
-/** One target out of a conditional `exports` value, ignoring `types`. */
 function pickTarget(value: Json | undefined): string | undefined {
 	if (isString(value)) return value;
 	if (isList(value)) {
@@ -785,7 +654,6 @@ function pickTarget(value: Json | undefined): string | undefined {
 	return undefined;
 }
 
-/** The file a package's `exports` (or `main`) maps `subpath` to, relative to the package. */
 export function exportTarget(
 	manifest: JsonObject,
 	subpath: string,
@@ -822,7 +690,6 @@ export function exportTarget(
 
 type Edges = Readonly<{
 	files: readonly string[];
-	/** Files named but not followed: another package's program, run as its own process. */
 	named?: readonly string[];
 	dirs: readonly string[];
 	unscoped?: string | undefined;
@@ -837,9 +704,6 @@ export function createWalker(repo: Repo) {
 	const manifests = new Map<string, JsonObject | undefined>();
 	const edgeCache = new Map<string, Edges>();
 
-	// The deepest workspace directory at or above the path. Looked up by
-	// walking up from it: a scan of every workspace per path was a fifth of
-	// the planner's time.
 	const byDir = new Map(repo.workspaces.map((ws) => [ws.dir, ws]));
 	const owners = new Map<string, Workspace | undefined>();
 	const ownerOf = (path: string): Workspace | undefined => {
@@ -858,13 +722,6 @@ export function createWalker(repo: Repo) {
 		return manifests.get(ws.dir);
 	};
 
-	/**
-	 * The files that shape what an importer of `ws` gets without being imported:
-	 * its manifest (`exports`, `type`, dependencies), its `turbo.json`, its
-	 * `tsconfig.json`, every tsconfig one of its scripts names
-	 * (`tsc -p config/tsconfig.types.json`), what those extend inside the
-	 * package, and the config of a bundler one of its scripts runs.
-	 */
 	const inputs = new Map<string, readonly string[]>();
 	function packageInputs(ws: Workspace): readonly string[] {
 		const cached = inputs.get(ws.dir);
@@ -896,8 +753,6 @@ export function createWalker(repo: Repo) {
 		for (let path = tsconfigs.shift(); path; path = tsconfigs.shift()) {
 			if (found.has(path) || !inside(path)) continue;
 			found.add(path);
-			// A tsconfig is JSONC, so `extends` is read as text. One that leaves
-			// the package (the root base config) is a path outside every package.
 			const extended = EXTENDS.exec(repo.read(path) ?? "")?.[1] ?? "";
 			for (const [, target = ""] of extended.matchAll(/"([^"]*)"/g)) {
 				if (!target.startsWith(".")) continue;
@@ -909,7 +764,6 @@ export function createWalker(repo: Repo) {
 		inputs.set(ws.dir, list);
 		return list;
 	}
-	/** The changed manifest or build config of the package `path` sits in. */
 	function changedInput(
 		path: string,
 		changed: ReadonlySet<string>,
@@ -918,7 +772,6 @@ export function createWalker(repo: Repo) {
 		return owner && packageInputs(owner).find((input) => changed.has(input));
 	}
 
-	/** The tracked source file `path` names, or the one a `dist/` path is built from. */
 	const sources = new Map<string, string | undefined>();
 	function sourceFile(path: string): string | undefined {
 		if (!sources.has(path)) sources.set(path, findSourceFile(path));
@@ -951,7 +804,6 @@ export function createWalker(repo: Repo) {
 		return undefined;
 	}
 
-	/** Whether `dir` contains a workspace other than the one `file` sits in. */
 	const holdsPackages = (dir: string, owner: Workspace | undefined) =>
 		repo.workspaces.some(
 			(ws) =>
@@ -961,7 +813,6 @@ export function createWalker(repo: Repo) {
 	const isOtherPackageRoot = (dir: string, owner: Workspace | undefined) =>
 		dir !== owner?.dir && repo.workspaces.some((ws) => ws.dir === dir);
 
-	/** A whole package and, transitively, its workspace dependencies. */
 	function wholePackage(ws: Workspace, into: Set<string>): void {
 		if (into.has(ws.dir)) return;
 		into.add(ws.dir);
@@ -995,9 +846,6 @@ export function createWalker(repo: Repo) {
 			if (match[1]) specifiers.push(match[1]);
 		for (const match of source.matchAll(DYNAMIC_IMPORT)) {
 			if (match[2]) specifiers.push(match[2]);
-			// A test picks what it loads. Library code loads what its caller hands
-			// it (a project file, an optional dependency), and that caller's
-			// literal is an edge of its own.
 			else if (TEST_SIDE.test(file))
 				unscoped ??= `computed import() in ${file}`;
 		}
@@ -1013,8 +861,6 @@ export function createWalker(repo: Repo) {
 				const target = sourceFile(path);
 				if (target) files.add(target);
 				else if (dirs.has(path)) reached.add(path);
-				// Inside its own package the target is covered by that package's own
-				// suite, even when it is generated or only quoted in a template.
 				else if (!owner || !path.startsWith(`${owner.dir}/`))
 					unscoped ??= `cannot resolve ${specifier} from ${file}`;
 				continue;
@@ -1032,21 +878,13 @@ export function createWalker(repo: Repo) {
 			if (target) files.add(target);
 			else wholePackage(ws, reached);
 		}
-		// A literal naming another package's file is a program started as its own
-		// process (`spawn(node, [daemon])`): its package's suite covers what it
-		// imports. A vitest config's literals are setup files vitest imports.
 		const loadsWhatItNames = VITEST_CONFIGS.includes(posix.basename(file));
 		const named = new Set<string>();
 		const text = withoutComments(source);
 		for (const match of text.matchAll(PATH_LITERAL)) {
 			const literal = match[1] ?? "";
-			// A bare `./` or `../` names the directory a module reads computed
-			// paths under (`new URL("../", import.meta.url)`, `cwd: "../"`),
-			// unless it only tests a string: `entry.startsWith("./")` read as
-			// reaching every file of @hobo/core.
 			const bare = BARE_DIR.test(literal);
 			if (bare && isStringTest(text, match)) continue;
-			// `startsWith("packages/connectors/")` tests a path; it reads nothing.
 			const prefix = literal.endsWith("/");
 			const bases = /^(?:packages|examples)\//.test(literal)
 				? ["."]
@@ -1056,16 +894,12 @@ export function createWalker(repo: Repo) {
 					.normalize(posix.join(base, literal))
 					.replace(/\/$/, "");
 				if (path === ".." || path.startsWith("../")) continue;
-				// A bare directory is read, not imported: its `index.ts` is one
-				// file of it.
 				const target = bare ? undefined : sourceFile(path);
 				if (target && (loadsWhatItNames || ownerOf(target) === owner))
 					files.add(target);
 				else if (target) named.add(target);
 				else if (!dirs.has(path)) continue;
 				else if (holdsPackages(path, owner) && prefix) continue;
-				// Library code listing package dirs (`"packages/ci-gh-actions"` in a
-				// layering table) classifies them; a test naming one reads it.
 				else if (isOtherPackageRoot(path, owner) && !TEST_SIDE.test(file))
 					continue;
 				else if (holdsPackages(path, owner))
@@ -1081,11 +915,6 @@ export function createWalker(repo: Repo) {
 		};
 	}
 
-	/**
-	 * The first changed path `entry`'s closure reaches, why the walk gave up,
-	 * or `undefined` when it reaches none. `lenient` walks past a give-up and
-	 * answers only for a path it actually reaches.
-	 */
 	function reaches(
 		entry: string,
 		changed: ReadonlySet<string>,
@@ -1097,8 +926,6 @@ export function createWalker(repo: Repo) {
 			if (seen.has(file)) continue;
 			seen.add(file);
 			if (changed.has(file)) return file;
-			// Entering a package, by import or by a file it names, takes what
-			// that package's manifest and build config make of it.
 			const input = changedInput(file, changed);
 			if (input) return input;
 			const next = edges(file);
@@ -1108,8 +935,6 @@ export function createWalker(repo: Repo) {
 				const namedInput = changedInput(path, changed);
 				if (namedInput) return namedInput;
 			}
-			// A directory is data read from disk: a change under it counts, the
-			// manifest of the package it sits in does not.
 			for (const dir of next.dirs) {
 				const prefix = dir === "." ? "" : `${dir}/`;
 				for (const path of changed) if (path.startsWith(prefix)) return path;
@@ -1133,9 +958,6 @@ export function planDependentTests(
 	const outside = changed.filter(
 		(path) => !repo.workspaces.some((ws) => path.startsWith(`${ws.dir}/`)),
 	);
-	// The root reader keeps this planner consistent with the workflow's
-	// lane decision: without it a scripts-only root package.json edit the
-	// workflow scoped still widens here to the whole workspace.
 	const lanes = affectedLanes(
 		changed,
 		(path) => repo.files.has(path),
@@ -1172,11 +994,6 @@ export function planDependentTests(
 			}
 		}
 	}
-	// A package that declares no dependency can still reach a change: a path
-	// outside every package (the root vitest config, a shared setup file, a doc
-	// a test reads), or another package's file it imports by relative path. Only
-	// a closure that actually reaches it counts: walking every package strictly
-	// would run all of them for a docs edit.
 	const bystanders = repo.workspaces
 		.map((ws) => ws.dir)
 		.filter((dir) => !changedPackages.has(dir) && !dependents.has(dir));
@@ -1188,9 +1005,6 @@ export function planDependentTests(
 		if (owner)
 			testsOf.set(owner.dir, [...(testsOf.get(owner.dir) ?? []), path]);
 	}
-	// A changed package runs whole even when only its tests or docs changed:
-	// its tests read sibling files by names this walk cannot follow
-	// (`readPackageFile("README.md")`, a scan of the test directory).
 	const full = [...changedPackages];
 	const subsets = new Map<string, readonly string[]>();
 	const skipped: string[] = [];
@@ -1203,11 +1017,6 @@ export function planDependentTests(
 		const scripts = ws ? walker.manifestOf(ws)?.scripts : undefined;
 		const test = isObject(scripts) ? scripts.test : undefined;
 		if (!isString(test)) continue;
-		// A script that is not plain `vitest run` cannot take a file list, so it
-		// runs whole or not at all. A dependent runs whole. A bystander still has
-		// to be asked whether its config or tests reach the change: skipping it
-		// here missed `packages/cli` (`pnpm run build && vitest run`) when the
-		// root vitest config it merges changed.
 		const plain = PLAIN_VITEST.test(test.trim());
 		if (!plain && !lenient) {
 			full.push(dir);
@@ -1236,32 +1045,14 @@ export function planDependentTests(
 	return { mode: "scoped", full: full.sort(), subsets, skipped };
 }
 
-/** One task of `turbo run test --dry=json`. */
 export type GraphTask = Readonly<{
 	taskId: string;
 	task: string;
-	/** Package dir, repository-relative. */
 	directory: string;
 }>;
 
-/** The task graph turbo would run for `turbo run test` over these dirs. */
 export type TestGraph = (dirs: readonly string[]) => readonly GraphTask[];
 
-/**
- * The `pnpm` argument lists that run a plan.
- *
- * Turbo hands `--` arguments to every task of a run, its dependencies' builds
- * included, and folds them into each task's hash. A subset that passed its
- * files that way rebuilt its whole dependency graph uncached, once per subset.
- * So the first call runs, by task id and with no pass-through, everything in
- * turbo's own `test` graph for these packages except the subsets' test tasks:
- * the whole suites and every build a subset's test depends on, including a
- * `<pkg>#test` override's extra `dependsOn` (`@hobo/hobo#test` needs
- * `@hobo/adapter-hono#build`). Its hashes match a plain `turbo run test`, so
- * builds share the cache. Each subset then runs only its own test task
- * (`--only`) with its files passed through to the package's `vitest run`.
- * `turboArgs` go to the first call only.
- */
 function turboAffectedArgs(): readonly string[] {
 	return process.env.HOBO_TURBO_USE_AFFECTED === "1" ? ["--affected"] : [];
 }
@@ -1399,13 +1190,10 @@ export function planCommands(
 }
 
 export type TurboGraphOptions = Readonly<{
-	/** When true, plan with `turbo run test --affected --dry=json`. */
 	affected?: boolean;
-	/** Sets `TURBO_SCM_BASE` for the dry run (required with `affected`). */
 	scmBase?: string;
 }>;
 
-/** Reads the `test` task graph from `turbo run test --dry=json`. */
 export function turboTestGraph(
 	dirs: readonly string[],
 	options?: TurboGraphOptions,
@@ -1444,7 +1232,6 @@ export function turboTestGraph(
 	return tasks;
 }
 
-/** Package dirs Turbo would schedule a `test` task for under `--affected`. */
 export function turboAffectedTestDirectories(
 	scmBase: string,
 ): ReadonlySet<string> {
@@ -1454,10 +1241,6 @@ export function turboAffectedTestDirectories(
 	);
 }
 
-/**
- * Drop planner units Turbo's affected graph would not run; add Turbo-only
- * workspaces the import walk skipped.
- */
 export function intersectScopedPlanWithTurboAffected(
 	plan: TestPlan,
 	affected: ReadonlySet<string>,
@@ -1491,7 +1274,6 @@ export function intersectScopedPlanWithTurboAffected(
 	};
 }
 
-/** Plan workspace tests for a main push, narrowed to Turbo `--affected`. */
 export function planDependentTestsForTurboAffected(
 	changedPaths: readonly string[],
 	repo: Repo,
@@ -1521,7 +1303,6 @@ function alignPlanWithTurboAffectedFromEnv(
 	);
 }
 
-/** Whether a plan will run any workspace test suites (whole or subset). */
 export function planHasWorkspaceWork(plan: TestPlan): boolean {
 	if (plan.mode === "all") return true;
 	return (
@@ -1531,7 +1312,6 @@ export function planHasWorkspaceWork(plan: TestPlan): boolean {
 	);
 }
 
-/** Runs the plan. Every part runs, so one failure hides no other. */
 function runPlan(plan: TestPlan, turboArgs: readonly string[]): number {
 	if (!planHasWorkspaceWork(plan)) {
 		console.error("dependent-tests: no workspace tests selected");
@@ -1572,7 +1352,6 @@ function describePlan(plan: TestPlan): string {
 	return lines.join("\n");
 }
 
-/** The checkout in the working directory: tracked files, read from disk. */
 export function readRepo(): Repo {
 	const listed = spawnSync("git", ["ls-files", "-z"], {
 		encoding: "utf8",

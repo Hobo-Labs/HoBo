@@ -1,30 +1,7 @@
-/**
- * The module specifiers a source file names, read from its TypeScript syntax
- * tree.
- *
- * What is read, when the specifier is a string literal or a template literal
- * with no substitution:
- * - `import … from`, `import "…"`, `export … from`, `import x = require(…)`;
- * - `import(…)`, `require(…)`, `require.resolve(…)`, `import.meta.resolve(…)`;
- * - `createRequire(…)(…)`, and a name bound to `createRequire(…)`, where it is
- *   declared or by a later assignment (`let req; req = createRequire(…)`),
- *   called or `.resolve`d;
- * - `vi.mock`, `vi.doMock`, `vi.importActual` and `vi.importMock`, where `vi`
- *   is the global or a name vitest's `vi` is imported as (`import { vi as v }`);
- * - `typeof import(…)` in a type.
- *
- * What cannot be read, and is not: a specifier computed or substituted at run
- * time (`import(\`@hobo/${name}\`)`, `require(base + "/x")`), and a path built
- * for a child process or a URL (`spawn("node", [join(root, "dist/cli.js")])`,
- * `new URL("../dist/x.js", import.meta.url)`). A string that holds source text
- * is not an import either: the scanner sees one literal.
- */
 import ts from "typescript";
 
 export interface ImportSpecifier {
-	/** The specifier as written. */
 	readonly specifier: string;
-	/** True where a compiler erases the import: `import type`, all-`type` named imports, `typeof import()`. */
 	readonly typeOnly: boolean;
 }
 
@@ -57,23 +34,14 @@ function isCreateRequire(node: ts.Expression): boolean {
 }
 
 interface LoaderNames {
-	/** `require`, and names bound to `createRequire(…)`. */
 	readonly requires: Set<string>;
-	/** `vi`, and names vitest's `vi` is imported as. */
 	readonly vis: Set<string>;
-	/** Names bound to `node:child_process`: a namespace or default import, or a `require`/`import()` of it. */
 	readonly processes: Set<string>;
-	/**
-	 * Other names for a computed loader: `import { exec as run }`,
-	 * `const run = cp.exec`, `const { exec: run } = cp`,
-	 * `const execAsync = promisify(exec)`.
-	 */
 	readonly aliases: Set<string>;
 }
 
 const CHILD_PROCESS = new Set(["child_process", "node:child_process"]);
 
-/** The expression under parentheses, `await`, `as`, `satisfies` and `!`. */
 function unwrap(node: ts.Expression): ts.Expression {
 	let inner = node;
 	while (
@@ -87,7 +55,6 @@ function unwrap(node: ts.Expression): ts.Expression {
 	return inner;
 }
 
-/** Whether `node` is `node:child_process`: a name bound to it, or a `require`/`import()` of it. */
 function isChildProcess(node: ts.Expression, names: LoaderNames): boolean {
 	const inner = unwrap(node);
 	if (ts.isIdentifier(inner)) return names.processes.has(inner.text);
@@ -100,11 +67,6 @@ function isChildProcess(node: ts.Expression, names: LoaderNames): boolean {
 	);
 }
 
-/**
- * Whether `node` is a computed loader (`COMPUTED_LOADERS`): by its own name,
- * by an alias, as a method (`exec` only on `node:child_process`, since RegExp
- * has one too), promisified, or bound.
- */
 function isLoader(node: ts.Expression, names: LoaderNames): boolean {
 	const inner = unwrap(node);
 	if (ts.isIdentifier(inner))
@@ -119,7 +81,6 @@ function isLoader(node: ts.Expression, names: LoaderNames): boolean {
 	return ts.isCallExpression(inner) && isPromisified(inner, names);
 }
 
-/** Whether the call makes a loader of one: `promisify(exec)`, `exec.bind(…)`. */
 function isPromisified(node: ts.CallExpression, names: LoaderNames): boolean {
 	const callee = node.expression;
 	const first = node.arguments[0];
@@ -141,7 +102,6 @@ function boundCount(names: LoaderNames): number {
 	);
 }
 
-/** The names that load a module or run a child process, bound anywhere in the file. */
 function loaderNames(file: ts.SourceFile): LoaderNames {
 	const names: LoaderNames = {
 		requires: new Set(["require"]),
@@ -191,14 +151,12 @@ function loaderNames(file: ts.SourceFile): LoaderNames {
 				names.vis.add(node.name.text);
 			if (COMPUTED_LOADERS.has(imported)) names.aliases.add(node.name.text);
 		} else if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
-			// `const { exec: run } = cp`
 			const property = node.propertyName ?? node.name;
 			if (ts.isIdentifier(property) && COMPUTED_LOADERS.has(property.text))
 				names.aliases.add(node.name.text);
 		}
 		ts.forEachChild(node, visit);
 	};
-	// Again until nothing new is bound: a name may be bound to one bound later.
 	let before = -1;
 	while (before !== boundCount(names)) {
 		before = boundCount(names);
@@ -231,7 +189,6 @@ function exportIsTypeOnly(node: ts.ExportDeclaration): boolean {
 	);
 }
 
-/** The specifier a call loads, if it is one of the loaders this reader knows. */
 function calledSpecifier(
 	node: ts.CallExpression,
 	{ requires, vis }: LoaderNames,
@@ -264,69 +221,25 @@ function calledSpecifier(
 	return undefined;
 }
 
-/**
- * Stands in an assembled path for the part computed at run time: a template
- * literal's substitution, or a `join(…)`/`resolve(…)` argument that is not a
- * literal. It is not a character a path holds, so a literal `*` (a glob) stays
- * literal; the check shows it as `*`.
- */
 export const COMPUTED = "\u0000";
 
-/**
- * Stands for a computed part that is visibly a temporary directory: a call to
- * `tmpdir()`; `mkdtemp(prefix)` or `mkdtempSync(prefix)` where `prefix` is
- * itself one (`join(tmpdir(), "x-")`, `"/tmp/x-"`), since with any other
- * prefix the directory is made wherever the prefix names; a path built on one
- * (`join(tmpdir(), "x")`, `realpathSync(…)` of one) that has no `..`; a
- * literal under `/tmp/` with no `..`; or a name every binding of which in the
- * file is one. A parameter, a loop variable or a destructured name is not
- * visibly one. It is computed too.
- */
 export const TEMPORARY = `${COMPUTED}\u0001`;
 
 const TEMPORARY_LITERAL = /^\/tmp(?:\/|$)/u;
 
-/** Whether path text has a `..` segment. */
 const climbs = (text: string) => text.split(/[\\/]/u).includes("..");
 
-/** Whether an assembled path starts at a temporary directory (`TEMPORARY`, or a literal `/tmp/…`). */
 export function isTemporaryRooted(text: string): boolean {
 	return text.startsWith(TEMPORARY) || TEMPORARY_LITERAL.test(text);
 }
 
-/**
- * Whether an assembled path stays under the temporary directory it starts at:
- * temporary-rooted, with no `..`. One that climbs (`${tmp}/../../packages`,
- * `/tmp/../repo`) may leave it, so it is read as a real path.
- */
 export function isTemporaryPath(text: string): boolean {
 	return isTemporaryRooted(text) && !climbs(text);
 }
 
-/** What a file names, read from one parse. */
 export interface ModuleFacts {
-	/** Every module specifier, in source order. */
 	readonly imports: ImportSpecifier[];
-	/**
-	 * The path text it assembles: each string or template literal that is not an
-	 * import specifier; each `join(…)`/`resolve(…)` call's arguments joined with
-	 * `/`, a spread of an array literal, or of a name bound to one, read as its
-	 * elements; and each `+` chain with a string in it, concatenated. A
-	 * substitution, a non-literal argument or operand, or any other spread
-	 * reads `COMPUTED`, or `TEMPORARY` where it is visibly a temporary
-	 * directory.
-	 */
 	readonly paths: string[];
-	/**
-	 * Whether it runs or loads something by a path it computes: a child process
-	 * (`spawn`, `exec`, `execFile`, `fork`, sync forms included), `import()` or
-	 * `require` of a non-literal, `createRequire`, `symlink`, a copy (`cp`,
-	 * `cpSync`, `fs.promises.cp`), or `new Worker`. A loader counts by its own
-	 * name, under another (`import { exec as run }`, `const run = cp.exec`,
-	 * `const { exec: run } = cp`), promisified or bound (`promisify(exec)`
-	 * counts where it is made), and `exec` as a method only on a name bound to
-	 * `node:child_process` (`cp.exec`), since RegExp has an `exec` too.
-	 */
 	readonly loadsComputed: boolean;
 }
 
@@ -352,7 +265,6 @@ function calleeName(node: ts.Expression): string | undefined {
 	return undefined;
 }
 
-/** A literal's text, a substitution in it read by `part` (`COMPUTED` by default). */
 function templateText(
 	node: ts.Node,
 	part: (expression: ts.Expression) => string = () => COMPUTED,
@@ -370,7 +282,6 @@ function templateText(
 }
 
 const TEMPORARY_MAKERS = new Set(["mkdtemp", "mkdtempSync"]);
-/** Calls whose result is rooted where their first argument is. */
 const ROOT_KEEPING = new Set([
 	"join",
 	"resolve",
@@ -379,7 +290,6 @@ const ROOT_KEEPING = new Set([
 	"realpathSync",
 ]);
 
-/** Whether `node` is visibly a temporary directory (`TEMPORARY`), given the names that are. */
 function isTemporary(node: ts.Expression, names: ReadonlySet<string>): boolean {
 	const inner = unwrap(node);
 	if (ts.isIdentifier(inner)) return names.has(inner.text);
@@ -405,7 +315,6 @@ function isTemporary(node: ts.Expression, names: ReadonlySet<string>): boolean {
 	if (name === undefined) return false;
 	if (name === "tmpdir") return true;
 	const [first, ...rest] = inner.arguments;
-	// mkdtemp makes its directory under its prefix, which must be temporary too.
 	const under =
 		first !== undefined &&
 		!ts.isSpreadElement(first) &&
@@ -418,13 +327,7 @@ function isTemporary(node: ts.Expression, names: ReadonlySet<string>): boolean {
 	);
 }
 
-/**
- * The names that are visibly a temporary directory: every binding of the name
- * in the file (a declaration's initializer, an assignment) is one. A name also
- * bound as a parameter, a loop variable or by destructuring is not.
- */
 function temporaryNames(file: ts.SourceFile): Set<string> {
-	// Each name's bindings; undefined for one whose value the file does not show.
 	const bindings = new Map<string, (ts.Expression | undefined)[]>();
 	const bind = (name: string, value: ts.Expression | undefined) => {
 		bindings.set(name, [...(bindings.get(name) ?? []), value]);
@@ -471,7 +374,6 @@ const isPlus = (node: ts.Node): node is ts.BinaryExpression =>
 	ts.isBinaryExpression(node) &&
 	node.operatorToken.kind === ts.SyntaxKind.PlusToken;
 
-/** The operands of a `+` chain, through parentheses: `a + ("b" + c)` is `a`, `"b"`, `c`. */
 function operands(node: ts.Expression): ts.Expression[] {
 	let inner = node;
 	while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
@@ -480,14 +382,12 @@ function operands(node: ts.Expression): ts.Expression[] {
 		: [inner];
 }
 
-/** Whether a `+` sits inside another, through parentheses. */
 function insidePlus(node: ts.Node): boolean {
 	let parent = node.parent;
 	while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
 	return isPlus(parent);
 }
 
-/** The arrays a file binds to a name: `const segs = ["packages", "hobo"]`. */
 function arrayBindings(
 	file: ts.SourceFile,
 ): Map<string, ts.ArrayLiteralExpression> {
@@ -506,7 +406,6 @@ function arrayBindings(
 	return arrays;
 }
 
-/** What `source` names: its imports, the path text it assembles, and whether it loads by a computed path. */
 export function readModule(source: string, fileName: string): ModuleFacts {
 	const file = ts.createSourceFile(
 		fileName,
@@ -518,14 +417,8 @@ export function readModule(source: string, fileName: string): ModuleFacts {
 	const loaders = loaderNames(file);
 	const arrays = arrayBindings(file);
 	const temporary = temporaryNames(file);
-	/** How a computed part reads: `TEMPORARY` where it is visibly a temporary directory. */
 	const part = (expression: ts.Expression) =>
 		isTemporary(expression, temporary) ? TEMPORARY : COMPUTED;
-	/**
-	 * Whether `node` is a later piece of a path rooted at a temporary directory
-	 * (`join(tmp, "packages/hobo")`, `tmp + "/packages/hobo"`): that path is read
-	 * whole, so the piece is not read as a path of its own.
-	 */
 	const inTemporaryPath = (node: ts.Node) => {
 		const parent = node.parent;
 		const first = ts.isCallExpression(parent) ? parent.arguments[0] : undefined;
@@ -549,13 +442,10 @@ export function readModule(source: string, fileName: string): ModuleFacts {
 		const head = operands(chain)[0]!;
 		return head !== node && isTemporary(head, temporary);
 	};
-	/** An operand's text, and whether it was written as a literal. */
 	const piece = (expression: ts.Expression) => {
 		const text = templateText(expression, part);
 		return { text: text ?? part(expression), literal: text !== undefined };
 	};
-	// A path builder's arguments, a spread of an array the file writes or binds
-	// read as its elements (`join(root, ...segs)`), any other spread as computed.
 	const segments = (args: readonly ts.Expression[]) =>
 		args.flatMap((argument) => {
 			if (!ts.isSpreadElement(argument)) return [piece(argument)];
@@ -624,7 +514,6 @@ export function readModule(source: string, fileName: string): ModuleFacts {
 		)
 			loadsComputed = true;
 		else if (isPlus(node) && !insidePlus(node)) {
-			// A concatenation, `root + "/packages/" + name`, as one path.
 			const parts = operands(node).map(piece);
 			if (parts.some((item) => item.literal))
 				paths.push(parts.map((item) => item.text).join(""));
@@ -638,7 +527,6 @@ export function readModule(source: string, fileName: string): ModuleFacts {
 	return { imports, paths, loadsComputed };
 }
 
-/** Every module specifier `source` names, in source order. */
 export function importSpecifiersOf(
 	source: string,
 	fileName: string,

@@ -1,7 +1,3 @@
-// `artifact.Stored` / `artifact.Deleted` on `cd-artifact-<digest>`. The stream
-// head says whether the journal believes a blob is present; appends are
-// expected-version and idempotency-keyed, so concurrent puts of one digest
-// record it once and a retried delete records it once.
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, PrincipalRef } from "@hobo/core";
 import {
@@ -73,9 +69,7 @@ export function createArtifactJournal(
 					{ expectedSeq: current.seq, actor: principal, tenant: d.tenant },
 				);
 				return result.appended.length > 0;
-			} catch {
-				// Another writer moved the head; re-read and decide again.
-			}
+			} catch {}
 		}
 		throw new ArtifactStoreError(
 			ARTIFACT_REASON.journalConflict,
@@ -87,7 +81,6 @@ export function createArtifactJournal(
 
 	return {
 		recordStored(artifact, ctx) {
-			// SAFETY: the store only journals digests it computed itself.
 			const digest = artifact.digest as Digest;
 			const record = create(ArtifactStoredRecordSchema, {
 				artifact,

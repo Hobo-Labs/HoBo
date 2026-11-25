@@ -1,18 +1,3 @@
-/**
- * npm provenance: the Sigstore bundle a Freight carries, checked against the
- * tarball before it is attached to a publish.
- *
- * npm (libnpmpublish) attaches the bundle as `_attachments["<name>-<version>.sigstore"]`
- * with the bundle's own `mediaType` as `content_type` and the bundle JSON as
- * `data`. The registry then verifies it, and refuses the whole publish if the
- * attested subject is not this tarball. Doing the subject check here first
- * turns that remote 4xx into a typed local refusal that names the cause.
- *
- * This is a binding check, not a signature check: certificate chains and the
- * transparency log are verified by `@hobo/cd/provenance` at ingest and again
- * by the registry. What this module guarantees is that the bundle we attach is
- * *about these bytes and this package version*.
- */
 import { reject } from "./errors.js";
 import {
 	isJsonArray,
@@ -42,7 +27,6 @@ export function parseProvenanceBundle(
 	let bundle: JsonValue;
 	try {
 		data = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-		// SAFETY: JSON.parse yields a JSON value at this artifact boundary.
 		bundle = JSON.parse(data) as JsonValue;
 	} catch {
 		return reject("npm provenance bundle is not UTF-8 JSON");
@@ -81,7 +65,6 @@ function dsseStatement(bundle: JsonObject): JsonObject {
 		return reject("npm provenance bundle carries no DSSE envelope");
 	let statement: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this artifact boundary.
 		statement = JSON.parse(
 			Buffer.from(envelope.payload, "base64").toString("utf8"),
 		) as JsonValue;

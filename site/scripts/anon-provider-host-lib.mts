@@ -1,8 +1,3 @@
-/**
- * Legacy same-origin anonymous host helpers (residual).
- * OOB Examples yards use Temporary Accounts / Drop / provider-temp APIs instead.
- * Railway removed from OOB; Vercel uses Drop (`/api/vercel-temp`).
- */
 import { mkdir, readFile, writeFile, cp, access } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -135,7 +130,6 @@ export async function serveAnonHostFile(
 	const safe = relPath.replace(/\.\./gu, "").replace(/^\/+/u, "") || "index.html";
 	const hostDirectory = path.join(HOST_ROOT, hostId);
 	try {
-		// SAFETY: assertion required at this I/O boundary.
 		const metadata = JSON.parse(await readFile(metadataFile(hostDirectory), "utf8")) as {
 			expiresAt?: unknown;
 		};

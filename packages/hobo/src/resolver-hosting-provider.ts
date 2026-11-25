@@ -61,8 +61,6 @@ export interface HostingOperatingLiabilityInput {
 	readonly transport: HttpTransport;
 }
 
-/** The reader must obtain native, independently authenticated evidence. Desired
- * expiry, soft quotas and timers are not enforceable financial bounds. */
 export type HostingOperatingLiabilityReader = (
 	input: HostingOperatingLiabilityInput,
 ) => Promise<{
@@ -106,8 +104,6 @@ export interface ProductionResolverBinding {
 	}): Promise<void>;
 }
 
-/** Provider-independent execution wiring. Provider API semantics remain owned by
- * the shipped ResourceResolvers; all state advances require their readbacks. */
 export interface ResolverHostingProviderOptions {
 	readonly store: DurableEventStore;
 	readonly context: {
@@ -117,8 +113,6 @@ export interface ResolverHostingProviderOptions {
 	};
 	readonly mutationJournal: ResourceMutationJournal;
 	readonly artifacts: ReadonlyMap<string, DeploymentPlan>;
-	/** Independently observed image/code identity expected from each approved plan.
-	 * This is distinct from the plan's graph/financial hash. */
 	readonly resourceArtifacts: ReadonlyMap<string, ReadonlyMap<string, string>>;
 	readonly resourceIdentities?: ReadonlyMap<
 		string,
@@ -153,7 +147,6 @@ export interface ResolverHostingProviderOptions {
 			request: HostingOperationRequest,
 		): Promise<readonly ResourceLifecycleObservation[]>;
 	};
-	/** Explicit loopback-only fixture policy. Real provider endpoints require HTTPS. */
 	readonly allowInsecureLocalEndpoints?: boolean;
 	readonly nowMs: () => number;
 }
@@ -167,8 +160,6 @@ const slots = new Map<string, CapabilitySlot>([
 	["objectStore", "bucket"],
 ]);
 
-/** Drives real provider resolvers and the selected Station routing adapter. No
- * accepted request, positive estimate, or DELETE ack is interpreted as success. */
 export function createResolverHostingTransitionProvider(
 	options: ResolverHostingProviderOptions,
 ): HostingTransitionProvider {
@@ -919,8 +910,6 @@ export function createResolverHostingTransitionProvider(
 				throw new Error(
 					"native resolver hosting supports stateless moves with pinned data; moving state requires a workload-owned checkpoint and write-fence adapter",
 				);
-			// A delayed retirement must not leave the old payer with an unbounded
-			// bill either. Existing source proof is immutable approved inventory.
 			await operatingLiabilities(request, false, true);
 			if (
 				request.plan.intent !== "decommission" &&
@@ -928,8 +917,6 @@ export function createResolverHostingTransitionProvider(
 			)
 				await operatingLiabilities(request);
 			if (action === Action.PREPARE) {
-				// Validate the complete target before the first billable effect. A
-				// later unsupported resource must not leave a partially created plan.
 				const plan = artifact(request.plan.targetPlanId);
 				for (const name of plan.dependencyOrder) {
 					const node = plan.resources.find((row) => row.name === name);
@@ -1001,7 +988,6 @@ export function createResolverHostingTransitionProvider(
 						"routing adapter did not realize the exact approved plan",
 					);
 				if (action === Action.RESTORE) {
-					// Cleanup only follows positive source routing and business health.
 					const status = await plans.port.status(plan.planId);
 					if (
 						status?.planId !== plan.planId ||

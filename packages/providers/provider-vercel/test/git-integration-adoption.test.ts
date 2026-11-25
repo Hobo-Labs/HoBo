@@ -1,6 +1,3 @@
-// Observe-only adoption of a Vercel Git-integration deployment: the JSON
-// GitHub's Deployments API returns (recorded shapes, no network), and the
-// verdict a realizer reports.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -13,8 +10,6 @@ import {
 const SHA = "a".repeat(40);
 const OTHER = "b".repeat(40);
 
-// The shape `GET /repos/{owner}/{repo}/deployments?sha=` returns for a push
-// Vercel's Git integration built (fields this module reads, and some it does not).
 const LISTING = [
 	{
 		id: 301,

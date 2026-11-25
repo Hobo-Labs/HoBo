@@ -1,7 +1,3 @@
-// Compile-time tests: `tsc -p tsconfig.types.json` must pass. The package's
-// default test run type-checks this file with it (vitest's typecheck,
-// vitest.config.ts), and so does its `typecheck` script. Run as an ordinary
-// test, an `expectTypeOf` checks nothing.
 import { describe, expectTypeOf, it } from "vitest";
 
 import type { VercelFetch } from "../src/vercel-client.js";

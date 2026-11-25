@@ -11,7 +11,6 @@ interface OrderRow {
 	totalCents: number;
 }
 
-// SAFETY: the order.Placed read-set contract supplies orderId and totalCents.
 const openOrders = defineMaterialization<OrderRow[]>({
 	name: "openOrders",
 	readSet: ["order.Placed"],
@@ -68,7 +67,6 @@ describe("reactor reads-your-writes", () => {
 		});
 		expect(sub.current()).toEqual({ value: [], seq: 0 });
 
-		// A command returns its seq; the subscription must advance to >= that seq.
 		const result = await orders.execute(
 			deps,
 			"order:1001",
@@ -80,7 +78,6 @@ describe("reactor reads-your-writes", () => {
 		expect(observed.seq).toBeGreaterThanOrEqual(result.seq);
 		expect(observed.value).toEqual([{ orderId: "1001", totalCents: 4200 }]);
 
-		// Pushed over the Streamer port and recorded as subscription.* facts.
 		const factTypes = sub.facts().map((f) => f.type);
 		expect(factTypes).toContain("subscription.Opened");
 		expect(factTypes).toContain("subscription.Recomputed");
@@ -121,7 +118,6 @@ describe("reactor reads-your-writes", () => {
 
 	it("replay-then-live: a new subscriber gets the current value before any live push", async () => {
 		const s = store();
-		// Seed the stream before subscribing.
 		await s.append(
 			"order:3001",
 			[{ type: "order.Placed", data: { orderId: "3001", totalCents: 55 } }],

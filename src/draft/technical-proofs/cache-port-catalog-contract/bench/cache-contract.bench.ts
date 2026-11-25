@@ -2,7 +2,6 @@ import { bench, describe } from "vitest";
 
 import { cacheAside, SimCache, SimDurableKv } from "../src/cache-contract.ts";
 
-// Numbers are advisory; the gate only requires that declared benches EXECUTE.
 describe("cache-port hot path", () => {
 	let now = 0;
 	const clock = () => now;

@@ -106,7 +106,6 @@ describe("createBroker.resolve — brokering across providers", () => {
 		const byResource = new Map(
 			(result.receipt?.placements ?? []).map((p) => [p.resourceId, p]),
 		);
-		// Different resources land on DIFFERENT providers — brokered per resource.
 		expect(byResource.get("api")?.providerId).toBe("@hobo/provider-cloudflare");
 		expect(byResource.get("media")?.providerId).toBe("@hobo/provider-azure");
 		expect(result.receipt?.catalogHash).toBe("sha256:catalog-abc");
@@ -140,7 +139,6 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 		expect(result.outcome).toBe("resolved");
 		const api = result.receipt?.placements.find((p) => p.resourceId === "api");
-		// Cloudflare is cheapest but denied by the yard policy → azure wins.
 		expect(api?.providerId).toBe("@hobo/provider-azure");
 	});
 
@@ -196,7 +194,6 @@ describe("createBroker.resolve — brokering across providers", () => {
 		expect(rejected.outcome).toBe("rejected");
 		expect(rejected.rejection?.reasons[0]?.code).toBe("explicit-camp-required");
 
-		// Naming an explicit camp satisfies the lockdown.
 		const allowed = await broker.resolve({
 			...baseRequest,
 			scope: {
@@ -254,7 +251,6 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 		expect(result.outcome).toBe("rejected");
 		expect(result.rejection?.reasons[0]?.plane).toBe("policy");
-		// The gatekeeper's policy.Decided fact is part of the emitted events.
 		expect(result.events.some((event) => event.type === "policy.Decided")).toBe(
 			true,
 		);
@@ -308,7 +304,6 @@ describe("createBroker.resolve — brokering across providers", () => {
 				{ resourceId: "api", port: "hobo:http-service", region: "us-east-1" },
 			],
 		});
-		// us-east-1 is outside the allowed regions → no eligible provider.
 		expect(pinned.outcome).toBe("rejected");
 	});
 });
@@ -385,7 +380,6 @@ describe("createBroker.deliver — delivers through CD (D14)", () => {
 			publisher: "argo-cd",
 			promotionId: "promo-1",
 		});
-		// No Kubernetes vocabulary leaves the neutral broker.
 		expect(JSON.stringify(ticket)).not.toMatch(/namespace|argoproj/u);
 	});
 

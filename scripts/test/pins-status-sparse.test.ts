@@ -1,11 +1,3 @@
-/**
- * `pins:status` against a pin with a sparse cone (ADR-0169). `pins:fetch`
- * checks out only the cone; status says when the checkout is something else.
- * A full checkout, or a cone wider than the pin's, still has every directory
- * the workspace links (a hosted CI checkout is full), so it is a warning and
- * the exit status stays 0. A directory of the pin's cone that is not checked
- * out is a failure.
- */
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -27,7 +19,6 @@ interface Fixture {
 	readonly sub: string;
 }
 
-/** A work tree whose pin `lib` has the cone `packages/a`, fetched. */
 function fetched(): Fixture {
 	const dir = scratch("sparse-status");
 	const remote = makeRemote(dir);
@@ -103,7 +94,6 @@ describe("pins:status and the sparse cone", () => {
 			run.stdout,
 			/ {2}external\/lib does not have packages\/gone, which the pin's sparse cone names, and neither does the pinned commit\n {2}fix: drop packages\/gone from lib's "sparse" list in tools\/pins\/siblings\.json, or move the pin to a commit that has it: pnpm run pins:bump lib <ref>/,
 		);
-		// Fetching again checks out the same commit, so it is not offered.
 		assert.doesNotMatch(run.stdout, /fix: pnpm run pins:fetch lib/);
 	});
 

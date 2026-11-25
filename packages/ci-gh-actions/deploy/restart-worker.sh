@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Graceful box-worker restart: drain in-flight hobo / merge-queue containers before exit.
 set -euo pipefail
 
 export HOBO_CI_WORKER_STOP_MODE="${HOBO_CI_WORKER_STOP_MODE:-drain}"

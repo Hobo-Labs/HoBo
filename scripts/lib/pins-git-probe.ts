@@ -1,18 +1,3 @@
-/**
- * Whether a server serves a commit, asked from a repository nobody uses.
- *
- * Fetching a commit, even with `--dry-run`, downloads its pack and, with
- * `--depth`, writes `shallow`: run in the superproject or the submodule it
- * would turn a full clone shallow and add objects to the user's repository.
- * So the question is asked from a new, empty bare repository under the cache
- * root (private, checked like the asset cache), removed as soon as the
- * answer is in. Its git runs asynchronously under the same signal guard as a
- * download (`pins-partial.ts`): SIGINT, SIGTERM or SIGHUP removes the
- * repository and ends that git's process group. One a harder kill left is
- * swept, older than an hour, before every probe (`sweepProbes`).
- *
- * Erasable TypeScript with node builtins only.
- */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { lstatSync, mkdirSync, rmSync } from "node:fs";
@@ -35,9 +20,7 @@ import { armGuard } from "./pins-partial.ts";
 function assertPrivate(cache: string): void {
 	try {
 		mkdirSync(cache, { recursive: true, mode: 0o700 });
-	} catch {
-		// A file where the directory belongs is reported below.
-	}
+	} catch {}
 	const info = lstatSync(cache);
 	const problem = dirProblem(
 		{ uid: info.uid, mode: info.mode, directory: info.isDirectory() },
@@ -52,10 +35,8 @@ function assertPrivate(cache: string): void {
 	}
 }
 
-/** What a probe's git may write before it is stopped (the old spawnSync bound). */
 const MAX_OUTPUT_BYTES = 64 * 1024 ** 2;
 
-/** One network git, in its own process group, ended at the deadline or by `stop`. */
 interface ProbeGit {
 	readonly result: Promise<GitResult>;
 	stop(): void;
@@ -70,7 +51,6 @@ function probeGit(
 	const child = spawn("git", netArgs(args), {
 		cwd: repo,
 		detached: true,
-		// The answer is the exit status and stderr; stdout is not needed.
 		stdio: ["ignore", "ignore", "pipe"],
 		env: {
 			...gitEnvironment(),
@@ -82,14 +62,11 @@ function probeGit(
 	const group = (signal: NodeJS.Signals): void => {
 		try {
 			if (child.pid !== undefined) process.kill(-child.pid, signal);
-		} catch {
-			// Already gone.
-		}
+		} catch {}
 	};
 	let escalation: ReturnType<typeof setTimeout> | undefined;
 	const stop = (): void => {
 		group("SIGTERM");
-		// Cancelled at close: once git is gone its group id may be reused.
 		escalation ??= setTimeout(() => group("SIGKILL"), 2000).unref();
 	};
 	let late = false;
@@ -135,11 +112,6 @@ function probeGit(
 	return { result, stop };
 }
 
-/**
- * Run `ask` in a new, empty bare repository that is removed afterwards, also
- * when a signal ends the run; `ask` gets the repository and a way to run one
- * network git in it.
- */
 export async function withProbeRepo<T>(
 	ask: (
 		repo: string,
@@ -152,11 +124,9 @@ export async function withProbeRepo<T>(
 	sweepProbes(cache);
 	const repo = join(cache, `.probe-${randomBytes(6).toString("hex")}`);
 	let current: ProbeGit | undefined;
-	// Armed before the directory exists, released after it is gone.
 	const guard = armGuard(repo, () => current?.stop(), true);
 	try {
 		mkdirSync(repo, { mode: 0o700 });
-		// No template: no hook of anyone's can run in it.
 		const init = git(repo, ["init", "--quiet", "--bare", "--template=", "."]);
 		if (init.status !== 0) {
 			throw new PinsError(
@@ -180,7 +150,6 @@ export async function withProbeRepo<T>(
 				return current.result;
 			});
 		} catch (error) {
-			// The git a signal stopped fails; the signal is what happened.
 			throw interrupted() ?? error;
 		}
 		const stopped = interrupted();
@@ -192,14 +161,6 @@ export async function withProbeRepo<T>(
 	}
 }
 
-/**
- * Whether `url` will serve `sha`. A commit that exists only here (made in a
- * `--reference` clone, or never pushed) is answered "not our ref", which no
- * amount of local objects can hide: this asks the server by fetching the
- * commit into a throwaway repository, never into the superproject or the
- * submodule. A failure that is not that answer (no network, a bad host) is an
- * error, not a "no".
- */
 export async function remoteHas(
 	url: string,
 	sha: string,

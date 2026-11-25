@@ -21,7 +21,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 		const pacts = await loadPactDirectory(path.join(contractsDir, "pacts"));
 		const pact = requirePact(pacts, "ConnectivityHost");
 
-		// Consumer: mock provider returns contracted responses.
 		const mock = createMockProviderFromPact(pact);
 		const named = await mock.handle({
 			method: "GET",
@@ -32,7 +31,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 			url: "https://web.myapp.local.hobo.localhost",
 		});
 
-		// Real host implements the same paths (provider verification path).
 		const host = createConnectivityHostHandler();
 		const report = await verifyPact(pact, {
 			name: host.name,
@@ -52,7 +50,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 			path: "/named-endpoints/local?resource=web&app=myapp&env=local",
 		});
 		expect(local.status).toBe(200);
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((local.body as { url: string }).url).toBe(
 			"https://web.myapp.local.hobo.localhost",
 		);
@@ -61,7 +58,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 			method: "GET",
 			path: "/named-endpoints/overlay?resource=web&app=myapp&env=prod",
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((overlay.body as { url: string }).url).toBe(
 			"https://web.myapp.hobo.test",
 		);
@@ -78,7 +74,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 				resourceTags: ["env:development"],
 			},
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((allow.body as { effect: string }).effect).toBe("allow");
 
 		const deny = await host.handle({
@@ -91,7 +86,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 				resourceTenant: "other",
 			},
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((deny.body as { effect: string }).effect).toBe("deny");
 
 		const dnsOk = await host.handle({
@@ -104,7 +98,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 			},
 		});
 		expect(dnsOk.status).toBe(200);
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((dnsOk.body as { applied: boolean }).applied).toBe(true);
 
 		const dnsBad = await host.handle({

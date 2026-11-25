@@ -1,8 +1,3 @@
-// Promoted proof semantics (AGENTS.md § Draft-proof promotion policy). The
-// frozen proofs stay untouched; their claims that belong to Sets/Deltas are
-// restated here against @hobo/cd/sets.
-//   - src/draft/technical-proofs/delta-set-apply-reconcile-contract
-//   - docs/design/proofs/hobo-50-deployment-set-delta
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

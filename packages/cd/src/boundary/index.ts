@@ -1,5 +1,3 @@
-// @hobo/cd/boundary — outbound standards boundary (ADR-0182 D17):
-// CDEvents projection, CloudEvents webhooks, and the NotificationPort.
 export {
 	artifactPurl,
 	assertCdEvent,

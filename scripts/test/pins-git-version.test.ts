@@ -1,15 +1,3 @@
-/**
- * The pins need git 2.31 or newer (`git rev-parse --path-format=absolute`;
- * `git config --show-scope`, which the stale-URL read uses, is 2.26). An older
- * git is refused once, up front, with a message that says so. And a git that
- * cannot answer the stale-URL read (it exits with anything but 0, a value,
- * or 1, nothing set) is a problem, never "nothing is configured": before,
- * a git without `--show-scope` read nothing, the check passed, and fetch
- * cloned from a stale URL.
- *
- * Both are shown with a stand-in `git` first on PATH that runs the real one
- * for everything but the one thing an old git does differently.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -28,7 +16,6 @@ const REAL_GIT = execFileSync("sh", ["-c", "command -v git"], {
 	encoding: "utf8",
 }).trim();
 
-/** A directory holding `git`: `when` decides which calls it answers itself. */
 function standIn(dir: string, when: string): string {
 	const bin = join(dir, "old-git");
 	mkdirSync(bin);
@@ -48,7 +35,6 @@ const OLD_VERSION = `if [ "$1" = "--version" ]; then echo "git version 2.25.1"; 
 
 const BEFORE_SPARSE_SET_CONE = `if [ "$1" = "--version" ]; then echo "git version 2.33.0"; exit 0; fi`;
 
-/** The URL read dies by a signal, as an OOM kill or a sandbox's SIGSYS would end it. */
 const KILLED_ON_READ = `case "$*" in *--show-scope*submodule.*.url*) kill -KILL $$ ;; esac`;
 
 function setUp(when: string, sparse: readonly string[] | null = null) {

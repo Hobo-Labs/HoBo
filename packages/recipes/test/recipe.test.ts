@@ -85,7 +85,6 @@ describe("parseSolutionRecipe", () => {
 
 	it("refuses two placements covering one capability", () => {
 		expect(() =>
-			// SAFETY: assertion to `{ ...inbox, placements: [ ...inbox.placements, { ...inbox.placements[0], placementId: "inbox-2" }, ], } as SolutionRecip` is required at this boundary.
 			parseSolutionRecipe({
 				...inbox,
 				placements: [
@@ -242,7 +241,6 @@ describe("recipe policy", () => {
 				maximumSponsoredCostMinorUnits: 0,
 				minimumClaimWindowMs: 0,
 				maximumEvidenceAgeMs: 1000,
-				// SAFETY: assertion to `["profile.made-up"] as never` is required at this boundary.
 				allowedWidenings: ["profile.made-up"] as never,
 			}),
 		).toThrow(RecipePolicyError);

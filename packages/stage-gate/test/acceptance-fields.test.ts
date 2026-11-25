@@ -1,11 +1,3 @@
-/**
- * HoBo reads ai-bdd's report across a process boundary and imports no ai-bdd
- * code, so the only statement of the contract on this side is the schema file
- * copied into test/fixtures/ai-bdd/. These tests hold the parser to it: every
- * field RunReport v1 requires is read (its removal is refused) or deliberately
- * ignored (its removal changes nothing), and the ledger in
- * src/acceptance-fields.ts names exactly those fields.
- */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -50,13 +42,11 @@ function escapeRe(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-/** sha256 of each copied file; README.md beside them records the same values and where they came from. */
 const COPIED = {
 	"report.v1.passed.json":
 		"39b3124e109795fcb285de613fb0eee1bf60322a017c0d1b6c54639e7bdebbb1",
 	"report.v1.failed.json":
 		"b8924cf22dd6ad3b5a7c235b24943e69b698f5b2d865e5db6020da5959f7b76f",
-	// ai-bdd pins this digest too (V1_SHA256 in packages/sdk/test/report/schema.test.ts, main at 7f9456a): v1 is frozen once released.
 	"run-report.v1.schema.json":
 		"7e907a6232b9b8de41e14154243d11612be07d8bba4e831085cf828f4ca3d423",
 } as const;
@@ -81,7 +71,6 @@ function objectAt(node: JsonValue | undefined, what: string): JsonObject {
 	return node;
 }
 
-/** Follow `#/$defs/<name>` references; the schema uses no other kind. */
 function resolve(root: JsonObject, node: JsonObject): JsonObject {
 	const ref = node.$ref;
 	if (!isJsonString(ref)) return node;
@@ -89,7 +78,6 @@ function resolve(root: JsonObject, node: JsonObject): JsonObject {
 	return resolve(root, objectAt(objectAt(root.$defs, "$defs")[name], ref));
 }
 
-/** The object schema a required field opens into, through an array's items. */
 function openedObject(root: JsonObject, node: JsonObject): JsonObject | null {
 	const resolved = resolve(root, node);
 	if (resolved.type === "array") {
@@ -102,10 +90,6 @@ function segmentOf(root: JsonObject, node: JsonObject, key: string): string {
 	return resolve(root, node).type === "array" ? `${key}[]` : key;
 }
 
-/**
- * Required field paths, in ledger notation, descending only into fields the
- * ledger marks `read`: nothing under an ignored field is looked at.
- */
 function requiredPaths(root: JsonObject): string[] {
 	const found: string[] = [];
 	const visit = (node: JsonObject, prefix: string) => {
@@ -184,7 +168,6 @@ describe("RunReport v1 fields against the parser", () => {
 	});
 });
 
-/** Where each closed key set the parser applies sits in the schema. */
 function schemaObjects(root: JsonObject): ReadonlyMap<string, JsonObject> {
 	const props = objectAt(root.properties, "properties");
 	const usage = objectAt(props.usage, "usage");

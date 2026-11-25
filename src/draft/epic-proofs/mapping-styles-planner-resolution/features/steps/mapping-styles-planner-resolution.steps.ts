@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for mapping-styles-planner-resolution.feature.
- *
- * Drives the epic's real planner module (src/mapping-styles-planner-resolution.ts),
- * which composes the promoted topology, mapping-compiler, capability-negotiation,
- * and provider-options technical proofs. Every assertion reads a value produced
- * by planCampDeployment or its emitted control-plane events.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -54,8 +46,6 @@ function requestsWithDbFeatures(
 	};
 }
 
-// --- Scenario: Same Bindle resolves to AWS or Azure by mapping edit only ---
-
 let awsPlan: PlanResult | undefined;
 let azurePlan: PlanResult | undefined;
 
@@ -90,8 +80,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: Each mapping style deploys the reference shop app -----------
 
 let stylePlans: Array<{ style: string; result: PlanResult }> = [];
 
@@ -139,8 +127,6 @@ Then(
 	},
 );
 
-// --- Scenario: Required capability miss fails the plan closed --------------
-
 let rejectedPlan: PlanResult | undefined;
 
 Given("an azure shop mapping that requires database.ha", () => {
@@ -168,8 +154,6 @@ Then(
 		assert.match(rejectedPlan.reason, /database\.ha/);
 	},
 );
-
-// --- Scenario: Preferred capability miss degrades with a planWarning -------
 
 let degradedPlan: PlanResult | undefined;
 

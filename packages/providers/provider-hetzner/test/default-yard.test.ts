@@ -7,20 +7,10 @@ import {
 	hetznerYardSpec,
 } from "../src/index.js";
 
-/**
- * Every published capability profile, derived from `@hobo/core`'s catalog
- * rather than restated here.
- *
- * This used to be a hand-written list, and it drifted the moment a factory was
- * pointed at a more specific profile — the test failed for the list's reason,
- * not the catalog's. Deriving it means a profile the core vocabulary adds is
- * automatically legal, and a profile it does not define still fails.
- */
 const REAL_PROFILES: readonly string[] = Object.values(capability).flatMap(
 	(family) => Object.values(family),
 );
 
-/** Entries declared for one slot, or an empty list when the slot is absent. */
 function slotEntries(slot: CapabilitySlot) {
 	return HETZNER_DEFAULT_BINDINGS[slot] ?? [];
 }
@@ -44,12 +34,6 @@ describe("the Hetzner Yard is an allocatable catalog", () => {
 		}
 	});
 
-	/**
-	 * The load-bearing honesty test. A `data` row would say Hetzner can allocate
-	 * a database; it cannot. An empty slot is a gap an author can see, and
-	 * "Postgres you install yourself on a Cloud Server" is not a product a
-	 * catalog can allocate.
-	 */
 	it("leaves the five slots Hetzner sells nothing for empty", () => {
 		for (const slot of ["data", "kv", "queue", "topic", "secretRef"] as const) {
 			expect(slotEntries(slot)).toEqual([]);
@@ -117,11 +101,6 @@ describe("hetznerYardSpec emits raw, canonical rows", () => {
 		expect(hetznerYardSpec().bindings).toHaveLength(declared);
 	});
 
-	/**
-	 * `cloudServer()` and `cloudServerWorker()` emit the same productId under
-	 * different profiles. Rows key on `(profile, productId, connectivityId)`, so
-	 * both survive — a dedup on productId alone would silently drop one.
-	 */
 	it("keeps one product reached through two profiles as two rows", () => {
 		const rows = hetznerYardSpec().bindings.filter(
 			(row) => row.productId === "hetzner.cloud-server/v1",

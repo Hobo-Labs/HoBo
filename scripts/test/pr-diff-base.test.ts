@@ -34,11 +34,6 @@ function shellForStep(block: string, name: string): string {
 		.replaceAll("${{ github.event_name }}", "pull_request");
 }
 
-/**
- * A pull request's checkout as GitHub makes it: `refs/pull/N/merge`, a merge
- * commit whose first parent is the base branch as it is now, while the
- * event's `pull_request.base.sha` can still name an older base.
- */
 describe("a PR's own changes, against the base its merge commit was made on", () => {
 	let repo: string;
 	const git = (...args: string[]) =>
@@ -50,7 +45,6 @@ describe("a PR's own changes, against the base its merge commit was made on", ()
 		git("commit", "-q", "-m", path);
 		return git("rev-parse", "HEAD");
 	};
-	/** The PR merge commit for a PR that changed `path`, after main changed a deps input. */
 	const mergeRef = (path: string) => {
 		const eventBase = commit("README.md", "base\n");
 		git("checkout", "-q", "-b", "pr");
@@ -115,9 +109,6 @@ describe("a PR's own changes, against the base its merge commit was made on", ()
 	});
 
 	it("falls back to the event's base for any other merge commit at HEAD", () => {
-		// A merge whose second parent is not the PR head: here a head that
-		// itself merged main in, checked out directly. Its first parent is the
-		// PR's own previous commit, not a base.
 		const { eventBase, prHead } = mergeRef("packages/ci-agent/src/agent.ts");
 		git("checkout", "-q", "pr");
 		git("merge", "-q", "--no-ff", "--no-edit", "main");

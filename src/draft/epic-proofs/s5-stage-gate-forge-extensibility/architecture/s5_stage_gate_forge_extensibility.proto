@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the S5 Stage Gate Forge Extensibility
-// draft package reasons about. Design-time contract artifact; not compiled at runtime.
 
 enum S5StageGateForgeExtensibilityEvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

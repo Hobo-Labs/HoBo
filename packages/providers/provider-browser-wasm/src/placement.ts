@@ -1,12 +1,3 @@
-/**
- * Parse-don't-validate boundary for an authored guest placement.
- *
- * `browserWasm.with.guest({...})` hands this package a
- * `Record<string, unknown>`. It crosses this parser once and comes out as
- * {@link GuestPlacement}, whose fields are already bounded, page-aligned and
- * paired with the right resource class. Nothing downstream re-checks a guest
- * id or wonders whether a memory limit was mebibytes or pages.
- */
 import { BrowserWasmProviderError } from "./errors.js";
 import {
 	isJsonArray,
@@ -30,18 +21,12 @@ const DNS_1123_LABEL = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/u;
 const WIT_ID =
 	/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?(@[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)?$/u;
 
-/**
- * A guest that never yields freezes the tab: there is no OS underneath to kill
- * it and no supervisor to restart it. The epoch deadline is the whole defence,
- * so an unbounded one is the same as none.
- */
 export const MAX_EPOCH_DEADLINE_MS = 300_000;
 export const DEFAULT_EPOCH_DEADLINE_MS = 5_000;
 export const DEFAULT_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
 // public-contract: default WIT world for browser-hosted guests.
 export const DEFAULT_WORLD = "hobo:guest/http-handler@0.1.0";
 
-/** A placement never asks for `unavailable`; that is an outcome, not a request. */
 export type RequestedPersistence = Extract<
 	PersistenceMode,
 	"opfs-sahpool" | "transient-memory"
@@ -89,8 +74,6 @@ export function parseGuestPlacement(
 
 	const guestId = record.guestId;
 	if (!isJsonString(guestId) || !DNS_1123_LABEL.test(guestId)) {
-		// The guest id becomes a DNS label in the station URL, so it is bounded
-		// by DNS rules rather than by what a filesystem would tolerate.
 		throw rejected("guestId is not an RFC 1123 label", {
 			value: isJsonString(guestId) ? guestId.slice(0, 64) : "not-a-string",
 		});

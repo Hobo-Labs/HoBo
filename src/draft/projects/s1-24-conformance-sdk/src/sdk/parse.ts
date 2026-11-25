@@ -16,7 +16,6 @@ import {
 } from "./types.js";
 import { asJsonObject, isJsonNumber, isJsonString, isJsonObject, type JsonValue, type JsonObject, type JsonBag } from "../json.js";
 
-
 const ANNEX_CATEGORIES = new Set<AnnexCategory>([
   "error-mapping",
   "cancellation",
@@ -448,7 +447,6 @@ function readObject(value: JsonValue | undefined, label: string): JsonObject {
   if (!value || !isJsonObject(value) || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object`);
   }
-  // SAFETY: `return value as JsonObject;` is required at this I/O or test boundary.
   return value as JsonObject;
 }
 

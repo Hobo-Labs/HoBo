@@ -1,9 +1,4 @@
 import assert from "node:assert/strict";
-// Cross-adapter composition proof, homed in the composition root: the package
-// boundary guard forbids adapter -> adapter imports, so this test lives in
-// @hobo/hobo (which legally depends on both @hobo/iac-pulumi and
-// @hobo/provider-cloudflare) to prove realize() output is accepted by the
-// real IaC backend.
 import {
 	createPulumiAutomationAdapter,
 	runIacBackendConformance,

@@ -3,7 +3,6 @@ import { JobSchema } from "@hobo/ci";
 import type { HostedRelayStore, IsolatedRunnerHost } from "../hosted-relay.js";
 import type { RunnerLabel } from "../runner-labels.js";
 
-/** Route launch/reconcile to the provider that owns the lease. */
 export function createCompositeIsolatedHost(options: {
 	store: Pick<HostedRelayStore, "get">;
 	sandbox?: IsolatedRunnerHost;

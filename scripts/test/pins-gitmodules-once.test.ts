@@ -1,13 +1,3 @@
-/**
- * A `.gitmodules` that does not name a submodule exactly once (no section for
- * its path, or two) is one problem, and status says it once, with a fix that
- * works. The `.git` check needs the section's name to find the submodule's
- * own repository; without one it has nothing to compare, so it does not add a
- * second refusal (before, status repeated an ambiguity, and for a missing
- * entry it called the submodule's own repository "not this submodule's" and
- * offered `rm -rf`, which cannot bring the clone back while the entry is
- * missing). fetch and bump refuse the `.gitmodules` first, as before.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
@@ -23,8 +13,6 @@ import {
 	scratch,
 } from "./support/pins-support.ts";
 
-/** A checkout set up the ordinary way: external/lib cloned and at the pin. */
-/** A checkout whose submodule is cloned and at the pin, unless `fetched` is false. */
 function setUp(fetched = true) {
 	const dir = scratch("gitmodules-once");
 	const remote = makeRemote(dir);
@@ -82,10 +70,6 @@ describe("status says a .gitmodules problem once, with a fix that works", () => 
 		assert.match(after, /^exit 0\n/u, `the printed fix is enough: ${after}`);
 	});
 
-	// git matches a submodule's path exactly, so a section that spells it
-	// another way registers nothing; the fix corrects that section, where a
-	// new one would make two for the path. The section's name is the one git
-	// clones under (modules/<name>), so these start before the first fetch.
 	const SPELLINGS: readonly [string, (url: string) => string][] = [
 		[
 			"section lib, path ./external/lib",

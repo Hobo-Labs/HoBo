@@ -25,13 +25,8 @@ interface RegistryPort {
 interface RegistryProvider {
 	readonly providerId: string;
 	readonly ports: RegistryPort[];
-	// "base" = built into the runtime; "installed" = added via `hobo add`.
 	readonly source: "base" | "installed";
-	// Only approved providers are matchable (walkthrough Part 0/2); a held
-	// (installed-but-unapproved) provider renders approved: false.
 	readonly approved: boolean;
-	// Hash of the pricing catalog stored at registration, when the provider
-	// declared billing. Absent for built-in providers.
 	readonly pricingCatalogHash?: string;
 }
 
@@ -72,7 +67,6 @@ export function createRegistryCommand(
 			const registry = runtime.registry;
 			const definitions = registry.definitions();
 
-			// Group definitions by provider, then by port.
 			const byProvider = new Map<string, Map<string, RegistryPort>>();
 			for (const def of definitions) {
 				let ports = byProvider.get(def.providerId);
@@ -98,10 +92,6 @@ export function createRegistryCommand(
 				}
 			}
 
-			// Providers installed via `hobo add` — folded from the durable registry
-			// stream. Anything the stream knows about is "installed"; the rest of
-			// the live PlannerRegistry snapshot is "base" (compiled into the
-			// runtime). One projection, one fold — no second source of truth.
 			const registryEvents = await collectStream(
 				runtime.store,
 				REGISTRY_STREAM,

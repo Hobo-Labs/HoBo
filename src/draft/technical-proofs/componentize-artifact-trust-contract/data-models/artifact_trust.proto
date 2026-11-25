@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.componentize.v1;
 
-// Design-time contract for S0-10 artifact signing and install verification.
 
 enum ProvenanceTier {
   PROVENANCE_TIER_UNSPECIFIED = 0;

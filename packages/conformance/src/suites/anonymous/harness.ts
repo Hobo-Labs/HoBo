@@ -1,15 +1,3 @@
-/**
- * The shared runner behind all four anonymous-dimension suites.
- *
- * It owns the two rules that make the resulting evidence trustworthy:
- *
- * 1. **A case that did not run is `unknown`.** Filtering, an unsupported
- *    provider capability, and an empty check all collapse to `unknown`, never
- *    to `pass`.
- * 2. **Aggregation is worst-wins.** One failing case sinks its check; one
- *    unknown case downgrades an otherwise-passing check. There is no averaging
- *    and no "mostly passed".
- */
 import {
 	isJsonBoolean,
 	isJsonNumber,
@@ -36,10 +24,6 @@ export interface CaseJudgement {
 	readonly detail: string;
 }
 
-/**
- * A suite is a description, not a program: cases plus the parser that turns an
- * executor's answer into a derived domain type, plus the pure judge.
- */
 export interface AnonymousSuiteDefinition<TRequest, TExpectation, TOutcome> {
 	readonly suiteId: string;
 	readonly dimension: AnonymousDimension;
@@ -54,7 +38,6 @@ export interface AnonymousSuiteDefinition<TRequest, TExpectation, TOutcome> {
 
 export interface RunAnonymousSuiteOptions {
 	readonly subjectId?: string;
-	/** Run only these cases. Everything omitted reports as `unknown`. */
 	readonly caseIds?: readonly string[];
 }
 
@@ -180,12 +163,6 @@ async function evaluateCase<TRequest, TExpectation, TOutcome>(
 	};
 }
 
-/**
- * Fold case results into per-check outcomes.
- *
- * A declared check with no results is `unknown` rather than absent, so a caller
- * cannot mistake "we never wrote a case for this" for "nothing went wrong".
- */
 export function aggregateChecks(
 	declaredChecks: readonly string[],
 	results: readonly AnonymousCaseResult[],
@@ -199,8 +176,6 @@ export function aggregateChecks(
 		);
 	}
 
-	// Declared checks come first and in sorted order, so the map a caller
-	// digests does not depend on which cases happened to run.
 	const checks: CaseOutcomeBag = {};
 	for (const check of [...declaredChecks].sort()) {
 		checks[check] = folded.get(check) ?? "unknown";
@@ -226,7 +201,6 @@ function messageOf<T>(error: T): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** Shared parse helpers. Kept here so every suite rejects the same way. */
 export function requireRecord<T>(
 	value: T,
 	caseId: string,
@@ -235,7 +209,6 @@ export function requireRecord<T>(
 	if (value === null || !isJsonObject(value) || Array.isArray(value)) {
 		throw new AnonymousConformanceError(caseId, `${field} must be an object`);
 	}
-	// SAFETY: assertion to `value as JsonObject` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -308,17 +281,12 @@ export function requireMember<TValue, T extends string>(
 	field: string,
 	allowed: readonly T[],
 ): T {
-	if (
-		!isJsonString(value) ||
-		// SAFETY: assertion to `allowed as readonly string[]` is required at this boundary.
-		!(allowed as readonly string[]).includes(value)
-	) {
+	if (!isJsonString(value) || !(allowed as readonly string[]).includes(value)) {
 		throw new AnonymousConformanceError(
 			caseId,
 			`${field} must be one of ${allowed.join(", ")}`,
 		);
 	}
-	// SAFETY: allowed-member parse restores the closed string union.
 	return value as never;
 }
 

@@ -1,7 +1,3 @@
-// The CD chaos lane: kill a reconciler mid-converge,
-// partition an agent, store failover, source registry outage, an agent
-// flapping conditions (never NO_RUN) and mass lease loss (failover budget
-// holds; nothing purged early). Chaos never ends wedged.
 import { CD_CHAOS_FAULTS, runCdChaos } from "@hobo/conformance";
 import { describe, expect, it } from "vitest";
 import { type ChaosMutant, refChaosHarness } from "../src/index.js";

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-/** Cloudflare temporary-account preview challenge (claim-deployments PoW). */
 export type PreviewChallenge = {
 	readonly challengeToken: string;
 	readonly seed: string;
@@ -34,10 +33,6 @@ function encodeBase64(bytes: Uint8Array): string {
 	return btoa(binary);
 }
 
-/**
- * Solve Cloudflare temporary-account proof-of-work.
- * Sync node:crypto SHA-256 — must finish before challenge expires (~live k*g ≈ 2e6).
- */
 export async function solvePreviewChallenge(
 	challenge: PreviewChallenge,
 ): Promise<PreviewChallengeSolution> {
@@ -83,7 +78,6 @@ export async function solvePreviewChallenge(
 	};
 }
 
-/** Verify a solution matches the checkpoint ladder (test helper). */
 export async function verifyPreviewChallengeSolution(
 	challenge: PreviewChallenge,
 	checkpointsBase64: string,

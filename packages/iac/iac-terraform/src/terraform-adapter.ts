@@ -4,13 +4,10 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
-// One adapter, two interchangeable binaries (they share the plan/apply/state
-// protocol); OpenTofu is the default per control-plane.md §IaC backends.
 // public-contract: the pinned OpenTofu toolchain the default engine declares.
 export const PINNED_TOFU_VERSION = "1.8.3";
 // public-contract: the pinned Terraform toolchain the terraform lane declares.
 export const PINNED_TERRAFORM_VERSION = "1.9.8";
-// The SAME wire schema the Pulumi adapter consumes; only `provider` differs.
 // public-contract: the IacProgram schema version validateIacProgram accepts.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
 // public-contract: the adapter id stamped on every report this package emits.
@@ -51,36 +48,22 @@ export class TerraformStateError extends Error {
 	}
 }
 
-/**
- * Stored stack/workspace state as this module reads it.
- *
- * `resources` is read back as `JsonValue` and narrowed at use, rather than
- * declared as `Record<string, ResourceOutcome>` beside a `JsonValue` index
- * signature. TypeScript requires every named property to be assignable to that
- * signature, and a record of a *specific* interface is not -- the two
- * declarations contradict each other, and the index signature is the one that
- * has to hold, because this shape is parsed from a state file nobody here
- * wrote.
- */
 interface StoredState {
 	readonly [key: string]: JsonValue;
 }
 
-/** A resource in a realization outputs payload. */
 interface ResourceOutcome {
 	readonly id?: string;
 	readonly status?: string;
 	readonly outputs?: JsonObject;
 }
 
-/** Overrides accepted by the trivial fixture program. */
 interface ProgramOverrides {
 	readonly resources?: JsonValue;
 	readonly stackOutputs?: JsonValue;
 	readonly [key: string]: JsonValue;
 }
 
-/** Options for the Terraform/OpenTofu adapter. */
 interface AdapterOptions {
 	readonly stateBackend?: ReturnType<typeof createInMemoryStateBackend>;
 	readonly engine?: EngineLike;
@@ -88,7 +71,6 @@ interface AdapterOptions {
 	readonly toolchainVersion?: string;
 }
 
-/** What an adapter actually calls on its engine — any lane may implement it. */
 interface EngineLike {
 	readonly toolchainVersion?: string;
 	readonly binary?: string;
@@ -106,12 +88,10 @@ interface EngineLike {
 	destroy(program: JsonValue): JsonValue;
 }
 
-/** Options for the offline state backend. */
 interface StateBackendOptions {
 	readonly failOnWriteFor?: string;
 }
 
-/** Options for the offline HCL engine. */
 interface EngineOptions {
 	readonly stateBackend?: ReturnType<typeof createInMemoryStateBackend>;
 	readonly lockHolder?: string;
@@ -147,9 +127,6 @@ export function createTrivialIacProgram(overrides: ProgramOverrides = {}) {
 	});
 }
 
-// Per-resource workspace key: `deploymentId/resourceName` — one HCL workspace
-// (own local state) per resource, the same blast-radius isolation the Pulumi
-// adapter's per-resource stacks give (control-plane.md §IaC state model).
 export function createWorkspaceKey(program, resourceName) {
 	const deploymentId = program.deploymentId ?? program.stack ?? "default";
 	return `${deploymentId}/${resourceName}`;
@@ -157,19 +134,8 @@ export function createWorkspaceKey(program, resourceName) {
 
 export function createTerraformAdapter(options: AdapterOptions = {}) {
 	const stateBackend = options.stateBackend ?? createInMemoryStateBackend();
-	// The default engine is the deterministic in-memory stand-in so the package
-	// stays offline; swap `options.engine` for createTerraformCliEngine (the
-	// REAL tofu/terraform binary) — same preview/apply/refresh/destroy shape,
-	// proven by runIacBackendConformance.
 	const engine = options.engine ?? createInMemoryHclEngine({ stateBackend });
 	const binary = options.binary ?? engine.binary ?? "tofu";
-	// An engine's reported version is evidence about the binary that engine
-	// runs, so it only applies when that is the binary we resolved. Without the
-	// check, `createTerraformAdapter({ binary: "terraform" })` over the default
-	// in-memory engine reported terraform 1.8.3 -- the engine hardcodes the tofu
-	// version, and it shadowed the pinned default below. Terraform has no 1.8.3;
-	// that is OpenTofu's line. These values go onto provisioning receipts, whose
-	// whole job is to say which toolchain did the work.
 	const engineVersion =
 		engine.binary === undefined || engine.binary === binary
 			? engine.toolchainVersion
@@ -184,7 +150,6 @@ export function createTerraformAdapter(options: AdapterOptions = {}) {
 		binary,
 		toolchainVersion,
 		stateBackend: stateBackend.describe(),
-		// Estate discovery seam (drift/import parity with @hobo/iac-pulumi).
 		snapshotState() {
 			return engine.snapshot instanceof Function
 				? engine.snapshot()
@@ -273,11 +238,6 @@ export function createInMemoryStateBackend(options: StateBackendOptions = {}) {
 	};
 }
 
-// Deterministic in-memory HCL engine: the offline stand-in for the real
-// tofu/terraform binary (createTerraformCliEngine). The return shapes below
-// are the contract the CLI engine preserves (runIacBackendConformance proves
-// both). Semantics mirror the Pulumi in-memory engine so every IaC adapter in
-// HoBo folds the same way.
 export function createInMemoryHclEngine(options: EngineOptions = {}) {
 	const stateBackend = options.stateBackend ?? createInMemoryStateBackend();
 	let driftWorkspaces = new Map();
@@ -395,8 +355,6 @@ export function createInMemoryHclEngine(options: EngineOptions = {}) {
 				});
 			}
 
-			// Refresh judges ONLY the program's own workspaces — drift is per
-			// workspace, never a sibling scan (parity with the Pulumi engine).
 			const drifted = [];
 			for (const resource of program.resources) {
 				const workspaceKey = createWorkspaceKey(program, resource.name);
@@ -471,9 +429,6 @@ export function outputsToBindings(outputs) {
 	return deepFreeze(bindings);
 }
 
-// The same @hobo/conformance/iac-backend smoke every IaC adapter passes —
-// identical assertion names to the Pulumi and Crossplane lanes, so backends
-// stay substitutable behind one shape.
 export async function runIacBackendConformance({ adapter, program }) {
 	const preview = await adapter.preview(program);
 	assertConformance(preview.kind === "diff" && preview.dirty, "preview-diff");
@@ -518,8 +473,6 @@ export async function runIacBackendConformance({ adapter, program }) {
 }
 
 export function validateIacProgram(program) {
-	// Parse, don't validate: returns a frozen, derived parsed domain program so
-	// callers work with a trusted ParsedIacProgram instead of re-checking DTO fields.
 	if (!program || !isJsonObject(program)) {
 		throw new TerraformProgramError(
 			"invalid-program",
@@ -698,11 +651,6 @@ function resourceId(name) {
 }
 
 function collectValues(value) {
-	// Arrays first: `isJsonObject` excludes them by design, so without this
-	// branch an array fell through and was returned as a single non-string
-	// value. The caller passes `program.resources`, which IS an array, so no
-	// output reference inside any resource was ever validated -- only
-	// stackOutputs, which is iterated directly.
 	if (Array.isArray(value)) {
 		return value.flatMap((entry) => collectValues(entry));
 	}

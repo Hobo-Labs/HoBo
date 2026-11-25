@@ -3,8 +3,6 @@ import {
 	collectVerifiedRunnerArchive,
 } from "./sandbox-runner-archive.js";
 
-// Ubuntu 26.04 (resolute) amd64 libicu78, published in Ubuntu's main archive.
-// The exact version and digest are verified before the file reaches the VM.
 // public-contract: bootstrap tests and operators can identify the fixed package source.
 export const SANDBOX_ICU_URL =
 	"https://snapshot.ubuntu.com/ubuntu/20260304T000000Z/pool/main/i/icu/libicu78_78.2-2ubuntu1_amd64.deb";
@@ -13,7 +11,6 @@ export const SANDBOX_ICU_SHA256 =
 	"c8b97930f9e365d6d00978144b468ac8397ef07d2fb2c453869f05fc3a98c4ca";
 export const SANDBOX_ICU_BYTES = 11_456_466;
 
-/** Fetch a fixed Ubuntu package without redirect or unbounded buffering. */
 export async function downloadSandboxIcu(
 	fetcher: typeof fetch = fetch,
 ): Promise<Buffer> {

@@ -18,10 +18,6 @@ import {
 	type YardSelectionMode,
 } from "./types.js";
 
-/**
- * Deterministic Yard matching: hard filters then lexicographic specificity,
- * then objective/stable-id tiebreak. Never uses registration order.
- */
 export function matchYard(
 	request: YardPlacementRequest,
 	inventory: YardInventorySnapshot,
@@ -30,12 +26,9 @@ export function matchYard(
 		readonly objective?: string;
 		readonly contributingPolicyIds?: readonly string[];
 		readonly bindleRuntimes?: readonly string[];
-		/** Whole-request normalized quotes after financial hard filters. Missing
-		 * entries are ineligible, never an assumed zero cost. */
 		readonly economicCosts?: ReadonlyMap<string, number>;
 	},
 ): YardMatchDecision {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(request.requestedLayout) as ContentHash;
 	const candidates: YardCandidateDecision[] = inventory.yards
 		.map((yard) => {
@@ -81,7 +74,6 @@ export function matchYard(
 				rationale: `exact yard ${hit.yardId}`,
 			});
 		}
-		// Exact missing: generation only when allowGenerationRequested and policy later allows.
 		if (request.allowGenerationRequested) {
 			return decision(request, layoutHash, inventory, candidates, options, {
 				outcome: "generation-required",
@@ -197,7 +189,6 @@ function evaluateCandidate(
 			!yard.layout.componentHosts.includes(runtime) &&
 			!yard.capabilities.includes(runtime)
 		) {
-			// Soft for empty local yards that accept any; hard if yard declares hosts.
 			if (yard.layout.componentHosts.length > 0) {
 				hardFailures.push(`bindle-runtime-missing:${runtime}`);
 			}
@@ -292,7 +283,6 @@ function compareCandidates(
 	if (a.compatible !== b.compatible) return a.compatible ? -1 : 1;
 	const sa = a.specificity;
 	const sb = b.specificity;
-	// Lexicographic specificity (higher better).
 	const keys: (keyof YardMatchSpecificity)[] = [
 		"exactId",
 		"provider",
@@ -302,11 +292,8 @@ function compareCandidates(
 		"hardCapabilities",
 	];
 	for (const key of keys) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		if (sa[key] !== sb[key]) return Number(sb[key]) - Number(sa[key]);
 	}
-	// Capacity is not a price. Only normalized full-request quote totals can
-	// implement min-cost; absent economics leaves a deterministic structural tie.
 	if (objective === "min-cost") {
 		const ca = Number(a.rankInputs.totalCostMicros ?? 0);
 		const cb = Number(b.rankInputs.totalCostMicros ?? 0);
@@ -368,7 +355,6 @@ function decision(
 	});
 }
 
-/** Shape compatibility is directional: requested ⊆ yard guarantees. */
 export function layoutSubsetCompatible(
 	requested: YardLayout,
 	actual: YardLayout,

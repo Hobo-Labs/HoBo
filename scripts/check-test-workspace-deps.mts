@@ -1,83 +1,4 @@
 #!/usr/bin/env node
-/**
- * Every workspace package a test loads must be built before the turbo task
- * that runs the test.
- *
- * turbo orders a task only on what `turbo.json` and `package.json` say. A test
- * that loads a sibling package — by name (`@hobo/runtime-local`) or by a
- * relative path into the sibling's directory
- * (`../../../runtimes/runtime-local/dist/actor-host/in-memory.js`) — passes
- * only when something else happened to build that sibling first, and fails on
- * a clean checkout or a filtered run. This check finds those imports.
- *
- * - Scope: the workspace packages under `packages/`, `examples/` and
- *   `src/draft/` that have the script for the task.
- * - Files: everything under a `test/`, `tests/` or `__tests__/` directory
- *   (fixtures and helpers included), `*.test.*` and `*.spec.*` anywhere, and
- *   `vitest*.config.*`; and every file those import by a relative path,
- *   transitively, in their own package (`src/`, `services/`, anything) or in a
- *   sibling's source. In a git repository only tracked files are read.
- * - A relative import that lands on a tracked source file needs no build of
- *   the package it is in: the test runs it as written, and what it loads is
- *   checked in turn. One that lands on a path git does not track (`dist/`)
- *   needs that package built, as a by-name import does.
- * - Tasks: every test file runs under `test`; a file under
- *   `contracts/consumer/` or `contracts/provider/` also runs under
- *   `test:contract:consumer` / `test:contract:provider` where the package has
- *   that script. A file a test loads runs under every task of the files that
- *   import it, so a `test/` helper a `contracts/consumer/` test imports is
- *   checked under `test:contract:consumer` too, and a sibling's source under
- *   the importing package's tasks. Each task must have every build such a
- *   file needs (lib/turbo-task-graph); a task's own package is built where the
- *   task needs it.
- * - A type-only import counts only in a file of the task's own package that
- *   its tsconfig compiles: anywhere else it is erased before the test runs.
- * - Imports are read from the syntax tree (lib/test-import-specifiers). A
- *   specifier computed at run time cannot be read.
- * - A path a loaded file assembles at run time that names another package's
- *   build output directory (its tsconfig `outDir`, else `dist/`), or ends at
- *   its directory in a file that spawns, links, copies or loads by a computed
- *   path, or does either for a package it names by a computed segment
- *   (`join(root, "packages", name, "dist")`), fails unless
- *   `scripts/test-deps-runtime-reaches.json` declares what the file needs.
- *   lib/test-runtime-reaches says exactly which paths count, and which it
- *   cannot see: a path assembled across files or behind a name, one with no
- *   literal anchor, and what a child process loads. Every test task that loads a declared file must have those builds, and a
- *   declaration no test task reaches, that names no workspace package, or
- *   whose needs name no package other than that of some task that loads the
- *   file (an empty `needs`), fails too, as does a file declared twice, and one whose needs
- *   leave out a package the reader sees it reach (a need the reader sees no
- *   reach for may stand: it cannot see every reach). A path rooted at a
- *   temporary directory is a stub tree, and needs no build; a file whose only
- *   reaches are stubs is declared `{ "from", "stubOnly": true, "reason" }`,
- *   which fails if the reader sees it reach anything outside a temporary
- *   root.
- * - A declaration orders the sibling's build only with a `workspace:`
- *   specifier, unless pnpm's link-workspace-packages is on
- *   (lib/turbo-task-graph `orderedDependency`); a violation says how the
- *   package declared the sibling, and which file sets the setting or which
- *   default applies.
- * - What it does not model fails, naming the file and why, rather than
- *   passing unseen: a `catalog:` specifier that may name a workspace package;
- *   with link-workspace-packages on, a version range or tag on one; a
- *   submodule inside a submodule, or one git cannot list; and an undeclared
- *   runtime reach (above).
- * - Files git tracks that the checkout leaves out (a sparse checkout, or a
- *   submodule never initialised) cannot be read: a manifest, a test file, or
- *   any file the follow reaches. The check names how many it skipped and
- *   passes with a warning; under `--strict`, or in CI (`CI` set,
- *   and not `0` or `false`), it fails instead.
- *
- * Fix one by declaring the sibling in `devDependencies` as `"workspace:*"`
- * where the test imports it by name, or, for a relative import (which needs no
- * declaration to resolve), by naming its build on the task:
- * `"@hobo/runtime#test": { "dependsOn": ["build", "@hobo/runtime-local#build"] }`.
- * A devDependency widens the package's own `build` and `typecheck`, and every
- * dependent's; a task override orders that task only. A runtime reach is fixed
- * the same way, once its declaration says which builds it needs.
- *
- * Usage: node --import tsx scripts/check-test-workspace-deps.mts [--json] [--strict] [--root <dir>]
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import {
@@ -115,34 +36,20 @@ import {
 } from "./lib/turbo-task-graph.mts";
 
 export interface Violation {
-	/** The importing package's name. */
 	readonly package: string;
-	/** The test file, relative to the repository root. */
 	readonly file: string;
-	/** The turbo task that runs the file. */
 	readonly task: string;
-	/** The workspace package it reaches. */
 	readonly imports: string;
-	/** The specifier as written. */
 	readonly specifier: string;
-	/**
-	 * Where the package declares the sibling in a field turbo orders and turbo
-	 * does not count the declaration: the specifier, and why. Else undefined.
-	 */
 	readonly declared: string | undefined;
 }
 
-/** What a checkout leaves out, which the check cannot read. */
 export interface Skipped {
-	/** Tracked files the check reads that are not on disk (a sparse checkout, or deleted). */
 	readonly files: readonly string[];
-	/** Submodules with no checkout, none of whose files git lists. */
 	readonly submodules: readonly string[];
 }
 
-/** A declaration or a checkout this check does not model, so it fails rather than guesses. */
 export interface Unmodelled {
-	/** The manifest that declares it, or the nested submodule's path. */
 	readonly file: string;
 	readonly reason: string;
 }
@@ -150,13 +57,11 @@ export interface Unmodelled {
 export interface Report {
 	readonly violations: readonly Violation[];
 	readonly unmodelled: readonly Unmodelled[];
-	/** Declarations in the runtime-reach registry that no longer hold. */
 	readonly stale: readonly Unmodelled[];
 	readonly skipped: Skipped;
 }
 
 export interface CheckOptions {
-	/** Repository-relative paths to read; by default git's tracked files, or a walk outside a repository. */
 	readonly files?: readonly string[];
 }
 
@@ -171,20 +76,15 @@ interface Manifest {
 }
 
 export interface WorkspacePackage extends GraphPackage {
-	/** Repository-relative, `/`-separated. */
 	readonly dir: string;
-	/** Its `build` script, if it has one. */
 	readonly build: string | undefined;
-	/** Workspace packages it declares in an ordering field with a specifier turbo does not count, and why. */
 	readonly unordered: ReadonlyMap<string, string>;
 }
 
-/** The workspace as turbo sees it. */
 export interface Workspace {
 	readonly packages: readonly WorkspacePackage[];
 	readonly graph: TurboTaskGraph;
 	readonly link: LinkWorkspacePackages;
-	/** Declarations whose ordering this check cannot tell. */
 	readonly unmodelled: readonly Unmodelled[];
 }
 
@@ -213,7 +113,6 @@ const WALK_SKIP = new Set([
 
 function readJson<T>(path: string): T | undefined {
 	try {
-		// SAFETY: the callers read only the fields their type names, each optional.
 		return JSON.parse(readFileSync(path, "utf8")) as T;
 	} catch {
 		return undefined;
@@ -231,11 +130,6 @@ function walk(root: string, dir = ""): string[] {
 	return out;
 }
 
-/**
- * git's tracked files (submodules' included) when `root` is a work tree's top,
- * else undefined; the submodules that are not checked out; and any submodule
- * inside a checked-out one, which this check does not model.
- */
 function trackedFiles(root: string):
 	| {
 			files: string[];
@@ -255,7 +149,6 @@ function trackedFiles(root: string):
 			realpathSync(root)
 		)
 			return undefined;
-		// `<mode> <object> <stage>\t<path>`; a gitlink is mode 160000.
 		const gitlinks = (dir: string) =>
 			git(dir, ["ls-files", "-z", "--stage"])
 				.split("\0")
@@ -292,7 +185,6 @@ function trackedFiles(root: string):
 	}
 }
 
-/** The `packages:` globs of pnpm-workspace.yaml (`*` segments, as this repository writes them). */
 function workspaceGlobs(root: string): string[][] {
 	const globs: string[][] = [];
 	let inPackages = false;
@@ -329,7 +221,6 @@ function readText(path: string): string | undefined {
 	}
 }
 
-/** The workspace packages among `files`, their dependencies as turbo orders them, and the graph over them. */
 export function readWorkspace(
 	root: string,
 	files: readonly string[],
@@ -345,7 +236,6 @@ export function readWorkspace(
 		if (manifest?.name) found.push({ dir, manifest });
 	}
 	const workspaceYaml = readText(join(root, "pnpm-workspace.yaml")) ?? "";
-	// A catalog entry with a workspace: specifier can order a build under any key.
 	const unmodelled: Unmodelled[] = [];
 	let catalogNamesWorkspace: boolean;
 	try {
@@ -354,7 +244,6 @@ export function readWorkspace(
 		);
 	} catch (error) {
 		if (!(error instanceof UnreadYaml)) throw error;
-		// It cannot tell, so it fails, and holds any catalog to it.
 		unmodelled.push({ file: "pnpm-workspace.yaml", reason: error.message });
 		catalogNamesWorkspace = true;
 	}
@@ -374,7 +263,6 @@ export function readWorkspace(
 			byName: (name) => (names.has(name) ? name : undefined),
 			versionOf: (name) => versions.get(name),
 			catalogNamesWorkspace,
-			// From the dependent's directory, else (as turbo also tries) from the root.
 			byPath: (path) =>
 				atDir.get(posix.normalize(posix.join(dir, path))) ??
 				atDir.get(posix.normalize(path)),
@@ -427,7 +315,6 @@ export function readWorkspace(
 	return { packages, graph, link, unmodelled };
 }
 
-/** Whether `path` (relative to its package) is a test file, a test helper or a vitest config. */
 function isTestFile(path: string): boolean {
 	if (!SOURCE.test(path) || path.endsWith(".d.ts")) return false;
 	const parts = path.split("/");
@@ -439,7 +326,6 @@ function isTestFile(path: string): boolean {
 	);
 }
 
-/** The tasks that run `path` (relative to its package) by where it is, or none. */
 function tasksRunning(path: string, scripts: ReadonlySet<string>): string[] {
 	if (!isTestFile(path)) return [];
 	const config = !path.includes("/") && VITEST_CONFIG.test(path);
@@ -473,7 +359,6 @@ const SOURCES_FOR: readonly (readonly [RegExp, readonly string[]])[] = [
 	[/\.cjs$/u, [".cts"]],
 ];
 
-/** The listed file a relative import of `path` loads: its TypeScript source, as written, or with an extension or `/index` added. */
 function resolveLocal(
 	path: string,
 	files: ReadonlySet<string>,
@@ -498,13 +383,11 @@ function isRelative(specifier: string): boolean {
 	);
 }
 
-/** Reads a tsconfig and what it extends, listing no files: only its options are wanted. */
 const OPTIONS_ONLY: ts.ParseConfigHost = {
 	...ts.sys,
 	readDirectory: () => [],
 };
 
-/** The tsconfig files a build script compiles with (`tsc -p <file>`), else `tsconfig.json`. */
 function buildProjects(build: string | undefined): string[] {
 	const named = [
 		...(build ?? "").matchAll(
@@ -547,7 +430,6 @@ function outputDirs(
 	return out.size > 0 ? [...out] : ["dist"];
 }
 
-/** Whether the package's tsconfig compiles `file` (an absolute path). */
 function compiledBy(
 	root: string,
 	pkg: WorkspacePackage,
@@ -574,7 +456,6 @@ function compiledBy(
 	return names.has(resolve(file));
 }
 
-/** The violations under `root` (see the header). */
 export function checkTestWorkspaceDeps(
 	root: string,
 	options: CheckOptions = {},
@@ -582,7 +463,6 @@ export function checkTestWorkspaceDeps(
 	return [...scanTestWorkspaceDeps(root, options).violations];
 }
 
-/** The tracked files under a workspace package that the check reads and that are not on disk. */
 function missingFiles(
 	root: string,
 	files: readonly string[],
@@ -613,7 +493,6 @@ function missingFiles(
 	});
 }
 
-/** The violations under `root`, what it cannot model, and what the checkout left out (see the header). */
 export function scanTestWorkspaceDeps(
 	root: string,
 	options: CheckOptions = {},
@@ -639,7 +518,6 @@ export function scanTestWorkspaceDeps(
 		compiledBy(root, pkg, tsconfigs, join(root, file));
 	const listed = new Set(files);
 	const modules = new Map<string, ModuleFacts>();
-	// Tracked files the follow reached and could not read: a sparse checkout.
 	const unread = new Set<string>();
 	const factsOf = (file: string): ModuleFacts => {
 		let found = modules.get(file);
@@ -656,11 +534,6 @@ export function scanTestWorkspaceDeps(
 		return found;
 	};
 	const specifiersOf = (file: string) => factsOf(file).imports;
-	/**
-	 * Where a relative specifier lands: a tracked source file, which runs as
-	 * written and is followed; or a path in a package that git does not track
-	 * (its build output), which needs that package built.
-	 */
 	const reach = (
 		file: string,
 		specifier: string,
@@ -679,18 +552,12 @@ export function scanTestWorkspaceDeps(
 		const target = owner(path);
 		return target === undefined ? undefined : { built: target };
 	};
-	// The tasks that load each file, as `<package>#<task>`: a test file's by
-	// where it is, and every file a loaded file imports by a relative path
-	// inherits the tasks that load the importer (its package's helpers and
-	// source, and a sibling's source).
 	const tasks = new Map<string, { pkg: WorkspacePackage; task: string }>();
 	const id = (pkg: WorkspacePackage, task: string) => {
 		const key = `${pkg.name}#${task}`;
 		if (!tasks.has(key)) tasks.set(key, { pkg, task });
 		return key;
 	};
-	// A type-only import loads only under the file's own package's tasks, and
-	// only where its tsconfig compiles the file; a test elsewhere erases it.
 	const carries = (key: string, file: string, typeOnly: boolean) => {
 		if (!typeOnly) return true;
 		const pkg = tasks.get(key)!.pkg;
@@ -741,7 +608,6 @@ export function scanTestWorkspaceDeps(
 			const needed = graph.needsBuilt(target.name);
 			for (const key of loading) {
 				const { pkg, task } = tasks.get(key)!;
-				// A task builds its own package where it needs it (`test` on `build`).
 				if (target === pkg) continue;
 				const built = graph.buildsBefore(pkg.name, task);
 				if (needed.every((name) => built.has(name))) continue;
@@ -760,7 +626,6 @@ export function scanTestWorkspaceDeps(
 			}
 		}
 	}
-	// Reaches made at run time by an assembled path: declared, or unmodelled.
 	const registry = parseRuntimeReaches(
 		readText(join(root, RUNTIME_REACHES_FILE)),
 	);
@@ -789,10 +654,7 @@ export function scanTestWorkspaceDeps(
 		{ named: Map<string, string>; computed: string | undefined }
 	>();
 	const reachesAnother = new Set<string>();
-	// A declared file's reaches its entry does not name the build of: a package
-	// the reader sees, and the path that names it.
 	const uncovered = new Map<string, Map<string, string>>();
-	// A stubOnly file's first reach outside a temporary root: what, and the path.
 	const notStub = new Map<string, readonly [string, string]>();
 	for (const [file, loading] of running) {
 		const { named, computed, stubs } = reachesOf(file);
@@ -806,7 +668,6 @@ export function scanTestWorkspaceDeps(
 		const entry = declared.get(file);
 		for (const key of loading) {
 			const { pkg, task } = tasks.get(key)!;
-			// A computed segment may name any package, so it counts as another.
 			const others = [...named].filter(([name]) => name !== pkg.name);
 			const stubbed = [...stubs.named].filter(([name]) => name !== pkg.name);
 			const real = others.length > 0 || computed !== undefined;
@@ -814,7 +675,6 @@ export function scanTestWorkspaceDeps(
 				continue;
 			reachesAnother.add(file);
 			if (entry === undefined) {
-				// A stub reach needs an entry too: the reader may misjudge a root.
 				const found = undeclared.get(file) ?? {
 					named: new Map<string, string>(),
 					computed: computed ?? stubs.computed,
@@ -836,7 +696,6 @@ export function scanTestWorkspaceDeps(
 					);
 				continue;
 			}
-			// A stub tree needs no build, so only a real reach must be a need.
 			for (const [name, text] of others)
 				if (!entry.needs.includes(`${name}#build`)) {
 					const missing = uncovered.get(file) ?? new Map<string, string>();
@@ -894,16 +753,10 @@ export function scanTestWorkspaceDeps(
 					`"${from}" needs "${need}", and ${name} is not a workspace package`,
 				);
 		}
-		// Each package the reader sees the file reach must be a need; a need it
-		// sees no reach for may stand, since it cannot see every reach.
 		for (const [name, text] of [...(uncovered.get(from) ?? [])].sort())
 			staleness(
 				`"${from}" reaches ${name} ("${shownPath(text)}"), and its entry does not name "${name}#build"`,
 			);
-		// An entry that needs nothing of another package's would silence the
-		// reach it declares: a task builds its own package anyway. A need counts
-		// where it is another package for at least one task that loads the file
-		// (a's test helper, which b's test loads too, may need @s/a#build).
 		const loaders = new Set(
 			[...(running.get(from) ?? [])].map((key) => tasks.get(key)!.pkg.name),
 		);
@@ -961,12 +814,10 @@ export function scanTestWorkspaceDeps(
 	return { violations, unmodelled, stale: stale.sort(byFile), skipped };
 }
 
-/** Whether `CI` names a CI run: set, and not empty, `0` or `false`. */
 export function inCi(ci: string | undefined): boolean {
 	return ci !== undefined && !["", "0", "false"].includes(ci.toLowerCase());
 }
 
-/** What the CLI says about a checkout's left-out files, as `warning` or, failing, `error`. */
 export function skippedLines(
 	skipped: Skipped,
 	level: "warning" | "error",

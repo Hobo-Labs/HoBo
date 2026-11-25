@@ -1,11 +1,3 @@
-/**
- * A submodule path that is (or passes through) a symbolic link is refused.
- * `external/lib -> ..` resolves to the superproject, whose top level is then
- * "the submodule's own": every git the pins ran there would act on the
- * superproject. The check is on the path as written (lstat of each part under
- * the superproject's root), and git's answer is compared against the path
- * under the root's real location, never the link's target.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, renameSync, rmSync, symlinkSync } from "node:fs";

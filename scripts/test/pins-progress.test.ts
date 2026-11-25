@@ -1,15 +1,3 @@
-/**
- * A person at a terminal sees git's progress while the submodule is fetched,
- * as it arrives: when the script's stderr is a terminal, the visible git gets
- * `--progress` and its stderr is passed on live (a bounded tail is kept for
- * the failure hint). Without a terminal nothing changes: no progress meter,
- * and git's messages are printed once the call returns.
- *
- * The end-to-end terminal is a real pseudo-terminal made by util-linux
- * `script(1)`; where that `script` is missing (BSD and macOS have another
- * with other options) that case is skipped and says why. The decision itself,
- * and the live pass-through, are checked everywhere without a terminal.
- */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -30,7 +18,6 @@ import {
 
 const PROGRESS = /Enumerating objects|Counting objects|Receiving objects/u;
 
-/** Why the pseudo-terminal case cannot run here, or false when it can. */
 function noUtilLinuxScript(): string | false {
 	const needs = "needs util-linux script(1) for a pseudo-terminal";
 	const probe = spawnSync("script", ["--version"], { encoding: "utf8" });
@@ -100,7 +87,6 @@ describe("the progress decision, without a terminal", () => {
 
 	for (const live of [true, false]) {
 		it(`${live ? "passes" : "holds"} git's stderr ${live ? "on as it arrives" : "until git ends"} when live is ${live}`, async () => {
-			// A `git` that says one line, then waits for the test to let it end.
 			const dir = scratch("progress-live");
 			const bin = join(dir, "bin");
 			mkdirSync(bin);
@@ -135,8 +121,6 @@ describe("the progress decision, without a terminal", () => {
 			const ended = new Promise<number | null>((resolve) =>
 				child.on("close", resolve),
 			);
-			// Live: the line arrives while git is still running. Held: nothing
-			// arrives in that time, however long it is given.
 			const deadline = Date.now() + (live ? 10_000 : 1500);
 			while (!said.includes("Cloning into") && Date.now() < deadline)
 				await new Promise((resolve) => setTimeout(resolve, 20));

@@ -15,11 +15,6 @@ import {
 	openRelayCache,
 } from "./relay-cache-fixtures.js";
 
-// What phase 4b asks of the cache store beyond phase 4a: a hook per lease
-// write (the hosted relay's step scheduler), a change ring that keeps only
-// what MCP follows, compare-and-set from the record a write just made, and a
-// rebuild pass over what GitHub has in flight.
-
 const account = () => {
 	const found = configuration().accounts[0];
 	if (!found) throw new Error("fixture account");
@@ -66,7 +61,6 @@ describe("the relay cache store as the hosted relay uses it", () => {
 			["ci.DispatchRequested", "reserved", "dispatching"],
 			["ci.HostRunFound", "dispatching", "dispatching"],
 		]);
-		// The ring keeps the state changes, not the write that left it alone.
 		const feed = await harness.store.eventsSince({
 			accountId: "hobo-labs",
 			limit: 50,
@@ -92,7 +86,6 @@ describe("the relay cache store as the hosted relay uses it", () => {
 
 	it("writes from the record it just wrote, and redoes the write on a fresh read when another instance wrote in between", async () => {
 		const harness = openRelayCache();
-		// Load every script once, so the count below is the steady state.
 		const warm = await harness.store.reserve(account(), job(99), NOW, 1);
 		if (!warm) throw new Error("reservation");
 		await harness.store.transition(
@@ -112,10 +105,7 @@ describe("the relay cache store as the hosted relay uses it", () => {
 			"ci.DispatchRequested",
 			NOW,
 		);
-		// The routing check's index read, the write and a ring append (two):
-		// the lease itself is not read again.
 		expect(harness.meter.usage().total - before).toBe(4);
-		// Another relay instance moves the lease on.
 		const peer = harness.peer();
 		await peer.transition(
 			lease.id,
@@ -124,8 +114,6 @@ describe("the relay cache store as the hosted relay uses it", () => {
 			"ci.Dispatched",
 			NOW,
 		);
-		// This instance's remembered record is stale: its compare-and-set
-		// fails, and the transition is decided on what the peer wrote.
 		const stale = await harness.store.transition(
 			lease.id,
 			["dispatching"],
@@ -167,7 +155,6 @@ describe("the rebuild pass", () => {
 							labels: ["hobo"],
 							runner_name: `hobo-${lease}`,
 						},
-						// Another runner's job is not the relay's to rebuild.
 						{
 							id: 6,
 							run_id: 900,
@@ -203,7 +190,6 @@ describe("the rebuild pass", () => {
 	it("costs one read when no account lost its holds", async () => {
 		const harness = openRelayCache();
 		await harness.store.markHoldsKnown("hobo-labs", NOW);
-		// Load the read script once, so the count below is the steady state.
 		await harness.store.accountsAwaitingRebuild();
 		const transport = github(true);
 		const before = harness.meter.usage().total;

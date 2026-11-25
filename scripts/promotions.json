@@ -9,14 +9,14 @@
 			"digests": {
 				"context.ts": "sha256:48a51b61ccb05ea48594807606df36302afb85b66c0dbfc3745434a0b6b5496c",
 				"divergence.ts": "sha256:a8c77f88bcb0efd871a4ed901b727b9d1f920d998fd08d376bdddb50dd000da2",
-				"equivalence.ts": "sha256:04077d6947c3abcb35ca55f04d076005371288962a1cfa59585d9134786dde74",
+				"equivalence.ts": "sha256:6960a62f3c3f2892647cac8024689a3eff85f791460b1c13d0d3548423c53fba",
 				"index.ts": "sha256:3b9f6ddd2ad0d3c9ab36a759f26a551ca3732625e5f943ef1b4633d3f0649f81",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba",
-				"parse.ts": "sha256:a402a2ad6bc8b54fcff0cfe4b976c72b15f15191d878d7849e8cab5b2686f2db",
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265",
+				"parse.ts": "sha256:6281caaeee342ad33aba0b153f74750a6636d5977145118944a2698d2040545b",
 				"recorder.ts": "sha256:16a25034f056cbdf3897026bacf09b1d96d41758c8f59c577d692c819058dac4",
-				"replayer.ts": "sha256:7c3f56a75c9a3db84c0151cd648c9b756e242747ac7284de12d90b639fe7caba",
+				"replayer.ts": "sha256:ee675a72343581f830e77776cf35a656d6a773aec43dc045a24d33f79849197f",
 				"store.ts": "sha256:c1558f0b7f931f7ef49943aac00637ef43e294c27357406430aeb2ccb49534e4",
-				"test-runtime.ts": "sha256:62a1b5aeda764d54e768619c89630e8932114d26e68a526b40ad19f4a9af701b",
+				"test-runtime.ts": "sha256:b1adfa2cd9c3144a83dd497ea57dd5a10ae0d47b98dc917f0b557ff8168d9d70",
 				"types.ts": "sha256:b93daf16499ad79ab5377e211ae89a863d461ff72193e2d73bc4d0264308d2ad"
 			}
 		},
@@ -26,7 +26,7 @@
 			"status": "frozen",
 			"note": "Promoted as parse-don't-validate port types + vendored WIT; extended with the ADR-0125 artifact form.",
 			"digests": {
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba",
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265",
 				"training-engine-contract.d.mts": "sha256:45c6295a22d06d891e7ba17670c730a5c85f8660a1512d5a983c043f44ad0e8d",
 				"training-engine-contract.ts": "sha256:a0daf2513f5f8a7889b4dfd70933b192fc5cc84a052b97c5bc15f36ec8d33529"
 			}
@@ -53,7 +53,7 @@
 			"note": "HOBO-152 promotion: project codegen engine typed and split (types/engine/tree/fixture/run-codegen), injectable CodegenEngine; the CLI and build gate no longer dynamic-import the proof (GAPS.md IMPL-004).",
 			"digests": {
 				"codegen-cli-contract.ts": "sha256:c7503ccf1a86cfdff67728d3084c9bf293cc3ba8c2f379fc4ada2bb7c967e438",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265"
 			}
 		},
 		{
@@ -64,7 +64,7 @@
 			"digests": {
 				"dispatcher.d.ts": "sha256:00aac63a6d4af4e04e8a3f81dd464c8fc1fcb2b8b31ae936a602eb9f928b09dd",
 				"dispatcher.ts": "sha256:d8325dc768c215c72edcc90beebf304edbcfab1e601de3016302c131e8f20c2f",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265"
 			}
 		},
 		{
@@ -82,12 +82,12 @@
 				"package.json": "sha256:6ab362f11ef3a3ecfe640c58b8ee513d50805540aeaf5f5bbc96827802132ee3",
 				"src/_generated/hobo/schematools/v1/codegen_report_pb.ts": "sha256:f882b88ea9305180334fa8e46ed9e3c600c2e62e6225810782ca56061becb105",
 				"src/cli.ts": "sha256:a6408260db5ba1912f02de0d24fb940553fa8ee789d05e90b2a14ae870dd92f2",
-				"src/codegen.ts": "sha256:9b7acd6261683d9b03cea8d85f380add0a3c535f16cf4212c1b5f7a2a231f1c0",
+				"src/codegen.ts": "sha256:4f971b74fccbe3a91d1bf3e09bd1b8c6b9d173ed4f648b862a724f940554a602",
 				"src/cue.ts": "sha256:6cce81529b610a3a02e12982620d5dfd708aab5e38935f1d0751af8c851b6247",
-				"src/discover.ts": "sha256:685f5decd7f27d0522503c97246c917c9bcdb5d2812d87d13833c5856dc721c7",
-				"src/parse.ts": "sha256:2750ed6d6ac8d3ed6bcbe60c6f1f9a06f43b6903398d615fce901781c6dd0b4a",
+				"src/discover.ts": "sha256:db42aa430689d276e2a24b826278ddbb7f98d7d7e98beccef7c251f964f24ac1",
+				"src/parse.ts": "sha256:a27a09348c0c52749881c7888953380a45285aed5f8174bfdd01f13912f880be",
 				"src/types.ts": "sha256:2fd23e4a87f8feb36d65841ad16b9fa90bcab6d6cfb4a18df206d244807fdbac",
-				"test/codegen-pipeline.test.ts": "sha256:7d7eb8a6614ef9506c30238e144864f2a4ab35f7d682bc4c4deb29eccc304d90",
+				"test/codegen-pipeline.test.ts": "sha256:db925d7bf2cea75bc23afefb94f7dc1c3054f648ed18b4da56424bf11c2f2dfe",
 				"tsconfig.json": "sha256:72909bdc6a21c90a32d98bf1a5bc1b40109b130f1d71e3b22b8b90f0ef36fb0b"
 			}
 		},
@@ -98,7 +98,7 @@
 			"note": "ADR-0134 promotion: DNS-shaped saga re-expressed over TrafficRoutingPort — fail-closed preconditions (validated change, live incumbent via port.status, TTL lowered + waited => effective RTO), rollback hysteresis (consecutive failures), refusal/TtlLowered/Started/RampAdvanced/RoutingChanged/RolledBack event ladder.",
 			"digests": {
 				"domain-cutover-saga.ts": "sha256:575ea5edd8ee69d9b46d06bcfe1e089beb4d08c07fe92bfcddcc834309af649e",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265"
 			}
 		},
 		{
@@ -107,8 +107,8 @@
 			"status": "frozen",
 			"note": "HOBO-499 M1 promotion: typed 11-field compatibility inputs, dry-run contract + four fixtures, rollback-evidence parser, scope-boundary register with fail-closed guard.",
 			"digests": {
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba",
-				"upgrade-rollback-dry-run.ts": "sha256:846377abf9222051b48ee5fa08457fea80f253073f0625bd0c370ccbfbb1acd7"
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265",
+				"upgrade-rollback-dry-run.ts": "sha256:cc5a3b04c391b446edc094abc590b6ef939e361fec240d671da3c9a50361d170"
 			}
 		},
 		{
@@ -118,7 +118,7 @@
 			"note": "M4 promotion: typed golden-replay corpus + upcaster-totality can-deploy gate (coverage, append-only baseline, total chain, purity, replay); migration.* v1 corpus pinned in packages/events/corpus.",
 			"digests": {
 				"event-body-upcaster-gate.ts": "sha256:7bac097f619e18c6b07d42016a4614dc6fd4f098a506da250455b80f3d93051a",
-				"json.ts": "sha256:4fc6c8c4e15d487ff952392e925c80c827cb7843ccb4cbfd07468ac660d0f2ba"
+				"json.ts": "sha256:0fee4eeca3d1311605aa3ffd0be10571bc736c8ebba2c33bb6624c328e19f265"
 			}
 		},
 		{

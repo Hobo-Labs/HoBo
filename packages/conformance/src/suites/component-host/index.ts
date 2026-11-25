@@ -19,6 +19,7 @@ import {
 	REFERENCE_WASI_ROUND_TRIP,
 } from "./reference.js";
 
+// public-contract: stable exported contract literal
 export const COMPONENT_HOST_CONFORMANCE_SCHEMA =
 	"@hobo/conformance/component-host/v1";
 
@@ -575,7 +576,6 @@ function clone<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
-	// SAFETY: JSON round-trip preserves T at this clone fallback.
 	return cloned as T;
 }
 

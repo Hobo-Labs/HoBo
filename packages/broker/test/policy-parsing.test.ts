@@ -1,36 +1,3 @@
-/**
- * The broker's parse boundary, and the layering that sits on top of it.
- *
- * Every constraint in `policies.ts` mirrors an invariant in
- * `data-models/broker.cue`, and the whole point of the module is that a value
- * violating one of them never exists past it. That makes the refusals the
- * product, not the error handling: a policy set that parses is a policy set the
- * rest of the broker is entitled to trust without re-checking.
- *
- * Three things are worth stating about what these cover.
- *
- * **Both spellings, everywhere.** Every field is read as
- * `raw.camelCase ?? raw.snake_case`, because policy documents arrive both from
- * TypeScript callers and from YAML written by operators. A test that only ever
- * passes camelCase leaves half of those reads unexercised, and the failure mode
- * is silent: a snake_case field is not rejected, it is *ignored*, so the value
- * falls back to a default and the policy quietly does something other than what
- * was written.
- *
- * **Cross-field invariants are the interesting refusals.** Anyone can check
- * that a string is a string. `quotaUsed <= quotaLimit`, `objective: pinned`
- * requiring a provider, and `engine: argo` requiring a repo and a namespace are
- * the constraints that encode what the broker actually means, and the ones a
- * refactor is most likely to drop.
- *
- * **Restrictions accumulate outward-in.** `effectivePlacementPolicy` merges
- * layers from junction to bindle, and the direction is not symmetric: choice
- * fields take the narrower layer's answer, but denied providers union and
- * `requireExplicitCamps` ORs. A junction broker admin's lockdown must not be
- * removable by someone who can write a bindle-scoped policy. That is a
- * privilege boundary, so it is tested from the attacker's direction — a
- * narrower policy that tries to relax an outer restriction.
- */
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../src/json.js";
 import {
@@ -47,7 +14,6 @@ import {
 } from "../src/policies.js";
 import { BROKER_SCHEMA_VERSION, type TopologyScope } from "../src/types.js";
 
-/** The code carried by a refusal, or the string that was thrown instead. */
 function codeOf(run: () => void): string {
 	try {
 		run();
@@ -67,8 +33,6 @@ const placement = (over: JsonObject = {}) => ({
 
 describe("placement policies", () => {
 	it("refuses anything that is not an object", () => {
-		// Including an array, which `typeof` alone would call an object and let
-		// through as a record with numeric keys.
 		expect(codeOf(() => parsePlacementPolicy([]))).toBe(
 			"invalid-placement-policy",
 		);
@@ -81,17 +45,12 @@ describe("placement policies", () => {
 	});
 
 	it("refuses an empty id as firmly as a missing one", () => {
-		// An empty string is falsy in the places this id is later used, so
-		// accepting it would produce a policy that silently matches nothing.
 		expect(codeOf(() => parsePlacementPolicy(placement({ id: "" })))).toBe(
 			"invalid-placement-policy",
 		);
 	});
 
 	it("accepts the snake_case spelling of every aliased field", () => {
-		// The silent failure mode: an ignored snake_case field is not rejected,
-		// it falls back to a default, and the policy does something other than
-		// what the operator wrote.
 		const parsed = parsePlacementPolicy({
 			id: "p1",
 			scope_kind: "camp",
@@ -117,17 +76,12 @@ describe("placement policies", () => {
 	});
 
 	it("refuses the pinned objective with no provider named", () => {
-		// The dependent constraint from broker.cue. Without it a 'pinned' policy
-		// would parse and then place anywhere, which is the opposite of what
-		// pinning means.
 		expect(
 			codeOf(() => parsePlacementPolicy(placement({ objective: "pinned" }))),
 		).toBe("pinned-provider-required");
 	});
 
 	it("treats an empty pinned provider as absent", () => {
-		// `optionalString` requires a non-empty string, so `pinnedProviderId: ""`
-		// has to trip the same refusal rather than pinning to nothing.
 		expect(
 			codeOf(() =>
 				parsePlacementPolicy(
@@ -138,9 +92,6 @@ describe("placement policies", () => {
 	});
 
 	it("locks down explicit camps only on a literal true", () => {
-		// `=== true`, not truthiness. A lockdown flag that turned on for the
-		// string "false" would be the worst possible direction for this bug to
-		// go, so the non-boolean cases are pinned.
 		const on = parsePlacementPolicy(placement({ requireExplicitCamps: true }));
 		expect(on.requireExplicitCamps).toBe(true);
 		for (const value of ["true", 1, {}, []]) {
@@ -154,8 +105,6 @@ describe("placement policies", () => {
 
 describe("billing policies", () => {
 	it("defaults every amount to zero rather than refusing", () => {
-		// A policy set that has not configured spend yet is legitimate; the
-		// numbers are floors, not requirements.
 		const parsed = parseBillingPolicy({ quota: "standard" });
 		expect(parsed.quotaUsed).toBe(0);
 		expect(parsed.quotaLimit).toBe(0);
@@ -168,18 +117,12 @@ describe("billing policies", () => {
 	});
 
 	it("refuses a negative amount", () => {
-		// Negative consumption would make every downstream comparison against a
-		// limit pass.
 		expect(
 			codeOf(() => parseBillingPolicy({ quota: "standard", quotaUsed: -1 })),
 		).toBe("invalid-billing-policy");
 	});
 
 	it("refuses NaN, which compares false against every limit", () => {
-		// The reason NaN is called out separately from "not a number": it *is* a
-		// number, and `NaN < 0` is false, so a check that only tested the sign
-		// would let it through — and then `quotaUsed > quotaLimit` is false too,
-		// so an unbounded spend would pass the overflow gate.
 		expect(
 			codeOf(() => parseBillingPolicy({ quota: "standard", quotaUsed: NaN })),
 		).toBe("invalid-billing-policy");
@@ -198,9 +141,6 @@ describe("billing policies", () => {
 	});
 
 	it("allows consumption exactly at the limit", () => {
-		// `>`, not `>=`: a fully consumed quota is a real state, not a corrupt
-		// one, and refusing it here would make the policy unparseable at exactly
-		// the moment the broker most needs to read it.
 		expect(
 			parseBillingPolicy({
 				quota: "standard",
@@ -243,8 +183,6 @@ describe("delivery policies (neutral, D14)", () => {
 	});
 
 	it("defaults the sync mode to manual", () => {
-		// Manual, because automatic sync is the one that acts on its own; a
-		// missing field must not opt an operator into that.
 		expect(parseDeliveryPolicy({ reconcilerMode: "conductor" }).syncMode).toBe(
 			"manual",
 		);
@@ -307,8 +245,6 @@ describe("delivery policies (neutral, D14)", () => {
 		expect(JSON.stringify(parsed)).not.toContain("apps");
 		expect(parsed.syncMode).toBe("auto");
 		expect(parsed.prune).toBe(true);
-		// A legacy argo policy without a namespace is no longer refused: the
-		// destination is deprecated and the publisher owns placement.
 		expect(parseDeliveryPolicy({ engine: "argo" }).publisher).toEqual({
 			target: "argo-cd",
 		});
@@ -340,11 +276,6 @@ describe("policy sets", () => {
 	});
 
 	it("refuses a policy set that omits billing, naming the missing block", () => {
-		// Billing is required — quota is a policy someone chose, and there is no
-		// honest default to invent. What matters is *which* refusal: this used to
-		// fall into `parseBillingPolicy({})` and report "quota must be a non-empty
-		// string" against a billing block the operator never wrote. The refusal
-		// now names the block, so the fix it points at is the real one.
 		expect(() =>
 			parseBrokerPolicySet({
 				schemaVersion: BROKER_SCHEMA_VERSION,
@@ -359,8 +290,6 @@ describe("policy sets", () => {
 	});
 
 	it("refuses a schema version it does not implement", () => {
-		// Pinned rather than range-checked: a policy document from a future
-		// broker may mean something different by the same field names.
 		expect(
 			codeOf(() => parseBrokerPolicySet(set({ schemaVersion: "v0" }))),
 		).toBe("unsupported-schema");
@@ -372,9 +301,6 @@ describe("policy sets", () => {
 	});
 
 	it("ignores a placement list that is not a list", () => {
-		// Falls back to empty. Worth pinning as the deliberate choice it is:
-		// the alternative is a refusal, and the broker prefers to run with no
-		// placement policy than not at all.
 		expect(
 			parseBrokerPolicySet(set({ placement_policies: "all" }))
 				.placementPolicies,
@@ -382,7 +308,6 @@ describe("policy sets", () => {
 	});
 
 	it("parses each placement policy through the same boundary", () => {
-		// Nested documents are not trusted just because their parent was.
 		expect(
 			codeOf(() =>
 				parseBrokerPolicySet(
@@ -405,7 +330,6 @@ describe("policy sets", () => {
 	});
 
 	it("supplies in-proc delivery and a zero billing policy by default", () => {
-		// So a minimal policy set is usable rather than merely parseable.
 		const parsed = parseBrokerPolicySet(set());
 		expect(parsed.delivery.engine).toBe("in-proc");
 		expect(parsed.billing.quotaLimit).toBe(0);
@@ -422,10 +346,6 @@ describe("broker requests", () => {
 	});
 
 	it("refuses a request that names no scope, naming the missing block", () => {
-		// A request must name at least the bindle it is placing into. This used
-		// to fall into `parseTopologyScope({})` and refuse over a missing
-		// bindleId inside a scope block the caller never wrote; it now says the
-		// scope itself is missing, which is the fix the caller actually needs.
 		expect(() =>
 			parseBrokerRequest({
 				schemaVersion: BROKER_SCHEMA_VERSION,
@@ -441,9 +361,6 @@ describe("broker requests", () => {
 	});
 
 	it("refuses a request that places nothing", () => {
-		// An empty requirements list is not an empty success — it is a caller
-		// bug, and answering it with an empty receipt would look like a
-		// completed placement.
 		expect(
 			codeOf(() => parseBrokerRequest(request({ requirements: [] }))),
 		).toBe("empty-requirements");
@@ -453,8 +370,6 @@ describe("broker requests", () => {
 	});
 
 	it("refuses a schema version it does not implement", () => {
-		// Built without the camelCase spelling: `raw.schemaVersion ?? raw.schema_version`
-		// reads the camelCase one first, so passing both would test nothing.
 		expect(
 			codeOf(() =>
 				parseBrokerRequest({
@@ -489,9 +404,6 @@ describe("broker requests", () => {
 
 describe("topology scopes and requirements", () => {
 	it("omits absent scope levels rather than carrying undefined keys", () => {
-		// `effectivePlacementPolicy` decides which layers apply by testing these
-		// for `undefined`, so a present-but-undefined key and an absent one have
-		// to stay indistinguishable.
 		const parsed = parseTopologyScope({ bindle_id: "app" });
 		expect(Object.keys(parsed)).toEqual(["bindleId"]);
 	});
@@ -521,8 +433,6 @@ describe("topology scopes and requirements", () => {
 	});
 
 	it("requires a port", () => {
-		// The port is what the requirement is *for*; without it there is nothing
-		// to match a provider against.
 		expect(codeOf(() => parseResourceRequirement({ resourceId: "db" }))).toBe(
 			"invalid-requirement",
 		);
@@ -547,8 +457,6 @@ describe("layering placement policies", () => {
 	};
 
 	it("returns nothing when no layer applies to the scope", () => {
-		// A junction-scoped policy against a bindle-only scope. Returning a
-		// policy here would apply a restriction the operator scoped elsewhere.
 		expect(
 			effectivePlacementPolicy(
 				policies(placement({ id: "j1", scopeKind: "junction" })),
@@ -558,7 +466,6 @@ describe("layering placement policies", () => {
 	});
 
 	it("lets the narrower layer win a choice-shaped field", () => {
-		// bindle overrides camp overrides yard overrides junction.
 		const merged = effectivePlacementPolicy(
 			policies(
 				placement({ id: "j1", scopeKind: "junction", objective: "min-cost" }),
@@ -576,9 +483,6 @@ describe("layering placement policies", () => {
 	});
 
 	it("accumulates denied providers instead of replacing them", () => {
-		// The privilege boundary, tested from the attacker's direction: a
-		// bindle-scoped policy denying only 'gcp' must not thereby re-permit the
-		// 'aws' a junction admin denied.
 		const merged = effectivePlacementPolicy(
 			policies(
 				placement({
@@ -598,7 +502,6 @@ describe("layering placement policies", () => {
 	});
 
 	it("cannot have an outer explicit-camp lockdown switched off inward", () => {
-		// `||`, so a narrower policy omitting the flag leaves it on.
 		const merged = effectivePlacementPolicy(
 			policies(
 				placement({
@@ -618,9 +521,6 @@ describe("layering placement policies", () => {
 	});
 
 	it("keeps an outer allow-list when the narrower layer states none", () => {
-		// An empty list means "did not say", not "allow everything" — the
-		// opposite reading would let an empty bindle policy erase a junction
-		// admin's allow-list.
 		const merged = effectivePlacementPolicy(
 			policies(
 				placement({
@@ -636,8 +536,6 @@ describe("layering placement policies", () => {
 	});
 
 	it("records every contributing layer, outermost first", () => {
-		// So a receipt can name the policies that produced a placement, which is
-		// what makes a surprising decision traceable to the rule behind it.
 		const merged = effectivePlacementPolicy(
 			policies(
 				placement({ id: "b1", scopeKind: "bindle" }),

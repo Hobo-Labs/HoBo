@@ -38,10 +38,6 @@ import {
 	fakeFreightManifestCodec,
 } from "./cd-delivery-fakes.js";
 
-// `hobo build` writes `.hobo/freight.json` with the injected
-// `writeFreightManifest` and stores the bytes in the configured artifact
-// store, so `hobo up` records the build as LOCAL_BUILD Freight.
-
 const DECLARATION = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -113,7 +109,6 @@ function fieldOf(
 	return isJsonObject(value) ? value[key] : undefined;
 }
 
-/** A build fixture whose hobo.bindle.json is also a hobo.manifest/v1 declaration. */
 async function withDeclaredBuildProject(
 	callback: (projectRoot: string) => Promise<void>,
 ): Promise<void> {
@@ -166,7 +161,6 @@ describe("hobo build emits Freight", () => {
 				cwd: projectRoot,
 			});
 			expect(result.exitCode).toBe(0);
-			// SAFETY: one JSON envelope on stdout.
 			const envelope = JSON.parse(result.stdout) as BuildEnvelope;
 			expect(envelope.ok).toBe(true);
 			const freight = envelope.data.freight;
@@ -176,7 +170,6 @@ describe("hobo build emits Freight", () => {
 			const parsed = fakeFreightManifestCodec.parse(written);
 			expect(parsed.ok).toBe(true);
 			if (!parsed.ok) return;
-			// Byte-identical to what the injected writer emits for that record.
 			expect(Buffer.from(fakeFreightManifestCodec.write(parsed.value))).toEqual(
 				Buffer.from(written),
 			);
@@ -232,7 +225,6 @@ describe("hobo build emits Freight", () => {
 				},
 			});
 			const result = await up.run(["up", "--json"], { cwd: projectRoot });
-			// SAFETY: one JSON envelope on stdout.
 			const envelope = JSON.parse(result.stdout) as { status: string };
 			expect(envelope.status).toBe("deployed");
 			const recorded = fake.calls.find((c) => c.port === "freight.record");
@@ -258,7 +250,6 @@ describe("hobo build emits Freight", () => {
 				cwd: projectRoot,
 			});
 			expect(result.exitCode).toBe(0);
-			// SAFETY: one JSON envelope on stdout.
 			const envelope = JSON.parse(result.stdout) as BuildEnvelope;
 			expect(envelope.data.freight).toBeUndefined();
 			await expect(
@@ -279,7 +270,6 @@ describe("hobo build emits Freight", () => {
 				cwd: projectRoot,
 			});
 			expect(result.exitCode).toBe(0);
-			// SAFETY: one JSON envelope on stdout.
 			const envelope = JSON.parse(result.stdout) as BuildEnvelope;
 			expect(envelope.data.freight?.skipped).toContain("hobo.manifest/v1");
 			await expect(
@@ -310,7 +300,6 @@ describe("hobo build emits Freight", () => {
 				cwd: projectRoot,
 			});
 			expect(result.exitCode).toBe(1);
-			// SAFETY: one JSON envelope on stdout.
 			const envelope = JSON.parse(result.stdout) as BuildEnvelope & {
 				remediation: string[];
 			};

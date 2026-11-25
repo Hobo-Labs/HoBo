@@ -40,7 +40,6 @@ describe("durable-agent", () => {
 		const toolStep = journal.find(
 			(event) =>
 				event.type === "run.StepCompleted" &&
-				// SAFETY: assertion to `event.data as { name?: string }` is required at this boundary.
 				(event.data as { name?: string }).name === "tool:writeOrder",
 		);
 		expect(toolStep).toBeDefined();
@@ -63,7 +62,6 @@ describe("durable-agent", () => {
 				},
 			],
 			async run(ctx, input) {
-				// SAFETY: assertion to `(await ctx.tool("writeOrder", input)) as string` is required at this boundary.
 				const written = (await ctx.tool("writeOrder", input)) as string;
 				if (!crashed) {
 					crashed = true;
@@ -78,7 +76,6 @@ describe("durable-agent", () => {
 		).rejects.toThrow("SIMULATED_HOST_CRASH");
 		expect(toolCalls).toBe(1);
 
-		// A brand-new engine over the SAME durable store resumes the run.
 		const restarted = createWorkflowEngine({ store: engine.store });
 		const handle = await restarted.resume(flaky, runId, {
 			orderId: "ord-9",
@@ -86,7 +83,6 @@ describe("durable-agent", () => {
 
 		expect(handle.status).toBe("completed");
 		expect(handle.result).toBe("written");
-		// The tool step was journaled on attempt 1 — replayed, not re-run.
 		expect(toolCalls).toBe(1);
 	});
 
@@ -111,7 +107,6 @@ describe("durable-agent", () => {
 		const engine = createWorkflowEngine();
 		const unauthorized = agent<null, unknown>({
 			name: "unauthorized-ops",
-			// No token:acme-cloud capability declared.
 			async run(ctx) {
 				return ctx.token({ provider: TOKEN_PROVIDER, scope: TOKEN_SCOPE });
 			},
@@ -125,14 +120,12 @@ describe("durable-agent", () => {
 		}
 
 		expect(denial).toBeInstanceOf(CapabilityDeniedError);
-		// SAFETY: assertion to `nial as CapabilityDeniedError).` is required at this boundary.
 		expect((denial as CapabilityDeniedError).capability).toBe(
 			`token:${TOKEN_PROVIDER}`,
 		);
 	});
 
 	it("mints exactly the broker token the pact contract pins", async () => {
-		// SAFETY: assertion to `ON.parse( await readFile( new URL( "../contracts/pacts/agent-to-token-broker.pact.json", import.meta.url, ), "utf8", ), ` is required at this boundary.
 		const pact = JSON.parse(
 			await readFile(
 				new URL(

@@ -32,14 +32,6 @@ import {
 	type ResourceActorState,
 } from "./resource-actor.js";
 
-// Choreographed compensation (control-plane.md "Compensation is also
-// choreographed"): a `resource.Failed` past the no-go threshold emits
-// `deployment.RolledBack`, which each already-`Provisioned` actor observes and
-// reacts to by `Destroying` itself in reverse-dependency order (tracked via the
-// DAG). There is no central saga coordinator — the reverse-topological walk is
-// derived from the plan's dependency edges, and a resource is destroyed only once
-// all of its dependents are already Destroyed.
-
 export interface CompensationDeps {
 	store: EventStore;
 	actorHost: ActorHost;
@@ -66,9 +58,6 @@ function streamId(deploymentId: string): string {
 	return `deployment:${deploymentId}`;
 }
 
-// Reverse-topological order over the resources that reached a
-// provisioned-or-later state — the safe teardown order (dependents before
-// dependencies).
 function reverseDependencyOrder(
 	plan: DeploymentPlan,
 	states: Map<string, ResourceActorState>,
@@ -217,7 +206,6 @@ export async function runCompensation(
 			reason: triggeringFailure.reason,
 		};
 		const lastSeq =
-			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
 		await emit(deps.store, stream, [deploymentTransitionStarted(transition)], {
@@ -245,8 +233,6 @@ export async function runCompensation(
 	const byName = new Map(plan.resources.map((r) => [r.name, r]));
 	const destroyedOrder: string[] = [];
 
-	// Walk reverse-dependency order, destroying each provisioned actor once its
-	// live dependents are gone.
 	let progressed = true;
 	while (progressed) {
 		progressed = false;
@@ -280,8 +266,6 @@ export async function runCompensation(
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
 			const state = states.get(resourceId);
 			if (state === "Destroyed") continue;
-			// Only compensate resources that actually got provisioned (an
-			// interrupted in-place update still exists at the provider).
 			if (
 				state !== "Provisioned" &&
 				state !== "Updating" &&
@@ -294,7 +278,6 @@ export async function runCompensation(
 			)
 				continue;
 
-			// Gate: all dependents must already be Destroyed (reverse order).
 			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
 				const s = states.get(depId);
 				return (

@@ -1,9 +1,3 @@
-/**
- * Manifest -> the provider shape the registry catalog registers.
- *
- * Structurally a `@hobo/cloud` `RegistrableProvider`; declared here so this
- * package does not depend on the control plane it feeds.
- */
 import type { CapabilityManifest } from "@hobo/core";
 import type { ParsedProviderManifest } from "./parse.js";
 import { toCapabilityManifest, toCostDocument } from "./publish.js";
@@ -26,7 +20,6 @@ export type ManifestProvider = {
 	readonly id: string;
 	readonly regions: string[];
 	readonly capabilities: ManifestCapability[];
-	/** Mapping ids dropped because an earlier mapping already claimed the port. */
 	readonly shadowedMappings: readonly string[];
 	capabilityManifest(): CapabilityManifest;
 };
@@ -39,16 +32,10 @@ type CostFact = {
 	readonly pricingStatus?: "unknown" | "estimate";
 };
 
-/**
- * A data-only provider. The catalog keys a provider's definitions by port, so
- * when several mappings share a port the first one is registered and the rest
- * are returned in `shadowedMappings` rather than silently merged.
- */
 export function providerFromManifest(
 	manifest: ParsedProviderManifest,
 ): ManifestProvider {
 	const published = toCapabilityManifest(manifest);
-	// SAFETY: toCostDocument builds `facts` as an array of the shape above.
 	const facts = toCostDocument(manifest).facts as readonly CostFact[];
 	const mappings = manifest.capabilities?.mappings ?? [];
 	const capabilities: ManifestCapability[] = [];
@@ -74,7 +61,6 @@ export function providerFromManifest(
 					: { kind: "partial", missing };
 			},
 			estimateCost() {
-				// No fact, or a plan too rich for one number: unknown ranks last.
 				return {
 					marginalPrice: fact?.marginalPrice ?? "0",
 					sku: fact?.sku ?? `${published.providerId}:${mapping.port}`,

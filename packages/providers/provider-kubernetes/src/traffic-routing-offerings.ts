@@ -1,16 +1,5 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 
-/**
- * Kubernetes TrafficRouting offerings declaration (scaffold).
- *
- * Every offering below is `simulated` rather than `real`, and that is the
- * honest fidelity: a Service gives weighted routing only across the pods of one
- * Deployment, and everything richer — header matching, canaries, per-route
- * weights — needs an Ingress *controller* or a service mesh, which is software
- * an operator installs into the cluster rather than something the Kubernetes
- * API provides. Declaring these as `real` would let Matching negotiate a
- * feature that then falls through at realization on a bare cluster.
- */
 export const KUBERNETES_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	{
 		provider: "other",

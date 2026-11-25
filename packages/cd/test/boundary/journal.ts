@@ -1,6 +1,3 @@
-// A fixed CD journal used by the boundary golden tests. Bodies are the
-// generated protobuf records rendered with toJson, exactly as the owning
-// modules append them.
 import { create, type DescMessage, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, JsonObject } from "@hobo/core";
 import {
@@ -32,7 +29,6 @@ const RAIL = `sha256:${"3".repeat(64)}`;
 
 let seq = 0;
 
-/** The protobuf JSON body of a generated message. */
 function body<D extends DescMessage>(
 	schema: D,
 	message: Parameters<typeof toJson<D>>[1],
@@ -376,7 +372,6 @@ export function fixtureJournal(): EventEnvelope<JsonObject>[] {
 			),
 			16,
 		),
-		// A body that does not parse is skipped, never trusted.
 		{
 			id: "evt-bad",
 			type: CD_EVENTS.EnvPromoted,

@@ -1,9 +1,3 @@
-/**
- * MIRROR_BIN and HOBO_OPENSESAME_KIT point a lane at a local binary instead of
- * the pinned, hash-checked release. Such a binary is unverified by definition:
- * nothing here (or anywhere) has looked at it. That is fine on a developer's
- * machine and wrong in CI, where a green run must mean the pinned bytes ran.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 

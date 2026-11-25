@@ -1,4 +1,3 @@
-// Default bindings of the frozen factories and the in-package adapters.
 import type { DurableEventStore } from "@hobo/core";
 import { ReconcilerMode } from "../_generated/cd_pb.js";
 import { createAgentEnrollment, createHttpTransport } from "../agent/index.js";
@@ -61,7 +60,6 @@ import { createChangeWindows } from "../windows/index.js";
 import type { RailCatalog } from "./rails.js";
 import type { CdComposeAdapters, CdComposeScope } from "./wire.js";
 
-/** Every frozen factory bound to its module. */
 export const defaultCdFactories: CdFactories = Object.freeze({
 	createFreightLedger,
 	createTrustedPublisherVerifier,
@@ -109,17 +107,12 @@ type ScopeOwned =
 	| "telemetry"
 	| "stationRail";
 
-/** Host inputs the in-package adapters need beyond the composed modules. */
 export type CdHostInputs = Readonly<{
-	/** Matching/Planner inputs (WP6 planning adapter): registry, declarations, per-Camp planning. */
 	planning: Omit<PlanningDeps, "store" | "tenant" | "now" | "desired">;
-	/** Gate inputs the host owns: contracts, subject classification, trust, cost. */
 	gate: Omit<DeployGateDeps, ScopeOwned>;
-	/** Station cutover routing per Camp; absent → no traffic capability (fail closed). */
 	routing?: CutoverTrafficShifterDeps["routing"];
 	flags?: HarnessRolloutEngineDeps["flags"];
 	drift?: DriftPolicyOptions;
-	/** Realizer per mode; a missing mode refuses that reconciler. */
 	realizers: Readonly<
 		Partial<
 			Record<
@@ -143,7 +136,6 @@ const MODE_KEY: ReadonlyMap<
 	[ReconcilerMode.PUBLISHER, "publisher"],
 ]);
 
-/** The in-package adapters bound to host inputs. */
 export function defaultCdAdapters(host: CdHostInputs): CdComposeAdapters {
 	const routing = host.routing;
 	return Object.freeze({

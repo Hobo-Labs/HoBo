@@ -1,14 +1,3 @@
-/**
- * Migration conformance — can the data actually leave?
- *
- * "Supports export" is the single most over-claimed field in any provider
- * catalog. An export endpoint that emits bytes nobody can verify, an import
- * that is only ever tested against the machine it came from, and a cutover
- * that fires before verification are all ways to have an export button and no
- * exit. The fourth case is the one operators care about at 3am: when the import
- * fails, is the source still there?
- */
-
 import type { MigrationState } from "@hobo/claims";
 import { DIGEST_PATTERN } from "@hobo/trust";
 import type { JsonValue } from "../../json.js";

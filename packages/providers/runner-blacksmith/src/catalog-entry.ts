@@ -13,12 +13,6 @@ import {
 	publishCapabilityManifest,
 } from "./manifest.js";
 
-// The M0 catalog entry for `hobo add runner-blacksmith` (HOBO-710 registry
-// model): a registrable snapshot of both execution-host ports whose
-// Capability Manifest lands in the provider.Registered fact. Structurally
-// matches @hobo/cloud's RegistrableProvider so the composition root registers
-// it without this package depending on the kernel.
-
 const FEATURES = {
 	[RUNNER_CATEGORY]: ["ci-job", "workflow-dispatch", "fast-runner"],
 	[BUILD_MACHINE_CATEGORY]: [

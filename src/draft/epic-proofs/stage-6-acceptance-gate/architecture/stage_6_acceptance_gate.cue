@@ -1,4 +1,3 @@
-// CUE constraints for Stage-6 acceptance drill records (HOBO-665).
 
 package architecture_evidence
 

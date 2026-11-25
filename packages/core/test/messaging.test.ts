@@ -55,14 +55,11 @@ describe("@hobo/core messaging port", () => {
 	it("publish/subscribe round-trip with consumer groups", async () => {
 		const bus = createInMemoryMessaging({ tenantId: "t1" });
 		await bus.ensureTopic({
-			// SAFETY: assertion required at this I/O or test boundary.
 			name: "events" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: "t1" as never,
 			delivery: "at-least-once",
 		});
 		const pub = await bus.publish(
-			// SAFETY: assertion required at this I/O or test boundary.
 			"events" as never,
 			{ hello: "world" },
 			{
@@ -71,7 +68,6 @@ describe("@hobo/core messaging port", () => {
 		);
 		expect(pub.deduped).toBe(false);
 		const dedup = await bus.publish(
-			// SAFETY: assertion required at this I/O or test boundary.
 			"events" as never,
 			{ hello: "world" },
 			{
@@ -80,7 +76,6 @@ describe("@hobo/core messaging port", () => {
 		);
 		expect(dedup.deduped).toBe(true);
 
-		// SAFETY: assertion required at this I/O or test boundary.
 		const consumed = await bus.consume("events" as never, "workers" as never, {
 			maxMessages: 10,
 		});
@@ -96,7 +91,6 @@ describe("@hobo/core messaging port", () => {
 			bus.ack(first(consumed).messageId, first(consumed).leaseId),
 		).rejects.toThrow(/no inflight message/);
 
-		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await bus.consume("events" as never, "workers" as never);
 		expect(again).toHaveLength(0);
 

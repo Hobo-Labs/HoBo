@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Registry Capability Manifest
-// Ingest Contract draft package reasons about.
 
 enum RegistryCapabilityManifestIngestEvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

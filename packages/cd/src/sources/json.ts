@@ -1,6 +1,3 @@
-// JSON document helpers for the source boundaries. Registry, Git host, CI and
-// webhook payloads arrive as text; these turn them into JsonValue once and let
-// the drivers branch on parsed values (no runtime `typeof`).
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "@hobo/core";
 
@@ -27,10 +24,8 @@ export function isList<T>(value: T): value is T & JsonValue[] {
 	return Array.isArray(value);
 }
 
-/** Parse JSON text; `undefined` when it is not JSON. */
 export function parseJson(text: string): JsonValue | undefined {
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;
@@ -60,7 +55,6 @@ export function list(
 	return isList(found) ? found : [];
 }
 
-/** Keys sorted at every depth, arrays in order: the canonical JSON form. */
 export function canonical(value: JsonValue): string {
 	if (isList(value)) return `[${value.map(canonical).join(",")}]`;
 	if (isRecord(value)) {
@@ -86,7 +80,6 @@ export function isDigest(value: string): value is `sha256:${string}` {
 	return DIGEST_PATTERN.test(value);
 }
 
-/** Bytes of a binary-safe transport body (one byte per UTF-16 unit, latin1). */
 export function latin1Bytes(body: string): Uint8Array | undefined {
 	const bytes = new Uint8Array(body.length);
 	for (let index = 0; index < body.length; index += 1) {

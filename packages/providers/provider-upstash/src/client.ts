@@ -1,22 +1,3 @@
-/**
- * The control-plane client: idempotency, adoption, and bounded retry.
- *
- * `POST https://upstash.com/start-redis` accepts an `Idempotency-Key`, and the
- * provider derives the database id from it, so a repeat POST with the same key
- * returns the same database rather than making another one. That is a stronger
- * guarantee than most anonymous surfaces offer, and this client is built around
- * it: **adoption is a re-POST with the original key**, never a fresh create.
- *
- * The reason to be strict about that is that an orphaned anonymous Redis is
- * invisible. There is no account to list it in and no delete endpoint, so a
- * duplicate created while resolving an ambiguous timeout is not a tidy-up
- * problem — it is a live, credentialed database nobody will ever find again,
- * sitting there until the provider reaps it.
- *
- * A local store still exists, but it does a different job than Neon's: it
- * remembers which key was used so a caller that lost its response can adopt,
- * and it refuses to let one intent quietly become two keys.
- */
 import {
 	providerErrorForStatus,
 	redactProviderText,
@@ -49,7 +30,6 @@ export type IdempotencyRecord = {
 };
 
 export interface IdempotencyStore {
-	/** Native keys and ids are bearer capabilities: this cache is private custody, never public events. */
 	readonly visibility: "private-custody";
 	get(key: string): Promise<IdempotencyRecord | undefined>;
 	put(record: IdempotencyRecord): Promise<void>;
@@ -73,24 +53,17 @@ export function createInMemoryIdempotencyStore(
 }
 
 export type CreateDatabaseInput = {
-	/**
-	 * A UUIDv4. The provider uses it as the database id, so it is both the
-	 * dedupe key and the resource identity — which is why this client will not
-	 * accept an arbitrary string for it.
-	 */
 	readonly idempotencyKey: string;
 };
 
 export type CreateDatabaseOutcome = {
 	readonly database: StartRedisDatabase;
-	/** True when the provider returned an existing database for this key. */
 	readonly adopted: boolean;
 };
 
 export type UpstashClientOptions = {
 	readonly transport: UpstashTransport;
 	readonly store: IdempotencyStore;
-	/** Injected clock. Nothing in this package reads `Date.now()` directly. */
 	readonly clock: () => number;
 	readonly policy?: TransportPolicy;
 	readonly baseUrl?: string;
@@ -102,13 +75,6 @@ export type UpstashClientOptions = {
 
 export type UpstashClient = {
 	createDatabase(input: CreateDatabaseInput): Promise<CreateDatabaseOutcome>;
-	/**
-	 * Re-POST a known key to observe the database it names.
-	 *
-	 * This is the adoption primitive, and it is exposed because "did my create
-	 * actually happen" is a question a caller has to be able to ask without
-	 * risking a second database.
-	 */
 	adoptDatabase(idempotencyKey: string): Promise<StartRedisDatabase>;
 	getMetrics(
 		metricsUrl: string,
@@ -197,10 +163,6 @@ export function createUpstashClient(
 		if (response.status === 200 || response.status === 201) {
 			const parsed = parseStartRedisResponse(response.body);
 			if (parsed.databaseId !== idempotencyKey) {
-				// The provider documents the key as becoming the id. If that
-				// stops being true, adoption silently stops working, and a
-				// caller resolving an ambiguity would create a second database
-				// while believing it adopted the first.
 				throw new UpstashProviderError(
 					"PROVIDER_CONTRACT_CHANGED",
 					"provider returned a database whose id is not the idempotency key, so re-POST is no longer a safe adoption",
@@ -242,8 +204,6 @@ export function createUpstashClient(
 				return database;
 			} catch (cause) {
 				if (!(cause instanceof UpstashProviderError)) throw cause;
-				// Ambiguity is retryable *here specifically*, because a repeat
-				// POST on the same key cannot create a second database.
 				const canRetry =
 					cause.retryable || cause.code === "PROVIDER_OPERATION_AMBIGUOUS";
 				if (!canRetry) throw cause;
@@ -267,8 +227,6 @@ export function createUpstashClient(
 
 		const existing = await options.store.get(input.idempotencyKey);
 		if (existing !== undefined && existing.state !== "failed") {
-			// Both "created" and "in-flight" resolve the same way: ask the
-			// provider, with the same key, and take what it says.
 			return {
 				database: await adoptDatabase(input.idempotencyKey),
 				adopted: true,
@@ -289,10 +247,8 @@ export function createUpstashClient(
 				cause instanceof UpstashProviderError &&
 				cause.code === "PROVIDER_OPERATION_AMBIGUOUS"
 			) {
-				// Left in-flight on purpose: the next call must adopt.
 				throw cause;
 			}
-			// A definite refusal releases the key.
 			await options.store.put({
 				key: input.idempotencyKey,
 				state: "failed",
@@ -324,8 +280,6 @@ export function createUpstashClient(
 		if (response.status === 200)
 			return parseStartRedisMetrics(response.body, databaseId);
 		if (response.status === 404) {
-			// The one signal the anonymous surface gives that a database is
-			// gone. It cannot distinguish reaped-on-expiry from never-existed.
 			throw new UpstashProviderError(
 				"LEASE_EXPIRED",
 				`the provider no longer knows about database ${databaseId}; an unclaimed temporary database is reaped at expiry`,

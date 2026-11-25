@@ -1,11 +1,3 @@
-/**
- * Host-stall recovery for jobs on this box worker only.
- *
- * Stops the local container only — never force-cancels a workflow run and never
- * touches ARC or GitHub-hosted runners. Single-job rerun is limited to main
- * push and merge_group within a short window after run creation.
- */
-
 import type { Lease } from "@hobo/ci";
 import {
 	type GithubTransport,

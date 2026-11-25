@@ -41,8 +41,6 @@ export const RESOLVER_OPERATIONS_METRIC = "hobo.cd.resolver.operations";
 // public-contract: histogram name for every resolver call's duration.
 export const RESOLVER_DURATION_METRIC = "hobo.cd.resolver.duration";
 
-/** Every portable traffic offering id (ADR-0143); a profile declares each one
- * as present or absent, never by omission. */
 export const PORTABLE_TRAFFIC_OFFERING_IDS: readonly TrafficRoutingOfferingId[] =
 	Object.freeze([
 		"lb.lifecycle",
@@ -64,7 +62,6 @@ export const PORTABLE_TRAFFIC_OFFERING_IDS: readonly TrafficRoutingOfferingId[] 
 		"resiliency.edge",
 	]);
 
-/** A catalogued hosting product this package refuses to realize, and why. */
 // domain-view: frozen domain record built by defineHostingCoverage; wire form is UnresolvedHostingProduct in data-models/hosting_coverage.proto (CUE #UnresolvedHostingProduct).
 export interface UnresolvedHostingProduct {
 	readonly productId: string;
@@ -72,7 +69,6 @@ export interface UnresolvedHostingProduct {
 	readonly remediation: string;
 }
 
-/** A traffic offering the provider cannot realize (ADR-0144: absent, not preview). */
 // domain-view: offeringId is the core TrafficRoutingOfferingId union, narrower than the proto string; wire form is AbsentTrafficOffering in data-models/hosting_coverage.proto.
 export interface AbsentTrafficOffering {
 	readonly offeringId: TrafficRoutingOfferingId;
@@ -97,7 +93,6 @@ export type ResolverMetricAttributes = Readonly<
 	Record<string, string | number | boolean>
 >;
 
-/** Structurally an OTel metric point, compatible with `@hobo/cd` OtelMetricPoint. */
 export type ResolverMetricPoint = Readonly<{
 	name: string;
 	kind: "counter" | "histogram" | "gauge";
@@ -107,14 +102,12 @@ export type ResolverMetricPoint = Readonly<{
 	attributes: ResolverMetricAttributes;
 }>;
 
-/** Structurally the `metrics` half of `@hobo/cd` TelemetrySink. */
 export interface ResolverMetricSink {
 	metrics(points: readonly ResolverMetricPoint[]): Promise<void>;
 }
 
 export interface ResolverTelemetryOptions {
 	readonly metrics?: ResolverMetricSink;
-	/** Required with `metrics`: an injected clock keeps replay deterministic (I8). */
 	readonly nowMs?: () => number;
 }
 
@@ -206,11 +199,6 @@ export function defineHostingCoverage(input: {
 	});
 }
 
-/**
- * The typed refusal for a product id this provider does not realize, or
- * `undefined` when a shipped resolver owns it. An id the provider does not
- * catalog at all is also refused, naming the out-of-tree escape (D6).
- */
 export function hostingProductRefusal(
 	coverage: HostingCoverage,
 	productId: string,
@@ -232,12 +220,6 @@ export function hostingProductRefusal(
 	);
 }
 
-/**
- * Wrap resolvers so every call emits `hobo.cd.resolver.operations` and
- * `hobo.cd.resolver.duration`. Without a sink the resolvers are returned
- * unchanged. A sink without a clock is refused: a metric stamped from an
- * ambient clock breaks replay (I8).
- */
 export function instrumentResolvers(
 	resolvers: readonly ResourceResolver[],
 	options: ResolverTelemetryOptions,
@@ -287,9 +269,7 @@ export function instrumentResolvers(
 					attributes,
 				},
 			]);
-		} catch {
-			// Telemetry never changes delivery: a failed export is dropped.
-		}
+		} catch {}
 	}
 	async function measured<T>(
 		resolver: ResourceResolver,

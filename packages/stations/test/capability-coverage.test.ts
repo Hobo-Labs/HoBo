@@ -13,7 +13,6 @@ const azure: StationYardCatalogInput = {
 	yardName: "yard:azure-east",
 	providerId: "azure",
 	bindings: [
-		// A Yard is a catalog: Azure legitimately lists four ways to do web.
 		{ profile: "web.hosted/v1", productId: "azure:app-service" },
 		{ profile: "web.hosted/v1", productId: "azure:static-web-apps" },
 		{ profile: "web.hosted/v1", productId: "azure:container-apps" },
@@ -85,7 +84,6 @@ describe("aggregateStationCapabilities() — breadth, not choice", () => {
 			(entry) => entry.profile === "web.hosted/v1",
 		);
 		const keys = Object.keys(web?.offerings[0] ?? {});
-		// No preferred/selected/rank/score/weight field exists to smuggle a choice.
 		for (const forbidden of [
 			"preferred",
 			"selected",
@@ -101,8 +99,6 @@ describe("aggregateStationCapabilities() — breadth, not choice", () => {
 	it("orders offerings lexicographically by yard then productId, not by input order", () => {
 		const coverage = aggregateStationCapabilities({
 			stationId: "station:acme",
-			// "zulu" is authored first; a preference-carrying aggregation would
-			// keep it first. ADR-0151 forbids authoring order influencing anything.
 			yards: [
 				{
 					yardName: "yard:a",
@@ -296,7 +292,6 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 			aggregateStationCapabilities(input);
 		} catch (error) {
 			expect(error).toBeInstanceOf(StationCapabilityCoverageError);
-			// SAFETY: assertion required at this I/O or test boundary.
 			const typed = error as StationCapabilityCoverageError;
 			expect(typed.remediation.length).toBeGreaterThan(0);
 			return { code: typed.code, remediation: typed.remediation };
@@ -371,7 +366,6 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 					{
 						yardName: "yard:bad",
 						providerId: "azure",
-						// SAFETY: assertion required at this I/O or test boundary.
 						bindings: [null as never],
 					},
 				],
@@ -402,7 +396,6 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 					{
 						yardName: "yard:a",
 						providerId: "azure",
-						// SAFETY: assertion required at this I/O or test boundary.
 						bindings: undefined as never,
 					},
 				],
@@ -412,7 +405,6 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 		expect(
 			refusal({
 				stationId: "station:acme",
-				// SAFETY: assertion required at this I/O or test boundary.
 				yards: [null as never],
 				expected: [],
 			}).code,
@@ -455,7 +447,6 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 		expect(
 			refusal({
 				stationId: "station:acme",
-				// SAFETY: assertion required at this I/O or test boundary.
 				yards: undefined as never,
 				expected: [],
 			}).code,
@@ -464,7 +455,6 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 			refusal({
 				stationId: "station:acme",
 				yards: [],
-				// SAFETY: assertion required at this I/O or test boundary.
 				expected: undefined as never,
 			}).code,
 		).toBe("STATION_COVERAGE_EXPECTED_INVALID");

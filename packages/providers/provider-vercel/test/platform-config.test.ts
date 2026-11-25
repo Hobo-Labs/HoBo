@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { vercelPlatformDrift } from "../src/index.js";
 
-// A schedule or a queue placed on Vercel is executed by the deployment's
-// vercel.json; the plan says what that file must hold.
-
 const planned = [
 	{ name: "hobo-ci", port: "queue", deps: [] },
 	{

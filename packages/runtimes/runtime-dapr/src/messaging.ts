@@ -1,8 +1,3 @@
-/**
- * Messaging over Dapr pub/sub building block.
- * Live fidelity requires an injected {@link DaprSidecarClient}.
- */
-
 import { randomUUID } from "node:crypto";
 import {
 	assertDeadLetterSupported,
@@ -36,9 +31,7 @@ import type { DaprRuntimeConfig } from "./types.js";
 export interface DaprMessagingOptions {
 	readonly config: DaprRuntimeConfig;
 	readonly metering?: MeteringBus;
-	/** Requires {@link client} when true. */
 	readonly live?: boolean;
-	/** Live path: all publish/drain/ack go through daprd client. */
 	readonly client?: DaprSidecarClient;
 	readonly now?: () => string;
 	readonly settlementTimeoutMs?: number;
@@ -131,7 +124,6 @@ export function createDaprMessaging(
 		string,
 		{ topic: string; group: string; maxDeliveryAttempts: number }
 	>();
-	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = config.tenantId as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const emit = (
@@ -400,7 +392,6 @@ async function meter(
 	if (!metering || quantity === 0) return;
 	await metering.emit(
 		createUsageEvent({
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: config.tenantId as TenantId,
 			eventType,
 			resource: tenantScopedTopicName(config.tenantId, String(topic)),

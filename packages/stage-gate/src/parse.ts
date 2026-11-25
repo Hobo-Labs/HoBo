@@ -42,12 +42,10 @@ function memberOf<T extends string>(
 	return allowed.find((entry) => entry === value);
 }
 
-/** Own field only: a key named like an Object.prototype member reads as absent. */
 function fieldOf(raw: JsonObject, key: string): JsonValue | undefined {
 	return Object.hasOwn(raw, key) ? raw[key] : undefined;
 }
 
-/** A field under its snake_case wire name, else its camelCase alias (null falls through, as `??` does). */
 function wireField(
 	raw: JsonObject,
 	snake: string,
@@ -66,7 +64,6 @@ function parseCommand(
 	path: string,
 ): string[] {
 	if (!Array.isArray(raw)) {
-		// eli5: a non-array `command` is an error and yields no command words.
 		issues.push(`${path}.command: expected array`);
 		return [];
 	}

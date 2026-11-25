@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Depot execution-host wire records. One constraint
-// per protobuf message in runner_depot.proto.
 
 #DepotCapabilityRecord: {
 	port:      "hobo:runner" | "hobo:build-machine"

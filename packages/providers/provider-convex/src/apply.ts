@@ -1,7 +1,3 @@
-/**
- * Apply a realized convex-deploy DriverProgram against Cloud or self-host.
- * This is the missing execute side of realize() (IR alone is not enough).
- */
 import {
 	type ConvexSpawn,
 	type DeployConvexAppResult,
@@ -11,7 +7,6 @@ import { assertDriverProgram, type DriverProgram } from "./driver-program.js";
 
 export type ApplyConvexDriverInput = {
 	readonly program: DriverProgram;
-	/** App tree whose `convex/` functions are pushed (Bindle convexApp root). */
 	readonly root: string;
 	readonly deployKey?: string;
 	readonly selfHostedUrl?: string;
@@ -30,10 +25,6 @@ export type ApplyConvexDriverResult = {
 	readonly program: DriverProgram;
 };
 
-/**
- * Execute the driver: push functions via `convex deploy`, materialize
- * connection refs (URL only — never keys) for frontend / Bindle wiring.
- */
 export async function applyDriverProgram(
 	input: ApplyConvexDriverInput,
 ): Promise<ApplyConvexDriverResult> {

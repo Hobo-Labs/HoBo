@@ -1,9 +1,3 @@
-/**
- * Full Temporary OpenSaaS ship (anon, zero project API keys):
- * 1) Neon Claimable Postgres (Bindle `db`)
- * 2) Anon server host chain: OpenPouch HTTP → Clawdship Docker → CF Temporary Neon shim
- * 3) Cloudflare Temporary Pages client (REACT_APP_API_URL → server)
- */
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import path from "node:path";
@@ -84,7 +78,6 @@ async function ensureClientBuild(
 			await access(clientBuild);
 			return;
 		} catch {
-			/* build missing */
 		}
 	}
 
@@ -125,9 +118,6 @@ async function ensureClientBuild(
 	await access(clientBuild);
 }
 
-/**
- * Full anon Temporary OpenSaaS: Neon db + anon server chain + CF Temporary client.
- */
 export async function deployOpenSaasTemporaryClient(input: {
 	readonly root: string;
 	readonly wranglerBin?: string;
@@ -153,7 +143,6 @@ export async function deployOpenSaasTemporaryClient(input: {
 	});
 	env.DATABASE_URL = database.databaseUrl;
 
-	// Placeholder client URL for server boot (dev CORS is open).
 	const placeholderClient = "https://hobo-opensaas-client.workers.dev";
 	const server = await provisionAnonOpenSaasServer({
 		waspAbsRoot,
@@ -161,7 +150,6 @@ export async function deployOpenSaasTemporaryClient(input: {
 		webClientUrl: placeholderClient,
 		mock: mockServer,
 	});
-	// #region agent log
 	fetch("http://127.0.0.1:7655/ingest/eac23247-0462-43c4-8e6e-14b2a6cecba6", {
 		method: "POST",
 		headers: {
@@ -190,7 +178,6 @@ export async function deployOpenSaasTemporaryClient(input: {
 			timestamp: Date.now(),
 		}),
 	}).catch(() => {});
-	// #endregion
 	env.REACT_APP_API_URL = server.serverUrl;
 	env.WASP_SERVER_URL = server.serverUrl;
 	env.WASP_WEB_CLIENT_URL = placeholderClient;

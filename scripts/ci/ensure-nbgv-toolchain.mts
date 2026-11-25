@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/**
- * CI entry for release-main-train-gate: bounded dotnet install for nbgv with progress logs.
- */
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureNbgvToolchainAsync } from "../lib/nbgv-toolchain.mts";

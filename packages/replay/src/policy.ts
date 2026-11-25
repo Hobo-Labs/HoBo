@@ -1,10 +1,8 @@
-/**
- * Recording policy: default-on local, sampling/off production, OpenFeature kill switch.
- */
 import { defaultPrivacyPolicy, type PrivacyPolicy } from "./types.js";
 
 // public-contract: OpenFeature / env keys for progressive recording control.
 export const REPLAY_FLAG_KEY = "hobo.session-replay" as const;
+// public-contract: stable exported contract literal
 export const REPLAY_ENV_KILL = "HOBO_REPLAY" as const;
 
 export type RecordingDecision = Readonly<{
@@ -23,26 +21,15 @@ export type RecordingDecision = Readonly<{
 }>;
 
 export type RecordingPolicyInput = Readonly<{
-	/** Process / browser env. */
 	env?: Readonly<Record<string, string | undefined>>;
-	/** OpenFeature / Harness evaluation result for REPLAY_FLAG_KEY. */
 	flagEnabled?: boolean;
-	/** Explicit sample rate 0..1 when progressive. */
 	sampleRate?: number;
-	/** Deterministic sample unit (session id hash bucket). */
 	sampleUnit?: number;
-	/** Isolation / env class. */
 	isolationClass?: string;
-	/** Effects harness may force-disable capture for deterministic tests. */
 	effectIsolated?: boolean;
 	privacy?: PrivacyPolicy;
 }>;
 
-/**
- * Decide whether recording is active.
- * Local / dual-fixture: default ON. Production: default OFF unless flag/sample.
- * HOBO_REPLAY=0 always forces off.
- */
 export function evaluateRecordingPolicy(
 	input: RecordingPolicyInput = {},
 ): RecordingDecision {
@@ -111,7 +98,6 @@ export function evaluateRecordingPolicy(
 		});
 	}
 
-	// Local / Station / dual-fixture path: on by default.
 	return Object.freeze({
 		enabled: true,
 		reason: "local-default-on",

@@ -1,6 +1,3 @@
-// createVerificationEngine end to end over an in-memory journal: the WP9 Accept
-// bullets and the §10 rows "Health source returns no data → FAIL" and
-// "Canary error rate significantly worse → FAIL".
 import { describe, expect, it } from "vitest";
 import {
 	Aggregation,
@@ -93,7 +90,6 @@ async function expectReplayMatches(store: MemoryEventStore) {
 	expect(ids.length).toBeGreaterThan(0);
 	for (const streamId of ids) {
 		const id = streamId.slice("cd-verification-".length);
-		// SAFETY: stream ids are minted by the engine from VerificationIds.
 		const replay = await replayVerificationFromStore(
 			store,
 			id as Parameters<typeof replayVerificationFromStore>[1],
@@ -116,7 +112,7 @@ describe("verification engine: canary vs baseline", () => {
 			},
 			h.ctx,
 		);
-		expect(await h.engine.tick(h.ctx)).toEqual([]); // window still open
+		expect(await h.engine.tick(h.ctx)).toEqual([]);
 		expect(source.calls).toEqual([]);
 		h.time.advance(10 * MINUTE);
 		const [result] = await h.engine.tick(h.ctx);

@@ -1,14 +1,3 @@
-/**
- * The deadline wrapper (UNDER_DEADLINE) starts git in a session of its own,
- * so a terminal's Ctrl-C reaches git only through the wrapper. Its signal
- * listeners therefore exist before git does: a signal handled before the
- * spawn ends the wrapper with 130 and git never starts, and one after it is
- * passed on to git's group. Either way no git outlives the run.
- *
- * The wrapper runs in its own process group here and the test signals that
- * group, as a terminal does; a `git` on PATH records its pid and waits.
- * Whether that git is still alive is read from /proc.
- */
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import {
@@ -47,7 +36,6 @@ interface Rig {
 	readonly started: () => boolean;
 }
 
-/** A `git` on PATH that writes its pid to `mark` and sleeps. */
 function rig(): Rig {
 	const dir = scratch("wrapper");
 	const bin = join(dir, "bin");
@@ -82,7 +70,6 @@ function rig(): Rig {
 	};
 }
 
-/** How the wrapper ended: its exit code, its signal, or undefined. */
 function ending(wrapper: ChildProcess): Promise<string | undefined> {
 	const exited = new Promise<string>((resolve) =>
 		wrapper.on("exit", (code, signal) => resolve(`${code ?? signal}`)),
@@ -90,7 +77,6 @@ function ending(wrapper: ChildProcess): Promise<string | undefined> {
 	return Promise.race([exited, pause(3000)]);
 }
 
-/** Kill what is left of a run; true when its git was still alive. */
 function sweep(wrapper: ChildProcess, setup: Rig): boolean {
 	let survived = false;
 	if (setup.started()) {
@@ -100,9 +86,7 @@ function sweep(wrapper: ChildProcess, setup: Rig): boolean {
 	}
 	try {
 		process.kill(-(wrapper.pid ?? 0), "SIGKILL");
-	} catch {
-		// Already gone.
-	}
+	} catch {}
 	return survived;
 }
 
@@ -143,8 +127,6 @@ describe("the deadline wrapper and a signal to its group", () => {
 		skip: NO_PROC,
 	}, async () => {
 		const setup = rig();
-		// The wrapper signals itself as soon as its last listener is in place,
-		// so the signal is pending before git is spawned.
 		const preload = join(setup.dir, "pending.cjs");
 		writeFileSync(
 			preload,

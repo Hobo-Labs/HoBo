@@ -11,14 +11,12 @@ import {
 	BROWSER_WASM_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-/** Every Browser WASM hosting product with a shipped resolver (I14). */
 export const BROWSER_WASM_RESOLVED_PRODUCT_IDS: readonly string[] =
 	Object.freeze([BROWSER_WASM_GUEST_PRODUCT_ID]);
 
 const IN_BROWSER =
 	"publish it as a guest (port kv or queue in the guest manifest) through browser-wasm.guest/v1, or bind a hosted provider (for example @hobo/provider-upstash or @hobo/provider-kafka) for a delivered store";
 
-/** Equivalence classes no resolver delivers on their own. Each is a decision. */
 export const BROWSER_WASM_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 	Object.freeze([
 		Object.freeze({
@@ -45,7 +43,6 @@ export const BROWSER_WASM_HOSTING_COVERAGE: HostingCoverage =
 		absent: BROWSER_WASM_TRAFFIC_ROUTING_ABSENT,
 	});
 
-/** Typed `RESOLVER_PRODUCT_UNSUPPORTED` for a product Browser WASM does not realize. */
 export function browserWasmProductRefusal(
 	productId: string,
 ): ResolverError | undefined {

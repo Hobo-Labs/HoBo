@@ -1,8 +1,3 @@
-/**
- * Persisted HOBO_HOME profile: default Station occupancy + broker association + login.
- * Local `hobo up` never requires this file; remote authenticated paths prefer it.
- */
-
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PrincipalKind, PrincipalRef } from "@hobo/core";
@@ -22,7 +17,6 @@ export interface HoboProfileSession {
 	readonly tenant: string;
 	readonly token: string;
 	readonly issuedAt: string;
-	/** Optional DPoP / sender-constrained proof material id (never the raw key). */
 	readonly proofKeyId?: string;
 	readonly brokerUri?: string;
 }
@@ -34,12 +28,7 @@ export interface HoboProfileDefaultStation {
 
 export interface HoboProfile {
 	readonly schemaVersion: typeof HOBO_PROFILE_SCHEMA;
-	/**
-	 * Optional remote Conductor HTTP base URI for login/placement over the network.
-	 * Local setup is always Station occupancy — this is not a parallel setup path.
-	 */
 	readonly defaultBrokerUri?: string;
-	/** Required for control-plane work once Station is initialized. */
 	readonly defaultStation?: HoboProfileDefaultStation;
 	readonly activeRail?: string;
 	readonly session?: HoboProfileSession;
@@ -150,7 +139,6 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 	if (raw === null || !isJsonObject(raw)) {
 		throw new TypeError("hobo profile must be an object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	if (obj.schemaVersion !== HOBO_PROFILE_SCHEMA) {
 		throw new TypeError(
@@ -171,7 +159,6 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 			: undefined),
 	};
 	if (obj.defaultStation !== undefined && obj.defaultStation !== null) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const ds = obj.defaultStation as JsonObject;
 		if (!isJsonString(ds.id) || ds.id.length === 0) {
 			throw new TypeError("hobo profile.defaultStation.id required");
@@ -184,7 +171,6 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 		});
 	}
 	if (obj.session !== undefined && obj.session !== null) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const s = obj.session as JsonObject;
 		const principal = parsePrincipal(s.principal);
 		if (!isJsonString(s.tenant) || s.tenant.length === 0) {
@@ -217,10 +203,8 @@ function parsePrincipal(raw: JsonValue | undefined): PrincipalRef {
 	if (raw === null || !isJsonObject(raw)) {
 		throw new TypeError("principal must be an object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	const kinds: PrincipalKind[] = ["user", "agent", "service", "system"];
-	// SAFETY: assertion required at this I/O or test boundary.
 	if (!isJsonString(obj.kind) || !(kinds as string[]).includes(obj.kind)) {
 		throw new TypeError("principal.kind invalid");
 	}
@@ -228,7 +212,6 @@ function parsePrincipal(raw: JsonValue | undefined): PrincipalRef {
 		throw new TypeError("principal.id required");
 	}
 	return {
-		// SAFETY: assertion required at this I/O or test boundary.
 		kind: obj.kind as PrincipalKind,
 		id: obj.id,
 		...(obj.delegatedBy !== undefined

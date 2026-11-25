@@ -9,8 +9,6 @@ import {
 
 describe("anon-host-client", () => {
 	it("no longer stands in Temporary Accounts via anon hosts", () => {
-		// Real temp paths: cf-temp / lakebed-temp / provider-temp.
-		// Railway/Vercel fail closed — never claim anon HTML is Temporary Accounts.
 		expect(isAnonSameOriginProvider("railway")).toBe(false);
 		expect(isAnonSameOriginProvider("browser-wasm")).toBe(false);
 		expect(isAnonSameOriginProvider("cloudflare")).toBe(false);

@@ -1,9 +1,3 @@
-/**
- * Provider verification for Broker Yard-first placement surface.
- * Offline: real resolveBindleDeployment + fold path, no live cloud keys.
- * (Mirrors broker-resolution.provider.test.ts style — no contract-harness dep.)
- */
-
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +20,6 @@ import {
 import type { JsonObject } from "../../src/json.js";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
-// SAFETY: assertion required at this I/O or test boundary.
 const pact = JSON.parse(
 	readFileSync(
 		join(packageRoot, "../pacts/broker_yard_placement.pact.json"),

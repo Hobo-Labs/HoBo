@@ -32,7 +32,6 @@ const stormSignals = Array.from({ length: 100 }, (_, index) => ({
 
 const stormEvents = evaluateAlertRouting({ now: NOW, signals: stormSignals, policy, receivers }).events;
 
-// Numbers are advisory; the gate only requires that declared benches EXECUTE.
 describe("alert routing hot path", () => {
 	bench("evaluateAlertRouting over a 100-signal storm", () => {
 		evaluateAlertRouting({ now: NOW, signals: stormSignals, policy, receivers });

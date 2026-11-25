@@ -1,7 +1,3 @@
-// Module hooks for hold-mcp-serve.mjs. mcp-serve is replaced by a stand-in
-// that waits for SIGUSR2 with a top-level await, then loads the real module.
-// A hook that itself waited would block the main thread on Node 24, and
-// with it the very answer the test checks for; a top-level await does not.
 const RELEASED = "hold=released";
 
 export async function load(url, context, nextLoad) {

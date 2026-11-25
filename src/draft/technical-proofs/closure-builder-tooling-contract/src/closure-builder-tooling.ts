@@ -179,9 +179,6 @@ export async function typecheckGeneratedAliases(declarations: string): Promise<v
       "ES2022",
       "consumer.ts",
     ];
-    // Resolve the workspace TypeScript compiler directly instead of a bare
-    // `tsc` on PATH: test lanes that do not put node_modules/.bin on PATH
-    // (the root sharded runner) otherwise fail with spawnSync tsc ENOENT.
     const tscJs = createRequire(import.meta.url).resolve(
       "typescript/lib/tsc.js",
     );
@@ -200,7 +197,6 @@ function parseClosureBuilderResources(sourceText: string, fileName: string): Clo
     resources.push({
       alias: match[1],
       generatedId: `res_${String(resources.length + 1).padStart(4, "0")}`,
-      // SAFETY: assertion to `kind: match[2] as ResourceKind,` is required at this boundary.
       kind: match[2] as ResourceKind,
       fileName,
       line: lineAt(sourceText, match.index ?? 0),

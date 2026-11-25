@@ -1,10 +1,6 @@
 import { isJsonString, isJsonObject, type JsonValue } from "./json.js";
 type ResourceKind = "api" | "kv" | "queue" | "topic" | "schedule" | "bucket";
 
-// A handler accepts whatever arguments its trigger kind supplies; declaring
-// the rest-parameter as `never[]` makes this a safe "any function" shape
-// (every concrete handler signature is assignable to it) without resorting
-// to `Function` or `any`.
 type Handler = (...args: never[]) => JsonValue | void | Promise<JsonValue | void>;
 
 interface WorkflowHandler {
@@ -219,13 +215,11 @@ export class TriggerContractError extends Error {
 
 export function api<B extends BindMap = BindMap>(name: string, options: ApiOptions<B> = {}): ApiHandle<B> {
   const handle = createHandle("api", name, options);
-  // SAFETY: host handle is mutated with HTTP verbs before freeze.
   const mutable: MutableHandleMethods = handle as never;
   for (const method of HTTP_METHODS) {
     mutable[method.toLowerCase()] = (path: string, handler: HttpHandler<B>) =>
       registerHttpRoute(handle, method, path, handler);
   }
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   return Object.freeze(handle) as ApiHandle<B>;
 }
 
@@ -239,7 +233,6 @@ export function queue(name: string): QueueHandle {
 
 export function topic(name: string, options: ResourceOptions = {}): TopicHandle {
   const handle = createHandle("topic", name, options);
-  // SAFETY: host handle is mutated with subscribe before freeze.
   const mutable: MutableHandleMethods = handle as never;
   mutable.subscribe = (eventType: string | HandlerLike, handler?: HandlerLike) => {
     const normalized =
@@ -255,13 +248,11 @@ export function topic(name: string, options: ResourceOptions = {}): TopicHandle 
       inferredPermissions: ["subscribe"],
     });
   };
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   return Object.freeze(handle) as TopicHandle;
 }
 
 export function schedule(name: string, options: ResourceOptions = {}): ScheduleHandle {
   const handle = createHandle("schedule", name, options);
-  // SAFETY: host handle is mutated with cron before freeze.
   const mutable: MutableHandleMethods = handle as never;
   mutable.cron = (expression: string, handler: HandlerLike) =>
     registerHostTrigger(handle, {
@@ -272,13 +263,11 @@ export function schedule(name: string, options: ResourceOptions = {}): ScheduleH
       handler,
       inferredPermissions: [],
     });
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   return Object.freeze(handle) as ScheduleHandle;
 }
 
 export function bucket(name: string, options: ResourceOptions = {}): BucketHandle {
   const handle = createHandle("bucket", name, options);
-  // SAFETY: host handle is mutated with on() before freeze.
   const mutable: MutableHandleMethods = handle as never;
   mutable.on = (event: string, handler: HandlerLike) => {
     const eventName = assertString(event, `resources.${name}.triggers.event`);
@@ -292,7 +281,6 @@ export function bucket(name: string, options: ResourceOptions = {}): BucketHandl
       inferredPermissions,
     });
   };
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   return Object.freeze(handle) as BucketHandle;
 }
 
@@ -500,7 +488,6 @@ function normalizeBindMap(bind: BindMap, path: string): BindMap {
 }
 
 function assertHandle<T>(handle: T, path: string): void {
-  // SAFETY: handle is a host resource object; brand marker is checked below.
   const candidate = handle as { __hoboTriggerContract?: JsonValue; name?: JsonValue };
   if (!candidate?.__hoboTriggerContract || !isJsonString(candidate.name)) {
     throw new TriggerContractError(path, "must contain HoBo handler-trigger resource handles");
@@ -527,7 +514,6 @@ function assertHandler<T>(handler: T, path: string): asserts handler is T & Hand
 }
 
 function isWorkflowHandler<T>(value: T): value is T & WorkflowHandler {
-  // SAFETY: workflow handlers are host objects tagged with kind "workflow".
   const candidate = value as { kind?: JsonValue };
   return candidate?.kind === "workflow";
 }
@@ -551,7 +537,6 @@ function durableRuntimeFor(handler: HandlerLike): DurableRuntime | undefined {
 }
 
 function omitEmpty<T extends object>(value: T): T {
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => {
       if (Array.isArray(entry)) {
@@ -566,6 +551,5 @@ function omitEmpty<T extends object>(value: T): T {
 }
 
 function omitUndefined<T extends object>(value: T): T {
-  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }

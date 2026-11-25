@@ -1,15 +1,3 @@
-/**
- * The live PostgreSQL lane. Tests that need a real server run against one of:
- *
- * 1. `HOBO_TEST_POSTGRES_URL` — any reachable server (CI service, dev box);
- * 2. a container from the digest-pinned image below, when a Docker engine
- *    answers (`/var/run/docker.sock` + `docker info`);
- * 3. an ephemeral local cluster from PostgreSQL >= 16 binaries (`initdb`,
- *    `pg_ctl`) on PATH or under /usr/lib/postgresql/<major>/bin.
- *
- * When none is available the live suites are skipped with the reason in
- * their name; `HOBO_STORAGE_POSTGRES_LANE=off` skips on purpose.
- */
 import { spawnSync } from "node:child_process";
 import {
 	chownSync,
@@ -22,10 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
 
-/**
- * Same digest-pinned image as packages/ci-gh-actions/contracts/pinned-container-images.json
- * (postgres17Alpine); 17 satisfies the >= 16 minimum.
- */
 export const PINNED_POSTGRES_IMAGE =
 	"postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
 
@@ -34,7 +18,6 @@ export const MIN_MAJOR = 16;
 export interface LaneProbe {
 	env(name: string): string | undefined;
 	dockerReady(): boolean;
-	/** Directory holding initdb/pg_ctl of the newest local major >= MIN_MAJOR. */
 	localBinDir(): string | undefined;
 	isRoot(): boolean;
 	hasPostgresUser(): boolean;
@@ -46,7 +29,6 @@ export type LanePlan =
 	| Readonly<{ kind: "local"; binDir: string; runAsPostgres: boolean }>
 	| Readonly<{ kind: "unavailable"; reason: string }>;
 
-/** Decide which lane to run, without side effects. */
 export function planLane(probe: LaneProbe): LanePlan {
 	const url = probe.env("HOBO_TEST_POSTGRES_URL");
 	if (url !== undefined && url !== "") return { kind: "url", url };
@@ -254,7 +236,6 @@ async function startContainer(image: string): Promise<RunningLane> {
 	}
 }
 
-/** Start the planned lane; a failure to start becomes an unavailable lane with its reason. */
 export async function startLane(
 	plan: LanePlan,
 ): Promise<RunningLane | Readonly<{ url: undefined; reason: string }>> {

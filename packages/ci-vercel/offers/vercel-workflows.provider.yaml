@@ -1,12 +1,3 @@
-# Vercel Workflows on Vercel's managed World as the hosted relay's lease
-# lifecycle driver (ADR-0179 amendment, phase 4d). Lowered into the
-# @hobo/pricing catalog by scripts/generate-offers.mts.
-#
-# NOT YET AVAILABLE: the driver needs `workflow` 5.4.0 or later, pinnable
-# under the repository's two-week rule from 2026-11-18, and is not built
-# (phase 4d). The generator's driver table marks it unavailable until then,
-# so selection never picks it. Events only: data written, queue operations
-# and compute are not modelled. About 22 events a job (planned).
 schema: hobo.provider-manifest/v1
 
 provider:

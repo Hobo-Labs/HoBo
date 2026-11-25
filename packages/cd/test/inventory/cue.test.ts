@@ -1,5 +1,3 @@
-// data-models/inventory.cue and the inventory parse boundary must agree: what
-// the inventory records vets clean, and what the parsers refuse, CUE refuses.
 import { create, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

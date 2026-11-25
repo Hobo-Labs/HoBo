@@ -1,25 +1,3 @@
-/**
- * The kubectl process transport.
- *
- * This is the production side of the kubectl PACT boundary, and it is normally
- * untestable-looking because it shells out. It isn't: `kubectlBin` is
- * injectable, so pointing it at a stub script exercises the real `spawnSync`
- * path, the real argument construction and the real output parsing — without a
- * cluster, and without mocking `node:child_process` (which would test the mock
- * rather than the code).
- *
- * The branches that matter here are the failure translations. This transport
- * sits between a cluster that fails in many ways and callers that need a small
- * number of distinguishable outcomes, so what it *does with* a non-zero exit is
- * the whole contract:
- *
- *   - an unreachable cluster becomes 503, not a throw;
- *   - unparseable version JSON degrades to "unknown" rather than failing, since
- *     a kubectl that printed something unexpected is still a kubectl;
- *   - but a failed *write* throws `KubectlUnavailableError`, because silently
- *     reporting success for an apply that did not happen is the one outcome
- *     nobody can recover from.
- */
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,11 +8,6 @@ import {
 	KubectlUnavailableError,
 } from "../src/kubectl-transport.js";
 
-/**
- * Write a stub `kubectl` that echoes a canned stdout and exits with a chosen
- * code. Argument-dependent behaviour is expressed as a shell case so one stub
- * can serve a whole scenario.
- */
 function stubKubectl(script: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-kubectl-"));
 	const bin = join(dir, "kubectl");
@@ -92,8 +65,6 @@ describe("/kubectl/version", () => {
 	});
 
 	it('degrades to "unknown" rather than failing on unparseable output', async () => {
-		// A kubectl that printed something unexpected is still a kubectl. Failing
-		// here would make a cosmetic output change look like an outage.
 		const response = await transport(ok("not json at all")).handle({
 			method: "GET",
 			path: "/kubectl/version",
@@ -119,8 +90,6 @@ describe("/kubectl/version", () => {
 	});
 
 	it("returns 503 when the binary does not exist at all", async () => {
-		// spawnSync reports an error rather than an exit code here, and the
-		// transport has to translate that too.
 		const response = await transport("/nonexistent/kubectl").handle({
 			method: "GET",
 			path: "/kubectl/version",
@@ -158,8 +127,6 @@ describe("/kubectl/cluster-info", () => {
 
 describe("/kubectl/namespace/ensure", () => {
 	it("does not create a namespace that already exists", async () => {
-		// `get` succeeding means it is there; applying anyway would be a
-		// needless write against a cluster.
 		const bin = stubKubectl(`
 case "$1" in
   get) printf 'namespace/prod'; exit 0 ;;
@@ -200,7 +167,6 @@ exit 0`);
 	});
 
 	it("throws when creating the namespace fails", async () => {
-		// A write that did not happen must not report success.
 		const bin = stubKubectl(`
 case "$1" in
   get) exit 1 ;;
@@ -259,8 +225,6 @@ describe("/kubectl/apply", () => {
 	});
 
 	it("names the failing command and exit code in the error", async () => {
-		// An error that says only "kubectl failed" sends someone to the cluster
-		// to find out what.
 		await expect(
 			transport(fails("invalid manifest")).handle({
 				method: "POST",
@@ -285,8 +249,6 @@ describe("/kubectl/rollout-status", () => {
 	});
 
 	it("falls back to endpoints when rollout status fails but the service has addresses", async () => {
-		// A Deployment that rolled out under a different controller can still be
-		// serving; endpoints are the ground truth.
 		const bin = stubKubectl(`
 case "$1" in
   rollout) printf 'no status' >&2; exit 1 ;;
@@ -323,8 +285,6 @@ exit 0`);
 	});
 
 	it("does not treat blank endpoint output as ready", async () => {
-		// jsonpath prints nothing when there are no addresses. Treating that as
-		// success would report a Deployment ready with nothing behind it.
 		const bin = stubKubectl(`
 case "$1" in
   rollout) exit 1 ;;

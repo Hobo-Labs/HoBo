@@ -1,6 +1,3 @@
-// Shared discovery pipeline for version-listing drivers (OCI, Git tags,
-// package registries, HTTP index): filter, forward-only selection above the
-// high-water mark, newest-N limit, and the cursor that carries the mark.
 import { create } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
 import {
@@ -17,7 +14,6 @@ import { selectNewest, versionAllowed } from "../selection.js";
 
 export type Candidate = Readonly<{
 	version: string;
-	/** Ordering key: the version for SEMVER/LEXICAL, a sortable timestamp for NEWEST_*. */
 	rank: string;
 	artifact: ArtifactRef;
 	commit?: string;
@@ -62,7 +58,6 @@ export type Selection = Readonly<{
 	cursor: string;
 }>;
 
-/** Filter, then pick the newest `limit` strictly above the cursor's mark, oldest first. */
 export function selectCandidates(
 	subscription: SubscriptionRecord,
 	candidates: readonly Candidate[],

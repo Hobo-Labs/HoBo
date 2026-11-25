@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.upgrade_rollback_dry_run.v1;
 
-// Data shapes for the HOBO-499 Upgrade & Migration Engine dry-run contract.
-// These are design-time contract artifacts, not runtime generated sources.
 
 enum UpgradeDryRunStatus {
   UPGRADE_DRY_RUN_STATUS_UNSPECIFIED = 0;

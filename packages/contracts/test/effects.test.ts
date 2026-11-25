@@ -120,7 +120,6 @@ describe("EffectSpec lattice", () => {
 			at: "t1",
 		});
 		expect(sink.facts()).toHaveLength(2);
-		// Replay inspection: same facts, no new invoke
 		expect(sink.facts().map((f) => f.type)).toEqual([
 			"contract.EffectDeclared",
 			"contract.EffectInvoked",
@@ -203,8 +202,6 @@ describe("ResilienceProfile applicator", () => {
 			effects: pureEffects(),
 			resilience: createResilienceProfile({ id: "r1" }),
 		});
-		// pure + network-facing resilience strategies may fail validation
-		// pure with default retry strategy that doesn't need network is ok
 		const text = formatContractDescribe(contract);
 		expect(text).toContain("purity: pure");
 		expect(text).toContain("resilience:");

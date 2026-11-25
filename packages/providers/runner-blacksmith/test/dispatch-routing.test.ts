@@ -15,10 +15,6 @@ import {
 	createBlacksmithRunnerProvider,
 } from "../src/index.js";
 
-// Acceptance (HOBO-719): with GitHub and Blacksmith BOTH registered, the
-// min-cost objective routes to the cheaper effective option and records the
-// rationale in dispatch.Decided (ADR-0071).
-
 const noopFetch: GithubFetch = async () => ({
 	ok: true,
 	status: 200,

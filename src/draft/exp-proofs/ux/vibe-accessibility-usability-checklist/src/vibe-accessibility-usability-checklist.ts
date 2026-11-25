@@ -457,7 +457,6 @@ export function parseVibeAccessibilityChecklist(
     throw new VibeAccessibilityChecklistParseError(validation.errors);
   }
 
-  // SAFETY: `return checklist as ParsedVibeAccessibilityChecklist;` is required at this I/O or test boundary.
   return checklist as ParsedVibeAccessibilityChecklist;
 }
 

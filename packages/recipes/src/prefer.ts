@@ -1,13 +1,3 @@
-/**
- * Choosing between compatible recipes.
- *
- * Compatibility is decided first and entirely by the gates; preference only
- * ever orders survivors. The ordering is lexicographic over facts a caller
- * would recognise as costs they will pay later — provider boundaries, human
- * claim actions, disclosed downgrades — with no weighted score anywhere. More
- * providers is not better, and a cheaper incompatible provider is still
- * incompatible.
- */
 import type {
 	RecipeCompilation,
 	RecipeCompilationAccepted,
@@ -28,9 +18,7 @@ export type RankedRecipe = {
 
 export type RecipeChoice = {
 	readonly winner?: RankedRecipe;
-	/** Every compatible recipe, best first. */
 	readonly ranked: readonly RankedRecipe[];
-	/** Every candidate's outcome, including the incompatible ones. */
 	readonly outcomes: readonly RecipeCandidateOutcome[];
 };
 
@@ -51,11 +39,9 @@ function providerCount(ranked: RankedRecipe): number {
 }
 
 function compare(a: RankedRecipe, b: RankedRecipe): number {
-	// 1. Fewest provider boundaries: each one is an account someone inherits.
 	const providers = providerCount(a) - providerCount(b);
 	if (providers !== 0) return providers;
 
-	// 2. Fewest separate claims, then fewest human actions inside them.
 	const claims =
 		a.compilation.claims.items.length - b.compilation.claims.items.length;
 	if (claims !== 0) return claims;
@@ -63,18 +49,15 @@ function compare(a: RankedRecipe, b: RankedRecipe): number {
 		a.compilation.claims.actionCount - b.compilation.claims.actionCount;
 	if (actions !== 0) return actions;
 
-	// 3. Fewest disclosed downgrades: a recipe that keeps the semantics wins.
 	const degradations =
 		a.compilation.widenings.length - b.compilation.widenings.length;
 	if (degradations !== 0) return degradations;
 
-	// 4. Strongest claim atomicity.
 	const atomicity =
 		(ATOMICITY_RANK[a.compilation.claims.atomicity] ?? 3) -
 		(ATOMICITY_RANK[b.compilation.claims.atomicity] ?? 3);
 	if (atomicity !== 0) return atomicity;
 
-	// 5. Least sponsor exposure, then most portable, then a stable id tiebreak.
 	const cost =
 		a.compilation.sponsoredCostMinorUnits -
 		b.compilation.sponsoredCostMinorUnits;
@@ -87,13 +70,11 @@ function compare(a: RankedRecipe, b: RankedRecipe): number {
 	return a.recipe.id.localeCompare(b.recipe.id);
 }
 
-/** Compile every candidate and order the compatible ones. Pure. */
 export function chooseRecipe(input: ChooseRecipeInput): RecipeChoice {
 	const { candidates, ...shared } = input;
 	const outcomes: RecipeCandidateOutcome[] = [];
 	const ranked: RankedRecipe[] = [];
 
-	// Sorted first so evaluation order never depends on declaration order.
 	for (const recipe of [...candidates].sort((a, b) =>
 		a.id.localeCompare(b.id),
 	)) {

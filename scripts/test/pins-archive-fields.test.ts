@@ -1,16 +1,3 @@
-/**
- * Every numeric field of a ustar header, with every byte value at three
- * places in it, held to the system `tar`. Each archive is a GOOD `mirror`,
- * then a header `pad` that claims 1024 bytes and carries the byte under test,
- * then an EVIL `mirror` in exactly those 1024 bytes. Where both read `pad`'s
- * fields alike, the EVIL copy is `pad`'s data and only GOOD is extracted;
- * where `tar` cannot read a field it skips `pad` and extracts EVIL, and where
- * it reads a field the reader does not, the two disagree some other way.
- *
- * The reader must refuse every such archive or name the bytes both extracts
- * leave. `tar` runs only on the archives the reader accepts, which keeps
- * 6,144 cases fast.
- */
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,7 +19,6 @@ import {
 } from "./support/tar-diff.ts";
 import { type TarEntry, tarGz } from "./support/tar-support.ts";
 
-/** The numeric fields, where they are, and the value `pad` gives each. */
 const FIELDS = [
 	{ field: "mode", at: 100, length: 8, value: 0o755 },
 	{ field: "uid", at: 108, length: 8, value: 0 },
@@ -44,14 +30,12 @@ const FIELDS = [
 	{ field: "devminor", at: 337, length: 8, value: 0 },
 ] as const;
 
-/** Where the byte goes: before the digits, right after them, or the field's last byte. */
 const PLACES = ["first", "after the digits", "last"] as const;
 type Place = (typeof PLACES)[number];
 
 const octalDigits = (value: number, width: number): string =>
 	value.toString(8).padStart(width, "0");
 
-/** The field's text with `byte` at `place`; the checksum's sum is only known once the header is built. */
 function fieldText(
 	length: number,
 	value: number,
@@ -111,11 +95,6 @@ function* fieldCases(): Generator<FieldCase> {
 	}
 }
 
-/**
- * The reader's answer for each case. The scan alone is run first, in memory;
- * only an archive it accepts is written out and read the whole way, through
- * gunzip and the file, as a pin reads it.
- */
 async function readAll(): Promise<readonly Read[]> {
 	const dir = scratch("tar-fields");
 	const read: Read[] = [];
@@ -140,7 +119,6 @@ interface Read {
 	readonly answer: string;
 }
 
-/** The code the scan refuses `bytes` with, or `undefined` when it reads them. */
 function scanOnly(bytes: Buffer): string | undefined {
 	try {
 		const scan = new TarScan("case", "mirror", () => undefined);
@@ -153,14 +131,12 @@ function scanOnly(bytes: Buffer): string | undefined {
 	}
 }
 
-/** Both tests read the same cases; they are read once. */
 let reading: Promise<readonly Read[]> | undefined;
 const readOnce = (): Promise<readonly Read[]> => {
 	reading ??= readAll();
 	return reading;
 };
 
-/** A byte the one numeric form allows at `place`: an octal digit, a space, or a NUL after the first byte. */
 function allowed(byte: number, place: Place): boolean {
 	if (byte >= 0x30 && byte <= 0x37) return true;
 	if (byte === 0x20) return true;

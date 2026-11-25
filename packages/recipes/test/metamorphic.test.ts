@@ -1,11 +1,3 @@
-/**
- * Metamorphic properties.
- *
- * Each case changes something that must not matter — declaration order, key
- * order, object identity, an unrelated catalog row — and asserts the compiled
- * bytes are identical. A digest that moves under any of these is a digest
- * nobody can sign.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -55,12 +47,6 @@ function digestsOf(input: CompileRecipeInput): readonly string[] {
 	return [compilation.topologyDigest, compilation.resolutionDigest];
 }
 
-/**
- * Rebuild every object with its keys in reverse order.
- *
- * Canonicalization is supposed to make this invisible; the only way to know is
- * to hand the compiler a value whose key order is deliberately wrong.
- */
 type JsonObject = { readonly [key: string]: JsonValue };
 type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 
@@ -84,10 +70,8 @@ function reverseKeyOrder(value: JsonValue): JsonValue {
 }
 
 function withReversedKeys<T>(value: T): T {
-	// SAFETY: metamorphic fixtures are JSON data.
 	const json = value as JsonValue;
 	const reversed = reverseKeyOrder(json);
-	// SAFETY: key-reversed JSON still matches the input domain type.
 	return reversed as T;
 }
 
@@ -168,7 +152,6 @@ describe("determinism", () => {
 			}),
 		);
 		expect(after.topologyDigest).toBe(baseline.topologyDigest);
-		// The catalog digest moved; the resolution did not depend on the row.
 		expect(after.resolutionDigest).toBe(baseline.resolutionDigest);
 		expect(catalogDigestOf(widened)).not.toBe(CATALOG_DIGEST);
 	});

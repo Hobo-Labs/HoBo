@@ -1,6 +1,3 @@
-// ReconcilerTransport conformance (ADR-0182 D5, I4, I12). One fenced lease
-// per Camp, a cursor feed of desired state after the committed checkpoint,
-// and reports that a stale holder can never land.
 import type { EventPosition } from "@hobo/core";
 import {
 	type CdConformanceReport,
@@ -38,11 +35,8 @@ export interface ReconcilerTransportWorld<
 	TObs,
 > {
 	transport: ReconcilerTransportLike<TLease, TObs>;
-	/** Advance the transport's injected clock. */
 	advance(ms: number): void;
-	/** Record desired Set number `n` for the Camp (one spec-stream change). */
 	publish(n: number): Promise<void>;
-	/** A valid observation for the lease. */
 	observation(lease: TLease): TObs;
 }
 
@@ -57,7 +51,6 @@ export interface ReconcilerTransportHarness<
 	create(): Promise<ReconcilerTransportWorld<TLease, TObs>>;
 }
 
-/** Read up to `count` changes, bounded by `waitMs` of idleness. */
 export async function takeChanges(
 	feed: (signal: AbortSignal) => AsyncIterable<DesiredStateChangeLike>,
 	count: number,

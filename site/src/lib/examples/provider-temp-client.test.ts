@@ -28,7 +28,6 @@ describe("provider-temp-client", () => {
 			assertProviderTempApiReady({
 				providerId: "netlify",
 				pageUrl: "http://127.0.0.1:4321/HoBo/examples/",
-				// SAFETY: vitest mock stands in for fetch at this test boundary.
 				fetchImpl: fetchImpl as typeof fetch,
 			}),
 		).rejects.toThrow(PROVIDER_TEMP_API_MISSING);
@@ -66,7 +65,6 @@ describe("provider-temp-client", () => {
 			providerId: "netlify",
 			stationId: "st-1",
 			pageUrl: "http://127.0.0.1:4321/HoBo/examples/",
-			// SAFETY: vitest mock stands in for fetch at this test boundary.
 			fetchImpl: fetchImpl as typeof fetch,
 		});
 		expect(result.stationUrl).toContain("netlify.app");

@@ -22,8 +22,6 @@ describe("convex impedance", () => {
 	});
 });
 
-// The parse boundary sits on every ship, so its cost is part of the deploy
-// path's cost — measure it rather than assume it is free.
 describe("parse boundary", () => {
 	const response = Object.freeze({
 		ok: true as const,

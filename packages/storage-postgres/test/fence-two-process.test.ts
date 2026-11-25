@@ -5,11 +5,6 @@ import {
 	startStoreProcess,
 } from "./support/worker-process.js";
 
-/**
- * Two-process fence test. Two OS processes, each
- * with its own pool and clock, contend for one Camp's lease and the Camp's
- * fenced stream (I4: one writer per Camp; a stale fence is refused).
- */
 describeLive("WP17 two-process fence", () => {
 	const processes: StoreProcess[] = [];
 	afterEach(async () => {
@@ -64,14 +59,12 @@ describeLive("WP17 two-process fence", () => {
 		});
 		await a.call("checkpoint", { ...key, position: 1, fence: leaseA.fence });
 
-		// B cannot take over a live lease ...
 		expect(
 			await b.send("claim", { ...key, holderId: "replica-b" }),
 		).toMatchObject({
 			ok: false,
 			code: "SUBSCRIPTION_LEASE_CONFLICT",
 		});
-		// ... but can once A's lease has expired on B's clock (A is paused, not dead).
 		await b.call("clock", { at: "2026-11-12T00:00:31.000Z" });
 		const leaseB = await b.lease("claim", {
 			...key,
@@ -86,7 +79,6 @@ describeLive("WP17 two-process fence", () => {
 			holderId: "replica-b",
 		});
 
-		// A wakes up and keeps going with its old fence: every write is refused.
 		expect(
 			await a.send("append", {
 				streamId: stream,
@@ -122,7 +114,6 @@ describeLive("WP17 two-process fence", () => {
 			code: "STALE_FENCE",
 		});
 
-		// Only B's write landed after the takeover, and the stream carries B's epoch.
 		const rows = await adminQuery(
 			`SELECT seq, data FROM "${schema}".events WHERE stream_id = $1 ORDER BY seq`,
 			[stream],

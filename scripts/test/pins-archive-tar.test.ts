@@ -1,12 +1,3 @@
-/**
- * The archive reader against the system `tar`, on archives crafted byte by
- * byte. Whatever the reader accepts, it must name exactly the bytes `tar -xzf`
- * leaves at the member's path, both when `tar` extracts the whole archive and
- * when it extracts only that member by name; anything else it must refuse.
- *
- * Each case also says what the reader answers, so the reader is pinned on a
- * machine without `tar`; only the comparison with `tar` needs one.
- */
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,26 +17,18 @@ import {
 } from "./support/tar-diff.ts";
 import { type TarEntry, tarGz, tarStream } from "./support/tar-support.ts";
 
-/** GNU tar's magic and version, `ustar  \0`. */
 const GNU = "ustar  ";
-/** A header's sum as the checksum field writes it: six octal digits. */
 const oct6 = (sum: number): string => sum.toString(8).padStart(6, "0");
-/** NBSP, U+00A0, the byte 0xA0: a JavaScript `trim` strips it, C's `isspace` does not. */
 const NBSP = "\u00a0";
-/** A name as UTF-8 bytes, in the latin1 string the builder writes byte for byte. */
 const utf8 = (name: string): string =>
 	Buffer.from(name, "utf8").toString("latin1");
 
 interface Case {
 	readonly what: string;
 	readonly entries: readonly TarEntry[];
-	/** Entries after the two end blocks. */
 	readonly after?: readonly TarEntry[];
-	/** The member the pin names; `mirror` unless given. */
 	readonly member?: string;
-	/** What is done to the gzip bytes `entries` make, when the case is about gzip. */
 	readonly gzip?: (archive: Buffer) => Buffer;
-	/** `GOOD` when the reader names GOOD's bytes, else the code it refuses with. */
 	readonly reader: string;
 }
 
@@ -96,7 +79,6 @@ const CASES: readonly Case[] = [
 		member: "bin/mirror",
 		reader: "GOOD",
 	},
-	// GNU headers. Bytes 345 to 500 hold times there, and tar reads no prefix.
 	{
 		what: "mirror, then a GNU-magic mirror with zz where a prefix would be",
 		entries: [
@@ -120,7 +102,6 @@ const CASES: readonly Case[] = [
 		entries: [{ name: "mirror", magic: "ustar ", body: GOOD }],
 		reader: "ARCHIVE_UNSUPPORTED",
 	},
-	// A regular file whose name ends in "/": tar makes a directory of it.
 	{
 		what: "a lone regular file named mirror/",
 		entries: [{ name: "mirror/", body: EVIL }],
@@ -145,7 +126,6 @@ const CASES: readonly Case[] = [
 		member: "bin/mirror",
 		reader: "ARCHIVE_UNSAFE",
 	},
-	// Names tar extracts somewhere other than as written, or not at all.
 	{
 		what: "mirror, then /mirror",
 		entries: [
@@ -211,7 +191,6 @@ const CASES: readonly Case[] = [
 		member: "bin/mirror",
 		reader: "ARCHIVE_UNSAFE",
 	},
-	// Links, anywhere: each can put other bytes at the member's path.
 	{
 		what: "d -> ., mirror, then d/mirror",
 		entries: [
@@ -249,7 +228,6 @@ const CASES: readonly Case[] = [
 		],
 		reader: "ARCHIVE_UNSAFE",
 	},
-	// The member's path in the tree: nothing under it, only directories above it.
 	{
 		what: "mirror/x, then mirror",
 		entries: [
@@ -293,8 +271,6 @@ const CASES: readonly Case[] = [
 		member: "bin/mirror",
 		reader: "ARCHIVE_UNSAFE",
 	},
-	// NBSP in a numeric field. tar cannot read the field, so it skips that
-	// header and reads the block after it as the next header.
 	{
 		what: "mirror, a header with NBSP before its checksum, a hidden mirror",
 		entries: [
@@ -364,7 +340,6 @@ const CASES: readonly Case[] = [
 		member: "bin/mirror",
 		reader: "ARCHIVE_UNSAFE",
 	},
-	// The gzip stream: read to its end and checked, as gzip under tar checks it.
 	{
 		what: "two gzip members, LICENSE in the first and mirror in the second",
 		entries: [],
@@ -408,7 +383,6 @@ const CASES: readonly Case[] = [
 		gzip: (archive) => Buffer.concat([archive, Buffer.alloc(8)]),
 		reader: "ARCHIVE_MALFORMED",
 	},
-	// Names one file to a case-insensitive file system (macOS, Windows).
 	{
 		what: "mirror, then MIRROR",
 		entries: [
@@ -444,7 +418,6 @@ const CASES: readonly Case[] = [
 		member: "ssh",
 		reader: "ARCHIVE_UNSAFE",
 	},
-	// Default-ignorable code points, which HFS+ and some Linux casefold kernels drop.
 	{
 		what: "mirror, then mi\u200drror (a zero-width joiner)",
 		entries: [
@@ -552,7 +525,6 @@ describe("crafted archives, against the system tar", () => {
 });
 
 describe("the tar the comparisons run against", () => {
-	/** A directory holding only a `tar` that prints `banner` for any arguments and exits 0. */
 	function fakeTar(banner: string): string {
 		const dir = scratch("fake-tar");
 		writeFileSync(join(dir, "tar"), `#!/bin/sh\necho '${banner}'\nexit 0\n`, {

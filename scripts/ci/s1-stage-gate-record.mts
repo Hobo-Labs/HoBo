@@ -2,18 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
-// S1-24: assemble the machine record for the PRODUCTION S1 stage gate.
-//
-// This script is the `record` job of .github/workflows/s1-stage-gate.yml. It runs
-// only after the conformance / offline / replay jobs are green (they are the gate's
-// `needs`), so it does not re-execute the suites; it pins the gate definition, the
-// exact runnable command per check, the human acceptance record, and the workflow
-// run URL into an append-only JSON artifact that mirrors the S0 record shape.
-//
-// The human-facing record is docs/design/build-s1-stage-gate-acceptance.md; this
-// script fails closed if that record is missing or malformed so the doc and the
-// gate cannot drift apart.
-
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
 const ACCEPTANCE_DOC = path.join(
@@ -30,7 +18,6 @@ interface GateCheck {
 	readonly reportRef: string;
 }
 
-// The three executable checks the workflow jobs run against production packages.
 const CHECKS: readonly GateCheck[] = [
 	{
 		checkId: "conformance",
@@ -95,8 +82,6 @@ if (problems.length > 0) {
 	process.exit(1);
 }
 
-// The record job is gated on the three suites (`needs`), so reaching this point
-// means they are green.
 const record = {
 	gate_id: "s1-stage-gate",
 	target: "production",

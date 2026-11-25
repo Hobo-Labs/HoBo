@@ -80,7 +80,6 @@ describe("the containers", () => {
 			mongodb: "hobo-data-live-mongo-4242-2-data-live",
 		});
 		assert.notDeepEqual(liveContainerNames("4242-3-data-live"), names);
-		// Anything that is not a name character becomes a dash.
 		assert.equal(
 			liveContainerNames("Run 7/job").postgres,
 			"hobo-data-live-pg-run-7-job",
@@ -94,16 +93,11 @@ describe("the containers", () => {
 			mongoRunArgv("mongo", MONGO),
 		]) {
 			assert.ok(argv.includes(`${DATA_LIVE_LABEL}=1`));
-			// The box daemon removes lease-less containers under this label.
 			assert.ok(!argv.join(" ").includes("hobo.ci/isolated"));
-			// A server that exits during start-up must leave its logs behind.
 			assert.ok(!argv.includes("--rm"));
 			assert.ok(argv.includes("--detach"));
-			// Sibling containers are outside the job's cgroup, so each is bounded.
 			assert.equal(argv[argv.indexOf("--memory") + 1], "1024m");
-			// A published port would bind the host's loopback, not the job's.
 			assert.ok(!argv.includes("--publish") && !argv.includes("-p"));
-			// The network a fleet job container is on, named and not defaulted.
 			assert.equal(argv[argv.indexOf("--network") + 1], "bridge");
 			assert.equal(
 				argv[argv.indexOf("--ulimit") + 1],
@@ -132,7 +126,6 @@ describe("the containers", () => {
 		] as const) {
 			assert.equal(argv[argv.indexOf("--entrypoint") + 1], "timeout");
 			assert.ok(argv.indexOf("--entrypoint") < argv.indexOf(image));
-			// `timeout`'s arguments, then the image's own entrypoint and server.
 			assert.deepEqual(
 				argv.slice(argv.indexOf(image) + 1, argv.indexOf(image) + 5),
 				[
@@ -161,7 +154,6 @@ describe("the containers", () => {
 
 	it("start MongoDB as a replica set with a bounded cache", () => {
 		const argv = mongoRunArgv("mongo", MONGO);
-		// Without this MongoDB 8 refuses to start on Linux 6.19+ (SERVER-121912).
 		assert.equal(MONGO_RSEQ_TUNABLE, "GLIBC_TUNABLES=glibc.pthread.rseq=1");
 		assert.equal(argv[argv.indexOf("--env") + 1], MONGO_RSEQ_TUNABLE);
 		assert.ok(argv.indexOf("--env") < argv.indexOf(MONGO));
@@ -242,7 +234,6 @@ describe("the stale-container sweep", () => {
 			]),
 			["hobo-data-live-mongo-1-1-data-live"],
 		);
-		// On a shared box an undateable container may be a running job's server.
 		assert.deepEqual(
 			staleContainers([{ name: "x", createdAt: "garbage" }], now, []),
 			[],
@@ -272,7 +263,6 @@ function failed(stderr: string): DockerResult {
 	return { status: 1, stdout: "", stderr };
 }
 
-/** A lane whose docker is `answer`; everything it does is recorded in order. */
 function fakeLane(answer: (args: readonly string[]) => DockerResult) {
 	const calls: (readonly string[])[] = [];
 	const out: string[] = [];
@@ -297,7 +287,6 @@ function fakeLane(answer: (args: readonly string[]) => DockerResult) {
 	return { io, calls, out, notes };
 }
 
-/** A docker in which both servers come up at once. */
 function healthy(args: readonly string[]): DockerResult {
 	const last = args.at(-1) ?? "";
 	if (args[0] === "exec" && last === "show wal_level") return ok("logical\n");
@@ -332,12 +321,10 @@ describe("starting the servers", () => {
 			.map((args) => args.at(-1))
 			.lastIndexOf(MONGO_PRIMARY_PROBE);
 		assert.ok(lastProbe > 0 && lastProbe < firstOut);
-		// The job log records what the run was against.
 		assert.match(
 			lane.notes.join("\n"),
 			/PostgreSQL 16\.15 at 172\.17\.0\.2, MongoDB 8\.0\.34 at 172\.17\.0\.3/u,
 		);
-		// A healthy start removes only a previous attempt's containers, before it runs.
 		assert.deepEqual(removed(lane.calls), [[NAMES.postgres, NAMES.mongodb]]);
 		assert.ok(
 			lane.calls.findIndex((args) => args[0] === "rm") <
@@ -350,7 +337,6 @@ describe("starting the servers", () => {
 		const lane = fakeLane((args) => {
 			if (args.at(-1) === "show wal_level") {
 				asked += 1;
-				// Connection refused, then the wrong answer, then the real server.
 				if (asked === 1) return failed("psql: connection refused");
 				if (asked === 2) return ok("replica\n");
 			}
@@ -377,7 +363,6 @@ describe("starting the servers", () => {
 			startLiveServers(lane.io, NAMES, IMAGES),
 			/the MongoDB replica set exited during start-up/u,
 		);
-		// Nothing reaches stdout, so nothing reaches $GITHUB_ENV.
 		assert.deepEqual(lane.out, []);
 		assert.equal(lane.calls.filter((args) => args[0] === "<pause>").length, 0);
 		assert.match(
@@ -415,7 +400,6 @@ describe("starting the servers", () => {
 			/docker run failed \(exit 1\): Unable to find image \| docker: toomanyrequests/u,
 		);
 		assert.deepEqual(lane.out, []);
-		// The PostgreSQL that did start is not left behind.
 		assert.deepEqual(removed(lane.calls).at(-1), [
 			NAMES.postgres,
 			NAMES.mongodb,
@@ -436,9 +420,6 @@ describe("starting the servers", () => {
 });
 
 describe("probing MongoDB", () => {
-	// The image sets HOME to /data/db and its entrypoint chowns that tree as it
-	// starts. A mongosh that keeps its lock files there makes the chown fail
-	// ("cannot access ... .json.lock") and the server exit during start-up.
 	it("keeps mongosh's own files out of the data directory", () => {
 		assert.equal(MONGOSH_HOME, "HOME=/tmp");
 		assert.deepEqual(mongoshExecArgv("mongo"), [
@@ -494,7 +475,6 @@ describe("stopping the servers", () => {
 	});
 });
 
-/** One package's part of the lane's output, as pnpm and vitest print it. */
 function packageRun(name: string, tests: string): string {
 	return [
 		`> ${name}@0.0.1 pretest /work/packages/x`,
@@ -633,7 +613,6 @@ describe("the workflow job and the script agree", () => {
 			job,
 			/if: always\(\) && steps\.scope\.outputs\.run == 'true'\n +run: .*data-live-servers\.mts down/u,
 		);
-		// A manual run never takes the diff's word for it.
 		assert.match(job, /"\$GITHUB_EVENT_NAME" != "pull_request"/u);
 	});
 

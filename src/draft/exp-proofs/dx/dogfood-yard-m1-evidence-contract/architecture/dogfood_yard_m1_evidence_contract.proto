@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Dogfood Yard M1
-// Evidence Contract draft package reasons about. Not compiled at runtime; this
-// is a design-time contract artifact.
 
 enum DogfoodGapDecision {
   DOGFOOD_GAP_DECISION_UNSPECIFIED = 0;

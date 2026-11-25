@@ -1,7 +1,3 @@
-/**
- * HoBo Cloudflare Environment Station Worker — operator bootstrap only.
- * No Bindle / app code. Deployed via temporary accounts for anonymous stations.
- */
 export const ENVIRONMENT_STATION_WORKER_NAME_PREFIX = "hobo-env-station"; // public-contract: Temporary Accounts Environment Station script name prefix
 
 // public-contract: Environment Station Worker module source for Temporary Accounts
@@ -28,7 +24,6 @@ export const ENVIRONMENT_STATION_WORKER_MODULE = `export default {
 };
 `;
 
-/** Reject Bindle/app packaging strings in station Worker source. */
 export function assertStationWorkerHasNoAppCode(source: string): void {
 	const banned = [
 		/\bwaspApp\b/u,

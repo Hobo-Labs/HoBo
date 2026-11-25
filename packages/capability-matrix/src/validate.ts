@@ -34,19 +34,16 @@ export const MATRIX_FINDING_SEVERITIES = ["error", "warning", "info"] as const;
 export type MatrixFindingSeverity = (typeof MATRIX_FINDING_SEVERITIES)[number];
 
 // domain-view: parsed narrowing of CapabilityMatrixFindingRecord in
-// data-models/capability_matrix.proto.
 export type CapabilityMatrixFinding = {
 	readonly code: MatrixFindingCode;
 	readonly severity: MatrixFindingSeverity;
 	readonly primitive: BindlePrimitive;
 	readonly runtime: BindleRuntime;
 	readonly detail: string;
-	/** The definitions the finding is about. Sorted; may be empty. */
 	readonly definitionIds: readonly string[];
 };
 
 // domain-view: parsed narrowing of CoverageSummaryRecord in
-// data-models/capability_matrix.proto.
 export type CoverageSummaryEntry = {
 	readonly verdict: CoverageVerdict;
 	readonly cells: number;
@@ -56,17 +53,11 @@ export type CapabilityMatrixValidation = {
 	readonly evaluatedAtMs: number;
 	readonly matrixDigest: string;
 	readonly expiryHorizonMs: number;
-	/** One entry per verdict, in the canonical verdict order. */
 	readonly summary: readonly CoverageSummaryEntry[];
 	readonly findings: readonly CapabilityMatrixFinding[];
 };
 
 export type CapabilityMatrixValidationOptions = {
-	/**
-	 * How far ahead an expiry counts as "expiring". Defaults to seven days,
-	 * which is roughly the shortest window in which somebody can notice a
-	 * finding and re-run a conformance harness.
-	 */
 	readonly expiryHorizonMs?: number | undefined;
 };
 
@@ -74,7 +65,6 @@ const DEFAULT_EXPIRY_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
 
 const SEVERITY_BY_CODE = {
 	"uncovered-cell": "warning",
-	// A lapse is worse than a gap: this cell used to work.
 	"evidence-lapsed-cell": "error",
 	"bridge-only-cell": "warning",
 	"sponsor-only-cell": "warning",
@@ -84,7 +74,6 @@ const SEVERITY_BY_CODE = {
 	"missing-conformance-ref": "error",
 } as const;
 
-/** Verdicts that are, on their own, worth reporting — and why. */
 const VERDICT_FINDINGS = {
 	covered: undefined,
 	"pack-only": undefined,
@@ -130,7 +119,6 @@ function expiringFinding(
 			candidate.evidenceExpiresAtMs !== undefined &&
 			candidate.evidenceExpiresAtMs - evaluatedAtMs <= horizonMs,
 	);
-	// Only worth reporting when the whole cell is about to lapse: one expiring
 	// candidate beside a healthy one is not a coverage risk.
 	if (expiring.length !== available.length) return undefined;
 	return {
@@ -225,7 +213,6 @@ export function validateCapabilityMatrix(
 	};
 }
 
-/** The findings a caller would normally refuse to ship on. */
 export function blockingFindings(
 	validation: CapabilityMatrixValidation,
 ): readonly CapabilityMatrixFinding[] {

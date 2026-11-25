@@ -1,11 +1,3 @@
-// The pure verdict function (D9, I5, I8). Given a parsed spec, the evidence
-// recorded on a cd-verification stream and an instant, it decides every check
-// and the overall verdict. The engine calls it live; replay calls it with the
-// recorded evidence and finished_at and must get the same answer.
-//
-// Fail closed: no data is FAIL (or INCONCLUSIVE when fail_on_no_data is
-// false), never PASS; a check that still lacks evidence at the progress
-// deadline is INCONCLUSIVE, which the rollout treats as FAIL.
 import { create } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -37,16 +29,10 @@ export type EvaluationInput = Readonly<{
 	evidence: readonly EvidenceObservationRecord[];
 	startedAtMs: number;
 	atMs: number;
-	/**
-	 * Checks whose health source refused at this instant. Live only: such a
-	 * check stays pending (it is retried) until the progress deadline, after
-	 * which an empty check is no data like any other.
-	 */
 	unavailable?: ReadonlySet<string>;
 }>;
 
 export type Evaluation = Readonly<{
-	/** False while any check is still waiting for evidence before the deadline. */
 	complete: boolean;
 	verdict: VerificationVerdict;
 	checks: readonly CheckOutcomeRecord[];
@@ -57,7 +43,6 @@ type Decided = CheckOutcomeRecord | "pending";
 
 type Clock = Readonly<{ windowEnded: boolean; deadlinePassed: boolean }>;
 
-/** The cohort a threshold reads: the canary when traffic is split, else everything. */
 export function thresholdCohort(cohortAware: boolean): Cohort {
 	return cohortAware ? Cohort.CANARY : Cohort.ALL;
 }
@@ -112,7 +97,6 @@ function noData(
 	);
 }
 
-/** Shared "enough evidence yet?" rule for every sampled check. */
 function sufficiency(
 	check: string,
 	counts: readonly number[],
@@ -161,7 +145,6 @@ function nearestRank(sorted: readonly number[], quantile: number): number {
 	return sorted[index] ?? Number.NaN;
 }
 
-/** Thresholds per aggregation; percentiles use the nearest-rank method. */
 export function aggregate(
 	values: readonly number[],
 	aggregation: Aggregation,
@@ -512,10 +495,6 @@ export function evaluateVerification(input: EvaluationInput): Evaluation {
 	return { complete: true, verdict, checks, reasons };
 }
 
-/**
- * The only verdict that qualifies Freight or advances a stage. INCONCLUSIVE
- * and FAIL both stop the rollout (D9, I5).
- */
 export function qualifies(verdict: VerificationVerdict): boolean {
 	return verdict === VerificationVerdict.PASS;
 }

@@ -49,7 +49,6 @@ const account = (config: Configuration = configuration()) => {
 
 describe("deterministic lease ids", () => {
 	it("is RFC 9562 UUIDv5", () => {
-		// The RFC's DNS-namespace example.
 		expect(
 			uuidV5("6ba7b810-9dad-11d1-80b4-00c04fd430c8", "www.example.com"),
 		).toBe("2ed6657d-e927-568b-95e1-2665a8aea6a2");
@@ -83,7 +82,6 @@ describe("deterministic lease ids", () => {
 			sandbox: `hobo-${leaseId}`,
 			proxySandbox: `hobo-proxy-${leaseId}`,
 		});
-		// The box worker's runner-name parser reads a deterministic id back.
 		expect(leaseIdFromBoxRunnerName(names.runner)).toBe(leaseId);
 	});
 });
@@ -122,7 +120,6 @@ describe("relay cache store: concurrency", () => {
 		);
 		expect(leases.filter(Boolean)).toHaveLength(2);
 		expect(await harness.store.activeLeases()).toHaveLength(2);
-		// Losers re-read the index and re-routed; nobody wrote over a winner.
 		expect(
 			peers.reduce((sum, peer) => sum + peer.casRetries(), 0),
 		).toBeGreaterThan(0);
@@ -195,8 +192,6 @@ describe("relay cache store: TTLs", () => {
 		await harness.store.queue(job(1), NOW, 1);
 		expect(await harness.store.pendingJobs()).toEqual([]);
 		harness.clock.advance(24 * HOUR + 1);
-		// After the window the relay re-reads GitHub before queueing (the
-		// queued-job scan does); the cache alone no longer remembers.
 		await harness.store.queue(
 			job(1),
 			new Date(Date.parse(NOW) + 25 * HOUR).toISOString(),
@@ -325,7 +320,6 @@ describe("relay cache store: cache loss and rebuild by name", () => {
 			(await harness.store.activeLeases()).map((entry) => entry.id),
 		).toEqual([lease.id]);
 		expect((await harness.store.assignedJob(job(1)))?.leaseId).toBe(lease.id);
-		// The rebuilt lease holds its slot, so it is not admitted twice.
 		expect(
 			await harness.store.reserve(account(), job(1), LATER, 1),
 		).toBeUndefined();
@@ -369,7 +363,6 @@ describe("relay cache store: cache loss and rebuild by name", () => {
 		expect(
 			(await harness.store.pendingJobs()).map((entry) => entry.id),
 		).toEqual([1]);
-		// Each candidate generation was looked up by every name it implies.
 		expect(
 			queued.calls.filter((call) => call.startsWith("sandbox:")),
 		).toHaveLength(4);
@@ -557,13 +550,11 @@ describe("relay cache store: budgets without history", () => {
 			1,
 		);
 		expect(first && second).toBeTruthy();
-		// 2 × 35,000 held; a third 35,000 would cross the 100,000 cap.
 		expect(
 			await harness.store.reserve(account(config), sharedJob(3), NOW, 1),
 		).toBeUndefined();
 		if (!first) throw new Error("reservation");
 		await harness.store.settle(first.id, 0, 30, LATER);
-		// The settled lease's spend is the provider's to report; its hold is released.
 		expect(
 			await harness.store.reserve(account(config), sharedJob(3), LATER, 1),
 		).toBeDefined();
@@ -733,7 +724,6 @@ describe("relay cache store: sandbox egress and proxy caps", () => {
 			);
 		expect(await request(1, 600)).toBe(true);
 		expect(await request(1, 10)).toBe(false);
-		// Two racing 300-byte requests: at most one fits under the remaining 400.
 		const raced = await Promise.all([request(2, 300), request(3, 300)]);
 		expect(raced.filter(Boolean)).toHaveLength(1);
 		expect(
@@ -803,7 +793,6 @@ describe("relay cache store: sandbox egress and proxy caps", () => {
 				"sbx_guest",
 			),
 		).toEqual({ bytes: 250, calls: 1 });
-		// Counters live for the sandbox's lifetime (35 min + proxy time) plus an hour.
 		harness.clock.advance(35 * 60_000 + 60_000 + HOUR + 1);
 		expect(
 			await harness.store.sandboxEgressUsage(
@@ -824,7 +813,7 @@ describe("relay cache store: command cost", () => {
 			await run();
 			cost[name] = harness.meter.usage().total - before;
 		};
-		await harness.store.reserve(account(), job(99), NOW, 1); // warm script cache
+		await harness.store.reserve(account(), job(99), NOW, 1);
 		const body = (action: string) =>
 			Buffer.from(JSON.stringify({ action, workflow_job: { id: 1 } }));
 		const deliver = (n: number, action: string) =>
@@ -877,16 +866,6 @@ describe("relay cache store: command cost", () => {
 		await step("completed", () => harness.store.observe(completed, LATER, 1));
 		await step("settle", () => harness.store.settle(leaseId, 0, 3, LATER));
 		const total = Object.values(cost).reduce((sum, value) => sum + value, 0);
-		// Pinned so a change in cost is a reviewed change. Each change-ring
-		// append is 2 commands until the account's ring first fills, 3 after;
-		// the ring takes only state changes and job lifecycle events (7 on
-		// this path: queued, reserved, dispatching, dispatched, claiming,
-		// running, settled). The rest is records and the in-flight index:
-		// observations read the job and lease records in one round trip and
-		// skip writes that change nothing, a lease this instance just wrote is
-		// compared-and-set without reading it again, and the pending set is
-		// pruned by `pendingJobs` rather than on every take. Before (phase
-		// 4a): 3, 6, 11, 5, 4, 5, 1, 8, 5, 8, 6 = 62.
 		expect(cost).toEqual({
 			"intake (dedupe)": 3,
 			queue: 6,
@@ -934,8 +913,6 @@ describe("relay cache store: command cost", () => {
 			10,
 			"00000000-0000-4000-8000-000000000001",
 		);
-		// Authenticate: lease read + call counter. Reserve: lease and binding
-		// reads, request dedupe, rate window, request total, byte counter.
 		expect(authenticated - before).toBe(2);
 		expect(harness.meter.usage().total - authenticated).toBe(6);
 	});

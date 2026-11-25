@@ -123,8 +123,6 @@ describe("running the suite against a store that falls short", () => {
 	});
 
 	it("still withholds a capability when only some of its cases pass", async () => {
-		// SET ... NX EX passes, SET ... NX alone does not; one out of two is
-		// not evidence for a create-if-absent guarantee.
 		const report = await runAgainstReferenceStore({ breakVerb: "GET" });
 		expect(report.substantiatedCapabilities).not.toContain(
 			"atomicCompareAndSet",

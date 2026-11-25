@@ -1,7 +1,3 @@
-/**
- * Privileged Access Gateway Station attachment surface (ADR-0131 / ADR-0133).
- * Re-exports full implementations from @hobo/connectivity — no stubs.
- */
 export {
 	type AuditSink,
 	type CreatePrivilegedAccessGatewayOptions,

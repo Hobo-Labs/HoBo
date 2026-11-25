@@ -1,9 +1,3 @@
-/**
- * The cache holds executables that a later command runs, so it is private
- * (0700, owned by the user, never writable by anyone else), and a download that
- * is interrupted or killed leaves nothing in it: not for this run, and not for
- * the next one, which sweeps what a dead process left.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -77,7 +71,7 @@ describe("the cache directories are private", () => {
 		const root = scratch("cache-open");
 		const cache = join(root, "siblings");
 		mkdirSync(cache);
-		chmodSync(cache, 0o775); // mkdir applies the umask; chmod does not
+		chmodSync(cache, 0o775);
 		await assert.rejects(
 			ensureCached(cache, pinnedFile(server.origin), { allowLocal: true }),
 			(error: Error) =>
@@ -158,7 +152,6 @@ describe("the cache directories are private", () => {
 	});
 });
 
-/** A pid that existed a moment ago and does not now. */
 function deadPid(): number {
 	const result = spawnSync(process.execPath, ["-e", ""]);
 	assert.ok(result.pid > 0);
