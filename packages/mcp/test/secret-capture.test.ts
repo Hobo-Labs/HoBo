@@ -1059,5 +1059,4 @@ describe("CapturedSecret redaction", () => {
 		expect(result(await form).isError).toBe(true);
 		expect(authorize).not.toHaveBeenCalled();
 	});
-
 });
