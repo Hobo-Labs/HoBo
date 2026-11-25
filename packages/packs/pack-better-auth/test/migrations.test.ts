@@ -1,4 +1,4 @@
-import { parseBetterAuthConfig } from "@hobo/adapter-better-auth";
+import { parseBetterAuthConfig } from "@hobo/auth-adapter-contract";
 import { MIGRATION_STEP_KINDS, parseSchemaIr, SCHEMA_IR_CONTRACT } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 

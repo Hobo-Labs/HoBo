@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package hobo.auth.adapter.v1;
+
+message BetterAuthConfigRecord {
+  string contract = 1;
+  string adapter_id = 2;
+  string base_path = 3;
+  string secret_ref = 4;
+  string database_profile = 5;
+}
