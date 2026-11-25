@@ -7,7 +7,7 @@ tags: [hobo, design]
 
 # S6-01 Stage-6 Production Hardening Acceptance Proof
 
-This proof record backs the Stage-6 (Production Hardening) M0 acceptance record per the [post-399 cross-cutting delta pattern](../hobo-524-post-core-cross-cutting-delta-pattern/README.md).
+This proof record backs the Stage-6 (Production Hardening) M0 acceptance record per the [post-399 cross-cutting delta pattern](https://linear.app/quickdeploy-ai/document/hobo-524-proof-record-archived-b1ca6dbf530b).
 
 ## Branch Evidence
 

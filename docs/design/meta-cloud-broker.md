@@ -28,10 +28,10 @@ Branch evidence:
 - [`HOBO-521 proof record`](./proofs/hobo-521-meta-cloud-broker/README.md)
 - [`HOBO-522 proof record`](./proofs/hobo-522-meta-cloud-broker-artifacts/README.md)
 - [`HOBO-523 proof record`](./proofs/hobo-523-yard-receipt-consumption/README.md)
-- [`HOBO-525 proof record`](./proofs/hobo-525-meta-cloud-broker-resolution/README.md)
+- [`HOBO-525 proof record`](https://linear.app/quickdeploy-ai/document/hobo-525-proof-record-archived-81dbe462d156)
 - [`HOBO-528 proof record`](./proofs/hobo-528-meta-cloud-broker-rejection-matrix/README.md)
 - [`HOBO-529 proof record`](./proofs/hobo-529-broker-receipt-integrity/README.md)
-- [`HOBO-526 proof record`](./proofs/hobo-526-broker-environment-publication/README.md)
+- [`HOBO-526 proof record`](https://linear.app/quickdeploy-ai/document/hobo-526-proof-record-archived-86315d5ef944)
 - [`HOBO-527 proof record`](./proofs/hobo-527-broker-admin-controls/README.md)
 
 This M0 record defines the accepted productization scope for the Meta-cloud Broker. It does not
