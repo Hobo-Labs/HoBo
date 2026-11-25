@@ -140,6 +140,20 @@ describe("disableSparseCheckoutIfActive", () => {
 });
 
 describe("clearSparseCheckoutConfig", () => {
+	it("clears stale index flags when sparse config was already removed", () => {
+		const work = join(temp, "work-sparse-interrupted-prepare");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		git(work, ["config", "--worktree", "--unset", "core.sparseCheckout"]);
+		rmSync(join(work, ".git", "info", "sparse-checkout"));
+		expect(sparseCheckoutEnabled(work)).toBe(false);
+		expect(clearSparseCheckoutConfig(work)).toBe(true);
+		git(work, ["checkout", "--force", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
+	});
+
 	it("recognizes a Git boolean alias for sparse checkout", () => {
 		const work = join(temp, "work-sparse-boolean-alias");
 		execFileSync("git", ["clone", "--no-checkout", source, work]);

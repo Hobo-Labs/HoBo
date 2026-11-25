@@ -207,25 +207,24 @@ export function clearSparseCheckoutConfig(
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-	if (!sparseCheckoutEnabled(cwd, env)) {
-		return true;
-	}
-	const gitDir = gitDirPath(cwd, env);
-	if (!gitDir) {
-		return false;
-	}
-	const info = join(gitDir, "info");
-	for (const name of ["sparse-checkout", "sparse-checkout-cone"] as const) {
-		const path = join(info, name);
-		if (existsSync(path)) {
-			rmSync(path);
+	if (sparseCheckoutEnabled(cwd, env)) {
+		const gitDir = gitDirPath(cwd, env);
+		if (!gitDir) {
+			return false;
 		}
+		const info = join(gitDir, "info");
+		for (const name of ["sparse-checkout", "sparse-checkout-cone"] as const) {
+			const path = join(info, name);
+			if (existsSync(path)) {
+				rmSync(path);
+			}
+		}
+		for (const scope of ["--worktree", "--local"] as const) {
+			git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
+			git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
+		}
+		if (sparseCheckoutEnabled(cwd, env)) return false;
 	}
-	for (const scope of ["--worktree", "--local"] as const) {
-		git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
-		git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
-	}
-	if (sparseCheckoutEnabled(cwd, env)) return false;
 	const listed = spawnSync("git", ["ls-files", "-t", "-z"], {
 		cwd,
 		env,
