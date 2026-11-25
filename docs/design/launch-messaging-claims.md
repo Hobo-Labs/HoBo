@@ -26,7 +26,7 @@ Source issue: HOBO-458.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-site-demo-alpha-evidence-contract`](../../src/draft/exp-proofs/cx/launch-site-demo-alpha-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-458-launch-site-demo-alpha-evidence`](./proofs/hobo-458-launch-site-demo-alpha-evidence/README.md).
+[`proofs/hobo-458-launch-site-demo-alpha-evidence`](https://linear.app/quickdeploy-ai/document/hobo-458-launch-site-demo-alpha-evidence-proof-archived-4e32cfcc1a43).
 
 The M1 dogfood/alpha gate accepts the launch-site, messaging, and demo-asset evidence map without
 building the launch site. The gate records owner-mapped evidence, blockers, accepted risks, release

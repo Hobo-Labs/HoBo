@@ -12,7 +12,7 @@ Source issue: HOBO-508.
 Executable proof lives in
 [`src/draft/technical-proofs/v1-outcome-activation-rail-contract`](../../src/draft/technical-proofs/v1-outcome-activation-rail-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-508-outcome-activation-rail`](./proofs/hobo-508-outcome-activation-rail/README.md).
+[`proofs/hobo-508-outcome-activation-rail`](https://linear.app/quickdeploy-ai/document/hobo-508-v1-outcome-activation-rail-proof-archived-8e5ab0dea6c8).
 
 ## M0 Acceptance Record
 

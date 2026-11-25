@@ -12,7 +12,7 @@ Source issue: HOBO-442.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/drift-reconciliation-scope-contract`](../../src/draft/exp-proofs/dx/drift-reconciliation-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-442-drift-reconciliation`](./proofs/hobo-442-drift-reconciliation/README.md).
+[`proofs/hobo-442-drift-reconciliation`](https://linear.app/quickdeploy-ai/document/hobo-442-drift-reconciliation-proof-archived-e62b009eebc2).
 
 ## M0 Acceptance Record
 

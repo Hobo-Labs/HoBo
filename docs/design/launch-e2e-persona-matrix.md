@@ -12,7 +12,7 @@ Source issue: HOBO-500.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/v1-e2e-persona-matrix-contract`](../../src/draft/exp-proofs/dx/v1-e2e-persona-matrix-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-500-launch-e2e-persona-matrix`](./proofs/hobo-500-launch-e2e-persona-matrix/README.md).
+[`proofs/hobo-500-launch-e2e-persona-matrix`](https://linear.app/quickdeploy-ai/document/hobo-500-launch-e2e-persona-matrix-proof-archived-a3995f65b37d).
 
 ## M0 Acceptance Record
 

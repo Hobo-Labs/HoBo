@@ -12,7 +12,7 @@ Source issue: HOBO-448.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/support-workflow-scope-contract`](../../src/draft/exp-proofs/cx/support-workflow-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-448-support-workflow`](./proofs/hobo-448-support-workflow/README.md).
+[`proofs/hobo-448-support-workflow`](https://linear.app/quickdeploy-ai/document/hobo-448-support-workflow-proof-archived-e0b7a25a8732).
 
 ## M0 Acceptance Record
 

@@ -12,7 +12,7 @@ Source issue: HOBO-410.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/deployment-dashboard-topology-scope-contract`](../../src/draft/exp-proofs/ux/deployment-dashboard-topology-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-410-deployment-dashboard-topology`](./proofs/hobo-410-deployment-dashboard-topology/README.md).
+[`proofs/hobo-410-deployment-dashboard-topology`](https://linear.app/quickdeploy-ai/document/hobo-410-deployment-dashboard-and-topology-scope-proof-archived-16ab967bfa82).
 
 ## M0 Acceptance Record
 

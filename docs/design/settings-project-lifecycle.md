@@ -12,7 +12,7 @@ Source issue: HOBO-412.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/settings-project-lifecycle-scope`](../../src/draft/exp-proofs/ux/settings-project-lifecycle-scope/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-412-settings-project-lifecycle`](./proofs/hobo-412-settings-project-lifecycle/README.md).
+[`proofs/hobo-412-settings-project-lifecycle`](https://linear.app/quickdeploy-ai/document/hobo-412-settings-and-project-lifecycle-m0-scope-proof-archived-727a60798968).
 
 ## M0 Acceptance Record
 

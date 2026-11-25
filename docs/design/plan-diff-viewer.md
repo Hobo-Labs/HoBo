@@ -12,7 +12,7 @@ Source issue: HOBO-411.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/plan-diff-viewer-scope-acceptance`](../../src/draft/exp-proofs/ux/plan-diff-viewer-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-411-plan-diff-viewer-scope`](./proofs/hobo-411-plan-diff-viewer-scope/README.md).
+[`proofs/hobo-411-plan-diff-viewer-scope`](https://linear.app/quickdeploy-ai/document/hobo-411-plandiff-viewer-m0-scope-proof-archived-ff3efcca2fd7).
 
 ## M0 Acceptance Record
 

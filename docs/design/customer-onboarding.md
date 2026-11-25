@@ -17,7 +17,7 @@ with branch evidence summarized in
 Script proof lives in
 [`src/draft/exp-proofs/cx/customer-onboarding-script-contract`](../../src/draft/exp-proofs/cx/customer-onboarding-script-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-487-customer-onboarding-script`](./proofs/hobo-487-customer-onboarding-script/README.md).
+[`proofs/hobo-487-customer-onboarding-script`](https://linear.app/quickdeploy-ai/document/hobo-487-customer-onboarding-script-proof-archived-8b1394b19b0a).
 
 ## M0 Scope Acceptance Record
 

@@ -14,9 +14,9 @@ Executable proofs live in
 and
 [`src/draft/exp-proofs/dx/launch-performance-capacity-envelope-contract`](../../src/draft/exp-proofs/dx/launch-performance-capacity-envelope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-440-performance-load-tests`](./proofs/hobo-440-performance-load-tests/README.md)
+[`proofs/hobo-440-performance-load-tests`](https://linear.app/quickdeploy-ai/document/hobo-440-performance-and-load-tests-m0-scope-proof-archived-864a904b6e4b)
 and
-[`proofs/hobo-502-launch-performance-capacity-envelope`](./proofs/hobo-502-launch-performance-capacity-envelope/README.md).
+[`proofs/hobo-502-launch-performance-capacity-envelope`](https://linear.app/quickdeploy-ai/document/hobo-502-launch-performance-capacity-envelope-proof-archived-269eea126134).
 
 ## M0 Scope And Acceptance Record
 

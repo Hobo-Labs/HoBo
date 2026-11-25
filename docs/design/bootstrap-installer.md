@@ -12,11 +12,11 @@ Source issue: HOBO-428.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/bootstrap-installer-scope-contract`](../../src/draft/exp-proofs/dx/bootstrap-installer-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-428-bootstrap-installer`](./proofs/hobo-428-bootstrap-installer/README.md).
+[`proofs/hobo-428-bootstrap-installer`](https://linear.app/quickdeploy-ai/document/hobo-428-bootstrap-installer-m0-proof-archived-d7026e127677).
 Launch smoke matrix proof lives in
 [`src/draft/exp-proofs/dx/bootstrap-launch-smoke-matrix-contract`](../../src/draft/exp-proofs/dx/bootstrap-launch-smoke-matrix-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-501-bootstrap-launch-smoke-matrix`](./proofs/hobo-501-bootstrap-launch-smoke-matrix/README.md).
+[`proofs/hobo-501-bootstrap-launch-smoke-matrix`](https://linear.app/quickdeploy-ai/document/hobo-501-bootstrap-launch-smoke-matrix-proof-archived-488f67de3b6f).
 
 ## M0 Acceptance Record
 

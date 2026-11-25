@@ -127,7 +127,7 @@ Source issue: HOBO-467.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-support-private-beta-evidence-contract`](../../src/draft/exp-proofs/cx/launch-support-private-beta-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-467-launch-support-private-beta`](./proofs/hobo-467-launch-support-private-beta/README.md).
+[`proofs/hobo-467-launch-support-private-beta`](https://linear.app/quickdeploy-ai/document/hobo-467-launch-support-private-beta-evidence-archived-aad704d0f038).
 
 The M2 gate records six support evidence items:
 

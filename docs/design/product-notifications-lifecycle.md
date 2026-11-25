@@ -12,7 +12,7 @@ Source issue: HOBO-506.
 Executable proof lives in
 [`src/draft/technical-proofs/product-notification-taxonomy-contract`](../../src/draft/technical-proofs/product-notification-taxonomy-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-506-product-notification-taxonomy`](./proofs/hobo-506-product-notification-taxonomy/README.md).
+[`proofs/hobo-506-product-notification-taxonomy`](https://linear.app/quickdeploy-ai/document/hobo-506-product-notification-taxonomy-proof-archived-29d71baccdcb).
 
 ## M0 Acceptance Record
 
