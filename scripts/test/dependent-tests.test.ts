@@ -1231,6 +1231,49 @@ describe("exportTarget", () => {
 });
 
 describe("planCommands", () => {
+	it("passes the empty-suite option only when the package test script does not", () => {
+		const commands = planCommands(
+			{
+				mode: "scoped",
+				full: [],
+				subsets: new Map([["packages/a", ["test/a.test.ts"]]]),
+				vitestShards: new Map([["packages/b", { count: 2, indexes: [0] }]]),
+				skipped: [],
+			},
+			[],
+			"1",
+			() => [],
+			undefined,
+			(dir) =>
+				dir === "packages/a"
+					? "vitest run test/ --passWithNoTests"
+					: "vitest run test/",
+		);
+		assert.deepEqual(commands[0]?.slice(-1), ["test/a.test.ts"]);
+		assert.equal(commands[0]?.includes("--passWithNoTests"), false);
+		assert.deepEqual(commands[1]?.slice(-2), [
+			"--passWithNoTests",
+			"--shard=1/2",
+		]);
+		const reversed = planCommands(
+			{
+				mode: "scoped",
+				full: [],
+				subsets: new Map([["packages/a", ["test/a.test.ts"]]]),
+				vitestShards: new Map([["packages/b", { count: 2, indexes: [0] }]]),
+				skipped: [],
+			},
+			[],
+			"1",
+			() => [],
+			undefined,
+			(dir) =>
+				dir === "packages/b" ? "vitest run --passWithNoTests" : undefined,
+		);
+		assert.equal(reversed[0]?.includes("--passWithNoTests"), true);
+		assert.equal(reversed[1]?.includes("--passWithNoTests"), false);
+	});
+
 	const plan: TestPlan = {
 		mode: "scoped",
 		full: ["packages/lib"],

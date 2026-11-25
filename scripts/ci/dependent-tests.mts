@@ -1100,15 +1100,33 @@ function buildConcurrencyFromEnv(): string {
 	);
 }
 
+function workspaceTestScript(directory: string): string | undefined {
+	try {
+		const manifest: { scripts?: { test?: string } } = JSON.parse(
+			readFileSync(`${directory}/package.json`, "utf8"),
+		);
+		return manifest.scripts?.test;
+	} catch {
+		return undefined;
+	}
+}
+
 export function planCommands(
 	plan: TestPlan,
 	turboArgs: readonly string[],
 	concurrency: string,
 	graph: TestGraph,
 	buildConcurrency?: string,
+	readTestScript: (
+		directory: string,
+	) => string | undefined = workspaceTestScript,
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
+	const emptySuiteFlag = (directory: string): string[] =>
+		/(?:^|\s)--passWithNoTests(?:\s|=|$)/u.test(readTestScript(directory) ?? "")
+			? []
+			: ["--passWithNoTests"];
 	const affected = turboAffectedArgs();
 	if (plan.mode === "all")
 		return [[...test, ...affected, parallel, ...turboArgs]];
@@ -1172,7 +1190,7 @@ export function planCommands(
 			"--only",
 			parallel,
 			"--",
-			"--passWithNoTests",
+			...emptySuiteFlag(dir),
 			...files,
 		]);
 	for (const [dir, spec] of [...slices].sort(([a], [b]) => a.localeCompare(b)))
@@ -1183,7 +1201,7 @@ export function planCommands(
 				"--only",
 				parallel,
 				"--",
-				"--passWithNoTests",
+				...emptySuiteFlag(dir),
 				`--shard=${index + 1}/${spec.count}`,
 			]);
 	return commands;
