@@ -83,7 +83,7 @@ test("scenario paths, proof modes, accessibility notes, and dependency refs cove
   }
 
   for (const requiredRef of [
-    "docs/design/publisher-portal.md",
+    "https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060",
     "docs/design/capability-review-approval.md",
     "docs/design/marketplace-publisher-trust-evidence.md",
     "docs/design/marketplace-payout-hooks.md",

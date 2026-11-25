@@ -388,7 +388,7 @@ export const VIBE_DOCS_PORTAL_IA_STATES: VibeDocsPortalIaStates = {
   packagePath: "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states",
   proofPath: "docs/design/proofs/vibe-docs-portal-ia-states/README.md",
   designRefs: [
-    "docs/design/docs-portal.md",
+    "https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce",
     "docs/design/developer-experience.md#plan-07",
     "docs/design/release-notes-upgrade-guide.md",
     "docs/design/known-limitations-register.md",

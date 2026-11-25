@@ -307,7 +307,7 @@ export const VIBE_PLAN_REVIEW_STATES: VibePlanReviewStates = {
   packagePath: "src/draft/exp-proofs/ux/vibe-plan-review-states",
   proofPath: "docs/design/proofs/vibe-plan-review-states/README.md",
   designRefs: [
-    "docs/design/plan-diff-viewer.md",
+    "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/developer-experience.md#plan-07",
     "docs/design/control-plane.md#plan-04",
     "docs/design/platform-engineering.md#plan-25",

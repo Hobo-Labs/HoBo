@@ -210,7 +210,7 @@ const FIXTURES: readonly SupportWorkflowFixture[] = [
     affectedSurface: "docs portal troubleshooting answer",
     ownerRoute: "Support Workflow / Docs Portal",
     evidenceLinks: [
-      "docs/design/docs-portal.md",
+      "https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce",
       "docs/design/support-workflow.md#intake-states",
     ],
     redactionState: "customer-safe",

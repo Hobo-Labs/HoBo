@@ -387,11 +387,11 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-542", "plan review mockups for safe, blocked, destructive, stale, and unknown evidence", "Plan/Diff Viewer", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/plan-diff-viewer.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f"]),
     child("HOBO-543", "policy, cost, capacity, and approval annotation pseudocode", "Plan/Diff Viewer", "M1", 3, [
       "pseudocode",
       "fixtures",
-    ], ["docs/design/plan-diff-viewer.md", "docs/design/contracts-policy-flags.md#plan-29"]),
+    ], ["https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f", "docs/design/contracts-policy-flags.md#plan-29"]),
     child("HOBO-544", "deployment timeline, topology graph, run inspector, and health rollup mockups", "Deployment Dashboard & Topology Explorer", "M1", 3, [
       "mockups",
       "wireframes",
@@ -411,7 +411,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-548", "publisher submission, evidence upload, review, rejection, and yank remediation mockups", "Publisher Portal", "M1", 3, [
       "mockups",
       "wireframes",
-    ], ["docs/design/publisher-portal.md", "docs/design/marketplace-publisher-trust-evidence.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060", "docs/design/marketplace-publisher-trust-evidence.md"]),
     child("HOBO-549", "first-customer pilot storyboard and script artifacts", "Customer Onboarding", "M1", 3, [
       "storyboard",
       "script",
@@ -423,7 +423,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-551", "docs IA, audience paths, search metadata, and stale-content states", "Docs Portal", "M1", 3, [
       "fixtures",
       "state model",
-    ], ["docs/design/docs-portal.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce"]),
     child("HOBO-552", "app developer, platform engineer, GitOps, SecOps, DevOps, and SRE tutorial outlines", "Tutorials & Walkthroughs", "M1", 3, [
       "tutorial outline",
       "fixtures",
@@ -460,7 +460,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-560", "deterministic plan/diff review prototype over golden fixtures", "Plan/Diff Viewer", "M2", 5, [
       "reference prototype",
       "fixtures",
-    ], ["docs/design/plan-diff-viewer.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f"]),
     child("HOBO-561", "topology/status prototype over projection snapshots", "Deployment Dashboard & Topology Explorer", "M2", 5, [
       "reference prototype",
       "fixtures",

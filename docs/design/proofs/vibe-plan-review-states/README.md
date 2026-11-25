@@ -13,7 +13,7 @@ blocked, destructive, stale, and unknown evidence states.
 
 ## Evidence
 
-- Source record: [`plan-diff-viewer.md`](../../plan-diff-viewer.md).
+- Source record: [`plan-diff-viewer.md`](https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f).
 - DX parity source: [`developer-experience.md#plan-07`](../../developer-experience.md#plan-07).
 - Quickstart source: [`resource-lifecycle-quickstart-examples`](../resource-lifecycle-quickstart-examples/README.md).
 - Executable proof: [`vibe-plan-review-states`](../../../../src/draft/exp-proofs/ux/vibe-plan-review-states/README.md).

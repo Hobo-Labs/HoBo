@@ -173,7 +173,7 @@ export const releaseNotesGaHandoffEvidence: ReleaseNotesGaHandoffEvidenceRecord 
     {
       id: "docs-portal-publication-handoff",
       ownerProject: "Docs Portal",
-      source: "docs/design/docs-portal.md",
+      source: "https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce",
       proofMode: "manual-review",
       status: "accepted",
       acceptanceBullet: "The parent HoBo v1 Release Readiness initiative status is updated if this gate changes launch risk.",

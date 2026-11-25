@@ -14,7 +14,7 @@ docs.
 
 ## Evidence
 
-- Source record: [`docs-portal.md`](../../docs-portal.md).
+- Source record: [`docs-portal.md`](https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce).
 - DX source: [`developer-experience.md#plan-07`](../../developer-experience.md#plan-07).
 - Quickstart source: [`resource-lifecycle-quickstart-examples`](../resource-lifecycle-quickstart-examples/README.md).
 - Executable proof: [`vibe-docs-portal-ia-states`](../../../../src/draft/exp-proofs/ux/vibe-docs-portal-ia-states/README.md).

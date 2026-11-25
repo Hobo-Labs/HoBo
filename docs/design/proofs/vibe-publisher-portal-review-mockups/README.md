@@ -14,7 +14,7 @@ handoff, and customer-safe support wording mockups.
 
 ## Evidence
 
-- Source record: [`publisher-portal.md`](../../publisher-portal.md).
+- Source record: [`publisher-portal.md`](https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060).
 - Review source: [`capability-review-approval.md`](../../capability-review-approval.md).
 - Trust source: [`marketplace-publisher-trust-evidence.md`](../../marketplace-publisher-trust-evidence.md).
 - Payout source: [`marketplace-payout-hooks.md`](../../marketplace-payout-hooks.md).

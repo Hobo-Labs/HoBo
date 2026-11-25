@@ -123,7 +123,7 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       id: "docs-copy-owner-and-limitation-register",
       status: "accepted",
       owningProject: "V1 Docs",
-      proofSource: ["docs/design/docs-portal.md", "https://linear.app/quickdeploy-ai/document/hobo-407-release-notes-and-upgrade-guide-proof-archived-ee58bdd74348"],
+      proofSource: ["https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce", "https://linear.app/quickdeploy-ai/document/hobo-407-release-notes-and-upgrade-guide-proof-archived-ee58bdd74348"],
       feeds: ["known-limitations", "customer-safe-copy-ownership"]
     }
   ],
@@ -185,7 +185,7 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       },
       {
         project: "V1 Docs",
-        issueOrRecord: "docs/design/docs-portal.md",
+        issueOrRecord: "https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce",
         cutlineRole: "copy ownership and limitation register"
       }
     ]

@@ -133,7 +133,7 @@ export const PLAN_DIFF_VIEWER_SCOPE = {
       kind: "plan-diff-state-model",
       owner: "Plan/Diff Viewer",
       proofMode: "design-record",
-      source: "docs/design/plan-diff-viewer.md",
+      source: "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
       proves: "Each viewer state has an input, output, owner, missing-evidence behavior, and release-gate meaning.",
     },
     {
@@ -161,7 +161,7 @@ export const PLAN_DIFF_VIEWER_SCOPE = {
       kind: "blocked-plan-support-handoff",
       owner: "Support & Debug Tools",
       proofMode: "support-handoff",
-      source: "docs/design/plan-diff-viewer.md",
+      source: "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
       proves: "Blocked or confusing plan states carry owner, safe next action, customer-visible wording, and evidence source.",
     },
   ],

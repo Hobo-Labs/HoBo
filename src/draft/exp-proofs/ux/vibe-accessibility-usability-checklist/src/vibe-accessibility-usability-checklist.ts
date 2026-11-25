@@ -374,10 +374,10 @@ export const VIBE_ACCESSIBILITY_USABILITY_CHECKLIST: VibeAccessibilityChecklist 
   designRefs: [
     "docs/design/accessibility-usability-launch-baseline.md",
     "docs/design/workspace-onboarding-ux.md",
-    "docs/design/plan-diff-viewer.md",
+    "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/deployment-dashboard-topology-explorer.md",
     "docs/design/marketplace-ux.md",
-    "docs/design/publisher-portal.md",
+    "https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060",
     "docs/design/support-workflow.md",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
