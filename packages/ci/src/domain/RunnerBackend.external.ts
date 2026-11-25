@@ -4,9 +4,9 @@ import {
 	ExternalRunnerId,
 	JobDispatchId,
 	NonEmptyReason,
+	RunnerLabel,
 	RunnerPoolId,
 	RunnerTier,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -34,7 +34,7 @@ export class RunnerBackend extends Domain.ExternalSystem("RunnerBackend", {
 			jobId: JobDispatchId,
 			poolId: RunnerPoolId,
 			tier: RunnerTier,
-			runsOn: RunsOnLabel,
+			runnerLabel: RunnerLabel,
 			slotId: SlotId,
 		},
 		success: {

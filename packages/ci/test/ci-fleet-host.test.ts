@@ -20,8 +20,8 @@ import {
 	PositiveConcurrency,
 	PositiveMinutes,
 	RunnerBackend,
+	RunnerLabel,
 	RunnerPoolId,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "../src/domain/index.js";
@@ -46,7 +46,7 @@ const LOCAL_POOL = {
 	poolId: RunnerPoolId.make("local-devbox"),
 	tier: "local" as const,
 	role: "primary" as const,
-	runsOn: RunsOnLabel.make("hobo-local-host"),
+	runnerLabel: RunnerLabel.make("hobo-local-host"),
 	concurrency: PositiveConcurrency.make(2),
 	costPerMinuteMicros: NonNegativeMicros.make(0),
 	payer: PayerId.make("local"),
