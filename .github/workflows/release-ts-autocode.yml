@@ -19,6 +19,20 @@ on:
 permissions:
   contents: read
 
+env:
+  TS_AUTOCODE_SPARSE_PATHS: |
+    .github
+    scripts
+    packages
+    tools/pins
+    external
+    package.json
+    pnpm-lock.yaml
+    pnpm-workspace.yaml
+    .mise/locks
+    mise.toml
+    mise.lock
+
 concurrency:
   group: ts-autocode-release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -77,25 +91,19 @@ jobs:
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          clean: false
           fetch-depth: 1
           filter: blob:none
-          sparse-checkout: |
-            .github
-            scripts
-            packages
-            tools/pins
-            external
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            .mise/locks
-            mise.toml
-            mise.lock
+          sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          sparse-paths: ${{ env.TS_AUTOCODE_SPARSE_PATHS }}
           submodules: recursive
-          clean: false
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode sparse cone
         run: pnpm run pins:fetch ts-autocode
