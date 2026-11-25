@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -54,5 +56,33 @@ describe("hobo-repo-checkout wiring", () => {
 			action.match(new RegExp(`actions/checkout@${checkoutSha}`, "g")),
 		).toHaveLength(6);
 		expect(action).toContain("sleep 8");
+	});
+	it.each([
+		1, 2,
+	])("checks the marker after remote attempt %i before retrying", (attempt) => {
+		const block = action
+			.split(`    - name: Verify remote checkout (attempt ${attempt})\n`)[1]
+			?.split("\n    - name: ")[0];
+		const markerCheck = block?.split("      run: |\n")[1];
+		if (!markerCheck) throw new Error("marker check is absent");
+		const script = markerCheck
+			.split("\n")
+			.map((line) => line.replace(/^        /, ""))
+			.join("\n");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-checkout-marker-"));
+		try {
+			const run = (marker: string) =>
+				spawnSync("/bin/bash", ["-e", "-o", "pipefail", "-c", script], {
+					cwd: directory,
+					env: { CHECKOUT_MARKER: marker },
+					encoding: "utf8",
+				});
+			expect(run("").status).toBe(0);
+			expect(run("marker").status).toBe(1);
+			writeFileSync(join(directory, "marker"), "ok");
+			expect(run("marker").status).toBe(0);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 });
