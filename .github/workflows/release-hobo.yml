@@ -1636,7 +1636,7 @@ jobs:
         if: steps.fresh.outputs.deploy == 'true'
         timeout-minutes: 21
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"
