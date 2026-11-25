@@ -12,7 +12,7 @@ Source issue: HOBO-434.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/docs-portal-scope-contract`](../../src/draft/exp-proofs/dx/docs-portal-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-434-docs-portal`](./proofs/hobo-434-docs-portal/README.md).
+[`proofs/hobo-434-docs-portal`](https://linear.app/quickdeploy-ai/document/hobo-434-docs-portal-m0-scope-proof-archived-75386bc9e701).
 
 ## M0 Acceptance Record
 

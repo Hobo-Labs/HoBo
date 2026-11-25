@@ -12,7 +12,7 @@ Source issue: HOBO-421.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/marketplace-ux-scope-contract`](../../src/draft/exp-proofs/ux/marketplace-ux-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-421-marketplace-ux`](./proofs/hobo-421-marketplace-ux/README.md).
+[`proofs/hobo-421-marketplace-ux`](https://linear.app/quickdeploy-ai/document/hobo-421-marketplace-ux-proof-archived-2febd428c9fa).
 
 ## M0 Acceptance Record
 

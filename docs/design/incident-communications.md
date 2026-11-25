@@ -12,7 +12,7 @@ Source issue: HOBO-450.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/incident-communications-scope-contract`](../../src/draft/exp-proofs/cx/incident-communications-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-450-incident-communications`](./proofs/hobo-450-incident-communications/README.md).
+[`proofs/hobo-450-incident-communications`](https://linear.app/quickdeploy-ai/document/hobo-450-incident-communications-proof-archived-6152d0f48825).
 
 ## M0 Acceptance Record
 

@@ -11,7 +11,7 @@ gate.
 The durable design record lives in
 [`docs/design/incident-communications.md`](../../../../../docs/design/incident-communications.md). Branch
 evidence is summarized in
-[`docs/design/proofs/hobo-450-incident-communications`](../../../../../docs/design/proofs/hobo-450-incident-communications/README.md).
+[`docs/design/proofs/hobo-450-incident-communications`](https://linear.app/quickdeploy-ai/document/hobo-450-incident-communications-proof-archived-6152d0f48825).
 
 ## Contract Surface
 

@@ -12,7 +12,7 @@ Source issue: HOBO-422.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/publisher-portal-scope-contract`](../../src/draft/exp-proofs/ux/publisher-portal-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-422-publisher-portal`](./proofs/hobo-422-publisher-portal/README.md).
+[`proofs/hobo-422-publisher-portal`](https://linear.app/quickdeploy-ai/document/hobo-422-publisher-portal-m0-scope-proof-archived-4d8f357ce4ab).
 
 ## M0 Acceptance Record
 

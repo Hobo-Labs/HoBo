@@ -104,7 +104,7 @@ cutline dependencies, follow-up rules, and parent-initiative status behavior.
 HOBO-465 adds the M2 private beta gate for this project. The executable proof lives in
 [`src/draft/exp-proofs/cx/launch-site-private-beta-evidence-contract`](../../src/draft/exp-proofs/cx/launch-site-private-beta-evidence-contract/README.md),
 with branch evidence summarized in
-[`proofs/hobo-465-launch-site-private-beta`](./proofs/hobo-465-launch-site-private-beta/README.md).
+[`proofs/hobo-465-launch-site-private-beta`](https://linear.app/quickdeploy-ai/document/hobo-465-launch-site-private-beta-evidence-proof-archived-fb00a6f60165).
 
 Private beta launch messaging may consume the claim register and golden-path demo records only when
 required evidence has owners, accepted sources, demo asset refresh triggers, blockers, accepted

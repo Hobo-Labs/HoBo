@@ -13,6 +13,7 @@ const relPath = z
 		"package-relative path (no leading slash, no backslashes)",
 	);
 const repoPath = z.string().regex(/^[^/\\][^\\]*$/u, "repo-relative path");
+const designReference = z.union([z.string().url(), repoPath]);
 
 export const proofManifestSchema = z
 	.object({
@@ -29,7 +30,7 @@ export const proofManifestSchema = z
 				technicalProofs: z.array(repoPath).default([]),
 				epicProofs: z.array(repoPath).default([]),
 				expProofs: z.array(repoPath).default([]),
-				designDocs: z.array(repoPath).default([]),
+				designDocs: z.array(designReference).default([]),
 			})
 			.default({
 				technicalProofs: [],

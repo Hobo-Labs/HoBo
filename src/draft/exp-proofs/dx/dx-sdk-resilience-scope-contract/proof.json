@@ -10,7 +10,7 @@
     "expProofs": [],
     "designDocs": [
       "docs/design/dx-sdk-resilience-semantics.md",
-      "docs/design/proofs/hobo-514-dx-sdk-resilience/README.md",
+      "https://linear.app/quickdeploy-ai/document/hobo-514-dx-sdk-resilience-scope-proof-archived-340bcae93e40",
       "docs/design/sdk-contracts.md"
     ]
   },
