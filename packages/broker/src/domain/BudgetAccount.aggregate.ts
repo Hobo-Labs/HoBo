@@ -1,10 +1,6 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
-import {
-	BudgetAccountId,
-	BudgetEpochMs,
-	BudgetHoldId,
-} from "./ids.js";
+import { BudgetAccountId, BudgetEpochMs, BudgetHoldId } from "./ids.js";
 
 export class BudgetLimitExceeded extends Domain.Rejection(
 	"BudgetLimitExceeded",
@@ -479,8 +475,7 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 				return new BudgetAccountNotConfigured({ accountId: id });
 			}
 			const due = state.holds.filter(
-				(item) =>
-					item.expiresAtMs !== null && item.expiresAtMs <= cmd.nowMs,
+				(item) => item.expiresAtMs !== null && item.expiresAtMs <= cmd.nowMs,
 			);
 			const [first, ...rest] = due;
 			if (first === undefined) {
