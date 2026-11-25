@@ -1,13 +1,11 @@
-import {
-	assertBetterAuthRuntimeAvailable,
-	BETTER_AUTH_RUNTIME_MODULE,
-	BetterAuthRuntimeUnavailableError,
-	parseBetterAuthConfig,
-} from "@hobo/adapter-better-auth";
 import { describe, expect, it } from "vitest";
 
 import {
+	assertBetterAuthRuntimeAvailable,
+	BETTER_AUTH_RUNTIME_MODULE,
 	BetterAuthBundlePlanError,
+	BetterAuthRuntimeUnavailableError,
+	parseBetterAuthConfig,
 	planBetterAuthBundle,
 } from "../src/index.js";
 

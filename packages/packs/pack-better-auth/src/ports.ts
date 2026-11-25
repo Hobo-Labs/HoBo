@@ -1,6 +1,6 @@
-const BINDLE_NAME = /^[a-z][a-z0-9_-]{0,63}$/u;
+import { parseBetterAuthSecretRef } from "@hobo/auth-adapter-contract";
 
-const SECRET_LOCATOR = /^[a-z][a-z0-9+.-]{1,31}:\/\/.+/u;
+const BINDLE_NAME = /^[a-z][a-z0-9_-]{0,63}$/u;
 
 export interface BetterAuthBundlePortRefs {
 	readonly relationalBindle: string;
@@ -14,16 +14,12 @@ export function parseBetterAuthBundlePortRefs(
 	const relationalBindle = input.relationalBindle.trim();
 	const httpBindle = input.httpBindle.trim();
 	const signingSecretRef = input.signingSecretRef.trim();
-	if (
-		!BINDLE_NAME.test(relationalBindle) ||
-		!BINDLE_NAME.test(httpBindle) ||
-		!SECRET_LOCATOR.test(signingSecretRef)
-	) {
+	if (!BINDLE_NAME.test(relationalBindle) || !BINDLE_NAME.test(httpBindle)) {
 		throw new Error("invalid better-auth bundle port refs");
 	}
 	return Object.freeze({
 		relationalBindle,
 		httpBindle,
-		signingSecretRef,
+		signingSecretRef: parseBetterAuthSecretRef(signingSecretRef),
 	});
 }

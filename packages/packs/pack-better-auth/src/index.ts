@@ -15,4 +15,19 @@ export {
 	parseBetterAuthBundlePortRefs,
 } from "./ports.js";
 
-export { type BetterAuthBundlePlan, planBetterAuthBundle } from "./plan.js";
+export {
+	type BetterAuthBundlePlanRecord,
+	toBetterAuthBundlePlanRecord,
+} from "./record.js";
+
+export {
+	type BetterAuthBundlePlan,
+	planBetterAuthBundle,
+} from "./plan.js";
+
+export {
+	assertBetterAuthRuntimeAvailable,
+	BETTER_AUTH_RUNTIME_MODULE,
+	BetterAuthRuntimeUnavailableError,
+	parseBetterAuthConfig,
+} from "@hobo/auth-adapter-contract";
