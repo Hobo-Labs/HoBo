@@ -26,8 +26,10 @@ const CD_REALIZE_SCOPE =
 const CREDENTIAL_REF =
 	/^(github-app:\/\/[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}|owner:\/\/[A-Z][A-Z0-9_]{0,63})$/u;
 
-const MAX_CREDENTIAL_REF_LEN = 120;
-const MAX_SCOPE_LEN = 96;
+const MAX_CREDENTIAL_REF_LEN = 153;
+const MAX_SCOPE_LEN = 138;
+
+const RELEASE_FREIGHT_VERDICT_CODE = /^[a-z0-9][a-z0-9._:-]{0,63}$/u;
 
 const GH_TOKEN_PREFIX =
 	/(?:^|[^A-Za-z0-9_])(?:npm_|ghp_|ghu_|ghs_|ghr_|github_pat_)/u;
@@ -133,9 +135,10 @@ export function formatReleaseFreightBlockedDetail(
 	const validated = validateReasonStructuredDetail(detail);
 	if (!validated) return code.trim() || "unknown";
 	if (validated.detailKind === "repository-mismatch") {
-		const expectedRepository = validated.requestedScope.slice(
-			"github-app://".length,
-		);
+		const scope = validated.requestedScope;
+		const expectedRepository = scope.startsWith("github-app://")
+			? scope.slice("github-app://".length)
+			: scope;
 		return `${code}: credential=${validated.credentialRef} expected-repository=${expectedRepository} repository-mismatch`;
 	}
 	return `${code}: credential=${validated.credentialRef} scope=${validated.requestedScope} ${validated.detailKind}`;
@@ -191,11 +194,12 @@ export function parseReleaseFreightAuthorMessage(
 		requestedScope: string,
 		detailKind: ReleaseFreightDetailKind,
 	) => {
-		if (
-			!isValidReleaseFreightCredentialRef(credentialRef) ||
-			!isReleaseFreightScopeAllowed(requestedScope, allowedScopes)
-		)
+		if (!isValidReleaseFreightCredentialRef(credentialRef)) return undefined;
+		if (detailKind === "scope-not-allowed") {
+			if (!isValidReleaseFreightScope(requestedScope)) return undefined;
+		} else if (!isReleaseFreightScopeAllowed(requestedScope, allowedScopes)) {
 			return undefined;
+		}
 		return { credentialRef, requestedScope, detailKind };
 	};
 	const scopeDenied = PARSE_SCOPE_NOT_ALLOWED.exec(text);
@@ -305,10 +309,23 @@ export function releaseFreightLogLooksSensitive(text: string): boolean {
 	return false;
 }
 
+export function sanitizeReleaseFreightVerdictCodes(
+	codes: readonly string[],
+): string[] {
+	return codes
+		.map((code) => code.replaceAll(/[\r\n]/gu, "").trim())
+		.filter(
+			(code) => code.length > 0 && RELEASE_FREIGHT_VERDICT_CODE.test(code),
+		);
+}
+
 export function releaseFreightLogFragment(text: string | undefined): string {
 	const trimmed = text?.trim() ?? "";
 	if (!trimmed) return "";
 	const singleLine = trimmed.replaceAll(/[\r\n]/gu, " ").trim();
-	if (releaseFreightLogLooksSensitive(singleLine)) return "";
+	if (!singleLine) return "";
+	const redacted = redactProviderText(singleLine);
+	if (redacted !== singleLine || releaseFreightLogLooksSensitive(singleLine))
+		return "";
 	return singleLine;
 }

@@ -7,8 +7,13 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { ReconcilerMode } from "../../src/_generated/cd_pb.js";
+import {
+	ReasonStructuredDetailSchema,
+	ReconcilerMode,
+} from "../../src/_generated/cd_pb.js";
+import { validateReasonStructuredDetail } from "../../src/reconcile/release-freight-detail.js";
 import {
 	createCampReconciler,
 	createDriftPolicy,
@@ -51,11 +56,27 @@ function findCue(): string | undefined {
 			execFileSync("which", ["cue"], { encoding: "utf8" }).trim() || undefined
 		);
 	} catch {
+		/* try mise next */
+	}
+	try {
+		return (
+			execFileSync("mise", ["which", "cue"], { encoding: "utf8" }).trim() ||
+			undefined
+		);
+	} catch {
 		return undefined;
 	}
 }
 
 const cue = findCue();
+if (
+	!cue &&
+	(process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true")
+) {
+	throw new Error(
+		"cue binary is required in CI; run `mise install` before agent:check",
+	);
+}
 
 function vet(
 	definition: string,
@@ -118,6 +139,35 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			const result = vet("#ReconcileStatusEvent", body);
 			expect(result.output).toBe("");
 		}
+	});
+
+	it("accepts structured release Freight detail emitted by validateReasonStructuredDetail", () => {
+		const structured = validateReasonStructuredDetail({
+			credentialRef: "github-app://Hobo-Labs/HoBo",
+			requestedScope: "cd-realize:hobo-release/pages-candidate",
+			detailKind: "scope-not-allowed",
+		});
+		expect(structured).toBeDefined();
+		const json = toJson(ReasonStructuredDetailSchema, structured!);
+		const result = vet("ReasonStructuredDetail", json);
+		expect(result.ok, result.output).toBe(true);
+		const mismatch = validateReasonStructuredDetail({
+			credentialRef: "github-app://Hobo-Labs/HoBo",
+			requestedScope: "github-app://Other/Repo",
+			detailKind: "repository-mismatch",
+		});
+		expect(mismatch).toBeDefined();
+		expect(
+			vet("ReasonStructuredDetail", toJson(ReasonStructuredDetailSchema, mismatch!))
+				.ok,
+		).toBe(true);
+		expect(
+			vet("ReasonStructuredDetail", {
+				credentialRef: "github-app://Hobo-Labs/HoBo",
+				requestedScope: "cd-realize:evil",
+				detailKind: "repository-mismatch",
+			}).ok,
+		).toBe(false);
 	});
 
 	it("rejects a BLOCKED observation without a reason and a malformed drift kind", () => {

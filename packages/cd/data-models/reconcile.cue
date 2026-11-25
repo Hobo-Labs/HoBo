@@ -28,11 +28,21 @@ package cd
 #releaseFreightCredentialRef: string & !~"[\\r\\n]" & =~"^(github-app://[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}|owner://[A-Z][A-Z0-9_]{0,63})$"
 #releaseFreightScope: string & !~"[\\r\\n]" & (=~"^release-probe$" | =~"^cd-realize:[a-z0-9][a-z0-9-]{0,62}(/[a-z0-9][a-z0-9-]{0,62})?$")
 
-#reconcileReasonStructured: {
-	credential_ref?:  #releaseFreightCredentialRef
-	requested_scope?: (#releaseFreightScope | #releaseFreightCredentialRef)
-	detail_kind?:     "scope-not-allowed" | "credential-unresolved" | "repository-mismatch" | "missing-GITHUB_REPOSITORY" | "missing-GITHUB_TOKEN"
+#reconcileReasonStructuredScope: {
+	credentialRef: #releaseFreightCredentialRef
+	requestedScope: #releaseFreightScope
+	detailKind: "scope-not-allowed" | "credential-unresolved" | "missing-GITHUB_REPOSITORY" | "missing-GITHUB_TOKEN"
 }
+
+#reconcileReasonStructuredRepositoryMismatch: {
+	credentialRef: #releaseFreightCredentialRef
+	requestedScope: #releaseFreightCredentialRef
+	detailKind: "repository-mismatch"
+}
+
+#reconcileReasonStructured:
+	#reconcileReasonStructuredScope |
+	#reconcileReasonStructuredRepositoryMismatch
 
 ReasonStructuredDetail: #reconcileReasonStructured
 

@@ -515,6 +515,36 @@ describe("classifyRelease", () => {
 });
 
 describe("announceVerdict", () => {
+	it("omits short opaque bearer and connection-string material from ::error:: lines", () => {
+		const opaque = randomBytes(16).toString("hex");
+		const basic = Buffer.from(`svc:${opaque}`).toString("base64");
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			for (const message of [
+				`Bearer ${opaque}`,
+				`Authorization: Basic ${basic}`,
+				`postgres://u:${opaque}@db.local:5432/x`,
+				`secret=sk_${opaque}`,
+				`bot xoxb-${opaque}`,
+			]) {
+				announceVerdict(
+					"oci",
+					"candidate",
+					"f",
+					{ outcome: "blocked", codes: ["realize-failed"], message },
+					{},
+				);
+			}
+			for (const call of error.mock.calls) {
+				const line = String(call[0]);
+				expect(line).not.toContain(opaque);
+				expect(line).not.toMatch(/Bearer\s+\S+/u);
+			}
+		} finally {
+			error.mockRestore();
+		}
+	});
+
 	it("redacts raw promotion-refused and drive-error text in error lines", () => {
 		const payload = randomBytes(14).toString("base64url");
 		const synthetic = `eyJhbGciOiJIUzI1NiJ9.${payload}.${randomBytes(22).toString("base64url")}`;

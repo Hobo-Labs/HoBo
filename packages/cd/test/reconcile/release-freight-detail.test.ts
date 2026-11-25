@@ -14,6 +14,7 @@ import {
 	parseReleaseFreightAuthorMessage,
 	ReleaseFreightBlockedError,
 	releaseFreightLogFragment,
+	sanitizeReleaseFreightVerdictCodes,
 	validateReasonStructuredDetail,
 } from "../../src/reconcile/release-freight-detail.js";
 
@@ -52,14 +53,14 @@ describe("parseReleaseFreightAuthorMessage", () => {
 		).toBeUndefined();
 	});
 
-	it("parses a well-formed scope refusal", () => {
+	it("parses scope-not-allowed from pattern validation, not the allowlist", () => {
 		const parsed = parseReleaseFreightAuthorMessage(
-			"release Freight refuses github-app://Hobo-Labs/HoBo: scope cd-realize:hobo-release/pages-candidate is not allowed for workflow github-app credentials",
+			"release Freight refuses github-app://Hobo-Labs/HoBo: scope cd-realize:hobo-release/evil is not allowed for workflow github-app credentials",
 			ALLOWED,
 		);
 		expect(parsed).toEqual({
 			credentialRef: "github-app://Hobo-Labs/HoBo",
-			requestedScope: "cd-realize:hobo-release/pages-candidate",
+			requestedScope: "cd-realize:hobo-release/evil",
 			detailKind: "scope-not-allowed",
 		});
 	});
@@ -137,6 +138,20 @@ describe("sanitizeObservation release freight structured verdict", () => {
 	});
 });
 
+describe("sanitizeReleaseFreightVerdictCodes", () => {
+	it("strips invalid and injected code material", () => {
+		expect(
+			sanitizeReleaseFreightVerdictCodes([
+				"realize-failed",
+				"npm-provenance-bundle-missing",
+				"INJECTED\n::error::",
+				"",
+				"Uppercase",
+			]),
+		).toEqual(["realize-failed", "npm-provenance-bundle-missing"]);
+	});
+});
+
 describe("releaseFreightLogFragment", () => {
 	it("drops sensitive promotion and error material", () => {
 		const jwtPayload = randomBytes(12).toString("base64url");
@@ -149,5 +164,34 @@ describe("releaseFreightLogFragment", () => {
 				`release promotion refused: registry bearer ghp_${"a".repeat(36)}`,
 			),
 		).toBe("");
+	});
+
+	it("drops runtime-generated synthetic secrets Muse probed", () => {
+		const opaque = randomBytes(20).toString("hex");
+		const cases = [
+			`registry refused Bearer ${opaque}`,
+			`Authorization: Basic ${Buffer.from(`user:${opaque}`).toString("base64")}`,
+			`postgres://user:${opaque}@db.example:5432/app`,
+			`api_key=${opaque}`,
+			`prefix sk_${opaque}`,
+			`prefix xoxb-${opaque}`,
+		];
+		for (const line of cases) {
+			expect(releaseFreightLogFragment(line)).toBe("");
+		}
+	});
+
+	it("formats repository-mismatch without stripping owner:// scopes", () => {
+		const detail = validateReasonStructuredDetail({
+			credentialRef: "github-app://Hobo-Labs/HoBo",
+			requestedScope: "owner://NPM_TOKEN",
+			detailKind: "repository-mismatch",
+		});
+		expect(detail).toBeDefined();
+		expect(
+			formatReleaseFreightBlockedReason("realize-failed", detail),
+		).toBe(
+			"realize-failed: credential=github-app://Hobo-Labs/HoBo expected-repository=owner://NPM_TOKEN repository-mismatch",
+		);
 	});
 });
