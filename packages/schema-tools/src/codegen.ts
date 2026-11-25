@@ -64,8 +64,7 @@ function resolveBufBin(repoRoot: string): string | undefined {
 		const bufPackageJson = requireLocal.resolve("@bufbuild/buf/package.json");
 		const bufBin = join(dirname(bufPackageJson), "bin", "buf");
 		if (existsSync(bufBin)) return bufBin;
-	} catch {
-	}
+	} catch {}
 	const candidates = [
 		join(repoRoot, "node_modules", "@bufbuild", "buf", "bin", "buf"),
 		join(
