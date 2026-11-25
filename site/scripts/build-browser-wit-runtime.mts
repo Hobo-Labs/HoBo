@@ -21,7 +21,7 @@ import {
 	copyHostWitTreeIntoWorkRoot,
 	guestSourcePathInWorkRoot,
 	resolveComponentizeHostWitPath,
-	SANDBOX_WIT_DIR_NAME,
+	COMPONENTIZE_WIT_PATH,
 } from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
 import {
 	logBrowserWitComponentizeToolchain,
@@ -173,7 +173,7 @@ export async function buildBrowserWitRuntime(
 				workRoot,
 				sourcePath: hostSourcePath,
 				hostWitPath,
-				componentizeWitPath: SANDBOX_WIT_DIR_NAME,
+				componentizeWitPath: COMPONENTIZE_WIT_PATH,
 			},
 		);
 		process.stderr.write("browser-wit: componentizing real guest\n");
@@ -195,7 +195,7 @@ export async function buildBrowserWitRuntime(
 			built = await toolchain.componentize.componentize({
 				env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
 				sourcePath: BROWSER_WIT_GUEST_SOURCE_NAME,
-				witPath: SANDBOX_WIT_DIR_NAME,
+				witPath: COMPONENTIZE_WIT_PATH,
 				worldName: "browser-station",
 				disableFeatures: ["random", "clocks", "stdio", "http"],
 			});
