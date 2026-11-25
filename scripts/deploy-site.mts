@@ -1,31 +1,3 @@
-/**
- * Publish `site/` to the `gh-pages` branch.
- *
- * GitHub Pages for this repo serves the **`gh-pages` branch at `/`** (legacy
- * build type, https://tyler-r-kendrick.github.io/HoBo/). There was no script
- * for it: the previous deploy was made by hand, which is why the live site sat
- * on a stale commit long after `main` moved — nothing recorded how to redo it,
- * so nobody did.
- *
- * HoBo delivers its own site through HoBo CD: the exact tree is recorded as
- * release Freight (a `hobo.static-site-tree/v1` index plus its file blobs in
- * the CD artifact store) and promoted hobo-release/pages-candidate ->
- * hobo-release/pages-stable through `hobo deploy`
- * (scripts/ci/create-github-release.mts). The candidate Camp's realizer,
- * @hobo/provider-github, publishes it: missing blobs, the tree (whose id it
- * computed before uploading), and one commit on gh-pages whose parent is the
- * observed head (a compare-and-swap ref move, never a force push), named
- * `deploy: <source sha>` so the freshness gate reads it back. Stable
- * re-observes the same tree live. GITHUB_TOKEN (contents: write) is the
- * credential the Camp declares (`env://GITHUB_TOKEN`).
- *
- * Usage:
- *   pnpm run site:deploy              # build, then publish (GITHUB_TOKEN)
- *   pnpm run site:deploy -- --dry-run # build and show what would publish
- *   node scripts/deploy-site.mts --release-freight <dir>  # record, promote, publish
- *     (the release workflow; HOBO_RELEASE_CD_HOME, HOBO_RELEASE_REVISION)
- */
-
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,
@@ -54,7 +26,6 @@ const SITE_DIR = join(REPO_ROOT, "site");
 const DIST_DIR = join(SITE_DIR, "dist");
 const MEDIA_DIR = join(REPO_ROOT, "media");
 const MEDIA_DIST = join(MEDIA_DIR, "dist");
-/** Where the art catalogue is nested inside the published tree. */
 const MEDIA_SUBPATH = "media";
 const BRANCH = "gh-pages";
 
@@ -72,7 +43,6 @@ function git(args: readonly string[], cwd = REPO_ROOT): string {
 	return run("git", args, cwd).trim();
 }
 
-/** Refuse to publish a tree that does not match a recorded commit. */
 function assertClean(): string {
 	const dirty = git(["status", "--porcelain", "--", "site", "media"]);
 	if (dirty.length > 0) {
@@ -84,9 +54,6 @@ function assertClean(): string {
 }
 
 function build(): void {
-	// The Examples catalog build imports workspace packages (@hobo/bindles,
-	// @hobo/wasp, …) through their built dist/, so a fresh clone must compile
-	// them first — otherwise `prebuild` dies on the first example app.
 	console.log("building site workspace dependencies…");
 	execFileSync(
 		"pnpm",
@@ -107,19 +74,12 @@ function build(): void {
 		throw new Error(`build produced no output at ${DIST_DIR}`);
 	}
 
-	// The art catalogue publishes as a subdirectory of the same Pages origin
-	// rather than a second deploy, so one commit always describes the whole
-	// published tree. Its base is /HoBo/media/, which has to agree with
-	// MEDIA_SUBPATH or every asset 404s.
 	console.log("building media catalogue…");
 	execFileSync("pnpm", ["run", "build"], { cwd: MEDIA_DIR, stdio: "inherit" });
 	if (!existsSync(MEDIA_DIST) || readdirSync(MEDIA_DIST).length === 0) {
 		throw new Error(`media build produced no output at ${MEDIA_DIST}`);
 	}
 
-	// Gate the publish on the artifact actually working as deployed: serve
-	// dist/ statically (what Pages does) and drive the Examples console
-	// end-to-end in a real browser. Skippable only explicitly.
 	if (process.env.HOBO_SKIP_DIST_VERIFY === "1") {
 		console.log("skipping dist verification (HOBO_SKIP_DIST_VERIFY=1)…");
 	} else {
@@ -128,8 +88,6 @@ function build(): void {
 			cwd: SITE_DIR,
 			stdio: "inherit",
 		});
-		// The landing page's trail fills one screen per stop: check every stop
-		// still reads at laptop sizes and on a phone before it ships.
 		console.log("verifying built site (the landing trail at every size)…");
 		execFileSync("pnpm", ["run", "landing:verify-dist"], {
 			cwd: SITE_DIR,
@@ -163,7 +121,6 @@ export async function qualifySiteRelease(input: {
 			},
 		],
 		blobs: tree.files.map((file) => file.bytes),
-		// The freshness gate (check-release-pages-stale) reads this back.
 		labels: {
 			"hobo.cd/github.commit-message": `deploy: ${releaseSource(env).commit}`,
 		},
@@ -186,28 +143,14 @@ function releaseCdHome(): string {
 }
 
 async function publish(sha: string): Promise<void> {
-	// A throwaway staging tree: exactly what publishes, site and catalogue.
 	const staging = mkdtempSync(join(tmpdir(), "hobo-pages-"));
 	try {
 		run("cp", ["-a", `${DIST_DIR}/.`, staging]);
-		// Nested, not merged: the catalogue is a second Astro build with its own
-		// hashed `_astro/` bundle, and flattening the two into one root would let
-		// them fight over that directory.
 		const mediaTarget = join(staging, MEDIA_SUBPATH);
 		mkdirSync(mediaTarget, { recursive: true });
 		run("cp", ["-a", `${MEDIA_DIST}/.`, mediaTarget]);
-		// Astro output is already built; Jekyll must not touch it, and without
-		// this file GitHub silently drops every `_astro/*` asset.
 		run("touch", [join(staging, ".nojekyll")], staging);
 
-		// The browser WIT runtime (~25MB wasm) ships by default: it is what lets
-		// visitors actually run hello-world / todo-api in-page on Pages. The
-		// earlier "Pages legacy builds fail / hang on the wasm" belief traced to
-		// runner starvation on 2026-08-06 (build jobs cancelled at 15m with no
-		// runner assigned, runner_id=0), not to payload size — and a failed
-		// branch build leaves the previous deployment live, so shipping it is
-		// safe to attempt. HOBO_PAGES_STRIP_WIT=1 restores the old strip as an
-		// escape hatch if a Pages build ever genuinely chokes on it.
 		if (process.env.HOBO_PAGES_STRIP_WIT === "1") {
 			const runtimeDir = join(staging, "examples/runtime");
 			if (existsSync(runtimeDir)) {
