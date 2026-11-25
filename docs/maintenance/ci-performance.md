@@ -805,6 +805,19 @@ with `pnpm exec vitest run`, and `scripts/relevant-check-policy.ts` selects four
 `scripts/test/script-test-runners.test.ts` holds each of those invocations to the runner
 `test:scripts` gives the same file.
 
+GitHub's native `.github/workflows/actions.lock` must be regenerated with
+`gh actions-lock` when verify fails: apply the CI `actions-lock-patch` artifact
+(do not hand-add `actions/cache/restore` or `actions/cache/save` lock keys;
+composites pin restore/save in YAML under the existing `actions/cache@` entry).
+
+Hosted Fabric workspace shards pass `save-playwright-cache: true` on
+`matrix.shard == 0` only so parallel shards do not race on a cold Playwright
+browser cache save (the same pattern as Turbo cache save on shard 0).
+
+`release-ts-autocode.yml` uses `hobo-checkout` with `TS_AUTOCODE_SPARSE_PATHS`
+so root manifest files are materialized outside cone-mode sparse-checkout (cone
+mode alone cannot list `package.json` alongside directory cones).
+
 ## Checks that went stale on main
 
 No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these
