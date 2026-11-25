@@ -460,7 +460,8 @@ function matchBroadStatement(statement: string): string | undefined {
 				break;
 			}
 			const execCmd = args[execIndex]?.split("/").at(-1)?.toLowerCase() ?? "";
-			if (execCmd === "turbo") return matchBroadTurbo(args.slice(execIndex + 1));
+			if (execCmd === "turbo")
+				return matchBroadTurbo(args.slice(execIndex + 1));
 			if (execCmd === "vitest")
 				return matchBroadVitest(args.slice(execIndex + 1));
 			return undefined;

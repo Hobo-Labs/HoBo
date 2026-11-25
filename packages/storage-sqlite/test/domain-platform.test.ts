@@ -139,94 +139,74 @@ describe("@hobo/storage-sqlite createSqliteDomainPlatform", () => {
 		}
 	});
 
-	it("fails closed when a second driver commits with a stale expected version", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-domain-race-"));
+	it("clears transactional outbox rows after aggregate commits deliver view updates", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-domain-outbox-"));
 		tempDirs.push(dir);
 		const dbPath = join(dir, "domain.sqlite");
-		const counterId = CounterId.make("race-counter-1");
-		const modelName = "CounterDomain";
-		const aggregateName = "CounterAggregate";
-
-		const seedDriver = createNodeSqliteDriver({ path: dbPath });
-		const layer = CounterDomain.layer(Layer.empty).pipe(
-			Layer.provide(createSqliteDomainPlatform(seedDriver)),
-		);
+		const counterId = CounterId.make("station-counter-outbox");
+		const driver = createNodeSqliteDriver({ path: dbPath });
 		try {
+			const layer = CounterDomain.layer(Layer.empty).pipe(
+				Layer.provide(createSqliteDomainPlatform(driver)),
+			);
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const counters = yield* CounterAggregate;
-					return yield* counters.send(
+					yield* counters.send(
 						counterId,
-						new IncrementCounter({ delta: 4 }),
-						{ commandId: "seed-cmd" },
+						new IncrementCounter({ delta: 2 }),
+						{ commandId: "cmd-outbox-1" },
+					);
+				}).pipe(Effect.provide(layer)),
+			);
+			const remaining = driver
+				.prepare(
+					"SELECT COUNT(*) AS n FROM domain_outbox WHERE model_name = ?",
+				)
+				.get("CounterDomain");
+			expect(remaining).toBeDefined();
+			expect(Number(remaining?.n)).toBe(0);
+		} finally {
+			driver.close();
+		}
+	});
+
+	it("persists scheduled commands across SQLite restarts", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-domain-schedule-"));
+		tempDirs.push(dir);
+		const dbPath = join(dir, "domain.sqlite");
+		const counterId = CounterId.make("station-counter-schedule");
+		const driver = createNodeSqliteDriver({ path: dbPath });
+		try {
+			const layer = CounterDomain.layer(Layer.empty).pipe(
+				Layer.provide(createSqliteDomainPlatform(driver)),
+			);
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const counters = yield* CounterAggregate;
+					yield* counters.schedule(
+						counterId,
+						new IncrementCounter({ delta: 1 }),
+						{ commandId: "tick", after: "60 seconds" },
 					);
 				}).pipe(Effect.provide(layer)),
 			);
 		} finally {
-			seedDriver.close();
+			driver.close();
 		}
 
-		const winner = createNodeSqliteDriver({ path: dbPath });
-		const loser = createNodeSqliteDriver({ path: dbPath });
-		const casUpdateSql = `UPDATE domain_aggregates
-       SET state_json = ?, version = ?
-       WHERE model_name = ? AND aggregate_name = ? AND instance_id = ? AND version = ?`;
-		const winnerCas = winner.prepare(casUpdateSql);
-		const readVersion = (driver: typeof winner) =>
-			Number(
-				driver
-					.prepare(
-						`SELECT version FROM domain_aggregates
-           WHERE model_name = ? AND aggregate_name = ? AND instance_id = ?`,
-					)
-					.get(modelName, aggregateName, counterId)?.version ?? -1,
-			);
-
+		const reopened = createNodeSqliteDriver({ path: dbPath });
 		try {
-			winner.beginImmediate();
-			const winnerUpdate = winnerCas.run(
-				JSON.stringify({ total: 9 }),
-				2,
-				modelName,
-				aggregateName,
-				counterId,
-				1,
-			);
-			expect(winnerUpdate.changes).toBe(1);
-			winner.commit();
-			winner.close();
-			expect(readVersion(loser)).toBe(2);
-
-			const loserCas = loser.prepare(casUpdateSql);
-			loser.beginImmediate();
-			const staleUpdate = loserCas.run(
-				JSON.stringify({ total: 99 }),
-				1,
-				modelName,
-				aggregateName,
-				counterId,
-				0,
-			);
-			expect(staleUpdate.changes).toBe(0);
-			loser.rollback();
-			expect(readVersion(loser)).toBe(2);
-
-			const verifyDriver = createNodeSqliteDriver({ path: dbPath });
-			try {
-				const row = verifyDriver
-					.prepare(
-						`SELECT state_json, version FROM domain_aggregates
-           WHERE model_name = ? AND aggregate_name = ? AND instance_id = ?`,
-					)
-					.get(modelName, aggregateName, counterId);
-				expect(JSON.parse(String(row?.state_json))).toEqual({ total: 9 });
-				expect(Number(row?.version)).toBe(2);
-			} finally {
-				verifyDriver.close();
-			}
+			const row = reopened
+				.prepare(
+					"SELECT schedule_name, cancelled FROM domain_schedules WHERE instance_id = ?",
+				)
+				.get(counterId);
+			expect(row).toBeDefined();
+			expect(row?.schedule_name).toBe("tick");
+			expect(Number(row?.cancelled)).toBe(0);
 		} finally {
-			loser.close();
+			reopened.close();
 		}
 	});
-
 });

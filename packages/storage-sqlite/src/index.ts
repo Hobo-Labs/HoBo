@@ -18,6 +18,7 @@ export {
 	createSqliteDomainPlatform,
 	DomainAggregateVersionConflictError,
 	DomainEventSequenceConflictError,
+	DomainPersistenceError,
 	initSqliteDomainTables,
 	type SqliteDomainPlatformOptions,
 } from "./domain-platform.js";

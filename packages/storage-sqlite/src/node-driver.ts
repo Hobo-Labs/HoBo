@@ -14,7 +14,6 @@ import type {
 	SqliteValue,
 } from "./driver.js";
 import { isJsonBigInt, isJsonNumber, isJsonString } from "./json.js";
-import { NATIVE_PRAGMAS } from "./schema.js";
 
 export interface NodeSqliteDriverOptions {
 	readonly path: string;
@@ -54,7 +53,6 @@ export function createNodeSqliteDriver(
 				"native SQLite driver requires a persistent file; use the memory driver for ephemeral storage",
 			);
 		disableExtensions(db, options.disableExtensions);
-		applyNodePragmas(db);
 		return wrapDatabaseSync(db, "node");
 	} catch (error) {
 		db.close();
@@ -68,15 +66,7 @@ export function createMemoryNodeSqliteDriver(
 	const openOptions: DatabaseSyncOpenOptions = { readBigInts: true };
 	const db = new DatabaseSync(":memory:", openOptions);
 	disableExtensions(db, options.disableExtensions);
-	applyNodePragmas(db);
 	return wrapDatabaseSync(db, "memory");
-}
-
-function applyNodePragmas(db: DatabaseSync): void {
-	db.exec(`PRAGMA journal_mode = ${NATIVE_PRAGMAS.journal_mode}`);
-	db.exec(`PRAGMA synchronous = ${NATIVE_PRAGMAS.synchronous}`);
-	db.exec(`PRAGMA foreign_keys = ${NATIVE_PRAGMAS.foreign_keys}`);
-	db.exec(`PRAGMA busy_timeout = ${NATIVE_PRAGMAS.busy_timeout}`);
 }
 
 function disableExtensions(db: DatabaseSync, disable?: boolean): void {

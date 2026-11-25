@@ -35,6 +35,20 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { WorkflowEngine } from "effect/workflow";
 import { asNumber, asText, type SqliteDriver } from "./driver.js";
+import {
+	assertSqlitePersisted,
+	DomainPersistenceError,
+	initSqliteDomainDurableTables,
+	makeDomainOutbox,
+	makeDomainScheduleStore,
+	makeSqliteBackedWorkflowEngine,
+	scheduleDueMillis,
+	type DomainOutbox,
+	type DomainScheduleStore,
+	type SqliteWorkflowHost,
+} from "./domain-platform-durable.js";
+
+export { DomainPersistenceError };
 
 const SQLITE_DOMAIN_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS domain_aggregates (
@@ -110,6 +124,7 @@ CREATE TABLE IF NOT EXISTS domain_projections (
 
 export function initSqliteDomainTables(driver: SqliteDriver): void {
 	driver.exec(SQLITE_DOMAIN_SCHEMA_SQL);
+	initSqliteDomainDurableTables(driver);
 }
 
 const ReceiptPayloadSchema = Schema.Struct({
@@ -264,10 +279,31 @@ export function createSqliteDomainPlatform(
 		"SELECT entry_json FROM domain_stream_entries WHERE model_name = ? AND stream_name = ? AND stream_key = ? ORDER BY seq ASC",
 	);
 	const loadProjectionStmt = driver.prepare(
-		"SELECT checkpoints_json FROM domain_projections WHERE model_name = ? AND projection_name = ? AND projection_key = ?",
+		"SELECT checkpoints_json, processed_position FROM domain_projections WHERE model_name = ? AND projection_name = ? AND projection_key = ?",
 	);
 	const saveProjectionStmt = driver.prepare(
-		"INSERT OR REPLACE INTO domain_projections (model_name, projection_name, projection_key, checkpoints_json) VALUES (?, ?, ?, ?)",
+		"INSERT OR REPLACE INTO domain_projections (model_name, projection_name, projection_key, checkpoints_json, processed_position) VALUES (?, ?, ?, ?, ?)",
+	);
+	const outbox: DomainOutbox = makeDomainOutbox(driver);
+	const scheduleStore: DomainScheduleStore = makeDomainScheduleStore(driver);
+
+	const workflowHostBase: SqliteWorkflowHost = {
+		now,
+		enqueue: (run, _key) => Effect.forkDetach(run).pipe(Effect.asVoid),
+		acquire: (lock) => lock.take(1),
+		timer: (_key, at, fire) =>
+			Effect.forkDetach(
+				Effect.sleep(Math.max(0, at - now())).pipe(Effect.andThen(fire)),
+			).pipe(Effect.asVoid),
+		failed: () => undefined,
+		died: () => undefined,
+	};
+
+	const workflows = makeSqliteBackedWorkflowEngine(
+		"__hobo_platform__",
+		driver,
+		workflowHostBase,
+		(host) => InMemoryWorkflows.make(host),
 	);
 
 	function inTransaction<A>(fn: () => A): A {
@@ -314,8 +350,9 @@ export function createSqliteDomainPlatform(
 			newVersion: number;
 			events: ReadonlyArray<StoredEvent>;
 			receipt?: { commandId: string; accepted: SendResult } | undefined;
+			deliveries?: ReadonlyArray<Delivery>;
 		}) => {
-			inTransaction(() => {
+			return inTransaction(() => {
 				const updated = casUpdateAggregateStmt.run(
 					JSON.stringify(input.state),
 					input.newVersion,
@@ -377,29 +414,22 @@ export function createSqliteDomainPlatform(
 					}
 				}
 				if (input.receipt !== undefined) {
-					saveReceiptStmt.run(
+					const saved = saveReceiptStmt.run(
 						modelName,
 						input.aggregateName,
 						input.instanceId,
 						input.receipt.commandId,
 						JSON.stringify(input.receipt.accepted),
 					);
+					assertSqlitePersisted(saved, "domain_receipts.save");
 				}
+				if (input.deliveries !== undefined && input.deliveries.length > 0) {
+					return outbox.stageWithinTransaction(modelName, input.deliveries);
+				}
+				return [] satisfies number[];
 			});
 		};
 	};
-
-	const workflows = InMemoryWorkflows.make({
-		now,
-		enqueue: (run) => Effect.forkDetach(run).pipe(Effect.asVoid),
-		acquire: (lock) => lock.take(1),
-		timer: (_key, at, fire) =>
-			Effect.forkDetach(
-				Effect.sleep(Math.max(0, at - now())).pipe(Effect.andThen(fire)),
-			).pipe(Effect.asVoid),
-		failed: () => undefined,
-		died: () => undefined,
-	});
 
 	const platformLayer = Layer.succeed(Platform, {
 		model: ({ modelName, id }) =>
@@ -414,16 +444,9 @@ export function createSqliteDomainPlatform(
 								string,
 								SubscriptionRef.SubscriptionRef<number>
 							>();
-							const scheduled = new Map<
+							const scheduleArms = new Map<
 								string,
-								Map<
-									string,
-									{
-										readonly commandId: string;
-										readonly at: number;
-										cancelled: boolean;
-									}
-								>
+								Map<string, { cancelled: boolean }>
 							>();
 
 							const readAggregate = (instanceId: string) => {
@@ -496,10 +519,7 @@ export function createSqliteDomainPlatform(
 										if (existingReceiptRow !== undefined) {
 											const parsed: SendResult = decodeAccepted(
 												JSON.parse(
-													asText(
-														existingReceiptRow.receipt_json,
-														"receipt_json",
-													),
+													asText(existingReceiptRow.receipt_json, "receipt_json"),
 												),
 											);
 											return parsed;
@@ -536,7 +556,7 @@ export function createSqliteDomainPlatform(
 											_tag: "Accepted",
 											receipt,
 										};
-										persistAggregate({
+										const stagedOutbox = persistAggregate({
 											aggregateName: kit.name,
 											instanceId,
 											expectedVersion: current.version,
@@ -547,11 +567,13 @@ export function createSqliteDomainPlatform(
 												commandId: meta.commandId,
 												accepted,
 											},
+											deliveries: result.deliveries,
 										});
 										yield* announce(instanceId, result.version);
 										for (const delivery of result.deliveries) {
 											yield* kit.deliver(delivery);
 										}
+										yield* outbox.dropStaged(modelName, stagedOutbox);
 										return accepted;
 									}),
 								);
@@ -561,27 +583,47 @@ export function createSqliteDomainPlatform(
 								schedule: (instanceId, name, command, meta, due) =>
 									lock.withPermits(1)(
 										Effect.suspend(() => {
-											let entries = scheduled.get(instanceId);
+											const existing = scheduleStore.load(
+												modelName,
+												kit.name,
+												instanceId,
+												name,
+											);
+											if (
+												existing !== undefined &&
+												existing.commandId === meta.commandId &&
+												!existing.cancelled
+											) {
+												return Effect.succeed(existing.dueAt);
+											}
+											const at = scheduleDueMillis(now, due);
+											inTransaction(() => {
+												scheduleStore.upsert(
+													modelName,
+													kit.name,
+													instanceId,
+													name,
+													{
+														commandId: meta.commandId,
+														dueAt: at,
+														commandJson: JSON.stringify(command),
+														metaJson: JSON.stringify(meta),
+														cancelled: false,
+													},
+												);
+											});
+											let entries = scheduleArms.get(instanceId);
 											if (entries === undefined) {
 												entries = new Map();
-												scheduled.set(instanceId, entries);
+												scheduleArms.set(instanceId, entries);
 											}
-											const existing = entries.get(name);
-											if (existing?.commandId === meta.commandId) {
-												return Effect.succeed(existing.at);
-											}
-											const at = "at" in due ? due.at : now() + due.afterMillis;
-											const record = {
-												commandId: meta.commandId,
-												at,
-												cancelled: false,
-											};
-											entries.set(name, record);
+											const arm = { cancelled: false };
+											entries.set(name, arm);
 											return Effect.forkDetach(
 												Effect.sleep(Math.max(0, at - now())).pipe(
 													Effect.andThen(
 														Effect.suspend(() =>
-															record.cancelled
+															arm.cancelled
 																? Effect.void
 																: commit(instanceId, command, meta).pipe(
 																		Effect.asVoid,
@@ -604,8 +646,13 @@ export function createSqliteDomainPlatform(
 												id: instanceId,
 												commandId: name,
 											};
-											const record = scheduled.get(instanceId)?.get(name);
-											if (record === undefined) {
+											const persisted = scheduleStore.load(
+												modelName,
+												kit.name,
+												instanceId,
+												name,
+											);
+											if (persisted === undefined) {
 												return Effect.fail(new NotScheduled(fields));
 											}
 											if (
@@ -613,15 +660,26 @@ export function createSqliteDomainPlatform(
 													modelName,
 													kit.name,
 													instanceId,
-													record.commandId,
+													persisted.commandId,
 												) !== undefined
 											) {
 												return Effect.fail(new AlreadyExecuted(fields));
 											}
-											if (record.cancelled) {
+											if (persisted.cancelled) {
 												return Effect.fail(new AlreadyCancelled(fields));
 											}
-											record.cancelled = true;
+											inTransaction(() => {
+												scheduleStore.markCancelled(
+													modelName,
+													kit.name,
+													instanceId,
+													name,
+												);
+											});
+											const arm = scheduleArms
+												.get(instanceId)
+												?.get(name);
+											if (arm !== undefined) arm.cancelled = true;
 											return Effect.void;
 										}),
 									),
@@ -671,18 +729,20 @@ export function createSqliteDomainPlatform(
 												commandId: `seed:${instanceId}:${current.version}`,
 												now: now(),
 											});
-											persistAggregate({
+											const stagedOutbox = persistAggregate({
 												aggregateName: kit.name,
 												instanceId,
 												expectedVersion: current.version,
 												state: result.state,
 												newVersion: result.version,
 												events: result.events,
+												deliveries: result.deliveries,
 											});
 											yield* announce(instanceId, result.version);
 											for (const delivery of result.deliveries) {
 												yield* kit.deliver(delivery);
 											}
+											yield* outbox.dropStaged(modelName, stagedOutbox);
 										}),
 									),
 							};
@@ -738,7 +798,7 @@ export function createSqliteDomainPlatform(
 												deliveries,
 											);
 											if (!applied.changed) return;
-											inTransaction(() => {
+											const stagedOutbox = inTransaction(() => {
 												saveViewStmt.run(
 													modelName,
 													kit.name,
@@ -754,6 +814,10 @@ export function createSqliteDomainPlatform(
 														JSON.stringify(entry),
 													);
 												}
+												return outbox.stageWithinTransaction(
+													modelName,
+													applied.downstream,
+												);
 											});
 											const ref = refs.get(key);
 											if (ref !== undefined) {
@@ -762,6 +826,7 @@ export function createSqliteDomainPlatform(
 											for (const downstream of applied.downstream) {
 												yield* kit.deliver(downstream);
 											}
+											yield* outbox.dropStaged(modelName, stagedOutbox);
 										}),
 									),
 								read: (key) => Effect.sync(() => readSnapshot(key)),
@@ -817,7 +882,15 @@ export function createSqliteDomainPlatform(
 									JSON.parse(asText(row.checkpoints_json, "checkpoints_json")),
 								);
 							};
-							let position = 0;
+							const readProcessedPosition = (key: string) => {
+								const row = loadProjectionStmt.get(
+									modelName,
+									kit.name,
+									key,
+								);
+								if (row === undefined) return 0;
+								return asNumber(row.processed_position, "processed_position");
+							};
 							const store: ProjectionStore = {
 								receive: (delivery) =>
 									lock.withPermits(1)(
@@ -825,20 +898,30 @@ export function createSqliteDomainPlatform(
 											const checkpoints = readCheckpoints(delivery.key);
 											const prev = checkpoints[delivery.source] ?? 0;
 											if (delivery.seq <= prev) return;
-											position += 1;
+											const processedPosition = readProcessedPosition(
+												delivery.key,
+											);
+											const nextPosition = processedPosition + 1;
 											yield* kit.run(delivery.key, [
-												{ position, delivery, at: now() },
+												{
+													position: nextPosition,
+													delivery,
+													at: now(),
+												},
 											]);
 											const nextCheckpoints = {
 												...checkpoints,
 												[delivery.source]: delivery.seq,
 											};
-											saveProjectionStmt.run(
-												modelName,
-												kit.name,
-												delivery.key,
-												JSON.stringify(nextCheckpoints),
-											);
+											inTransaction(() => {
+												saveProjectionStmt.run(
+													modelName,
+													kit.name,
+													delivery.key,
+													JSON.stringify(nextCheckpoints),
+													nextPosition,
+												);
+											});
 										}),
 									),
 								checkpoints: (key) => Effect.sync(() => readCheckpoints(key)),
