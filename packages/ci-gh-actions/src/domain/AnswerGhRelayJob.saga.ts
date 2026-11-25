@@ -457,6 +457,43 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 						"reread-machine-pool-after-acquire-race",
 					);
 					if (
+						reread.outcome === "routed" &&
+						reread.step !== null &&
+						reread.runnerLabel !== null
+					) {
+						yield* Activity.make({
+							name: "answer-routed-after-acquire-race",
+							success: Schema.Void,
+							error: GhProtocolRejected,
+							execute: confirmProtocolAnswer(protocol.answerJob, {
+								accountId: context.accountId,
+								repository: context.repository,
+								jobId: key,
+								conclusion: "succeeded",
+								runnerLabel: reread.runnerLabel,
+								annotations: [reread.reason],
+							}),
+						});
+						yield* Activity.make({
+							name: "record-routed-after-acquire-race",
+							success: Schema.Void,
+							error: GhJobNotClaimed,
+							execute: jobs
+								.send(
+									key,
+									new RecordGhRelayRouted({
+										step: reread.step,
+										runnerLabel: reread.runnerLabel,
+										machineId: reread.machineId ?? machineId,
+										skipped: reread.skipped,
+										notInOrder: reread.notInOrder,
+									}),
+								)
+								.pipe(Effect.asVoid),
+						});
+						return;
+					}
+					if (
 						reread.outcome !== "waiting" ||
 						reread.step === null ||
 						reread.runnerLabel === null
