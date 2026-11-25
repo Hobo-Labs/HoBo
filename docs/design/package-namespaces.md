@@ -157,12 +157,9 @@ Current design examples align to this map:
 - `walkthrough.md` keeps operator SDK examples separate from app authoring
   imports.
 
-## Control-plane game UI (ADR-0150)
-
 | Package | Role |
 |---|---|
 | `@hobo/management` | Pure Station/Connection/broker projection ops shared by CLI, MCP, control API |
 | `@hobo/control-api` | Local-first HTTP + SSE adapter over management |
-| `@hobo/control-yard` | Phaser Yard game UI + asset index + OpenUI generative sheets (HoBo Rubberhose) |
 
 
