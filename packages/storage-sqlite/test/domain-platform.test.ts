@@ -13,7 +13,6 @@ import {
 } from "../src/index.js";
 
 const CounterId = Schema.String.pipe(Schema.brand("CounterId"));
-type CounterId = typeof CounterId.Type;
 
 class Incremented extends Domain.Event("Incremented", {
 	delta: Schema.Int,
@@ -152,17 +151,13 @@ describe("@hobo/storage-sqlite createSqliteDomainPlatform", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const counters = yield* CounterAggregate;
-					yield* counters.send(
-						counterId,
-						new IncrementCounter({ delta: 2 }),
-						{ commandId: "cmd-outbox-1" },
-					);
+					yield* counters.send(counterId, new IncrementCounter({ delta: 2 }), {
+						commandId: "cmd-outbox-1",
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			const remaining = driver
-				.prepare(
-					"SELECT COUNT(*) AS n FROM domain_outbox WHERE model_name = ?",
-				)
+				.prepare("SELECT COUNT(*) AS n FROM domain_outbox WHERE model_name = ?")
 				.get("CounterDomain");
 			expect(remaining).toBeDefined();
 			expect(Number(remaining?.n)).toBe(0);

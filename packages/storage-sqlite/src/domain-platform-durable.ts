@@ -1,7 +1,13 @@
+import type { Host as InMemoryWorkflowHost } from "@alchemy.run/domain/InMemoryWorkflows";
 import type { Delivery } from "@alchemy.run/domain/Platform";
 import * as Effect from "effect/Effect";
 import type * as Semaphore from "effect/Semaphore";
-import { asNumber, asText, type SqliteDriver, type SqliteRunResult } from "./driver.js";
+import {
+	asNumber,
+	asText,
+	type SqliteDriver,
+	type SqliteRunResult,
+} from "./driver.js";
 
 // public-contract: SQLite DDL for durable domain side tables (outbox, schedules, workflow timers).
 export const SQLITE_DOMAIN_DURABLE_SCHEMA_SQL = `
@@ -53,6 +59,50 @@ export class DomainPersistenceError extends Error {
 	}
 }
 
+export type WorkflowDiedDefect = {
+	readonly message: string;
+	readonly raw: unknown;
+};
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: workflow engine defects arrive as untrusted catch values; this parser is the I/O boundary.
+export function parseWorkflowDiedDefect(defect: unknown): WorkflowDiedDefect {
+	if (defect instanceof Error) {
+		return { message: defect.message, raw: defect };
+	}
+	// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: string defects are valid at this boundary before any domain logic runs.
+	if (typeof defect === "string") {
+		return { message: defect, raw: defect };
+	}
+	return { message: String(defect), raw: defect };
+}
+
+export function asInMemoryWorkflowHost(
+	host: SqliteWorkflowHost,
+): InMemoryWorkflowHost {
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: InMemoryWorkflows Host passes untrusted defects; parseWorkflowDiedDefect runs at this adapter boundary.
+	const died = (workflow: string, executionId: string, defect: unknown) =>
+		host.died(workflow, executionId, parseWorkflowDiedDefect(defect));
+	if (host.turn !== undefined) {
+		return {
+			now: host.now,
+			enqueue: host.enqueue,
+			turn: host.turn,
+			acquire: host.acquire,
+			timer: host.timer,
+			failed: host.failed,
+			died,
+		};
+	}
+	return {
+		now: host.now,
+		enqueue: host.enqueue,
+		acquire: host.acquire,
+		timer: host.timer,
+		failed: host.failed,
+		died,
+	};
+}
+
 export function assertSqlitePersisted(
 	result: SqliteRunResult,
 	context: string,
@@ -84,7 +134,10 @@ export interface DomainOutbox {
 		modelName: string,
 		deliveries: ReadonlyArray<Delivery>,
 	): ReadonlyArray<number>;
-	dropStaged(modelName: string, ids: ReadonlyArray<number>): Effect.Effect<void>;
+	dropStaged(
+		modelName: string,
+		ids: ReadonlyArray<number>,
+	): Effect.Effect<void>;
 	drainPending(
 		modelName: string,
 		deliver: (delivery: Delivery) => Effect.Effect<void>,
@@ -108,7 +161,7 @@ export function makeDomainOutbox(driver: SqliteDriver): DomainOutbox {
 
 	const decodeDelivery = (json: string): Delivery => {
 		const parsed = JSON.parse(json);
-		if (parsed === null || !Object.prototype.hasOwnProperty.call(parsed, "target")) {
+		if (parsed === null || !Object.hasOwn(parsed, "target")) {
 			throw new DomainPersistenceError("domain_outbox.delivery", 0);
 		}
 		// SAFETY: Outbox rows are written only by this module with Delivery-shaped JSON from domain commits.
@@ -221,13 +274,7 @@ export function makeDomainScheduleStore(
 	});
 
 	return {
-		upsert(
-			modelName,
-			aggregateName,
-			instanceId,
-			scheduleName,
-			record,
-		) {
+		upsert(modelName, aggregateName, instanceId, scheduleName, record) {
 			const result = upsertStmt.run(
 				modelName,
 				aggregateName,
@@ -287,7 +334,7 @@ export interface SqliteWorkflowHost {
 	readonly died: (
 		workflow: string,
 		executionId: string,
-		defect: unknown,
+		defect: WorkflowDiedDefect,
 	) => void;
 }
 

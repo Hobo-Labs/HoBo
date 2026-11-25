@@ -34,19 +34,20 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { WorkflowEngine } from "effect/workflow";
-import { asNumber, asText, type SqliteDriver } from "./driver.js";
 import {
+	asInMemoryWorkflowHost,
 	assertSqlitePersisted,
+	type DomainOutbox,
 	DomainPersistenceError,
+	type DomainScheduleStore,
 	initSqliteDomainDurableTables,
 	makeDomainOutbox,
 	makeDomainScheduleStore,
 	makeSqliteBackedWorkflowEngine,
-	scheduleDueMillis,
-	type DomainOutbox,
-	type DomainScheduleStore,
 	type SqliteWorkflowHost,
+	scheduleDueMillis,
 } from "./domain-platform-durable.js";
+import { asNumber, asText, type SqliteDriver } from "./driver.js";
 
 export { DomainPersistenceError };
 
@@ -303,7 +304,7 @@ export function createSqliteDomainPlatform(
 		"__hobo_platform__",
 		driver,
 		workflowHostBase,
-		(host) => InMemoryWorkflows.make(host),
+		(host) => InMemoryWorkflows.make(asInMemoryWorkflowHost(host)),
 	);
 
 	function inTransaction<A>(fn: () => A): A {
@@ -519,7 +520,10 @@ export function createSqliteDomainPlatform(
 										if (existingReceiptRow !== undefined) {
 											const parsed: SendResult = decodeAccepted(
 												JSON.parse(
-													asText(existingReceiptRow.receipt_json, "receipt_json"),
+													asText(
+														existingReceiptRow.receipt_json,
+														"receipt_json",
+													),
 												),
 											);
 											return parsed;
@@ -676,9 +680,7 @@ export function createSqliteDomainPlatform(
 													name,
 												);
 											});
-											const arm = scheduleArms
-												.get(instanceId)
-												?.get(name);
+											const arm = scheduleArms.get(instanceId)?.get(name);
 											if (arm !== undefined) arm.cancelled = true;
 											return Effect.void;
 										}),
@@ -883,11 +885,7 @@ export function createSqliteDomainPlatform(
 								);
 							};
 							const readProcessedPosition = (key: string) => {
-								const row = loadProjectionStmt.get(
-									modelName,
-									kit.name,
-									key,
-								);
+								const row = loadProjectionStmt.get(modelName, kit.name, key);
 								if (row === undefined) return 0;
 								return asNumber(row.processed_position, "processed_position");
 							};
