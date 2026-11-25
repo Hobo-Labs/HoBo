@@ -712,6 +712,21 @@ f: /* TODO: remove block */`;
 		write(
 			repo,
 			"docs/design/index.md",
+			"# Index\n- [a](https://linear.app/hobo/document/a)\n",
+		);
+		git(repo, "add", "docs/design/index.md");
+		const relocated = guard(repo, "--staged");
+		assert.equal(relocated.status, 0, relocated.stderr);
+		write(
+			repo,
+			"docs/design/index.md",
+			"# Index\n- [a](https://example.com/a)\n",
+		);
+		git(repo, "add", "docs/design/index.md");
+		assert.equal(guard(repo, "--staged").status, 1);
+		write(
+			repo,
+			"docs/design/index.md",
 			"# Index\n- [a](./a.md)\n- [c](./c.md)\n",
 		);
 		git(repo, "add", "docs/design/index.md");
