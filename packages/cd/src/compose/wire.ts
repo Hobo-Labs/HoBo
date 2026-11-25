@@ -81,6 +81,11 @@ import {
 	unconfiguredTraffic,
 	unroutedNotifications,
 } from "./fail-closed.js";
+import {
+	createCdEngineRegistry,
+	type CdEngineRegistry,
+	type CdEngineRegistration,
+} from "./engines.js";
 import { lateBound } from "./late.js";
 import { createRailDeliveryReader, type RailCatalog } from "./rails.js";
 
@@ -180,6 +185,7 @@ export type CdComposeInput = Readonly<{
 	telemetryHeaders?: Readonly<Record<string, string>>;
 	members?: CampMembers;
 	fleet?: DeliveryFleet;
+	engines?: readonly CdEngineRegistration[];
 }>;
 
 export type ComposedContinuousDelivery = ContinuousDelivery &
@@ -190,6 +196,7 @@ export type ComposedContinuousDelivery = ContinuousDelivery &
 		shadow: ShadowRecorder;
 		postureSeries: PostureSeriesReader;
 		scope: CdComposeScope;
+		engines: CdEngineRegistry;
 	}>;
 
 const MODE_NAMES: ReadonlyMap<ReconcilerMode, string> = new Map([
@@ -223,6 +230,7 @@ function scopeOver(
 export function wireContinuousDelivery(
 	input: CdComposeInput,
 ): ComposedContinuousDelivery {
+	const engineRegistry = createCdEngineRegistry(input.engines ?? []);
 	const { base, factories: f, adapters: a } = input;
 	const built: Partial<Record<keyof CdComposeScope, unknown>> = {};
 	const scope = scopeOver(built);
@@ -590,6 +598,7 @@ export function wireContinuousDelivery(
 		shadow,
 		postureSeries: posture,
 		scope,
+		engines: engineRegistry,
 	});
 }
 

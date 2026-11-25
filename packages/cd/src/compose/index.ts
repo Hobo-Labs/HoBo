@@ -1,5 +1,6 @@
 // `@hobo/cd/compose` — the composition root of @hobo/cd.
 export * from "./ci-bridge.js";
+export * from "./engines.js";
 export * from "./compose.js";
 export * from "./config.js";
 export * from "./defaults.js";

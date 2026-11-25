@@ -200,7 +200,7 @@ green before handoff. Suggested order:
 | PR | Scope | Closes (rows above) |
 | --- | --- | --- |
 | **P1** | `docs/cd/*` (this audit) + index links | Baseline |
-| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Engine pluggability |
+| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Engine pluggability — **implemented** (`engines.ts`, `cd-gitops` bridge) |
 | **P3** | `packages/cd-argocd`: read/observe/sync PACT, hook integration | Argo `argocd-update`/`wait` partial |
 | **P4** | Pipeline: auto-promotion **holds** + promote-by-origin | Kargo holds / origin promote |
 | **P5** | Pipeline: multi-origin slots per node | requestedFreight parity |

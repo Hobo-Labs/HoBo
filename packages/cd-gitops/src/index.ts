@@ -38,6 +38,11 @@ export {
 	publisherTarget,
 } from "./publisher.js";
 export {
+	cdEngineRegistrations,
+	createCdEngineRegistryFromGitops,
+	mergePublisherRegistryIntoCdEngines,
+} from "./engine-registry.js";
+export {
 	canonicalJson,
 	type EngineDocumentRef,
 	k8sName,
