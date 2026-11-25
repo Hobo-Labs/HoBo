@@ -133,7 +133,6 @@ export async function readCloudflareByteStream(
 				throw failure("invalid");
 			total += length;
 			if (total > maximum) throw failure("large");
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the native typed-array getter above accepted this view.
 			const chunk = new NativeBytes(item.value as Uint8Array);
 			const field: PropertyDescriptor = create(null);
 			field.value = chunk;

@@ -37,7 +37,6 @@ export function rivetOwnData<Value>(
 			!descriptor.enumerable
 		)
 			return undefined;
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: consumers validate the specific value after extracting an own data property.
 		return descriptor.value as Value;
 	} catch {
 		return undefined;

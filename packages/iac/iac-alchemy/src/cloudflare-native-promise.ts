@@ -71,7 +71,6 @@ export function observeCloudflareNativePromise<T>(
 					typeof original.enumerable !== "boolean"
 				)
 					return false;
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the copied descriptor is an own-data descriptor from the runtime.
 				restore = create(null) as PropertyDescriptor;
 				restore.value = original.value;
 				restore.writable = original.writable;

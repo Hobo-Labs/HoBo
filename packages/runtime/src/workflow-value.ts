@@ -265,12 +265,10 @@ export function parseRunStepCompletedFact(
 export function replayStepCompletedResult<T>(data: JsonValue): T {
 	const step = parseRunStepCompletedFact(data);
 	if (step.result === undefined) {
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: void steps journal an explicit undefined result field.
 		return undefined as T;
 	}
 	const replayed = terminalCompletedHandleResult<T>(step.result);
 	if (replayed === undefined) {
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: undefined is the declared void-step replay outcome.
 		return undefined as T;
 	}
 	return replayed;
@@ -354,7 +352,6 @@ function faithfullyReproduces<T>(
 	captured: JsonValue,
 ): captured is T & JsonValue {
 	return isDeepStrictEqual(
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: `isReproducibleJsonValue` already validated JSON shape.
 		cloneAsJson(original as JsonValue),
 		captured,
 	);
@@ -400,6 +397,5 @@ export function terminalCompletedHandleResult<R>(
 	journaled: JsonValue | undefined,
 ): R | undefined {
 	if (journaled === undefined) return undefined;
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: journaled payloads are re-validated through readJournaledWorkflowResult.
 	return journaled as R;
 }

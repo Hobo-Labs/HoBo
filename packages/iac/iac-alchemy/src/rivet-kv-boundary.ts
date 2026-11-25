@@ -30,7 +30,6 @@ export function rivetKvDescriptor(
 	configurable = false,
 	writable = false,
 ): PropertyDescriptor {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fresh null-prototype object contains only descriptor data.
 	const result = create(null) as PropertyDescriptor;
 	result.value = value;
 	result.enumerable = enumerable;
@@ -39,7 +38,6 @@ export function rivetKvDescriptor(
 	return freeze(result);
 }
 export const RIVET_KV_NONTHENABLE = rivetKvDescriptor(undefined);
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this null-prototype options object is private and frozen before callbacks.
 const listenerOptions = create(null) as AddEventListenerOptions;
 listenerOptions.once = true;
 export const RIVET_KV_ONCE = freeze(listenerOptions);
@@ -145,7 +143,6 @@ export function rivetKvObserve<T>(
 export type RivetKvBox<T> = Readonly<{ value: T }>;
 
 function box<T>(value: T): RivetKvBox<T> {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the value is defined on a fresh null-prototype record.
 	const result = create(null) as { value: T };
 	defineProperty(result, "value", rivetKvDescriptor(value, true));
 	return freeze(result);

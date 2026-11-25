@@ -298,7 +298,6 @@ describe("trusted source fences", () => {
 			sourceDigest: claim.sourceDigest,
 			environmentDigest: claim.environmentDigest,
 			proofRef: claim.proofRef,
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the host callback deliberately violates the synchronous contract.
 			verify: (() => Promise.reject(new Error("source rejected"))) as never,
 		});
 		if (fence === undefined) throw new Error("test fence missing");
@@ -338,7 +337,6 @@ describe("trusted source fences", () => {
 		}
 		let result: unknown;
 		try {
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the malformed resource intentionally probes inherited descriptor maps.
 			result = captureAlchemySourceRequirements([impostor] as never);
 		} finally {
 			for (let index = 0; index < fields.length; index++) {

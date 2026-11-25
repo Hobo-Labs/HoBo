@@ -39,7 +39,6 @@ it("runs a combined HTTP and KV application in a real Rivet 3 registry", {
 						process.kill(-child.pid, "SIGKILL");
 					else child.kill("SIGKILL");
 				} catch (error) {
-					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: process signaling errors carry Node's errno code.
 					if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
 				}
 			};

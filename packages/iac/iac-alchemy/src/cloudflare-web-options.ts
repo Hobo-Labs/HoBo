@@ -83,7 +83,6 @@ const receiptHeaders = freeze([
 function snapshotHeaders(
 	value: unknown,
 ): Readonly<Record<string, string | null>> {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: captured native Headers.get validates its receiver; every key is assigned below.
 	const result = create(null) as Record<string, string | null>;
 	for (let index = 0; index < receiptHeaders.length; index++) {
 		const name = receiptHeaders[index];
@@ -115,7 +114,6 @@ const responseHeaders = new WeakMap<
 const requests = new WeakMap<object, RequestSnapshot>();
 
 function responseSnapshot(value: object): ResponseSnapshot {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this private map stores only validated response snapshots.
 	const cached = apply(weakGet, responses, [value]) as
 		| ResponseSnapshot
 		| undefined;
@@ -142,16 +140,13 @@ function responseSnapshot(value: object): ResponseSnapshot {
 		throw new NativeError("response fields invalid");
 
 	apply(getHeader, headers, ["x-hobo-boundary-check"]);
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: status, body and the native Headers receiver were checked.
 	const result = create(null) as {
 		status: number;
 		body: ReadableStream<Uint8Array> | null;
 		headers: Headers;
 	};
 	result.status = status;
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the body is an owned native stream or null under the host fence.
 	result.body = body as ReadableStream<Uint8Array> | null;
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: native Headers.get accepted the captured receiver above.
 	result.headers = headers as Headers;
 	const snapshot = freeze(result);
 	apply(weakSet, responses, [value, snapshot]);
@@ -159,7 +154,6 @@ function responseSnapshot(value: object): ResponseSnapshot {
 }
 
 function requestSnapshot(value: Request): RequestSnapshot {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this private map stores only validated request snapshots.
 	const cached = apply(weakGet, requests, [value]) as
 		| RequestSnapshot
 		| undefined;
@@ -196,7 +190,6 @@ function requestSnapshot(value: Request): RequestSnapshot {
 		(body !== null && (typeof body !== "object" || body === null))
 	)
 		throw new NativeError("request fields invalid");
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: each data field was checked and native Headers.get validates the headers.
 	const result = create(null) as {
 		url: string;
 		method: string;
@@ -205,7 +198,6 @@ function requestSnapshot(value: Request): RequestSnapshot {
 	};
 	result.url = url;
 	result.method = method;
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the body is an owned native stream or null under the host fence.
 	result.body = body as ReadableStream<Uint8Array> | null;
 	result.headers = snapshotHeaders(headers);
 	const snapshot = freeze(result);
@@ -265,7 +257,6 @@ export function cloudflareResponseHeader(
 	value: Response,
 	name: string,
 ): string | null {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this private map stores bounded receipt-header snapshots only.
 	let headers = apply(weakGet, responseHeaders, [value]) as
 		| Readonly<Record<string, string | null>>
 		| undefined;
@@ -331,7 +322,6 @@ export function cloudflareAbortSignal(value: AbortController): AbortSignal {
 		signalAbortedGetter,
 	);
 	if (aborted !== false) throw new NativeError("abort signal unavailable");
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the controller was created locally and its signal state was checked.
 	return signal as AbortSignal;
 }
 
@@ -356,7 +346,6 @@ export function cloudflareHeaders(
 	name: string,
 	value: string,
 ): Record<string, string> {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the null-prototype record is populated with string fields below.
 	const headers = create(null) as Record<string, string>;
 	headers[name] = value;
 	return headers;
@@ -366,7 +355,6 @@ export function cloudflareResponseInit(
 	status: number,
 	headers?: HeadersInit,
 ): ResponseInit {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: both optional Web API fields are populated as own data.
 	const init = create(null) as ResponseInit;
 	init.status = status;
 	if (headers !== undefined) init.headers = headers;
@@ -392,7 +380,6 @@ export function cloudflareRequestInit(
 	signal: AbortSignal,
 	body?: BodyInit,
 ): RequestInit {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: all Web API fields are populated as own data.
 	const init = create(null) as RequestInit;
 	init.method = "POST";
 	init.headers = headers;
@@ -409,11 +396,9 @@ export function cloudflareR2PutOptions(
 	readonly customMetadata: Record<string, string>;
 	readonly sha256: string;
 } {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: each nested provider dictionary is populated before use.
 	const httpMetadata = create(null) as { contentType: string };
 	httpMetadata.contentType = contentType;
 	const customMetadata = cloudflareHeaders("hobo-sha256", `sha256:${sha256}`);
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: all required R2 options are assigned as own data.
 	const options = create(null) as {
 		httpMetadata: { contentType: string };
 		customMetadata: Record<string, string>;
@@ -438,7 +423,6 @@ export function cloudflareR2ReadResult(
 	digest: string;
 	body: Uint8Array;
 }> {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: every field is assigned before freezing the returned record.
 	const result = create(null) as {
 		name: string;
 		contentType: string;
@@ -454,7 +438,6 @@ export function cloudflareR2ReadResult(
 	return freeze(result);
 }
 
-// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: mode is the only field supplied to the BYOB reader API.
 const byob = create(null) as { mode: "byob" };
 byob.mode = "byob";
 export const cloudflareByobOptions = freeze(byob);
