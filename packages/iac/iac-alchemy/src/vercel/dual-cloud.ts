@@ -71,14 +71,12 @@ export function selectDualCloudBudgetTarget(input: {
 		if (healthy.length === 0) {
 			throw new DualCloudBudgetRouterError({
 				reason: "no-healthy-offers",
-				message:
-					"dual-cloud budget router refuses to select from zero healthy offers",
+				message: "dual-cloud budget router refuses to select from zero healthy offers",
 			});
 		}
 		throw new DualCloudBudgetRouterError({
 			reason: "budget-exhausted",
-			message:
-				"dual-cloud budget router refuses to select an offer above the budget ceiling",
+			message: "dual-cloud budget router refuses to select an offer above the budget ceiling",
 		});
 	}
 
@@ -145,12 +143,8 @@ export function declareVercelServiceStack(input: VercelServiceStackInput) {
 				projectId: project.projectId,
 				serviceName: input.serviceName,
 				artifactDigest: input.artifactDigest,
-				...(input.runtime !== undefined
-					? { runtime: input.runtime }
-					: undefined),
-				...(input.regions !== undefined
-					? { regions: input.regions }
-					: undefined),
+				...(input.runtime !== undefined ? { runtime: input.runtime } : undefined),
+				...(input.regions !== undefined ? { regions: input.regions } : undefined),
 				...(input.credentialConfigKey !== undefined
 					? { credentialConfigKey: input.credentialConfigKey }
 					: undefined),
