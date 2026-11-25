@@ -72,8 +72,6 @@ export function parsePactDocument(
 	parseMetadata(record.metadata, issues);
 
 	if (issues.length > 0 || !consumer || !provider || !interactions) {
-		// The `!` variants relied on "issues is empty implies all three parsed",
-		// which is true today and invisible to the checker. Test the values.
 		throw new PactParseError(
 			issues.length > 0 ? issues : ["document is missing a required section"],
 			source,

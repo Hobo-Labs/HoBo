@@ -1,12 +1,3 @@
-/**
- * The parse boundary for the report this package produces.
- *
- * Every case asserts the *specific* refusal — the error class, its code, and
- * the field path — rather than "it threw". A parser has many ways to throw and
- * only one of them is the branch under test; `toThrow()` with no matcher goes
- * green when the value under test is undefined, when a helper is missing, and
- * when the refusal fires, which makes it evidence of nothing.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -65,7 +56,6 @@ describe("what the boundary admits", () => {
 			canonicalRoundTripReportJson(parseRoundTripReport(JSON.parse(json))),
 		).toBe(json);
 		expect(hashRoundTripReport(parsed)).toMatch(/^sha256:[0-9a-f]{64}$/u);
-		// Key order in the input must not reach the digest.
 		expect(
 			hashRoundTripReport(
 				parseRoundTripReport({ checks: [CHECK], schema: REPORT.schema }),

@@ -1,26 +1,3 @@
-/**
- * Per-station layout persistence.
- *
- * A layout is what an operator arranged by hand, so losing one is losing work
- * nobody can regenerate. Two mechanisms protect it and both are pinned here.
- *
- * **Writes are atomic.** The store serializes to a temporary sibling and
- * renames over the target, because a `writeFileSync` interrupted mid-write
- * leaves a truncated JSON file — which is to say, a layout that loads as
- * corrupt and is silently discarded on the next read. `rename` is atomic on
- * every filesystem this runs on, so a reader sees either the old layout or the
- * new one, never half of either.
- *
- * **Saves are debounced.** Dragging a node emits a change per frame; writing
- * each one would put a disk write in the drag loop. The coalescing rule that
- * matters is that the *last* layout wins — an earlier one landing on disk after
- * a later one would silently undo the operator's final position.
- *
- * `load` swallowing every error is deliberate and worth stating: an absent
- * layout, an unreadable one and a corrupt one are all "there is no layout to
- * restore", and a viewer that threw on any of them would refuse to open a
- * station over a cosmetic file problem.
- */
 import {
 	existsSync,
 	mkdirSync,
@@ -74,8 +51,6 @@ describe("paths", () => {
 	});
 
 	it("percent-encodes a station id, since it becomes a filename", () => {
-		// Station ids contain colons and can contain a slash; unencoded, one
-		// station's layout would be written into another station's directory.
 		const store = new LayoutStore(home());
 		expect(store.pathFor("a/b")).toContain("a%2Fb");
 		expect(store.pathFor("a/b")).not.toContain("a/b.json");
@@ -95,16 +70,12 @@ describe("saveNow", () => {
 	});
 
 	it("creates the layouts directory on first save", () => {
-		// A fresh install has no directory; failing here would lose the first
-		// layout anybody arranges.
 		const store = new LayoutStore(home());
 		store.saveNow("station:a", layout());
 		expect(existsSync(store.dir)).toBe(true);
 	});
 
 	it("leaves no temporary file behind", () => {
-		// A stray `.tmp-<pid>` would be picked up by anything globbing the
-		// directory, and would accumulate one per save.
 		const store = new LayoutStore(home());
 		store.saveNow("station:a", layout());
 		expect(readdirSync(store.dir).filter((f) => f.includes(".tmp-"))).toEqual(
@@ -113,8 +84,6 @@ describe("saveNow", () => {
 	});
 
 	it("writes readable, newline-terminated JSON", () => {
-		// These files get read and edited by hand; a single-line blob is not
-		// something an operator can fix.
 		const store = new LayoutStore(home());
 		store.saveNow("station:a", layout());
 		const raw = readFileSync(store.pathFor("station:a"), "utf8");
@@ -141,13 +110,10 @@ describe("saveNow", () => {
 
 describe("load", () => {
 	it("reports nothing for a station that has never been saved", () => {
-		// Absent is the normal case for a station opened for the first time.
 		expect(new LayoutStore(home()).load("station:new")).toBeUndefined();
 	});
 
 	it("reports nothing rather than throwing on corrupt JSON", () => {
-		// A viewer that threw here would refuse to open a station over a
-		// cosmetic file problem.
 		const store = new LayoutStore(home());
 		mkdirSync(store.dir, { recursive: true });
 		writeFileSync(store.pathFor("station:a"), "{ not json");
@@ -155,8 +121,6 @@ describe("load", () => {
 	});
 
 	it("reports nothing for JSON that is not an object", () => {
-		// `null` parses fine and would be handed to a caller that immediately
-		// reads `.nodes` off it.
 		const store = new LayoutStore(home());
 		mkdirSync(store.dir, { recursive: true });
 		writeFileSync(store.pathFor("station:a"), "null");
@@ -171,8 +135,6 @@ describe("load", () => {
 	});
 
 	it("returns what was stored without reshaping it", () => {
-		// The store persists; interpreting the layout is the model's job, and
-		// two interpretations would drift.
 		const store = new LayoutStore(home());
 		store.saveNow("station:a", { unknownFutureField: true } as never);
 		expect(store.load("station:a")).toEqual({ unknownFutureField: true });
@@ -181,7 +143,6 @@ describe("load", () => {
 
 describe("saveDebounced", () => {
 	it("does not write immediately", () => {
-		// The whole point: a drag emits a change per frame.
 		const store = new LayoutStore(home());
 		store.saveDebounced("station:a", layout(), 50);
 		expect(store.load("station:a")).toBeUndefined();
@@ -195,8 +156,6 @@ describe("saveDebounced", () => {
 	});
 
 	it("keeps the last layout when several arrive in a burst", async () => {
-		// An earlier layout landing after a later one would silently undo the
-		// operator's final position.
 		const store = new LayoutStore(home());
 		store.saveDebounced("station:a", layout({ nodes: { a: 1 } }), 10);
 		store.saveDebounced("station:a", layout({ nodes: { b: 2 } }), 10);
@@ -215,7 +174,6 @@ describe("saveDebounced", () => {
 	});
 
 	it("debounces each station independently", async () => {
-		// Two stations open at once must not cancel each other's pending write.
 		const store = new LayoutStore(home());
 		store.saveDebounced("station:a", layout({ nodes: { a: 1 } }), 10);
 		store.saveDebounced("station:b", layout({ nodes: { b: 2 } }), 10);
@@ -231,8 +189,6 @@ describe("saveDebounced", () => {
 
 describe("flush", () => {
 	it("writes a pending layout at once", () => {
-		// Shutdown is the case this exists for: an unflushed pending write is
-		// work the operator did and lost.
 		const store = new LayoutStore(home());
 		store.saveDebounced("station:a", layout(), 10_000);
 		store.flush();
@@ -261,8 +217,6 @@ describe("flush", () => {
 	});
 
 	it("cancels the timer it flushed, so no late write follows", async () => {
-		// A timer firing after flush would write the layout a second time, after
-		// something newer may already have landed.
 		const store = new LayoutStore(home());
 		store.saveDebounced("station:a", layout({ nodes: { early: true } }), 10);
 		store.flush();

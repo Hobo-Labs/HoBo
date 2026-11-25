@@ -1,16 +1,3 @@
-/**
- * Deterministic simulator of a plausible HoBo platform so the world is alive
- * without a real OTel collector: 1 station, 2 yards, 4 camps, 10 bindles,
- * junctions between camps, plus a crew member and an internal actor.
- *
- * The simulator emits OTLP/JSON payloads (traces, logs, metrics) routed
- * through the same mappers a real collector hits — including the shared
- * TraceIndex. Cross-camp parent spans and their server children are emitted on
- * DIFFERENT ticks, so junction packets exercise the cross-request pairing path
- * end to end.
- *
- * Same seed → identical event stream (mulberry32 RNG, tick-driven, no wall clock).
- */
 import { deriveLayout } from "./layout-model.js";
 import {
 	type AgentEvent,
@@ -33,7 +20,6 @@ import { TraceIndex } from "./trace-index.js";
 
 export const SIM_TICK_MS = 500;
 
-/** mulberry32 — small seedable PRNG. */
 export function createRng(seed: number): () => number {
 	let a = seed >>> 0;
 	return () => {
@@ -135,7 +121,6 @@ function corridorBetween(
 	a: Camp["rect"],
 	b: Camp["rect"],
 ): Junction["corridor"] {
-	// L-shaped corridor: horizontal from a's door to b's column, then vertical.
 	const ax = a.x + a.w;
 	const ay = a.y + Math.floor(a.h / 2);
 	const bx = b.x - 1;
@@ -150,7 +135,6 @@ function corridorBetween(
 
 export interface Simulation {
 	state: WorldState;
-	/** Advance one tick; returns events (including the tick) in deterministic order. */
 	step(): AgentEvent[];
 }
 
@@ -190,7 +174,6 @@ interface OpenSpan {
 	startedAt: number;
 }
 
-/** A server/consumer child span due on a later tick (cross-request pairing). */
 interface PendingChild {
 	dueAt: number;
 	characterId: string;
@@ -263,8 +246,6 @@ export function createSimulation(seed = 1): Simulation {
 
 	let clock = 0;
 	let spanSeq = 0;
-	// The world layout is data: derive the default from the
-	// topology above; the server may replace it with a persisted/edited one.
 	state.layouts[TOPOLOGY.station] = deriveLayout(state, TOPOLOGY.station);
 	const characters = Object.values(state.characters);
 	const byCamp = new Map<string, Character[]>();
@@ -273,8 +254,6 @@ export function createSimulation(seed = 1): Simulation {
 		list.push(ch);
 		byCamp.set(ch.campId, list);
 	}
-	// The sim owns its open-span ledger: the server reduces events into cloned
-	// state, so the sim never reads its own topology object back.
 	const openSpans = new Map<string, OpenSpan[]>();
 	const pendingChildren: PendingChild[] = [];
 	const index = new TraceIndex();
@@ -413,8 +392,6 @@ export function createSimulation(seed = 1): Simulation {
 		const metricPayloads: OtlpMetricsRequest[] = [];
 		const direct: AgentEvent[] = [];
 
-		// 1. Cross-camp children due this tick — their parents were ingested on
-		//    an earlier tick, so pairing resolves through the trace index.
 		for (let i = pendingChildren.length - 1; i >= 0; i -= 1) {
 			const child = pendingChildren[i];
 			if (child === undefined || child.dueAt > clock) continue;
@@ -441,12 +418,10 @@ export function createSimulation(seed = 1): Simulation {
 			openSpans.set(ch.id, open);
 		}
 
-		// 2. Regular per-character activity.
 		for (const ch of characters) {
 			const open = openSpans.get(ch.id) ?? [];
 			const roll = rng();
 			if (open.length > 0 && roll < 0.45) {
-				// Close the oldest open span; ~1 in 8 ends in error.
 				const closing = open.shift() ?? {
 					spanId: "",
 					traceId: "",
@@ -474,7 +449,6 @@ export function createSimulation(seed = 1): Simulation {
 					);
 				}
 			} else if (roll < 0.45 + 0.35) {
-				// Open a new span via an OTLP payload; sometimes a cross-camp call.
 				const shape = pick(SPAN_SHAPES);
 				spanSeq += 1;
 				const spanId = `span-${spanSeq}`;
@@ -500,8 +474,6 @@ export function createSimulation(seed = 1): Simulation {
 				open.push({ spanId, traceId, startedAt: clock });
 				openSpans.set(ch.id, open);
 				if (crossing !== undefined) {
-					// Schedule the server child in the peer camp 1–2 ticks out, so the
-					// pair lands in separate "requests" and pairs via the index.
 					const peerCampId =
 						crossing.fromCampId === ch.campId
 							? crossing.toCampId
@@ -524,8 +496,6 @@ export function createSimulation(seed = 1): Simulation {
 				metricPayloads.push(metricsPayload(ch, 0.5 + rng() * 0.5));
 			}
 			if (rng() < 0.03) {
-				// Varied, deterministic severities: INFO stays quiet, WARN bubbles,
-				// ERROR bubbles + flips the character to stuck attention.
 				const sevRoll = rng();
 				const severity =
 					sevRoll < 0.4
@@ -546,7 +516,6 @@ export function createSimulation(seed = 1): Simulation {
 			}
 		}
 
-		// 3. Route payloads through the same mappers the HTTP ingest uses.
 		const events: AgentEvent[] = [];
 		for (const payload of tracePayloads) {
 			events.push(...mapTracePayload(payload, state, clock, index));

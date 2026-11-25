@@ -1,16 +1,3 @@
-/**
- * Tests for layout-as-data: derivation, sync, application, validation and
- * pathfinding.
- *
- * This module was 26.9% covered while being the thing that decides whether an
- * *untrusted* layout payload is allowed to mutate live topology. `validateLayout`
- * is an admission boundary — an editor PUT arrives as `unknown` and everything
- * downstream trusts what comes back — and almost none of its rules were pinned.
- *
- * The rules are asserted one at a time on purpose. `validateLayout` reports
- * every violation rather than exiting early, so a test that feeds one bad
- * layout and asserts "rejected" would pass no matter which rule fired.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -142,21 +129,18 @@ describe("geometry helpers", () => {
 				{ x: 1, y: 1 },
 			]),
 		).toBe(true);
-		// Diagonal: manhattan distance 2.
 		expect(
 			isContiguous([
 				{ x: 0, y: 0 },
 				{ x: 1, y: 1 },
 			]),
 		).toBe(false);
-		// Repeated tile: distance 0.
 		expect(
 			isContiguous([
 				{ x: 0, y: 0 },
 				{ x: 0, y: 0 },
 			]),
 		).toBe(false);
-		// Jump.
 		expect(
 			isContiguous([
 				{ x: 0, y: 0 },
@@ -189,8 +173,6 @@ describe("deriveLayout", () => {
 
 	it("sizes the grid to content plus a margin", () => {
 		const layout = deriveLayout(world(), "st1");
-		// Widest camp ends at x=18, so w = 18 + 10. The tallest ends at y=7,
-		// which is below the built-in floor of 8, so h = 8 + 8 rather than 7 + 8.
 		expect(layout.grid).toEqual({ w: 28, h: 16 });
 	});
 
@@ -230,7 +212,6 @@ describe("syncLayout", () => {
 		room.color = "#000000";
 		room.rect = { x: 1, y: 1, w: 4, h: 4 };
 
-		// New topology arrives after the first sync.
 		state.camps.c3 = {
 			id: "c3",
 			yardId: "y1",
@@ -242,7 +223,6 @@ describe("syncLayout", () => {
 		expect(second.rooms.c1?.color).toBe("#000000");
 		expect(second.rooms.c1?.rect).toEqual({ x: 1, y: 1, w: 4, h: 4 });
 		expect(second.rooms.c3).toBeDefined();
-		// The grid grows to contain the newcomer.
 		expect(second.grid.w).toBeGreaterThanOrEqual(45);
 		expect(second.grid.h).toBeGreaterThanOrEqual(32);
 	});
@@ -282,7 +262,6 @@ describe("applyLayout", () => {
 
 		expect(state.camps.c1?.rect).toEqual({ x: 20, y: 20, w: 4, h: 4 });
 		expect(state.characters.ch1?.desk).toEqual({ x: 21, y: 21 });
-		// The character snaps to the new desk and any in-flight path is dropped.
 		expect(state.characters.ch1?.position).toEqual({ x: 21, y: 21 });
 		expect(state.characters.ch1?.path).toEqual([]);
 		expect(state.junctions.j1?.corridor).toEqual([{ x: 1, y: 1 }]);
@@ -434,7 +413,6 @@ describe("findPath", () => {
 		const blocked = [{ x: 1, y: 0, w: 1, h: 9 }];
 		const path = findPath(grid, blocked, { x: 0, y: 0 }, { x: 2, y: 0 });
 		expect(path).toBeDefined();
-		// Every intermediate tile avoids the wall.
 		for (const tile of (path ?? []).slice(1, -1))
 			expect(tile.x === 1 && tile.y < 9).toBe(false);
 	});
@@ -451,7 +429,6 @@ describe("findPath", () => {
 	});
 
 	it("reaches a goal that sits inside a blocked rect", () => {
-		// The goal tile is always walkable — a corridor may end at a room door.
 		const blocked = [{ x: 5, y: 5, w: 3, h: 3 }];
 		const path = findPath(grid, blocked, { x: 0, y: 0 }, { x: 5, y: 5 });
 		expect(path?.at(-1)).toEqual({ x: 5, y: 5 });

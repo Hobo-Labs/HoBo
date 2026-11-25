@@ -1,13 +1,3 @@
-/**
- * The harness needs its own tests, and it did not have any.
- *
- * Everything below is a way `describeConcern` could pass while checking
- * nothing, which is the only failure mode that matters in a test harness: a
- * broken assertion library reports green and takes every suite built on it with
- * it. The three pieces are exercised directly — `assertCase` is split out of
- * the runner precisely so the assertions can be falsified here rather than only
- * by running a nested suite, which is what let two of them ship inert.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -70,8 +60,6 @@ describe("callableMembers", () => {
 			},
 		};
 		expect(callableMembers(subject)).toEqual(["computed"]);
-		// Listing must not run it: a getter with a side effect would otherwise
-		// fire once per suite just by being enumerated.
 		expect(reads).toBe(0);
 	});
 
@@ -80,8 +68,6 @@ describe("callableMembers", () => {
 	});
 
 	it("treats a module namespace as functions only", () => {
-		// Every export of an ES module is a getter, so without this a plain
-		// constant would be demanded as a member needing its own cases.
 		const namespace = Object.create(null, {
 			[Symbol.toStringTag]: { value: "Module" },
 			CONSTANT: { get: () => "x", enumerable: true },
@@ -95,12 +81,6 @@ describe("assertCase", () => {
 	const returned = (value: unknown) => ({ returned: value });
 	const threw = (error: unknown) => ({ threw: error });
 
-	// Every row here is a *different* assertion inside `assertCase`, and the
-	// bare `.toThrow()` this replaced could not distinguish them: an
-	// `assertCase` that rejected every row for one wrong reason — an unparsed
-	// field, a thrown TypeError on a shape it did not expect — would have gone
-	// green on all eight. This is the harness every PACT suite in the repo
-	// delegates to, so a false green here is a false green everywhere.
 	it.each([
 		[
 			"a throws case that returned instead",
@@ -181,8 +161,6 @@ describe("assertCase", () => {
 	});
 
 	it("rethrows an unexpected throw rather than swallowing it", () => {
-		// A case asserting a value must not absorb a crash in the subject:
-		// that would turn every broken method into a green "no assertion ran".
 		expect(() =>
 			assertCase(
 				{ method: "f", expect: 1 },

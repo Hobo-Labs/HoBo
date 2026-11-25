@@ -1,19 +1,3 @@
-/**
- * Structural parse of a collected Bindle into the topology the harness boots.
- *
- * The harness takes `bindle: unknown` on purpose: `@hobo/testing` is a layer-3
- * package that must not drag `@hobo/bindles` into every consumer's graph, and
- * ADR-0144's bindle-first rule says an abstract shape beats a concrete import.
- * So this module is the parse boundary — it turns an unknown value into a
- * frozen `TestTopology` (a derived domain type) or throws
- * `HARNESS_BINDLE_INVALID`. Nothing downstream re-checks the shape.
- *
- * Dependency direction follows the collected form: a `BindleEdge` is
- * `{ from, to }` where `from` depends on `to`, matching the resource records'
- * own `dependsOn` lists. Deployment order is dependencies-first with a
- * lexicographic tie-break so the order is deterministic under input
- * permutation; teardown is its exact reverse (ADR-0159 §2b).
- */
 
 import { TestHarnessError } from "./errors.js";
 import { isHttpServedKind } from "./fidelity.js";
@@ -21,20 +5,13 @@ import { isHttpServedKind } from "./fidelity.js";
 export interface TestTopologyNode {
 	readonly alias: string;
 	readonly kind: string;
-	/** Aliases inside this topology that `alias` depends on. Sorted, deduped. */
 	readonly dependsOn: readonly string[];
-	/** The collected graph declared an entrypoint factory for this alias. */
 	readonly hasEntrypoint: boolean;
 }
 
 export interface TestTopology {
 	readonly name: string;
 	readonly nodes: readonly TestTopologyNode[];
-	/**
-	 * Declared dependencies that name something outside the resource set
-	 * (connectors, for example). Recorded rather than dropped: a silently
-	 * discarded edge is a portability lie.
-	 */
 	readonly unresolvedDependencies: readonly {
 		readonly alias: string;
 		readonly dependency: string;
@@ -64,7 +41,6 @@ function entrypointFactory(bindle: Record<string, unknown>, alias: string) {
 	}
 }
 
-/** Parse boundary. Returns a frozen derived domain type or throws. */
 export function parseTestTopology(bindle: unknown): TestTopology {
 	if (!isRecord(bindle)) {
 		throw new TestHarnessError(
@@ -146,10 +122,6 @@ export function parseTestTopology(bindle: unknown): TestTopology {
 	});
 }
 
-/**
- * Dependencies first, lexicographic among the ready set. Deterministic under
- * input permutation; a cycle is refused rather than broken arbitrarily.
- */
 export function deploymentOrder(topology: TestTopology): readonly string[] {
 	const pending = new Map<string, Set<string>>();
 	for (const node of topology.nodes) {
@@ -181,7 +153,6 @@ export function deploymentOrder(topology: TestTopology): readonly string[] {
 	return Object.freeze(ordered);
 }
 
-/** Exact reverse of `deploymentOrder` — dependents torn down before deps. */
 export function teardownOrder(topology: TestTopology): readonly string[] {
 	return Object.freeze([...deploymentOrder(topology)].reverse());
 }

@@ -1,12 +1,3 @@
-/**
- * Every case is a line in `otel-mapper.cases.jsonl`.
- *
- * Two payload fixtures live here rather than in the data: the single-span one
- * that most cases vary a field of, and the cross-camp parent/child pair that
- * the junction cases slice up. Everything else — which world to start from,
- * whether a trace index is in play, which emitted events get folded back — is
- * a field in the case.
- */
 
 import { describeConcern } from "@hobo/contract-harness";
 import { applyEvent, emptyWorld, visibleCharacters } from "../src/model.js";
@@ -77,7 +68,6 @@ const resource = (service: string, camp: string) => ({
 	],
 });
 
-/** A client span in one camp and its server child in another. */
 function crossCampPayload(childCamp = "camp-b"): OtlpTraceRequest {
 	return {
 		resourceSpans: [
@@ -165,25 +155,15 @@ function worldWithCampsAndJunction() {
 interface Submission {
 	readonly preset?: keyof typeof PRESETS;
 	readonly payload?: PayloadOverrides;
-	/** Spelled out where no fixture fits — a junction attribute with no parent. */
 	readonly raw?: OtlpTraceRequest;
 	readonly nowMs?: number;
-	/**
-	 * Which emitted events to fold back into the world.
-	 *
-	 * `except-ended` keeps a span open on purpose: a packet only exists while
-	 * its server span is still running, so folding `span-ended` would erase the
-	 * very thing the case is about.
-	 */
 	readonly apply?: "all" | "started" | "except-ended" | "none";
 }
 
 interface Ask {
 	readonly world?: "empty" | "camps-and-junction";
-	/** Present means a TraceIndex is threaded through every submission. */
 	readonly index?: { readonly ttlMs?: number; readonly sweepMs?: number };
 	readonly submissions: readonly Submission[];
-	/** Stations whose visible character ids the case asserts on. */
 	readonly visibleIn?: readonly string[];
 }
 
@@ -228,7 +208,6 @@ describeConcern("otel mapper", {
 	cases: `${import.meta.dirname}/otel-mapper.cases.jsonl`,
 	subject: () => ({
 		spanKindFromOtlp,
-		/** The last submission's events plus the world they fold into. */
 		after: (ask: Ask) => {
 			const { state, events, index } = run(ask);
 			return {
