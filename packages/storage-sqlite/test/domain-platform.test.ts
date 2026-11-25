@@ -188,11 +188,9 @@ describe("@hobo/storage-sqlite createSqliteDomainPlatform", () => {
 				Effect.gen(function* () {
 					const counters = yield* CounterAggregate;
 					const views = yield* CounterSummaryView;
-					yield* counters.send(
-						counterId,
-						new IncrementCounter({ delta: 0 }),
-						{ commandId: "drain-boot-touch" },
-					);
+					yield* counters.send(counterId, new IncrementCounter({ delta: 0 }), {
+						commandId: "drain-boot-touch",
+					});
 					return Option.getOrThrow(yield* views.get(counterId));
 				}).pipe(Effect.provide(layer)),
 			);
@@ -235,7 +233,9 @@ describe("@hobo/storage-sqlite createSqliteDomainPlatform", () => {
 	});
 
 	it("re-arms persisted schedules after SQLite restart", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-domain-schedule-rearm-"));
+		const dir = mkdtempSync(
+			join(tmpdir(), "hobo-sqlite-domain-schedule-rearm-"),
+		);
 		tempDirs.push(dir);
 		const dbPath = join(dir, "domain.sqlite");
 		const counterId = CounterId.make("station-counter-schedule-rearm");

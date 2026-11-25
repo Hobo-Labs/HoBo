@@ -4,8 +4,8 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Semaphore from "effect/Semaphore";
-import * as DurableDeferred from "effect/workflow/DurableDeferred";
 import { Workflow, WorkflowEngine } from "effect/workflow";
+import * as DurableDeferred from "effect/workflow/DurableDeferred";
 import {
 	asNumber,
 	asText,
