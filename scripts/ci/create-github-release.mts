@@ -47,7 +47,7 @@ import {
 	parseReleaseFreightAuthorMessage,
 	releaseFreightLogFragment,
 	validateReasonStructuredDetail,
-} from "../../packages/cd/src/reconcile/release-freight-detail.ts";
+} from "../../packages/cd/dist/reconcile/release-freight-detail.js";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
