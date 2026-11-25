@@ -275,7 +275,6 @@ const TERMINAL = new Set([
 const codesOf = (reasons: readonly CdReason[] | undefined) =>
 	(reasons ?? []).map((r) => r.code ?? "").filter((c) => c !== "");
 
-/** Operator-safe blocked promotion text: stable code plus redacted resolver detail. */
 export function releaseBlockedRealizerMessage(
 	reasons: readonly CdReason[] | undefined,
 ): string {
@@ -371,7 +370,6 @@ export type ReleaseCredentials = Readonly<{
 
 const GITHUB_APP_REF = "github-app://";
 
-/** Credential scope the catalog resolver passes (`cd-realize:<campId>`). */
 export function releaseCampRealizeScope(camp: (typeof camps)[number]): string {
 	const campId = camp.logicalId?.trim() || camp.campId;
 	return `cd-realize:${campId}`;
