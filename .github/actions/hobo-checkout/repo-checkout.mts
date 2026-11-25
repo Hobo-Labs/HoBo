@@ -221,7 +221,29 @@ export function clearSparseCheckoutConfig(
 		git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
 		git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
 	}
-	return sparseCheckoutEnabled(cwd, env) === false;
+	if (sparseCheckoutEnabled(cwd, env)) return false;
+	const listed = spawnSync("git", ["ls-files", "-t", "-z"], {
+		cwd,
+		env,
+		maxBuffer: 16 * 1024 * 1024,
+	});
+	if (listed.error || listed.status !== 0) return false;
+	const entries = listed.stdout;
+	const skipped: Buffer[] = [];
+	for (let start = 0; start < entries.length; ) {
+		const end = entries.indexOf(0, start);
+		if (end < 0) return false;
+		if (entries[start] === 83 && entries[start + 1] === 32)
+			skipped.push(entries.subarray(start + 2, end + 1));
+		start = end + 1;
+	}
+	if (skipped.length === 0) return true;
+	const updated = spawnSync(
+		"git",
+		["update-index", "--no-skip-worktree", "-z", "--stdin"],
+		{ cwd, env, input: Buffer.concat(skipped), maxBuffer: 16 * 1024 * 1024 },
+	);
+	return !updated.error && updated.status === 0;
 }
 
 function parseArgs(args: readonly string[]) {
