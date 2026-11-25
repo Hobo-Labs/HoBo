@@ -37,9 +37,9 @@ import {
 	ReservationNotReleasable,
 	ReserveDispatch,
 	type RunnerAccountId,
+	StartReservation,
 	scopedAccountId,
 	selectDispatchCandidate,
-	StartReservation,
 	UsageEvidenceRef,
 	UsageEvidenceRequired,
 } from "../src/domain/index.js";
