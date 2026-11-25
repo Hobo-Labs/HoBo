@@ -15,6 +15,8 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import {
+	constants,
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -37,7 +39,12 @@ import {
 	readEvents,
 	type WorkspaceEvent,
 } from "./journal.js";
-import { isJsonNumber } from "./json.js";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJsonValue,
+} from "./json.js";
 import { parseWorkspaceName, type WorkspaceName } from "./names.js";
 
 // public-contract: marker identifying a registered rift root.
@@ -87,8 +94,23 @@ export interface Registry {
 	readonly eventCount?: number;
 }
 
+export class RiftRegistryError extends Error {}
+
 function registryPath(root: string): string {
 	return join(root, RIFT_DIR, "registry.json");
+}
+
+function repairBackupPath(root: string): string {
+	return join(root, RIFT_DIR, "registry.repair-backup.json");
+}
+
+function requireNoUnfinishedRepair(root: string): void {
+	const backup = repairBackupPath(root);
+	if (existsSync(backup)) {
+		throw new RiftRegistryError(
+			`unfinished workspace repair left a backup at ${backup}; inspect it before continuing`,
+		);
+	}
 }
 
 function riftDir(root: string): string {
@@ -109,6 +131,7 @@ function riftDir(root: string): string {
  */
 export function readRegistry(root: string): Registry {
 	const abs = resolve(root);
+	requireNoUnfinishedRepair(abs);
 	const dir = riftDir(abs);
 	if (existsSync(journalPath(dir))) {
 		// Authoritative, including when it projects to empty: "everything was
@@ -116,10 +139,19 @@ export function readRegistry(root: string): Registry {
 		// back to the snapshot here would resurrect removed workspaces, which
 		// is worse than the truncation it would guard against — recovery from a
 		// lost journal is `repair`'s job, where an operator asked for it.
-		return { root: abs, workspaces: projectWorkspaces(readEvents(dir)) };
+		const events = readEvents(dir);
+		return {
+			root: abs,
+			workspaces: projectWorkspaces(events),
+			eventCount: events.length,
+		};
 	}
-	// No journal: a root from before journalling, or one never initialised.
-	return { root: abs, workspaces: readSnapshot(abs) ?? [] };
+	if (existsSync(registryPath(abs))) {
+		throw new RiftRegistryError(
+			`workspace journal missing at ${journalPath(dir)}; run hobo-rift repair`,
+		);
+	}
+	return { root: abs, workspaces: [], eventCount: 0 };
 }
 
 /** Does this tree hold any file at all? Directories alone carry no work. */
@@ -154,11 +186,6 @@ export function pruneDebris(root: string): readonly string[] {
 	return parked;
 }
 
-/** The persisted projection, or null when it is absent or unreadable. */
-function readSnapshot(root: string): readonly WorkspaceRecord[] | null {
-	return readSnapshotRegistry(root)?.workspaces ?? null;
-}
-
 /**
  * Reconcile journal and snapshot. Exposed as `hobo-rift repair`.
  *
@@ -177,6 +204,7 @@ export interface RepairResult extends Registry {
 
 export function rebuildRegistry(root: string): RepairResult {
 	const abs = resolve(root);
+	requireNoUnfinishedRepair(abs);
 	const dir = riftDir(abs);
 	const events = readEvents(dir);
 	const projected = projectWorkspaces(events);
@@ -189,10 +217,26 @@ export function rebuildRegistry(root: string): RepairResult {
 	const truncated =
 		snapshot !== null &&
 		isJsonNumber(snapshot.eventCount) &&
-		snapshot.eventCount > events.length &&
-		snapshot.workspaces.length > 0;
+		snapshot.eventCount > events.length;
 	if (truncated) {
+		mkdirSync(dir, { recursive: true });
+		copyFileSync(
+			registryPath(abs),
+			repairBackupPath(abs),
+			constants.COPYFILE_EXCL,
+		);
+		if (!existsSync(journalPath(dir)))
+			writeFileSync(journalPath(dir), "", { flag: "a" });
 		const surviving = snapshot.workspaces.filter((w) => existsSync(w.path));
+		const names = new Set(surviving.map((workspace) => workspace.name));
+		for (const workspace of projected) {
+			if (!names.has(workspace.name))
+				appendEvent(dir, {
+					type: "WorkspaceRemoved",
+					at: new Date().toISOString(),
+					name: workspace.name,
+				});
+		}
 		for (const workspace of surviving) {
 			appendEvent(dir, {
 				type: "WorkspaceCreated",
@@ -212,7 +256,20 @@ export function rebuildRegistry(root: string): RepairResult {
 			eventCount: after.length,
 		};
 		writeRegistry(restored);
+		rmSync(repairBackupPath(abs));
 		return restored;
+	}
+	if (
+		snapshot !== null &&
+		snapshot.eventCount === events.length &&
+		!sameWorkspaces(snapshot.workspaces, projected)
+	) {
+		return {
+			root: abs,
+			workspaces: projected,
+			eventCount: events.length,
+			undecidable: `the snapshot and journal have the same event count but different workspaces — ${registryPath(abs)} has been left untouched; inspect both before continuing`,
+		};
 	}
 	// A root written before snapshots carried `eventCount` cannot be judged:
 	// its snapshot might be a truncation survivor, or might merely predate a
@@ -220,10 +277,13 @@ export function rebuildRegistry(root: string): RepairResult {
 	// would leave an operator staring at workspaces that exist on disk and
 	// nowhere else.
 	if (
-		projected.length === 0 &&
 		snapshot !== null &&
 		snapshot.workspaces.length > 0 &&
-		!isJsonNumber(snapshot.eventCount)
+		!isJsonNumber(snapshot.eventCount) &&
+		snapshot.workspaces.some(
+			(workspace) =>
+				!projected.some((candidate) => sameWorkspace(workspace, candidate)),
+		)
 	) {
 		// Leave the snapshot alone. It is the only surviving record of those
 		// workspaces' names, tiers and layer paths, and overwriting it with an
@@ -238,6 +298,9 @@ export function rebuildRegistry(root: string): RepairResult {
 			undecidable: `the snapshot lists ${snapshot.workspaces.length} workspace(s) but predates event counting, so it cannot be told from one that simply predates a removal — ${registryPath(abs)} has been left untouched; inspect it and recreate what you still want`,
 		};
 	}
+	mkdirSync(dir, { recursive: true });
+	if (!existsSync(journalPath(dir)))
+		writeFileSync(journalPath(dir), "", { flag: "a" });
 	const registry: Registry = {
 		root: abs,
 		workspaces: projected,
@@ -247,16 +310,133 @@ export function rebuildRegistry(root: string): RepairResult {
 	return registry;
 }
 
-/** The persisted projection with its bookkeeping, or null when unusable. */
+function sameWorkspace(a: WorkspaceRecord, b: WorkspaceRecord): boolean {
+	return (
+		a.name === b.name &&
+		a.path === b.path &&
+		a.source === b.source &&
+		a.tier === b.tier &&
+		a.createdAt === b.createdAt &&
+		a.upper === b.upper &&
+		a.work === b.work
+	);
+}
+
+function sameWorkspaces(
+	a: readonly WorkspaceRecord[],
+	b: readonly WorkspaceRecord[],
+): boolean {
+	return (
+		a.length === b.length &&
+		a.every((workspace) =>
+			b.some((candidate) => sameWorkspace(workspace, candidate)),
+		)
+	);
+}
+
+function registryForWrite(root: string): Registry {
+	const registry = readRegistry(root);
+	const snapshot = readSnapshotRegistry(root);
+	if (
+		snapshot &&
+		((isJsonNumber(snapshot.eventCount) &&
+			snapshot.eventCount > (registry.eventCount ?? 0)) ||
+			(snapshot.eventCount === registry.eventCount &&
+				!sameWorkspaces(snapshot.workspaces, registry.workspaces)) ||
+			(!isJsonNumber(snapshot.eventCount) &&
+				snapshot.workspaces.some(
+					(workspace) =>
+						!registry.workspaces.some((candidate) =>
+							sameWorkspace(workspace, candidate),
+						),
+				)))
+	)
+		throw new RiftRegistryError(
+			`workspace snapshot may contain newer work at ${registryPath(root)}; run hobo-rift repair`,
+		);
+	return registry;
+}
+
 function readSnapshotRegistry(root: string): Registry | null {
 	const file = registryPath(root);
 	if (!existsSync(file)) return null;
 	try {
-		// SAFETY: `const snapshot = JSON.parse(readFileSync(file, "utf8")) as Registry;` is required at this I/O or test boundary.
-		const snapshot = JSON.parse(readFileSync(file, "utf8")) as Registry;
-		return Array.isArray(snapshot.workspaces) ? snapshot : null;
+		const snapshot = parseJsonValue(readFileSync(file, "utf8"));
+		if (
+			!isJsonObject(snapshot) ||
+			!isJsonString(snapshot.root) ||
+			!snapshot.root ||
+			!Array.isArray(snapshot.workspaces) ||
+			(snapshot.eventCount !== undefined &&
+				(!isJsonNumber(snapshot.eventCount) ||
+					!Number.isSafeInteger(snapshot.eventCount) ||
+					snapshot.eventCount < snapshot.workspaces.length ||
+					snapshot.eventCount > 4294967295)) ||
+			Object.keys(snapshot).some(
+				(key) => !["root", "workspaces", "eventCount"].includes(key),
+			)
+		)
+			throw new TypeError("invalid snapshot");
+		const names = new Set<string>();
+		const workspaces = snapshot.workspaces.map((record): WorkspaceRecord => {
+			if (!isJsonObject(record)) throw new TypeError("invalid workspace");
+			const name = isJsonString(record.name)
+				? parseWorkspaceName(record.name)
+				: undefined;
+			if (
+				!isJsonString(record.name) ||
+				!name?.ok ||
+				name.value !== record.name ||
+				names.has(record.name) ||
+				!isJsonString(record.path) ||
+				!record.path ||
+				!isJsonString(record.source) ||
+				!record.source ||
+				!isJsonString(record.createdAt) ||
+				!record.createdAt ||
+				(record.tier !== "reflink" &&
+					record.tier !== "overlayfs" &&
+					record.tier !== "hardlink" &&
+					record.tier !== "copy") ||
+				(record.upper !== undefined && !isJsonString(record.upper)) ||
+				(record.work !== undefined && !isJsonString(record.work)) ||
+				(record.tier === "overlayfs" && (!record.upper || !record.work)) ||
+				Object.keys(record).some(
+					(key) =>
+						![
+							"name",
+							"path",
+							"source",
+							"tier",
+							"createdAt",
+							"upper",
+							"work",
+						].includes(key),
+				)
+			)
+				throw new TypeError("invalid workspace");
+			names.add(record.name);
+			return {
+				name: record.name,
+				path: record.path,
+				source: record.source,
+				tier: record.tier,
+				createdAt: record.createdAt,
+				...(isJsonString(record.upper) ? { upper: record.upper } : undefined),
+				...(isJsonString(record.work) ? { work: record.work } : undefined),
+			};
+		});
+		return {
+			root: snapshot.root,
+			workspaces,
+			...(isJsonNumber(snapshot.eventCount)
+				? { eventCount: snapshot.eventCount }
+				: undefined),
+		};
 	} catch {
-		return null;
+		throw new RiftRegistryError(
+			`invalid workspace snapshot at ${file}; file left untouched`,
+		);
 	}
 }
 
@@ -299,7 +479,7 @@ export function initRoot(root: string): RootInitResult {
 	const created = !existsSync(join(abs, RIFT_DIR));
 	mkdirSync(join(abs, RIFT_DIR, "workspaces"), { recursive: true });
 	if (created) {
-		writeRegistry({ root: abs, workspaces: [] });
+		writeRegistry({ root: abs, workspaces: [], eventCount: 0 });
 		record(abs, {
 			type: "RootInitialized",
 			at: new Date().toISOString(),
@@ -358,6 +538,7 @@ export function createWorkspace(options: CreateOptions): CreateResult {
 	}
 	const name: WorkspaceName = parsed.value;
 	if (!existsSync(join(root, RIFT_DIR))) initRoot(root);
+	registryForWrite(root);
 	// Claim the name before looking at the directory. Without this, two
 	// concurrent creates both see "no such workspace", and the second parks or
 	// recreates the tree the first is still copying into — two `cp -a` runs
@@ -542,7 +723,7 @@ export function removeWorkspace(root: string, name: string): boolean {
 	const abs = resolve(root);
 	const parsed = parseWorkspaceName(name);
 	if (!parsed.ok) return false;
-	const registry = readRegistry(abs);
+	const registry = registryForWrite(abs);
 	const existing = registry.workspaces.find((w) => w.name === parsed.value);
 	const base = join(abs, RIFT_DIR, "workspaces", parsed.value);
 	// Record the removal before deleting: a crash mid-rm then leaves debris

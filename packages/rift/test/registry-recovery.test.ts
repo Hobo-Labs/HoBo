@@ -27,6 +27,7 @@
  * crash would, because the states that matter here are states of files on disk.
  */
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -36,16 +37,21 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { WorkspaceEvent } from "../src/journal.js";
+import { type JsonObject, parseJsonObject } from "../src/json.js";
 
 import {
+	createWorkspace,
 	entriesToClone,
 	initRoot,
 	listDebris,
 	pruneDebris,
 	REGENERABLE,
+	type Registry,
 	RIFT_DIR,
 	readRegistry,
 	rebuildRegistry,
+	removeWorkspace,
 	type WorkspaceRecord,
 } from "../src/workspace.js";
 
@@ -60,11 +66,11 @@ function workspace(name: string, path: string): WorkspaceRecord {
 		tier: "copy",
 		source: "/src",
 		createdAt: "2026-08-20T00:00:00.000Z",
-	} as WorkspaceRecord;
+	};
 }
 
 /** Append a raw journal line, the way the runtime does. */
-function appendJournal(abs: string, event: unknown): void {
+function appendJournal(abs: string, event: WorkspaceEvent): void {
 	const dir = join(abs, RIFT_DIR);
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "events.jsonl"), `${JSON.stringify(event)}\n`, {
@@ -72,7 +78,10 @@ function appendJournal(abs: string, event: unknown): void {
 	});
 }
 
-function writeSnapshot(abs: string, body: unknown): void {
+function writeSnapshot(
+	abs: string,
+	body: Partial<Registry> | { root: string; workspaces: string },
+): void {
 	mkdirSync(join(abs, RIFT_DIR), { recursive: true });
 	writeFileSync(
 		join(abs, RIFT_DIR, "registry.json"),
@@ -80,14 +89,14 @@ function writeSnapshot(abs: string, body: unknown): void {
 	);
 }
 
-function readSnapshotFile(abs: string): Record<string, unknown> {
-	return JSON.parse(
+function readSnapshotFile(abs: string): JsonObject {
+	return parseJsonObject(
 		readFileSync(join(abs, RIFT_DIR, "registry.json"), "utf8"),
-	) as Record<string, unknown>;
+	);
 }
 
 /** A root with one workspace whose directory really exists on disk. */
-function rootWithWorkspace(): { abs: string; ws: WorkspaceRecord } {
+function rootWithWorkspace() {
 	const abs = initRoot(root()).root;
 	const path = join(abs, RIFT_DIR, "workspaces", "feature");
 	mkdirSync(path, { recursive: true });
@@ -164,37 +173,165 @@ describe("the journal is the authority", () => {
 		expect(readRegistry(abs).workspaces).toEqual([]);
 	});
 
-	it("falls back to the snapshot only when there is no journal at all", () => {
-		// A root from before journalling, or one never initialised. There is
-		// nothing authoritative to prefer, so the snapshot is all there is.
+	it("requires explicit repair when a snapshot has no journal", () => {
 		const abs = root();
 		const ws = workspace("legacy", join(abs, "legacy"));
 		writeSnapshot(abs, { root: abs, workspaces: [ws] });
-		expect(readRegistry(abs).workspaces.map((w) => w.name)).toEqual(["legacy"]);
+		expect(() => readRegistry(abs)).toThrow("workspace journal missing");
+		expect(rebuildRegistry(abs).undecidable).toContain("left untouched");
+		expect(readSnapshotFile(abs).workspaces).toEqual([ws]);
 	});
 
 	it("reports empty for a root with neither journal nor snapshot", () => {
 		expect(readRegistry(root()).workspaces).toEqual([]);
 	});
 
-	it("reports empty rather than throwing on an unreadable snapshot", () => {
-		// A half-written registry.json is what a crash during the snapshot step
-		// leaves. Throwing would make every command fail on a root that is
-		// otherwise fine.
+	it("reports and preserves an unreadable snapshot during repair", () => {
 		const abs = root();
 		writeSnapshot(abs, {});
 		writeFileSync(join(abs, RIFT_DIR, "registry.json"), "{not json");
-		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(() => rebuildRegistry(abs)).toThrow("invalid workspace snapshot");
+		expect(readFileSync(join(abs, RIFT_DIR, "registry.json"), "utf8")).toBe(
+			"{not json",
+		);
 	});
 
-	it("reports empty when the snapshot's workspaces are not an array", () => {
+	it("preserves a snapshot whose workspaces are not an array", () => {
 		const abs = root();
 		writeSnapshot(abs, { root: abs, workspaces: "all of them" });
-		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(() => rebuildRegistry(abs)).toThrow("invalid workspace snapshot");
+		expect(readSnapshotFile(abs).workspaces).toBe("all of them");
 	});
 });
 
 describe("repair", () => {
+	it("preserves the backup and refuses further changes after an interrupted repair", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const backup = join(abs, RIFT_DIR, "registry.repair-backup.json");
+		const body = JSON.stringify({ root: abs, workspaces: [ws], eventCount: 9 });
+		writeFileSync(backup, body);
+		writeFileSync(join(abs, RIFT_DIR, "registry.json"), "{torn");
+		expect(() => readRegistry(abs)).toThrow("unfinished workspace repair");
+		expect(() => createWorkspace({ root: abs, name: "new" })).toThrow(
+			"unfinished workspace repair",
+		);
+		expect(() => rebuildRegistry(abs)).toThrow("unfinished workspace repair");
+		expect(readFileSync(backup, "utf8")).toBe(body);
+	});
+
+	it("refuses creation when the journal is missing and leaves the snapshot intact", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const body = { root: abs, workspaces: [ws], eventCount: 2 };
+		writeSnapshot(abs, body);
+		rmSync(join(abs, RIFT_DIR, "events.jsonl"));
+		expect(() => createWorkspace({ root: abs, name: "new" })).toThrow(
+			"workspace journal missing",
+		);
+		expect(readSnapshotFile(abs)).toEqual(body);
+		expect(existsSync(join(abs, RIFT_DIR, "events.jsonl"))).toBe(false);
+	});
+
+	it("refuses mutations when a snapshot may contain newer work", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const body = { root: abs, workspaces: [ws], eventCount: 9 };
+		writeSnapshot(abs, body);
+		expect(() => createWorkspace({ root: abs, name: "new" })).toThrow(
+			"snapshot may contain newer work",
+		);
+		expect(() => removeWorkspace(abs, ws.name)).toThrow(
+			"snapshot may contain newer work",
+		);
+		expect(readSnapshotFile(abs)).toEqual(body);
+		expect(existsSync(ws.path)).toBe(true);
+	});
+
+	it("refuses mutations when the snapshot cannot be parsed", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const path = join(abs, RIFT_DIR, "registry.json");
+		writeFileSync(path, "{broken");
+		expect(() => createWorkspace({ root: abs, name: "new" })).toThrow(
+			"invalid workspace snapshot",
+		);
+		expect(() => removeWorkspace(abs, ws.name)).toThrow(
+			"invalid workspace snapshot",
+		);
+		expect(readFileSync(path, "utf8")).toBe("{broken");
+		expect(existsSync(ws.path)).toBe(true);
+	});
+
+	it("recreates a missing journal for a counted empty snapshot", () => {
+		const abs = root();
+		writeSnapshot(abs, { root: abs, workspaces: [], eventCount: 0 });
+		expect(() => readRegistry(abs)).toThrow("workspace journal missing");
+		expect(rebuildRegistry(abs).workspaces).toEqual([]);
+		expect(readRegistry(abs).workspaces).toEqual([]);
+	});
+
+	it("preserves invalid counts and duplicate workspace records", () => {
+		const abs = initRoot(root()).root;
+		const ws = workspace("feature", join(abs, "feature"));
+		for (const body of [
+			{ root: abs, workspaces: [ws], eventCount: -1 },
+			{ root: abs, workspaces: [ws], eventCount: 0 },
+			{ root: abs, workspaces: [ws], eventCount: 1.5 },
+			{ root: abs, workspaces: [ws, ws], eventCount: 2 },
+		]) {
+			writeSnapshot(abs, body);
+			expect(() => rebuildRegistry(abs)).toThrow("invalid workspace snapshot");
+			expect(readSnapshotFile(abs)).toEqual(body);
+		}
+	});
+
+	it("declines to overwrite an uncounted snapshot with unprojected work", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const body = {
+			root: abs,
+			workspaces: [ws, workspace("other", join(abs, "other"))],
+		};
+		writeSnapshot(abs, body);
+		expect(rebuildRegistry(abs).undecidable).toContain("left untouched");
+		expect(readSnapshotFile(abs)).toEqual(body);
+	});
+
+	it("preserves conflicting snapshots at the same event count", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const body = { root: abs, workspaces: [], eventCount: 2 };
+		writeSnapshot(abs, body);
+		expect(rebuildRegistry(abs).undecidable).toContain("left untouched");
+		expect(() => removeWorkspace(abs, ws.name)).toThrow(
+			"snapshot may contain newer work",
+		);
+		expect(readSnapshotFile(abs)).toEqual(body);
+	});
+
+	it("removes stale journal projections when restoring a newer snapshot", () => {
+		const { abs } = rootWithWorkspace();
+		const survivorPath = join(abs, RIFT_DIR, "workspaces", "survivor");
+		mkdirSync(survivorPath, { recursive: true });
+		writeSnapshot(abs, {
+			root: abs,
+			workspaces: [workspace("survivor", survivorPath)],
+			eventCount: 9,
+		});
+		expect(rebuildRegistry(abs).workspaces.map((entry) => entry.name)).toEqual([
+			"survivor",
+		]);
+		expect(readRegistry(abs).workspaces.map((entry) => entry.name)).toEqual([
+			"survivor",
+		]);
+		expect(existsSync(join(abs, RIFT_DIR, "registry.repair-backup.json"))).toBe(
+			false,
+		);
+	});
+
+	it("does not resurrect a removed workspace from a partially truncated journal", () => {
+		const { abs, ws } = rootWithWorkspace();
+		writeSnapshot(abs, { root: abs, workspaces: [], eventCount: 3 });
+		expect(rebuildRegistry(abs).workspaces).toEqual([]);
+		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(existsSync(ws.path)).toBe(true);
+	});
+
 	it("rewrites the snapshot from the journal", () => {
 		const { abs } = rootWithWorkspace();
 		writeSnapshot(abs, { root: abs, workspaces: [], eventCount: 0 });
@@ -207,7 +344,7 @@ describe("repair", () => {
 		// The count is the discriminator every later repair depends on. Omitting
 		// it makes the root permanently unjudgeable.
 		const { abs } = rootWithWorkspace();
-		expect(typeof rebuildRegistry(abs).eventCount).toBe("number");
+		expect(rebuildRegistry(abs).eventCount).toEqual(expect.any(Number));
 	});
 
 	it("restores from a snapshot that saw more history than the journal", () => {
