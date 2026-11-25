@@ -1,14 +1,3 @@
-/**
- * Whether GitHub Pages needs a deploy, decided from what is published.
- *
- * The release gate used to ask "did the commit that triggered this run touch a
- * release path?". That question forgets: a deploy that failed, a run that was
- * cancelled, or a commit that reached `main` in a merge-queue batch behind
- * another was never asked about again, and the site stayed on the last deploy
- * that happened to work. Asking "is `gh-pages` behind this commit?" has no
- * memory to lose, so the next green run on `main` publishes whatever an
- * earlier one missed.
- */
 import { setTimeout as delay } from "node:timers/promises";
 import {
 	isArray,
@@ -19,7 +8,6 @@ import {
 } from "./pins-json.ts";
 import { anyPathMatchesReleaseHoboFilters } from "./release-hobo-path-filters.mts";
 
-/** GitHub's compare endpoint returns at most this many files. */
 export const COMPARE_FILE_LIMIT = 300;
 
 export type PagesComparison =
@@ -27,14 +15,11 @@ export type PagesComparison =
 	| {
 			readonly status: "ahead";
 			readonly files: readonly string[];
-			/** True when the file list was cut off and cannot rule a path out. */
 			readonly truncated: boolean;
 	  };
 
 export interface PagesSource {
-	/** Subject of the commit `gh-pages` points at; undefined when there is no such branch. */
 	deployedMessage(): Promise<string | undefined>;
-	/** How `head` relates to `base`; undefined when the repository does not know `base`. */
 	compare(base: string, head: string): Promise<PagesComparison | undefined>;
 }
 
@@ -44,11 +29,6 @@ export interface PagesDeployDecision {
 	readonly deployedSha?: string;
 }
 
-/**
- * The source commit a `gh-pages` deploy commit names. Both publishers write
- * one: the release workflow (`deploy: <sha>`) and `scripts/deploy-site.mts`
- * (`deploy: site + media @ <short sha>`).
- */
 export function parseDeployedSha(message: string): string | undefined {
 	const subject = message.split("\n", 1)[0]?.trim() ?? "";
 	const match = /^deploy:.*?\b([0-9a-f]{7,64})$/i.exec(subject);
@@ -59,7 +39,6 @@ export async function decidePagesDeploy(options: {
 	readonly head: string;
 	readonly filters: readonly string[];
 	readonly source: PagesSource;
-	/** Publish without asking whether a release path changed. Never rolls back. */
 	readonly force?: boolean;
 }): Promise<PagesDeployDecision> {
 	const { head, filters, source, force = false } = options;
@@ -84,7 +63,6 @@ export async function decidePagesDeploy(options: {
 	}
 	switch (comparison.status) {
 		case "behind":
-			// An older run finishing late must not put an older site back.
 			return {
 				deploy: false,
 				deployedSha,
@@ -142,7 +120,6 @@ export async function decidePagesDeploy(options: {
 	}
 }
 
-/** One GitHub API answer: the status and the body as it arrived. */
 export type PagesApiRequest = (
 	url: string,
 	headers: Readonly<
@@ -152,8 +129,6 @@ export type PagesApiRequest = (
 	},
 ) => Promise<{ readonly status: number; readonly text: string }>;
 
-// The gate runs on a sparse checkout before any `pnpm install`, so it reads the
-// two answers it needs with the built-in JSON readers in pins-json.ts.
 function child(value: Json | undefined, key: string, at: string): Json {
 	const found = isObject(value) ? value[key] : undefined;
 	if (found === undefined) throw new Error(`${at}: missing ${key}`);
@@ -165,7 +140,6 @@ function stringAt(value: Json | undefined, at: string): string {
 	return value;
 }
 
-/** `GET /repos/{repo}/branches/{branch}`: the message of the commit it points at. */
 export function parseBranchMessage(json: Json | undefined): string {
 	const commit = child(
 		child(json, "commit", "branch"),
@@ -178,8 +152,6 @@ export function parseBranchMessage(json: Json | undefined): string {
 const COMPARE_STATUSES = ["ahead", "behind", "identical", "diverged"] as const;
 type CompareStatus = (typeof COMPARE_STATUSES)[number];
 
-/** `GET /repos/{repo}/compare/{base}...{head}`: the status and every path listed, renames twice. */
-/** What a compare answer says, renames listed under both paths. */
 export interface Comparison {
 	readonly status: CompareStatus;
 	readonly listed: number;
@@ -193,7 +165,6 @@ export function parseComparison(json: Json | undefined): Comparison {
 		throw new Error(`compare: unknown status ${JSON.stringify(reported)}`);
 	const files = isObject(json) && "files" in json ? json.files : [];
 	if (!isArray(files)) throw new Error("compare: files is not a list");
-	// A rename moves content out of one path and into another; both count.
 	const paths = files.flatMap((file, index) => {
 		const filename = stringAt(
 			child(file, "filename", `files[${index}]`),
@@ -215,7 +186,6 @@ const requestOverHttp: PagesApiRequest = async (url, headers) => {
 	return { status: response.status, text: await response.text() };
 };
 
-/** The published branch and the commit graph, read from the GitHub API. */
 export function githubPagesSource(options: {
 	readonly repository: string;
 	readonly token: string;
@@ -239,7 +209,6 @@ export function githubPagesSource(options: {
 		? { ...base, authorization: `Bearer ${options.token}` }
 		: base;
 
-	/** The parsed answer, or undefined for 404. Anything else is retried, then thrown. */
 	async function get<T>(
 		path: string,
 		parse: (json: Json | undefined) => T,
