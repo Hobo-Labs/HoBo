@@ -62,7 +62,10 @@ packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 checkouts have `dist/` without pulling `@hobo/cd` source into the scripts lane.
 When `scripts/ci/attested-jobs.json` changes, bump `SHADOW_PLAN_BLOB` in
 `attestation.mts` to the git blob id
-`scripts/test/attested-jobs.test.ts` asserts.
+`scripts/test/attested-jobs.test.ts` asserts. The same test pins
+`SHADOW_WORKFLOW_BLOB` when `.github/workflows/hobo-ci.yml` changes; the
+main-gate **Verify agent plugin attestation** step passes the job
+`GITHUB_TOKEN` (`github.token`) into `agent-plugin:check --verify-attestation`.
 Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).

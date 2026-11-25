@@ -53,6 +53,7 @@ describe("main full gate workspace sharding", () => {
 			verification,
 			/run: pnpm run agent-plugin:build && pnpm run agent-plugin:check -- --verify-attestation/u,
 		);
+		assert.match(verification, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
 		assert.doesNotMatch(main, /name: Workspace tests/u);
 		assert.doesNotMatch(main, /Plan main workspace test shards/u);
 	});

@@ -1862,6 +1862,8 @@ jobs:
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
       - name: Verify agent plugin attestation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: pnpm run agent-plugin:build && pnpm run agent-plugin:check -- --verify-attestation
       - name: S0 gate set
         timeout-minutes: 20
