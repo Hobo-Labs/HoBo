@@ -202,10 +202,7 @@ export function createGhPickRunnerRegistry(
 			},
 		}),
 		actions: {
-			enqueueJob: async (
-				c,
-				raw: JsonValue,
-			): Promise<GhPickRunnerJobRecord> => {
+			enqueueJob: async (c, raw: JsonValue): Promise<GhPickRunnerJobRecord> => {
 				const input = decodeEnqueuePickRunnerInput(raw);
 				const existingRows = decodePickRunnerRows(
 					await c.db.execute(
