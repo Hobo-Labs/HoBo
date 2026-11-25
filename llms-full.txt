@@ -1136,6 +1136,7 @@ Which host is a **standing decision**: the same idea as [continuous migration](/
 | [Providers](/HoBo/ci/providers/) | What each provider costs, who it serves, how to connect it |
 | [Fleet balancing](/HoBo/ci/fleet-balancing/) | Eligibility → price → policy, on worked decisions |
 | [Route table](/HoBo/ci/route-table/) | Publishing the choice so a job can ask for the right label |
+| [Runner order](/HoBo/ci/runner-order/) | A committed list of runner types, walked first-fit when HoBo CI decides for a job |
 | [Host health](/HoBo/ci/host-health/) | The box watching its own CPU, memory and disk |
 | [Errors & codes](/HoBo/reference/errors/#ci-fleet) | Stable refusal codes (reference) |
 
@@ -1451,9 +1452,9 @@ Jog, Boat and Lizard are the kinds `jog`, `boat` and `lizard`:
 
 <!-- HoBo CI · Fleet balancing · https://tyler-r-kendrick.github.io/HoBo/ci/fleet-balancing/ -->
 
-# Fleet balancing
+# Runner routing
 
-Given a job and the providers an account has connected, the balancer returns **every provider that could take the job, best first**, and a **coded reason** for each one that could not. Nothing is chosen silently.
+Runner routing chooses a runner *provider* for a job by tier and cost; it is routing, not a fleet. Given a job and the providers an account has connected, the balancer returns **every provider that could take the job, best first**, and a **coded reason** for each one that could not. Nothing is chosen silently.
 
 ## Same path as placement
 
@@ -1486,7 +1487,7 @@ Each table is the balancer's **real output** for a 20-minute job: the whole cata
 A pull request on a public, organization-owned repository. The box is first because it is already paid for; everything after it is what the job would fall to.
 
 <!-- generated:box-free:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -1524,7 +1525,7 @@ A pull request on a public, organization-owned repository. The box is first beca
 The box drops out with `fleet.capacity`. The cheapest rented provider that may serve a public repository takes the job: Blacksmith, because the job fits inside its included minutes.
 
 <!-- generated:box-full:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -1562,7 +1563,7 @@ The box drops out with `fleet.capacity`. The cheapest rented provider that may s
 A private repository's trunk job does not need its own machine, so the shared ARC cluster is allowed, and wins: rented-tier capacity that adds nothing to the bill.
 
 <!-- generated:private-trunk:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -1600,7 +1601,7 @@ A private repository's trunk job does not need its own machine, so the shared AR
 The job is queued on the label `hobo`. A queued job cannot change its label, so every label provider is out with `fleet.label-bound`; only injected capacity can still reach it.
 
 <!-- generated:queued:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -1638,7 +1639,7 @@ The job is queued on the label `hobo`. A queued job cannot change its label, so 
 A $5 budget with $5 committed. Every provider that would add to the bill is refused by the budget policy, and the job falls through to capacity that costs nothing.
 
 <!-- generated:budget-spent:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -1676,7 +1677,7 @@ A $5 budget with $5 committed. Every provider that would add to the bill is refu
 The box has free slots, but its [host health](/HoBo/ci/host-health/) is critical. It is skipped with `fleet.unhealthy`.
 
 <!-- generated:box-unhealthy:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 | Rank | Member | Tier | Job asks for | Adds to the bill |
 | --- | --- | --- | --- | --- |
@@ -1715,7 +1716,7 @@ Three families, all stable. The full list with retry guidance is in [Errors & co
 
 | Family | Raised by | Example |
 |---|---|---|
-| `fleet.` | The fleet's own eligibility and ceilings | `fleet.capacity` |
+| `fleet.` | Runner routing's own eligibility and ceilings (the prefix is kept for compatibility) | `fleet.capacity` |
 | `pricing.` | The pricing engine, with its own code after the prefix | an expired rate |
 | `budget.` | The budget policy, with its own code after the prefix | `budget.policy.exhausted` |
 
@@ -1725,14 +1726,17 @@ The balancer is a pure function in `@hobo/ci`: no I/O, no clock.
 
 ```ts
 import {
-  balanceFleet,
-  fleetAccountExposure,
-  fleetBudgetPolicy,
-  fleetMembersFromAccount,
+  balanceRunnerProviders,
+  runnerAccountExposure,
+  runnerBudgetPolicy,
+  runnerProvidersFromAccount,
 } from "@hobo/ci";
 
-const decision = balanceFleet({
-  members: fleetMembersFromAccount(account, leases, { poolLabel: "hobo" }),
+const decision = balanceRunnerProviders({
+  members: runnerProvidersFromAccount(account, leases, {
+    poolLabel: "hobo",
+    hoboCapacity: verdict.capacity, // optional: the hobo fleet's FleetCapacity
+  }),
   demand: {
     id: "acme/app:1001:1:1",
     minutes: 20,
@@ -1741,8 +1745,8 @@ const decision = balanceFleet({
     needsDocker: true,
     isolationRequired: true,
   },
-  policy: fleetBudgetPolicy(account),
-  ...fleetAccountExposure(account, leases),
+  policy: runnerBudgetPolicy(account),
+  ...runnerAccountExposure(account, leases),
   now: new Date().toISOString(),
   allowNewProviderAgreements: false,
 });
@@ -1752,30 +1756,26 @@ decision.ranking; // every admitted provider, best first
 decision.refusals; // [{ memberId, code, reason }]
 ```
 
-`fleetMembersFromAccount` builds the fleet from the offers an account really has. The **offer** supplies what was observed for that account: rate, included minutes, ceiling. The **model** supplies what does not vary by account: rounding, plan fee, eligibility, tier.
+`runnerProvidersFromAccount` builds the provider list from the offers an account really has. Given the hobo fleet's `FleetCapacity` from its fleet verdict, the hobo provider's health and active jobs are read from it rather than from the relay's own leases. The **offer** supplies what was observed for that account: rate, included minutes, ceiling. The **model** supplies what does not vary by account: rounding, plan fee, eligibility, tier.
 
 ## What balancing is not
 
 - Not admission of a queued job: a job already waiting on `hobo` is still admitted in the existing box → ARC → GitHub order. The balancer decides ahead of the queue.
 - Not a launcher: Agent37, Modal and Boat sandboxes appear in these decisions because they are modelled, but no host driver starts a runner on them yet.
-- Not a health monitor for rented providers: only the box reports its health.
+- Not a health monitor for rented providers: only the hobo fleet reports its health, through its capacity.
 - Not a way to open paid plans: placing a job never subscribes to anything unless policy allows it.
 
 ## Related
 
-[Providers](/HoBo/ci/providers/) · [Route table](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/) · [Continuous migration](/HoBo/cicd/migration/)
+[Providers](/HoBo/ci/providers/) · [Runner routes](/HoBo/ci/route-table/) · [Host health](/HoBo/ci/host-health/) · [Continuous migration](/HoBo/cicd/migration/)
 
 ---
 
 <!-- HoBo CI · Route table · https://tyler-r-kendrick.github.io/HoBo/ci/route-table/ -->
 
-# CI route table
+# CI runner routes
 
-A **label** provider can only take a job that asks for its label, and GitHub fixes the label when the job is queued. So the relay decides before that, and publishes the decision where a workflow can read it without running anything: one repository variable, **`HOBO_CI_FLEET_ROUTES`**.
-
-## What is published
-
-After a dispatch pass the relay [balances](/HoBo/ci/fleet-balancing/) three representative jobs against the account's connected providers.
+A **label** provider can only take a job that asks for its label, and GitHub fixes the label when the job is queued. So the choice of label has to be made before that. [Runner routing](/HoBo/ci/fleet-balancing/) makes it: it balances a representative job of each class against the account's connected providers.
 
 | Class | Stands for |
 |---|---|
@@ -1786,7 +1786,7 @@ After a dispatch pass the relay [balances](/HoBo/ci/fleet-balancing/) three repr
 While the box has room, every class stays where it is today:
 
 <!-- generated:routes-box-free:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 ```json
 {"fork":"hobo","pr":"hobo","trunk":"hobo-trunk"}
@@ -1797,7 +1797,7 @@ While the box has room, every class stays where it is today:
 When the box is full, new jobs are pointed at the best provider that can take them:
 
 <!-- generated:routes-box-full:start -->
-<!-- Generated from the fleet code by packages/ci/scripts/fleet-docs.ts. Do not edit by hand. -->
+<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->
 
 ```json
 {"fork":"hobo","pr":"blacksmith-4vcpu-ubuntu-2404","trunk":"blacksmith-4vcpu-ubuntu-2404"}
@@ -1805,53 +1805,20 @@ When the box is full, new jobs are pointed at the best provider that can take th
 
 <!-- generated:routes-box-full:end -->
 
-Both are the relay's real output for the catalog in [Fleet balancing](/HoBo/ci/fleet-balancing/). A class keeps its own label when its best provider is injected, or when none is admitted: that is where a waiting job can still be rescued.
+Both are runner routing's real output for the catalog in [Runner routing](/HoBo/ci/fleet-balancing/). A class keeps its own label when its best provider is injected, or when none is admitted: that is where a waiting job can still be rescued.
 
-## Turn it on
+## How a workflow learns the route
 
-| Step | Detail |
+The relay no longer publishes this table as a repository variable. The variables that carried the route table and the box's capacity have been removed with the code that wrote them.
+
+| Question | Answered by |
 |---|---|
-| 1. Permission | Give the HoBo CI GitHub App repository permission **Variables: write** |
-| 2. Flag | Start the box daemon with `HOBO_CI_FLEET_ROUTES=1`. `0` or unset is off; any other value refuses to start |
-
-The daemon's startup record reports `publishFleetRoutes`.
-
-## How it behaves
-
-| Behavior | Rule |
-|---|---|
-| Computing | At most every 15 seconds for a repository |
-| Writing | Only when the value changes, and at most once a minute, so a label cannot flap with every freed slot |
-| A successful write | Logs `hobo_ci_fleet_routes_published` with the repository and value |
-| A refused write | Logs `hobo_ci_fleet_routes_error` with the HTTP status; not attempted again for ten minutes |
-| A failure to publish | Never disturbs admission. Jobs on `hobo` are admitted exactly as before |
-
-## Turn it off
-
-The variable **outlives the daemon**.
-
-| Stop | What happens to the table |
-|---|---|
-| Drain | Every class is put back on its own label before the daemon exits |
-| Handoff (the default for a deploy) | Left in place for the successor |
-| Restart with publishing off | Untouched |
-| Crash | The last table stays in force |
-
-To turn publishing off for good, **delete the variable**.
-
-## Reading it from a workflow
-
-The intended shape is one expression per job, falling back to today's label when the variable is unset or a class is missing:
-
-```yaml
-jobs:
-  test:
-    runs-on: ${{ fromJSON(vars.HOBO_CI_FLEET_ROUTES || '{}').pr || 'hobo' }}
-```
+| Is the hobo fleet open, and how many slots are free? | The route job fetches the hobo fleet's **fleet verdict** and reads its capacity. Its mode values (`fleet`, `local`, `github`) and its output `tier=fleet` are unchanged |
+| Which provider should take a job the fleet cannot? | Runner routing, as above, with the hobo provider's health and active jobs read from the same fleet capacity |
 
 ## Status honesty
 
-**No HoBo workflow reads the variable yet**, and the expression above has not been run on HoBo's own CI. Turning publishing on changes no job's runner today, so it is safe to enable in order to watch what the fleet would choose. Two things come first:
+Choosing a label provider ahead of the queue still needs two things before HoBo's own workflows rely on it:
 
 | Needed | Why |
 |---|---|
@@ -1860,7 +1827,52 @@ jobs:
 
 ## Related
 
-[Fleet balancing](/HoBo/ci/fleet-balancing/) · [Providers](/HoBo/ci/providers/) · [Host health](/HoBo/ci/host-health/)
+[Runner routing](/HoBo/ci/fleet-balancing/) · [Providers](/HoBo/ci/providers/) · [Host health](/HoBo/ci/host-health/)
+
+---
+
+<!-- HoBo CI · Runner order · https://tyler-r-kendrick.github.io/HoBo/ci/runner-order/ -->
+
+# Runner order
+
+A **runner order** is a list you commit: for example "the HoBo fleet, then my machines, then Blacksmith while it is under $100 this month, then GitHub-hosted". A job takes the first runner type in the list that can run it now. Nothing is ranked; the list is walked as written. The decision record is [ADR-0183](https://github.com/Hobo-Labs/HoBo/blob/main/docs/ci/runner-order.md).
+
+## Where it lives
+
+The order is the `runnerOrder` block in `.hobo/ci.json`. A change to it is a commit someone reviews; no dashboard or variable carries it. A block that is there but broken is refused with the parser's sentence, never replaced by a default.
+
+## Where routing happens
+
+Routing happens in HoBo CI, never in a workflow. The only HoBo CI change a workflow gets is `runs-on` set to a HoBo label (`hobo ci init --apply` writes it); HoBo CI walks the order when it claims the job. HoBo ships no workflow that runs a routing or evaluator job.
+
+In **relay mode** a HoBo node claims a check job (HoBo `pr-title` or `lint` steps only) labelled `hobo-relay` and completes it, so no runner minute is billed. It never routes: a job on that label that asks to be routed fails. It needs a deployed relay, and `relayJobs.answer` turned on for the node and the repository.
+
+When nothing in the order can take the job, it fails with the reason as an annotation. When the only runners that fit are busy, the job waits on that runner's label.
+
+## Around it
+
+| Command | What it does |
+|---|---|
+| `hobo ci route` | Shows the decision for a job and every step passed over, with the reason |
+| `hobo ci machine connect` | Connects this computer; each job gets a fresh container. `pause`, `resume`, `share` and `remove` manage it |
+| `hobo ci provider-health` | Lists hosted runner types that missed jobs, and clears one |
+| `hobo ci activity`, `usage`, `performance`, `signals`, `diagnose` | Where jobs ran and why, minutes and spend, times, wasted time, and why a job failed |
+
+The relay also serves a read-only dashboard, a read API with an OpenAPI description and read-only MCP tools.
+
+## Status honesty
+
+Each capability is one case on the generated [parity scorecard](https://github.com/Hobo-Labs/HoBo/blob/main/docs/ci/parity-scorecard.md). A case passes at its tier or it is not claimed.
+
+| Run in production | Built, not yet run in production |
+|---|---|
+| `hobo ci diagnose` on a real failed run of the HoBo repository | Relay mode (off by default until one live run shows a check job claimed with no billed minute) |
+| | Machine connect, runner-less checks, the billing reader |
+| | `route`, `init` and `signals` against the HoBo repository (no run linked yet) |
+
+## Related
+
+[HoBo CI overview](/HoBo/ci/) · [Route table](/HoBo/ci/route-table/) · [Providers](/HoBo/ci/providers/)
 
 ---
 
