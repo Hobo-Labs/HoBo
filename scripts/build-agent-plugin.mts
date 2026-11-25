@@ -16,6 +16,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
+import { workloadOidcOf } from "../packages/hobo-ci/src/prepare.ts";
 import { agentPluginCiActive } from "./check-agent-plugin.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -163,8 +164,10 @@ export function agentPluginBuildAttestationIssue(
 	}
 	if (nonPublishing) return undefined;
 	if (env.GITHUB_JOB === "main-gate") return undefined;
-	const requestUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "";
-	const requestToken = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "";
+	const workloadOidc = workloadOidcOf(env);
+	const requestUrl = workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "";
+	const requestToken =
+		workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "";
 	let oidcRequestUrlValid = false;
 	if (requestUrl.length > 0) {
 		try {

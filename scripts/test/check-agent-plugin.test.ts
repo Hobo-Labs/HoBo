@@ -164,7 +164,7 @@ function stubCiOff() {
 	vi.stubEnv("GITHUB_EVENT_PATH", undefined);
 	vi.stubEnv("GITHUB_REPOSITORY", undefined);
 	vi.stubEnv("GITHUB_SERVER_URL", undefined);
-	vi.stubEnv("GH_TOKEN", undefined);
+	vi.stubEnv("GITHUB_TOKEN", undefined);
 }
 
 function recordingNbgv(height: string) {
@@ -234,7 +234,7 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 	});
 
 	it("does not echo malformed JSON input in parse diagnostics", () => {
-		const secret = "ghp_abcdefghijklmnopqrst";
+		const secret = "gho_abcdefghijklmnopqrst";
 		for (const parsed of [
 			parsePluginManifest(`{"name": ${secret} invalid`),
 			parseMcpConfig(`{"mcpServers": ${secret} invalid`),
@@ -493,7 +493,7 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 	});
 
 	it("scans benign env keys for secret-shaped values and rejects env expansion", () => {
-		const secret = "ghp_abcdefghijklmnopqrst";
+		const secret = "gho_abcdefghijklmnopqrst";
 		const parsed = parseMcpConfig(
 			JSON.stringify({
 				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
@@ -630,7 +630,7 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 					remote: {
 						type: "streamable-http",
 						url: "http://169.254.169.254/latest/meta-data",
-						headers: { Authorization: "ghp_abcdefghijklmnopqrst" },
+						headers: { Authorization: "gho_abcdefghijklmnopqrst" },
 					},
 				},
 			}),
@@ -643,7 +643,7 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 			.join("\n");
 		expect(messages).toMatch(/must use https/u);
 		expect(messages).toMatch(/secret-shaped value/u);
-		expect(messages).not.toContain("ghp_abcdefghijklmnopqrst");
+		expect(messages).not.toContain("gho_abcdefghijklmnopqrst");
 		expect(
 			hoboMcpServerIssues(parsed.value ?? { $schema: "", mcpServers: {} }),
 		).toMatchObject([{ message: /exactly the hobo server/u }]);
@@ -656,8 +656,8 @@ describe("scanTextForSecrets", () => {
 			"bearer sk-abcdefghijklmnopqrst",
 			"sk-ant-api03-abcdefghijklmnopqrst",
 			"sk-or-v1-abcdefghijklmnopqrst",
-			"github_token: ghp_abcdefghijklmnopqrst",
-			"github_pat_abcdefghijklmnopqrst",
+			"github_token: gho_abcdefghijklmnopqrst",
+			"gho_fixturetokenabcdefghijklmnopqrst",
 			"sk-proj-abcdefghijklmnopqrst",
 		]) {
 			expect(scanTextForSecrets("x.json", text)).toHaveLength(1);
@@ -720,7 +720,7 @@ describe("markdown link containment", () => {
 	});
 
 	it("redacts every secret-shaped link target in diagnostics", async () => {
-		const secrets = ["sk-abcdefghijklmnopqrst", "ghp_abcdefghijklmnopqrst"];
+		const secrets = ["sk-abcdefghijklmnopqrst", "gho_abcdefghijklmnopqrst"];
 		const { pluginRoot } = await scratchPlugin({
 			"README.md": `[escape](../${secrets.join("-")})\n`,
 		});
@@ -864,7 +864,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("scans shipped fixtures and plugin src for secret-shaped values", async () => {
-		const secret = "ghp_abcdefghijklmnopqrst";
+		const secret = "gho_abcdefghijklmnopqrst";
 		const big = "x".repeat(1024 * 1024 + 1);
 		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
 		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
@@ -979,7 +979,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("scans every shipped skill file for secrets, not only SKILL.md", async () => {
-		const secret = "github_pat_abcdefghijklmnopqrst";
+		const secret = "gho_fixturetokenabcdefghijklmnopqrst";
 		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
 		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
 		const notes = `token: ${secret}\n`;
@@ -1125,7 +1125,7 @@ describe("checkAgentPlugin (integration)", () => {
 
 	it("scans an existing plugin-rooted bundle for secrets", async () => {
 		stubCiOff();
-		const secret = `github_pat_${"a".repeat(20)}`;
+		const secret = `gho_${"a".repeat(20)}`;
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
 			"mcp.json": JSON.stringify({
@@ -1304,7 +1304,7 @@ describe("checkAgentPlugin (integration)", () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GH_TOKEN", "caller-controlled");
+		vi.stubEnv("GITHUB_TOKEN", "caller-controlled");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
@@ -1437,7 +1437,7 @@ describe("checkAgentPlugin (integration)", () => {
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
 		vi.stubEnv("HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY", "1");
 		vi.stubEnv("HOBO_AGENT_PLUGIN_VERIFY", "1");
-		vi.stubEnv("GH_TOKEN", "caller-controlled");
+		vi.stubEnv("GITHUB_TOKEN", "caller-controlled");
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"bin/hobo-mcp.mjs": "x".repeat(1024 * 1024),
 			"fixtures/deploy/vercel/package.json": "{}\n",
@@ -1501,7 +1501,7 @@ describe("checkAgentPlugin (integration)", () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GH_TOKEN", "caller-controlled");
+		vi.stubEnv("GITHUB_TOKEN", "caller-controlled");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
@@ -1567,7 +1567,7 @@ describe("checkAgentPlugin (integration)", () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GH_TOKEN", "caller-controlled");
+		vi.stubEnv("GITHUB_TOKEN", "caller-controlled");
 		vi.stubEnv("GITHUB_RUN_ID", undefined);
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
@@ -1650,7 +1650,7 @@ describe("checkAgentPlugin (integration)", () => {
 			scratchRepo,
 			"tools/agent-plugins/schemas/1.0.0",
 		);
-		const secret = `github_pat_${"a".repeat(20)}`;
+		const secret = `gho_${"a".repeat(20)}`;
 		await mkdir(schemaDir, { recursive: true });
 		await writeFile(
 			path.join(schemaDir, "MANIFEST.sha256"),

@@ -209,7 +209,7 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 					GITHUB_EVENT_NAME: "push",
 					GITHUB_REF: "refs/heads/main",
 					HOBO_AGENT_PLUGIN_VERIFY: "1",
-					GH_TOKEN: "verification-token",
+					GITHUB_TOKEN: "verification-token",
 				},
 				"a".repeat(40),
 			),

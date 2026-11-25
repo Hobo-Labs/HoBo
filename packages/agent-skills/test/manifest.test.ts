@@ -364,7 +364,7 @@ description: d
 
 	it("rejects unrecognized non-comment top-level YAML in strict skills", async () => {
 		const secrets = [
-			"github_pat_abcdefghijklmnopqrst",
+			"gho_fixturetokenabcdefghijklmnopqrst",
 			"sk-proj-abcdefghijklmnopqrst",
 		];
 		const root = await scratchTree({
@@ -396,7 +396,7 @@ description: d
 	it("never echoes credential-shaped rejected values in issue messages", async () => {
 		const secrets = [
 			"sk-abcdefghijklmnopqrst",
-			"github_pat_abcdefghijklmnopqrst",
+			"gho_fixturetokenabcdefghijklmnopqrst",
 		];
 		const root = await scratchTree({
 			"hobo-setup": `---\nname: ${secrets[0]}\ndescription: d\n---\n`,

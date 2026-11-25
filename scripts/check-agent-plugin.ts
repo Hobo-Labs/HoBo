@@ -1388,9 +1388,9 @@ async function bundleAttestationIssues(
 		}
 		return [];
 	}
-	if ((process.env.GH_TOKEN ?? "").trim().length === 0) {
+	if ((process.env.GITHUB_TOKEN ?? "").trim().length === 0) {
 		return failure(
-			"attestation verification requires GH_TOKEN with attestations:read; refusing to downgrade to an unverified bundle",
+			"attestation verification requires GITHUB_TOKEN with attestations:read; refusing to downgrade to an unverified bundle",
 		);
 	}
 	const runId = process.env.GITHUB_RUN_ID?.trim();
