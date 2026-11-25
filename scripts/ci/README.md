@@ -71,6 +71,13 @@ componentize fails indicates a **host vs WASI/preview2-shim view mismatch** (not
 `release-pages-browser-wit-smoke` on the **`hobo`** runner runs
 [`build-release-browser-wit-on-runner.mts`](build-release-browser-wit-on-runner.mts) — the same
 prebuild + `examples:runtime` chain as Pages publish, without pushing gh-pages.
+The smoke purges `site/public/examples/runtime`, sets `HOBO_BROWSER_WIT_FORCE_COMPONENTIZE=1`,
+and requires `.cache/browser-wit-componentize/componentize-proof.json` after build (cold
+componentize, not a verified runtime cache hit). Spawn results fail closed on `error`,
+`signal`, or non-zero `status` (`spawn-sync-fail-closed.mts`).
+
+`site/src/lib/examples/catalog-contract.ts` parser helpers accept `JsonValue | undefined` so
+root `typecheck:root` can follow imports from `site/scripts/build-browser-wit-runtime.mts`.
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in

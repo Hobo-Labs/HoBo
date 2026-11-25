@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { cp, readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -45,11 +46,22 @@ export function witPathIsUnderWorkRoot(
 	witPath: string,
 	workRoot: string,
 ): boolean {
-	const relative = path.relative(workRoot, path.resolve(witPath));
-	if (relative === "") {
+	let resolvedWit: string;
+	let resolvedRoot: string;
+	try {
+		resolvedWit = realpathSync.native(path.resolve(witPath));
+		resolvedRoot = realpathSync.native(path.resolve(workRoot));
+	} catch {
+		resolvedWit = path.resolve(witPath);
+		resolvedRoot = path.resolve(workRoot);
+	}
+	const rootPrefix = resolvedRoot.endsWith(path.sep)
+		? resolvedRoot
+		: `${resolvedRoot}${path.sep}`;
+	if (resolvedWit === resolvedRoot) {
 		return false;
 	}
-	return !relative.startsWith("..") && !path.isAbsolute(relative);
+	return resolvedWit.startsWith(rootPrefix);
 }
 
 export async function copyHostWitTreeIntoWorkRoot(

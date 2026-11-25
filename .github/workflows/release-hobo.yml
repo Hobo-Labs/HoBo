@@ -612,12 +612,7 @@ jobs:
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
       - name: Componentize browser WIT runtime (Pages release path)
-        env:
-          XDG_CACHE_HOME: ${{ runner.temp }}/xdg-cache
-        run: |
-          set -euo pipefail
-          mkdir -p "$XDG_CACHE_HOME"
-          node --no-warnings scripts/ci/build-release-browser-wit-on-runner.mts
+        run: node --no-warnings scripts/ci/build-release-browser-wit-on-runner.mts
 
   # The offline proof of the release realizer path: the built hobo CD
   # composition with release/hobo-release.delivery.ts as topology, against the

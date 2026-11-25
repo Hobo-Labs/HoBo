@@ -15,6 +15,11 @@ describe("release browser-wit runner smoke", () => {
 		expect(source).toMatch(/assertReleasePagesBrowserRuntimeWit/);
 		expect(source).toMatch(/releaseSitePrebuildTurboArgs/);
 		expect(source).toMatch(/examples:runtime/);
+		expect(source).toMatch(/exitSpawnFailClosed/);
+		expect(source).toMatch(/purgeColdComponentizeState/);
+		expect(source).toMatch(/assertComponentizeProof/);
+		expect(source).toMatch(/HOBO_BROWSER_WIT_FORCE_COMPONENTIZE/);
+		expect(source).not.toMatch(/build\.status \?\? 0/);
 	});
 
 	it("release-hobo workflow runs browser-wit smoke on hobo runner for PRs", () => {
@@ -35,7 +40,7 @@ describe("release browser-wit runner smoke", () => {
 		expect(block).toContain("'hobo'");
 		expect(block).toContain("RELEASE_PAGES_MATERIALIZE_PATHS");
 		expect(block).toContain("build-release-browser-wit-on-runner.mts");
-		expect(block).toContain("XDG_CACHE_HOME: ${{ runner.temp }}/xdg-cache");
+		expect(block).not.toContain("XDG_CACHE_HOME");
 	});
 
 	it("release PR gate requires browser-wit smoke on hobo runner", () => {

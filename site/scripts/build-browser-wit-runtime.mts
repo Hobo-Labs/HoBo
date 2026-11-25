@@ -26,6 +26,7 @@ import {
 	resolveBrowserWitComponentizeToolchain,
 } from "../../scripts/lib/browser-wit-toolchain.mts";
 import {
+	browserWitComponentizeProofPath,
 	createBrowserWitComponentizeWorkRoot,
 	removeBrowserWitWorkRoot,
 } from "../../scripts/lib/browser-wit-work-root.mts";
@@ -98,14 +99,22 @@ export async function buildBrowserWitRuntime(
 	const sourceDigest = sha256(new TextEncoder().encode(guestSource));
 	const toolchain = await resolveToolchain();
 	const buildDigest = await calculateBuildDigest(sourceDigest, toolchain.versions);
-	const cached = await reuseVerifiedRuntime(outputRoot, {
-		sourceDigest,
-		buildDigest,
-		toolchain: toolchain.versions,
-	});
-	if (cached) {
-		process.stderr.write("browser-wit: verified runtime cache hit\n");
-		return { outputRoot, componentDigest: cached };
+	const forceComponentize =
+		process.env.HOBO_BROWSER_WIT_FORCE_COMPONENTIZE === "1";
+	if (!forceComponentize) {
+		const cached = await reuseVerifiedRuntime(outputRoot, {
+			sourceDigest,
+			buildDigest,
+			toolchain: toolchain.versions,
+		});
+		if (cached) {
+			process.stderr.write("browser-wit: verified runtime cache hit\n");
+			return { outputRoot, componentDigest: cached };
+		}
+	} else {
+		process.stderr.write(
+			"browser-wit: HOBO_BROWSER_WIT_FORCE_COMPONENTIZE=1 (skip runtime cache)\n",
+		);
 	}
 	const { logical: workRootLogical, canonical: workRoot } =
 		await createBrowserWitComponentizeWorkRoot(REPO_ROOT);
@@ -165,6 +174,16 @@ export async function buildBrowserWitRuntime(
 			},
 		);
 		process.stderr.write("browser-wit: componentizing real guest\n");
+		await writeFile(
+			browserWitComponentizeProofPath(REPO_ROOT),
+			`${JSON.stringify({
+				schemaVersion: "hobo.browser-wit-componentize-proof/v1",
+				workRoot,
+				workRootLogical,
+				startedAt: new Date().toISOString(),
+			})}\n`,
+			"utf8",
+		);
 		const cacheHome = process.env.XDG_CACHE_HOME;
 		const built = await toolchain.componentize.componentize({
 			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
@@ -258,6 +277,17 @@ export async function buildBrowserWitRuntime(
 
 		await rm(outputRoot, { recursive: true, force: true });
 		await rename(staging, outputRoot);
+		await writeFile(
+			browserWitComponentizeProofPath(REPO_ROOT),
+			`${JSON.stringify({
+				schemaVersion: "hobo.browser-wit-componentize-proof/v1",
+				workRoot,
+				workRootLogical,
+				componentDigest,
+				finishedAt: new Date().toISOString(),
+			})}\n`,
+			"utf8",
+		);
 		process.stderr.write("browser-wit: runtime assets ready\n");
 		return { outputRoot, componentDigest };
 	} finally {

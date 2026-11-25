@@ -4,6 +4,16 @@ import path from "node:path";
 export const BROWSER_WIT_WORK_CACHE_RELATIVE =
 	".cache/browser-wit-componentize" as const;
 
+export const BROWSER_WIT_COMPONENTIZE_PROOF =
+	"componentize-proof.json" as const;
+
+export function browserWitComponentizeProofPath(repoRoot: string): string {
+	return path.join(
+		browserWitWorkCacheDir(repoRoot),
+		BROWSER_WIT_COMPONENTIZE_PROOF,
+	);
+}
+
 export function browserWitWorkCacheDir(repoRoot: string): string {
 	return path.join(repoRoot, BROWSER_WIT_WORK_CACHE_RELATIVE);
 }
