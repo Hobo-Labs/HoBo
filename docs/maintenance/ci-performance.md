@@ -814,6 +814,10 @@ Hosted Fabric workspace shards pass `save-playwright-cache: true` on
 `matrix.shard == 0` only so parallel shards do not race on a cold Playwright
 browser cache save (the same pattern as Turbo cache save on shard 0).
 
+`release-ts-autocode.yml` uses `hobo-checkout` with `TS_AUTOCODE_SPARSE_PATHS`
+so root manifest files are materialized outside cone-mode sparse-checkout (cone
+mode alone cannot list `package.json` alongside directory cones).
+
 ## Checks that went stale on main
 
 No workflow and no commit hook runs the scripts tests as a whole, only the files they name, so these
