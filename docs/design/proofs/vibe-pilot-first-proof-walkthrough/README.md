@@ -14,7 +14,7 @@ walkthrough with blocker routing.
 ## Evidence
 
 - Customer onboarding source: [`customer-onboarding.md`](https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3).
-- Workspace source: [`workspace-onboarding-ux.md`](../../workspace-onboarding-ux.md).
+- Workspace source: [`workspace-onboarding-ux.md`](https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35).
 - Support workflow source: [`support-workflow.md`](../../support-workflow.md).
 - Consumed storyboard proof: [`vibe-first-customer-pilot-storyboard`](../vibe-first-customer-pilot-storyboard/README.md).
 - Executable proof: [`vibe-pilot-first-proof-walkthrough`](../../../../src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough/README.md).

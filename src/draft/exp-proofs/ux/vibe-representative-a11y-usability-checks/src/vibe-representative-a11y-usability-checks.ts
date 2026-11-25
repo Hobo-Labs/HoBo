@@ -314,7 +314,7 @@ export const VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS: VibeRepresentativeA11yUs
   proofPath: "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md",
   designRefs: [
     "docs/design/accessibility-usability-launch-baseline.md",
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/deployment-dashboard-topology-explorer.md",
     "docs/design/marketplace-ux.md",

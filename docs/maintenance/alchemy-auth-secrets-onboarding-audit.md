@@ -78,7 +78,7 @@ Source: [`domain`](https://alchemy.run/domain).
 | **Tests** | In-memory **stories** (`Story.given/when/then`); production on Cloudflare DO / Rivet / Effect Cluster |
 | **Agent skill** | `alchemy-domain` shipped with package |
 
-HoBo analogue: CQRS/event store/actors for the control plane; **ADR-0135** covers the **Camp EventStore / actor journal**, not Better Auth `session` rows on `hobo:data/relational`. **No** `@alchemy.run/domain` dependency. Onboarding **design** contracts exist ([`docs/design/workspace-onboarding-ux.md`](../design/workspace-onboarding-ux.md)); they are not wired to Alchemy Domain stories.
+HoBo analogue: CQRS/event store/actors for the control plane; **ADR-0135** covers the **Camp EventStore / actor journal**, not Better Auth `session` rows on `hobo:data/relational`. **No** `@alchemy.run/domain` dependency. Onboarding **design** contracts exist ([`docs/design/workspace-onboarding-ux.md`](https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35)); they are not wired to Alchemy Domain stories.
 
 ### 1.6 Testing
 

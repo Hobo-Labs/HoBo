@@ -94,7 +94,7 @@ export const TUTORIALS_WALKTHROUGHS_SCOPE = {
       reason: "Supplies example-app proof modes and fixtures that tutorials can reuse.",
     },
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
       reason: "Defines first-run activation stages and stalled-state handoff inputs consumed by tutorials.",
     },
     {

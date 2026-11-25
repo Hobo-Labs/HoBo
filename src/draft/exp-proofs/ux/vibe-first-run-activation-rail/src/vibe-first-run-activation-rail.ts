@@ -104,7 +104,7 @@ export const VIBE_FIRST_RUN_ACTIVATION_RAIL = {
   targetPackage: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
   proofNote: "docs/design/proofs/vibe-first-run-activation-rail/README.md",
   designRefs: [
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],

@@ -188,7 +188,7 @@ export const ACCESSIBILITY_USABILITY_BASELINE = {
   ],
   dependencies: [
     {
-      source: "docs/design/workspace-onboarding-ux.md",
+      source: "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
       reason: "Names onboarding surfaces and explicitly scopes accessibility audit output out of workspace M0.",
     },
     {

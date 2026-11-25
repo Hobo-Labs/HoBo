@@ -103,7 +103,7 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
   proofPath: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3",
-    "docs/design/workspace-onboarding-ux.md",
+    "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "docs/design/support-workflow.md",
     "docs/design/beta-pilot-feedback.md",
     "docs/design/launch-blocker-taxonomy.md",
