@@ -63,6 +63,8 @@ export class JobDispatchFailed extends Domain.Event("JobDispatchFailed", {
 
 export class JobDispatchExpired extends Domain.Event("JobDispatchExpired", {
 	reason: NonEmptyReason,
+	stationId: Schema.NullOr(StationId),
+	slotId: Schema.NullOr(SlotId),
 }) {}
 
 export class ObserveJobDispatch extends Domain.Command(
@@ -145,7 +147,7 @@ export class ExpireJobDispatch extends Domain.Command(
 	},
 	{
 		description:
-			"Expire an unbound queued CI job once its queue deadline elapses.",
+			"Expire a queued or bound CI job once its dispatch deadline elapses.",
 	},
 ) {}
 
@@ -154,6 +156,7 @@ export const JobDispatchState = Schema.Union([
 	Schema.TaggedStruct("Queued", {
 		stationId: StationId,
 		requirements: JobRequirements,
+		deadlineSeconds: Schema.NullOr(PositiveSeconds),
 	}),
 	Schema.TaggedStruct("Bound", {
 		stationId: StationId,
@@ -163,6 +166,7 @@ export const JobDispatchState = Schema.Union([
 		runnerLabel: RunnerLabel,
 		externalRunnerId: ExternalRunnerId,
 		attempts: PositiveAttempts,
+		deadlineSeconds: Schema.NullOr(PositiveSeconds),
 	}),
 	Schema.TaggedStruct("Completed", {
 		stationId: StationId,
@@ -251,18 +255,36 @@ export class JobDispatch extends Domain.Aggregate("JobDispatch", {
 			state._tag === "Queued"
 				? [new JobDispatchFailed({ reason: cmd.reason })]
 				: [],
-		ExpireJobDispatch: (state, cmd) =>
-			state._tag === "Queued"
-				? [new JobDispatchExpired({ reason: cmd.reason })]
-				: [],
+		ExpireJobDispatch: (state, cmd) => {
+			if (state._tag === "Queued") {
+				return [
+					new JobDispatchExpired({
+						reason: cmd.reason,
+						stationId: state.stationId,
+						slotId: null,
+					}),
+				];
+			}
+			if (state._tag === "Bound") {
+				return [
+					new JobDispatchExpired({
+						reason: cmd.reason,
+						stationId: state.stationId,
+						slotId: state.slotId,
+					}),
+				];
+			}
+			return [];
+		},
 	},
 	evolve: {
 		JobDispatchObserved: (_state, event) => ({
 			_tag: "Queued" as const,
 			stationId: event.stationId,
 			requirements: event.requirements,
+			deadlineSeconds: event.deadlineSeconds,
 		}),
-		RunnerStartBound: (_state, event) => ({
+		RunnerStartBound: (state, event) => ({
 			_tag: "Bound" as const,
 			stationId: event.stationId,
 			poolId: event.poolId,
@@ -271,6 +293,7 @@ export class JobDispatch extends Domain.Aggregate("JobDispatch", {
 			runnerLabel: event.runnerLabel,
 			externalRunnerId: event.externalRunnerId,
 			attempts: event.attempts,
+			deadlineSeconds: state._tag === "Queued" ? state.deadlineSeconds : null,
 		}),
 		JobDispatchCompleted: (state, event) =>
 			state._tag === "Bound"

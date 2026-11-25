@@ -1,15 +1,19 @@
 import * as Domain from "@alchemy.run/domain";
+import type { Handler, TriggerOf } from "@alchemy.run/domain/Policy";
 import * as Effect from "effect/Effect";
 import { DispatchJob } from "./DispatchJob.saga.js";
-import { NonEmptyReason } from "./ids.js";
+import { NonEmptyReason, NonNegativeMicros } from "./ids.js";
 import {
 	ExpireJobDispatch,
 	JobDispatch,
 	JobDispatchCompleted,
+	JobDispatchExpired,
 	JobDispatchObserved,
 } from "./JobDispatch.aggregate.js";
 import { RunnerBackend } from "./RunnerBackend.external.js";
 import { ReleaseBalancedSlot, StationFleet } from "./StationFleet.aggregate.js";
+
+const ZERO_MICROS = NonNegativeMicros.make(0);
 
 export class JobObservedPolicy extends Domain.Policy(
 	"JobObservedPolicy",
@@ -61,6 +65,7 @@ export const JobCompletedPolicyLive = JobCompletedPolicy.toLayer(
 	Effect.gen(function* () {
 		const fleet = yield* StationFleet;
 		const backend = yield* RunnerBackend;
+		// SAFETY: Policy.Handler is typed void-only; releaseRunner failures must surface before slot settlement.
 		return Effect.fn(function* ({ event }) {
 			yield* backend.releaseRunner({
 				stationId: event.stationId,
@@ -73,6 +78,42 @@ export const JobCompletedPolicyLive = JobCompletedPolicy.toLayer(
 					settledMicros: event.settledMicros,
 				}),
 			);
-		});
+		}) as Handler<TriggerOf<typeof JobCompletedPolicy>>;
+	}),
+);
+
+export class JobExpiredPolicy extends Domain.Policy(
+	"JobExpiredPolicy",
+	{
+		from: JobDispatch,
+		on: [JobDispatchExpired],
+	},
+	{
+		description:
+			"Releases runner capacity and slot reservation when a bound job hits its deadline.",
+	},
+) {}
+
+export const JobExpiredPolicyLive = JobExpiredPolicy.toLayer(
+	Effect.gen(function* () {
+		const fleet = yield* StationFleet;
+		const backend = yield* RunnerBackend;
+		// SAFETY: Policy.Handler is typed void-only; releaseRunner failures must surface before slot settlement.
+		return Effect.fn(function* ({ event }) {
+			if (event.slotId === null || event.stationId === null) {
+				return;
+			}
+			yield* backend.releaseRunner({
+				stationId: event.stationId,
+				slotId: event.slotId,
+			});
+			yield* fleet.send(
+				event.stationId,
+				new ReleaseBalancedSlot({
+					slotId: event.slotId,
+					settledMicros: ZERO_MICROS,
+				}),
+			);
+		}) as Handler<TriggerOf<typeof JobExpiredPolicy>>;
 	}),
 );
