@@ -104,6 +104,110 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 	);
 });
 
+function fabricJobBlock(workflow: string, job: string): string {
+	const lines = workflow.split("\n");
+	const start = lines.indexOf(`  ${job}:`);
+	assert.notEqual(start, -1, `missing job ${job}`);
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex((line) => /^  [A-Za-z0-9_-]+:$/u.test(line));
+	return lines
+		.slice(start, end < 0 ? lines.length : start + 1 + end)
+		.join("\n");
+}
+
+function hostedPlaywrightPreflightWithInputs(withBlock: string): boolean {
+	return (
+		/browser:\s*"true"/u.test(withBlock) &&
+		/save-playwright-cache:\s*\$\{\{\s*matrix\.shard == 0 && 'true' \|\| 'false' \}\}/u.test(
+			withBlock,
+		)
+	);
+}
+
+function assertFabricShardHostedPlaywrightPreflight(
+	workflow: string,
+	job: string,
+): void {
+	const block = fabricJobBlock(workflow, job);
+	const match = block.match(
+		/- uses: \$\/\.github\/actions\/ci-runner-preflight\n        with:\n((?:          [^\n]+\n)+)/u,
+	);
+	assert.ok(
+		match?.[1] && hostedPlaywrightPreflightWithInputs(match[1]),
+		`${job} must run ci-runner-preflight with browser: "true" and shard-0 save wiring`,
+	);
+}
+
+test("Fabric workspace shards always install pinned Chromium on hosted runners", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	const preflight = await readFile(
+		new URL(
+			"../.github/actions/ci-runner-preflight/action.yml",
+			import.meta.url,
+		),
+		"utf8",
+	);
+	assert.doesNotMatch(workflow, /Decide Playwright install/u);
+	assert.doesNotMatch(workflow, /job-needs-playwright-browser\.mts/u);
+	for (const job of ["workspace_tests", "main_workspace_tests"])
+		assertFabricShardHostedPlaywrightPreflight(workflow, job);
+	assert.match(
+		preflight,
+		/Save Playwright headless shell \(hosted\)[\s\S]*inputs\.save-playwright-cache == 'true'/u,
+	);
+	assert.match(preflight, /Restore Playwright headless shell \(hosted\)/);
+	assert.match(
+		preflight,
+		/actions\/cache\/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/,
+	);
+	assert.match(
+		preflight,
+		/actions\/cache\/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/,
+	);
+	assert.match(
+		preflight,
+		/playwright-chromium-headless-shell-\$\{\{ hashFiles\('pnpm-lock.yaml', 'scripts\/lib\/ci-runner-contract\.mts', 'scripts\/lib\/playwright-headless-shell-install\.mts', 'scripts\/lib\/playwright-headless-shell-archive\.mts', 'scripts\/ci\/install-hosted-playwright-browser\.mts'\) \}\}/,
+	);
+	assert.doesNotMatch(
+		preflight,
+		/restore-keys:[\s\S]*playwright-chromium-headless-shell-\$\{\{ runner\.arch \}\}-/u,
+	);
+	assert.match(preflight, /install-hosted-playwright-browser\.mts/);
+	assert.doesNotMatch(preflight, /PLAYWRIGHT_BROWSERS_PATH=\/opt\/pw-browsers/);
+});
+
+test("Fabric shard Playwright preflight guard rejects missing browser or preflight step", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	for (const job of ["workspace_tests", "main_workspace_tests"]) {
+		const block = fabricJobBlock(workflow, job);
+		const browserOff = workflow.replace(
+			block,
+			block.replace('browser: "true"', 'browser: "false"'),
+		);
+		assert.throws(
+			() => assertFabricShardHostedPlaywrightPreflight(browserOff, job),
+			/ci-runner-preflight with browser: "true"/u,
+		);
+		const stepRemoved = workflow.replace(
+			block,
+			block.replace(
+				/      - uses: \$\/\.github\/actions\/ci-runner-preflight\n        with:\n          browser: "true"\n          save-playwright-cache: \$\{\{ matrix\.shard == 0 && 'true' \|\| 'false' \}\}\n/,
+				"",
+			),
+		);
+		assert.throws(
+			() => assertFabricShardHostedPlaywrightPreflight(stepRemoved, job),
+			/ci-runner-preflight/u,
+		);
+	}
+});
+
 test("workflow conditions never read the secrets context", async () => {
 	const directory = new URL("../.github/workflows/", import.meta.url);
 	const files = (await readdir(directory)).filter((name) =>

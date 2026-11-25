@@ -180,11 +180,31 @@ runs:
       id: checkout3
       if: steps.checkout1.outcome != 'success' && steps.checkout2.outcome != 'success'
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      continue-on-error: true
       with:
         clean: false
         ref: ${{ inputs.ref }}
         fetch-depth: ${{ inputs.fetch-depth }}
         filter: blob:none
+        fetch-tags: false
+        sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
+        sparse-checkout-cone-mode: true
+    - name: Reset partial clone before full-clone fallback
+      if: steps.checkout1.outcome != 'success' && steps.checkout2.outcome != 'success' && steps.checkout3.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Partial sparse checkout failed after 3 promisor attempts; retrying with a full non-partial fetch"
+        rm -rf .git
+    - name: Sparse checkout (full clone fallback)
+      id: checkout_full
+      if: steps.checkout1.outcome != 'success' && steps.checkout2.outcome != 'success' && steps.checkout3.outcome != 'success'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      continue-on-error: true
+      with:
+        clean: false
+        ref: ${{ inputs.ref }}
+        fetch-depth: ${{ inputs.fetch-depth }}
         fetch-tags: false
         sparse-checkout: ${{ steps.sparse.outputs.dir_cones }}
         sparse-checkout-cone-mode: true
@@ -194,10 +214,11 @@ runs:
         set -euo pipefail
         if [ "${{ steps.checkout1.outcome }}" = "success" ] \
           || [ "${{ steps.checkout2.outcome }}" = "success" ] \
-          || [ "${{ steps.checkout3.outcome }}" = "success" ]; then
+          || [ "${{ steps.checkout3.outcome }}" = "success" ] \
+          || [ "${{ steps.checkout_full.outcome }}" = "success" ]; then
           exit 0
         fi
-        echo "::error::sparse checkout failed after 3 attempts (partial clone / promisor fetch)"
+        echo "::error::sparse checkout failed after 3 partial attempts and 1 full-clone fallback (promisor fetch)"
         exit 1
     - name: Initialize sparse cone before root files
       shell: bash
