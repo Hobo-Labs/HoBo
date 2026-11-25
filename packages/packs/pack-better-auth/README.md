@@ -15,13 +15,19 @@ infrastructure inside the adapter.
   must wire before the bundle can run.
 - `plan.ts` — `planBetterAuthBundle`: parse-checked config + port refs → frozen
   plan; calls `assertBetterAuthRuntimeAvailable` when execution is requested.
+- `migrations.ts` — `planBetterAuthRelationalMigrations`: ADR-0160
+  `diffSchemaIr` from an empty postgres baseline (or supplied current schema)
+  to the pinned Better Auth `SchemaIr` fixture — expand-only on first deploy.
+- `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
+  governed data-plane migrations (not adapter-private DDL).
 
 ## HONEST SCOPE
 
 - **No `better-auth` dependency** in this package. The npm module is an optional
   peer installed by the deployed bundle.
-- **No database provisioning, migrations, or HTTP serving** yet. Planning and
-  fail-closed gating only; runtime wiring lands in follow-up PRs per
+- **No database provisioning, migration apply, or HTTP serving** yet. Relational
+  schema planning and bundle gating only; SQL execution and runtime wiring land
+  in follow-up PRs per
   [`docs/maintenance/alchemy-auth-secrets-onboarding-audit.md`](../../../docs/maintenance/alchemy-auth-secrets-onboarding-audit.md).
 
 ## Parse, don't validate
