@@ -8,7 +8,7 @@ analytics, support tooling, security intake, hosting, or marketing publication.
 The authoritative design record is
 [`docs/design/docs-portal.md`](../../../../../docs/design/docs-portal.md).
 Branch evidence is summarized in
-[`docs/design/proofs/hobo-434-docs-portal`](../../../../../docs/design/proofs/hobo-434-docs-portal/README.md).
+[`docs/design/proofs/hobo-434-docs-portal`](https://linear.app/quickdeploy-ai/document/hobo-434-docs-portal-m0-scope-proof-archived-75386bc9e701).
 
 ## Proof
 

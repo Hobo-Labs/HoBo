@@ -54,4 +54,4 @@ Related records:
 
 - [DX SDK resilience semantics](../../../../../docs/design/dx-sdk-resilience-semantics.md)
 - [SDK contracts](../../../../../docs/design/sdk-contracts.md)
-- [HOBO-514 proof record](../../../../../docs/design/proofs/hobo-514-dx-sdk-resilience/README.md)
+- [HOBO-514 proof record](https://linear.app/quickdeploy-ai/document/hobo-514-dx-sdk-resilience-scope-proof-archived-340bcae93e40)

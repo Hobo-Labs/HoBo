@@ -10,7 +10,7 @@ initiative dependencies, listing states, installability outcomes, M1 evidence, a
 The durable design record lives in
 [`docs/design/marketplace-ux.md`](../../../../../docs/design/marketplace-ux.md). Branch evidence is
 summarized in
-[`docs/design/proofs/hobo-421-marketplace-ux`](../../../../../docs/design/proofs/hobo-421-marketplace-ux/README.md).
+[`docs/design/proofs/hobo-421-marketplace-ux`](https://linear.app/quickdeploy-ai/document/hobo-421-marketplace-ux-proof-archived-2febd428c9fa).
 
 ## Contract Surface
 
