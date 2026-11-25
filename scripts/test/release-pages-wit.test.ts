@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -7,11 +8,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
-	RELEASE_PAGES_BROWSER_RUNTIME_WIT_FILE,
 	assertReleasePagesBrowserRuntimeWit,
+	RELEASE_PAGES_BROWSER_RUNTIME_WIT_FILE,
 } from "../lib/release-pages-wit.mts";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -21,18 +21,18 @@ describe("release pages browser-runtime wit preflight", () => {
 		expect(existsSync(join(root, RELEASE_PAGES_BROWSER_RUNTIME_WIT_FILE))).toBe(
 			true,
 		);
-		expect(() => assertReleasePagesBrowserRuntimeWit(root, "HEAD")).not.toThrow();
+		expect(() =>
+			assertReleasePagesBrowserRuntimeWit(root, "HEAD"),
+		).not.toThrow();
 	});
 
 	it("rejects a stale on-disk wit file that does not match HEAD (run 45539357482)", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-pages-wit-"));
 		try {
 			execFileSync("git", ["init", "-q"], { cwd: dir });
-			execFileSync(
-				"git",
-				["config", "user.email", "wit-test@hobo.local"],
-				{ cwd: dir },
-			);
+			execFileSync("git", ["config", "user.email", "wit-test@hobo.local"], {
+				cwd: dir,
+			});
 			execFileSync("git", ["config", "user.name", "wit-test"], { cwd: dir });
 			const witDir = join(dir, "examples/browser-runtime/wit");
 			mkdirSync(witDir, { recursive: true });
