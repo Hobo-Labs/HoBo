@@ -110,7 +110,7 @@ Member names do not verify independent vendors.
   from a partitioned writer), whose writes fall inside the plan's recovery
   point.
 - `tick()` runs `reconcileFleet` with the declared policy (`plan`, from
-  `continuityFleetPlan` in `@hobo/backend-fleet`) to copy standbys and decide
+  `continuityFleetPlan` in `@hobo/backend-routing`) to copy standbys and decide
   whether to switch writers, then takes a scheduled backup when one is due.
 - **Scheduled backups** (`plan.backups`: `backupEveryMs`, `backupsKept`) are
   kept on `backupTo`, else the first witness (`src/fleet-backups.ts`). Each is

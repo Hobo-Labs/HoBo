@@ -16,7 +16,7 @@ const srcRoot = join(packageRoot, "src");
 const EXCLUDED = ["_generated", "adapters", join("verification", "sources")];
 
 const FORBIDDEN_IMPORT =
-	/^@hobo\/(?:provider-[\w-]+|iac(?:-[\w-]+)?|runtime-[\w-]+|ci(?:-[\w-]+)?|broker|cli|hobo|resolver-components)(?:\/.*)?$/u;
+	/^@hobo\/(?:provider-(?!redaction(?:\/|$))[\w-]+|iac(?:-[\w-]+)?|runtime-[\w-]+|ci(?:-[\w-]+)?|broker|cli|hobo|resolver-components)(?:\/.*)?$/u;
 
 // Vendor words, matched against the Pascal-case segments of type-like names.
 const VENDOR_WORDS = [

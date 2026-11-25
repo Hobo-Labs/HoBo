@@ -88,21 +88,21 @@ export interface GithubJobPollSummary {
 	 * Present only when the poll completed: the jobs runners hold on fleet
 	 * labels, for the fleet verdict reporter. What is ingested is unchanged.
 	 */
-	readonly fleetJobs?: FleetJobsSeen;
+	readonly runnerJobs?: RunnerJobsSeen;
 }
 
 /** A job a runner holds on a fleet label, as the poll read it. */
-export interface FleetJobInProgress {
+export interface RunnerJobInProgress {
 	readonly label: string;
 	readonly runnerName: string;
 	/** GitHub's `started_at`; absent when the list did not carry it. */
 	readonly startedAt?: string;
 }
 
-export interface FleetJobsSeen {
+export interface RunnerJobsSeen {
 	/** When the poll that read them completed. */
 	readonly completedAt: string;
-	readonly inProgress: readonly FleetJobInProgress[];
+	readonly inProgress: readonly RunnerJobInProgress[];
 }
 
 export interface GithubReadFailure {
@@ -342,7 +342,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 
 	async function poll(): Promise<GithubJobPollSummary> {
 		const waiting: WaitingJob[] = [];
-		const inProgress: FleetJobInProgress[] = [];
+		const inProgress: RunnerJobInProgress[] = [];
 		const witnessTerminalRuns: HeldJobPollWitness["terminalRuns"][number][] =
 			[];
 		const witnessTerminalJobs: HeldJobPollWitness["terminalJobs"][number][] =
@@ -666,13 +666,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			terminalRuns: witnessTerminalRuns,
 			terminalJobs: witnessTerminalJobs,
 		};
-		const fleetJobs: FleetJobsSeen = {
+		const runnerJobs: RunnerJobsSeen = {
 			completedAt: new Date(now()).toISOString(),
 			inProgress,
 		};
 		return rateLimitRemaining === undefined
-			? { ...summary, heldPruneWitness, fleetJobs }
-			: { ...summary, heldPruneWitness, fleetJobs, rateLimitRemaining };
+			? { ...summary, heldPruneWitness, runnerJobs }
+			: { ...summary, heldPruneWitness, runnerJobs, rateLimitRemaining };
 	}
 
 	return { poll };

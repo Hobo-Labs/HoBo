@@ -1,3 +1,4 @@
+import { types as utilTypes } from "node:util";
 import type { FoldEvent } from "@hobo/core";
 import { isJsonObject, isJsonString } from "./json.js";
 
@@ -95,7 +96,8 @@ function name(value: string): boolean {
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: actor action inputs cross a network boundary and must be bounded plain JSON data. */
+// SAFETY: actor action inputs cross a network boundary and must be bounded plain JSON data.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 function plainJson(
 	value: unknown,
 	depth: number,
@@ -114,11 +116,12 @@ function plainJson(
 		if (!Number.isFinite(value)) throw new Error("event number invalid");
 		return value;
 	}
-	if (typeof value !== "object" || seen.has(value))
+	if (typeof value !== "object" || utilTypes.isProxy(value) || seen.has(value))
 		throw new Error("event is not JSON");
 	seen.add(value);
 	try {
 		const descriptors = Object.getOwnPropertyDescriptors(value);
+		Object.setPrototypeOf(descriptors, null);
 		if (Object.getOwnPropertySymbols(value).length !== 0)
 			throw new Error("event symbol");
 		if (Array.isArray(value)) {
@@ -131,7 +134,7 @@ function plainJson(
 				throw new Error("event array invalid");
 			return Array.from({ length: value.length }, (_unused, index) => {
 				const item = descriptors[String(index)];
-				if (item === undefined || !("value" in item))
+				if (item === undefined || !Object.hasOwn(item, "value"))
 					throw new Error("event array hole");
 				return plainJson(item.value, depth + 1, seen, remaining);
 			});
@@ -147,7 +150,7 @@ function plainJson(
 				key.length > 200 ||
 				remaining.bytes < 0 ||
 				property === undefined ||
-				!("value" in property) ||
+				!Object.hasOwn(property, "value") ||
 				!property.enumerable
 			)
 				throw new Error("event property invalid");
@@ -167,7 +170,7 @@ export function snapshotDistributedData<T>(value: T): T | undefined {
 		);
 		if (encoded === undefined || Buffer.byteLength(encoded) > 65_536)
 			return undefined;
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: plainJson has checked the complete value and preserved its JSON shape.
+		// SAFETY: plainJson has checked the complete value and preserved its JSON shape.
 		return JSON.parse(encoded) as T;
 	} catch {
 		return undefined;
@@ -242,7 +245,7 @@ function validState(state: DistributedJournalState): boolean {
 				entry.eventJson.length > MAX_EVENT_BYTES
 			)
 				return false;
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: persisted JSON is parsed and checked against the canonical event encoder.
+			// SAFETY: persisted JSON is parsed and checked against the canonical event encoder.
 			const parsed = JSON.parse(entry.eventJson) as FoldEvent;
 			if (encodeDistributedEvent(parsed) !== entry.eventJson) return false;
 			bytes += Buffer.byteLength(entry.eventJson);
@@ -270,7 +273,7 @@ export function readDistributedJournal(state: DistributedJournalState):
 		revision: state.entries.length,
 		events: state.entries.map((entry) => ({
 			eventId: entry.eventId,
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: validState has parsed and checked every canonical event.
+			// SAFETY: validState has parsed and checked every canonical event.
 			event: JSON.parse(entry.eventJson) as FoldEvent,
 		})),
 	};

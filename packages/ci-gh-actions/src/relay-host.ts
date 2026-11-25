@@ -1,14 +1,4 @@
-import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import type { ControlAuthenticator } from "./control-auth.js";
-import {
-	createStartFenceHandler,
-	type StartFencePolicy,
-} from "./fleet-v2/start-fence-handler.js";
-import {
-	createMemoryFleetVerdicts,
-	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-	type FleetReporter,
-} from "./fleet-verdict.js";
 import type { GithubAppTransport } from "./github.js";
 import {
 	createHostedControlPlane,
@@ -19,8 +9,12 @@ import {
 	createHostedRelayRuntime,
 	type HostedInboxStore,
 } from "./hosted-runtime.js";
-import { createRelayHandler, type StubEngine } from "./http-handler.js";
-import type { MeshNodesReader } from "./mesh-nodes-reader.js";
+import {
+	createRelayHandler,
+	type HostedRelayApplication,
+	type StubEngine,
+	type VerifiedWebhook,
+} from "./http-handler.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { createRelayMcp, isRelayMcpPath } from "./relay-mcp.js";
 import type { RelayMcpStore } from "./relay-mcp-server.js";
@@ -29,7 +23,6 @@ import {
 	createRelayService,
 	type RelayServiceLog,
 } from "./service.js";
-import type { GithubWorkflowVerifier } from "./workflow-oidc.js";
 
 /**
  * An optional CI agent beside the relay (see `@hobo/ci-agent`). The relay
@@ -39,6 +32,12 @@ export type RelayAgent = Readonly<{
 	tick(): Promise<void>;
 	/** How often a pass starts; one minute when omitted. */
 	intervalMs?: number;
+}>;
+
+export type RelayHostWiring = Readonly<{
+	onWebhook(webhook: VerifiedWebhook): void;
+	page(request: Request): Promise<Response | undefined>;
+	control(request: Request): Promise<Response | undefined>;
 }>;
 
 /**
@@ -58,12 +57,6 @@ export function createRelayHost(options: {
 	 */
 	mcpStore?: RelayMcpStore;
 	github: GithubAppTransport;
-	strictFleet?:
-		| {
-				store: StrictFleetStore;
-				policies: readonly StartFencePolicy[];
-		  }
-		| undefined;
 	identity: IdentityVerifier;
 	webhookSecret: string;
 	ingressForwardSecret?: string | undefined;
@@ -82,28 +75,11 @@ export function createRelayHost(options: {
 	drainTimeoutMs?: number;
 	/** Off unless supplied. It never delays the worker tick or fails the relay. */
 	agent?: RelayAgent | undefined;
-	/**
-	 * What the relay mesh looks like from this host, when it is a node of one
-	 * (`createMeshNode`). The account API's `GET /v1/mesh/nodes` and the MCP
-	 * server's `list_mesh_nodes` both answer from it; without it both answer
-	 * `mesh: "not-configured"`.
-	 */
-	meshNodes?: MeshNodesReader | undefined;
-	/**
-	 * The fleet reporters whose signed reports this host accepts (ADR-0180).
-	 * None unless supplied: every report is then refused and every label is
-	 * served open.
-	 */
-	fleetReporters?: readonly FleetReporter[] | undefined;
-	/** Verifies a workflow's OIDC token for the fleet reporter status route. */
-	workflowIdentity?: GithubWorkflowVerifier | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
+	wiring?: RelayHostWiring | undefined;
 }) {
 	const { store, github, identity, webhookSecret } = options;
-	const startFence = options.strictFleet
-		? createStartFenceHandler({ ...options.strictFleet, github })
-		: undefined;
 	const now = options.now ?? (() => new Date().toISOString());
 	const log = (entry: RelayServiceLog) => {
 		try {
@@ -111,17 +87,6 @@ export function createRelayHost(options: {
 		} catch {
 			// A failed logger must not fail a tick or a request.
 		}
-	};
-	// Kept in this process: a verdict lapses in minutes and its reporter
-	// repeats it, so a restart costs one report (ADR-0180).
-	const fleetVerdicts = {
-		store: createMemoryFleetVerdicts(() => Date.parse(now())),
-		settings: () => ({
-			reporters: options.fleetReporters ?? [],
-			serving: true,
-			dailyBlockMinutes: FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-		}),
-		workflowIdentity: options.workflowIdentity,
 	};
 	const relay = async () => {
 		const state = await store.configuration();
@@ -141,10 +106,8 @@ export function createRelayHost(options: {
 		github,
 		identity,
 		webhookSecret,
-		control: async (request) => {
-			const startResponse = await startFence?.(request);
-			if (startResponse) return startResponse;
-			return createHostedControlPlane({
+		control: async (request) =>
+			createHostedControlPlane({
 				relay: await relay(),
 				store,
 				github,
@@ -153,10 +116,7 @@ export function createRelayHost(options: {
 				assets: options.assets,
 				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
-				meshNodes: options.meshNodes,
-				fleetVerdicts,
-			})(request);
-		},
+			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
 		now,
@@ -175,11 +135,26 @@ export function createRelayHost(options: {
 		relay,
 		authenticate: options.authenticate,
 		ready: async () => service.ready(),
-		meshNodes: options.meshNodes,
 		publicOrigin: options.publicOrigin,
 		sessions: "memory",
 		cursorSecret: webhookSecret,
 	});
+	const { wiring } = options;
+	const application: HostedRelayApplication = wiring
+		? {
+				...runtime,
+				mcp: mcp.handle,
+				async ingestWebhook(input) {
+					const status = await runtime.ingestWebhook(input);
+					wiring.onWebhook(input);
+					return status;
+				},
+				page: (request) => wiring.page(request),
+				async control(request) {
+					return (await wiring.control(request)) ?? runtime.control(request);
+				},
+			}
+		: { ...runtime, mcp: mcp.handle };
 	const service = createRelayService({
 		origin: options.publicOrigin,
 		allowLoopbackHttp: options.allowLoopbackHttp === true,
@@ -191,7 +166,7 @@ export function createRelayHost(options: {
 		drainTimeoutMs: options.drainTimeoutMs ?? 30_000,
 		handle: (ready) =>
 			createRelayHandler({
-				application: admitWhenReady({ ...runtime, mcp: mcp.handle }, ready),
+				application: admitWhenReady(application, ready),
 				webhookSecret,
 				ingressForwardSecret: options.ingressForwardSecret,
 				engineId: "gh-actions",

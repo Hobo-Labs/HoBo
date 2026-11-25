@@ -20,6 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { slow } from "../../packages/hobo/test/support/slow.js";
+import { ReleaseFreightBlockedError } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
+import { camps } from "../../release/hobo-release.delivery.ts";
 import {
 	HOBO_CLI_DIST,
 	openReleaseCd,
@@ -31,9 +33,12 @@ import {
 	type ReleaseCredentials,
 	recordReleaseFreight,
 	releaseCampId,
+	releaseCampRealizeScope,
 	releaseDriveFor,
 	releaseReportPath,
 	releaseSource,
+	releaseWorkflowCredentials,
+	releaseWorkflowGithubAppScopeAllowed,
 } from "../ci/create-github-release.mts";
 import { qualifySiteRelease } from "../deploy-site.mts";
 
@@ -549,6 +554,58 @@ describe.skipIf(!built)(
 				await cd.close();
 			}
 			expect(world.paths("PUT")).toEqual([]);
+		});
+
+		it("Pages promotion drives logical cd-realize scopes through workflow credentials", async () => {
+			const resolvedScopes: string[] = [];
+			const pagesCamp = camps.find(
+				(camp) => camp.logicalId === "hobo-release/pages-candidate",
+			);
+			expect(pagesCamp).toBeDefined();
+			const workflow = releaseWorkflowCredentials({
+				GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
+				GITHUB_TOKEN: fx.TOKEN,
+			});
+			const credentials: ReleaseCredentials = {
+				async resolve(ref, scope) {
+					resolvedScopes.push(scope);
+					if (!releaseWorkflowGithubAppScopeAllowed(scope))
+						throw new ReleaseFreightBlockedError(
+							"scope-not-allowed",
+							ref,
+							scope,
+						);
+					return workflow.resolve(ref, scope);
+				},
+			};
+			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
+			const github: HttpTransport = async (request) => {
+				const response = await world.transport(request);
+				if (request.method !== "GET") world.finishBuild("built");
+				return response;
+			};
+			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-scope-"));
+			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
+			writeFileSync(join(dist, ".nojekyll"), "");
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-scope-"));
+			await qualifySiteRelease({
+				dist,
+				home,
+				env,
+				seams: {
+					...seams(withProbes(github, [], world), 700, fx.TOKEN),
+					credentials,
+				},
+			});
+			expect(resolvedScopes.length).toBeGreaterThan(0);
+			expect(resolvedScopes).toContain(
+				releaseCampRealizeScope(pagesCamp ?? camps[0]!),
+			);
+			expect(
+				resolvedScopes.some(
+					(scope) => scope === `cd-realize:${pagesCamp!.campId}`,
+				),
+			).toBe(false);
 		});
 
 		it("Pages: candidate publishes the tree to gh-pages as `deploy: <sha>`, stable re-observes it", async () => {

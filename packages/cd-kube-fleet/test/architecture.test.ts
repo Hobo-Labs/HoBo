@@ -53,7 +53,7 @@ describe("I11 neutral core and D26 transport-only", () => {
 		expect(KUBE_TYPES.test(proto)).toBe(false);
 	});
 
-	it("@hobo/cd does not depend on this adapter; this adapter depends on @hobo/cd and @hobo/core only", () => {
+	it("@hobo/cd does not depend on this adapter; this adapter depends on @hobo/cd, @hobo/core and @hobo/fleet (TARGET declaration) only", () => {
 		// SAFETY: package manifests are JSON objects.
 		const cd = JSON.parse(
 			readFileSync(join(cdRoot, "package.json"), "utf8"),
@@ -72,6 +72,7 @@ describe("I11 neutral core and D26 transport-only", () => {
 			"@bufbuild/protobuf",
 			"@hobo/cd",
 			"@hobo/core",
+			"@hobo/fleet",
 		]);
 		expect(own.devDependencies).toBeUndefined();
 	});
@@ -83,7 +84,7 @@ describe("I11 neutral core and D26 transport-only", () => {
 				/@kubernetes\/client-node|kubernetes-client|\bfetch\(|KUBECONFIG|process\.env|node:https?"/u,
 			);
 			expect(source, relative(packageRoot, path)).not.toMatch(
-				/from "@hobo\/(?!cd"|core")/u,
+				/from "@hobo\/(?!cd"|cd\/inventory"|core"|fleet")/u,
 			);
 		}
 	});

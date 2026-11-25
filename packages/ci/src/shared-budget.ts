@@ -199,9 +199,13 @@ function checkedQuote(
 	options: CiSharedBudgetOptions,
 	at: string,
 	precommitDenial = false,
+	pinnedQuote?: HostingQuote,
 ): HostingQuote {
 	const policy = checkedPolicy(lease, options, at);
-	const quote = create(HostingQuoteSchema, options.quoteLease(lease));
+	const quote = create(
+		HostingQuoteSchema,
+		pinnedQuote ?? options.quoteLease(lease),
+	);
 	validateHostingQuote(quote, at);
 	if (
 		quote.ownerTenantId !== lease.budgetTenantId ||
@@ -234,13 +238,14 @@ function checkedQuote(
 		);
 	return quote;
 }
-function checkedClaimQuote(
+function checkedPinnedQuote(
 	lease: Lease,
 	reservation: BudgetReservation,
 	options: CiSharedBudgetOptions,
 	at: string,
+	pinnedQuote?: HostingQuote,
 ): HostingQuote {
-	const quote = checkedQuote(lease, options, at);
+	const quote = checkedQuote(lease, options, at, false, pinnedQuote);
 	const digest = createHash("sha256")
 		.update(toJsonString(HostingQuoteSchema, quote))
 		.digest("hex");
@@ -410,6 +415,43 @@ function checkedReservation(
 		throw new Error("exact original CI financial reservation required");
 	return reservation;
 }
+function recheckCommitted(
+	lease: Lease,
+	reservation: BudgetReservation,
+	ledger: BudgetLedgerSnapshot,
+	existing: BudgetReservation | undefined,
+	options: CiSharedBudgetOptions,
+	now: () => string,
+	measurements: CiPolicyMeasurements | undefined,
+	pinnedQuote?: HostingQuote,
+): void {
+	try {
+		const at = now();
+		const quote = checkedPinnedQuote(
+			lease,
+			checkedReservation(lease, reservation),
+			options,
+			at,
+			pinnedQuote,
+		);
+		checkedAllocation(lease, quote, ledger, options);
+		checkedFinancialPolicy(
+			lease,
+			quote,
+			ledger,
+			existing,
+			options,
+			at,
+			measurements,
+		);
+	} catch (error) {
+		if (error instanceof BudgetAdmissionDeniedError)
+			throw new Error(
+				"CI financial operation committed; reconcile before retry",
+			);
+		throw error;
+	}
+}
 function checkedUsage(
 	lease: Lease,
 	reservation: BudgetReservation,
@@ -486,7 +528,7 @@ export function createCiSharedBudgetHooks(
 				measurements,
 				true,
 			);
-			return authority.reserve({
+			const reserved = authority.reserve({
 				reservationId: ciReservationId(lease),
 				requestDigest: ciRequestDigest(lease),
 				quote,
@@ -494,10 +536,21 @@ export function createCiSharedBudgetHooks(
 				expectedSeq: current.seq,
 				now: at,
 			});
+			recheckCommitted(
+				lease,
+				reserved,
+				current,
+				existing,
+				options,
+				now,
+				measurements,
+				quote,
+			);
+			return reserved;
 		},
 		claim(lease, measurements) {
 			const at = now();
-			const quote = checkedClaimQuote(lease, lookup(lease), options, at);
+			const quote = checkedPinnedQuote(lease, lookup(lease), options, at);
 			const { ledger: current, existing } = financialState(lease, at);
 			checkedAllocation(lease, quote, current, options);
 			checkedFinancialPolicy(
@@ -515,12 +568,14 @@ export function createCiSharedBudgetHooks(
 				executionDigest: ciExecutionDigest(lease),
 				expectedSeq: current.seq,
 			});
-			// Financial storage may have waited for a lock. Permission is current at return.
-			checkedClaimQuote(
+			recheckCommitted(
 				lease,
-				checkedReservation(lease, claimed),
+				claimed,
+				current,
+				claimed,
 				options,
-				now(),
+				now,
+				measurements,
 			);
 			return claimed;
 		},
@@ -586,7 +641,7 @@ export function createCiAsyncSharedBudgetHooks(
 				measurements,
 				true,
 			);
-			return authority.reserve({
+			const reserved = await authority.reserve({
 				reservationId: ciReservationId(lease),
 				requestDigest: ciRequestDigest(lease),
 				quote,
@@ -594,10 +649,21 @@ export function createCiAsyncSharedBudgetHooks(
 				expectedSeq: current.seq,
 				now: at,
 			});
+			recheckCommitted(
+				lease,
+				reserved,
+				current,
+				existing,
+				options,
+				now,
+				measurements,
+				quote,
+			);
+			return reserved;
 		},
 		async claim(lease, measurements) {
 			const at = now();
-			const quote = checkedClaimQuote(lease, await lookup(lease), options, at);
+			const quote = checkedPinnedQuote(lease, await lookup(lease), options, at);
 			const { ledger: current, existing } = await financialState(lease, at);
 			checkedAllocation(lease, quote, current, options);
 			checkedFinancialPolicy(
@@ -615,11 +681,14 @@ export function createCiAsyncSharedBudgetHooks(
 				executionDigest: ciExecutionDigest(lease),
 				expectedSeq: current.seq,
 			});
-			checkedClaimQuote(
+			recheckCommitted(
 				lease,
-				checkedReservation(lease, claimed),
+				claimed,
+				current,
+				claimed,
 				options,
-				now(),
+				now,
+				measurements,
 			);
 			return claimed;
 		},

@@ -5,7 +5,10 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { verifyElevatedAccessCapability } from "../env-isolation/elevated-capability.js";
+import {
+	type ElevatedCapabilityTrust,
+	verifyElevatedAccessCapability,
+} from "../env-isolation/elevated-capability.js";
 import { DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK } from "../env-isolation/policy-pack.js";
 import type { IsolationClass } from "../env-isolation/types.js";
 import { isJsonNumber, isJsonString } from "../json.js";
@@ -43,11 +46,7 @@ export type CreatePrivilegedAccessGatewayOptions = Readonly<{
 	keys?: SessionBrokerKeys;
 	/** Optional remote PAM control plane. */
 	transport?: PamTransportConfig;
-	/**
-	 * HMAC secret for verifying elevated access JWTs (same as identity migration).
-	 * Required when verifying production elevated tokens outside tests.
-	 */
-	elevatedHmacSecret?: string;
+	elevatedTrust?: ElevatedCapabilityTrust;
 	/** Classes that always require elevated capability (default from pack). */
 	capabilityRequiredClasses?: readonly IsolationClass[];
 }>;
@@ -150,13 +149,11 @@ export function createPrivilegedAccessGateway(
 				{ code: "elevated-required" },
 			);
 		}
-		const verified = verifyElevatedAccessCapability({
+		const verified = await verifyElevatedAccessCapability({
 			token: req.elevatedToken,
 			expectedAudience: `${options.isolationClass}-access`,
 			expectedIsolationClass: options.isolationClass,
-			...(options.elevatedHmacSecret !== undefined
-				? { hmacSecret: options.elevatedHmacSecret }
-				: { hmacSecret: "hobo-local-svid-dev-only" }),
+			trust: options.elevatedTrust,
 			now: now(),
 		});
 		if (!verified.ok) {

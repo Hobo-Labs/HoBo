@@ -1,9 +1,14 @@
-import { MESSAGING_WIT_INTERFACE } from "@hobo/core";
+import { MESSAGING_PORT_CONTRACT_VERSION } from "@hobo/core";
 
+// public-contract: capability-manifest bundle schema id (registry parity).
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
+// public-contract: capabilities document schema id.
 export const CAPABILITIES_SCHEMA = "hobo.capabilities/v1";
+// public-contract: auth document schema id.
 export const AUTH_SCHEMA = "hobo.provider-auth/v1";
+// public-contract: cost document schema id.
 export const COST_SCHEMA = "hobo.cost/v1";
+// public-contract: the provider id every published document carries.
 export const KAFKA_PROVIDER_ID = "@hobo/provider-kafka";
 
 export interface PublishedManifestDocuments {
@@ -22,37 +27,18 @@ export function publishCapabilityManifest(
 		"/.well-known/capability-manifest/index.json": JSON.stringify({
 			schema: MANIFEST_SCHEMA,
 			providerId,
-			ports: ["topic", "queue"],
-			witExports: [MESSAGING_WIT_INTERFACE, "hobo:queue/queue@0.1.0"],
+			ports: [],
+			witExports: [],
+			nativeMessaging: {
+				contract: MESSAGING_PORT_CONTRACT_VERSION,
+				componentWit: false,
+			},
 			regions,
 		}),
 		"/.well-known/capability-manifest/capabilities.json": JSON.stringify({
 			schema: CAPABILITIES_SCHEMA,
 			providerId,
-			capabilities: [
-				{
-					port: "topic",
-					wit: MESSAGING_WIT_INTERFACE,
-					features: [
-						"consumer-groups",
-						"at-least-once",
-						"exactly-once",
-						"transactional-produce",
-						"idempotent-produce",
-						"schema-registry",
-						"dead-letter",
-						"partition-aware",
-						"cross-yard-federation",
-					],
-				},
-				{
-					port: "queue",
-					wit: "hobo:queue/queue@0.1.0",
-					features: ["enqueue", "dequeue", "complete"],
-					notes:
-						"aligned semantics where pull-queue maps to consumer-group poll",
-				},
-			],
+			capabilities: [],
 		}),
 		"/.well-known/capability-manifest/auth.json": JSON.stringify({
 			schema: AUTH_SCHEMA,

@@ -15,10 +15,12 @@ import { canonicalManifestHash } from "@hobo/bindles";
 import {
 	ArtifactKind,
 	type CampId,
+	type CampMembers,
 	type CampReconciler,
 	type CampTopology,
 	type CdContext,
 	type CredentialResolver,
+	type DeliveryFleet,
 	DeltaRecordSchema,
 	type DesiredStateReader,
 	type FreightId,
@@ -30,6 +32,7 @@ import {
 	type Realizer,
 	type ReasonRecord,
 	ReasonRecordSchema,
+	type ReasonStructuredDetail,
 	type ReconcileObservationRecord,
 	ReconcileObservationRecordSchema,
 	type ReconcilerId,
@@ -58,7 +61,7 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-import { createDriftPolicy } from "@hobo/cd/reconcile";
+import { createDriftPolicy, releaseFreightRefusalOf } from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
 	RUNNER_FLEET_BINDLE,
@@ -189,6 +192,8 @@ export type CdRuntimeOptions = Readonly<{
 	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
 	 */
 	onRunnerHostIngestError?: (error: Error) => void;
+	fleet?: DeliveryFleet;
+	members?: CampMembers;
 }>;
 
 export type CdRuntime = Readonly<{
@@ -634,6 +639,10 @@ async function openComposedCdRuntime(
 		trustPolicy: options.trustPolicy ?? {},
 		policyPack,
 		topology,
+		...(options.fleet !== undefined ? { fleet: options.fleet } : undefined),
+		...(options.members !== undefined
+			? { members: options.members }
+			: undefined),
 		railCatalog,
 		...(publicOrigin === undefined ? undefined : { publicOrigin }),
 		...(agentIssuer === undefined
@@ -1052,17 +1061,40 @@ export function withRunnerHostRealization(
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
 function refusalOf(error: Error) {
-	return {
-		code:
-			error instanceof ResolverError || error instanceof CatalogRealizerError
-				? error.code
-				: "realize-failed",
-		message: error.message,
-	};
+	const refused = releaseFreightRefusalOf(error);
+	const code =
+		error instanceof ResolverError || error instanceof CatalogRealizerError
+			? error.code
+			: refused.code;
+	if (refused.structured) {
+		return {
+			code,
+			message: error.message,
+			structured: refused.structured,
+		};
+	}
+	return { code, message: error.message };
 }
 
-function realizerReason(code: string, message: string, remediation: string) {
-	return create(ReasonRecordSchema, { code, message, remediation });
+function realizerReason(
+	code: string,
+	message: string,
+	remediation: string,
+	structured?: ReasonStructuredDetail,
+) {
+	if (structured) {
+		return create(ReasonRecordSchema, {
+			code,
+			message,
+			remediation,
+			structured,
+		});
+	}
+	return create(ReasonRecordSchema, {
+		code,
+		message,
+		remediation,
+	});
 }
 
 /**
@@ -1244,7 +1276,11 @@ export function createCatalogResolverRealizer(
 
 	function blocked(
 		input: RealizeInput,
-		{ code, message }: Readonly<{ code: string; message: string }>,
+		refusal: Readonly<{
+			code: string;
+			message: string;
+			structured?: ReasonStructuredDetail;
+		}>,
 		resources: Parameters<typeof observation>[3] = [],
 	): ReconcileObservationRecord {
 		return observation(
@@ -1252,9 +1288,10 @@ export function createCatalogResolverRealizer(
 			ReconcileStatus.BLOCKED,
 			[
 				realizerReason(
-					code,
-					message,
+					refusal.code,
+					refusal.message,
 					"Fix the cause the resolver names; the next pass re-observes and is idempotent.",
+					refusal.structured,
 				),
 			],
 			resources,
@@ -1274,6 +1311,7 @@ export function agentReconciler(
 		reconcilerId: string;
 		privateJwk: CdJsonObject;
 		svid: string;
+		credential?: () => Promise<string>;
 		campIds: readonly CampId[];
 		realizer: Realizer;
 		store: DurableEventStore;
@@ -1293,6 +1331,7 @@ export function agentReconciler(
 		reconcilerId,
 		privateJwk: input.privateJwk,
 		svid: input.svid,
+		credential: input.credential,
 		now: input.now,
 	});
 	return defaultCdFactories.createCampReconciler({
@@ -1513,6 +1552,8 @@ async function runAgentProcess(
 		// SAFETY: checked to be a JSON object above.
 		privateJwk: parsedKey as CdJsonObject,
 		svid,
+		credential: async () =>
+			(await readFile(resolve(input.cwd, svidFile), "utf8")).trim(),
 		// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
 		campIds: camps as CampId[],
 		realizer: input.realizer,

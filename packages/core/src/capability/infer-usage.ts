@@ -12,7 +12,7 @@ const RESOURCE_FACTORIES = new Map<string, string>([
 	["bucket", "wasi:blobstore"],
 	["objectStore", "wasi:blobstore"],
 	["queue", "hobo:queue"],
-	["topic", "wasi:messaging"],
+	["topic", "hobo:durable-messaging"],
 	["secret", "wasi:config"],
 ]);
 

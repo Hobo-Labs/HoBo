@@ -71,7 +71,7 @@ export function createTagAclPolicyEngine(
 
 			// (2) Environment isolation axis (soft floor always on)
 			if (enforceEnv) {
-				const envVerdict = evaluateEnvIsolation(
+				const envVerdict = await evaluateEnvIsolation(
 					request,
 					options?.envIsolation ?? {},
 				);

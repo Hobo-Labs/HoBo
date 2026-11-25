@@ -791,6 +791,7 @@ test("the behavior lane also builds what the root step definitions import", () =
 	assert.ok(
 		build?.args.includes("--filter=@hobo/example-cd-conformance-kit^..."),
 	);
+	assert.ok(build?.args.includes("--filter=@hobo/fleet-authority..."));
 });
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
@@ -818,6 +819,58 @@ test("editing cucumber.yaml trips the behavior lane", () => {
 test("unrelated docs edits do not trip the behavior lane", () => {
 	const { checks } = plan(["docs/design/vision.md"]);
 	assert.ok(!checks.some(isBehaviorLane));
+});
+
+function isParityScorecardCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") === "run ci:parity-scorecard:check"
+	);
+}
+
+function behaviorBuild(checks: readonly Check[]) {
+	return checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+}
+
+test("the behavior lane builds what the parity gauntlet's steps import", () => {
+	const build = behaviorBuild(plan(["cucumber.yaml"]).checks);
+	for (const filter of [
+		"--filter=@hobo/hobo^...",
+		"--filter=@hobo/ci-gh-actions^...",
+		"--filter=@hobo/ci-dashboard^...",
+	])
+		assert.ok(build?.args.includes(filter), filter);
+});
+
+test("a stale parity scorecard fails a gate", () => {
+	for (const file of [
+		"docs/ci/parity-scorecard.md",
+		"features/hobo-ci-parity/cases.json",
+		"features/hobo-ci-parity/routing.feature",
+		"scripts/ci/parity-scorecard.mts",
+		"packages/ci/src/runner-order/answer.ts",
+		"packages/ci-gh-actions/src/relay-answer/answerer.ts",
+		"packages/ci-gh-actions/test/support/github-simulator/index.ts",
+		"packages/ci-dashboard/src/views.ts",
+		"packages/hobo/src/ci-route.ts",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(checks.some(isParityScorecardCheck), file);
+		assert.equal(behaviorBuild(checks)?.serial, true, file);
+	}
+});
+
+test("edits away from the CI packages leave the parity scorecard alone", () => {
+	for (const file of [
+		"docs/design/vision.md",
+		"packages/hobo/src/deploy.ts",
+		"packages/ci/README.md",
+	])
+		assert.equal(plan([file]).checks.some(isParityScorecardCheck), false, file);
 });
 
 function isOptimizexpLane(check: Check) {
@@ -953,11 +1006,35 @@ test("a changed-path stdin reader edit selects its regression tests", () => {
 		"scripts/test/read-stdin.test.ts",
 		"scripts/test/job-scope.test.ts",
 		"scripts/ci/job-scope.mts",
+		"scripts/ci/state-machine-scope.mts",
 		"scripts/ci/dependent-tests.mts",
 		"scripts/ci/impact-classifier.mts",
 	]) {
 		assert.ok(plan([file]).checks.some(isReadStdinTest), file);
 	}
+});
+
+const isStateMachineScopeTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/state-machine-scope.test.ts";
+
+test("a state-machine relevance input selects the scope tests", () => {
+	for (const file of [
+		"scripts/ci/state-machine-scope.mts",
+		"scripts/test/state-machine-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/affected-lanes.mts",
+		"scripts/verify-state-machine.sh",
+		".agents/skills/verify-cd-fanout/SKILL.md",
+	])
+		assert.ok(plan([file]).checks.some(isStateMachineScopeTest), file);
+	assert.ok(
+		!plan(["docs/ci/performance.md"]).checks.some(isStateMachineScopeTest),
+	);
 });
 
 test("unrelated changes do not select the stdin reader tests", () => {

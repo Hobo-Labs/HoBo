@@ -1,12 +1,11 @@
+import type { CredentialResolver } from "@hobo/cd";
+import type { TrustedVault } from "@hobo/core";
+import { VERCEL_DEPLOY_ENTRIES } from "@hobo/hobo-ci";
+
 import {
-	createInfisicalClient,
-	githubActionsJwtSource,
-	InfisicalError,
-	infisicalSecretRef,
-	oidcAuth,
-	parseInfisicalBinding,
-} from "@hobo/adapter-infisical";
-import type { RepairSecretStoreBinding } from "@hobo/secret-store-claim";
+	OWNER_CREDENTIAL_SCHEME,
+	OwnerCredentialUnavailable,
+} from "./owner-store-session.js";
 
 // public-contract: the entry in the deploy credential's project that holds the deploy token (CONFIG-SERVICE.md).
 export const RELAY_DEPLOY_TOKEN_ENTRY = "VERCEL_TOKEN";
@@ -15,85 +14,66 @@ export const RELAY_GITHUB_OIDC_AUDIENCE = "https://github.com/Hobo-Labs";
 // public-contract: the deploy token reader authenticates here, never at the writer's audience.
 export const RELAY_DEPLOY_READER_OIDC_AUDIENCE = `${RELAY_GITHUB_OIDC_AUDIENCE}/hobo-ci-deploy-reader`;
 
-// public-contract: the deploy credential sits at the root of its own project, apart from the relay's (CONFIG-SERVICE.md).
-const DEPLOY_SECRET_PATH = "/";
+// public-contract: the owner-store locator hobo ci deploy reads the Vercel deploy token from (the entry hobo cd up keeps).
+export const RELAY_DEPLOY_TOKEN_REF = `${OWNER_CREDENTIAL_SCHEME}${VERCEL_DEPLOY_ENTRIES.token}`;
 
-// A token Vercel issues: printable, one line, no spaces.
+const RUN_VAULT_TOKEN = "VERCEL_TOKEN";
+
+const RELAY_DEPLOY_TOKEN_SCOPE = "vercel.deploy:hobo-ci-relay";
+
 const TOKEN = /^[!-~]{8,4096}$/u;
 
-export class RelayDeployCredentialError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "RelayDeployCredentialError";
-	}
+export type RelayDeployToken =
+	| Readonly<{ ok: true; token: string; source: "owner-store" | "run-vault" }>
+	| Readonly<{ ok: false; code: string; message: string }>;
+
+const sessionAbsent = (): RelayDeployToken => ({
+	ok: false,
+	code: "HOBO_CI_SECRET_STORE_SESSION_REQUIRED",
+	message: `hobo ci deploy reads the Vercel deploy token only through the owner's store session (${RELAY_DEPLOY_TOKEN_REF}), never from the environment or a CI job's identity. Connect the store with HoBo MCP's choose_secret_store (cwd: this project), then run again; --dry-run shows what would be sent without it.`,
+});
+
+const entryMissing = (): RelayDeployToken => ({
+	ok: false,
+	code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+	message: `The owner's store session holds no Vercel deploy token at ${RELAY_DEPLOY_TOKEN_REF}. Run hobo cd up once: it connects HoBo's Vercel account and keeps the token there, where hobo ci deploy reads it.`,
+});
+
+const notAToken = (): RelayDeployToken => ({
+	ok: false,
+	code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+	message: `${RELAY_DEPLOY_TOKEN_REF} in the owner's store is not a single-line Vercel token. Run hobo cd up again to reconnect HoBo's Vercel account.`,
+});
+
+function accepted(
+	token: string,
+	source: "owner-store" | "run-vault",
+): RelayDeployToken {
+	return TOKEN.test(token) ? { ok: true, token, source } : notAToken();
 }
 
-// Read the deploy token. `fetch` reaches both GitHub's token endpoint and
-// the store; injected in tests. `env` carries only the runner's own OIDC
-// request variables.
 export async function readRelayDeployToken(input: {
-	readonly binding: RepairSecretStoreBinding;
-	readonly env: Readonly<Record<string, string | undefined>>;
-	/** The audience the deploy identity expects; GitHub's default otherwise. */
-	readonly audience?: string;
-	readonly fetch?: typeof fetch;
-}): Promise<
-	Readonly<{
-		token: string;
-		secretRef: string;
-		identityId: string;
-		audience: string;
-	}>
-> {
-	const { env, binding: store } = input;
-	const identityId = store.deployCredentialIdentityId;
-	if (
-		!identityId ||
-		identityId === store.deployIdentityId ||
-		identityId === store.relayIdentityId
-	)
-		throw new RelayDeployCredentialError(
-			"The binding has no deploy credential identity of its own: the reader must be distinct from both the writer and the relay identity. Record deployCredentialIdentityId for a read-only deploy identity; neither the writer nor the relay identity is ever used for deploy token reads.",
-		);
-	const audience = input.audience ?? RELAY_DEPLOY_READER_OIDC_AUDIENCE;
+	readonly ownerCredentials?: CredentialResolver;
+	readonly runVault?: TrustedVault;
+}): Promise<RelayDeployToken> {
+	const kept = input.runVault?.reveal(RUN_VAULT_TOKEN);
+	if (input.ownerCredentials === undefined)
+		return kept === undefined || kept === ""
+			? sessionAbsent()
+			: accepted(kept, "run-vault");
 	try {
-		const binding = parseInfisicalBinding({
-			siteUrl: store.endpoint,
-			projectId: store.deployProjectId,
-			environment: store.environment,
-			secretPath: DEPLOY_SECRET_PATH,
-		});
-		const client = createInfisicalClient({
-			binding,
-			auth: oidcAuth({
-				identityId,
-				jwt: githubActionsJwtSource({
-					env,
-					...(audience !== undefined ? { audience } : undefined),
-					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-				}),
-			}),
-			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-		});
-		const secret = await client.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
-		if (!TOKEN.test(secret.value))
-			throw new RelayDeployCredentialError(
-				`${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy credential's path is not a single-line token.`,
-			);
-		return {
-			token: secret.value,
-			secretRef: infisicalSecretRef(binding, RELAY_DEPLOY_TOKEN_ENTRY),
-			identityId,
-			audience,
-		};
-	} catch (error) {
-		if (error instanceof RelayDeployCredentialError) throw error;
-		// The adapter's messages name the operation, a code, a status and a
-		// request id; never a token, a JWT or a value.
-		throw new RelayDeployCredentialError(
-			error instanceof InfisicalError
-				? `Could not read the deploy token: ${error.message}.`
-				: "Could not read the deploy token.",
+		const resolved = await input.ownerCredentials.resolve(
+			RELAY_DEPLOY_TOKEN_REF,
+			RELAY_DEPLOY_TOKEN_SCOPE,
 		);
+		return accepted(resolved.token ?? "", "owner-store");
+	} catch (error) {
+		if (kept !== undefined && kept !== "") return accepted(kept, "run-vault");
+		if (
+			error instanceof OwnerCredentialUnavailable &&
+			error.reason === "no-session"
+		)
+			return sessionAbsent();
+		return entryMissing();
 	}
 }

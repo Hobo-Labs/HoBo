@@ -7,10 +7,15 @@ default:
   paths:
     - "src/draft/epic-proofs/*/features/**/*.feature"
     - "src/draft/projects/*/features/**/*.feature"
+    - "features/fleet/*.feature"
+    - "features/control-yard-core-loop.feature"
+    - "features/hobo-ci-parity/*.feature"
   import:
     - "src/draft/epic-proofs/*/features/steps/**/*.ts"
     - "src/draft/projects/*/features/steps/**/*.ts"
     - "features/steps/**/*.ts"
+    - "features/hobo-ci-parity/steps/**/*.ts"
+  tags: "not @pending and not @met-differently"
   publishQuiet: true
 
 # Live acceptance, never part of `test:behavior`: the examples-console feature

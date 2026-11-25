@@ -1,0 +1,3 @@
+export const title = 'Reserve a CI budget near a funded window boundary';
+export const state = v => ({ready:'Work fits the funded window',reserving:'Reservation waiting on financial store',committed:'Hold committed; recheck the window',accepted:'Reservation accepted',refused:'Reservation refused; hold retained'})[v.phase];
+export const step = (action, from, to) => to.phase === 'reserving' ? 'reserve the financial hold' : to.phase === 'committed' ? 'hold commits' : to.phase === 'accepted' ? 'work still fits the window' : to.phase === 'refused' ? 'work no longer fits the window' : 'time passes';

@@ -3,7 +3,7 @@
     "name": "HoboCiInsights"
   },
   "provider": {
-    "name": "GitHubActionsRestViaGhCli"
+    "name": "GitHubActionsRest"
   },
   "metadata": {
     "pactSpecification": {
@@ -134,10 +134,23 @@
       }
     },
     {
-      "description": "download the failed job's log as text",
+      "description": "ask for the failed job's log and be redirected to a short-lived download",
       "request": {
         "method": "GET",
         "path": "repos/acme/app/actions/jobs/71/logs"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Location": "https://results-receiver.actions.githubusercontent.com/job-logs/71.txt?sig=fixture"
+        }
+      }
+    },
+    {
+      "description": "download the failed job's log from the redirect without the installation token",
+      "request": {
+        "method": "GET",
+        "path": "https://results-receiver.actions.githubusercontent.com/job-logs/71.txt?sig=fixture"
       },
       "response": {
         "status": 200,

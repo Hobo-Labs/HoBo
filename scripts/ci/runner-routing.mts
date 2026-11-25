@@ -1,29 +1,4 @@
 #!/usr/bin/env node
-/**
- * Committed routing policy and the routing slip, read without dependencies
- * (ADR-0181).
- *
- * The route job runs from a sparse checkout with nothing installed, so this
- * file uses Node's built-ins only, in the style of
- * `packages/ci/src/fleet-overflow.ts` and `route-runner.mts`. It holds the
- * same rules as the package's parsers
- * (`packages/ci-gh-actions/src/runner-routing.ts`, zod;
- * `packages/ci-gh-actions/src/routing-slip.ts`, protobuf) and
- * `#RunnerRouting` / `#RoutingSlip` in `data-models/onboarding.cue`; a test
- * holds the three to the same answer on every fixture.
- *
- * - `readRunnerRouting` reads `runnerRouting` from `.hobo/ci.json`.
- * - `judgeRoutingSlip` decides whether a slip may be used: not expired by the
- *   reader's clock, naming the reader's repository, every runner one of the
- *   committed `runnerRouting.labels`. Anything else is no slip, and the queue
- *   rule decides as it does today (R3).
- * - `readRoutingSlip` fetches the slip with the route job's token and
- *   `contents: read`: `GET /git/ref/hobo/routing-slip`, then
- *   `GET /git/commits/<sha>`, within three seconds together.
- *
- * Run directly, it prints the committed policy as JSON (or one field of it
- * with `--get <field>`), or exits 1 when the file has none.
- */
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 

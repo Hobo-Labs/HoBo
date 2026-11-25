@@ -1,59 +1,35 @@
 #!/usr/bin/env node
-/**
- * The CI health monitor: reads what the last window of workflow runs left
- * behind and raises every fallback that would otherwise stay silent
- * (ADR-0180; `docs/ci/health-monitor.md`).
- *
- * Runs every two hours on a GitHub-hosted machine (`ci-health.yml`). It reads
- * the run list, each run's jobs, and the annotations of the route job and of
- * the main gate's plan job, where the route step prints one `hobo-ci-route`
- * notice per decision (what became of the box relay's routing slip, and
- * why) and a `hobo-ci-route-fallback` warning when the route did not run or
- * no slip could be used. It asks the hosted relay's status route which reporters are alive
- * and how much of each label's block allowance is spent. From those it
- * computes seven signals (H1, H2, H3, H4, H6, H8, H10), opens or comments on
- * one issue per breached signal, writes the report to the step summary and to
- * a file the workflow uploads as `ci-health-report`, and exits non-zero on any
- * breach. The next run starts where the newest uploaded report's window ended.
- *
- * It decides nothing about the fleet (R1): it only counts what the route job
- * and the relay already said. It loads no package, only node builtins, so it
- * runs straight from a checkout with `node scripts/ci/ci-health.mts`.
- */
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
 
 /** The signals, in the order the report lists them. */
-export const SIGNALS = ["H1", "H2", "H3", "H4", "H6", "H8", "H10"] as const;
+export const SIGNALS = ["H1", "H2", "H3", "H6", "H8", "H11"] as const;
 export type Signal = (typeof SIGNALS)[number];
 
 export const SIGNAL_NAMES = {
 	H1: "routing did not run",
 	H2: "routing slip unusable",
 	H3: "no routing slip",
-	H4: "reporter silent",
 	H6: "stall",
 	H8: "paid minutes",
-	H10: "allowance spent",
+	H11: "relay stale",
 } as const satisfies Readonly<Record<Signal, string>>;
 
 /** Runs read per window; past this the report says `truncated`. */
 export const MAX_RUNS = 100;
-/** Every request a run may make, GitHub's and the relay's together. */
 export const REQUEST_BUDGET = 350;
 /** The window when no earlier report exists. */
 export const DEFAULT_WINDOW_MS = 2 * 60 * 60 * 1000;
 export const DEFAULT_STALL_MINUTES = 30;
 export const DEFAULT_PAID_MINUTES_PER_WINDOW = 150;
-/** A reporter in `shadow` or `report` that has not reported for this long is silent. */
-export const REPORTER_SILENT_MS = 10 * 60 * 1000;
 export const REQUEST_TIMEOUT_MS = 15_000;
 
 export const ARTIFACT_NAME = "ci-health-report";
 export const REPORT_FILE = "ci-health-report.json";
 export const ISSUE_LABEL = "ci-health";
+export const RELAY_INPUTS_FILE = "relay-inputs.json";
 
 /** The route job of every routed workflow, and the main gate's plan job that asks again. */
 export const ROUTE_JOB = "Route runners";
@@ -71,7 +47,7 @@ export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"HoBo release PR gate (required)",
 	"CI health",
 ]);
-export const FLEET_LABELS: ReadonlySet<string> = new Set([
+export const RUNNER_LABELS: ReadonlySet<string> = new Set([
 	"hobo",
 	"hobo-trunk",
 ]);
@@ -98,7 +74,6 @@ export const ABSENT_SLIP_WHYS: ReadonlySet<string> = new Set([
 
 // --- JSON, read at the boundary ---
 
-/** A parsed JSON document: what GitHub and the relay answer with. */
 export type JsonValue =
 	| null
 	| boolean
@@ -144,8 +119,6 @@ export function parseJson(text: string): JsonValue | undefined {
 	}
 }
 
-// --- What the GitHub REST API and the relay answer (only the fields read) ---
-
 export type WorkflowRun = Readonly<{
 	id: number;
 	htmlUrl: string;
@@ -172,28 +145,14 @@ export type Annotation = Readonly<{
 	message: string;
 }>;
 
-export type ReporterStatus = Readonly<{
-	id: string;
-	mode: string;
-	lastReportAt: string;
-}>;
-
-export type LabelAllowance = Readonly<{
-	label: string;
-	usedSeconds: number;
-	spent: boolean;
-}>;
-
-/** `FleetReporterStatusList` in `packages/ci-gh-actions/data-models/fleet_verdict.proto`, the fields read. */
-export type ReporterStatusList = Readonly<{
-	reporters: readonly ReporterStatus[];
-	allowance: readonly LabelAllowance[];
-	dailyBlockMinutes: number;
-}>;
-
-/** The relay's status, or why it could not be read. */
-export type StatusReading =
-	| Readonly<{ kind: "known"; list: ReporterStatusList }>
+export type RelayFreshness =
+	| Readonly<{
+			kind: "known";
+			served: string;
+			branch: string;
+			behindBy: number;
+			relayFiles: readonly string[];
+	  }>
 	| Readonly<{ kind: "unknown"; why: string }>;
 
 /** One run of the window: the run, its jobs, and the route annotations by job id. */
@@ -206,7 +165,7 @@ export type RunPages = Readonly<{
 /** Everything one window's runs left behind. */
 export type WindowData = Readonly<{
 	runs: readonly RunPages[];
-	status: StatusReading;
+	relay: RelayFreshness;
 }>;
 
 /** The runs of a `GET /repos/{r}/actions/runs` page. */
@@ -264,45 +223,6 @@ export function parseAnnotations(page: JsonValue | undefined): Annotation[] {
 	});
 }
 
-/** A status list for `repository`, or nothing when the answer is not one. */
-export function parseStatusList(
-	document: JsonValue | undefined,
-	repository: string,
-): ReporterStatusList | undefined {
-	const list = asObject(document);
-	const reporters = list?.reporters;
-	if (
-		asText(list?.repository)?.toLowerCase() !== repository.toLowerCase() ||
-		!Array.isArray(reporters)
-	)
-		return undefined;
-	const allowance = asObject(list?.allowance) ?? {};
-	return {
-		reporters: asList(reporters).flatMap((entry) => {
-			const reporter = asObject(entry);
-			const id = asText(reporter?.id);
-			if (id === undefined) return [];
-			const state = asObject(reporter?.state);
-			return [
-				{
-					id,
-					mode: asText(state?.mode) ?? "",
-					lastReportAt: asText(state?.lastReportAt) ?? "",
-				},
-			];
-		}),
-		allowance: Object.entries(allowance).map(([label, value]) => {
-			const use = asObject(value);
-			return {
-				label,
-				usedSeconds: asNumber(use?.usedSeconds) ?? 0,
-				spent: use?.spent === true,
-			};
-		}),
-		dailyBlockMinutes: asNumber(list?.dailyBlockMinutes) ?? 0,
-	};
-}
-
 // --- The report ---
 
 export type SignalState = "breach" | "clear" | "unknown";
@@ -336,10 +256,9 @@ export type Signals = Readonly<{
 	H1: SignalResult;
 	H2: SignalResult;
 	H3: SignalResult;
-	H4: SignalResult;
 	H6: SignalResult;
 	H8: SignalResult;
-	H10: SignalResult;
+	H11: SignalResult;
 }>;
 
 export type HealthReport = Readonly<{
@@ -356,10 +275,6 @@ export type HealthReport = Readonly<{
 	truncated: boolean;
 	runs: number;
 	requests: number;
-	/** Whether the relay's status route answered; two `unknown` in a row raise H2. */
-	statusRoute: "known" | "unknown";
-	/** Why the status route was not read; empty when it was. */
-	statusWhy: string;
 	signals: Signals;
 	paidMinutes: Readonly<{ total: number; byRefusal: RefusalMinutes }>;
 }>;
@@ -369,10 +284,8 @@ export type Thresholds = Readonly<{
 	paidMinutesPerWindow: number;
 }>;
 
-/** The previous report's fields this run reads: where its window ended and whether the status route answered. */
 export type PreviousReport = Readonly<{
 	windowEnd: string;
-	statusRoute: "known" | "unknown";
 }>;
 
 // --- Pure: from parsed pages to a report ---
@@ -463,17 +376,7 @@ export function h2Breaches(unusable: number, read: number): boolean {
 	);
 }
 
-/**
- * Slips that were there (or could not be read) and still could not be used:
- * malformed, another repository, a label `runnerRouting.labels` does not
- * allow, an API error or the three-second limit. `unknownTwice` is why the
- * hosted relay's status route went unread a second run running; empty when
- * it did not.
- */
-export function signalH2(
-	evidence: readonly RouteEvidence[],
-	unknownTwice: string,
-): SignalResult {
+export function signalH2(evidence: readonly RouteEvidence[]): SignalResult {
 	let read = 0;
 	const lines: string[] = [];
 	for (const entry of evidence)
@@ -484,16 +387,9 @@ export function signalH2(
 			read += 1;
 			lines.push(`${entry.run.htmlUrl}: ${notice.why}`);
 		}
-	const ratio = `${lines.length} of ${read} routing slips unusable`;
-	if (unknownTwice)
-		return {
-			state: "breach",
-			summary: `relay status route unread two runs running (${unknownTwice}); ${ratio}`,
-			evidence: cap(lines),
-		};
 	return {
 		state: h2Breaches(lines.length, read) ? "breach" : "clear",
-		summary: ratio,
+		summary: `${lines.length} of ${read} routing slips unusable`,
 		evidence: cap(lines),
 	};
 }
@@ -519,36 +415,6 @@ export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 	};
 }
 
-export function signalH4(status: StatusReading, nowMs: number): SignalResult {
-	if (status.kind === "unknown")
-		return {
-			state: "unknown",
-			summary: `status route: ${status.why}`,
-			evidence: [],
-		};
-	const silent = status.list.reporters.filter((reporter) => {
-		if (reporter.mode !== "shadow" && reporter.mode !== "report") return false;
-		const last = ms(reporter.lastReportAt);
-		return last === undefined || nowMs - last > REPORTER_SILENT_MS;
-	});
-	if (silent.length === 0)
-		return {
-			state: "clear",
-			summary: `${plural(status.list.reporters.length, "enrolled reporter")}, none silent`,
-			evidence: [],
-		};
-	return {
-		state: "breach",
-		summary: `${silent.map((reporter) => reporter.id).join(", ")} silent for more than 10 minutes`,
-		evidence: cap(
-			silent.map(
-				(reporter) =>
-					`${reporter.id} (${reporter.mode}): last report ${reporter.lastReportAt || "never"}`,
-			),
-		),
-	};
-}
-
 /** How long a job waited for a runner, or has been waiting; nothing for a job that never asked. */
 export function waitedMs(job: WorkflowJob, nowMs: number): number | undefined {
 	if (job.conclusion === "skipped") return undefined;
@@ -570,7 +436,7 @@ export function signalH6(
 	for (const pages of runs)
 		for (const job of pages.jobs) {
 			if (STALL_EXCLUDED_JOBS.has(job.name)) continue;
-			if (!job.labels.some((label) => FLEET_LABELS.has(label))) continue;
+			if (!job.labels.some((label) => RUNNER_LABELS.has(label))) continue;
 			const waited = waitedMs(job, nowMs);
 			if (waited === undefined || waited <= limitMs) continue;
 			stalls.push(
@@ -648,29 +514,20 @@ export function signalH8(
 	};
 }
 
-export function signalH10(status: StatusReading): SignalResult {
-	if (status.kind === "unknown")
-		return {
-			state: "unknown",
-			summary: `status route: ${status.why}`,
-			evidence: [],
-		};
-	const spent = status.list.allowance.filter((use) => use.spent);
-	if (spent.length === 0)
+export function signalH11(relay: RelayFreshness): SignalResult {
+	if (relay.kind === "unknown")
+		return { state: "unknown", summary: relay.why, evidence: [] };
+	const served = relay.served.slice(0, 12);
+	if (relay.relayFiles.length === 0)
 		return {
 			state: "clear",
-			summary: "no label's allowance is spent",
+			summary: `the relay serves ${served}; ${plural(relay.behindBy, "later commit")} on ${relay.branch} changed none of its sources`,
 			evidence: [],
 		};
 	return {
 		state: "breach",
-		summary: `block allowance spent for ${spent.map((use) => use.label).join(", ")}`,
-		evidence: cap(
-			spent.map(
-				(use) =>
-					`${use.label}: ${Math.round(use.usedSeconds / 60)} of ${status.list.dailyBlockMinutes} min`,
-			),
-		),
+		summary: `the relay serves ${served}, behind ${relay.branch}: ${plural(relay.relayFiles.length, "relay source")} changed since; deploy it through HoBo with the owner's store session (hobo ci deploy)`,
+		evidence: cap(relay.relayFiles),
 	};
 }
 
@@ -689,19 +546,14 @@ export type EvaluateInput = Readonly<{
 
 export function evaluate(input: EvaluateInput): HealthReport {
 	const evidence = input.data.runs.map(routeEvidence);
-	const status = input.data.status;
-	const statusWhy = status.kind === "unknown" ? status.why : "";
-	const unknownTwice =
-		input.previous?.statusRoute === "unknown" ? statusWhy : "";
 	const h8 = signalH8(input.data.runs, input.thresholds.paidMinutesPerWindow);
 	const signals: Signals = {
 		H1: signalH1(evidence),
-		H2: signalH2(evidence, unknownTwice),
+		H2: signalH2(evidence),
 		H3: signalH3(evidence),
-		H4: signalH4(status, input.nowMs),
 		H6: signalH6(input.data.runs, input.nowMs, input.thresholds.stallMinutes),
 		H8: h8.result,
-		H10: signalH10(status),
+		H11: signalH11(input.data.relay),
 	};
 	const breach = SIGNALS.some((signal) => signals[signal].state === "breach");
 	return {
@@ -716,8 +568,6 @@ export function evaluate(input: EvaluateInput): HealthReport {
 		truncated: input.truncated,
 		runs: input.data.runs.length,
 		requests: input.requests,
-		statusRoute: status.kind,
-		statusWhy,
 		signals,
 		paidMinutes: { total: h8.total, byRefusal: h8.byRefusal },
 	};
@@ -778,7 +628,6 @@ export function issueBody(
 	].join("\n");
 }
 
-/** The relay's origin from `.hobo/ci.json`: the default environment's `relayOrigin`, `https` only. */
 export function parseRelayOrigin(text: string): string | undefined {
 	const project = asObject(parseJson(text));
 	const environment = asObject(
@@ -832,11 +681,7 @@ export function parsePreviousReport(
 	const report = asObject(document);
 	const end = ms(asText(report?.windowEnd) ?? "");
 	if (end === undefined || end > nowMs) return undefined;
-	return {
-		windowEnd: new Date(end).toISOString(),
-		statusRoute:
-			asText(report?.statusRoute) === "unknown" ? "unknown" : "known",
-	};
+	return { windowEnd: new Date(end).toISOString() };
 }
 
 // --- Fetching, within the budget ---
@@ -849,7 +694,6 @@ export type GithubRequest = Readonly<{ method: "GET" | "POST"; body: string }>;
 export type Http = Readonly<{
 	/** GitHub's REST API: a path below the API root; JSON out. */
 	github(path: string, request?: GithubRequest): Promise<JsonValue | undefined>;
-	/** A whole URL, raw; for the artifact archive, the OIDC token and the relay. */
 	raw(url: string, headers: HeadersInit): Promise<Response>;
 	requests(): number;
 	/** The GitHub token, for the archive download; empty when there is none. */
@@ -979,55 +823,76 @@ export async function readWindow(
 	return { runs, truncated: total > MAX_RUNS };
 }
 
-export type OidcSource = Readonly<{ requestUrl: string; requestToken: string }>;
+const COMMIT = /^[0-9a-f]{40}$/u;
+const COMPARE_FILE_LIMIT = 300;
 
-/** The relay's status for this repository, through a workflow OIDC token; `unknown` on any failure. */
-export async function readStatus(
+export function parseRelayInputs(text: string): readonly string[] {
+	return asList(parseJson(text)).flatMap((entry) => {
+		const dir = asText(entry);
+		return dir ? [dir] : [];
+	});
+}
+
+export function touchesRelayInput(
+	file: string,
+	inputDirs: readonly string[],
+): boolean {
+	return inputDirs.some((dir) => file === dir || file.startsWith(`${dir}/`));
+}
+
+export async function readRelayFreshness(
 	http: Http,
 	repository: string,
 	origin: string | undefined,
-	oidc: OidcSource,
-): Promise<StatusReading> {
+	inputDirs: readonly string[],
+): Promise<RelayFreshness> {
 	if (!origin)
 		return { kind: "unknown", why: "no relay named in .hobo/ci.json" };
-	if (!oidc.requestUrl || !oidc.requestToken)
+	if (inputDirs.length === 0)
 		return {
 			kind: "unknown",
-			why: "no OIDC token (not in a workflow with id-token: write)",
+			why: "the relay's source directories are unknown",
 		};
 	try {
-		const tokenResponse = await http.raw(
-			`${oidc.requestUrl}&audience=${encodeURIComponent(origin)}`,
-			{ Authorization: `bearer ${oidc.requestToken}` },
+		const health = await http.raw(`${origin}/healthz`, {
+			Accept: "application/json",
+		});
+		if (!health.ok)
+			return { kind: "unknown", why: `/healthz answered ${health.status}` };
+		const served = asText(asObject(parseJson(await health.text()))?.commit);
+		if (!served || !COMMIT.test(served))
+			return { kind: "unknown", why: "/healthz names no commit" };
+		const branch = asText(
+			asObject(await http.github(`/repos/${repository}`))?.default_branch,
 		);
-		if (!tokenResponse.ok)
+		if (!branch)
+			return { kind: "unknown", why: "the default branch is unknown" };
+		const compare = asObject(
+			await http.github(
+				`/repos/${repository}/compare/${served}...${encodeURIComponent(branch)}`,
+			),
+		);
+		const behindBy = asNumber(compare?.ahead_by);
+		if (behindBy === undefined)
+			return { kind: "unknown", why: "the comparison answered something else" };
+		const files = asList(compare?.files).flatMap((entry) => {
+			const name = asText(asObject(entry)?.filename);
+			return name ? [name] : [];
+		});
+		const relayFiles = files.filter((file) =>
+			touchesRelayInput(file, inputDirs),
+		);
+		if (relayFiles.length === 0 && files.length >= COMPARE_FILE_LIMIT)
 			return {
 				kind: "unknown",
-				why: `OIDC token request answered ${tokenResponse.status}`,
+				why: `${served.slice(0, 12)} is ${plural(behindBy, "commit")} behind ${branch}, more files than one comparison lists`,
 			};
-		const token = asText(
-			asObject(parseJson(await tokenResponse.text()))?.value,
-		);
-		if (!token)
-			return { kind: "unknown", why: "OIDC token missing from the answer" };
-		const response = await http.raw(
-			`${origin}/v1/fleet/reporters/${repository}`,
-			{ Authorization: `Bearer ${token}`, Accept: "application/json" },
-		);
-		if (!response.ok)
-			return {
-				kind: "unknown",
-				why: `status route answered ${response.status}`,
-			};
-		const list = parseStatusList(parseJson(await response.text()), repository);
-		return list
-			? { kind: "known", list }
-			: { kind: "unknown", why: "status route answered something else" };
+		return { kind: "known", served, branch, behindBy, relayFiles };
 	} catch (error) {
 		if (error instanceof BudgetSpent) throw error;
 		return {
 			kind: "unknown",
-			why: `status route unreachable (${error instanceof Error ? error.message : String(error)})`,
+			why: `relay freshness unread (${error instanceof Error ? error.message : String(error)})`,
 		};
 	}
 }
@@ -1142,8 +1007,8 @@ export type MainIo = Readonly<{
 	fetch: typeof fetch;
 	now: () => number;
 	log: (line: string) => void;
-	/** The contents of `.hobo/ci.json`. */
 	relayConfig: string;
+	relayInputs: string;
 }>;
 
 const defaultIo = (): MainIo => ({
@@ -1151,6 +1016,7 @@ const defaultIo = (): MainIo => ({
 	now: Date.now,
 	log: (line) => console.log(line),
 	relayConfig: readText(".hobo/ci.json"),
+	relayInputs: readText(RELAY_INPUTS_FILE),
 });
 
 /**
@@ -1187,18 +1053,15 @@ export async function main(
 		previous = await readPreviousReport(http, repository, nowMs, io.log);
 		if (previous) windowStart = previous.windowEnd;
 		const window = await readWindow(http, repository, windowStart, windowEnd);
-		const status = await readStatus(
+		const relay = await readRelayFreshness(
 			http,
 			repository,
 			parseRelayOrigin(io.relayConfig),
-			{
-				requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL ?? "",
-				requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "",
-			},
+			parseRelayInputs(io.relayInputs),
 		);
 		report = evaluate({
 			repository,
-			data: { runs: window.runs, status },
+			data: { runs: window.runs, relay },
 			windowStart,
 			windowEnd,
 			nowMs,
@@ -1227,16 +1090,13 @@ export async function main(
 			truncated: false,
 			runs: 0,
 			requests: http.requests(),
-			statusRoute: previous?.statusRoute ?? "known",
-			statusWhy: "",
 			signals: {
 				H1: NOT_COMPUTED,
 				H2: NOT_COMPUTED,
 				H3: NOT_COMPUTED,
-				H4: NOT_COMPUTED,
 				H6: NOT_COMPUTED,
 				H8: NOT_COMPUTED,
-				H10: NOT_COMPUTED,
+				H11: NOT_COMPUTED,
 			},
 			paidMinutes: {
 				total: 0,

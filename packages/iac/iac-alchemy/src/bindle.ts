@@ -81,6 +81,7 @@ export interface AlchemyPrimitiveInput<Entrypoint, Requirements> {
 export interface AlchemyMappedPrimitive<Entrypoint> {
 	readonly primary: ResourceLike;
 	readonly resources: readonly ResourceLike[];
+	readonly sharedDependency?: string;
 	readonly boundDependencies: readonly string[];
 	readonly boundEntrypoint?: Entrypoint;
 }
@@ -797,13 +798,27 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		const stack = currentStack.value;
 		const ownedResources = new Set<string>();
 		const ownedActions = new Set<string>();
+		let resourceWrites = 0;
+		let actionWrites = 0;
 		/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-reflect-set -- SAFETY: Alchemy registers stack objects through these dictionaries; the proxy refuses entries owned outside this Bindle. */
 		const guardRegistry = <T extends object>(
 			registry: Record<string, T>,
 			owned: Set<string>,
 			kind: "resource" | "action",
-		) =>
-			new Proxy(registry, {
+		) => {
+			const markWrite = () => {
+				if (kind === "resource") resourceWrites++;
+				else actionWrites++;
+			};
+			const claim = (target: Record<string, T>, key: string) => {
+				if (Object.hasOwn(target, key) && !owned.has(key))
+					throw new AlchemyIacError(
+						"BINDLE_IDENTITY_COLLISION",
+						`Alchemy ${kind} ${key} is already owned outside this Bindle`,
+					);
+				owned.add(key);
+			};
+			return new Proxy(registry, {
 				get(target, key, receiver) {
 					if (typeof key === "string") {
 						if (Object.hasOwn(target, key) && !owned.has(key))
@@ -817,12 +832,9 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 					return Reflect.get(target, key, receiver);
 				},
 				set(target, key, value) {
+					markWrite();
 					if (typeof key === "string") {
-						if (Object.hasOwn(target, key) && !owned.has(key))
-							throw new AlchemyIacError(
-								"BINDLE_IDENTITY_COLLISION",
-								`Alchemy ${kind} ${key} is already owned outside this Bindle`,
-							);
+						claim(target, key);
 						if (!Object.hasOwn(target, key)) {
 							Object.defineProperty(target, key, {
 								value,
@@ -830,14 +842,31 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 								configurable: true,
 								writable: true,
 							});
-							owned.add(key);
 							return true;
 						}
-						owned.add(key);
 					}
 					return Reflect.set(target, key, value);
 				},
+				defineProperty(target, key, descriptor) {
+					markWrite();
+					if (typeof key === "string") claim(target, key);
+					return Reflect.defineProperty(target, key, descriptor);
+				},
+				deleteProperty(target, key) {
+					markWrite();
+					if (
+						typeof key === "string" &&
+						Object.hasOwn(target, key) &&
+						!owned.has(key)
+					)
+						throw new AlchemyIacError(
+							"BINDLE_IDENTITY_COLLISION",
+							`Alchemy ${kind} ${key} is already owned outside this Bindle`,
+						);
+					return Reflect.deleteProperty(target, key);
+				},
 			});
+		};
 		/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-reflect-set */
 		const guardedStack = {
 			...stack,
@@ -847,8 +876,39 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		const primary: Record<string, ResourceLike> = Object.create(null);
 		const resources: ResourceLike[] = [];
 		const fqns = new Set<string>();
+		const stillRegistered = (resource: ResourceLike) => {
+			const descriptor = Object.getOwnPropertyDescriptor(
+				stack.resources,
+				resource.FQN,
+			);
+			return (
+				descriptor !== undefined &&
+				Object.hasOwn(descriptor, "value") &&
+				descriptor.value === resource
+			);
+		};
 		for (const row of order) {
 			ownedActions.clear();
+			const previousResources = new Set(ownedResources);
+			const previousResourceWrites = resourceWrites;
+			const previousActionWrites = actionWrites;
+			const previousBindings = new Map(
+				Object.entries(stack.bindings).map(([key, value]) => [key, [...value]]),
+			);
+			const bindingsUnchanged = () => {
+				const entries = Object.entries(stack.bindings);
+				return (
+					entries.length === previousBindings.size &&
+					entries.every(([key, value]) => {
+						const previous = previousBindings.get(key);
+						return (
+							previous !== undefined &&
+							previous.length === value.length &&
+							previous.every((item, index) => item === value[index])
+						);
+					})
+				);
+			};
 			const dependencies: Record<string, ResourceLike> = Object.create(null);
 			const dependencyDeclarations: Record<string, PrimitiveDeclaration> =
 				Object.create(null);
@@ -873,10 +933,24 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 					dependencyDeclarations: Object.freeze(dependencyDeclarations),
 				})
 				.pipe(Effect.provideService(StackContext, guardedStack));
+			const shared = mapped.sharedDependency;
 			if (
-				mapped.resources.length === 0 ||
 				resources.length + mapped.resources.length > 256 ||
-				!mapped.resources.includes(mapped.primary) ||
+				(shared === undefined &&
+					(mapped.resources.length === 0 ||
+						!mapped.resources.includes(mapped.primary))) ||
+				(shared !== undefined &&
+					(!validName(shared) ||
+						!row.dependencies.includes(shared) ||
+						dependencies[shared] !== mapped.primary ||
+						mapped.resources.length !== 0 ||
+						resourceWrites !== previousResourceWrites ||
+						actionWrites !== previousActionWrites ||
+						!bindingsUnchanged() ||
+						!isResource(mapped.primary) ||
+						!row.mapper.resourceTypes.includes(mapped.primary.Type) ||
+						!stillRegistered(mapped.primary))) ||
+				!resources.every(stillRegistered) ||
 				mapped.boundEntrypoint !== row.entrypoint ||
 				mapped.boundDependencies.length !== row.dependencies.length ||
 				new Set(mapped.boundDependencies).size !== row.dependencies.length ||
@@ -893,6 +967,7 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 					!isResource(resource) ||
 					!validName(resource.FQN) ||
 					!ownedResources.has(resource.FQN) ||
+					!stillRegistered(resource) ||
 					!row.mapper.resourceTypes.includes(resource.Type) ||
 					fqns.has(resource.FQN)
 				)
@@ -903,6 +978,17 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 				fqns.add(resource.FQN);
 				resources.push(resource);
 			}
+			if (
+				[...ownedResources].some(
+					(name) =>
+						!previousResources.has(name) &&
+						!mapped.resources.some((resource) => resource.FQN === name),
+				)
+			)
+				throw new AlchemyIacError(
+					"MAPPING_INCOMPLETE",
+					`mapping for ${row.declaration.name} registered an unreported Alchemy resource`,
+				);
 			primary[row.declaration.name] = mapped.primary;
 		}
 		return { primary, resources };

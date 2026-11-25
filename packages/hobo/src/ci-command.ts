@@ -5,6 +5,7 @@ import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, promisify } from "node:util";
+import type { JsonValue } from "@bufbuild/protobuf";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import type { CredentialResolver } from "@hobo/cd";
 import { loadCiProjectFromDirectory } from "@hobo/ci-gh-actions/cli-serve";
@@ -18,7 +19,8 @@ import {
 	verbHelpText,
 	type YardRuntime,
 } from "@hobo/cli";
-import type { HttpTransport, TrustedVault } from "@hobo/core";
+import type { HttpTransport } from "@hobo/core";
+import type { Outcome } from "@hobo/fleet";
 import {
 	type AppHandOffMode,
 	egressFetch,
@@ -34,6 +36,7 @@ import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import type { AgentVaultRouter } from "./agent-vault-broker.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
+import { type CiCommand, findCiCommand } from "./ci-commands.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runCiFleet } from "./ci-fleet.js";
 import {
@@ -45,18 +48,12 @@ import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
 import { runCiInit } from "./ci-init.js";
 import { runCiInsights } from "./ci-insights.js";
-import {
-	localMeshReport,
-	meshNodesData,
-	meshNodesTable,
-} from "./ci-mesh-status.js";
 import { CI_DEPLOY_ADOPT_OPTIONS, runCiRelayAdopt } from "./ci-relay-adopt.js";
 import {
 	CI_DEPLOY_ONLY_OPTIONS,
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
-import type { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
@@ -68,6 +65,9 @@ import {
 	type SecretStoreBindingStore,
 } from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
+import { fleetViews } from "./fleet-command.js";
+import { createFleetRuntime } from "./fleet-runtime.js";
+import { type NamedFleetView, renderFleetStatus } from "./fleet-status.js";
 import type { OwnerStoreEntries } from "./owner-store-session.js";
 import { createFetchHttpTransport } from "./resolver-iac-provider.js";
 import type { VercelFetch } from "./vercel-client.js";
@@ -130,21 +130,51 @@ function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
 }
 
-/**
- * `hobo ci status` with no relay to ask: this machine's own mesh report,
- * when its local runner keeps one. Nothing when it does not, so the caller
- * gives its usual answer.
- */
+export type CiFleetStatus = () => Promise<
+	Outcome<readonly NamedFleetView[]> | undefined
+>;
+
+function defaultFleetStatus(env: NodeJS.ProcessEnv): CiFleetStatus {
+	return async () => {
+		if (!env.HOBO_FLEET_AUTHORITY_URL) return undefined;
+		const client = await createFleetRuntime({
+			env,
+			progress: () => undefined,
+		}).client({ kind: "person" });
+		return client.ok ? fleetViews(client.value, undefined) : client;
+	};
+}
+
+async function fleetSection(
+	status: CiFleetStatus,
+): Promise<Readonly<{ message: string; data: JsonValue }> | undefined> {
+	const views = await status().catch(() => undefined);
+	if (views === undefined) return undefined;
+	if (!views.ok)
+		return {
+			message: `Fleet status unavailable: ${views.error.message}`,
+			data: { error: views.error.code },
+		};
+	return {
+		message: renderFleetStatus(views.value),
+		data: views.value.map((entry) => ({
+			fleet: entry.fleet,
+			members: entry.view?.members.length ?? 0,
+			freeSlots: entry.view?.capacity?.freeSlots ?? 0,
+			totalSlots: entry.view?.capacity?.totalSlots ?? 0,
+		})),
+	};
+}
+
 async function offlineStatus(
-	repositoryRoot: string,
-	env: NodeJS.ProcessEnv,
+	status: CiFleetStatus,
 	why: string,
 ): Promise<CommandResult | undefined> {
-	const report = await localMeshReport(repositoryRoot, env);
-	if (!report) return undefined;
+	const fleet = await fleetSection(status);
+	if (!fleet) return undefined;
 	return {
-		message: `${why} Showing this machine's own report.\n${meshNodesTable(report)}`,
-		data: { source: "local", mesh: meshNodesData(report) },
+		message: `${why}\n${fleet.message}`,
+		data: { source: "fleet", fleet: fleet.data },
 	};
 }
 
@@ -457,6 +487,28 @@ function bindingStoreFor(
 		: { bindingStore: ownerSecretStoreBindingStore(ownerEntries(cwd)) };
 }
 
+export const BUILT_IN_CI_COMMANDS = [
+	"enable",
+	"connect",
+	"status",
+	"list",
+	"ls",
+	"inspect",
+	"logs",
+	"grep",
+	"rerun",
+	"serve",
+	"github",
+	"deploy",
+	"app",
+	"secret-store",
+	"route",
+	"init",
+	"signals",
+	"diagnose",
+	"fleet",
+] as const;
+
 export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
@@ -469,8 +521,6 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
-		deployCredentials?: TrustedVault;
-		readDeployCredential?: typeof readRelayDeployToken;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		vercelBuild?: VercelBuildRunner;
@@ -487,7 +537,9 @@ export function createCiCommand(
 		fleetAgentVault?: (cwd: string) => AgentVaultRouter | undefined;
 		ownerEntries?: (cwd: string) => OwnerStoreEntries;
 		hostingerHttp?: HttpTransport;
+		commands?: readonly CiCommand[];
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
+		fleetStatus?: CiFleetStatus;
 	} = {},
 ): CommandModule {
 	return {
@@ -517,6 +569,21 @@ export function createCiCommand(
 						deps.hostingerHttp ?? createFetchHttpTransport(globalThis.fetch),
 				});
 			}
+			const first = args[0] ?? "";
+			const tabled = BUILT_IN_CI_COMMANDS.some((name) => name === first)
+				? undefined
+				: findCiCommand(first, deps.commands);
+			if (tabled)
+				return tabled.run({
+					args: args.slice(1),
+					flags,
+					emitProgress,
+					env: deps.env ?? process.env,
+					fetch: deps.fetch ?? fetch,
+					now: deps.now ?? Date.now,
+					credentials: deps.ownerCredentials?.(flags.cwd),
+					localRepository: (repo) => localRepository(deps, flags.cwd, { repo }),
+				});
 			let parsed: ReturnType<typeof parseCiArgs>;
 			try {
 				parsed = parseCiArgs(args);
@@ -539,29 +606,7 @@ export function createCiCommand(
 				? ["connect", ...parsed.positionals.slice(2)]
 				: parsed.positionals;
 			const command = positionals[0] ?? "";
-			if (
-				![
-					"enable",
-					"connect",
-					"status",
-					"list",
-					"ls",
-					"inspect",
-					"logs",
-					"grep",
-					"rerun",
-					"serve",
-					"github",
-					"deploy",
-					"app",
-					"secret-store",
-					"route",
-					"init",
-					"signals",
-					"diagnose",
-					"fleet",
-				].includes(command)
-			)
+			if (!BUILT_IN_CI_COMMANDS.some((name) => name === command))
 				return usage("Unknown CI command. Run hobo ci --help.");
 			if (command === "init") {
 				const local = await localRepository(deps, flags.cwd, values);
@@ -580,10 +625,10 @@ export function createCiCommand(
 				return runCiInsights({
 					command,
 					repository: local.repository,
-					cwd: local.root,
 					args: positionals.slice(1),
 					options: values,
-					env: deps.env ?? process.env,
+					credentials: deps.ownerCredentials?.(flags.cwd),
+					fetch: deps.fetch ?? fetch,
 				});
 			}
 			if (command === "route") {
@@ -637,11 +682,8 @@ export function createCiCommand(
 					values,
 					env: deps.env ?? process.env,
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
-					...(deps.deployCredentials !== undefined
-						? { credentials: deps.deployCredentials }
-						: undefined),
-					...(deps.readDeployCredential !== undefined
-						? { readDeployCredential: deps.readDeployCredential }
+					...(deps.ownerCredentials !== undefined
+						? { ownerCredentials: deps.ownerCredentials(flags.cwd) }
 						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
@@ -1019,6 +1061,7 @@ export function createCiCommand(
 					"--installation-id must be a positive, safe integer GitHub App installation ID.",
 				);
 			const env = deps.env ?? process.env;
+			const fleetStatus = deps.fleetStatus ?? defaultFleetStatus(env);
 			const interactive =
 				(deps.interactive ??
 					Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
@@ -1128,6 +1171,8 @@ export function createCiCommand(
 						args: positionals.slice(1),
 						options: runOptions,
 						env,
+						credentials: deps.ownerCredentials?.(flags.cwd),
+						fetch: deps.fetch ?? fetch,
 						emitProgress,
 					});
 				const link =
@@ -1164,7 +1209,7 @@ export function createCiCommand(
 				if (!relay)
 					return (
 						(command === "status"
-							? await offlineStatus(root, env, "No CI relay is selected.")
+							? await offlineStatus(fleetStatus, "No CI relay is selected.")
 							: undefined) ??
 						usage(
 							"Select your CI relay with --relay, HOBO_CI_RELAY_URL, or .hobo/ci.json (see hobo ci --help).",
@@ -1180,8 +1225,7 @@ export function createCiCommand(
 					return (
 						(command === "status"
 							? await offlineStatus(
-									root,
-									env,
+									fleetStatus,
 									"No CI account credential resolved from the owner's store session, so the relay was not asked.",
 								)
 							: undefined) ?? ciAccountCredentialUnavailable()
@@ -1218,8 +1262,7 @@ export function createCiCommand(
 						error instanceof CiRelayClientError &&
 						error.status === 0
 							? await offlineStatus(
-									root,
-									env,
+									fleetStatus,
 									"The CI relay could not be reached.",
 								)
 							: undefined;
@@ -1249,10 +1292,7 @@ export function createCiCommand(
 						connection.repository.toLowerCase() === repository.toLowerCase(),
 				);
 				if (command === "status") {
-					// The runner nodes behind the relay: availability, capacity
-					// and trust. A relay too old to have the route, or one that
-					// refuses it, leaves the connection status as the answer.
-					const mesh = await client.getMeshNodes().catch(() => undefined);
+					const fleet = await fleetSection(fleetStatus);
 					const connection = existing
 						? `CI connected for ${repository} at ${origin}.`
 						: `CI is not connected for ${repository}. Run hobo ci enable.`;
@@ -1267,10 +1307,10 @@ export function createCiCommand(
 						environment: selectedEnvironment,
 						jobAdmission,
 					};
-					return mesh
+					return fleet
 						? {
-								message: `${connection}\n${meshNodesTable(mesh)}`,
-								data: { ...status, mesh: meshNodesData(mesh) },
+								message: `${connection}\n${fleet.message}`,
+								data: { ...status, fleet: fleet.data },
 							}
 						: { message: connection, data: status };
 				}

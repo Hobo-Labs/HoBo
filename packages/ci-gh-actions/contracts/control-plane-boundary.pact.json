@@ -525,10 +525,10 @@
       }
     },
     {
-      "description": "refuse the relay mesh's node list without account authentication",
+      "description": "refuse the relay's fleet member list without account authentication",
       "request": {
         "method": "GET",
-        "path": "/v1/mesh/nodes",
+        "path": "/v1/fleet/members",
         "headers": {}
       },
       "response": {
@@ -543,26 +543,22 @@
       }
     },
     {
-      "description": "answer the relay mesh's node list as not configured on a relay with no mesh",
+      "description": "answer the relay's fleet member list as unavailable on a relay that reads no fleet",
       "request": {
         "method": "GET",
-        "path": "/v1/mesh/nodes",
+        "path": "/v1/fleet/members",
         "headers": {
           "Authorization": "Bearer control-readonly-token-with-at-least-32-characters"
         }
       },
       "response": {
-        "status": 200,
+        "status": 503,
         "headers": {
           "Content-Type": "application/json",
           "Cache-Control": "no-store"
         },
         "body": {
-          "mesh": "not-configured",
-          "nodes": [],
-          "readAt": "",
-          "requireTrusted": false,
-          "truncated": false
+          "error": "this relay reads no fleet"
         }
       }
     }

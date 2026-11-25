@@ -30,6 +30,11 @@ import {
 	OwnerPageRefused,
 	type OwnerPages,
 } from "./mcp-owner-page.js";
+import {
+	RELAY_LOGIN_DEFINITION,
+	RELAY_LOGIN_TOOL,
+	type RelayLoginTool,
+} from "./mcp-relay-login.js";
 import type {
 	OwnerSessionState,
 	OwnerStoreLabel,
@@ -53,6 +58,7 @@ export const STORE_CHOICE_TOOL_NAMES: readonly string[] = Object.freeze([
 	SUBMIT_STORE_CHOICE_TOOL,
 	SUBMIT_OWNER_PAGE_TOOL,
 	STORE_OWNER_ENTRIES_TOOL,
+	RELAY_LOGIN_TOOL,
 ]);
 
 export type StoreChoiceSupport = Readonly<{
@@ -468,6 +474,7 @@ export function createStoreChoiceApp(
 		readonly sessions?: OwnerStoreSessions;
 		readonly pages?: OwnerPages;
 		readonly deposit?: (name: string, value: string) => void;
+		readonly relayLogin?: RelayLoginTool;
 	} = {},
 ): StoreChoiceApp {
 	const locatorFor = options.locatorFor;
@@ -776,9 +783,11 @@ export function createStoreChoiceApp(
 		tools(support) {
 			const owned = locatorFor !== undefined;
 			const tools = baseTools(support, owned);
-			return options.sessions === undefined
-				? tools
-				: [...tools, entriesDefinition];
+			return [
+				...tools,
+				...(options.sessions === undefined ? [] : [entriesDefinition]),
+				...(options.relayLogin === undefined ? [] : [RELAY_LOGIN_DEFINITION]),
+			];
 		},
 		resources(support) {
 			return locatorFor !== undefined && support.apps
@@ -814,6 +823,10 @@ export function createStoreChoiceApp(
 		async callTool(tool, args, support, request) {
 			const cwd = cwdOf(args);
 			const family = args.family === "ci" ? "ci" : "cd";
+			if (tool === RELAY_LOGIN_TOOL)
+				return options.relayLogin === undefined
+					? UNAVAILABLE
+					: options.relayLogin.call(args, support, request);
 			if (tool === STORE_OWNER_ENTRIES_TOOL) {
 				const outcome = await storeOwnerEntries({
 					cwd,

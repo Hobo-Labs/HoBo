@@ -1,0 +1,5 @@
+{
+  "fleet": "ci",
+  "name": "box-a",
+  "ttlSeconds": 3600
+}

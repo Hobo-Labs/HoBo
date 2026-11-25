@@ -1,0 +1,10 @@
+# The shape of operator.conf, which each NATS server template includes. The
+# operator writes it from the key ceremony (`hobo fleet ops ceremony` stores the
+# operator JWT at <secretPrefix>/operator-jwt); the system account and its JWT
+# are derived from the same operator signing key. Never commit the real file:
+# mount it from the secret store beside the template.
+operator: "<operator JWT>"
+system_account: "<system account public key, A...>"
+resolver_preload: {
+  "<system account public key, A...>": "<system account JWT>"
+}

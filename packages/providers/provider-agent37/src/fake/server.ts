@@ -7,10 +7,10 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 
-const MAX_BODY_BYTES = 1_048_576;
-const MAX_EXEC_STREAM_BYTES = 512 * 1024;
-const EXEC_REPLAY_MS = 300_000;
-const MAX_WEBHOOKS = 5;
+const BODY_LIMIT = 1_048_576;
+const EXEC_OUTPUT_LIMIT = 512 * 1024;
+const EXEC_REPLAY_WINDOW = 300_000;
+const WEBHOOK_LIMIT = 5;
 const objectTag = Object.prototype.toString;
 
 export type JsonValue =
@@ -85,13 +85,13 @@ export const AGENT37_INSTANCE_SIZES: readonly Agent37InstanceSize[] = [
 	{ cpu: 8, memoryGb: 64, monthlyUsd: 55.52, virtualMachineOnly: true },
 ];
 
-const typeRate = {
+const rateMultipliers = {
 	default: 1,
 	vm: 2.5,
 	performance: 4,
 } satisfies Record<Agent37InstanceType, number>;
 
-const billedMemoryStatuses: ReadonlySet<Agent37InstanceStatus> = new Set([
+const memoryStatuses: ReadonlySet<Agent37InstanceStatus> = new Set([
 	"provisioning",
 	"running",
 	"starting",
@@ -178,11 +178,11 @@ export type FakeAgent37InstanceState = {
 	apiKey: string;
 	walletUsd: number;
 	memoryLimitGb: number;
-	readonly regionsWithoutCapacity: Set<string>;
+	readonly regionsWithoutCapacity: ReadonlySet<string>;
 	failNextRequest: FakeAgent37Fault | null;
-	readonly instances: FakeAgent37Instance[];
-	readonly execInvocations: FakeAgent37ExecInvocation[];
-	readonly webhookDeliveries: FakeAgent37WebhookDelivery[];
+	readonly instances: readonly FakeAgent37Instance[];
+	readonly execInvocations: readonly FakeAgent37ExecInvocation[];
+	readonly webhookDeliveries: readonly FakeAgent37WebhookDelivery[];
 };
 
 export type FakeAgent37ServerOptions = {
@@ -230,7 +230,7 @@ type ParsedCreate = {
 
 type ParsedExec = {
 	readonly command: string;
-	readonly user: "root";
+	readonly user: string;
 	readonly background: boolean;
 	readonly name: string | null;
 };
@@ -239,12 +239,12 @@ type ParseResult<T> =
 	| { readonly ok: true; readonly value: T }
 	| { readonly ok: false; readonly message: string };
 
-type ExecReplay = {
-	readonly response: JsonObject;
+type ReplayRecord = {
+	readonly body: JsonObject;
 	readonly finishedAt: number;
 };
 
-const transitions = {
+const lifecycle = {
 	stop: {
 		from: ["running", "starting", "restarting", "waking", "updating"],
 		to: "stopped",
@@ -254,42 +254,53 @@ const transitions = {
 	restart: { from: ["running"], to: "running" },
 	update: { from: ["running", "stopped"], to: "running" },
 } as const;
-
-type LifecycleVerb = keyof typeof transitions;
+type LifecycleVerb = keyof typeof lifecycle;
 
 function isLifecycleVerb(value: string | undefined): value is LifecycleVerb {
-	return value !== undefined && Object.hasOwn(transitions, value);
+	return value !== undefined && Object.hasOwn(lifecycle, value);
 }
 
-function ok(status: number, body: JsonValue): RouteResult {
+export function generateAgent37TestApiKey(): string {
+	return `sk_live_${randomBytes(24).toString("base64url")}`;
+}
+
+function success(status: number, body: JsonValue): RouteResult {
 	return { status, body };
 }
 
-function error(status: number, code: string, message: string): RouteResult {
+function failure(status: number, code: string, message: string): RouteResult {
 	return { status, body: { error: { code, message } } };
 }
 
-function invalid(message: string): RouteResult {
-	return error(400, "invalid_request", message);
+function invalidRequest(message: string): RouteResult {
+	return failure(400, "invalid_request", message);
 }
 
 function notFound(): RouteResult {
-	return error(404, "not_found", "unknown resource");
+	return failure(404, "not_found", "unknown resource");
 }
 
-function methodNotAllowed(): RouteResult {
-	return error(405, "method_not_allowed", "unsupported method");
+function wrongMethod(): RouteResult {
+	return failure(405, "method_not_allowed", "unsupported method");
 }
 
-function requestHeader(
-	headers: IncomingHttpHeaders,
-	name: string,
-): string | null {
+function header(headers: IncomingHttpHeaders, name: string): string | null {
 	const value = headers[name];
-	return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+	if (Array.isArray(value)) return value[0] ?? null;
+	return value ?? null;
 }
 
-function textField(object: JsonObject, name: string): string | null {
+function isAddressInfo(
+	address: string | AddressInfo | null,
+): address is AddressInfo {
+	return address !== null && objectTag.call(address) === "[object Object]";
+}
+
+function addressPort(address: string | AddressInfo | null): number | null {
+	return isAddressInfo(address) ? address.port : null;
+}
+
+function stringField(object: JsonObject, name: string): string | null {
 	const value = object[name];
 	return isJsonString(value) ? value : null;
 }
@@ -299,60 +310,60 @@ function integerField(object: JsonObject, name: string): number | null {
 	return isJsonNumber(value) && Number.isInteger(value) ? value : null;
 }
 
-function stringMap(
-	value: JsonValue | undefined,
-): { readonly [key: string]: string } | null {
+function stringRecord(value: JsonValue | undefined): {
+	readonly [key: string]: string;
+} | null {
 	if (value === undefined) return {};
 	if (!isJsonObject(value)) return null;
 	const result: { [key: string]: string } = {};
-	for (const [key, entry] of Object.entries(value)) {
-		if (!isJsonString(entry)) return null;
-		result[key] = entry;
+	for (const [key, item] of Object.entries(value)) {
+		if (!isJsonString(item)) return null;
+		result[key] = item;
 	}
 	return result;
 }
 
-function parseInstanceType(
+function instanceType(
 	value: JsonValue | undefined,
 ): Agent37InstanceType | null {
 	if (!isJsonString(value)) return null;
-	return AGENT37_INSTANCE_TYPES.find((entry) => entry === value) ?? null;
+	return AGENT37_INSTANCE_TYPES.find((item) => item === value) ?? null;
 }
 
-function parseRegion(value: JsonValue | undefined): Agent37Region | null {
+function region(value: JsonValue | undefined): Agent37Region | null {
 	if (!isJsonString(value)) return null;
-	return AGENT37_REGIONS.find((entry) => entry === value) ?? null;
+	return AGENT37_REGIONS.find((item) => item === value) ?? null;
 }
 
-function findSize(cpu: number, memoryGb: number): Agent37InstanceSize | null {
+function size(cpu: number, memoryGb: number): Agent37InstanceSize | null {
 	return (
 		AGENT37_INSTANCE_SIZES.find(
-			(entry) => entry.cpu === cpu && entry.memoryGb === memoryGb,
+			(item) => item.cpu === cpu && item.memoryGb === memoryGb,
 		) ?? null
 	);
 }
 
-function parseNetwork(value: JsonValue | undefined): Agent37NetworkRule | null {
-	if (value === undefined || value === "allow-all" || value === "deny-all") {
-		return value ?? "allow-all";
+function network(value: JsonValue | undefined): Agent37NetworkRule | null {
+	if (value === undefined) return "allow-all";
+	if (value === "allow-all" || value === "deny-all") return value;
+	if (!isJsonObject(value)) return null;
+	const allow = value.allow;
+	if (!isJsonArray(allow) || allow.length > 100) return null;
+	const entries: string[] = [];
+	for (const item of allow) {
+		if (!isJsonString(item)) return null;
+		entries.push(item);
 	}
-	if (!isJsonObject(value) || !isJsonArray(value.allow)) return null;
-	if (value.allow.length > 100) return null;
-	const allow: string[] = [];
-	for (const entry of value.allow) {
-		if (!isJsonString(entry)) return null;
-		allow.push(entry);
-	}
-	return { allow };
+	return { allow: entries };
 }
 
-function networkJson(rule: Agent37NetworkRule): JsonValue {
-	return rule === "allow-all" || rule === "deny-all"
-		? rule
-		: { allow: [...rule.allow] };
+function serializedNetwork(value: Agent37NetworkRule): JsonValue {
+	return value === "allow-all" || value === "deny-all"
+		? value
+		: { allow: [...value.allow] };
 }
 
-function instanceJson(instance: FakeAgent37Instance) {
+function serializedInstance(instance: FakeAgent37Instance) {
 	return {
 		id: instance.id,
 		name: instance.name,
@@ -369,7 +380,7 @@ function instanceJson(instance: FakeAgent37Instance) {
 		auto_sleep: instance.autoSleep,
 		idle_timeout_seconds: instance.idleTimeoutSeconds,
 		public_ports: [...instance.publicPorts],
-		network: networkJson(instance.network),
+		network: serializedNetwork(instance.network),
 		mount_path: instance.mountPath,
 		created_at: instance.created_at,
 		updated_at: instance.updated_at,
@@ -380,37 +391,35 @@ function parseCreate(body: JsonValue | undefined): ParseResult<ParsedCreate> {
 	if (!isJsonObject(body)) {
 		return { ok: false, message: "request body must be a JSON object" };
 	}
-	const template = textField(body, "template");
+	const template = stringField(body, "template");
 	if (template === null || template === "") {
 		return { ok: false, message: "template must be a non-empty string" };
 	}
-	const type = parseInstanceType(body.type);
+	const type = instanceType(body.type);
 	if (type === null) return { ok: false, message: "type is invalid" };
-	const region = parseRegion(body.region ?? "us");
-	if (region === null) return { ok: false, message: "region is invalid" };
-	if (!isJsonObject(body.resources)) {
+	const selectedRegion = region(body.region ?? "us");
+	if (selectedRegion === null)
+		return { ok: false, message: "region is invalid" };
+	const resources = body.resources;
+	if (!isJsonObject(resources)) {
 		return { ok: false, message: "resources must be an object" };
 	}
-	const cpu = integerField(body.resources, "cpu");
-	const memoryGb = integerField(body.resources, "memory");
-	const diskGb = integerField(body.resources, "disk");
-	if (cpu === null || cpu < 1) {
+	const cpu = integerField(resources, "cpu");
+	const memoryGb = integerField(resources, "memory");
+	const diskGb = integerField(resources, "disk");
+	if (cpu === null || cpu < 1)
 		return { ok: false, message: "resources.cpu is invalid" };
-	}
 	if (memoryGb === null || memoryGb < 1) {
 		return { ok: false, message: "resources.memory is invalid" };
 	}
 	if (diskGb === null || diskGb < 1 || diskGb > 1024) {
-		return {
-			ok: false,
-			message: "resources.disk must be between 1 and 1024",
-		};
+		return { ok: false, message: "resources.disk must be between 1 and 1024" };
 	}
-	const size = findSize(cpu, memoryGb);
-	if (size === null) {
+	const selectedSize = size(cpu, memoryGb);
+	if (selectedSize === null) {
 		return { ok: false, message: "instance size is not documented" };
 	}
-	if (size.virtualMachineOnly && type === "default") {
+	if (selectedSize.virtualMachineOnly && type === "default") {
 		return {
 			ok: false,
 			message: "the selected size requires vm or performance",
@@ -420,18 +429,15 @@ function parseCreate(body: JsonValue | undefined): ParseResult<ParsedCreate> {
 	if (rawName !== undefined && !isJsonString(rawName)) {
 		return { ok: false, message: "name must be a string" };
 	}
-	const metadata = stringMap(body.metadata);
-	if (metadata === null) {
+	const metadata = stringRecord(body.metadata);
+	if (metadata === null)
 		return { ok: false, message: "metadata must map strings to strings" };
-	}
-	const env = stringMap(body.env);
-	if (env === null) {
+	const env = stringRecord(body.env);
+	if (env === null)
 		return { ok: false, message: "env must map strings to strings" };
-	}
 	const autoSleep = body.auto_sleep ?? false;
-	if (!isJsonBoolean(autoSleep)) {
+	if (!isJsonBoolean(autoSleep))
 		return { ok: false, message: "auto_sleep must be a boolean" };
-	}
 	const idleTimeoutSeconds = body.idle_timeout_seconds ?? 3600;
 	if (
 		!isJsonNumber(idleTimeoutSeconds) ||
@@ -445,12 +451,12 @@ function parseCreate(body: JsonValue | undefined): ParseResult<ParsedCreate> {
 		};
 	}
 	const publicPorts: number[] = [];
-	if (body.public_ports !== undefined) {
-		if (!isJsonArray(body.public_ports)) {
+	const rawPorts = body.public_ports;
+	if (rawPorts !== undefined) {
+		if (!isJsonArray(rawPorts))
 			return { ok: false, message: "public_ports must be an array" };
-		}
-		for (const entry of body.public_ports) {
-			const port = isJsonObject(entry) ? integerField(entry, "port") : entry;
+		for (const item of rawPorts) {
+			const port = isJsonObject(item) ? integerField(item, "port") : item;
 			if (
 				!isJsonNumber(port) ||
 				!Number.isInteger(port) ||
@@ -462,10 +468,11 @@ function parseCreate(body: JsonValue | undefined): ParseResult<ParsedCreate> {
 			publicPorts.push(port);
 		}
 	}
-	const network = parseNetwork(body.network);
-	if (network === null) return { ok: false, message: "network is invalid" };
-	const rawMountPath = body.mount_path;
-	if (rawMountPath !== undefined && !isJsonString(rawMountPath)) {
+	const selectedNetwork = network(body.network);
+	if (selectedNetwork === null)
+		return { ok: false, message: "network is invalid" };
+	const mountPath = body.mount_path;
+	if (mountPath !== undefined && !isJsonString(mountPath)) {
 		return { ok: false, message: "mount_path must be a string" };
 	}
 	return {
@@ -473,7 +480,7 @@ function parseCreate(body: JsonValue | undefined): ParseResult<ParsedCreate> {
 		value: {
 			template,
 			type,
-			region,
+			region: selectedRegion,
 			cpu,
 			memoryGb,
 			diskGb,
@@ -483,27 +490,25 @@ function parseCreate(body: JsonValue | undefined): ParseResult<ParsedCreate> {
 			autoSleep,
 			idleTimeoutSeconds,
 			publicPorts,
-			network,
-			mountPath: rawMountPath === undefined ? null : rawMountPath,
-			size,
+			network: selectedNetwork,
+			mountPath: mountPath === undefined ? null : mountPath,
+			size: selectedSize,
 		},
 	};
 }
 
 function parseExec(body: JsonValue | undefined): ParseResult<ParsedExec> {
-	if (!isJsonObject(body)) {
+	if (!isJsonObject(body))
 		return { ok: false, message: "request body must be a JSON object" };
-	}
-	const command = textField(body, "command");
+	const command = stringField(body, "command");
 	if (command === null || command === "") {
 		return { ok: false, message: "command must be a non-empty string" };
 	}
 	const user = body.user ?? "root";
 	if (user !== "root") return { ok: false, message: 'user must be "root"' };
 	const background = body.background ?? false;
-	if (!isJsonBoolean(background)) {
+	if (!isJsonBoolean(background))
 		return { ok: false, message: "background must be a boolean" };
-	}
 	const rawName = body.name;
 	if (rawName !== undefined && (!isJsonString(rawName) || rawName === "")) {
 		return { ok: false, message: "name must be a non-empty string" };
@@ -529,16 +534,14 @@ function parseJson(raw: string): JsonValue | undefined {
 	}
 }
 
-async function readRequestBody(
-	request: IncomingMessage,
-): Promise<string | null> {
+async function readBody(request: IncomingMessage): Promise<string | null> {
 	return new Promise((resolve) => {
 		const chunks: Buffer[] = [];
-		let bytes = 0;
+		let length = 0;
 		let oversized = false;
 		request.on("data", (chunk: Buffer) => {
-			bytes += chunk.length;
-			if (bytes > MAX_BODY_BYTES) {
+			length += chunk.length;
+			if (length > BODY_LIMIT) {
 				oversized = true;
 				return;
 			}
@@ -551,32 +554,18 @@ async function readRequestBody(
 	});
 }
 
-function boundedExecStream(value: string): string {
-	const bytes = Buffer.from(value, "utf8");
-	return bytes.length <= MAX_EXEC_STREAM_BYTES
+function limitedOutput(value: string): string {
+	const encoded = Buffer.from(value, "utf8");
+	return encoded.length <= EXEC_OUTPUT_LIMIT
 		? value
-		: bytes.subarray(0, MAX_EXEC_STREAM_BYTES).toString("utf8");
+		: encoded.subarray(0, EXEC_OUTPUT_LIMIT).toString("utf8");
 }
 
-function permitsLoopbackHttp(url: URL): boolean {
+function loopbackHttp(url: URL): boolean {
 	return (
 		url.protocol === "http:" &&
 		["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
 	);
-}
-
-function isTcpAddress(
-	address: string | AddressInfo | null,
-): address is AddressInfo {
-	return address !== null && objectTag.call(address) === "[object Object]";
-}
-
-function tcpPort(address: string | AddressInfo | null): number | null {
-	return isTcpAddress(address) ? address.port : null;
-}
-
-export function generateAgent37TestApiKey(): string {
-	return `sk_live_${randomBytes(24).toString("base64url")}`;
 }
 
 export async function createAgent37FakeServer(
@@ -585,52 +574,53 @@ export async function createAgent37FakeServer(
 	const apiKey = options.apiKey ?? generateAgent37TestApiKey();
 	const execute =
 		options.execHandler ?? (() => ({ stdout: "", stderr: "", exitCode: 0 }));
-	const now = options.now ?? (() => new Date());
+	const clock = options.now ?? (() => new Date());
 	const webhookFetch = options.webhookFetch ?? globalThis.fetch;
 	const webhookTimeoutMs = options.webhookTimeoutMs ?? 2000;
 	const instances: FakeAgent37Instance[] = [];
-	const execInvocations: FakeAgent37ExecInvocation[] = [];
-	const webhookDeliveries: FakeAgent37WebhookDelivery[] = [];
+	const invocations: FakeAgent37ExecInvocation[] = [];
+	const deliveries: FakeAgent37WebhookDelivery[] = [];
 	const webhooks: FakeAgent37WebhookRegistration[] = [];
-	const replay = new Map<string, ExecReplay>();
+	const replay = new Map<string, ReplayRecord>();
+	const noCapacity = new Set<string>();
 	const state: FakeAgent37InstanceState = {
 		apiKey,
 		walletUsd: options.walletUsd ?? 5,
 		memoryLimitGb: options.memoryLimitGb ?? 32,
-		regionsWithoutCapacity: new Set<string>(),
+		regionsWithoutCapacity: noCapacity,
 		failNextRequest: null,
 		instances,
-		execInvocations,
-		webhookDeliveries,
+		execInvocations: invocations,
+		webhookDeliveries: deliveries,
 	};
 
 	function memoryInUse(): number {
 		return instances
-			.filter((instance) => billedMemoryStatuses.has(instance.status))
-			.reduce((sum, instance) => sum + instance.resources.memoryGb, 0);
+			.filter((instance) => memoryStatuses.has(instance.status))
+			.reduce((total, instance) => total + instance.resources.memoryGb, 0);
 	}
 
 	async function publishStatus(
-		previousStatus: Agent37InstanceStatus,
+		previous: Agent37InstanceStatus,
 		instance: FakeAgent37Instance,
 	): Promise<void> {
 		const body = JSON.stringify({
 			type: "instance.status_changed",
 			created_at: instance.updated_at,
 			data: {
-				previous_status: previousStatus,
-				instance: instanceJson(instance),
+				previous_status: previous,
+				instance: serializedInstance(instance),
 			},
 		});
 		for (const webhook of webhooks) {
 			const eventId = randomUUID();
-			const timestampSeconds = Math.floor(now().getTime() / 1000);
+			const timestampSeconds = Math.floor(clock().getTime() / 1000);
 			const key = Buffer.from(webhook.secret.slice(6), "base64");
 			const signature = `v1,${createHmac("sha256", key)
 				.update(`${eventId}.${timestampSeconds}.${body}`)
 				.digest("base64")}`;
 			let responseStatus: number | null = null;
-			let deliveryError: string | null = null;
+			let error: string | null = null;
 			try {
 				const response = await webhookFetch(webhook.url, {
 					method: "POST",
@@ -646,110 +636,108 @@ export async function createAgent37FakeServer(
 				responseStatus = response.status;
 				await response.body?.cancel();
 			} catch (cause) {
-				deliveryError = cause instanceof Error ? cause.message : String(cause);
+				error = cause instanceof Error ? cause.message : String(cause);
 			}
-			webhookDeliveries.push({
+			deliveries.push({
 				webhookId: webhook.id,
 				eventId,
 				timestampSeconds,
 				signature,
 				body,
 				instanceId: instance.id,
-				previousStatus,
+				previousStatus: previous,
 				status: instance.status,
 				responseStatus,
-				error: deliveryError,
+				error,
 			});
 		}
 	}
 
-	async function createInstance(input: ParsedCreate): Promise<RouteResult> {
-		if (input.type === "default" && input.region !== "us") {
-			return invalid("default instances run only in us");
+	async function createInstance(fields: ParsedCreate): Promise<RouteResult> {
+		if (fields.region !== "us" && fields.type === "default") {
+			return invalidRequest("default instances run only in us");
 		}
-		if (state.regionsWithoutCapacity.has(input.region)) {
-			return error(
+		if (noCapacity.has(fields.region)) {
+			return failure(
 				503,
 				"no_capacity",
-				`region ${input.region} has no capacity`,
+				`region ${fields.region} has no capacity`,
 			);
 		}
-		const requiredWallet = (input.size.monthlyUsd * typeRate[input.type]) / 30;
+		const requiredWallet =
+			(fields.size.monthlyUsd * rateMultipliers[fields.type]) / 30;
 		if (state.walletUsd < requiredWallet) {
-			return error(
+			return failure(
 				402,
 				"insufficient_balance",
 				"wallet cannot cover one day of the instance rate",
 			);
 		}
-		if (memoryInUse() + input.memoryGb > state.memoryLimitGb) {
-			return error(
+		if (memoryInUse() + fields.memoryGb > state.memoryLimitGb) {
+			return failure(
 				409,
 				"instance_limit_reached",
 				"workspace memory ceiling would be exceeded",
 			);
 		}
-		const timestamp = now().toISOString();
+		const timestamp = clock().toISOString();
 		const instance: FakeAgent37Instance = {
 			id: `i_${randomBytes(9).toString("hex")}`,
-			name: input.name,
-			template: input.template,
-			type: input.type,
-			region: input.region,
+			name: fields.name,
+			template: fields.template,
+			type: fields.type,
+			region: fields.region,
 			resources: {
-				cpu: input.cpu,
-				memoryGb: input.memoryGb,
-				diskGb: input.diskGb,
+				cpu: fields.cpu,
+				memoryGb: fields.memoryGb,
+				diskGb: fields.diskGb,
 			},
 			status: "running",
-			metadata: input.metadata,
-			env: input.env,
-			autoSleep: input.autoSleep,
-			idleTimeoutSeconds: input.idleTimeoutSeconds,
-			publicPorts: input.publicPorts,
-			network: input.network,
-			mountPath: input.mountPath,
+			metadata: fields.metadata,
+			env: fields.env,
+			autoSleep: fields.autoSleep,
+			idleTimeoutSeconds: fields.idleTimeoutSeconds,
+			publicPorts: fields.publicPorts,
+			network: fields.network,
+			mountPath: fields.mountPath,
 			created_at: timestamp,
 			updated_at: timestamp,
 		};
 		instances.push(instance);
 		await publishStatus("provisioning", instance);
-		return ok(201, instanceJson(instance));
+		return success(201, serializedInstance(instance));
 	}
 
-	function instanceById(id: string): FakeAgent37Instance | undefined {
+	function findInstance(id: string): FakeAgent37Instance | undefined {
 		return instances.find((instance) => instance.id === id);
 	}
 
-	async function lifecycle(
+	async function changeLifecycle(
 		instance: FakeAgent37Instance,
 		verb: LifecycleVerb,
 		body: JsonValue | undefined,
 	): Promise<RouteResult> {
-		const transition = transitions[verb];
+		const transition = lifecycle[verb];
 		const allowed: readonly Agent37InstanceStatus[] = transition.from;
 		if (!allowed.includes(instance.status)) {
-			return error(
+			return failure(
 				409,
 				"invalid_state",
 				`cannot ${verb} while ${instance.status}`,
 			);
 		}
 		if (verb === "update") {
-			if (!isJsonObject(body)) return invalid("update needs a template");
-			const template = textField(body, "template");
-			if (template === null || template === "") {
-				return invalid("template must be non-empty");
-			}
+			if (!isJsonObject(body)) return invalidRequest("update needs a template");
+			const template = stringField(body, "template");
+			if (template === null || template === "")
+				return invalidRequest("template must be non-empty");
 			instance.template = template;
 		}
-		const previousStatus = instance.status;
+		const previous = instance.status;
 		instance.status = transition.to;
-		instance.updated_at = now().toISOString();
-		if (previousStatus !== instance.status) {
-			await publishStatus(previousStatus, instance);
-		}
-		return ok(200, instanceJson(instance));
+		instance.updated_at = clock().toISOString();
+		if (previous !== instance.status) await publishStatus(previous, instance);
+		return success(200, serializedInstance(instance));
 	}
 
 	async function resize(
@@ -757,57 +745,56 @@ export async function createAgent37FakeServer(
 		body: JsonValue | undefined,
 	): Promise<RouteResult> {
 		if (!isJsonObject(body) || !isJsonObject(body.resources)) {
-			return invalid("resize needs resources");
+			return invalidRequest("resize needs resources");
 		}
 		const cpu = integerField(body.resources, "cpu");
 		const memoryGb = integerField(body.resources, "memory");
-		const size =
-			cpu === null || memoryGb === null ? null : findSize(cpu, memoryGb);
-		if (cpu === null || memoryGb === null || size === null) {
-			return invalid("resize target is not a documented size");
+		if (cpu === null || memoryGb === null || size(cpu, memoryGb) === null) {
+			return invalidRequest("resize target is not a documented size");
 		}
-		if (size.virtualMachineOnly && instance.type === "default") {
-			return invalid("the selected size requires vm or performance");
+		const selectedSize = size(cpu, memoryGb);
+		if (
+			selectedSize?.virtualMachineOnly === true &&
+			instance.type === "default"
+		) {
+			return invalidRequest("the selected size requires vm or performance");
 		}
 		const diskGb =
 			body.resources.disk === undefined
 				? instance.resources.diskGb
 				: integerField(body.resources, "disk");
 		if (diskGb === null || diskGb < 1 || diskGb > 1024) {
-			return invalid("resources.disk must be between 1 and 1024");
+			return invalidRequest("resources.disk must be between 1 and 1024");
 		}
-		const additionalMemory = Math.max(
-			0,
-			memoryGb - instance.resources.memoryGb,
-		);
-		if (memoryInUse() + additionalMemory > state.memoryLimitGb) {
-			return error(
+		const increase = Math.max(0, memoryGb - instance.resources.memoryGb);
+		if (memoryInUse() + increase > state.memoryLimitGb) {
+			return failure(
 				409,
 				"instance_limit_reached",
 				"workspace memory ceiling would be exceeded",
 			);
 		}
 		instance.resources = { cpu, memoryGb, diskGb };
-		instance.updated_at = now().toISOString();
-		return ok(200, instanceJson(instance));
+		instance.updated_at = clock().toISOString();
+		return success(200, serializedInstance(instance));
 	}
 
 	async function fork(
 		parent: FakeAgent37Instance,
 		body: JsonValue | undefined,
 	): Promise<RouteResult> {
-		const input = body ?? {};
-		if (!isJsonObject(input)) return invalid("fork body must be an object");
-		const rawName = input.name;
-		if (rawName !== undefined && !isJsonString(rawName)) {
-			return invalid("name must be a string");
-		}
-		const metadata = stringMap(input.metadata);
-		if (metadata === null) {
-			return invalid("metadata must map strings to strings");
-		}
-		const size = findSize(parent.resources.cpu, parent.resources.memoryGb);
-		if (size === null) return invalid("parent size is not documented");
+		const fields = body === undefined ? {} : body;
+		if (!isJsonObject(fields))
+			return invalidRequest("fork body must be an object");
+		const rawName = fields.name;
+		if (rawName !== undefined && !isJsonString(rawName))
+			return invalidRequest("name must be a string");
+		const metadata = stringRecord(fields.metadata);
+		if (metadata === null)
+			return invalidRequest("metadata must map strings to strings");
+		const parentSize = size(parent.resources.cpu, parent.resources.memoryGb);
+		if (parentSize === null)
+			return invalidRequest("parent size is not documented");
 		return createInstance({
 			template: parent.template,
 			type: parent.type,
@@ -816,14 +803,14 @@ export async function createAgent37FakeServer(
 			memoryGb: parent.resources.memoryGb,
 			diskGb: parent.resources.diskGb,
 			name: rawName === undefined ? null : rawName,
-			metadata: input.metadata === undefined ? parent.metadata : metadata,
+			metadata: fields.metadata === undefined ? parent.metadata : metadata,
 			env: {},
 			autoSleep: parent.autoSleep,
 			idleTimeoutSeconds: parent.idleTimeoutSeconds,
 			publicPorts: parent.publicPorts,
 			network: parent.network,
 			mountPath: parent.mountPath,
-			size,
+			size: parentSize,
 		});
 	}
 
@@ -832,9 +819,9 @@ export async function createAgent37FakeServer(
 		body: JsonValue | undefined,
 	): Promise<RouteResult> {
 		const parsed = parseExec(body);
-		if (!parsed.ok) return invalid(parsed.message);
+		if (!parsed.ok) return invalidRequest(parsed.message);
 		if (instance.status !== "running") {
-			return error(
+			return failure(
 				409,
 				"instance_not_running",
 				`instance is ${instance.status}`,
@@ -845,9 +832,9 @@ export async function createAgent37FakeServer(
 		const previous = replayKey === null ? undefined : replay.get(replayKey);
 		if (
 			previous !== undefined &&
-			now().getTime() - previous.finishedAt <= EXEC_REPLAY_MS
+			clock().getTime() - previous.finishedAt <= EXEC_REPLAY_WINDOW
 		) {
-			return ok(200, previous.response);
+			return success(200, previous.body);
 		}
 		const invocation: FakeAgent37ExecInvocation = {
 			command: parsed.value.command,
@@ -858,41 +845,40 @@ export async function createAgent37FakeServer(
 			env: instance.env,
 		};
 		const outcome = execute(invocation);
-		execInvocations.push(invocation);
-		const timestamp = now().toISOString();
-		const response = {
+		invocations.push(invocation);
+		const timestamp = clock().toISOString();
+		const result = {
 			id: `ex_${randomBytes(8).toString("hex")}`,
 			instance_id: instance.id,
 			background: parsed.value.background,
 			status: parsed.value.background ? "running" : "completed",
 			exit_code: parsed.value.background ? null : outcome.exitCode,
-			stdout: parsed.value.background ? "" : boundedExecStream(outcome.stdout),
-			stderr: parsed.value.background ? "" : boundedExecStream(outcome.stderr),
+			stdout: parsed.value.background ? "" : limitedOutput(outcome.stdout),
+			stderr: parsed.value.background ? "" : limitedOutput(outcome.stderr),
 			created_at: timestamp,
 			finished_at: parsed.value.background ? null : timestamp,
 		};
-		if (replayKey !== null) {
-			replay.set(replayKey, { response, finishedAt: now().getTime() });
-		}
-		return ok(200, response);
+		if (replayKey !== null)
+			replay.set(replayKey, { body: result, finishedAt: clock().getTime() });
+		return success(200, result);
 	}
 
 	function registerWebhook(body: JsonValue | undefined): RouteResult {
-		if (!isJsonObject(body)) return invalid("webhook needs a url");
-		const rawUrl = textField(body, "url");
+		if (!isJsonObject(body)) return invalidRequest("webhook needs a url");
+		const rawUrl = stringField(body, "url");
 		if (rawUrl === null || rawUrl === "")
-			return invalid("url must be non-empty");
+			return invalidRequest("url must be non-empty");
 		let url: URL;
 		try {
 			url = new URL(rawUrl);
 		} catch {
-			return invalid("url is invalid");
+			return invalidRequest("url is invalid");
 		}
-		if (url.protocol !== "https:" && !permitsLoopbackHttp(url)) {
-			return invalid("webhook urls require HTTPS or loopback HTTP");
+		if (url.protocol !== "https:" && !loopbackHttp(url)) {
+			return invalidRequest("webhook urls require HTTPS or loopback HTTP");
 		}
-		if (webhooks.length >= MAX_WEBHOOKS) {
-			return error(
+		if (webhooks.length >= WEBHOOK_LIMIT) {
+			return failure(
 				409,
 				"webhook_limit_reached",
 				"workspace webhook limit reached",
@@ -901,11 +887,11 @@ export async function createAgent37FakeServer(
 		const webhook: FakeAgent37WebhookRegistration = {
 			id: `wh_${randomBytes(8).toString("hex")}`,
 			url: rawUrl,
-			created_at: now().toISOString(),
+			created_at: clock().toISOString(),
 			secret: `whsec_${randomBytes(32).toString("base64")}`,
 		};
 		webhooks.push(webhook);
-		return ok(201, {
+		return success(201, {
 			id: webhook.id,
 			url: webhook.url,
 			created_at: webhook.created_at,
@@ -914,8 +900,7 @@ export async function createAgent37FakeServer(
 	}
 
 	function usage(url: URL): RouteResult {
-		const today = now().toISOString().slice(0, 10);
-		const from = url.searchParams.get("from") ?? today;
+		const today = clock().toISOString().slice(0, 10);
 		const totals = {
 			total_micros: 0,
 			compute_micros: 0,
@@ -928,24 +913,19 @@ export async function createAgent37FakeServer(
 			output_tokens: 0,
 			awake_minutes: 0,
 		};
-		return ok(200, {
-			from,
+		return success(200, {
+			from: url.searchParams.get("from") ?? today,
 			to: url.searchParams.get("to") ?? today,
 			total_micros: 0,
 			by_integration: {
 				compute: { cost_micros: 0, awake_minutes: 0 },
-				llm: {
-					cost_micros: 0,
-					calls: 0,
-					input_tokens: 0,
-					output_tokens: 0,
-				},
+				llm: { cost_micros: 0, calls: 0, input_tokens: 0, output_tokens: 0 },
 				brave: { cost_micros: 0 },
 				composio: { cost_micros: 0 },
 				perflo: { cost_micros: 0 },
 			},
 			by_model: [],
-			days: [{ date: from, ...totals }],
+			days: [{ date: url.searchParams.get("from") ?? today, ...totals }],
 			instances: instances.map((instance) => ({ id: instance.id, ...totals })),
 		});
 	}
@@ -964,57 +944,56 @@ export async function createAgent37FakeServer(
 			path === "/v1/webhooks" || path.startsWith("/v1/webhooks/");
 		if (!instancePath && !webhookPath && path !== "/v1/usage")
 			return notFound();
-		const execPath = instancePath && path.endsWith("/exec");
-		const authorized = execPath
+		const execPlane = instancePath && path.endsWith("/exec");
+		const authorized = execPlane
 			? execKey === apiKey
 			: authorization === `Bearer ${apiKey}`;
 		if (!authorized) {
-			return error(
+			return failure(
 				401,
 				"unauthorized",
-				execPath
+				execPlane
 					? "missing or invalid X-Agent37-Key header"
 					: "missing or invalid Authorization bearer key",
 			);
 		}
 		if (state.failNextRequest !== null) {
-			const fault = state.failNextRequest;
+			const injected = state.failNextRequest;
 			state.failNextRequest = null;
-			const body = {
-				error: { code: fault.code, message: "injected fault" },
-			};
-			if (fault.retryAfterSeconds === undefined) {
-				return { status: fault.status, body };
+			if (injected.retryAfterSeconds === undefined) {
+				return {
+					status: injected.status,
+					body: { error: { code: injected.code, message: "injected fault" } },
+				};
 			}
 			return {
-				status: fault.status,
-				headers: { "retry-after": String(fault.retryAfterSeconds) },
-				body,
+				status: injected.status,
+				headers: { "retry-after": String(injected.retryAfterSeconds) },
+				body: { error: { code: injected.code, message: "injected fault" } },
 			};
 		}
+		const malformed = rawBody.trim() !== "" && parseJson(rawBody) === undefined;
+		if (malformed) return invalidRequest("request body must be JSON");
 		const body = parseJson(rawBody);
-		if (rawBody.trim() !== "" && body === undefined) {
-			return invalid("request body must be JSON");
-		}
 		if (path === "/v1/usage")
-			return method === "GET" ? usage(url) : methodNotAllowed();
+			return method === "GET" ? usage(url) : wrongMethod();
 		if (path === "/v1/instances") {
 			if (method === "GET") {
-				return ok(200, {
-					instances: [...instances].reverse().map(instanceJson),
+				return success(200, {
+					instances: [...instances].reverse().map(serializedInstance),
 				});
 			}
 			if (method === "POST") {
 				const parsed = parseCreate(body);
 				return parsed.ok
 					? createInstance(parsed.value)
-					: invalid(parsed.message);
+					: invalidRequest(parsed.message);
 			}
-			return methodNotAllowed();
+			return wrongMethod();
 		}
 		if (path === "/v1/webhooks") {
 			if (method === "GET") {
-				return ok(200, {
+				return success(200, {
 					webhooks: webhooks.map((webhook) => ({
 						id: webhook.id,
 						url: webhook.url,
@@ -1022,10 +1001,10 @@ export async function createAgent37FakeServer(
 					})),
 				});
 			}
-			return method === "POST" ? registerWebhook(body) : methodNotAllowed();
+			return method === "POST" ? registerWebhook(body) : wrongMethod();
 		}
 		if (webhookPath) {
-			if (method !== "DELETE") return methodNotAllowed();
+			if (method !== "DELETE") return wrongMethod();
 			const id = decodeURIComponent(path.slice("/v1/webhooks/".length));
 			const index = webhooks.findIndex((webhook) => webhook.id === id);
 			if (index < 0) return notFound();
@@ -1036,28 +1015,36 @@ export async function createAgent37FakeServer(
 			.slice("/v1/instances/".length)
 			.split("/")
 			.map(decodeURIComponent);
-		const instance = instanceById(segments[0] ?? "");
+		const instance = findInstance(segments[0] ?? "");
 		if (instance === undefined) return notFound();
 		if (segments.length === 1) {
-			if (method === "GET") return ok(200, instanceJson(instance));
+			if (method === "GET") return success(200, serializedInstance(instance));
 			if (method === "DELETE") {
-				const previousStatus = instance.status;
+				const previous = instance.status;
 				instance.status = "deleting";
-				instance.updated_at = now().toISOString();
-				await publishStatus(previousStatus, instance);
+				instance.updated_at = clock().toISOString();
+				await publishStatus(previous, instance);
 				instances.splice(instances.indexOf(instance), 1);
 				return { status: 204 };
 			}
-			return methodNotAllowed();
+			return wrongMethod();
 		}
 		if (segments.length !== 2 || method !== "POST") return notFound();
 		const verb = segments[1];
 		if (verb === "exec") return exec(instance, body);
 		if (verb === "resize") return resize(instance, body);
 		if (verb === "fork") return fork(instance, body);
-		if (isLifecycleVerb(verb)) return lifecycle(instance, verb, body);
+		if (isLifecycleVerb(verb)) {
+			return changeLifecycle(instance, verb, body);
+		}
 		return notFound();
 	}
+
+	const server = createServer(
+		(request: IncomingMessage, response: ServerResponse) => {
+			void dispatch(request, response);
+		},
+	);
 
 	async function dispatch(
 		request: IncomingMessage,
@@ -1068,10 +1055,10 @@ export async function createAgent37FakeServer(
 			const url = new URL(request.url ?? "/", "http://fake.agent37.invalid");
 			const rawBody = ["GET", "HEAD"].includes(request.method ?? "GET")
 				? ""
-				: await readRequestBody(request);
+				: await readBody(request);
 			result =
 				rawBody === null
-					? error(
+					? failure(
 							413,
 							"request_too_large",
 							"request body exceeds 1048576 bytes",
@@ -1080,24 +1067,22 @@ export async function createAgent37FakeServer(
 							request.method ?? "GET",
 							url,
 							rawBody,
-							requestHeader(request.headers, "authorization"),
-							requestHeader(request.headers, "x-agent37-key"),
+							header(request.headers, "authorization"),
+							header(request.headers, "x-agent37-key"),
 						);
 		} catch {
-			result = error(500, "internal_error", "internal server error");
+			result = failure(500, "internal_error", "internal server error");
 		}
-		const headers = Object.entries(result.headers ?? {});
-		if (result.body !== undefined)
-			headers.push(["content-type", "application/json"]);
-		response.writeHead(result.status, Object.fromEntries(headers));
+		const responseHeaders = Object.entries(result.headers ?? {});
+		if (result.body !== undefined) {
+			responseHeaders.push(["content-type", "application/json"]);
+		}
+		response.writeHead(result.status, Object.fromEntries(responseHeaders));
 		response.end(
 			result.body === undefined ? undefined : JSON.stringify(result.body),
 		);
 	}
 
-	const server = createServer((request, response) => {
-		void dispatch(request, response);
-	});
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
 		server.listen(
@@ -1105,8 +1090,8 @@ export async function createAgent37FakeServer(
 			resolve,
 		);
 	});
+	const port = addressPort(server.address()) ?? options.port ?? 0;
 	const host = options.host ?? "127.0.0.1";
-	const port = tcpPort(server.address()) ?? options.port ?? 0;
 	let closed = false;
 	return {
 		baseUrl: `http://${host}:${port}`,
@@ -1117,8 +1102,8 @@ export async function createAgent37FakeServer(
 			closed = true;
 			server.closeAllConnections();
 			await new Promise<void>((resolve, reject) => {
-				server.close((closeError) =>
-					closeError === undefined ? resolve() : reject(closeError),
+				server.close((error) =>
+					error === undefined ? resolve() : reject(error),
 				);
 			});
 		},

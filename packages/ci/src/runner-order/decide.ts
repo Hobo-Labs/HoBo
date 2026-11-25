@@ -57,7 +57,7 @@ export const RUNNER_SKIP_REASONS = [
 ] as const;
 export type RunnerSkipReason = (typeof RUNNER_SKIP_REASONS)[number];
 
-export type FleetState = Readonly<{
+export type RunnerFleetState = Readonly<{
 	enabled: boolean;
 	taking: boolean;
 	isolated: boolean;
@@ -70,7 +70,7 @@ export type RouteRetry = Readonly<{
 }>;
 
 export type RouteFacts = Readonly<{
-	fleet: FleetState | undefined;
+	fleet: RunnerFleetState | undefined;
 	machines: readonly MachineCandidate[];
 	minutes: MinutesUsage | undefined;
 	spendUsd: ReadonlyMap<HostedRunnerProvider, number>;

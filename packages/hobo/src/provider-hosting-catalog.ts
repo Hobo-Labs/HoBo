@@ -1465,6 +1465,11 @@ export class CatalogRealizerError extends Error {
 
 export type CatalogRealizeMode = "converge" | "observe";
 
+// public-contract: blob-storage host GHCR may redirect cross-repository mounts to.
+export const GHCR_BLOB_REDIRECT_HOSTS = Object.freeze([
+	"pkg-containers.githubusercontent.com",
+] as const);
+
 // public-contract: the largest image blob the OCI Camp moves from the artifact store.
 export const CATALOG_OCI_MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024;
 // public-contract: blobs past this size are uploaded in Content-Range chunks of it.
@@ -1698,6 +1703,9 @@ export function catalogCampBinding(
 			const endpoint = {
 				host,
 				...(realm ? { authRealms: [realm] } : undefined),
+				...(host === "ghcr.io"
+					? { blobRedirectHosts: [...GHCR_BLOB_REDIRECT_HOSTS] }
+					: undefined),
 			};
 			return Object.freeze({
 				providerId,

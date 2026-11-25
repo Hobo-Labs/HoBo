@@ -12,6 +12,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
 	createSandboxComposition,
+	parseSandboxProvider,
 	type SandboxCompositionStore,
 } from "../src/sandbox-composition.js";
 
@@ -192,5 +193,84 @@ describe("Sandbox billing team binding", () => {
 			},
 		});
 		expect(() => sandbox?.allowedDomains()).toThrow();
+	});
+});
+
+describe("Agent37 sandbox composition", () => {
+	const github = {
+		request: async () => {
+			throw new Error("unexpected GitHub call");
+		},
+	};
+
+	it("defaults an unset provider to Vercel and accepts exact provider names", () => {
+		expect(parseSandboxProvider({})).toBe("vercel");
+		expect(parseSandboxProvider({ HOBO_CI_SANDBOX_PROVIDER: "" })).toBe(
+			"vercel",
+		);
+		expect(parseSandboxProvider({ HOBO_CI_SANDBOX_PROVIDER: "vercel" })).toBe(
+			"vercel",
+		);
+		expect(parseSandboxProvider({ HOBO_CI_SANDBOX_PROVIDER: "agent37" })).toBe(
+			"agent37",
+		);
+	});
+
+	it("returns before parsing provider, domains, or Agent37 options when disabled", () => {
+		expect(
+			createSandboxComposition({
+				env: {
+					HOBO_CI_SANDBOX_PROVIDER: "agent37-invalid",
+					HOBO_CI_SANDBOX_DOMAINS_JSON: "not-json",
+				},
+				publicOrigin: "https://ci.example.com",
+				store: stubStore(),
+				github,
+			}),
+		).toBeUndefined();
+	});
+
+	it("checks enablement before provider parsing", () => {
+		expect(() =>
+			createSandboxComposition({
+				env: {
+					HOBO_CI_SANDBOX_ENABLED: "yes",
+					HOBO_CI_SANDBOX_PROVIDER: "agent37-invalid",
+				},
+				publicOrigin: "https://ci.example.com",
+				store: stubStore(),
+				github,
+			}),
+		).toThrow(/invalid sandbox enablement/);
+	});
+
+	it("rejects an unknown provider only after sandbox enablement", () => {
+		expect(() =>
+			createSandboxComposition({
+				env: {
+					HOBO_CI_SANDBOX_ENABLED: "1",
+					HOBO_CI_SANDBOX_PROVIDER: "Agent37",
+					HOBO_CI_SANDBOX_DOMAINS_JSON: '["github.com"]',
+				},
+				publicOrigin: "https://ci.example.com",
+				store: stubStore(),
+				github,
+			}),
+		).toThrow(/invalid sandbox provider/);
+	});
+
+	it("fails closed when the enabled Agent37 driver has no client options", () => {
+		expect(() =>
+			createSandboxComposition({
+				env: {
+					HOBO_CI_SANDBOX_ENABLED: "1",
+					HOBO_CI_SANDBOX_PROVIDER: "agent37",
+					HOBO_CI_SANDBOX_DOMAINS_JSON: '["github.com"]',
+				},
+				publicOrigin: "https://ci.example.com",
+				store: stubStore(),
+				github,
+			}),
+		).toThrow(/driver unavailable/);
 	});
 });

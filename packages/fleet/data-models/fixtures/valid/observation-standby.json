@@ -1,0 +1,20 @@
+{
+  "memberId": "bkd_11112222333344445555666677778888",
+  "observerId": "dev_fedcba9876543210fedcba9876543210",
+  "fleets": [
+    "cache"
+  ],
+  "health": "HEALTH_UNREACHABLE",
+  "failingForMs": 45000,
+  "ready": false,
+  "lagMs": 1200,
+  "usage": [
+    {
+      "unit": "operations",
+      "used": 1200
+    }
+  ],
+  "since": "2026-11-12T10:00:00.000Z",
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "validUntil": "2026-11-12T10:20:00.000Z"
+}

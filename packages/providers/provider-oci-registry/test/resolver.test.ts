@@ -169,6 +169,31 @@ function world(
 	]);
 }
 
+describe("release Freight credential refusals", () => {
+	it("rethrows blocked credentials without wrapping them as transport refusals", async () => {
+		const blocked = Object.assign(
+			new Error("The realizer reported a condition."),
+			{
+				name: "ReleaseFreightBlockedError",
+				detailKind: "scope-not-allowed",
+				credentialRef: "github-app://Hobo-Labs/HoBo",
+				requestedScope: "cd-realize:hobo-release/oci-candidate",
+			},
+		);
+		const resolver = resolverOf({
+			resolveCredential: async () => {
+				throw blocked;
+			},
+		});
+		const fixture = image({ platform: "amd64", binary: true });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		await expect(
+			resolver.reconcile(request(fixture), w.transport),
+		).rejects.toBe(blocked);
+	});
+});
+
 describe("converge: copy from a source registry", () => {
 	it("uploads every blob, PUTs the manifest by digest, then the declared tag; digest unchanged", async () => {
 		const fixture = image({ platform: "amd64", binary: true });

@@ -105,7 +105,7 @@ describe("githubRoute", () => {
 				.route,
 		).toBe("/repos/{owner}/{repo}/actions/runners/registration-token");
 		expect(
-			githubRoute("/repos/o/r/actions/variables/HOBO_CI_FLEET_ROUTES").route,
+			githubRoute("/repos/o/r/actions/variables/EXAMPLE_VARIABLE").route,
 		).toBe("/repos/{owner}/{repo}/actions/variables/{name}");
 		expect(githubRoute("/app/installations/12/access_tokens").route).toBe(
 			"/app/installations/{installation_id}/access_tokens",
