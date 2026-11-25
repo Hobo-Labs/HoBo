@@ -7,6 +7,7 @@ import {
 	Agent37Runner,
 	Agent37RunnerProvider,
 	createAlchemyRunnerBackend,
+	createInMemoryHostingerRunnerRegistry,
 	createInMemoryLocalRunnerRegistry,
 	guardedHostingerRunnerTransport,
 	HostingerRunner,
@@ -57,6 +58,7 @@ describe("Alchemy v2 runner providers", () => {
 		const stateRecords: NonNullable<Parameters<typeof inMemoryState>[0]> = {};
 		const state = inMemoryState(stateRecords);
 		const providers = HostingerRunnerProvider({
+			registry: createInMemoryHostingerRunnerRegistry(),
 			resolveCredential: async (locator) => {
 				expect(locator).toBe("owner://HOSTINGER_FLEET");
 				return secretMaterial;
@@ -84,6 +86,7 @@ describe("Alchemy v2 runner providers", () => {
 					machineId: "42001",
 					hostname: "runner-hv-1.hostinger",
 					labels: ["hobo-fleet", "hostinger"],
+					maxConcurrency: 4,
 					credentialLocator: "owner://HOSTINGER_FLEET",
 				});
 				return {
@@ -262,16 +265,20 @@ describe("Alchemy v2 runner providers", () => {
 	it("bridges runner tiers through createAlchemyRunnerBackend with jobId-keyed ids and refuses unconfigured github", async () => {
 		const localRegistry = createInMemoryLocalRunnerRegistry();
 		const deletedSandboxes: string[] = [];
+		const hostingerUrls: string[] = [];
 		const backend = createAlchemyRunnerBackend({
 			local: { registry: localRegistry, maxConcurrency: 2 },
 			hostinger: {
-				machineIdForPool: () => "77001",
+				maxConcurrency: 4,
 				credentialLocator: "owner://HOSTINGER_FLEET",
 				resolveCredential: () => "hostinger-key",
-				transport: async () => ({
-					status: 200,
-					body: { id: "77001", state: "running", actionId: "act-77" },
-				}),
+				transport: async (request) => {
+					hostingerUrls.push(request.url);
+					return {
+						status: 200,
+						body: { id: "77001", state: "running", actionId: "act-77" },
+					};
+				},
 			},
 			agent37: {
 				template: "ci-runner",
@@ -302,7 +309,7 @@ describe("Alchemy v2 runner providers", () => {
 		});
 		const hostingerRunner = await backend.provisionRunner({
 			jobId: "job-2",
-			poolId: "hv-box",
+			poolId: "77001",
 			tier: "hostinger",
 			label: "hobo-fleet",
 		});
@@ -351,6 +358,60 @@ describe("Alchemy v2 runner providers", () => {
 		});
 		expect(localRegistry.activeRunnerIds()).toEqual([]);
 		expect(deletedSandboxes).toEqual(["sbx-77"]);
+	});
+
+	it("shares one Hostinger machine across concurrent jobs and stops only after the last release", async () => {
+		const hostingerUrls: string[] = [];
+		const hostingerRegistry = createInMemoryHostingerRunnerRegistry();
+		const backend = createAlchemyRunnerBackend({
+			hostinger: {
+				registry: hostingerRegistry,
+				maxConcurrency: 2,
+				credentialLocator: "owner://HOSTINGER_FLEET",
+				resolveCredential: () => "hostinger-key",
+				transport: async (request) => {
+					hostingerUrls.push(request.url);
+					return {
+						status: request.url.endsWith("/stop") ? 503 : 200,
+						body: { id: "88001", state: "running", actionId: "act-88" },
+					};
+				},
+			},
+		});
+		const first = await backend.provisionRunner({
+			jobId: "job-a",
+			poolId: "88001",
+			tier: "hostinger",
+			label: "hobo-fleet",
+		});
+		const second = await backend.provisionRunner({
+			jobId: "job-b",
+			poolId: "88001",
+			tier: "hostinger",
+			label: "hobo-fleet",
+		});
+		expect(hostingerRegistry.activeRunnerIds().sort()).toEqual([
+			"hostinger:job-a:88001",
+			"hostinger:job-b:88001",
+		]);
+		expect(
+			hostingerUrls.filter((url) => url.endsWith("/start")).length,
+		).toBe(1);
+
+		await backend.releaseRunner({
+			runnerId: first.runnerId,
+			tier: "hostinger",
+		});
+		expect(hostingerUrls.some((url) => url.endsWith("/stop"))).toBe(false);
+
+		await backend.releaseRunner({
+			runnerId: second.runnerId,
+			tier: "hostinger",
+		});
+		expect(hostingerUrls.filter((url) => url.endsWith("/stop")).length).toBe(
+			1,
+		);
+		expect(hostingerRegistry.activeRunnerIds()).toEqual([]);
 	});
 
 	it("reconciles Agent37 orphan sandboxes with the same name before and after provision", async () => {
