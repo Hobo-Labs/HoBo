@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
+	accessSync,
+	constants,
 	existsSync,
 	mkdirSync,
 	readFileSync,
@@ -7,7 +9,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { CI_RUNNER_PLAYWRIGHT_CHROMIUM } from "./ci-runner-contract.mts";
+import {
+	CI_RUNNER_PLAYWRIGHT_CHROMIUM,
+	playwrightHeadlessShellExecutables,
+} from "./ci-runner-contract.mts";
 import {
 	ensurePlaywrightHeadlessShellArchive,
 	headlessShellArchFromHost,
@@ -21,6 +26,14 @@ export const HOSTED_PLAYWRIGHT_BROWSERS_ROOT = join(
 	"pw-browsers",
 );
 
+export const PLAYWRIGHT_BROWSERS_CACHE_HASH_INPUTS = [
+	"pnpm-lock.yaml",
+	"scripts/lib/ci-runner-contract.mts",
+	"scripts/lib/playwright-headless-shell-install.mts",
+	"scripts/lib/playwright-headless-shell-archive.mts",
+	"scripts/ci/install-hosted-playwright-browser.mts",
+] as const;
+
 export function playwrightHeadlessShellInstallDir(
 	browsersRoot = HOSTED_PLAYWRIGHT_BROWSERS_ROOT,
 ): string {
@@ -30,14 +43,27 @@ export function playwrightHeadlessShellInstallDir(
 	);
 }
 
+function headlessShellExecutableOnDisk(
+	browsersRoot: string,
+): string | undefined {
+	for (const candidate of playwrightHeadlessShellExecutables(browsersRoot)) {
+		if (!existsSync(candidate)) continue;
+		try {
+			const st = statSync(candidate);
+			if (!st.isFile()) continue;
+			accessSync(candidate, constants.X_OK);
+			return candidate;
+		} catch {
+			continue;
+		}
+	}
+	return undefined;
+}
+
 export function playwrightHeadlessShellInstalled(
 	browsersRoot = HOSTED_PLAYWRIGHT_BROWSERS_ROOT,
 ): boolean {
-	const dir = playwrightHeadlessShellInstallDir(browsersRoot);
-	return (
-		existsSync(join(dir, "INSTALLATION_COMPLETE")) &&
-		statSync(join(dir, "INSTALLATION_COMPLETE")).isFile()
-	);
+	return headlessShellExecutableOnDisk(browsersRoot) !== undefined;
 }
 
 export function unzipPlaywrightHeadlessShellArchive(
@@ -55,6 +81,23 @@ export function unzipPlaywrightHeadlessShellArchive(
 	}
 	writeFileSync(join(installDir, "INSTALLATION_COMPLETE"), `${Date.now()}\n`);
 	writeFileSync(join(installDir, "DEPENDENCIES_VALIDATED"), `${Date.now()}\n`);
+	const browsersRoot = join(installDir, "..");
+	const executable = headlessShellExecutableOnDisk(browsersRoot);
+	if (executable === undefined) {
+		throw new Error(
+			`playwright headless-shell install missing executable under ${installDir}`,
+		);
+	}
+	try {
+		accessSync(executable, constants.X_OK);
+	} catch {
+		const mode = spawnSync("chmod", ["+x", executable], { encoding: "utf8" });
+		if (mode.status !== 0) {
+			throw new Error(
+				`playwright headless-shell executable is not runnable: ${executable}`,
+			);
+		}
+	}
 }
 
 export type InstallHostedPlaywrightOptions = Readonly<{
@@ -75,8 +118,7 @@ export function installHostedPlaywrightHeadlessShell(
 		join(process.env.HOME ?? "/tmp", ".cache", "hobo-ci", "playwright");
 	const archive = ensurePlaywrightHeadlessShellArchive({ cacheDir, arch });
 	unzipPlaywrightHeadlessShellArchive(archive, installDir);
-	const marker = join(installDir, "INSTALLATION_COMPLETE");
-	if (!existsSync(marker)) {
+	if (!playwrightHeadlessShellInstalled(browsersRoot)) {
 		throw new Error(
 			`playwright headless-shell install incomplete at ${installDir}`,
 		);
@@ -85,10 +127,11 @@ export function installHostedPlaywrightHeadlessShell(
 }
 
 export function playwrightBrowsersCacheKeyInputs(): string {
-	const lock = readFileSync("pnpm-lock.yaml", "utf8");
-	const contract = readFileSync("scripts/lib/ci-runner-contract.mts", "utf8");
+	const parts = PLAYWRIGHT_BROWSERS_CACHE_HASH_INPUTS.map((rel) =>
+		readFileSync(rel, "utf8"),
+	);
 	const spec = headlessShellArchiveSpec(
 		headlessShellArchFromHost(process.arch),
 	);
-	return `${lock}\n${contract}\n${spec.revision}\n${spec.digest}`;
+	return `${parts.join("\n")}\n${spec.revision}\n${spec.digest}`;
 }

@@ -34,6 +34,12 @@ const saved = z.object({
 const STRICT =
 	process.env.CI === "true" || process.env.HOBO_REQUIRE_BROWSER === "1";
 
+function revisionSort(a: string, b: string): number {
+	const ra = Number.parseInt(/(\d+)$/u.exec(a)?.[1] ?? "0", 10);
+	const rb = Number.parseInt(/(\d+)$/u.exec(b)?.[1] ?? "0", 10);
+	return ra - rb;
+}
+
 function chromiumBinary(): string | undefined {
 	const fromEnv = process.env.PLAYWRIGHT_CHROMIUM_PATH?.trim();
 	if (fromEnv && existsSync(fromEnv)) return fromEnv;
@@ -42,18 +48,20 @@ function chromiumBinary(): string | undefined {
 	if (root === undefined || root === "" || !existsSync(root)) return undefined;
 	const headlessBuild = readdirSync(root)
 		.filter((name) => /^chromium_headless_shell-\d+$/u.test(name))
-		.sort()
+		.sort(revisionSort)
 		.at(-1);
 	if (headlessBuild !== undefined) {
-		return ["chrome-headless-shell-linux64", "chrome-headless-shell-linux"]
-			.map((dir) =>
-				path.join(root, headlessBuild, dir, "chrome-headless-shell"),
-			)
+		return [
+			["chrome-headless-shell-linux64", "chrome-headless-shell"],
+			["chrome-headless-shell-linux", "chrome-headless-shell"],
+			["chrome-linux", "headless_shell"],
+		]
+			.map(([dir, bin]) => path.join(root, headlessBuild, dir, bin))
 			.find((candidate) => existsSync(candidate));
 	}
 	const build = readdirSync(root)
 		.filter((name) => /^chromium-\d+$/u.test(name))
-		.sort()
+		.sort(revisionSort)
 		.at(-1);
 	if (build === undefined) return undefined;
 	return ["chrome-linux64", "chrome-linux"]
@@ -62,23 +70,38 @@ function chromiumBinary(): string | undefined {
 }
 
 async function launchBrowser(): Promise<Browser | undefined> {
+	let lastError: unknown;
 	for (const executablePath of [chromiumBinary(), undefined]) {
 		if (executablePath !== undefined && !existsSync(executablePath)) continue;
 		try {
 			return await chromium.launch(
 				executablePath === undefined ? {} : { executablePath },
 			);
-		} catch {}
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	if (STRICT) {
+		const detail =
+			lastError instanceof Error
+				? lastError.message
+				: lastError === undefined
+					? "no chromium binary"
+					: String(lastError);
+		throw new Error(
+			`mcp-owner-page.test.ts needs Playwright's Chromium (CI or HOBO_REQUIRE_BROWSER=1): ${detail}`,
+			{ cause: lastError instanceof Error ? lastError : undefined },
+		);
+	}
+	if (lastError !== undefined) {
+		const detail =
+			lastError instanceof Error ? lastError.message : String(lastError);
+		console.warn(`mcp-owner-page.test.ts: chromium launch failed: ${detail}`);
 	}
 	return undefined;
 }
 
 const browser = await launchBrowser();
-if (browser === undefined && STRICT) {
-	throw new Error(
-		"mcp-owner-page.test.ts needs Playwright's Chromium (CI or HOBO_REQUIRE_BROWSER=1): run `pnpm exec playwright install chromium-headless-shell` or set PLAYWRIGHT_CHROMIUM_PATH",
-	);
-}
 if (browser === undefined)
 	console.warn(
 		"mcp-owner-page.test.ts skipped: no Playwright Chromium (set PLAYWRIGHT_CHROMIUM_PATH)",
@@ -210,160 +233,166 @@ describe.skipIf(browser === undefined)("HoBo's owner page", () => {
 	});
 });
 
-describe.skipIf(browser === undefined)(
-	"choose_secret_store on a host without forms or MCP Apps",
-	() => {
-	it("hands the agent HoBo's page, then records the sealed answer and deposits the sign-in", async () => {
-		const deposited = new Map<string, string>();
-		const written: Record<string, string>[] = [];
-		const sessions: OwnerStoreSessions = {
-			establish: async () => {
-				expect(deposited.get("INFISICAL_TOKEN")).toBe(TOKEN);
-				return { status: "established", store: "Infisical" };
-			},
-			status: () => ({ established: false }),
-			credentials: () => ({
-				resolve: async () => {
-					throw new Error("unused");
+describe("choose_secret_store on a host without forms or MCP Apps", () => {
+	it.skipIf(browser === undefined)(
+		"hands the agent HoBo's page, then records the sealed answer and deposits the sign-in",
+		async () => {
+			const deposited = new Map<string, string>();
+			const written: Record<string, string>[] = [];
+			const sessions: OwnerStoreSessions = {
+				establish: async () => {
+					expect(deposited.get("INFISICAL_TOKEN")).toBe(TOKEN);
+					return { status: "established", store: "Infisical" };
 				},
-			}),
-			entries: () => ({
-				read: async () => undefined,
-				write: async () => undefined,
-			}),
-			agentVault: () => undefined,
-			close: async () => undefined,
-		};
-		const pages = createOwnerPages();
-		const app = createStoreChoiceApp({
-			cwd: "/synthetic/project",
-			locatorFor: () => ({
-				read: async () => ({}),
-				write: async (values: Record<string, string>) => {
-					written.push(values);
-				},
-			}),
-			sessions,
-			pages,
-			deposit: (name, value) => deposited.set(name, value),
-		});
-		expect(app.tools(NO_STORE_CHOICE_SUPPORT).map((t) => t.name)).toEqual([
-			CHOOSE_SECRET_STORE_TOOL,
-			SUBMIT_OWNER_PAGE_TOOL,
-			STORE_OWNER_ENTRIES_TOOL,
-		]);
-		const shown = await app.callTool(
-			CHOOSE_SECRET_STORE_TOOL,
-			{},
-			NO_STORE_CHOICE_SUPPORT,
-			undefined,
-		);
-		const page = z
-			.object({
-				status: z.literal("owner-page"),
-				document: z.string(),
-				html: z.string(),
-				capabilities: z.object({ db: z.object({}) }),
-			})
-			.parse(shown.structuredContent);
-		expect(shown.isError).toBeUndefined();
-		expect(shown.content[0]?.text).not.toContain(TOKEN);
+				status: () => ({ established: false }),
+				credentials: () => ({
+					resolve: async () => {
+						throw new Error("unused");
+					},
+				}),
+				entries: () => ({
+					read: async () => undefined,
+					write: async () => undefined,
+				}),
+				agentVault: () => undefined,
+				close: async () => undefined,
+			};
+			const pages = createOwnerPages();
+			const app = createStoreChoiceApp({
+				cwd: "/synthetic/project",
+				locatorFor: () => ({
+					read: async () => ({}),
+					write: async (values: Record<string, string>) => {
+						written.push(values);
+					},
+				}),
+				sessions,
+				pages,
+				deposit: (name, value) => deposited.set(name, value),
+			});
+			expect(app.tools(NO_STORE_CHOICE_SUPPORT).map((t) => t.name)).toEqual([
+				CHOOSE_SECRET_STORE_TOOL,
+				SUBMIT_OWNER_PAGE_TOOL,
+				STORE_OWNER_ENTRIES_TOOL,
+			]);
+			const shown = await app.callTool(
+				CHOOSE_SECRET_STORE_TOOL,
+				{},
+				NO_STORE_CHOICE_SUPPORT,
+				undefined,
+			);
+			const page = z
+				.object({
+					status: z.literal("owner-page"),
+					document: z.string(),
+					html: z.string(),
+					capabilities: z.object({ db: z.object({}) }),
+				})
+				.parse(shown.structuredContent);
+			expect(shown.isError).toBeUndefined();
+			expect(shown.content[0]?.text).not.toContain(TOKEN);
 
-		const out = await submitInBrowser(
-			page.html,
-			{ INFISICAL_PROJECT_ID: PROJECT, INFISICAL_TOKEN: TOKEN },
-			"infisical",
-		);
-		expect(out.path).toBe(page.document);
-		const done = await app.callTool(
-			SUBMIT_OWNER_PAGE_TOOL,
-			{ sealed: out.data.sealed },
-			NO_STORE_CHOICE_SUPPORT,
-			undefined,
-		);
-		expect(done.structuredContent).toEqual({
-			status: "established",
-			store: "Infisical",
-		});
-		expect(JSON.stringify(done)).not.toContain(TOKEN);
-		expect(written).toEqual([
-			{ HOBO_SECRET_STORE: "infisical", INFISICAL_PROJECT_ID: PROJECT },
-		]);
-	});
+			const out = await submitInBrowser(
+				page.html,
+				{ INFISICAL_PROJECT_ID: PROJECT, INFISICAL_TOKEN: TOKEN },
+				"infisical",
+			);
+			expect(out.path).toBe(page.document);
+			const done = await app.callTool(
+				SUBMIT_OWNER_PAGE_TOOL,
+				{ sealed: out.data.sealed },
+				NO_STORE_CHOICE_SUPPORT,
+				undefined,
+			);
+			expect(done.structuredContent).toEqual({
+				status: "established",
+				store: "Infisical",
+			});
+			expect(JSON.stringify(done)).not.toContain(TOKEN);
+			expect(written).toEqual([
+				{ HOBO_SECRET_STORE: "infisical", INFISICAL_PROJECT_ID: PROJECT },
+			]);
+		},
+	);
 
-	it("on request, takes the store and its sign-in through the page even where the host declares forms, and asks for no provider entry", async () => {
-		const deposited = new Map<string, string>();
-		const written = new Map<string, string>();
-		let established = false;
-		const sessions: OwnerStoreSessions = {
-			establish: async () => {
-				established = deposited.has("INFISICAL_CLI_SESSION");
-				return established
-					? { status: "established", store: "Infisical" }
-					: { status: "sign-in-needed", store: "Infisical", code: "X" };
-			},
-			status: () =>
-				established
-					? { established: true, store: "Infisical" }
-					: { established: false },
-			credentials: () => ({
-				resolve: async () => {
-					throw new Error("unused");
+	it.skipIf(browser === undefined)(
+		"on request, takes the store and its sign-in through the page even where the host declares forms, and asks for no provider entry",
+		async () => {
+			const deposited = new Map<string, string>();
+			const written = new Map<string, string>();
+			let established = false;
+			const sessions: OwnerStoreSessions = {
+				establish: async () => {
+					established = deposited.has("INFISICAL_CLI_SESSION");
+					return established
+						? { status: "established", store: "Infisical" }
+						: { status: "sign-in-needed", store: "Infisical", code: "X" };
 				},
-			}),
-			entries: () => ({
-				read: async (name) => written.get(name),
-				write: async (name, value) => {
-					written.set(name, value);
+				status: () =>
+					established
+						? { established: true, store: "Infisical" }
+						: { established: false },
+				credentials: () => ({
+					resolve: async () => {
+						throw new Error("unused");
+					},
+				}),
+				entries: () => ({
+					read: async (name) => written.get(name),
+					write: async (name, value) => {
+						written.set(name, value);
+					},
+				}),
+				agentVault: () => undefined,
+				close: async () => undefined,
+			};
+			const app = createStoreChoiceApp({
+				cwd: "/synthetic/project",
+				locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+				sessions,
+				pages: createOwnerPages(),
+				deposit: (name, value) => deposited.set(name, value),
+			});
+			const support = { formElicitation: true, apps: false };
+			const shown = await app.callTool(
+				CHOOSE_SECRET_STORE_TOOL,
+				{ channel: "page" },
+				support,
+				async () => {
+					throw new Error("no form expected");
 				},
-			}),
-			agentVault: () => undefined,
-			close: async () => undefined,
-		};
-		const app = createStoreChoiceApp({
-			cwd: "/synthetic/project",
-			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
-			sessions,
-			pages: createOwnerPages(),
-			deposit: (name, value) => deposited.set(name, value),
-		});
-		const support = { formElicitation: true, apps: false };
-		const shown = await app.callTool(
-			CHOOSE_SECRET_STORE_TOOL,
-			{ channel: "page" },
-			support,
-			async () => {
-				throw new Error("no form expected");
-			},
-		);
-		const page = z
-			.object({ status: z.literal("owner-page"), html: z.string() })
-			.parse(shown.structuredContent);
-		expect(page.html).toContain("/login?callback_port=");
-		const out = await submitInBrowser(
-			page.html,
-			{
-				INFISICAL_PROJECT_ID: PROJECT,
-				INFISICAL_CLI_SESSION: "c2Vzc2lvbi1maXh0dXJl",
-			},
-			"infisical",
-		);
-		expect(page.html).not.toContain("HOSTINGER");
-		expect(out.data.sealed).not.toContain("c2Vzc2lvbi1maXh0dXJl");
-		const done = await app.callTool(
-			SUBMIT_OWNER_PAGE_TOOL,
-			{ sealed: out.data.sealed },
-			support,
-			undefined,
-		);
-		expect(done.structuredContent).toEqual({
-			status: "established",
-			store: "Infisical",
-		});
-		expect(deposited.get("INFISICAL_CLI_SESSION")).toBe("c2Vzc2lvbi1maXh0dXJl");
-		expect(written.size).toBe(0);
-		expect(JSON.stringify(done)).not.toContain("c2Vzc2lvbi1maXh0dXJl");
-	});
+			);
+			const page = z
+				.object({ status: z.literal("owner-page"), html: z.string() })
+				.parse(shown.structuredContent);
+			expect(page.html).toContain("/login?callback_port=");
+			const out = await submitInBrowser(
+				page.html,
+				{
+					INFISICAL_PROJECT_ID: PROJECT,
+					INFISICAL_CLI_SESSION: "c2Vzc2lvbi1maXh0dXJl",
+				},
+				"infisical",
+			);
+			expect(page.html).not.toContain("HOSTINGER");
+			expect(out.data.sealed).not.toContain("c2Vzc2lvbi1maXh0dXJl");
+			const done = await app.callTool(
+				SUBMIT_OWNER_PAGE_TOOL,
+				{ sealed: out.data.sealed },
+				support,
+				undefined,
+			);
+			expect(done.structuredContent).toEqual({
+				status: "established",
+				store: "Infisical",
+			});
+			expect(deposited.get("INFISICAL_CLI_SESSION")).toBe(
+				"c2Vzc2lvbi1maXh0dXJl",
+			);
+			expect(written.size).toBe(0);
+			expect(JSON.stringify(done)).not.toContain("c2Vzc2lvbi1maXh0dXJl");
+		},
+	);
 
 	it("takes Infisical without a project ID, leaving the project for HoBo to resolve", () => {
 		const choice = parseStoreChoice({ store: "infisical" });
@@ -386,8 +415,7 @@ describe.skipIf(browser === undefined)(
 			status: "secure-form-unavailable",
 		});
 	});
-	},
-);
+});
 
 async function sealRelayInBrowser(
 	html: string,
@@ -434,10 +462,12 @@ async function sealRelayInBrowser(
 	}
 }
 
-describe.skipIf(browser === undefined)("HoBo's relay owner page", () => {
+describe("HoBo's relay owner page", () => {
 	const RELAY = "https://relay.hobo.test";
 
-	it("seals the relay address so only this HoBo server reads it, then shows the GitHub code for the owner only", async () => {
+	it.skipIf(browser === undefined)(
+		"seals the relay address so only this HoBo server reads it, then shows the GitHub code for the owner only",
+		async () => {
 		const pages = createOwnerPages();
 		const opened = await pages.openRelay("/synthetic/project");
 		const out = await sealRelayInBrowser(opened.html, RELAY);
@@ -493,7 +523,8 @@ describe.skipIf(browser === undefined)("HoBo's relay owner page", () => {
 			).structuredContent,
 		).toEqual({ status: "pending" });
 		sessions.close();
-	});
+		},
+	);
 
 	it("opens an owner page for the address when the host shows no forms", async () => {
 		const pages = createOwnerPages();

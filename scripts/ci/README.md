@@ -6,12 +6,13 @@ spans several files.
 
 ## Hosted Playwright (Fabric overflow)
 
-When a Fabric shard lands on `ubuntu-24.04`, `ci-runner-preflight` installs the
-pinned chromium headless shell only when `job-needs-playwright-browser.mts`
-reports the shard needs browser tests. The zip is cached under
-`actions/cache` keyed by `pnpm-lock.yaml` and `scripts/lib/ci-runner-contract.mts`,
-then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
+When a Fabric workspace test shard lands on `ubuntu-24.04`, `ci-runner-preflight`
+with `browser: true` always restores or installs the lockfile-pinned chromium
+headless shell. The zip is cached under `actions/cache/restore` and
+`actions/cache/save` keyed by the lockfile, ci-runner contract, and install
+scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
 `PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
+Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
 
 ## Routing
 

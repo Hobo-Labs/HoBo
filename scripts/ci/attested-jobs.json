@@ -301,21 +301,9 @@
 					"local": "run"
 				},
 				{
-					"name": "Decide Playwright install",
-					"id": "playwright",
-					"env": {
-						"EVENT_NAME": "${{ github.event_name }}",
-						"PR_BASE": "${{ needs.pr_gate_plan.outputs.pr_base }}",
-						"MERGE_TESTS": "${{ needs.pr_gate_plan.outputs.merge_tests }}",
-						"MERGE_BASE": "${{ needs.pr_gate_plan.outputs.merge_base }}"
-					},
-					"run": "set -euo pipefail\nshard=\"${{ strategy.job-index }}/${{ strategy.job-total }}\"\ncase \"$EVENT_NAME\" in\n  pull_request)\n    if [ -z \"$PR_BASE\" ] || ! git cat-file -e \"${PR_BASE}^{commit}\"; then\n      needed=\"false\"\n    else\n      needed=\"$(git diff --name-only \"$PR_BASE\" HEAD | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard=\"$shard\" --tests=affected --base=\"$PR_BASE\")\"\n    fi\n    ;;\n  merge_group)\n    if [ \"$MERGE_TESTS\" = \"all\" ]; then\n      needed=\"$(printf '' | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard=\"$shard\" --tests=all\")\"\n    elif [ -n \"$MERGE_BASE\" ] && git cat-file -e \"${MERGE_BASE}^{commit}\"; then\n      needed=\"$(git diff --name-only \"$MERGE_BASE\" HEAD | node --experimental-strip-types --no-warnings scripts/ci/job-needs-playwright-browser.mts --shard=\"$shard\" --tests=affected --base=\"$MERGE_BASE\")\"\n    else\n      needed=\"false\"\n    fi\n    ;;\n  *) needed=\"false\" ;;\nesac\necho \"needed=${needed}\" >> \"$GITHUB_OUTPUT\"\necho \"workspace shard Playwright install: ${needed}\"\n",
-					"local": "run"
-				},
-				{
 					"uses": "$/.github/actions/ci-runner-preflight",
 					"with": {
-						"browser": "${{ steps.playwright.outputs.needed }}"
+						"browser": "true"
 					},
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
