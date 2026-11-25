@@ -14,6 +14,7 @@ import {
 	requiredPathsForTsAutocodeReleaseContract,
 	rootVitestSetupFiles,
 	splitSparseCheckoutPaths,
+	sparsePathLooksLikeNestedFile,
 	tsAutocodeReleaseSparseCones,
 } from "../lib/release-sparse-cone.mts";
 
@@ -460,6 +461,49 @@ describe("release workflow sparse-checkout sync", () => {
 		]);
 		expect([...split.directoryCones].sort()).toEqual(["packages", "scripts"]);
 		expect([...split.rootFiles].sort()).toEqual(["mise.toml", "package.json"]);
+	});
+
+	it("never classifies examples/browser-runtime/wit/station.wit as a directory cone", () => {
+		const wit = "examples/browser-runtime/wit/station.wit";
+		expect(sparsePathLooksLikeNestedFile(wit)).toBe(true);
+		const split = splitSparseCheckoutPaths(hoboReleasePagesSparseCones());
+		expect(split.directoryCones).not.toContain(wit);
+		const withRedundantWit = splitSparseCheckoutPaths([
+			...hoboReleasePagesSparseCones(),
+			wit,
+		]);
+		expect(withRedundantWit.directoryCones).not.toContain(wit);
+		expect(withRedundantWit.rootFiles).toContain(wit);
+		expect(coneCoversPath(withRedundantWit.directoryCones, wit)).toBe(true);
+	});
+
+	it("pages sparse cone covers browser-runtime wit via examples directory cone", () => {
+		const wit = "examples/browser-runtime/wit/station.wit";
+		const cones = hoboReleasePagesSparseCones();
+		expect(cones).not.toContain(wit);
+		expect(coneCoversPath(cones, wit)).toBe(true);
+		assertConeCoversPaths(
+			"release-pages",
+			cones,
+			requiredPathsForHoboReleasePages(),
+		);
+	});
+
+	it("hobo-checkout rejects nested file paths in cone initialization", () => {
+		const action = readFileSync(
+			join(root, ".github/actions/hobo-checkout/action.yml"),
+			"utf8",
+		);
+		expect(action).toMatch(/looks_like_nested_file/);
+		const split = action.indexOf("Split sparse directory cones and root files");
+		expect(split).toBeGreaterThan(-1);
+		const splitBlock = action.slice(split, split + 2_500);
+		expect(splitBlock).toMatch(
+			/is_root_file "\$path" \|\| looks_like_nested_file "\$path"/,
+		);
+		expect(splitBlock).not.toMatch(
+			/examples\/browser-runtime\/wit\/station\.wit/,
+		);
 	});
 
 	it("hobo-checkout checks out sparse root files after cone clone", () => {
