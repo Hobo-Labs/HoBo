@@ -1271,7 +1271,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 		expect(Exit.isFailure(exit)).toBe(true);
 	});
 
-	it("rereads routing after an acquire race and prefers waiting over failing (TOCTOU)", () => {
+	it("rereads routing on any GhMachineSlotUnavailable after acquire and re-acquires before a routed reread answer", () => {
 		const machineId = GhMachineId.make("m-toctou");
 		const jobId = GhRelayJobId.make("job-toctou");
 		const fillerId = GhRelayJobId.make("job-toctou-filler");
@@ -1388,6 +1388,97 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 				),
 			).toMatchObject({ outcome: "waiting", step: "machine", machineId });
 		}
+		const slotReopened = GhRelayRouter.predict(
+			routerState,
+			new RouteGhJob({
+				jobId,
+				context: ctx,
+				machines: [machineSnapshot(0)],
+				fleet: DEFAULT_ROUTE_FACTS.fleet,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(slotReopened._tag).toBe("Accepted");
+		if (slotReopened._tag === "Accepted") {
+			expect(
+				slotReopened.events.find(
+					(event) => event._tag === "GhRouteDecisionRecorded",
+				),
+			).toMatchObject({ outcome: "routed", step: "machine", machineId });
+		}
+		const acquireAfterReread = GhMachinePool.predict(
+			{
+				machines: [
+					{
+						machineId,
+						name: "studio",
+						runsOnLabel: GhRunnerLabel.make("hobo-machine-m-toctou"),
+						labels: [GhRunnerLabel.make("self-hosted")],
+						slots: PositiveSlots.make(1),
+						activeJobIds: [],
+						paused: false,
+						online: true,
+						sharing: "only_me",
+						ownerId: ACTOR_OWNER,
+						advertKeyId: GhAdvertKeyId.make("key-race"),
+						isolatedContainer: false,
+						adopted: false,
+						lastSeenMs: T0,
+					},
+				],
+			},
+			new AcquireGhMachineSlot({
+				machineId,
+				jobId,
+				actorId: ACTOR_OWNER,
+				ownerCanRead: true,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(acquireAfterReread._tag).toBe("Accepted");
+		if (acquireAfterReread._tag === "Accepted") {
+			expect(
+				acquireAfterReread.events.find(
+					(event) => event._tag === "GhMachineSlotAcquired",
+				),
+			).toMatchObject({ jobId, machineId });
+		}
+		const pausedRace = GhMachinePool.predict(
+			{
+				machines: [
+					{
+						machineId,
+						name: "studio",
+						runsOnLabel: GhRunnerLabel.make("hobo-machine-m-toctou"),
+						labels: [GhRunnerLabel.make("self-hosted")],
+						slots: PositiveSlots.make(1),
+						activeJobIds: [fillerId],
+						paused: true,
+						online: true,
+						sharing: "only_me",
+						ownerId: ACTOR_OWNER,
+						advertKeyId: GhAdvertKeyId.make("key-race"),
+						isolatedContainer: false,
+						adopted: false,
+						lastSeenMs: T0,
+					},
+				],
+			},
+			new AcquireGhMachineSlot({
+				machineId,
+				jobId,
+				actorId: ACTOR_OWNER,
+				ownerCanRead: true,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(pausedRace).toMatchObject({
+			_tag: "Rejected",
+			rejection: new GhMachineSlotUnavailable({
+				machineId,
+				reason: "paused",
+			}),
+		});
 	});
 
 	it("fails closed when runner order is not configured for the repository", () => {

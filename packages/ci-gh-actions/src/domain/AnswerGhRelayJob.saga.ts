@@ -409,47 +409,90 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 
 			if (decision.step === "machine" && decision.machineId !== null) {
 				const machineId = decision.machineId;
-				const acquire = pool
-					.send(
-						context.accountId,
-						new AcquireGhMachineSlot({
-							machineId,
-							jobId: key,
-							actorId: context.actorId,
-							ownerCanRead: routingFacts.ownerCanRead,
-						}),
-					)
-					.pipe(Effect.map((receipt) => receipt.reply.runsOnLabel));
 
-				const acquireActivity = Activity.make({
-					name: "acquire-machine-slot",
-					success: GhRunnerLabel,
-					error: GhMachineSlotUnavailable,
-					execute: acquire,
-				}).pipe(
-					AnswerGhRelayJob.withCompensation(() =>
-						Activity.make({
-							name: "release-machine-slot-compensation",
-							execute: pool
+				const acquireMachineSlotActivity = (
+					targetMachineId: GhMachineId,
+					name: string,
+				) =>
+					Activity.make({
+						name,
+						success: GhRunnerLabel,
+						error: GhMachineSlotUnavailable,
+						execute: pool
+							.send(
+								context.accountId,
+								new AcquireGhMachineSlot({
+									machineId: targetMachineId,
+									jobId: key,
+									actorId: context.actorId,
+									ownerCanRead: routingFacts.ownerCanRead,
+								}),
+							)
+							.pipe(Effect.map((receipt) => receipt.reply.runsOnLabel)),
+					}).pipe(
+						AnswerGhRelayJob.withCompensation(() =>
+							Activity.make({
+								name: "release-machine-slot-compensation",
+								execute: pool
+									.send(
+										context.accountId,
+										new ReleaseGhMachineSlot({
+											machineId: targetMachineId,
+											jobId: key,
+										}),
+									)
+									.pipe(Effect.asVoid),
+							}),
+						),
+					);
+
+				const finishWaitingAfterAcquireRace = (
+					reread: typeof RouteReplySchema.Type,
+					fallbackMachineId: GhMachineId,
+					step: GhStepKey,
+					runnerLabel: GhRunnerLabel,
+				) =>
+					Effect.gen(function* () {
+						yield* Activity.make({
+							name: "answer-waiting-after-acquire-race",
+							success: Schema.Void,
+							error: GhProtocolRejected,
+							execute: confirmProtocolAnswer(protocol.answerJob, {
+								accountId: context.accountId,
+								repository: context.repository,
+								jobId: key,
+								conclusion: "succeeded",
+								runnerLabel,
+								annotations: [reread.reason],
+							}),
+						});
+						yield* Activity.make({
+							name: "record-waiting-after-acquire-race",
+							success: Schema.Void,
+							error: GhJobNotClaimed,
+							execute: jobs
 								.send(
-									context.accountId,
-									new ReleaseGhMachineSlot({
-										machineId,
-										jobId: key,
+									key,
+									new RecordGhRelayWaiting({
+										step,
+										runnerLabel,
+										machineId: reread.machineId ?? fallbackMachineId,
+										skipped: reread.skipped,
 									}),
 								)
 								.pipe(Effect.asVoid),
-						}),
-					),
-				);
+						});
+					});
 
-				const acquireExit = yield* acquireActivity.pipe(Effect.exit);
+				const acquireExit = yield* acquireMachineSlotActivity(
+					machineId,
+					"acquire-machine-slot",
+				).pipe(Effect.exit);
 				if (Exit.isFailure(acquireExit)) {
 					const rejected = Cause.findErrorOption(acquireExit.cause);
 					if (
 						rejected._tag !== "Some" ||
-						rejected.value._tag !== "GhMachineSlotUnavailable" ||
-						rejected.value.reason !== "machine_full"
+						rejected.value._tag !== "GhMachineSlotUnavailable"
 					) {
 						return yield* Effect.failCause(acquireExit.cause);
 					}
@@ -461,6 +504,15 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 						reread.step !== null &&
 						reread.runnerLabel !== null
 					) {
+						const step = reread.step;
+						const runnerLabel = reread.runnerLabel;
+						const routedMachineId = reread.machineId ?? machineId;
+						if (step === "machine") {
+							yield* acquireMachineSlotActivity(
+								routedMachineId,
+								"acquire-machine-slot-after-reread-routed",
+							);
+						}
 						yield* Activity.make({
 							name: "answer-routed-after-acquire-race",
 							success: Schema.Void,
@@ -470,7 +522,7 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 								repository: context.repository,
 								jobId: key,
 								conclusion: "succeeded",
-								runnerLabel: reread.runnerLabel,
+								runnerLabel,
 								annotations: [reread.reason],
 							}),
 						});
@@ -482,9 +534,9 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 								.send(
 									key,
 									new RecordGhRelayRouted({
-										step: reread.step,
-										runnerLabel: reread.runnerLabel,
-										machineId: reread.machineId ?? machineId,
+										step,
+										runnerLabel,
+										machineId: routedMachineId,
 										skipped: reread.skipped,
 										notInOrder: reread.notInOrder,
 									}),
@@ -500,35 +552,12 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 					) {
 						return yield* Effect.failCause(acquireExit.cause);
 					}
-					yield* Activity.make({
-						name: "answer-waiting-after-acquire-race",
-						success: Schema.Void,
-						error: GhProtocolRejected,
-						execute: confirmProtocolAnswer(protocol.answerJob, {
-							accountId: context.accountId,
-							repository: context.repository,
-							jobId: key,
-							conclusion: "succeeded",
-							runnerLabel: reread.runnerLabel,
-							annotations: [reread.reason],
-						}),
-					});
-					yield* Activity.make({
-						name: "record-waiting-after-acquire-race",
-						success: Schema.Void,
-						error: GhJobNotClaimed,
-						execute: jobs
-							.send(
-								key,
-								new RecordGhRelayWaiting({
-									step: reread.step,
-									runnerLabel: reread.runnerLabel,
-									machineId: reread.machineId ?? machineId,
-									skipped: reread.skipped,
-								}),
-							)
-							.pipe(Effect.asVoid),
-					});
+					yield* finishWaitingAfterAcquireRace(
+						reread,
+						machineId,
+						reread.step,
+						reread.runnerLabel,
+					);
 					return;
 				}
 			}

@@ -44,6 +44,7 @@ import {
 	makeDomainOutbox,
 	makeDomainScheduleStore,
 	makeSqliteBackedWorkflowEngine,
+	type PersistedScheduleRecord,
 	type SqliteWorkflowHost,
 	scheduleDueMillis,
 } from "./domain-platform-durable.js";
@@ -300,12 +301,13 @@ export function createSqliteDomainPlatform(
 		died: () => undefined,
 	};
 
-	const workflows = makeSqliteBackedWorkflowEngine(
-		"__hobo_platform__",
-		driver,
-		workflowHostBase,
-		(host) => InMemoryWorkflows.make(asInMemoryWorkflowHost(host)),
-	);
+	const { engine: workflows, resumeDurableSideEffects } =
+		makeSqliteBackedWorkflowEngine(
+			"__hobo_platform__",
+			driver,
+			workflowHostBase,
+			(host) => InMemoryWorkflows.make(asInMemoryWorkflowHost(host)),
+		);
 
 	function inTransaction<A>(fn: () => A): A {
 		driver.beginImmediate();
@@ -436,10 +438,11 @@ export function createSqliteDomainPlatform(
 		model: ({ modelName, id }) =>
 			Effect.gen(function* () {
 				yield* claim(modelName, id);
+				yield* resumeDurableSideEffects;
 				const persistAggregate = makePersistAggregateTransaction(modelName);
 				const host: ModelHost = {
 					aggregate: (_aggregate, kit) =>
-						Effect.sync(() => {
+						Effect.gen(function* () {
 							const lock = Semaphore.makeUnsafe(1);
 							const versions = new Map<
 								string,
@@ -511,6 +514,12 @@ export function createSqliteDomainPlatform(
 							) =>
 								lock.withPermits(1)(
 									Effect.gen(function* () {
+										if (!outboxBootDrained) {
+											outboxBootDrained = true;
+											yield* outbox.drainPending(modelName, (delivery) =>
+												kit.deliver(delivery),
+											);
+										}
 										const existingReceiptRow = loadReceiptStmt.get(
 											modelName,
 											kit.name,
@@ -525,6 +534,9 @@ export function createSqliteDomainPlatform(
 														"receipt_json",
 													),
 												),
+											);
+											yield* outbox.drainPending(modelName, (delivery) =>
+												kit.deliver(delivery),
 											);
 											return parsed;
 										}
@@ -581,6 +593,61 @@ export function createSqliteDomainPlatform(
 										return accepted;
 									}),
 								);
+
+							let outboxBootDrained = false;
+
+							const armPersistedSchedule = (
+								instanceId: string,
+								scheduleName: string,
+								record: PersistedScheduleRecord,
+							) => {
+								if (
+									loadReceiptStmt.get(
+										modelName,
+										kit.name,
+										instanceId,
+										record.commandId,
+									) !== undefined
+								) {
+									return Effect.void;
+								}
+								const command = JSON.parse(record.commandJson);
+								const meta = JSON.parse(record.metaJson);
+								let entries = scheduleArms.get(instanceId);
+								if (entries === undefined) {
+									entries = new Map();
+									scheduleArms.set(instanceId, entries);
+								}
+								if (entries.has(scheduleName)) {
+									return Effect.void;
+								}
+								const arm = { cancelled: false };
+								entries.set(scheduleName, arm);
+								return Effect.forkDetach(
+									Effect.sleep(Math.max(0, record.dueAt - now())).pipe(
+										Effect.andThen(
+											Effect.suspend(() =>
+												arm.cancelled
+													? Effect.void
+													: commit(instanceId, command, meta).pipe(
+															Effect.asVoid,
+														),
+											),
+										),
+									),
+								).pipe(Effect.asVoid);
+							};
+
+							for (const active of scheduleStore.listActive(
+								modelName,
+								kit.name,
+							)) {
+								yield* armPersistedSchedule(
+									active.instanceId,
+									active.scheduleName,
+									active.record,
+								);
+							}
 
 							const store: AggregateStore = {
 								send: commit,
