@@ -45,6 +45,7 @@ const MS = (value: number) => decodeNonNegativeMs(value);
 const UPSTASH = decodeFleetMemberName("upstash");
 const TURSO = decodeFleetMemberName("turso");
 const BLOB = decodeFleetMemberName("blob");
+const CACHE_ROSTER = [BLOB, UPSTASH, TURSO] as const;
 
 const DEFAULT_MARKS = decodeRoutingHysteresisMarks({
 	switchAt: decodeUnitFraction(0.9),
@@ -145,6 +146,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 					fleet,
 					new InitializeFleetAssignment({
 						active: BLOB,
+						members: [...CACHE_ROSTER],
 						marks: DEFAULT_MARKS,
 						nowMs: EPOCH(1_000),
 					}),
@@ -153,6 +155,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 					fleet,
 					new FleetAssignmentInitialized({
 						active: BLOB,
+						members: [...CACHE_ROSTER],
 						marks: DEFAULT_MARKS,
 						epoch: decodeEpochNumber(1),
 						decidedAtMs: EPOCH(1_000),
@@ -169,6 +172,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: BLOB,
 						cause: "preference",
 						reason: prefReason,
+						observedUtilization: null,
 						nowMs: EPOCH(5_000_000),
 					}),
 				),
@@ -179,6 +183,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: UPSTASH,
 						cause: "preference",
 						reason: prefReason,
+						observedUtilization: null,
 						nowMs: EPOCH(61_000),
 					}),
 				),
@@ -194,6 +199,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: UPSTASH,
 						cause: "exhaustion",
 						reason: exhaustReason,
+						observedUtilization: decodeUnitFraction(0.95),
 						nowMs: EPOCH(62_000),
 					}),
 				),
@@ -213,6 +219,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: TURSO,
 						cause: "exhaustion",
 						reason: exhaustReason,
+						observedUtilization: null,
 						nowMs: EPOCH(63_000),
 					}),
 				),
@@ -234,6 +241,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: UPSTASH,
 						cause: "preference",
 						reason: prefReason,
+						observedUtilization: null,
 						nowMs: EPOCH(4_000_000),
 					}),
 				),

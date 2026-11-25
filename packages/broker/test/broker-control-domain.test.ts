@@ -8,6 +8,8 @@ import {
 	BrokerControlHandlers,
 	BudgetAccount,
 	BudgetAccountId,
+	BudgetAccountNotConfigured,
+	BudgetCeilingBelowLiabilities,
 	BudgetAlertThresholdCrossed,
 	BudgetAlertThresholdRecovered,
 	BudgetCeilingConfigured,
@@ -28,6 +30,7 @@ import {
 	ReserveBudgetHold,
 	RevokeProviderConnection,
 	SettleBudgetHold,
+	UncertainBudgetHoldNotSettleable,
 } from "../src/domain/index.js";
 
 const story = Story.make(BrokerControl, {
@@ -97,20 +100,6 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 				),
 				Story.when(
 					acct,
-					new MarkBudgetHoldUncertain({
-						holdId: hold1,
-						reason: "provider-ack-timeout",
-					}),
-				),
-				Story.then(
-					acct,
-					new BudgetHoldMarkedUncertain({
-						holdId: hold1,
-						reason: "provider-ack-timeout",
-					}),
-				),
-				Story.when(
-					acct,
 					new SettleBudgetHold({
 						holdId: hold1,
 						settledMicros: 40_000,
@@ -128,12 +117,115 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						thresholdMicros: 80_000,
 					}),
 				),
+				Story.when(
+					acct,
+					new ReserveBudgetHold({
+						holdId: hold2,
+						providerId: "cloudflare",
+						amountMicros: 10_000,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldReserved({
+						holdId: hold2,
+						providerId: "cloudflare",
+						amountMicros: 10_000,
+					}),
+				),
+				Story.when(
+					acct,
+					new MarkBudgetHoldUncertain({
+						holdId: hold2,
+						reason: "provider-ack-timeout",
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldMarkedUncertain({
+						holdId: hold2,
+						reason: "provider-ack-timeout",
+					}),
+				),
+				Story.when(
+					acct,
+					new SettleBudgetHold({
+						holdId: hold2,
+						settledMicros: 5_000,
+					}),
+				),
+				Story.rejected(new UncertainBudgetHoldNotSettleable({ holdId: hold2 })),
 				Story.view(BudgetExposureView, acct, {
 					settledMicros: 40_000,
-					heldMicros: 0,
+					heldMicros: 10_000,
 					uncertainHoldCount: 1,
 					alertActive: false,
 				}),
+			),
+		);
+	});
+
+	it("rejects reserve on unconfigured accounts and ceilings below liabilities", async () => {
+		const acct = BudgetAccount.ref(BudgetAccountId.make("acct-unconfigured"));
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					acct,
+					new ReserveBudgetHold({
+						holdId: BudgetHoldId.make("hold-none"),
+						providerId: "vercel",
+						amountMicros: 1_000,
+					}),
+				),
+				Story.rejected(
+					new BudgetAccountNotConfigured({
+						accountId: BudgetAccountId.make("acct-unconfigured"),
+					}),
+				),
+				Story.when(
+					acct,
+					new ConfigureBudgetAccount({
+						ceilingMicros: 50_000,
+						alertThresholdMicros: 40_000,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetCeilingConfigured({
+						ceilingMicros: 50_000,
+						alertThresholdMicros: 40_000,
+					}),
+				),
+				Story.when(
+					acct,
+					new ReserveBudgetHold({
+						holdId: BudgetHoldId.make("hold-liability"),
+						providerId: "vercel",
+						amountMicros: 30_000,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldReserved({
+						holdId: BudgetHoldId.make("hold-liability"),
+						providerId: "vercel",
+						amountMicros: 30_000,
+					}),
+				),
+				Story.when(
+					acct,
+					new ConfigureBudgetAccount({
+						ceilingMicros: 20_000,
+						alertThresholdMicros: 15_000,
+					}),
+				),
+				Story.rejected(
+					new BudgetCeilingBelowLiabilities({
+						liabilitiesMicros: 30_000,
+						requestedCeilingMicros: 20_000,
+					}),
+				),
 			),
 		);
 	});

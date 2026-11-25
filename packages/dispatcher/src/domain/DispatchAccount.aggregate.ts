@@ -100,6 +100,22 @@ export class UsageEvidenceRequired extends Domain.Rejection(
 	},
 ) {}
 
+export class SettlementExceedsHold extends Domain.Rejection(
+	"SettlementExceedsHold",
+	{
+		reservationId: ReservationId,
+		reservedMicros: NonNegativeMicros,
+		settledMicros: NonNegativeMicros,
+	},
+) {}
+
+export class DispatchOverrunReconciliationRequired extends Domain.Rejection(
+	"DispatchOverrunReconciliationRequired",
+	{
+		accountId: ScopedAccountId,
+	},
+) {}
+
 export class DispatchAccountConfigured extends Domain.Event(
 	"DispatchAccountConfigured",
 	{
@@ -198,6 +214,7 @@ export class ReserveDispatch extends Domain.Command(
 		events: [DispatchReserved],
 		rejects: [
 			AccountNotConfigured,
+			DispatchOverrunReconciliationRequired,
 			DuplicateReservation,
 			InsufficientHeadroom,
 			BudgetCapExceeded,
@@ -265,6 +282,7 @@ export class ConfirmReservation extends Domain.Command(
 			UnknownReservation,
 			ReservationNotConfirmable,
 			UsageEvidenceRequired,
+			SettlementExceedsHold,
 		],
 	},
 	{
@@ -405,6 +423,9 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 		ReserveDispatch: (state, cmd, { id }) => {
 			if (state._tag === "Unconfigured") {
 				return new AccountNotConfigured({ accountId: id });
+			}
+			if (state.overrunSeen) {
+				return new DispatchOverrunReconciliationRequired({ accountId: id });
 			}
 			if (
 				state.reservations.some(
@@ -551,10 +572,17 @@ export class DispatchAccount extends Domain.Aggregate("DispatchAccount", {
 					status: existing._tag,
 				});
 			}
-			if (existing._tag === "Running" && cmd.usageEvidenceRef === null) {
+			if (cmd.usageEvidenceRef === null) {
 				return new UsageEvidenceRequired({ reservationId: cmd.reservationId });
 			}
 			const { hold } = existing;
+			if (cmd.settledMicros > hold.reservedMicros) {
+				return new SettlementExceedsHold({
+					reservationId: cmd.reservationId,
+					reservedMicros: hold.reservedMicros,
+					settledMicros: cmd.settledMicros,
+				});
+			}
 			return [
 				new DispatchReservationConfirmed({
 					reservationId: cmd.reservationId,

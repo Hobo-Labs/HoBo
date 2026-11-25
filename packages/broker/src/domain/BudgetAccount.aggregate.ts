@@ -22,6 +22,36 @@ export class UnknownBudgetHold extends Domain.Rejection("UnknownBudgetHold", {
 	holdId: BudgetHoldId,
 }) {}
 
+export class BudgetAccountNotConfigured extends Domain.Rejection(
+	"BudgetAccountNotConfigured",
+	{
+		accountId: BudgetAccountId,
+	},
+) {}
+
+export class BudgetCeilingBelowLiabilities extends Domain.Rejection(
+	"BudgetCeilingBelowLiabilities",
+	{
+		liabilitiesMicros: Schema.Int,
+		requestedCeilingMicros: Schema.Int,
+	},
+) {}
+
+export class BudgetNegativeAmountRejected extends Domain.Rejection(
+	"BudgetNegativeAmountRejected",
+	{
+		field: Schema.String,
+		amountMicros: Schema.Int,
+	},
+) {}
+
+export class UncertainBudgetHoldNotSettleable extends Domain.Rejection(
+	"UncertainBudgetHoldNotSettleable",
+	{
+		holdId: BudgetHoldId,
+	},
+) {}
+
 export class BudgetCeilingConfigured extends Domain.Event(
 	"BudgetCeilingConfigured",
 	{
@@ -75,7 +105,10 @@ export class ConfigureBudgetAccount extends Domain.Command(
 			alertThresholdMicros: Schema.Int,
 		},
 		events: [BudgetCeilingConfigured],
-		rejects: [],
+		rejects: [
+			BudgetCeilingBelowLiabilities,
+			BudgetNegativeAmountRejected,
+		],
 	},
 	{
 		description:
@@ -93,7 +126,12 @@ export class ReserveBudgetHold extends Domain.Command(
 			amountMicros: Schema.Int,
 		},
 		events: [BudgetHoldReserved, BudgetAlertThresholdCrossed],
-		rejects: [BudgetLimitExceeded, DuplicateBudgetHold],
+		rejects: [
+			BudgetAccountNotConfigured,
+			BudgetLimitExceeded,
+			DuplicateBudgetHold,
+			BudgetNegativeAmountRejected,
+		],
 	},
 	{
 		description:
@@ -110,7 +148,7 @@ export class SettleBudgetHold extends Domain.Command(
 			settledMicros: Schema.Int,
 		},
 		events: [BudgetHoldSettled, BudgetAlertThresholdRecovered],
-		rejects: [UnknownBudgetHold],
+		rejects: [UnknownBudgetHold, UncertainBudgetHoldNotSettleable],
 	},
 	{
 		description:
@@ -169,17 +207,47 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 		MarkBudgetHoldUncertain,
 	],
 	decide: {
-		ConfigureBudgetAccount: (_state, cmd) => [
-			new BudgetCeilingConfigured({
-				ceilingMicros: Math.max(0, cmd.ceilingMicros),
-				alertThresholdMicros: Math.max(0, cmd.alertThresholdMicros),
-			}),
-		],
-		ReserveBudgetHold: (state, cmd) => {
+		ConfigureBudgetAccount: (state, cmd) => {
+			if (cmd.ceilingMicros < 0) {
+				return new BudgetNegativeAmountRejected({
+					field: "ceilingMicros",
+					amountMicros: cmd.ceilingMicros,
+				});
+			}
+			if (cmd.alertThresholdMicros < 0) {
+				return new BudgetNegativeAmountRejected({
+					field: "alertThresholdMicros",
+					amountMicros: cmd.alertThresholdMicros,
+				});
+			}
+			const liabilities = state.settledMicros + state.heldMicros;
+			if (cmd.ceilingMicros < liabilities) {
+				return new BudgetCeilingBelowLiabilities({
+					liabilitiesMicros: liabilities,
+					requestedCeilingMicros: cmd.ceilingMicros,
+				});
+			}
+			return [
+				new BudgetCeilingConfigured({
+					ceilingMicros: cmd.ceilingMicros,
+					alertThresholdMicros: cmd.alertThresholdMicros,
+				}),
+			];
+		},
+		ReserveBudgetHold: (state, cmd, { id }) => {
+			if (state.ceilingMicros === null) {
+				return new BudgetAccountNotConfigured({ accountId: id });
+			}
 			if (state.holds.some((item) => item.holdId === cmd.holdId)) {
 				return new DuplicateBudgetHold({ holdId: cmd.holdId });
 			}
-			const amount = Math.max(0, cmd.amountMicros);
+			if (cmd.amountMicros < 0) {
+				return new BudgetNegativeAmountRejected({
+					field: "amountMicros",
+					amountMicros: cmd.amountMicros,
+				});
+			}
+			const amount = cmd.amountMicros;
 			const currentExposure = state.settledMicros + state.heldMicros;
 			if (
 				state.ceilingMicros !== null &&
@@ -217,7 +285,16 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 			if (hold === undefined) {
 				return new UnknownBudgetHold({ holdId: cmd.holdId });
 			}
-			const settledAmount = Math.max(0, cmd.settledMicros);
+			if (hold.uncertain) {
+				return new UncertainBudgetHoldNotSettleable({ holdId: cmd.holdId });
+			}
+			if (cmd.settledMicros < 0) {
+				return new BudgetNegativeAmountRejected({
+					field: "settledMicros",
+					amountMicros: cmd.settledMicros,
+				});
+			}
+			const settledAmount = cmd.settledMicros;
 			const nextExposure =
 				state.settledMicros +
 				settledAmount +
@@ -246,6 +323,9 @@ export class BudgetAccount extends Domain.Aggregate("BudgetAccount", {
 			const hold = state.holds.find((item) => item.holdId === cmd.holdId);
 			if (hold === undefined) {
 				return new UnknownBudgetHold({ holdId: cmd.holdId });
+			}
+			if (hold.uncertain) {
+				return [];
 			}
 			return [
 				new BudgetHoldMarkedUncertain({

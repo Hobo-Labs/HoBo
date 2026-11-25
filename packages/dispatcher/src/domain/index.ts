@@ -31,6 +31,8 @@ export {
 	StartReservation,
 	UnconfiguredDispatchAccount,
 	UnknownReservation,
+	DispatchOverrunReconciliationRequired,
+	SettlementExceedsHold,
 	UsageEvidenceRequired,
 } from "./DispatchAccount.aggregate.js";
 export {

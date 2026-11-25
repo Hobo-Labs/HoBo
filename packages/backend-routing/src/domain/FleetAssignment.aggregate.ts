@@ -11,6 +11,7 @@ import {
 	NonNegativeMs,
 	RoutingHysteresisMarks,
 	SwitchCause,
+	UnitFraction,
 } from "./ids.js";
 
 export class FleetAlreadyInitialized extends Domain.Rejection(
@@ -63,10 +64,26 @@ export class FailoverThresholdNotReached extends Domain.Rejection(
 	},
 ) {}
 
+export class FleetMemberNotInRoster extends Domain.Rejection(
+	"FleetMemberNotInRoster",
+	{
+		member: FleetMemberName,
+	},
+) {}
+
+export class SwitchUtilizationThresholdNotReached extends Domain.Rejection(
+	"SwitchUtilizationThresholdNotReached",
+	{
+		observedUtilization: Schema.NullOr(UnitFraction),
+		requiredUtilization: UnitFraction,
+	},
+) {}
+
 export class FleetAssignmentInitialized extends Domain.Event(
 	"FleetAssignmentInitialized",
 	{
 		active: FleetMemberName,
+		members: Schema.Array(FleetMemberName),
 		marks: RoutingHysteresisMarks,
 		epoch: EpochNumber,
 		decidedAtMs: EpochMs,
@@ -112,11 +129,12 @@ export class InitializeFleetAssignment extends Domain.Command(
 		target: FleetId,
 		input: {
 			active: FleetMemberName,
+			members: Schema.Array(FleetMemberName),
 			marks: RoutingHysteresisMarks,
 			nowMs: EpochMs,
 		},
 		events: [FleetAssignmentInitialized],
-		rejects: [FleetAlreadyInitialized],
+		rejects: [FleetAlreadyInitialized, FleetMemberNotInRoster],
 	},
 	{
 		description:
@@ -132,6 +150,7 @@ export class ProposeBudgetSwitch extends Domain.Command(
 			target: FleetMemberName,
 			cause: SwitchCause,
 			reason: NonEmptyReason,
+			observedUtilization: Schema.NullOr(UnitFraction),
 			nowMs: EpochMs,
 		},
 		events: [FleetSwitchSealed],
@@ -140,6 +159,8 @@ export class ProposeBudgetSwitch extends Domain.Command(
 			FleetSwitchAlreadyInFlight,
 			SwitchTargetMatchesActive,
 			MinimumDwellNotReached,
+			FleetMemberNotInRoster,
+			SwitchUtilizationThresholdNotReached,
 		],
 	},
 	{
@@ -197,6 +218,7 @@ export class PromoteFailoverStandby extends Domain.Command(
 			FleetSwitchAlreadyInFlight,
 			SwitchTargetMatchesActive,
 			FailoverThresholdNotReached,
+			FleetMemberNotInRoster,
 		],
 	},
 	{
@@ -205,11 +227,17 @@ export class PromoteFailoverStandby extends Domain.Command(
 	},
 ) {}
 
+const rosterIncludes = (
+	members: readonly FleetMemberName[],
+	member: FleetMemberName,
+): boolean => members.some((entry) => entry === member);
+
 export const UnassignedFleetState = Schema.TaggedStruct("Unassigned", {});
 
 export const ActiveFleetState = Schema.TaggedStruct("Active", {
 	epoch: EpochNumber,
 	active: FleetMemberName,
+	members: Schema.Array(FleetMemberName),
 	marks: RoutingHysteresisMarks,
 	decidedAtMs: EpochMs,
 });
@@ -218,6 +246,7 @@ export const SwitchSealedFleetState = Schema.TaggedStruct("SwitchSealed", {
 	epoch: EpochNumber,
 	active: FleetMemberName,
 	target: FleetMemberName,
+	members: Schema.Array(FleetMemberName),
 	marks: RoutingHysteresisMarks,
 	decidedAtMs: EpochMs,
 	sealedAtMs: EpochMs,
@@ -256,9 +285,13 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 					epoch: state.epoch,
 				});
 			}
+			if (!rosterIncludes(cmd.members, cmd.active)) {
+				return new FleetMemberNotInRoster({ member: cmd.active });
+			}
 			return [
 				new FleetAssignmentInitialized({
 					active: cmd.active,
+					members: cmd.members,
 					marks: cmd.marks,
 					epoch: EPOCH_ONE,
 					decidedAtMs: cmd.nowMs,
@@ -275,8 +308,22 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 					target: state.target,
 				});
 			}
+			if (!rosterIncludes(state.members, cmd.target)) {
+				return new FleetMemberNotInRoster({ member: cmd.target });
+			}
 			if (cmd.target === state.active) {
 				return new SwitchTargetMatchesActive({ member: cmd.target });
+			}
+			if (cmd.cause === "exhaustion") {
+				if (
+					cmd.observedUtilization === null ||
+					cmd.observedUtilization < state.marks.switchAt
+				) {
+					return new SwitchUtilizationThresholdNotReached({
+						observedUtilization: cmd.observedUtilization,
+						requiredUtilization: state.marks.switchAt,
+					});
+				}
 			}
 			if (
 				cmd.cause === "preference" &&
@@ -334,6 +381,9 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 					target: state.target,
 				});
 			}
+			if (!rosterIncludes(state.members, cmd.target)) {
+				return new FleetMemberNotInRoster({ member: cmd.target });
+			}
 			if (cmd.target === state.active) {
 				return new SwitchTargetMatchesActive({ member: cmd.target });
 			}
@@ -360,6 +410,7 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 			_tag: "Active" as const,
 			epoch: event.epoch,
 			active: event.active,
+			members: event.members,
 			marks: event.marks,
 			decidedAtMs: event.decidedAtMs,
 		}),
@@ -372,6 +423,7 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 				epoch: state.epoch,
 				active: state.active,
 				target: event.target,
+				members: state.members,
 				marks: state.marks,
 				decidedAtMs: state.decidedAtMs,
 				sealedAtMs: event.sealedAtMs,
@@ -386,6 +438,7 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 				_tag: "Active" as const,
 				epoch: event.epoch,
 				active: event.active,
+				members: state.members,
 				marks: state.marks,
 				decidedAtMs: event.completedAtMs,
 			};
@@ -398,6 +451,7 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 				_tag: "Active" as const,
 				epoch: state.epoch,
 				active: state.active,
+				members: state.members,
 				marks: state.marks,
 				decidedAtMs: state.decidedAtMs,
 			};
@@ -410,6 +464,7 @@ export class FleetAssignment extends Domain.Aggregate("FleetAssignment", {
 				_tag: "Active" as const,
 				epoch: event.epoch,
 				active: event.active,
+				members: state.members,
 				marks: state.marks,
 				decidedAtMs: event.promotedAtMs,
 			};
