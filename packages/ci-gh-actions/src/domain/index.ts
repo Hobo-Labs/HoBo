@@ -27,6 +27,7 @@ export {
 export {
 	GhLintSandbox,
 	GhProtocolRejected,
+	GhRelayRouteFacts,
 	GhRunnerProtocol,
 	GhSandboxFailed,
 } from "./GhRelay.externals.js";
@@ -130,6 +131,7 @@ export {
 	isGhGithubHostedLabel,
 	isGhHostedProviderKey,
 	isGhProviderLabel,
+	isGhRunnerLabelToken,
 	type ParsedGhRunsOn,
 	parseGhAutoSize,
 	parseGhRelayInputs,

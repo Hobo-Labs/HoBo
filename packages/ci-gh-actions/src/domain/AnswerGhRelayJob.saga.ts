@@ -2,6 +2,7 @@ import * as Domain from "@alchemy.run/domain";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { Activity, Workflow } from "effect/workflow";
 import {
@@ -15,6 +16,7 @@ import {
 import {
 	GhLintSandbox,
 	GhProtocolRejected,
+	GhRelayRouteFacts,
 	GhRunnerProtocol,
 	GhSandboxFailed,
 } from "./GhRelay.externals.js";
@@ -31,6 +33,7 @@ import {
 import { GhRelayRouter, RouteGhJob } from "./GhRelayRouter.aggregate.js";
 import {
 	GH_DEFAULT_LINT_TOOLS,
+	GhFleetSnapshot,
 	GhJobContext,
 	GhMachineId,
 	GhRelayJobId,
@@ -109,6 +112,50 @@ const LintResultSchema = Schema.Struct({
 const TaggedFailure = Schema.Struct({ _tag: Schema.NonEmptyString });
 const decodeTaggedFailure = Schema.decodeUnknownOption(TaggedFailure);
 
+type ProtocolAnswerInput = {
+	readonly accountId: GhJobContext["accountId"];
+	readonly repository: GhJobContext["repository"];
+	readonly jobId: GhRelayJobId;
+	readonly conclusion: "succeeded" | "failed";
+	readonly runnerLabel: GhRunnerLabel | null;
+	readonly annotations: readonly NonEmptyReason[];
+};
+
+const decodeGhProtocolRejected = Schema.decodeUnknownOption(GhProtocolRejected);
+
+function confirmProtocolAnswer(
+	answerJob: (
+		input: ProtocolAnswerInput,
+	) => Effect.Effect<{ readonly accepted: boolean }, unknown>,
+	input: ProtocolAnswerInput,
+): Effect.Effect<void, GhProtocolRejected> {
+	return answerJob(input).pipe(
+		Effect.flatMap((reply) =>
+			reply.accepted
+				? Effect.void
+				: Effect.fail(
+						new GhProtocolRejected({
+							reason: NonEmptyReason.make(
+								"GitHub refused the relay job answer.",
+							),
+						}),
+					),
+		),
+		Effect.mapError((error) => {
+			if (error instanceof GhProtocolRejected) return error;
+			const parsed = decodeGhProtocolRejected(error);
+			if (Option.isSome(parsed)) {
+				return new GhProtocolRejected({ reason: parsed.value.reason });
+			}
+			return new GhProtocolRejected({
+				reason: NonEmptyReason.make(
+					error instanceof Error ? error.message : String(error),
+				),
+			});
+		}),
+	);
+}
+
 function reasonOf<E>(cause: Cause.Cause<E>): NonEmptyReason {
 	const failure = Cause.findErrorOption(cause);
 	if (failure._tag === "Some") {
@@ -149,6 +196,7 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 		const pool = yield* GhMachinePool;
 		const protocol = yield* GhRunnerProtocol;
 		const sandbox = yield* GhLintSandbox;
+		const routeFacts = yield* GhRelayRouteFacts;
 
 		return Effect.fn(function* ({ key, context }) {
 			yield* Workflow.addFinalizer((exit) =>
@@ -220,18 +268,16 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 
 				yield* Activity.make({
 					name: "answer-check-protocol",
-					success: Schema.Boolean,
+					success: Schema.Void,
 					error: GhProtocolRejected,
-					execute: protocol
-						.answerJob({
-							accountId: context.accountId,
-							repository: context.repository,
-							jobId: key,
-							conclusion: allPassed ? "succeeded" : "failed",
-							runnerLabel: null,
-							annotations,
-						})
-						.pipe(Effect.map((reply) => reply.accepted)),
+					execute: confirmProtocolAnswer(protocol.answerJob, {
+						accountId: context.accountId,
+						repository: context.repository,
+						jobId: key,
+						conclusion: allPassed ? "succeeded" : "failed",
+						runnerLabel: null,
+						annotations,
+					}),
 				});
 
 				yield* Activity.make({
@@ -252,28 +298,48 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 				return;
 			}
 
-			const poolState = yield* Activity.make({
-				name: "read-machine-pool",
-				success: GhMachinePoolState,
-				execute: pool.get(context.accountId),
+			const routingFacts = yield* Activity.make({
+				name: "load-relay-route-facts",
+				success: Schema.Struct({
+					fleet: Schema.NullOr(GhFleetSnapshot),
+					ownerCanRead: Schema.Boolean,
+				}),
+				execute: routeFacts.loadFacts({
+					accountId: context.accountId,
+					repository: context.repository,
+					actorId: context.actorId,
+				}),
 			});
-			const machines = toGhMachineSnapshots(poolState, true);
 
-			const decision = yield* Activity.make({
-				name: "route-gh-job",
-				success: RouteReplySchema,
-				execute: router
-					.send(
-						context.accountId,
-						new RouteGhJob({
-							jobId: key,
-							context,
-							machines: [...machines],
-							fleet: { enabled: true, taking: true, isolated: true },
-						}),
-					)
-					.pipe(Effect.map((receipt) => receipt.reply)),
-			});
+			const readPoolAndRoute = (name: string) =>
+				Effect.gen(function* () {
+					const poolState = yield* Activity.make({
+						name,
+						success: GhMachinePoolState,
+						execute: pool.get(context.accountId),
+					});
+					const machines = toGhMachineSnapshots(
+						poolState,
+						routingFacts.ownerCanRead,
+					);
+					return yield* Activity.make({
+						name: `${name}-route`,
+						success: RouteReplySchema,
+						execute: router
+							.send(
+								context.accountId,
+								new RouteGhJob({
+									jobId: key,
+									context,
+									machines: [...machines],
+									fleet: routingFacts.fleet,
+								}),
+							)
+							.pipe(Effect.map((receipt) => receipt.reply)),
+					});
+				});
+
+			const decision = yield* readPoolAndRoute("read-machine-pool");
 
 			if (
 				decision.outcome === "failed" ||
@@ -282,18 +348,16 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 			) {
 				yield* Activity.make({
 					name: "answer-failed-route",
-					success: Schema.Boolean,
+					success: Schema.Void,
 					error: GhProtocolRejected,
-					execute: protocol
-						.answerJob({
-							accountId: context.accountId,
-							repository: context.repository,
-							jobId: key,
-							conclusion: "failed",
-							runnerLabel: null,
-							annotations: [decision.reason],
-						})
-						.pipe(Effect.map((reply) => reply.accepted)),
+					execute: confirmProtocolAnswer(protocol.answerJob, {
+						accountId: context.accountId,
+						repository: context.repository,
+						jobId: key,
+						conclusion: "failed",
+						runnerLabel: null,
+						annotations: [decision.reason],
+					}),
 				});
 				yield* Activity.make({
 					name: "mark-route-failed",
@@ -313,18 +377,16 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 			if (decision.outcome === "waiting") {
 				yield* Activity.make({
 					name: "answer-waiting-route",
-					success: Schema.Boolean,
+					success: Schema.Void,
 					error: GhProtocolRejected,
-					execute: protocol
-						.answerJob({
-							accountId: context.accountId,
-							repository: context.repository,
-							jobId: key,
-							conclusion: "succeeded",
-							runnerLabel: decision.runnerLabel,
-							annotations: [decision.reason],
-						})
-						.pipe(Effect.map((reply) => reply.accepted)),
+					execute: confirmProtocolAnswer(protocol.answerJob, {
+						accountId: context.accountId,
+						repository: context.repository,
+						jobId: key,
+						conclusion: "succeeded",
+						runnerLabel: decision.runnerLabel,
+						annotations: [decision.reason],
+					}),
 				});
 				yield* Activity.make({
 					name: "record-waiting-job",
@@ -347,21 +409,23 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 
 			if (decision.step === "machine" && decision.machineId !== null) {
 				const machineId = decision.machineId;
-				yield* Activity.make({
+				const acquire = pool
+					.send(
+						context.accountId,
+						new AcquireGhMachineSlot({
+							machineId,
+							jobId: key,
+							actorId: context.actorId,
+							ownerCanRead: routingFacts.ownerCanRead,
+						}),
+					)
+					.pipe(Effect.map((receipt) => receipt.reply.runsOnLabel));
+
+				const acquireActivity = Activity.make({
 					name: "acquire-machine-slot",
 					success: GhRunnerLabel,
 					error: GhMachineSlotUnavailable,
-					execute: pool
-						.send(
-							context.accountId,
-							new AcquireGhMachineSlot({
-								machineId,
-								jobId: key,
-								actorId: context.actorId,
-								ownerCanRead: true,
-							}),
-						)
-						.pipe(Effect.map((receipt) => receipt.reply.runsOnLabel)),
+					execute: acquire,
 				}).pipe(
 					AnswerGhRelayJob.withCompensation(() =>
 						Activity.make({
@@ -378,22 +442,72 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 						}),
 					),
 				);
+
+				const acquireExit = yield* acquireActivity.pipe(Effect.exit);
+				if (Exit.isFailure(acquireExit)) {
+					const rejected = Cause.findErrorOption(acquireExit.cause);
+					if (
+						rejected._tag !== "Some" ||
+						rejected.value._tag !== "GhMachineSlotUnavailable" ||
+						rejected.value.reason !== "machine_full"
+					) {
+						return yield* Effect.failCause(acquireExit.cause);
+					}
+					const reread = yield* readPoolAndRoute(
+						"reread-machine-pool-after-acquire-race",
+					);
+					if (
+						reread.outcome !== "waiting" ||
+						reread.step === null ||
+						reread.runnerLabel === null
+					) {
+						return yield* Effect.failCause(acquireExit.cause);
+					}
+					yield* Activity.make({
+						name: "answer-waiting-after-acquire-race",
+						success: Schema.Void,
+						error: GhProtocolRejected,
+						execute: confirmProtocolAnswer(protocol.answerJob, {
+							accountId: context.accountId,
+							repository: context.repository,
+							jobId: key,
+							conclusion: "succeeded",
+							runnerLabel: reread.runnerLabel,
+							annotations: [reread.reason],
+						}),
+					});
+					yield* Activity.make({
+						name: "record-waiting-after-acquire-race",
+						success: Schema.Void,
+						error: GhJobNotClaimed,
+						execute: jobs
+							.send(
+								key,
+								new RecordGhRelayWaiting({
+									step: reread.step,
+									runnerLabel: reread.runnerLabel,
+									machineId: reread.machineId ?? machineId,
+									skipped: reread.skipped,
+								}),
+							)
+							.pipe(Effect.asVoid),
+					});
+					return;
+				}
 			}
 
 			yield* Activity.make({
 				name: "answer-routed-protocol",
-				success: Schema.Boolean,
+				success: Schema.Void,
 				error: GhProtocolRejected,
-				execute: protocol
-					.answerJob({
-						accountId: context.accountId,
-						repository: context.repository,
-						jobId: key,
-						conclusion: "succeeded",
-						runnerLabel: decision.runnerLabel,
-						annotations: [decision.reason],
-					})
-					.pipe(Effect.map((reply) => reply.accepted)),
+				execute: confirmProtocolAnswer(protocol.answerJob, {
+					accountId: context.accountId,
+					repository: context.repository,
+					jobId: key,
+					conclusion: "succeeded",
+					runnerLabel: decision.runnerLabel,
+					annotations: [decision.reason],
+				}),
 			});
 
 			yield* Activity.make({

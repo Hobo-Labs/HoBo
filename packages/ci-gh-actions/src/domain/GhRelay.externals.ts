@@ -2,6 +2,8 @@ import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
 import {
 	GhAccountId,
+	GhActorId,
+	GhFleetSnapshot,
 	GhLintTool,
 	GhRelayJobId,
 	GhRepoSlug,
@@ -47,6 +49,24 @@ export class GhRunnerProtocol extends Domain.ExternalSystem(
 				triggered: Schema.Boolean,
 			},
 			error: [GhProtocolRejected],
+		},
+	},
+) {}
+
+export class GhRelayRouteFacts extends Domain.ExternalSystem(
+	"GhRelayRouteFacts",
+	{
+		loadFacts: {
+			args: {
+				accountId: GhAccountId,
+				repository: GhRepoSlug,
+				actorId: GhActorId,
+			},
+			success: {
+				fleet: Schema.NullOr(GhFleetSnapshot),
+				ownerCanRead: Schema.Boolean,
+			},
+			error: [],
 		},
 	},
 ) {}

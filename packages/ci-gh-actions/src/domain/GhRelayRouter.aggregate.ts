@@ -295,26 +295,28 @@ export const GhRelayRouterState = Schema.Struct({
 });
 export type GhRelayRouterState = typeof GhRelayRouterState.Type;
 
-const DEFAULT_ORDER: GhRunnerOrderConfig = {
-	steps: [
-		{ key: "fleet", minutesLimitPercent: null, spendLimitCents: null },
-		{ key: "machine", minutesLimitPercent: null, spendLimitCents: null },
-		{ key: "github", minutesLimitPercent: null, spendLimitCents: null },
-	],
-	skipUnhealthy: true,
-	autoSizeVcpus: 2,
-	retry: { enabled: true, target: "other", maxRetries: 2 },
-};
-
 function orderFor(
 	state: GhRelayRouterState,
 	repository: GhRepoSlug,
-): GhRunnerOrderConfig {
+): GhRunnerOrderConfig | null {
 	return (
 		state.orders.find(
 			(entry) => entry.repository.toLowerCase() === repository.toLowerCase(),
-		)?.order ?? DEFAULT_ORDER
+		)?.order ?? null
 	);
+}
+
+function notConfiguredFailure(
+	candidates: readonly GhStepCandidate[],
+): readonly GhRouteSkip[] {
+	if (candidates.length > 0) {
+		return candidates.map((candidate) => ({
+			step: candidate.step,
+			reason: "not_configured" as const,
+			detail: "",
+		}));
+	}
+	return [{ step: "github", reason: "not_configured", detail: "" }];
 }
 
 function orderedStepsWithFirst(
@@ -458,6 +460,23 @@ export class GhRelayRouter extends Domain.Aggregate("GhRelayRouter", {
 		RouteGhJob: (state, cmd) => {
 			const order = orderFor(state, cmd.context.repository);
 			const { candidates, first, size } = effectiveCandidates(cmd.context);
+			if (order === null) {
+				const skipped = notConfiguredFailure(candidates);
+				return [
+					new GhRouteDecisionRecorded({
+						jobId: cmd.jobId,
+						repository: cmd.context.repository,
+						outcome: "failed",
+						step: null,
+						runnerLabel: null,
+						machineId: null,
+						reason: describeFailure(cmd.context.repository, skipped),
+						skipped,
+						notInOrder: [],
+						decidedAtMs: cmd.context.nowMs,
+					}),
+				];
+			}
 			const candidateByStep = new Map<GhStepKey, readonly GhRunnerLabel[]>(
 				candidates.map((candidate) => [candidate.step, candidate.labels]),
 			);
@@ -813,6 +832,9 @@ export class GhRelayRouter extends Domain.Aggregate("GhRelayRouter", {
 		},
 		RequestGhJobAutoRetry: (state, cmd) => {
 			const order = orderFor(state, cmd.repository);
+			if (order === null) {
+				return new GhRetryDisabled({ repository: cmd.repository });
+			}
 			if (order.retry === null || !order.retry.enabled) {
 				return new GhRetryDisabled({ repository: cmd.repository });
 			}

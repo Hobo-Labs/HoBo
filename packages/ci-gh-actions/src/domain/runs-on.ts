@@ -33,15 +33,9 @@ const GITHUB_HOSTED_LABELS: ReadonlySet<string> = new Set([
 	"macos-13",
 ]);
 
-const PROVIDER_PREFIXES = {
-	blacksmith: ["blacksmith-"],
-	depot: ["depot-"],
-	namespace: ["nscloud-", "namespace-profile-"],
-	warpbuild: ["warp-"],
-	ubicloud: ["ubicloud-"],
-	boat: ["boat-", "boat"],
-	"runs-on": ["runs-on=", "runs-on/"],
-} as const satisfies Readonly<Record<GhHostedProviderKey, readonly string[]>>;
+const RUNS_ON_PROVIDER_LABEL = /^runs-on=\d+\/runner=\d+cpu-linux-x64$/u;
+
+const RUNNER_LABEL_FORBIDDEN = /[/,=]/u;
 
 const PROVIDER_AUTO_LABELS = {
 	blacksmith: (vcpus: GhAutoSize) => `blacksmith-${vcpus}vcpu-ubuntu-2404`,
@@ -81,16 +75,27 @@ export function isGhGithubHostedLabel(label: string): boolean {
 	return GITHUB_HOSTED_LABELS.has(label.trim().toLowerCase());
 }
 
+export function isGhRunnerLabelToken(raw: string): boolean {
+	const trimmed = raw.trim();
+	if (trimmed.length === 0) return false;
+	if (trimmed.toLowerCase().startsWith("runs-on=")) {
+		return RUNS_ON_PROVIDER_LABEL.test(trimmed.toLowerCase());
+	}
+	return !RUNNER_LABEL_FORBIDDEN.test(trimmed);
+}
+
 export function isGhProviderLabel(
 	provider: GhHostedProviderKey,
 	label: string,
 ): boolean {
 	const lower = label.trim().toLowerCase();
-	return PROVIDER_PREFIXES[provider].some((prefix) =>
-		prefix.endsWith("-")
-			? lower.startsWith(prefix) || lower === prefix.slice(0, -1)
-			: lower === prefix || lower.startsWith(prefix),
-	);
+	if (provider === "boat") return lower === "boat";
+	if (provider === "runs-on") return RUNS_ON_PROVIDER_LABEL.test(lower);
+	for (const size of GH_AUTO_SIZES) {
+		const known = resolveGhAutoLabel(provider, size, 1);
+		if (known !== undefined && known.toLowerCase() === lower) return true;
+	}
+	return false;
 }
 
 export function resolveGhAutoLabel(
@@ -154,12 +159,15 @@ function parseLeadingKey(segment: string): string | undefined {
 	return parseGhStepKey(key);
 }
 
-function splitLabelList(raw: string): readonly GhRunnerLabel[] {
-	return raw
-		.split(",")
-		.map((part) => part.trim())
-		.filter((part) => part.length > 0)
-		.map((part) => GhRunnerLabel.make(part));
+function splitLabelList(raw: string): readonly GhRunnerLabel[] | undefined {
+	const labels: GhRunnerLabel[] = [];
+	for (const part of raw.split(",")) {
+		const trimmed = part.trim();
+		if (trimmed === "") continue;
+		if (!isGhRunnerLabelToken(trimmed)) return undefined;
+		labels.push(GhRunnerLabel.make(trimmed));
+	}
+	return labels;
 }
 
 export function parseGhRelayInputs(
@@ -217,6 +225,12 @@ export function parseGhRelayInputs(
 		}
 		seenSteps.add(step);
 		const labels = splitLabelList(value);
+		if (labels === undefined) {
+			return {
+				ok: false,
+				reason: `Runner key "${step}" declares a label containing a runs-on separator.`,
+			};
+		}
 		if (labels.length === 0) {
 			return {
 				ok: false,
