@@ -231,7 +231,7 @@ function parseBindleContainers(
 	});
 }
 
-function parseTopology(value: JsonValue, label: string): ExampleTopology {
+function parseTopology(value: JsonValue | undefined, label: string): ExampleTopology {
 	const input = record(value, label);
 	const home = record(input.homeStation, `${label}.homeStation`);
 	const junction = record(input.junction, `${label}.junction`);
@@ -267,7 +267,7 @@ function parseTopology(value: JsonValue, label: string): ExampleTopology {
 	};
 }
 
-function parseRuntime(value: JsonValue, label: string): ExampleRuntimeDescriptor {
+function parseRuntime(value: JsonValue | undefined, label: string): ExampleRuntimeDescriptor {
 	const input = record(value, label);
 	if (input.schemaVersion !== "hobo.try-runtime/v1") {
 		throw new TypeError(`${label}.schemaVersion is invalid`);
@@ -307,7 +307,7 @@ function parseRuntime(value: JsonValue, label: string): ExampleRuntimeDescriptor
 	return { schemaVersion: "hobo.try-runtime/v1", resources, routes };
 }
 
-function parsePolicy(value: JsonValue, label: string): ExamplePolicy {
+function parsePolicy(value: JsonValue | undefined, label: string): ExamplePolicy {
 	const input = record(value, label);
 	const output: MutableSparseBudgetPolicy = {};
 	if (input.preferLocal !== undefined) {
@@ -353,46 +353,57 @@ function parsePolicy(value: JsonValue, label: string): ExamplePolicy {
 	return output;
 }
 
-function record(value: JsonValue, label: string): JsonObject {
-	if (!isJsonObject(value)) throw new TypeError(`${label} must be an object`);
+function requireJson(value: JsonValue | undefined, label: string): JsonValue {
+	if (value === undefined) throw new TypeError(`${label} is required`);
 	return value;
 }
 
-function string(value: JsonValue, label: string): string {
-	if (!isJsonString(value) || value.length === 0) {
+function record(value: JsonValue | undefined, label: string): JsonObject {
+	const required = requireJson(value, label);
+	if (!isJsonObject(required)) throw new TypeError(`${label} must be an object`);
+	return required;
+}
+
+function string(value: JsonValue | undefined, label: string): string {
+	const required = requireJson(value, label);
+	if (!isJsonString(required) || required.length === 0) {
 		throw new TypeError(`${label} must be a non-empty string`);
 	}
-	return value;
+	return required;
 }
 
-function stringAllowEmpty(value: JsonValue, label: string): string {
-	if (!isJsonString(value)) throw new TypeError(`${label} must be a string`);
-	return value;
+function stringAllowEmpty(value: JsonValue | undefined, label: string): string {
+	const required = requireJson(value, label);
+	if (!isJsonString(required)) throw new TypeError(`${label} must be a string`);
+	return required;
 }
 
-function strings(value: JsonValue, label: string): string[] {
-	if (!isJsonArray(value)) throw new TypeError(`${label} must be a string array`);
+function strings(value: JsonValue | undefined, label: string): string[] {
+	const required = requireJson(value, label);
+	if (!isJsonArray(required)) throw new TypeError(`${label} must be a string array`);
 	const out: string[] = [];
-	for (const entry of value) {
+	for (const entry of required) {
 		if (!isJsonString(entry)) throw new TypeError(`${label} must be a string array`);
 		out.push(entry);
 	}
 	return [...new Set(out)];
 }
 
-function boolean(value: JsonValue, label: string): boolean {
-	if (!isJsonBoolean(value)) throw new TypeError(`${label} must be boolean`);
-	return value;
+function boolean(value: JsonValue | undefined, label: string): boolean {
+	const required = requireJson(value, label);
+	if (!isJsonBoolean(required)) throw new TypeError(`${label} must be boolean`);
+	return required;
 }
 
-function number(value: JsonValue, label: string): number {
-	if (!isJsonNumber(value) || !Number.isFinite(value) || value < 0) {
+function number(value: JsonValue | undefined, label: string): number {
+	const required = requireJson(value, label);
+	if (!isJsonNumber(required) || !Number.isFinite(required) || required < 0) {
 		throw new TypeError(`${label} must be a non-negative number`);
 	}
-	return value;
+	return required;
 }
 
-function integer(value: JsonValue, label: string, minimum: number): number {
+function integer(value: JsonValue | undefined, label: string, minimum: number): number {
 	const parsed = number(value, label);
 	if (!Number.isInteger(parsed) || parsed < minimum) {
 		throw new TypeError(`${label} must be an integer >= ${minimum}`);
@@ -401,13 +412,14 @@ function integer(value: JsonValue, label: string, minimum: number): number {
 }
 
 function oneOf<const T extends readonly string[]>(
-	value: JsonValue,
+	value: JsonValue | undefined,
 	label: string,
 	choices: T,
 ): T[number] {
-	if (!isJsonString(value)) throw new TypeError(`${label} is invalid`);
+	const required = requireJson(value, label);
+	if (!isJsonString(required)) throw new TypeError(`${label} is invalid`);
 	for (const choice of choices) {
-		if (choice === value) return choice;
+		if (choice === required) return choice;
 	}
 	throw new TypeError(`${label} is invalid`);
 }

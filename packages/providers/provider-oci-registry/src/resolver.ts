@@ -195,6 +195,17 @@ function unexpected(response: TransportResponse, what: string): never {
 	);
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: catch values at the resolver seam; only the release Freight error name and fields are interpreted.
+function isReleaseFreightBlockedError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		error.name === "ReleaseFreightBlockedError" &&
+		"detailKind" in error &&
+		"credentialRef" in error &&
+		"requestedScope" in error
+	);
+}
+
 /** A transport failure after a write was sent: its outcome is unknown. */
 function sentButUnknown(error: Error): boolean {
 	if (error instanceof ResolverError) return false;
@@ -217,6 +228,7 @@ async function settled<T>(run: () => Promise<T>): Promise<T> {
 		return await run();
 	} catch (error) {
 		if (error instanceof ResolverError) throw error;
+		if (isReleaseFreightBlockedError(error)) throw error;
 		const code = error instanceof TransportGuardError ? ` (${error.code})` : "";
 		return rejected(
 			`registry transport failed${code}; nothing past the last observation is assumed`,

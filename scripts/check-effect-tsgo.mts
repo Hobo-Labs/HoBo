@@ -119,6 +119,22 @@ function effectTsgoBin(rootDir: string): string {
 	return join(rootDir, "node_modules", ".bin", binName);
 }
 
+function buildWorkspaceDepsForTargets(
+	rootDir: string,
+	targets: readonly EffectTsgoTarget[],
+): number {
+	const args = ["exec", "turbo", "run", "build", "--output-logs=errors-only"];
+	for (const target of targets) {
+		args.push(`--filter=./${target.packageDir}^...`);
+	}
+	const result = spawnSync("pnpm", args, {
+		cwd: rootDir,
+		stdio: "inherit",
+		shell: false,
+	});
+	return result.status ?? 1;
+}
+
 function runEffectTsgoForTarget(
 	rootDir: string,
 	bin: string,
@@ -214,6 +230,12 @@ function main(argv: readonly string[]): number {
 			`effect-tsgo: binary not found at ${bin}; run pnpm install first`,
 		);
 		return 1;
+	}
+
+	const buildStatus = buildWorkspaceDepsForTargets(rootDir, targets);
+	if (buildStatus !== 0) {
+		console.error("effect-tsgo: workspace dependency build failed");
+		return buildStatus;
 	}
 
 	let failed = 0;

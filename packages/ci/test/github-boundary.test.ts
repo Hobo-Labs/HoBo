@@ -170,7 +170,7 @@ describe("GitHub isolation boundary for non-GitHub CI packages", () => {
 		expect(violations).toEqual([]);
 	});
 
-it("keeps non-GitHub CI packages (ci-ado, ci-cf, ci-dagger) isolated from @hobo/ci-gh-actions and GitHub Actions runner logic", () => {
+	it("keeps non-GitHub CI packages (ci-ado, ci-cf, ci-dagger) isolated from @hobo/ci-gh-actions and GitHub Actions runner logic", () => {
 		const packages = ["ci-ado", "ci-cf", "ci-dagger"] as const;
 		const violations: string[] = [];
 

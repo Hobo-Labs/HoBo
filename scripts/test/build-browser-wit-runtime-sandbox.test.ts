@@ -5,36 +5,83 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
+	BROWSER_WIT_GUEST_SOURCE_NAME,
 	componentizeWitDirUnderWorkRoot,
 	copyHostWitTreeIntoWorkRoot,
-	witPathIsUnderWorkRoot,
+	guestSourcePathInWorkRoot,
+	resolveComponentizeHostWitPath,
+	sandboxWitDirIsUnderWorkRoot,
 } from "../lib/browser-wit-componentize-sandbox.mts";
 
 const repoRoot = path.join(import.meta.dirname, "..", "..");
 const hostWitDir = path.join(repoRoot, "examples", "browser-runtime", "wit");
 
-describe("browser WIT componentize sandbox (run 45546344117)", () => {
-	it("repo wit path is outside a temp workRoot (WASI cannot preopen it)", () => {
+describe("browser WIT componentize sandbox", () => {
+	it("repo wit path is outside a temp workRoot", () => {
 		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
-		expect(witPathIsUnderWorkRoot(hostWitDir, workRoot)).toBe(false);
+		expect(sandboxWitDirIsUnderWorkRoot(hostWitDir, workRoot)).toBe(false);
 		expect(
-			witPathIsUnderWorkRoot(
+			sandboxWitDirIsUnderWorkRoot(
 				componentizeWitDirUnderWorkRoot(workRoot),
 				workRoot,
 			),
 		).toBe(true);
 	});
 
-	it("build script passes sandbox wit under workRoot, not host WIT_DIR", () => {
+	it("build script uses inline witWorld for splicer (no witPath file read)", () => {
 		const source = readFileSync(
 			path.join(repoRoot, "site/scripts/build-browser-wit-runtime.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/witPath:\s*sandboxWitDir/);
-		expect(source).not.toMatch(/witPath:\s*WIT_DIR/);
+		expect(source).toMatch(/readInlineComponentizeWit/);
+		expect(source).toMatch(/witWorld:\s*inlineWit/);
+		expect(source).not.toMatch(/witPath:\s*/);
+		expect(source).not.toMatch(/process\.chdir\(/);
+		expect(source).toMatch(/sourcePath:\s*hostSourcePath/);
+		expect(source).toMatch(/await resolveComponentizeHostWitPath/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
 		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
+		expect(source).toMatch(/createBrowserWitComponentizeWorkRoot/);
+		expect(source).toMatch(/logBrowserWitReleaseEnvironment/);
+		expect(source).not.toMatch(/mkdtemp\(path\.join\(tmpdir\(\)/);
+	});
+
+	it("resolveComponentizeHostWitPath returns an absolute real path under workRoot", async () => {
+		const workRoot = await import("node:fs/promises").then((fs) =>
+			fs.mkdtemp(path.join(tmpdir(), "hobo-browser-wit-test-")),
+		);
+		try {
+			const sandbox = componentizeWitDirUnderWorkRoot(workRoot);
+			await mkdir(sandbox, { recursive: true });
+			await writeFile(
+				path.join(sandbox, "station.wit"),
+				"package browser:station;\n",
+				"utf8",
+			);
+			const resolved = await resolveComponentizeHostWitPath(sandbox);
+			expect(path.isAbsolute(resolved)).toBe(true);
+			expect(path.basename(resolved)).toBe("station.wit");
+			expect(sandboxWitDirIsUnderWorkRoot(resolved, workRoot)).toBe(true);
+		} finally {
+			await import("node:fs/promises").then((fs) =>
+				fs.rm(workRoot, { recursive: true, force: true }),
+			);
+		}
+	});
+
+	it("guest source must use the fixed name under workRoot", () => {
+		const workRoot = path.join(tmpdir(), "guest-under-root");
+		const guest = guestSourcePathInWorkRoot(workRoot);
+		expect(path.basename(guest)).toBe(BROWSER_WIT_GUEST_SOURCE_NAME);
+		expect(() => assertGuestSourceUnderWorkRoot(guest, workRoot)).not.toThrow();
+		expect(() =>
+			assertGuestSourceUnderWorkRoot(
+				path.join(workRoot, "other.mjs"),
+				workRoot,
+			),
+		).toThrow(/must be station-guest\.mjs/);
 	});
 
 	it("copies host wit into workRoot and asserts before componentize", async () => {
@@ -57,7 +104,7 @@ describe("browser WIT componentize sandbox (run 45546344117)", () => {
 		}
 	});
 
-	it("rejects componentize witPath outside workRoot even when host tree exists", async () => {
+	it("rejects componentize sandbox wit outside workRoot even when host tree exists", async () => {
 		const workRoot = await mkdtemp(path.join(tmpdir(), "hobo-wit-sandbox-"));
 		try {
 			await expect(
