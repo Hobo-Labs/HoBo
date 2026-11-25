@@ -414,8 +414,8 @@ export function selectRelevantChecks(
 	}
 
 	const domainModelChanged = touchedAny([
-		/^packages\/(?:broker|cd|ci|ci-gh-actions|dispatcher|stations)\/src\/domain\//u,
-		/^packages\/(?:broker|cd|ci|ci-gh-actions|dispatcher|stations)\/test\/.*-domain\.test\.ts$/u,
+		/^packages\/(?:backend-routing|broker|cd|ci|ci-gh-actions|dispatcher|stations)\/src\/domain\//u,
+		/^packages\/(?:backend-routing|broker|cd|ci|ci-gh-actions|dispatcher|stations)\/test\/.*-domain\.test\.ts$/u,
 		/^scripts\/check-domain-boundaries\.mts$/u,
 	]);
 	if (domainModelChanged) {
@@ -431,13 +431,14 @@ export function selectRelevantChecks(
 		files.some(
 			(file) =>
 				PACKAGE_TYPESCRIPT.test(file) &&
-				/^packages\/(?:broker|cd|ci|ci-gh-actions|dispatcher|stations)\//u.test(
+				/^packages\/(?:backend-routing|broker|cd|ci|ci-gh-actions|dispatcher|stations)\//u.test(
 					file,
 				),
 		) ||
 		touchedAny([
 			/^scripts\/check-effect-tsgo\.mts$/u,
 			/^tsconfig\.base\.json$/u,
+			/^tsconfig\.json$/u,
 		]);
 	if (effectAlchemyChanged) {
 		checks.push({

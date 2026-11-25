@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -19,6 +19,16 @@ export type EffectTsgoTarget = Readonly<{
 }>;
 
 const EFFECT_DEPENDENCY_PREFIXES = ["effect", "@effect/", "@alchemy.run/"];
+
+export const ROOT_EFFECT_TSCONFIG_FILES = [
+	"tsconfig.base.json",
+	"tsconfig.json",
+] as const;
+
+export function isRootEffectTsconfigPath(filePath: string): boolean {
+	const normalized = toPosix(filePath).replace(/^\.\//u, "");
+	return ROOT_EFFECT_TSCONFIG_FILES.some((entry) => entry === normalized);
+}
 
 function toPosix(pathValue: string): string {
 	return pathValue.replaceAll("\\", "/");
@@ -57,19 +67,65 @@ export function workspaceDirForPath(filePath: string): string | undefined {
 	return undefined;
 }
 
-export function selectEffectTsgoTargets(
-	rootDir: string,
-	changedFiles: readonly string[],
-): readonly EffectTsgoTarget[] {
+function walkWorkspacePackageDirs(
+	absDir: string,
+	relDir: string,
+	packageDirs: Set<string>,
+): void {
+	const pkgJson = join(absDir, "package.json");
+	if (existsSync(pkgJson)) {
+		packageDirs.add(relDir);
+		return;
+	}
+	let entries: string[];
+	try {
+		entries = readdirSync(absDir);
+	} catch {
+		return;
+	}
+	for (const name of entries) {
+		if (name === "node_modules" || name.startsWith(".")) continue;
+		const childAbs = join(absDir, name);
+		try {
+			if (!statSync(childAbs).isDirectory()) continue;
+		} catch {
+			continue;
+		}
+		walkWorkspacePackageDirs(childAbs, `${relDir}/${name}`, packageDirs);
+	}
+}
+
+function discoverWorkspacePackageDirs(rootDir: string): readonly string[] {
 	const packageDirs = new Set<string>();
-	for (const file of changedFiles) {
-		const pkgDir = workspaceDirForPath(file);
-		if (pkgDir !== undefined) {
-			packageDirs.add(pkgDir);
+	for (const relRoot of ["packages", "examples"] as const) {
+		const absRoot = join(rootDir, relRoot);
+		if (!existsSync(absRoot)) continue;
+		let entries: string[];
+		try {
+			entries = readdirSync(absRoot);
+		} catch {
+			continue;
+		}
+		for (const name of entries) {
+			if (name === "node_modules" || name.startsWith(".")) continue;
+			const childAbs = join(absRoot, name);
+			try {
+				if (!statSync(childAbs).isDirectory()) continue;
+			} catch {
+				continue;
+			}
+			walkWorkspacePackageDirs(childAbs, `${relRoot}/${name}`, packageDirs);
 		}
 	}
+	return [...packageDirs].sort();
+}
+
+function effectTsgoTargetsForPackageDirs(
+	rootDir: string,
+	packageDirs: readonly string[],
+): readonly EffectTsgoTarget[] {
 	const targets: EffectTsgoTarget[] = [];
-	for (const packageDir of [...packageDirs].sort()) {
+	for (const packageDir of packageDirs) {
 		const absPkgDir = join(rootDir, packageDir);
 		const pkgJson = join(absPkgDir, "package.json");
 		const tsconfig = join(absPkgDir, "tsconfig.json");
@@ -81,6 +137,32 @@ export function selectEffectTsgoTargets(
 		});
 	}
 	return targets;
+}
+
+export function listAllEffectTsgoTargets(
+	rootDir: string,
+): readonly EffectTsgoTarget[] {
+	return effectTsgoTargetsForPackageDirs(
+		rootDir,
+		discoverWorkspacePackageDirs(rootDir),
+	);
+}
+
+export function selectEffectTsgoTargets(
+	rootDir: string,
+	changedFiles: readonly string[],
+): readonly EffectTsgoTarget[] {
+	if (changedFiles.some((file) => isRootEffectTsconfigPath(file))) {
+		return listAllEffectTsgoTargets(rootDir);
+	}
+	const packageDirs = new Set<string>();
+	for (const file of changedFiles) {
+		const pkgDir = workspaceDirForPath(file);
+		if (pkgDir !== undefined) {
+			packageDirs.add(pkgDir);
+		}
+	}
+	return effectTsgoTargetsForPackageDirs(rootDir, [...packageDirs].sort());
 }
 
 export type ChangedFilesRead =
@@ -212,11 +294,20 @@ function main(argv: readonly string[]): number {
 		return 2;
 	}
 	const targets = selectEffectTsgoTargets(rootDir, changed.files);
+	const rootTsconfigTouched = changed.files.some((file) =>
+		isRootEffectTsconfigPath(file),
+	);
 
 	if (targets.length === 0) {
 		if (explicitPackages.length > 0) {
 			console.error(
 				`effect-tsgo: explicit --packages matched no Effect/Alchemy package(s): ${explicitPackages.join(", ")}`,
+			);
+			return 1;
+		}
+		if (rootTsconfigTouched) {
+			console.error(
+				"effect-tsgo: root TypeScript config changed but no Effect/Alchemy workspace targets were found",
 			);
 			return 1;
 		}

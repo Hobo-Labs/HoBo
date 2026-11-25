@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	isRootEffectTsconfigPath,
+	listAllEffectTsgoTargets,
 	packageUsesEffect,
 	readChangedFiles,
 	resolveExplicitPackagePaths,
@@ -105,6 +107,35 @@ describe("check-effect-tsgo target selection", () => {
 				resolveExplicitPackagePaths(root, ["ci", "iac-alchemy", "packages/ci"]),
 				["packages/ci", "packages/iac/iac-alchemy", "packages/ci"],
 			);
+		});
+	});
+
+	it("treats root tsconfig edits as global Effect/Alchemy impact", () => {
+		assert.equal(isRootEffectTsconfigPath("tsconfig.base.json"), true);
+		assert.equal(isRootEffectTsconfigPath("./tsconfig.json"), true);
+		assert.equal(isRootEffectTsconfigPath("packages/ci/tsconfig.json"), false);
+
+		withTempWorkspace((root) => {
+			const effectPkg = join(root, "packages", "ci");
+			mkdirSync(effectPkg, { recursive: true });
+			writeFileSync(
+				join(effectPkg, "package.json"),
+				JSON.stringify({
+					name: "@hobo/ci",
+					dependencies: { effect: "4.1.4" },
+				}),
+			);
+			writeFileSync(join(effectPkg, "tsconfig.json"), "{}");
+
+			const fromBase = selectEffectTsgoTargets(root, ["tsconfig.base.json"]);
+			const all = listAllEffectTsgoTargets(root);
+			assert.deepEqual(fromBase, all);
+			assert.deepEqual(fromBase, [
+				{
+					packageDir: "packages/ci",
+					tsconfigPath: "packages/ci/tsconfig.json",
+				},
+			]);
 		});
 	});
 });

@@ -1229,6 +1229,39 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		);
 });
 
+const isEffectTypecheck = (check: Check) =>
+	check.command === "pnpm" &&
+	check.args[0] === "run" &&
+	check.args[1] === "typecheck:effect";
+
+const isDomainBoundaries = (check: Check) =>
+	check.command === "pnpm" &&
+	check.args[0] === "run" &&
+	check.args[1] === "lint:domain-boundaries";
+
+test("backend-routing and root tsconfig edits select Effect/Alchemy gates", () => {
+	for (const file of [
+		"packages/backend-routing/src/domain/Routing.model.ts",
+		"packages/backend-routing/test/backend-routing-domain.test.ts",
+		"tsconfig.base.json",
+		"tsconfig.json",
+	]) {
+		assert.ok(
+			plan([file]).checks.some(isEffectTypecheck),
+			`typecheck:effect for ${file}`,
+		);
+	}
+	for (const file of [
+		"packages/backend-routing/src/domain/Routing.model.ts",
+		"packages/backend-routing/test/backend-routing-domain.test.ts",
+	]) {
+		assert.ok(
+			plan([file]).checks.some(isDomainBoundaries),
+			`lint:domain-boundaries for ${file}`,
+		);
+	}
+});
+
 test("UI discovery manifest changes select the visual-token gate", () => {
 	for (const file of [
 		"packages/connect-ui/package.json",
