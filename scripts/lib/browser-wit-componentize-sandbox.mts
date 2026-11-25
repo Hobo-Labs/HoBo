@@ -1,23 +1,77 @@
-import { cp, readdir, readFile, stat } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { cp, readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { assertReleasePagesBrowserRuntimeWit } from "./release-pages-wit.mts";
 
 export const SANDBOX_WIT_DIR_NAME = "wit" as const;
+export const SANDBOX_WIT_STATION_FILE = "station.wit" as const;
+export const COMPONENTIZE_WIT_PATH =
+	`${SANDBOX_WIT_DIR_NAME}/${SANDBOX_WIT_STATION_FILE}` as const;
+export const BROWSER_WIT_GUEST_SOURCE_NAME = "station-guest.mjs" as const;
 
 export function componentizeWitDirUnderWorkRoot(workRoot: string): string {
 	return path.join(workRoot, SANDBOX_WIT_DIR_NAME);
+}
+
+export async function resolveComponentizeHostWitPath(
+	sandboxWitDir: string,
+): Promise<string> {
+	return realpath(path.join(path.resolve(sandboxWitDir), "station.wit"));
+}
+
+export async function readInlineComponentizeWit(
+	sandboxWitDir: string,
+): Promise<string> {
+	const stationWit = await resolveComponentizeHostWitPath(sandboxWitDir);
+	return readFile(stationWit, "utf8");
+}
+
+export function guestSourcePathInWorkRoot(workRoot: string): string {
+	return path.join(workRoot, BROWSER_WIT_GUEST_SOURCE_NAME);
+}
+
+export function assertGuestSourceUnderWorkRoot(
+	sourcePath: string,
+	workRoot: string,
+): void {
+	const resolvedSource = path.resolve(sourcePath);
+	const resolvedRoot = path.resolve(workRoot);
+	const rootPrefix = resolvedRoot.endsWith(path.sep)
+		? resolvedRoot
+		: `${resolvedRoot}${path.sep}`;
+	if (!resolvedSource.startsWith(rootPrefix)) {
+		throw new Error(
+			`browser-wit: componentize sourcePath must live under workRoot (${workRoot}); got ${sourcePath}`,
+		);
+	}
+	if (path.basename(resolvedSource) !== BROWSER_WIT_GUEST_SOURCE_NAME) {
+		throw new Error(
+			`browser-wit: componentize guest source must be ${BROWSER_WIT_GUEST_SOURCE_NAME} under workRoot`,
+		);
+	}
 }
 
 export function witPathIsUnderWorkRoot(
 	witPath: string,
 	workRoot: string,
 ): boolean {
-	const relative = path.relative(workRoot, path.resolve(witPath));
-	if (relative === "") {
+	let resolvedWit: string;
+	let resolvedRoot: string;
+	try {
+		resolvedWit = realpathSync.native(path.resolve(witPath));
+		resolvedRoot = realpathSync.native(path.resolve(workRoot));
+	} catch {
+		resolvedWit = path.resolve(witPath);
+		resolvedRoot = path.resolve(workRoot);
+	}
+	const rootPrefix = resolvedRoot.endsWith(path.sep)
+		? resolvedRoot
+		: `${resolvedRoot}${path.sep}`;
+	if (resolvedWit === resolvedRoot) {
 		return false;
 	}
-	return !relative.startsWith("..") && !path.isAbsolute(relative);
+	return resolvedWit.startsWith(rootPrefix);
 }
 
 export async function copyHostWitTreeIntoWorkRoot(

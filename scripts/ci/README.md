@@ -61,10 +61,23 @@ passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 `HEAD` by blob id, log `ls -la` on the wit tree, and fail closed when the file is absent,
 empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild.mts)
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
-builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) (via
-[`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts))
-copies that wit tree into the temp `hobo-browser-wit-*` workRoot and passes the
-sandbox path to `componentize-js`, because WASI preopens only the guest temp dir (run 45546344117).
+builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) copies the wit tree
+into a workspace-local work root (`.cache/browser-wit-componentize/`, then `realpath`), not `os.tmpdir()`,
+and passes `station.wit` (not the wit directory) to `componentize-js` before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
+logs `componentize-js` / `preview2-shim` resolution, `TMPDIR`, `/tmp` mount metadata, runner identity,
+and container hints on the release path. Host `readFile` on sandbox `station.wit` passing while
+componentize fails indicates a **host vs WASI/preview2-shim view mismatch** (not only sparse checkout:
+#2995–#2997 still materialize and byte-compare before componentize). PR job
+`release-pages-browser-wit-smoke` on the **`hobo`** runner runs
+[`build-release-browser-wit-on-runner.mts`](build-release-browser-wit-on-runner.mts) — the same
+prebuild + `examples:runtime` chain as Pages publish, without pushing gh-pages.
+The smoke purges `site/public/examples/runtime`, sets `HOBO_BROWSER_WIT_FORCE_COMPONENTIZE=1`,
+and requires `.cache/browser-wit-componentize/componentize-proof.json` after build (cold
+componentize, not a verified runtime cache hit). Spawn results fail closed on `error`,
+`signal`, or non-zero `status` (`spawn-sync-fail-closed.mts`).
+
+`site/src/lib/examples/catalog-contract.ts` parser helpers accept `JsonValue | undefined` so
+root `typecheck:root` can follow imports from `site/scripts/build-browser-wit-runtime.mts`.
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in
