@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	formatReleaseFreightBlockedReason,
 	parseReleaseFreightAuthorMessage,
-	validateReasonStructuredDetail,
+	releaseFreightStructuredFromFields,
 } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
 import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
@@ -552,7 +552,7 @@ describe("announceVerdict", () => {
 	it("keeps resolver codes and structured pages detail on blocked announce lines", () => {
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
-			const structured = validateReasonStructuredDetail({
+			const structured = releaseFreightStructuredFromFields({
 				credentialRef: "github-app://Hobo-Labs/HoBo",
 				requestedScope: "cd-realize:hobo-release/pages-candidate",
 				detailKind: "github-permission-missing",
