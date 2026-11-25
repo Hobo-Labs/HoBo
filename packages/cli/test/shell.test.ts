@@ -130,7 +130,7 @@ Canonical verbs:
   broker      governance    Resolve placements through the broker (the Conductor)
   yard        control plane Install and inspect the default bare-metal Yard
   station     control plane Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb
-  serve       control plane Local control-plane HTTP+SSE for the Yard game UI
+  serve       control plane Serve the local control-plane HTTP and SSE API
   replay      observability Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay)
   derivative  extensibility Manage derived HoBo implementations
   runbook     SRE           Execute or replay incident runbooks
