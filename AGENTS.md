@@ -27,8 +27,9 @@ over conflicting repository workflow guidance.
   an existing mechanism and use it. List the hard constraints against the goal
   and report any contradiction before building. The `hobo-setup` skill covers
   owner interaction and the `sdlc` skill covers landing pull requests.
-- Do not create or retain planning documents, roadmaps, or design documents.
-  Record genuinely outstanding work in Linear, then remove the artifacts. Keep
+- Do not create or retain planning documents, roadmaps, design documents,
+  architecture decision records, RFCs, or proposals. Record genuinely
+  outstanding work in Linear, then remove the artifacts. Keep
   user and operator documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.

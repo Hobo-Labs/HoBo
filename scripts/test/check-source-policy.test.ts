@@ -605,6 +605,13 @@ f: /* TODO: remove block */`;
 			["packages/example/DESIGN.md", "# New"],
 			["notes/implementation-plan.md", "# New"],
 			["notes/new.md", "---\ntype: Design\n---\n"],
+			["packages/example/ADR.md", "# Decision"],
+			["docs/decisions/adr-001-cache.md", "# Decision"],
+			["notes/RFC.md", "# Request"],
+			["docs/rfcs/001-feature.md", "# Request"],
+			["notes/cache-adr.md", "# Decision"],
+			["notes/proposal-next.md", "# Proposal"],
+			["notes/decision.md", "---\ntype: Architecture Decision Record\n---\n"],
 			[".impeccable/design.json", "{}"],
 			[".impeccable/surfaces/example.json", "{}"],
 			["site/.impeccable/surfaces/example.md", "# Example"],
@@ -1050,6 +1057,15 @@ f: /* TODO: remove block */`;
 		unlinkSync(join(repo, "docs/design/existing.md"));
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 0);
+	});
+
+	it("rejects a staged architecture decision record", () => {
+		const repo = fixture();
+		write(repo, "packages/example/ADR.md", "# Decision\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /packages\/example\/ADR\.md/u);
 	});
 
 	it("rejects a new empty design document", () => {
