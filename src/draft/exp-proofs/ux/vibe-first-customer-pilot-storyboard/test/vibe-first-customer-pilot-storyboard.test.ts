@@ -24,7 +24,7 @@ test("HOBO-549 storyboard contract pins issue, package path, proof path, persona
   );
   assert.equal(
     parsed.proofPath,
-    "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb",
   );
   assert.deepEqual(parsed.personas, REQUIRED_PILOT_STORYBOARD_PERSONAS);
   assert.deepEqual(

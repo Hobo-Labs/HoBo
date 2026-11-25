@@ -59,7 +59,7 @@ export interface VibeLaunchAssetRefreshPlan {
   schema: "hobo.vibe-launch-asset-refresh-plan/v1";
   issue: "HOBO-556";
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan";
-  proofNotePath: "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md";
+  proofNotePath: "https://linear.app/quickdeploy-ai/document/hobo-556-vibe-launch-asset-refresh-plan-proof-archived-aa444a865a7a";
   sourceRefs: string[];
   audience: string[];
   assets: LaunchAsset[];
@@ -89,7 +89,7 @@ export const VIBE_LAUNCH_ASSET_REFRESH_PLAN: VibeLaunchAssetRefreshPlan = {
   schema: "hobo.vibe-launch-asset-refresh-plan/v1",
   issue: "HOBO-556",
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan",
-  proofNotePath: "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md",
+  proofNotePath: "https://linear.app/quickdeploy-ai/document/hobo-556-vibe-launch-asset-refresh-plan-proof-archived-aa444a865a7a",
   sourceRefs: [
     "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     "docs/design/launch-messaging-claims.md",
@@ -361,7 +361,7 @@ export function parseLaunchAssetRefreshPlan(input: JsonValue) {
   if (record.targetPackagePath !== "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan") {
     errors.push("target package path must match HOBO-556 acceptance");
   }
-  if (record.proofNotePath !== "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md") {
+  if (record.proofNotePath !== "https://linear.app/quickdeploy-ai/document/hobo-556-vibe-launch-asset-refresh-plan-proof-archived-aa444a865a7a") {
     errors.push("proof note path must match HOBO-556 acceptance");
   }
   if (!Array.isArray(record.assets)) {
