@@ -1,5 +1,9 @@
 import { parseBetterAuthConfig } from "@hobo/auth-adapter-contract";
-import { MIGRATION_STEP_KINDS, parseSchemaIr, SCHEMA_IR_CONTRACT } from "@hobo/core";
+import {
+	MIGRATION_STEP_KINDS,
+	parseSchemaIr,
+	SCHEMA_IR_CONTRACT,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,7 +20,7 @@ const CONFIG_INPUT = {
 	emailAndPassword: { enabled: true },
 	socialProviders: ["github"],
 	organizations: { enabled: true },
-} as const;
+};
 
 const PORTS = {
 	relationalBindle: "auth_db",
@@ -31,9 +35,9 @@ describe("planBetterAuthRelationalMigrations", () => {
 		expect(wire.relationalBindle).toBe("auth_db");
 		expect(wire.desiredSchema).toBe(BETTER_AUTH_RELATIONAL_SCHEMA_IR);
 		expect(wire.migrationPlan.steps.length).toBeGreaterThan(0);
-		expect(wire.migrationPlan.steps.every((step) => step.phase === "expand")).toBe(
-			true,
-		);
+		expect(
+			wire.migrationPlan.steps.every((step) => step.phase === "expand"),
+		).toBe(true);
 		expect(
 			wire.migrationPlan.steps.every((step) =>
 				MIGRATION_STEP_KINDS.includes(step.kind),
@@ -94,8 +98,8 @@ describe("planBetterAuthRelationalMigrations", () => {
 		const wire = planBetterAuthRelationalMigrations(bundlePlan, {
 			currentSchema: empty,
 		});
-		expect(wire.migrationPlan.steps.some((step) => step.kind === "create-table")).toBe(
-			true,
-		);
+		expect(
+			wire.migrationPlan.steps.some((step) => step.kind === "create-table"),
+		).toBe(true);
 	});
 });
