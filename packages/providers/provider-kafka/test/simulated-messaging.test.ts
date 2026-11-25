@@ -1,21 +1,3 @@
-/**
- * The simulated-fidelity messaging surface.
- *
- * `createKafkaMessaging` has two paths. The live one drives a real broker
- * transport; the simulated one runs in memory so a Bindle can be authored and
- * exercised with no cluster at all. Both implement the same `KafkaMessaging`
- * shape, and that is exactly where the risk is: a simulated client that
- * silently diverged from the live one would let a developer build against
- * semantics the broker does not have, and the divergence would surface only
- * once something was deployed.
- *
- * So the property that matters most here is **honesty about which path you are
- * on**. The simulated client reports `fidelity: "simulated"` and a `null`
- * transport, and every metering fact it emits carries that label — a consumer
- * reading usage cannot mistake in-memory traffic for broker traffic. The
- * partition count it reports is likewise a plausible default rather than a
- * measurement, because there is no cluster to measure.
- */
 import {
 	parseConsumerGroupId,
 	parseSubscriptionName,
@@ -51,18 +33,12 @@ const topicSpec = () => ({
 
 describe("fidelity is stated, never inferred", () => {
 	it("reports simulated fidelity and a null transport", () => {
-		// The two together. A caller checking only `fidelity` could be fooled by
-		// a future path that set it wrongly; the null transport is the
-		// structural fact that there is nothing to talk to.
 		const client = messaging();
 		expect(client.fidelity).toBe("simulated");
 		expect(client.transport).toBeNull();
 	});
 
 	it("still names the native-kafka backend", () => {
-		// Simulated fidelity does not change *which* backend's semantics are
-		// being modelled — a reader has to be able to tell an in-memory Kafka
-		// from an in-memory anything-else.
 		expect(messaging().backend).toBe("native-kafka");
 	});
 
@@ -84,8 +60,6 @@ describe("ensureTopic", () => {
 	});
 
 	it("is idempotent", async () => {
-		// Ensuring twice must not produce two topics, because the whole point of
-		// an `ensure` is that a caller can run it on every start-up.
 		const client = messaging();
 		const first = await client.ensureTopic(topicSpec());
 		const second = await client.ensureTopic(topicSpec());
@@ -93,9 +67,6 @@ describe("ensureTopic", () => {
 	});
 
 	it("records a partition count for the topic it ensured", async () => {
-		// A plausible default rather than a measurement — there is no cluster to
-		// measure. Reporting 0 would make a partition-aware consumer believe the
-		// topic could not be read.
 		const client = messaging();
 		const ensured = await client.ensureTopic(topicSpec());
 		expect(client.partitionsFor(ensured.name)).toBeGreaterThan(0);
@@ -104,9 +75,6 @@ describe("ensureTopic", () => {
 
 describe("partitionsFor", () => {
 	it("reports a positive default for a topic it has never seen", async () => {
-		// Not zero and not a throw. A caller computing a partition key before
-		// ensuring the topic is normal, and either alternative would make that a
-		// special case.
 		expect(
 			messaging().partitionsFor(parseTopicName("never-ensured")),
 		).toBeGreaterThan(0);
@@ -134,9 +102,6 @@ describe("publish and consume", () => {
 	});
 
 	it("honours a maxMessages bound on consume", async () => {
-		// The bound is what stops a consumer pulling an unbounded batch into
-		// memory. A simulated client that ignored it would let a developer write
-		// a handler that only works because the in-memory queue is small.
 		const { client, topic } = await withTopic();
 		for (let index = 0; index < 5; index += 1) {
 			await client.publish(topic, { order: index });
@@ -146,8 +111,6 @@ describe("publish and consume", () => {
 	});
 
 	it("returns an empty batch rather than blocking on an empty topic", async () => {
-		// A poll that returned nothing is an answer. Blocking would make a
-		// simulated run hang where a live one would time out.
 		const { client, topic } = await withTopic();
 		expect(await client.consume(topic, GROUP)).toEqual([]);
 	});
@@ -179,9 +142,6 @@ describe("ack and nack", () => {
 	});
 
 	it("nacks a consumed message", async () => {
-		// The negative path exists so a handler that cannot process a message can
-		// say so rather than letting the lease expire. A simulated client without
-		// it would make that code path untestable offline.
 		const { client, message } = await consumeOne();
 		await expect(
 			client.nack(message.messageId, message.leaseId),
@@ -189,8 +149,6 @@ describe("ack and nack", () => {
 	});
 
 	it("carries a nack reason through", async () => {
-		// The reason is what a dead-letter policy dispatches on, so dropping it
-		// would make every nack look the same to whatever routes them.
 		const { client, message } = await consumeOne();
 		await expect(
 			client.nack(message.messageId, message.leaseId, "schema-mismatch"),
@@ -205,9 +163,6 @@ describe("events", () => {
 	});
 
 	it("records the topic creation", async () => {
-		// The event log is what a receipt is assembled from. A simulated run that
-		// recorded nothing would produce an empty receipt for work that visibly
-		// happened.
 		const client = messaging();
 		await client.ensureTopic(topicSpec());
 		expect(client.events().length).toBeGreaterThan(0);

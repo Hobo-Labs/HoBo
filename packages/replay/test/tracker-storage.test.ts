@@ -19,7 +19,6 @@ import {
 } from "../src/tracker.js";
 import { REPLAY_SCHEMA_VERSION } from "../src/types.js";
 
-/** The ended session, asserted present — the test ends it on the line above. */
 function mustSession<T>(session: T | undefined): T {
 	assert(session, "expected the tracker to have ended a session");
 	return session;
@@ -105,10 +104,6 @@ describe("tracker + dual fixtures", () => {
 		await tracker.flush();
 		const session = await tracker.stop();
 		expect(session?.chunkCount).toBe(1);
-		// Re-list chunks via raw store: open all mem blobs by scanning put path
-		// We verify via service open with captured refs from onEvent is complex;
-		// assert privacy on a direct mask path already covered — here check totalBytes > 0
-		// and that JSON of index has no hunter2.
 		const rec = await fixtures.index.get(tracker.sessionId);
 		expect(JSON.stringify(rec)).not.toContain("hunter2");
 	});
