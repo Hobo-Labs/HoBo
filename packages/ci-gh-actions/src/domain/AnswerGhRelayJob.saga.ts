@@ -116,7 +116,9 @@ function reasonOf<E>(cause: Cause.Cause<E>): NonEmptyReason {
 		if (decoded._tag === "Some") return NonEmptyReason.make(decoded.value._tag);
 	}
 	const pretty = Cause.pretty(cause).trim();
-	return NonEmptyReason.make(pretty.length > 0 ? pretty : "relay-answer-failed");
+	return NonEmptyReason.make(
+		pretty.length > 0 ? pretty : "relay-answer-failed",
+	);
 }
 
 export class AnswerGhRelayJob extends Domain.Saga(
@@ -211,7 +213,9 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 				}
 
 				const summary = NonEmptyReason.make(
-					allPassed ? "All relay checks passed." : "One or more relay checks failed.",
+					allPassed
+						? "All relay checks passed."
+						: "One or more relay checks failed.",
 				);
 
 				yield* Activity.make({
@@ -271,7 +275,11 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 					.pipe(Effect.map((receipt) => receipt.reply)),
 			});
 
-			if (decision.outcome === "failed" || decision.step === null || decision.runnerLabel === null) {
+			if (
+				decision.outcome === "failed" ||
+				decision.step === null ||
+				decision.runnerLabel === null
+			) {
 				yield* Activity.make({
 					name: "answer-failed-route",
 					success: Schema.Boolean,

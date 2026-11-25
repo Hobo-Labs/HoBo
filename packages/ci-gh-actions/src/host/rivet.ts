@@ -68,7 +68,11 @@ export function createGhRelayRivetLayer<
 	});
 	return GhRelay.layer(GhRelayHandlers).pipe(
 		Layer.provide(
-			Layer.mergeAll(rivetPlatform, options.runnerProtocol, options.lintSandbox),
+			Layer.mergeAll(
+				rivetPlatform,
+				options.runnerProtocol,
+				options.lintSandbox,
+			),
 		),
 	);
 }
@@ -129,9 +133,7 @@ export interface AnswerPickRunnerInput {
 	readonly chosenRunner: GhRunnerLabel;
 }
 
-function toRecord(
-	row: typeof PickRunnerRowSchema.Type,
-): GhPickRunnerJobRecord {
+function toRecord(row: typeof PickRunnerRowSchema.Type): GhPickRunnerJobRecord {
 	return {
 		jobId: row.job_id,
 		repository: row.repository,

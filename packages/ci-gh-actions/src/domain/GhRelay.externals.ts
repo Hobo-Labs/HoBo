@@ -20,33 +20,36 @@ export class GhSandboxFailed extends Domain.Rejection("GhSandboxFailed", {
 	reason: NonEmptyReason,
 }) {}
 
-export class GhRunnerProtocol extends Domain.ExternalSystem("GhRunnerProtocol", {
-	answerJob: {
-		args: {
-			accountId: GhAccountId,
-			repository: GhRepoSlug,
-			jobId: GhRelayJobId,
-			conclusion: Schema.Literals(["succeeded", "failed"]),
-			runnerLabel: Schema.NullOr(GhRunnerLabel),
-			annotations: Schema.Array(NonEmptyReason),
+export class GhRunnerProtocol extends Domain.ExternalSystem(
+	"GhRunnerProtocol",
+	{
+		answerJob: {
+			args: {
+				accountId: GhAccountId,
+				repository: GhRepoSlug,
+				jobId: GhRelayJobId,
+				conclusion: Schema.Literals(["succeeded", "failed"]),
+				runnerLabel: Schema.NullOr(GhRunnerLabel),
+				annotations: Schema.Array(NonEmptyReason),
+			},
+			success: {
+				accepted: Schema.Boolean,
+			},
+			error: [GhProtocolRejected],
 		},
-		success: {
-			accepted: Schema.Boolean,
+		rerunFailedJobs: {
+			args: {
+				accountId: GhAccountId,
+				repository: GhRepoSlug,
+				runId: PositiveRunId,
+			},
+			success: {
+				triggered: Schema.Boolean,
+			},
+			error: [GhProtocolRejected],
 		},
-		error: [GhProtocolRejected],
 	},
-	rerunFailedJobs: {
-		args: {
-			accountId: GhAccountId,
-			repository: GhRepoSlug,
-			runId: PositiveRunId,
-		},
-		success: {
-			triggered: Schema.Boolean,
-		},
-		error: [GhProtocolRejected],
-	},
-}) {}
+) {}
 
 export class GhLintSandbox extends Domain.ExternalSystem("GhLintSandbox", {
 	runTool: {

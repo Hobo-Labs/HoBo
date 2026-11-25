@@ -70,7 +70,9 @@ export function parseGhStepKey(text: string): GhStepKey | undefined {
 	return GH_STEP_KEYS.find((key) => key === lowered);
 }
 
-export function parseGhAutoSize(value: string | number): GhAutoSize | undefined {
+export function parseGhAutoSize(
+	value: string | number,
+): GhAutoSize | undefined {
 	const numeric = Number(value);
 	return GH_AUTO_SIZES.find((size) => size === numeric);
 }
@@ -241,9 +243,7 @@ export function parseGhRelayInputs(
 	};
 }
 
-export function parseGhRunsOn(
-	raw: string | readonly string[],
-): ParsedGhRunsOn {
+export function parseGhRunsOn(raw: string | readonly string[]): ParsedGhRunsOn {
 	const items = (Array.isArray(raw) ? raw : [raw])
 		.map((entry) => entry.trim())
 		.filter((entry) => entry.length > 0);
@@ -296,7 +296,9 @@ export function parseGhRunsOn(
 				continue;
 			}
 			if (lower.startsWith("hobo/") || lower.startsWith("relay/")) {
-				tokens.push(...splitStructuredSegments(item.slice(item.indexOf("/") + 1)));
+				tokens.push(
+					...splitStructuredSegments(item.slice(item.indexOf("/") + 1)),
+				);
 				continue;
 			}
 			tokens.push(item);

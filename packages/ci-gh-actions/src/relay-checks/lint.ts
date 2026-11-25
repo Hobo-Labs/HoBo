@@ -80,8 +80,7 @@ export function lintPathsOf(
 ):
 	| Readonly<{ ok: true; paths: readonly string[] }>
 	| Readonly<{ ok: false; problem: string }> {
-	if (text === undefined || text.trim() === "")
-		return { ok: true, paths: [] };
+	if (text === undefined || text.trim() === "") return { ok: true, paths: [] };
 	const patterns = [
 		...new Set(
 			text

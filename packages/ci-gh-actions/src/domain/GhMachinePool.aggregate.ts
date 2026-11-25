@@ -7,7 +7,7 @@ import {
 	GhAdvertKeyId,
 	GhMachineId,
 	GhMachineSharing,
-	GhMachineSnapshot,
+	type GhMachineSnapshot,
 	GhRelayJobId,
 	GhRunnerLabel,
 	NonNegativeCount,
@@ -467,13 +467,19 @@ export class GhMachinePool extends Domain.Aggregate("GhMachinePool", {
 		GhMachineTakenOver: (state, event) => ({
 			machines: state.machines.map((entry) =>
 				entry.machineId === event.machineId
-					? { ...entry, advertKeyId: event.newKeyId, lastSeenMs: event.takenOverAtMs }
+					? {
+							...entry,
+							advertKeyId: event.newKeyId,
+							lastSeenMs: event.takenOverAtMs,
+						}
 					: entry,
 			),
 		}),
 		GhMachinePaused: (state, event) => ({
 			machines: state.machines.map((entry) =>
-				entry.machineId === event.machineId ? { ...entry, paused: true } : entry,
+				entry.machineId === event.machineId
+					? { ...entry, paused: true }
+					: entry,
 			),
 		}),
 		GhMachineResumed: (state, event) => ({

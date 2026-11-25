@@ -6,10 +6,7 @@ import {
 } from "@hobo/storage-sqlite";
 import * as Layer from "effect/Layer";
 import { GhRelay, GhRelayHandlers } from "../domain/index.js";
-import type {
-	GhLintSandboxService,
-	GhRunnerProtocolService,
-} from "./rivet.js";
+import type { GhLintSandboxService, GhRunnerProtocolService } from "./rivet.js";
 
 export {
 	type AnswerPickRunnerInput,

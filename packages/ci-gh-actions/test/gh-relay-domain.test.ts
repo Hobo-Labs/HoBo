@@ -42,10 +42,10 @@ import {
 	GhRelayJobClaimed,
 	GhRelayJobFailed,
 	GhRelayJobId,
-	GhRelayNodeId,
 	GhRelayJobQueued,
 	GhRelayJobRouted,
 	GhRelayJobWaiting,
+	GhRelayNodeId,
 	GhRelayRouter,
 	GhRepoSlug,
 	GhRetryLimitReached,
@@ -133,8 +133,7 @@ function jobContext(
 		hasNonCheckSteps: overrides.hasNonCheckSteps ?? false,
 		pullRequestTitle: overrides.pullRequestTitle ?? null,
 		nowMs: overrides.nowMs ?? T0,
-		claimNodeId:
-			overrides.claimNodeId ?? GhRelayNodeId.make("hobo-relay-node"),
+		claimNodeId: overrides.claimNodeId ?? GhRelayNodeId.make("hobo-relay-node"),
 	};
 }
 
@@ -219,12 +218,14 @@ describe("@hobo/ci-gh-actions/domain RelayRunner runs-on syntax", () => {
 			kind: "route",
 			first: "blacksmith",
 			size: 16,
-			candidates: [{ step: "blacksmith", labels: [GhRunnerLabel.make("auto")] }],
+			candidates: [
+				{ step: "blacksmith", labels: [GhRunnerLabel.make("auto")] },
+			],
 		});
 
-		expect(
-			parseGhRelayInputs({ github: "${{ vars.RUNNER }}" }),
-		).toMatchObject({ ok: false });
+		expect(parseGhRelayInputs({ github: "${{ vars.RUNNER }}" })).toMatchObject({
+			ok: false,
+		});
 		expect(parseGhRunsOn("ubuntu-24.04")).toMatchObject({ ok: false });
 	});
 });
@@ -545,10 +546,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 						notInOrder: [],
 					}),
 				),
-				Story.when(
-					routerRef,
-					new ClearGhProviderHealth({ provider: "depot" }),
-				),
+				Story.when(routerRef, new ClearGhProviderHealth({ provider: "depot" })),
 				Story.then(
 					routerRef,
 					new GhProviderHealthCleared({ provider: "depot" }),

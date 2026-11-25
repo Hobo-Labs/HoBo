@@ -12,10 +12,10 @@ import {
 	GhRelayJobId,
 	GhRepoSlug,
 	GhRouteSkip,
-	GhRouteStepConfig,
+	type GhRouteStepConfig,
 	GhRunnerLabel,
 	GhRunnerOrderConfig,
-	GhStepCandidate,
+	type GhStepCandidate,
 	GhStepKey,
 	NonEmptyReason,
 	NonNegativeCents,
@@ -490,7 +490,10 @@ export class GhRelayRouter extends Domain.Aggregate("GhRelayRouter", {
 						skipped.push({ step: "fleet", reason: "fleet_off", detail: "" });
 						continue;
 					}
-					if ((!cmd.context.isPrivate || cmd.context.isFork) && !cmd.fleet.isolated) {
+					if (
+						(!cmd.context.isPrivate || cmd.context.isFork) &&
+						!cmd.fleet.isolated
+					) {
 						skipped.push({
 							step: "fleet",
 							reason: "needs_isolation",
@@ -814,8 +817,7 @@ export class GhRelayRouter extends Domain.Aggregate("GhRelayRouter", {
 				return new GhRetryDisabled({ repository: cmd.repository });
 			}
 			const existing = state.retries.find(
-				(entry) =>
-					entry.runId === cmd.runId && entry.jobName === cmd.jobName,
+				(entry) => entry.runId === cmd.runId && entry.jobName === cmd.jobName,
 			);
 			if (existing?.deliveryIds.includes(cmd.deliveryId)) {
 				return [];
@@ -900,7 +902,10 @@ export class GhRelayRouter extends Domain.Aggregate("GhRelayRouter", {
 					: existing?.trippedAtMs !== null &&
 							existing?.trippedAtMs !== undefined
 						? NonNegativeCount.make(
-								Math.min(MAX_BACKOFF_MS, Math.max(INITIAL_BACKOFF_MS, existing.backoffMs * 2)),
+								Math.min(
+									MAX_BACKOFF_MS,
+									Math.max(INITIAL_BACKOFF_MS, existing.backoffMs * 2),
+								),
 							)
 						: NonNegativeCount.make(INITIAL_BACKOFF_MS);
 			const nextEntry: ProviderHealthEntry = {
@@ -962,7 +967,10 @@ export class GhRelayRouter extends Domain.Aggregate("GhRelayRouter", {
 				...state,
 				retries: state.retries.map((entry) =>
 					entry.runId === event.runId && entry.jobName === event.jobName
-						? { ...entry, deliveryIds: [...entry.deliveryIds, event.deliveryId] }
+						? {
+								...entry,
+								deliveryIds: [...entry.deliveryIds, event.deliveryId],
+							}
 						: entry,
 				),
 			};
