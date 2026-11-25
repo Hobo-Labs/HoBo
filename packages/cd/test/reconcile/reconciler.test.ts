@@ -332,8 +332,10 @@ describe("createCampReconciler", () => {
 			"realizer",
 		);
 		expect(reason?.message).toBe("The realizer reported a condition.");
-		expect(JSON.stringify(reason)).not.toContain(synthetic);
-		expect(JSON.stringify(reason)).not.toContain(marker);
+		const serialized = JSON.stringify(reason);
+		expect(serialized).not.toContain(synthetic);
+		expect(serialized).not.toContain(marker);
+		expect(serialized).not.toContain("Bearer");
 	});
 
 	it("still redacts runner-host detail", () => {

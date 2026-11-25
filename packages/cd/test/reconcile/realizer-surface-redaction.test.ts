@@ -69,7 +69,9 @@ describe("realizer condition surfacing", () => {
 			management: CampManagement.MANAGED,
 		});
 		expect(observation.reasons[0]?.message).toBe(GENERIC);
-		expect(JSON.stringify(observation)).not.toContain(token);
-		expect(JSON.stringify(observation)).not.toContain(payload);
+		const serialized = JSON.stringify(observation);
+		expect(serialized).not.toContain(token);
+		expect(serialized).not.toContain(payload);
+		expect(serialized).not.toContain("registry bearer");
 	});
 });
