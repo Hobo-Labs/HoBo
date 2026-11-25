@@ -704,7 +704,6 @@ function stageOn(page: HTMLElement, stage: HTMLElement): () => void {
 		const dir = j > from ? 1 : -1;
 		active = j;
 		const carried = focusIn || pendingFocus;
-		// A heading that takes focus is read out by itself; the live region
 		announce(j, !carried);
 		fetchNear(j);
 		STOPS[j].sec.scrollTop = 0;
