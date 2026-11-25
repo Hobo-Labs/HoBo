@@ -138,4 +138,95 @@ describe("@hobo/storage-sqlite createSqliteDomainPlatform", () => {
 			reopenedDriver.close();
 		}
 	});
+
+	it("fails closed when a second driver commits with a stale expected version", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-domain-race-"));
+		tempDirs.push(dir);
+		const dbPath = join(dir, "domain.sqlite");
+		const counterId = CounterId.make("race-counter-1");
+		const modelName = "CounterDomain";
+		const aggregateName = "CounterAggregate";
+
+		const seedDriver = createNodeSqliteDriver({ path: dbPath });
+		const layer = CounterDomain.layer(Layer.empty).pipe(
+			Layer.provide(createSqliteDomainPlatform(seedDriver)),
+		);
+		try {
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const counters = yield* CounterAggregate;
+					return yield* counters.send(
+						counterId,
+						new IncrementCounter({ delta: 4 }),
+						{ commandId: "seed-cmd" },
+					);
+				}).pipe(Effect.provide(layer)),
+			);
+		} finally {
+			seedDriver.close();
+		}
+
+		const winner = createNodeSqliteDriver({ path: dbPath });
+		const loser = createNodeSqliteDriver({ path: dbPath });
+		const casUpdateSql = `UPDATE domain_aggregates
+       SET state_json = ?, version = ?
+       WHERE model_name = ? AND aggregate_name = ? AND instance_id = ? AND version = ?`;
+		const winnerCas = winner.prepare(casUpdateSql);
+		const readVersion = (driver: typeof winner) =>
+			Number(
+				driver
+					.prepare(
+						`SELECT version FROM domain_aggregates
+           WHERE model_name = ? AND aggregate_name = ? AND instance_id = ?`,
+					)
+					.get(modelName, aggregateName, counterId)?.version ?? -1,
+			);
+
+		try {
+			winner.beginImmediate();
+			const winnerUpdate = winnerCas.run(
+				JSON.stringify({ total: 9 }),
+				2,
+				modelName,
+				aggregateName,
+				counterId,
+				1,
+			);
+			expect(winnerUpdate.changes).toBe(1);
+			winner.commit();
+			winner.close();
+			expect(readVersion(loser)).toBe(2);
+
+			const loserCas = loser.prepare(casUpdateSql);
+			loser.beginImmediate();
+			const staleUpdate = loserCas.run(
+				JSON.stringify({ total: 99 }),
+				1,
+				modelName,
+				aggregateName,
+				counterId,
+				0,
+			);
+			expect(staleUpdate.changes).toBe(0);
+			loser.rollback();
+			expect(readVersion(loser)).toBe(2);
+
+			const verifyDriver = createNodeSqliteDriver({ path: dbPath });
+			try {
+				const row = verifyDriver
+					.prepare(
+						`SELECT state_json, version FROM domain_aggregates
+           WHERE model_name = ? AND aggregate_name = ? AND instance_id = ?`,
+					)
+					.get(modelName, aggregateName, counterId);
+				expect(JSON.parse(String(row?.state_json))).toEqual({ total: 9 });
+				expect(Number(row?.version)).toBe(2);
+			} finally {
+				verifyDriver.close();
+			}
+		} finally {
+			loser.close();
+		}
+	});
+
 });

@@ -160,6 +160,48 @@ const decodeStreamMeta = Schema.decodeUnknownSync(StreamMetaSchema);
 const decodeStreamEntry = Schema.decodeUnknownSync(StreamEntrySchema);
 const decodeCheckpoints = Schema.decodeUnknownSync(CheckpointsSchema);
 
+export class DomainAggregateVersionConflictError extends Error {
+	readonly _tag = "DomainAggregateVersionConflictError";
+
+	constructor(
+		readonly modelName: string,
+		readonly aggregateName: string,
+		readonly instanceId: string,
+		readonly expectedVersion: number,
+		readonly actualVersion: number | undefined,
+	) {
+		super(
+			`aggregate version conflict for ${aggregateName}/${instanceId}: expected ${expectedVersion}, observed ${actualVersion ?? "absent"}`,
+		);
+		this.name = "DomainAggregateVersionConflictError";
+	}
+}
+
+export class DomainEventSequenceConflictError extends Error {
+	readonly _tag = "DomainEventSequenceConflictError";
+
+	constructor(
+		readonly modelName: string,
+		readonly aggregateName: string,
+		readonly instanceId: string,
+		readonly seq: number,
+	) {
+		super(
+			`domain event seq collision for ${aggregateName}/${instanceId} at seq ${seq}`,
+		);
+		this.name = "DomainEventSequenceConflictError";
+	}
+}
+
+function isSqlitePrimaryKeyConflict(cause: unknown): boolean {
+	if (!(cause instanceof Error)) return false;
+	const message = cause.message;
+	return (
+		message.includes("UNIQUE constraint failed") ||
+		message.includes("PRIMARY KEY constraint failed")
+	);
+}
+
 export interface SqliteDomainPlatformOptions {
 	readonly now?: () => number;
 }
@@ -177,11 +219,16 @@ export function createSqliteDomainPlatform(
 	const loadAggregateStmt = driver.prepare(
 		"SELECT state_json, version FROM domain_aggregates WHERE model_name = ? AND aggregate_name = ? AND instance_id = ?",
 	);
-	const saveAggregateStmt = driver.prepare(
-		"INSERT OR REPLACE INTO domain_aggregates (model_name, aggregate_name, instance_id, state_json, version) VALUES (?, ?, ?, ?, ?)",
+	const casUpdateAggregateStmt = driver.prepare(
+		`UPDATE domain_aggregates
+     SET state_json = ?, version = ?
+     WHERE model_name = ? AND aggregate_name = ? AND instance_id = ? AND version = ?`,
+	);
+	const insertAggregateStmt = driver.prepare(
+		"INSERT INTO domain_aggregates (model_name, aggregate_name, instance_id, state_json, version) VALUES (?, ?, ?, ?, ?)",
 	);
 	const insertEventStmt = driver.prepare(
-		"INSERT OR IGNORE INTO domain_events (model_name, aggregate_name, instance_id, seq, event_json, envelope_json) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO domain_events (model_name, aggregate_name, instance_id, seq, event_json, envelope_json) VALUES (?, ?, ?, ?, ?, ?)",
 	);
 	const loadEventsStmt = driver.prepare(
 		"SELECT event_json, envelope_json FROM domain_events WHERE model_name = ? AND aggregate_name = ? AND instance_id = ? ORDER BY seq ASC",
@@ -235,6 +282,113 @@ export function createSqliteDomainPlatform(
 		}
 	}
 
+	const makePersistAggregateTransaction = (modelName: string) => {
+		const readAggregateVersion = (
+			aggregateName: string,
+			instanceId: string,
+		): number | undefined => {
+			const row = loadAggregateStmt.get(modelName, aggregateName, instanceId);
+			if (row === undefined) return undefined;
+			return asNumber(row.version, "version");
+		};
+
+		const refuseVersionConflict = (
+			aggregateName: string,
+			instanceId: string,
+			expectedVersion: number,
+		): never => {
+			throw new DomainAggregateVersionConflictError(
+				modelName,
+				aggregateName,
+				instanceId,
+				expectedVersion,
+				readAggregateVersion(aggregateName, instanceId),
+			);
+		};
+
+		return (input: {
+			aggregateName: string;
+			instanceId: string;
+			expectedVersion: number;
+			state: unknown;
+			newVersion: number;
+			events: ReadonlyArray<StoredEvent>;
+			receipt?: { commandId: string; accepted: SendResult } | undefined;
+		}) => {
+			inTransaction(() => {
+				const updated = casUpdateAggregateStmt.run(
+					JSON.stringify(input.state),
+					input.newVersion,
+					modelName,
+					input.aggregateName,
+					input.instanceId,
+					input.expectedVersion,
+				);
+				if (updated.changes !== 1) {
+					if (input.expectedVersion !== 0) {
+						refuseVersionConflict(
+							input.aggregateName,
+							input.instanceId,
+							input.expectedVersion,
+						);
+					}
+					try {
+						const inserted = insertAggregateStmt.run(
+							modelName,
+							input.aggregateName,
+							input.instanceId,
+							JSON.stringify(input.state),
+							input.newVersion,
+						);
+						if (inserted.changes !== 1) {
+							refuseVersionConflict(
+								input.aggregateName,
+								input.instanceId,
+								input.expectedVersion,
+							);
+						}
+					} catch (cause) {
+						if (isSqlitePrimaryKeyConflict(cause)) {
+							refuseVersionConflict(
+								input.aggregateName,
+								input.instanceId,
+								input.expectedVersion,
+							);
+						}
+						throw cause;
+					}
+				}
+				for (const entry of input.events) {
+					const written = insertEventStmt.run(
+						modelName,
+						input.aggregateName,
+						input.instanceId,
+						entry.envelope.seq,
+						JSON.stringify(entry.event),
+						JSON.stringify(entry.envelope),
+					);
+					if (written.changes !== 1) {
+						throw new DomainEventSequenceConflictError(
+							modelName,
+							input.aggregateName,
+							input.instanceId,
+							entry.envelope.seq,
+						);
+					}
+				}
+				if (input.receipt !== undefined) {
+					saveReceiptStmt.run(
+						modelName,
+						input.aggregateName,
+						input.instanceId,
+						input.receipt.commandId,
+						JSON.stringify(input.receipt.accepted),
+					);
+				}
+			});
+		};
+	};
+
 	const workflows = InMemoryWorkflows.make({
 		now,
 		enqueue: (run) => Effect.forkDetach(run).pipe(Effect.asVoid),
@@ -251,6 +405,7 @@ export function createSqliteDomainPlatform(
 		model: ({ modelName, id }) =>
 			Effect.gen(function* () {
 				yield* claim(modelName, id);
+				const persistAggregate = makePersistAggregateTransaction(modelName);
 				const host: ModelHost = {
 					aggregate: (_aggregate, kit) =>
 						Effect.sync(() => {
@@ -381,31 +536,17 @@ export function createSqliteDomainPlatform(
 											_tag: "Accepted",
 											receipt,
 										};
-										inTransaction(() => {
-											saveAggregateStmt.run(
-												modelName,
-												kit.name,
-												instanceId,
-												JSON.stringify(result.state),
-												result.version,
-											);
-											for (const entry of result.events) {
-												insertEventStmt.run(
-													modelName,
-													kit.name,
-													instanceId,
-													entry.envelope.seq,
-													JSON.stringify(entry.event),
-													JSON.stringify(entry.envelope),
-												);
-											}
-											saveReceiptStmt.run(
-												modelName,
-												kit.name,
-												instanceId,
-												meta.commandId,
-												JSON.stringify(accepted),
-											);
+										persistAggregate({
+											aggregateName: kit.name,
+											instanceId,
+											expectedVersion: current.version,
+											state: result.state,
+											newVersion: result.version,
+											events: result.events,
+											receipt: {
+												commandId: meta.commandId,
+												accepted,
+											},
 										});
 										yield* announce(instanceId, result.version);
 										for (const delivery of result.deliveries) {
@@ -530,24 +671,13 @@ export function createSqliteDomainPlatform(
 												commandId: `seed:${instanceId}:${current.version}`,
 												now: now(),
 											});
-											inTransaction(() => {
-												saveAggregateStmt.run(
-													modelName,
-													kit.name,
-													instanceId,
-													JSON.stringify(result.state),
-													result.version,
-												);
-												for (const entry of result.events) {
-													insertEventStmt.run(
-														modelName,
-														kit.name,
-														instanceId,
-														entry.envelope.seq,
-														JSON.stringify(entry.event),
-														JSON.stringify(entry.envelope),
-													);
-												}
+											persistAggregate({
+												aggregateName: kit.name,
+												instanceId,
+												expectedVersion: current.version,
+												state: result.state,
+												newVersion: result.version,
+												events: result.events,
 											});
 											yield* announce(instanceId, result.version);
 											for (const delivery of result.deliveries) {
