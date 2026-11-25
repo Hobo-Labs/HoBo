@@ -1,4 +1,5 @@
 import * as DomainRivet from "@alchemy.run/domain/Rivet";
+import type { JsonValue } from "@hobo/core";
 import type { PoolHost } from "@alchemy.run/rivet/Host";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -183,7 +184,7 @@ export function createCdPromotionGateRegistry(
 		actions: {
 			openGate: async (
 				c,
-				raw: unknown,
+				raw: JsonValue,
 			): Promise<CdPromotionGateRecord> => {
 				const input = decodeOpenCdPromotionGateInput(raw);
 				const existingRows = decodeGateRows(

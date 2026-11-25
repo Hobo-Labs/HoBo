@@ -370,6 +370,7 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 			const { client } = await setupTest(testCtx, registry);
 			const conn = client.ghPickRunner.getOrCreate(["acct-rivet-invalid"]).connect();
 			await expect(
+				// SAFETY: assertion to `as never` is required at this boundary to exercise Rivet schema rejection.
 				conn.enqueueJob({
 					jobId: "",
 					repository: "not-a-repo-slug",

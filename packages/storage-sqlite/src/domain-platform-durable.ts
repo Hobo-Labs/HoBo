@@ -1,4 +1,5 @@
 import type { Delivery } from "@alchemy.run/domain/Platform";
+import type { JsonValue } from "@hobo/core";
 import * as Effect from "effect/Effect";
 import type * as Semaphore from "effect/Semaphore";
 import { asNumber, asText, type SqliteDriver, type SqliteRunResult } from "./driver.js";
@@ -41,8 +42,6 @@ CREATE TABLE IF NOT EXISTS domain_workflow_pending_runs (
 	PRIMARY KEY (model_name, run_key)
 );
 `;
-
-export type WorkflowExecutionDefect = unknown;
 
 export class DomainPersistenceError extends Error {
 	readonly _tag = "DomainPersistenceError";
@@ -109,8 +108,8 @@ export function makeDomainOutbox(driver: SqliteDriver): DomainOutbox {
 	);
 
 	const decodeDelivery = (json: string): Delivery => {
-		const parsed: unknown = JSON.parse(json);
-		if (parsed === null || typeof parsed !== "object") {
+		const parsed = JSON.parse(json);
+		if (parsed === null || !Object.prototype.hasOwnProperty.call(parsed, "target")) {
 			throw new DomainPersistenceError("domain_outbox.delivery", 0);
 		}
 		// SAFETY: Outbox rows are written only by this module with Delivery-shaped JSON from domain commits.
@@ -289,7 +288,7 @@ export interface SqliteWorkflowHost {
 	readonly died: (
 		workflow: string,
 		executionId: string,
-		defect: WorkflowExecutionDefect,
+		defect: JsonValue,
 	) => void;
 }
 

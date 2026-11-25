@@ -1,5 +1,6 @@
 import * as DomainRivet from "@alchemy.run/domain/Rivet";
 import type { PoolHost } from "@alchemy.run/rivet/Host";
+import type { JsonValue } from "@hobo/core";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { actor, setup } from "rivetkit";
@@ -203,7 +204,7 @@ export function createGhPickRunnerRegistry(
 		actions: {
 			enqueueJob: async (
 				c,
-				raw: unknown,
+				raw: JsonValue,
 			): Promise<GhPickRunnerJobRecord> => {
 				const input = decodeEnqueuePickRunnerInput(raw);
 				const existingRows = decodePickRunnerRows(

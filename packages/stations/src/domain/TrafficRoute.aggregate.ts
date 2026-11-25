@@ -342,10 +342,15 @@ function decayFlipWindow(
 	return state;
 }
 
+interface SwapWindowAfterCompletion {
+	readonly swapsInWindow: NonNegativeCount;
+	readonly flipWindowStartMs: EpochMs;
+}
+
 function swapsAfterCompletion(
 	state: SwapWindowState,
 	completedAtMs: EpochMs,
-): { swapsInWindow: NonNegativeCount; flipWindowStartMs: EpochMs } {
+): SwapWindowAfterCompletion {
 	const decayed = decayFlipWindow(state, completedAtMs);
 	if (
 		decayed.flipWindowStartMs === null ||

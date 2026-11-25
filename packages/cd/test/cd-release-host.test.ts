@@ -312,6 +312,7 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 			const { client } = await setupTest(testCtx, registry);
 			const conn = client.promotionGate.getOrCreate(["yard-invalid"]).connect();
 			await expect(
+				// SAFETY: assertion to `as never` is required at this boundary to exercise Rivet schema rejection.
 				conn.openGate({
 					promotionId: "",
 					campId: "",
