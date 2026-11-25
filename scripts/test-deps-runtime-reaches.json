@@ -88,11 +88,6 @@
 			"from": "packages/hobo/test/evals/owner-ceremony-smoke.eval.test.ts",
 			"needs": ["@hobo/ci-vercel#build"],
 			"why": "names packages/ci-vercel as the owner ceremony project at run time"
-		},
-		{
-			"from": "packages/hobo/test/evals/ceremony-explorer.eval.test.ts",
-			"needs": ["@hobo/ci-vercel#build"],
-			"why": "names packages/ci-vercel as the owner ceremony project at run time"
 		}
 	]
 }

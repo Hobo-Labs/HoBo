@@ -18,9 +18,10 @@ Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers
 
 Package tests that load another workspace package through a computed path must
 declare that edge in `scripts/test-deps-runtime-reaches.json` so Fabric's
-`check-test-workspace-deps` gate schedules the right builds. Owner-ceremony evals
-under `packages/hobo/test/evals/` that touch `packages/ci-vercel` and CD listener
-tests that reach `@hobo/camps` are registered there.
+`check-test-workspace-deps` gate schedules the right builds. `owner-ceremony-smoke`
+names `packages/ci-vercel` at run time; `ceremony-explorer` uses the fake Vercel
+CLI path and does not register that reach. CD listener tests that reach
+`@hobo/camps` are registered there.
 
 ## Routing
 
