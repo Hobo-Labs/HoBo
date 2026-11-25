@@ -344,7 +344,7 @@ export const VIBE_PLAN_DIFF_REVIEW_PROTOTYPE = {
   targetPackage: "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype",
   proofNote: "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
   designRefs: [
-    "docs/design/plan-diff-viewer.md",
+    "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/developer-experience.md#plan-07",
     "docs/design/proofs/vibe-plan-review-states/README.md",
     "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md",

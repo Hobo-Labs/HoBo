@@ -67,7 +67,7 @@ export const VIBE_PLAN_ANNOTATION_PSEUDOCODE = {
   targetPackagePath: "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode",
   proofNotePath: "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md",
   designRefs: [
-    "docs/design/plan-diff-viewer.md",
+    "https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f",
     "docs/design/developer-experience.md#plan-07",
     "docs/design/control-plane.md#plan-04",
     "docs/design/contracts-policy-flags.md#plan-29",

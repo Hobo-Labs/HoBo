@@ -16,7 +16,7 @@ that composes accepted M1 plan review states and annotation pseudocode.
 - Plan review state source: [`vibe-plan-review-states`](../vibe-plan-review-states/README.md).
 - Annotation pseudocode source: [`vibe-plan-annotation-pseudocode`](../vibe-plan-annotation-pseudocode/README.md).
 - Quickstart fixture source: [`resource-lifecycle-quickstart-examples`](../resource-lifecycle-quickstart-examples/README.md).
-- Source record: [`plan-diff-viewer.md`](../../plan-diff-viewer.md).
+- Source record: [`plan-diff-viewer.md`](https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f).
 - Executable proof: [`vibe-plan-diff-review-prototype`](../../../../src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype/README.md).
 
 ## Acceptance Coverage

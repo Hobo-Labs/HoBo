@@ -67,7 +67,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`developer-experience.md`](./developer-experience.md#plan-07) | Developer experience: dashboards, CLI, status pages & availability | 07, 49 |
 | [`cli-spec.md`](./cli-spec.md) | Canonical CLI verb surface + lifecycle semantics | — |
 | [`deployment-dashboard-topology-explorer.md`](./deployment-dashboard-topology-explorer.md) | Productization M0 scope and acceptance for Deployment Dashboard & Topology Explorer | — |
-| [`plan-diff-viewer.md`](./plan-diff-viewer.md) | Productization M0 scope and acceptance for Plan/Diff Viewer | — |
+| [`plan-diff-viewer.md`](https://linear.app/quickdeploy-ai/document/plandiff-viewer-scope-and-acceptance-archived-fe33d9561d2f) | Productization M0 scope and acceptance for Plan/Diff Viewer | — |
 | [`security-verification.md`](./security-verification.md) | V1 vulnerability disclosure and security launch-blocker process | — |
 | [`threat-model-security-review.md`](./threat-model-security-review.md) | Productization M0 scope and acceptance for v1 threat-model and security-review gates | — |
 | [`anonymous-claim-threat-model.md`](./anonymous-claim-threat-model.md) | Threat boundaries and required controls for guest leases, claim bundles, sponsor-backed deployment, and migrate-on-claim (ADR-0151) | — |
@@ -110,7 +110,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`marketplace-publisher-trust-evidence.md`](./marketplace-publisher-trust-evidence.md) | Productization M0 evidence contract for marketplace publisher trust tiers, review evidence, and launch limitations | — |
 | [`marketplace-payout-hooks.md`](./marketplace-payout-hooks.md) | Productization M0 scope and acceptance for publisher payout-readiness states, tax/identity handoffs, billing reconciliation, and payout launch limitations | — |
 | [`marketplace-ux.md`](./marketplace-ux.md) | Productization M0 scope and acceptance for marketplace browse, trust warnings, installability outcomes, org-catalog visibility, accessibility, and support handoffs | — |
-| [`publisher-portal.md`](./publisher-portal.md) | Productization M0 scope and acceptance for publisher profile, maintainer roles, listing evidence, review status, payout-readiness handoffs, support wording, and follow-up gates | — |
+| [`publisher-portal.md`](https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060) | Productization M0 scope and acceptance for publisher profile, maintainer roles, listing evidence, review status, payout-readiness handoffs, support wording, and follow-up gates | — |
 | [`capability-review-approval.md`](./capability-review-approval.md) | Productization M0 scope and acceptance for capability review states, approval outcomes, trust-tier evidence, yanking, escalation, and follow-up gates | — |
 | [`provenance-retention.md`](./provenance-retention.md) | Productization M0 scope and acceptance for artifact provenance, retention classes, audit export, support handoff, and customer assurance evidence | — |
 | [`meta-cloud-broker.md`](./meta-cloud-broker.md) | Productization M0 scope and acceptance for hosted broker authority, broker artifacts, Resolution Receipts, Resolution Rejections, and follow-up gates | — |
@@ -138,7 +138,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`release-notes-upgrade-guide.md`](./release-notes-upgrade-guide.md) | V1 release notes and upgrade-guide outline contract | — |
 | [`release-channels.md`](./release-channels.md) | Productization M0 scope and acceptance for release channel taxonomy, states, evidence gates, and follow-up boundaries | — |
 | [`known-limitations-register.md`](./known-limitations-register.md) | Customer-facing v1 known limitations, scope-out states, support/docs/messaging handoffs, and beta/GA review checkpoints | [`known-limitations-register-contract`](../../src/draft/exp-proofs/cx/known-limitations-register-contract/README.md) |
-| [`docs-portal.md`](./docs-portal.md) | Productization M0 scope and acceptance for docs portal content areas, source ownership, search metadata, support handoffs, known limitations, and follow-up gates | — |
+| [`docs-portal.md`](https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce) | Productization M0 scope and acceptance for docs portal content areas, source ownership, search metadata, support handoffs, known limitations, and follow-up gates | — |
 | [`beta-pilot-feedback.md`](./beta-pilot-feedback.md) | Productization private-beta cohort, feedback intake, triage, release-candidate exit, and GA handoff evidence contract | — |
 | [`customer-onboarding.md`](https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3) | Productization M0 first-customer onboarding script, success criteria, support handoff, and pilot-note routing contract | — |
 | [`dogfood-yard.md`](./dogfood-yard.md) | Productization M0 dogfood Yard acceptance scenarios and telemetry evidence | 04, 05, 07, 40 |

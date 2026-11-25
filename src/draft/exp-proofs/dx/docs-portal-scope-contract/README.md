@@ -6,7 +6,7 @@ shape, and guards against implementation creep into portal UI, CMS, search,
 analytics, support tooling, security intake, hosting, or marketing publication.
 
 The authoritative design record is
-[`docs/design/docs-portal.md`](../../../../../docs/design/docs-portal.md).
+[`docs/design/docs-portal.md`](https://linear.app/quickdeploy-ai/document/docs-portal-scope-and-acceptance-archived-e27439feb7ce).
 Branch evidence is summarized in
 [`docs/design/proofs/hobo-434-docs-portal`](https://linear.app/quickdeploy-ai/document/hobo-434-docs-portal-m0-scope-proof-archived-75386bc9e701).
 

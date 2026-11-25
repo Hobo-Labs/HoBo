@@ -231,7 +231,7 @@ export const VIBE_PUBLISHER_PORTAL_REVIEW_MOCKUPS: VibePublisherPortalReviewMock
   packagePath: "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups",
   proofPath: "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md",
   designRefs: [
-    "docs/design/publisher-portal.md",
+    "https://linear.app/quickdeploy-ai/document/publisher-portal-scope-and-acceptance-archived-a198804cd060",
     "docs/design/capability-review-approval.md",
     "docs/design/marketplace-publisher-trust-evidence.md",
     "docs/design/marketplace-payout-hooks.md",
