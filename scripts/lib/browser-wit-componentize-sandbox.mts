@@ -6,7 +6,8 @@ import { assertReleasePagesBrowserRuntimeWit } from "./release-pages-wit.mts";
 
 export const SANDBOX_WIT_DIR_NAME = "wit" as const;
 export const SANDBOX_WIT_STATION_FILE = "station.wit" as const;
-export const COMPONENTIZE_WIT_PATH = `${SANDBOX_WIT_DIR_NAME}/${SANDBOX_WIT_STATION_FILE}` as const;
+export const COMPONENTIZE_WIT_PATH =
+	`${SANDBOX_WIT_DIR_NAME}/${SANDBOX_WIT_STATION_FILE}` as const;
 export const BROWSER_WIT_GUEST_SOURCE_NAME = "station-guest.mjs" as const;
 
 export function componentizeWitDirUnderWorkRoot(workRoot: string): string {

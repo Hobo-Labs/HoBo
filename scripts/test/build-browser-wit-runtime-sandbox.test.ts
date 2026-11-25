@@ -45,7 +45,6 @@ describe("browser WIT componentize sandbox", () => {
 		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
 		expect(source).toMatch(/createBrowserWitComponentizeWorkRoot/);
 		expect(source).toMatch(/logBrowserWitReleaseEnvironment/);
-		expect(source).toMatch(/logBrowserWitComponentizeSplicerContext/);
 		expect(source).not.toMatch(/mkdtemp\(path\.join\(tmpdir\(\)/);
 	});
 

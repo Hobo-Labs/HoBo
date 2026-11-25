@@ -13,10 +13,7 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import {
-	logBrowserWitComponentizeSplicerContext,
-	logBrowserWitReleaseEnvironment,
-} from "../../scripts/lib/browser-wit-componentize-diagnostics.mts";
+import { logBrowserWitReleaseEnvironment } from "../../scripts/lib/browser-wit-componentize-diagnostics.mts";
 import {
 	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
@@ -181,14 +178,6 @@ export async function buildBrowserWitRuntime(
 				witDelivery: "inline-witWorld",
 			},
 		);
-		await logBrowserWitComponentizeSplicerContext({
-			workRoot,
-			guestRelativePath: BROWSER_WIT_GUEST_SOURCE_NAME,
-			hostWitPath,
-			inlineWitBytes: Buffer.byteLength(inlineWit, "utf8"),
-			componentizeJsVersion: toolchain.versions.componentizeJs,
-			witDelivery: "inline-witWorld",
-		});
 		process.stderr.write("browser-wit: componentizing real guest\n");
 		await writeFile(
 			browserWitComponentizeProofPath(REPO_ROOT),
