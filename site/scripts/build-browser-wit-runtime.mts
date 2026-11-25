@@ -13,6 +13,10 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+	assertSandboxWitBeforeComponentize,
+	copyHostWitTreeIntoWorkRoot,
+} from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
 import { loadExamplesCatalog } from "../src/lib/examples/catalog.js";
 import { buildBrowserStationGuestSource } from "../src/lib/examples/runtime/guest-source.js";
 import {
@@ -110,12 +114,24 @@ export async function buildBrowserWitRuntime(
 	try {
 		const guestPath = path.join(workRoot, "station-guest.mjs");
 		await writeFile(guestPath, guestSource, "utf8");
+		const gitRef =
+			process.env.HOBO_RELEASE_CHECKOUT_REF?.trim() ||
+			process.env.GITHUB_SHA?.trim() ||
+			"HEAD";
+		const sandboxWitDir = await copyHostWitTreeIntoWorkRoot(WIT_DIR, workRoot);
+		await assertSandboxWitBeforeComponentize(
+			sandboxWitDir,
+			workRoot,
+			REPO_ROOT,
+			WIT_DIR,
+			gitRef,
+		);
 		process.stderr.write("browser-wit: componentizing real guest\n");
 		const cacheHome = process.env.XDG_CACHE_HOME;
 		const built = await toolchain.componentize.componentize({
 			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
 			sourcePath: guestPath,
-			witPath: WIT_DIR,
+			witPath: sandboxWitDir,
 			worldName: "browser-station",
 			disableFeatures: ["random", "clocks", "stdio", "http"],
 		});
