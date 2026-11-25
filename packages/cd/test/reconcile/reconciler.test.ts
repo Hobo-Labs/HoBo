@@ -274,7 +274,7 @@ describe("createCampReconciler", () => {
 		).not.toContain(marker);
 	});
 
-	it("redacts RESOLVER_CREDENTIAL_MISSING provider detail", async () => {
+	it("surfaces RESOLVER_CREDENTIAL_MISSING operator detail", async () => {
 		const h = harness();
 		const marker = "installation token missing for ghcr.io";
 		h.realizer.observe = async () =>
@@ -293,13 +293,10 @@ describe("createCampReconciler", () => {
 		await h.desired.publish(setFor(CAMP, resolved, 1), resolved);
 		const observation = await h.reconciler("r1").reconcileOnce(CAMP, h.ctx);
 		expect(observation.reasons[0]?.code).toBe("RESOLVER_CREDENTIAL_MISSING");
-		expect(observation.reasons[0]?.message).toBe(
-			"The realizer reported a condition.",
-		);
-		expect(JSON.stringify(observation)).not.toContain(marker);
+		expect(observation.reasons[0]?.message).toBe(marker);
 	});
 
-	it("replaces resolver refusal detail with a generic operator message", () => {
+	it("surfaces redacted resolver refusal detail for operators", () => {
 		const detail =
 			"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
 		const [reason] = sanitizeReasons(
@@ -314,7 +311,7 @@ describe("createCampReconciler", () => {
 			CAMP,
 			"realizer",
 		);
-		expect(reason?.message).toBe("The realizer reported a condition.");
+		expect(reason?.message).toMatch(/pkg-containers\.githubusercontent\.com/u);
 	});
 
 	it("redacts runtime-generated credentials from surfaced resolver detail", () => {
@@ -332,7 +329,7 @@ describe("createCampReconciler", () => {
 			CAMP,
 			"realizer",
 		);
-		expect(reason?.message).toBe("The realizer reported a condition.");
+		expect(reason?.message).toMatch(/token rejected/u);
 		expect(JSON.stringify(reason)).not.toContain(synthetic);
 		expect(JSON.stringify(reason)).not.toContain(marker);
 	});
