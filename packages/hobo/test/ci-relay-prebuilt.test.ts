@@ -200,7 +200,7 @@ function fakeVercelBuild(vercel: ReturnType<typeof prebuiltVercel>) {
 			});
 			vercel.state.deployments.push({
 				uid: "dpl_staged",
-				url: "https://hobo-ci-staged.vercel.app",
+				url: "https://hobo-ci-7f8x2k3p9-hobo-labs.vercel.app",
 				readyState: "READY",
 				target: "production",
 				created: 1_794_600_000_000,
@@ -208,7 +208,7 @@ function fakeVercelBuild(vercel: ReturnType<typeof prebuiltVercel>) {
 			});
 			return {
 				code: 0,
-				stdout: "https://hobo-ci-staged.vercel.app\n",
+				stdout: "https://hobo-ci-7f8x2k3p9-hobo-labs.vercel.app\n",
 				stderr: "",
 			};
 		}
@@ -913,13 +913,17 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
 			ok: false,
-			code: "HOBO_CI_DEPLOY_ROLLED_BACK",
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
 		});
+		expect(ran.data).toMatchObject({ rollback: "completed" });
 		expect(vercel.state.sent).toContain(
 			`POST /v10/projects/${PROJECT_ID}/promote/dpl_staged`,
 		);
 		expect(vercel.state.sent).toContain(
-			`POST /v1/projects/${PROJECT_ID}/rollback/dpl_live`,
+			`POST /v10/projects/${PROJECT_ID}/promote/dpl_live`,
+		);
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
 		);
 		expect(vercel.state.production).toBe("dpl_live");
 		expect(JSON.stringify(ran.envelope)).not.toContain(TOKEN);
@@ -942,5 +946,31 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
 			false,
 		);
+	});
+
+	it("leaves a concurrent production promotion untouched when the finalizer reports a superseded rollback", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		const supersedingProbe: HttpTransport = async (request) => {
+			const answer = await liveUnhealthy(request);
+			if (request.url.startsWith(PRODUCTION_ORIGIN))
+				vercel.state.production = "dpl_concurrent";
+			return answer;
+		};
+		const ran = await production(home, clock, vercel, {
+			probe: supersedingProbe,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+		});
+		expect(ran.data).toMatchObject({ rollback: "superseded" });
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
+		);
+		expect(vercel.state.production).toBe("dpl_concurrent");
 	});
 });

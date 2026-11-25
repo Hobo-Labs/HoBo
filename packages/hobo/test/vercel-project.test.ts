@@ -1603,23 +1603,20 @@ describe("production promotion", () => {
 		]);
 	});
 
-	it("refuses a promotion whose read-back still names the previous deployment", async () => {
+	it("refuses a promotion whose bounded read-back polling still names the previous deployment", async () => {
 		const transport = scripted({
-			"GET /v9/projects/hobo-ci": [
+			"GET /v9/projects/hobo-ci": Array.from({ length: 25 }, () =>
 				reply(200, {
 					id: "prj_relay",
 					targets: { production: { id: "dpl_current" } },
 				}),
-				reply(200, {
-					id: "prj_relay",
-					targets: { production: { id: "dpl_current" } },
-				}),
-			],
+			),
 			"POST /v10/projects/prj_relay/promote/dpl_123": [reply(202, {})],
 		});
 		const client = createVercelClient({
 			token: "test-token",
 			fetch: transport.fetch,
+			sleep: async () => {},
 		});
 		const pending = client.promoteDeployment("hobo-ci", "dpl_123");
 		await expect(pending).rejects.toBeInstanceOf(
@@ -1631,7 +1628,7 @@ describe("production promotion", () => {
 		expect(transport.routes()).toEqual([
 			"GET /v9/projects/hobo-ci",
 			"POST /v10/projects/prj_relay/promote/dpl_123",
-			"GET /v9/projects/hobo-ci",
+			...Array.from({ length: 24 }, () => "GET /v9/projects/hobo-ci"),
 		]);
 	});
 

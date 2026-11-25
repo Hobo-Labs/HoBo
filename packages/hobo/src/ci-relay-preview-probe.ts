@@ -36,10 +36,13 @@ export function normalizeDeploymentUrl(
 	if (!host.startsWith(deployPrefix)) return undefined;
 	const label = host.slice(deployPrefix.length);
 	if (label === "" || label.startsWith("git-")) return undefined;
+	const [deploymentId = "", ...scope] = label.split("-");
 	const deploymentHost =
-		label === "staged" ||
-		(label.length <= 3 && /^[a-z0-9]+$/u.test(label)) ||
-		/^[a-f0-9]{8,}$/u.test(label);
+		deploymentId !== "staged" &&
+		(deploymentId.length === 6 ||
+			(deploymentId.length >= 9 && deploymentId.length <= 32)) &&
+		/^[a-z0-9]+$/u.test(deploymentId) &&
+		scope.every((part) => part !== "" && /^[a-z0-9]+$/u.test(part));
 	if (!deploymentHost) return undefined;
 	return `${url.origin}/`;
 }

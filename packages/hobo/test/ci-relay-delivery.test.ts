@@ -498,7 +498,7 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(h.probed).toContain(`${PRODUCTION}/readyz`);
 	}, 60_000);
 
-	it("refuses, before deploying, a production run without a finalizer once a staged run injected the hook", async () => {
+	it("keeps staged finalization process-local so later non-staged delivery uses the clean shared pipeline", async () => {
 		const h = await harness();
 		const stagedPreview = await deliver(h, "preview");
 		expect(stagedPreview.ok).toBe(true);
@@ -506,6 +506,7 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 			finalizePromotion: async () => undefined,
 		});
 		expect(staged.ok, staged.ok ? "" : staged.message).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(0);
 		const nextSource = {
 			repository: "Hobo-Labs/HoBo",
 			ref: "main",
@@ -514,13 +515,12 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		const nextPreview = await deliver(h, "preview", { source: nextSource });
 		expect(nextPreview.ok).toBe(true);
 		const later = await deliver(h, "production", { source: nextSource });
-		expect(later.ok).toBe(false);
-		if (later.ok) return;
-		expect(later.code).toBe(RELAY_DELIVERY_REFUSAL.recordsInvalid);
-		expect(later.message).toContain("HOBO_CI_RELAY_STAGED_PRODUCTION=true");
+		expect(later.ok, later.ok ? "" : later.message).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(0);
 		expect(h.deployed.map((pin) => pin.sha)).toEqual([
 			SHA,
 			SHA,
+			"3".repeat(40),
 			"3".repeat(40),
 		]);
 	}, 180_000);
@@ -566,63 +566,38 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(finalized).toEqual([]);
 	}, 60_000);
 
-	it.each([
-		["no finalizer configured", undefined],
-		[
-			"a finalizer configured",
-			async () =>
-				({
-					ok: false as const,
-					code: "HOBO_CI_TEST_FINALIZER",
-					message: "must not run",
-				}) as const,
-		],
-	])(
-		"refuses records that declare the finalization hook themselves, with %s",
-		async (_case, finalizePromotion) => {
-			const h = await harness();
-			const stagedPreview = await deliver(h, "preview");
-			expect(stagedPreview.ok).toBe(true);
-			const withFinalizationHook: DeliveryModule = {
-				...records,
-				pipelines: records.pipelines.map((pipelineRecord) => ({
-					...pipelineRecord,
-					nodes: pipelineRecord.nodes.map((pipelineNode) =>
-						pipelineRecord.name === HOBO_CI_COMPONENTS.relay.pipeline &&
-						pipelineNode.name === "production"
-							? {
-									...pipelineNode,
-									hooks: [
-										...pipelineNode.hooks,
-										create(HookRecordSchema, {
-											kind: HookKind.SUITE,
-											point: HookPoint.AFTER_QUALIFIED,
-											ref: "relay:finalize-promotion",
-										}),
-									],
-								}
-							: pipelineNode,
-					),
-				})),
-			};
-			const outcome = await deliver(h, "production", {
-				records: withFinalizationHook,
-				...(finalizePromotion !== undefined
-					? { finalizePromotion }
-					: undefined),
-			});
-			expect(outcome.ok).toBe(false);
-			if (outcome.ok) return;
-			expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.recordsInvalid);
-			expect(outcome.message).toContain(
-				"ref is reserved for hobo ci deploy's own injection",
-			);
-			expect(h.deployed).toEqual([
-				{ repository: "Hobo-Labs/HoBo", ref: "main", sha: SHA },
-			]);
-		},
-		120_000,
-	);
+	it("strips a reserved relay finalizer hook from records instead of trapping drivers", async () => {
+		const h = await harness();
+		const stagedPreview = await deliver(h, "preview");
+		expect(stagedPreview.ok).toBe(true);
+		const withFinalizationHook: DeliveryModule = {
+			...records,
+			pipelines: records.pipelines.map((pipelineRecord) => ({
+				...pipelineRecord,
+				nodes: pipelineRecord.nodes.map((pipelineNode) =>
+					pipelineRecord.name === HOBO_CI_COMPONENTS.relay.pipeline &&
+					pipelineNode.name === "production"
+						? {
+								...pipelineNode,
+								hooks: [
+									...pipelineNode.hooks,
+									create(HookRecordSchema, {
+										kind: HookKind.SUITE,
+										point: HookPoint.AFTER_QUALIFIED,
+										ref: "relay:finalize-promotion",
+									}),
+								],
+							}
+						: pipelineNode,
+				),
+			})),
+		};
+		const outcome = await deliver(h, "production", {
+			records: withFinalizationHook,
+		});
+		expect(outcome.ok).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(0);
+	}, 120_000);
 
 	it("returns a finalizer's failure as the delivery's own result", async () => {
 		const h = await harness();
@@ -638,10 +613,12 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(outcome.ok).toBe(false);
 		if (outcome.ok) return;
 		expect(outcome.code).toBe("HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED");
+		expect(outcome.report?.state).toBe("FAILED");
 		expect(outcome.message).toContain("never became healthy");
 		expect(outcome.realization).toMatchObject({
 			data: { rollback: "completed" },
 		});
+		expect(await finalizationHooks(h.home)).toBe(0);
 	}, 120_000);
 
 	it("retries a finished staged promotion from the durable handover without deploying again", async () => {
@@ -667,7 +644,7 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(h.finalized).toEqual(["dpl_2", "dpl_2"]);
 	}, 240_000);
 
-	it("reuses the stored finalization hook on a finalizer-present retry without appending another", async () => {
+	it("runs the process-local finalization hook once per finalizer-present retry without persisting it", async () => {
 		const h = await harness();
 		expect((await deliver(h, "preview")).ok).toBe(true);
 		const finalizer = async ({
@@ -682,17 +659,17 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 			finalizePromotion: finalizer,
 		});
 		expect(first.ok, first.ok ? "" : first.message).toBe(true);
-		expect(await finalizationHooks(h.home)).toBe(1);
+		expect(await finalizationHooks(h.home)).toBe(0);
 		const retry = await deliver(h, "production", {
 			finalizePromotion: finalizer,
 		});
 		expect(retry.ok, retry.ok ? "" : retry.message).toBe(true);
-		expect(await finalizationHooks(h.home)).toBe(1);
+		expect(await finalizationHooks(h.home)).toBe(0);
 		expect(h.deployed).toHaveLength(2);
 		expect(h.finalized).toEqual(["dpl_2", "dpl_2"]);
 	}, 240_000);
 
-	it("keeps a hook the retry's delivery file declares anew while reusing the stored finalizer", async () => {
+	it("keeps a hook the retry's delivery file declares anew while running the process-local finalizer", async () => {
 		const h = await harness();
 		expect((await deliver(h, "preview")).ok).toBe(true);
 		const finalizer = async () => undefined;
@@ -700,7 +677,7 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 			finalizePromotion: finalizer,
 		});
 		expect(first.ok, first.ok ? "" : first.message).toBe(true);
-		expect(await finalizationHooks(h.home)).toBe(1);
+		expect(await finalizationHooks(h.home)).toBe(0);
 		const withDeclaredHook: DeliveryModule = {
 			...records,
 			pipelines: records.pipelines.map((pipelineRecord) => ({
@@ -727,11 +704,8 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 			finalizePromotion: finalizer,
 		});
 		expect(retry.ok, retry.ok ? "" : retry.message).toBe(true);
-		expect(await finalizationHooks(h.home)).toBe(1);
-		expect(await productionHookRefs(h.home)).toEqual([
-			"relay:notify-owners",
-			"relay:finalize-promotion",
-		]);
+		expect(await finalizationHooks(h.home)).toBe(0);
+		expect(await productionHookRefs(h.home)).toEqual(["relay:notify-owners"]);
 	}, 240_000);
 
 	it("never finalizes another promotion's candidate when a newer promotion replaced the Camp's Set", async () => {

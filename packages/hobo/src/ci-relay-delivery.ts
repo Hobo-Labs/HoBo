@@ -61,7 +61,6 @@ import {
 	HookKind,
 	HookPoint,
 	HookRecordSchema,
-	type PromotionId,
 	type PromotionRecord,
 	PromotionRecordSchema,
 	PromotionState,
@@ -88,6 +87,11 @@ import {
 	parseCdComposeConfig,
 	unconfiguredSuites,
 } from "@hobo/cd/compose";
+import {
+	createHookRunner,
+	createPromotionService,
+	promotionIdFor,
+} from "@hobo/cd/promotion";
 import { createInProcessTransport } from "@hobo/cd/reconcile";
 import {
 	createRegistryFromProviders,
@@ -883,7 +887,47 @@ async function deliverWith(
 	};
 	const cd = composeContinuousDelivery({
 		base: { store, tenant: config.tenant, now },
-		factories: defaultCdFactories,
+		factories: {
+			...defaultCdFactories,
+			createPromotionService(deps) {
+				const runner = createHookRunner(deps);
+				return createPromotionService({
+					...deps,
+					hooks: {
+						async run(request, ctx) {
+							if (request.point !== HookPoint.AFTER_QUALIFIED)
+								return runner.run(request, ctx);
+							const hooks = request.hooks.filter(
+								(hook) => hook.ref !== RELAY_FINALIZATION_SUITE,
+							);
+							if (
+								finalizePromotion === undefined ||
+								request.subject.pipeline !== pipeline ||
+								request.subject.node !== node ||
+								request.subject.promotionId !== promotionId ||
+								request.subject.campId !== campId ||
+								request.subject.freightId !== freight.freightId
+							)
+								return runner.run({ ...request, hooks }, ctx);
+							return runner.run(
+								{
+									...request,
+									hooks: [
+										...hooks,
+										create(HookRecordSchema, {
+											kind: HookKind.SUITE,
+											point: HookPoint.AFTER_QUALIFIED,
+											ref: RELAY_FINALIZATION_SUITE,
+										}),
+									],
+								},
+								ctx,
+							);
+						},
+					},
+				});
+			},
+		},
 		adapters: {
 			...defaultCdAdapters({
 				store,
@@ -985,101 +1029,29 @@ async function deliverWith(
 			};
 		records = loaded.value;
 	}
-	const declaredFinalizationHooks = records.pipelines.flatMap(
-		(pipelineRecord) =>
-			pipelineRecord.nodes
-				.filter((pipelineNode) =>
-					pipelineNode.hooks.some(
-						(hook) => hook.ref === RELAY_FINALIZATION_SUITE,
-					),
-				)
-				.map((pipelineNode) => `${pipelineRecord.name}/${pipelineNode.name}`),
-	);
-	if (declaredFinalizationHooks.length > 0)
-		return {
-			ok: false,
-			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
-			message: `${RELAY_DELIVERY_FILE} declares the ${RELAY_FINALIZATION_SUITE} hook on ${declaredFinalizationHooks.join(", ")}: that ref is reserved for hobo ci deploy's own injection, never a delivery file. Remove the hook; the run that carries a finalizer injects it.`,
-		};
-	const stored = await cd.pipelines.get(pipeline);
-	const storedNode = stored?.nodes.find(
-		(pipelineNode) => pipelineNode.name === node,
-	);
-	const storedFinalizationHook =
-		storedNode?.hooks.some((hook) => hook.ref === RELAY_FINALIZATION_SUITE) ??
-		false;
-	if (storedFinalizationHook && finalizePromotion === undefined)
-		return {
-			ok: false,
-			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
-			message: `Pipeline ${pipeline}/${node} already carries the ${RELAY_FINALIZATION_SUITE} hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true, which finalizes the promotion it drove.`,
-		};
-	const reuseStoredFinalizationHook =
-		storedFinalizationHook && finalizePromotion !== undefined;
-	let finalizationTargets = 0;
-	const deliveryRecords: DeliveryModule =
-		finalizePromotion === undefined
-			? records
-			: reuseStoredFinalizationHook
-				? {
-						...records,
-						pipelines: records.pipelines.map((pipelineRecord) =>
-							pipelineRecord.name === pipeline && storedNode !== undefined
-								? {
-										...pipelineRecord,
-										nodes: pipelineRecord.nodes.map((pipelineNode) =>
-											pipelineNode.name === node
-												? {
-														...pipelineNode,
-														hooks: [
-															...pipelineNode.hooks,
-															...storedNode.hooks.filter(
-																(hook) => hook.ref === RELAY_FINALIZATION_SUITE,
-															),
-														],
-													}
-												: pipelineNode,
-										),
-									}
-								: pipelineRecord,
-						),
-					}
-				: {
-						...records,
-						pipelines: records.pipelines.map((pipelineRecord) => ({
-							...pipelineRecord,
-							nodes: pipelineRecord.nodes.map((pipelineNode) => {
-								if (
-									pipelineRecord.name !== pipeline ||
-									pipelineNode.name !== node
-								)
-									return pipelineNode;
-								finalizationTargets += 1;
-								return {
-									...pipelineNode,
-									hooks: [
-										...pipelineNode.hooks,
-										create(HookRecordSchema, {
-											kind: HookKind.SUITE,
-											point: HookPoint.AFTER_QUALIFIED,
-											ref: RELAY_FINALIZATION_SUITE,
-										}),
-									],
-								};
-							}),
-						})),
-					};
-	if (
-		finalizePromotion !== undefined &&
-		!reuseStoredFinalizationHook &&
-		finalizationTargets !== 1
-	)
+	records = {
+		...records,
+		pipelines: records.pipelines.map((pipelineRecord) => ({
+			...pipelineRecord,
+			nodes: pipelineRecord.nodes.map((pipelineNode) => ({
+				...pipelineNode,
+				hooks: pipelineNode.hooks.filter(
+					(hook) => hook.ref !== RELAY_FINALIZATION_SUITE,
+				),
+			})),
+		})),
+	};
+	const finalizationTargets = records.pipelines
+		.filter((pipelineRecord) => pipelineRecord.name === pipeline)
+		.flatMap((pipelineRecord) => pipelineRecord.nodes)
+		.filter((pipelineNode) => pipelineNode.name === node).length;
+	if (finalizePromotion !== undefined && finalizationTargets !== 1)
 		return {
 			ok: false,
 			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
 			message: `The relay finalizer needs exactly one ${pipeline}/${node} pipeline node; found ${finalizationTargets}.`,
 		};
-	const refusedRecords = await applyRecords(cd, deliveryRecords, ctx);
+	const refusedRecords = await applyRecords(cd, records, ctx);
 	if (refusedRecords.length > 0)
 		return {
 			ok: false,
@@ -1144,12 +1116,14 @@ async function deliverWith(
 	}
 
 	const idempotencyKey = `relay:${freight.freightId}:${campId}`;
+	const promotionId = promotionIdFor(config.tenant, idempotencyKey);
 	const requested = await cd.promotions.promote(
 		{
 			// SAFETY: the ledger's own id.
 			freightId: freight.freightId as FreightId,
 			targets: [campId],
 			idempotencyKey,
+			driverOnly: finalizePromotion !== undefined,
 			pipeline,
 			node,
 			...(node === "production" ? { sourceCampId: previewCampId } : undefined),
@@ -1163,8 +1137,6 @@ async function deliverWith(
 			message: `CD refused to promote ${freight.alias} to ${campId}: ${describeReasons(requested.reasons)}`,
 			report: { ...report(), reasons: reasonsOf(requested.reasons) },
 		};
-	// SAFETY: the promotion service's own id.
-	const promotionId = requested.value.promotionId as PromotionId;
 	emit(`promotion ${promotionId} of ${freight.alias} to ${campId}`);
 
 	const holderId = `hobo-ci-deploy:${process.pid}:${randomUUID()}`;
@@ -1275,8 +1247,12 @@ async function deliverWith(
 		};
 	};
 	for (;;) {
-		// The same steps `hobo serve cd` ticks, for this one promotion.
-		await cd.promotions.tick(ctx);
+		if (finalizePromotion === undefined) await cd.promotions.tick(ctx);
+		else
+			await cd.promotions.tick(ctx, {
+				promotionId,
+				allowDriverOnly: true,
+			});
 		promotion = await cd.promotions.get(promotionId);
 		if (promotion && TERMINAL.has(promotion.state)) {
 			const set = await cd.desired.current(campId);

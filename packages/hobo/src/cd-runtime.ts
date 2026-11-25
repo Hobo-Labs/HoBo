@@ -60,7 +60,12 @@ import {
 	unconfiguredSuites,
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
-import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
+import {
+	createHookRunner,
+	createPromotionService,
+	deltaIdFor,
+	diffResolvedSets,
+} from "@hobo/cd/promotion";
 import {
 	createDriftPolicy,
 	releaseFreightRefusalOf,
@@ -486,6 +491,25 @@ export async function openCdRuntime(
 					approvedProviders: (stationId) =>
 						railCatalog.approvedProviders(stationId),
 				}),
+			createPromotionService: (deps) => {
+				const runner = createHookRunner(deps);
+				return createPromotionService({
+					...deps,
+					hooks: {
+						async run(request, ctx) {
+							return runner.run(
+								{
+									...request,
+									hooks: request.hooks.filter(
+										(hook) => hook.ref !== "relay:finalize-promotion",
+									),
+								},
+								ctx,
+							);
+						},
+					},
+				});
+			},
 		},
 		options.onRunnerHostIngestError ?? reportRunnerHostIngestError,
 	);

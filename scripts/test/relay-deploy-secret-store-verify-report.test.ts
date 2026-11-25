@@ -27,11 +27,11 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 					ok: false,
 					code: "HOBO_CI_SECRET_STORE_VERIFY_FAILED",
 					message:
-						"hobo-ci-deploy (GitHub Actions OIDC): fail — infisical login-denied (HTTP 401) (oidc_sub=repo:Hobo-Labs/HoBo:ref:refs/heads/main, oidc_aud=https://github.com/Hobo-Labs)",
+						"hobo-ci-writer (GitHub Actions OIDC): fail — infisical login-denied (HTTP 401) (oidc_sub=repo:Hobo-Labs/HoBo:ref:refs/heads/main, oidc_aud=https://github.com/Hobo-Labs)",
 					data: {
 						checks: [
 							{
-								identity: "hobo-ci-deploy",
+								identity: "hobo-ci-writer",
 								method: "GitHub Actions OIDC",
 								result: "fail",
 								detail:
@@ -52,6 +52,8 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 				ran.stdout,
 				/login-denied.*oidc_sub=repo:Hobo-Labs\/HoBo:ref:refs\/heads\/main/u,
 			);
+			assert.match(ran.stdout, /hobo-ci-writer/u);
+			assert.doesNotMatch(ran.stdout, /hobo-ci-deploy/u);
 			assert.match(ran.stdout, /::error title=Secret store verify::/u);
 			assert.doesNotMatch(ran.stdout, /eyJ/u);
 		} finally {
@@ -74,7 +76,7 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 					data: {
 						checks: [
 							{
-								identity: "hobo-ci-deploy",
+								identity: "hobo-ci-writer",
 								method: "GitHub Actions OIDC",
 								result: "fail",
 								detail: `leaked ${jwt}`,
