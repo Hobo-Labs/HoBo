@@ -22,8 +22,8 @@
 import {
 	BetterAuthClaimsError,
 	type BetterAuthClaimsErrorCode,
-} from "./errors.js";
-import { BETTER_AUTH_CLAIMS_MAPPING_VERSION } from "./ids.js";
+	BETTER_AUTH_CLAIMS_MAPPING_VERSION,
+} from "@hobo/auth-adapter-contract";
 import {
 	isJsonBoolean,
 	isJsonNumber,

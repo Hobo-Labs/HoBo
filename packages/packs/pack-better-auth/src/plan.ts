@@ -3,7 +3,7 @@ import {
 	BETTER_AUTH_DESCRIPTOR,
 	type BetterAuthConfig,
 	parseBetterAuthConfig,
-} from "@hobo/adapter-better-auth";
+} from "@hobo/auth-adapter-contract";
 import type { JsonValue } from "@hobo/core";
 
 import { BETTER_AUTH_PACK_ID } from "./catalog.js";

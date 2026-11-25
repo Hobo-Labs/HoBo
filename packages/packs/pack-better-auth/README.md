@@ -15,32 +15,26 @@ infrastructure inside the adapter.
   must wire before the bundle can run.
 - `plan.ts` — `planBetterAuthBundle`: parse-checked config + port refs → frozen
   plan; calls `assertBetterAuthRuntimeAvailable` when execution is requested.
-- `migrations.ts` — `planBetterAuthRelationalMigrations`: ADR-0160
-  `diffSchemaIr` from an empty postgres baseline (or supplied current schema)
-  to the pinned Better Auth `SchemaIr` fixture — expand-only on first deploy.
-- `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
-  governed data-plane migrations (not adapter-private DDL).
-- `secrets.ts` — `wireBetterAuthSigningSecret`: camp `SecretsPort` resolution at
-  bundle init; wire record carries locators only (ADR-0161 / ADR-0113).
 
 ## HONEST SCOPE
 
 - **No `better-auth` dependency** in this package. The npm module is an optional
   peer installed by the deployed bundle.
-- **No database provisioning, migration apply, or HTTP serving** yet. Relational
-  schema planning and bundle gating only; SQL execution and runtime wiring land
-  in follow-up PRs per
+- **No database provisioning, migrations, or HTTP serving** yet. Planning and
+  fail-closed gating only; runtime wiring lands in follow-up PRs per
   [`docs/maintenance/alchemy-auth-secrets-onboarding-audit.md`](../../../docs/maintenance/alchemy-auth-secrets-onboarding-audit.md).
 
 ## Parse, don't validate
 
-Untrusted JSON crosses one boundary: `parseBetterAuthConfig` and
-`parseBetterAuthBundlePortRefs` in `@hobo/adapter-better-auth` and this package
-mint **parsed domain types** (`BetterAuthConfig`, `BetterAuthBundlePortRefs`,
-`BetterAuthBundlePlan`). Downstream code never re-checks primitive strings; an
-invalid locator or base path is unrepresentable past the parse boundary. Durable
-**derived types** for replay are the protobuf records in
-`data-models/pack_better_auth.proto`, constrained by `pack_better_auth.cue`.
+Untrusted JSON crosses one boundary: `parseBetterAuthConfig` in
+`@hobo/auth-adapter-contract` and `parseBetterAuthBundlePortRefs` in this
+package mint **parsed domain types** (`BetterAuthConfig`,
+`BetterAuthBundlePortRefs`, `BetterAuthBundlePlan`). Downstream code never
+re-checks primitive strings; an invalid locator or base path is unrepresentable
+past the parse boundary. `toBetterAuthBundlePlanRecord` projects a plan into
+the durable replay shape. Protobuf records live in
+`data-models/pack_better_auth.proto`, constrained by `pack_better_auth.cue`
+(`claims_mapping_version` is `better-auth-claims/v1`, bindle names allow `_`).
 
 ## Commands, events, and durability
 
@@ -69,8 +63,8 @@ Pure planning today; the host still owns the CQRS loop that will surround execut
 - `data-models/pack_better_auth.proto` — durable plan and port-ref records.
 - `data-models/pack_better_auth.cue` — locators are locators, base paths are
   absolute, required ports are non-empty.
-- `contracts/pack-better-auth-bundle-plan.pact.json` — boundary with the bundle
-  host: accept fully wired ports, refuse a signing locator mismatch.
+- `contracts/pack-better-auth-bundle-plan.pact.json` — consumer pact over the
+  in-process `planBetterAuthBundle` entrypoint (no invented HTTP surface).
 
 ## Gates
 
