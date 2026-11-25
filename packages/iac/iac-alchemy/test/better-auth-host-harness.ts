@@ -7,6 +7,7 @@ export const BETTER_AUTH_HOST_DOTENV_FIXTURE = Object.freeze({
 	HOBO_AUTH_BASE_PATH: "/api/auth",
 	HOBO_AUTH_DATABASE_PROFILE: "data.relational/v1",
 	HOBO_AUTH_SECRET_REF: "hobo-secret://camp-test/auth/better-auth-signing-key",
+	HOBO_AUTH_CAMP_AUTHORITY: "camp-test",
 	HOBO_AUTH_RELATIONAL_BINDLE: "auth_db",
 	HOBO_AUTH_HTTP_BINDLE: "auth_http",
 } as const);
@@ -19,7 +20,7 @@ export interface BetterAuthHostStackInputs {
 		readonly secretRef: string;
 		readonly database: { readonly profile: string };
 		readonly emailAndPassword: { readonly enabled: boolean };
-		readonly socialProviders: readonly string[];
+		readonly socialProviders: string[];
 		readonly organizations: { readonly enabled: boolean };
 	};
 	readonly portsInput: {
@@ -27,6 +28,7 @@ export interface BetterAuthHostStackInputs {
 		readonly httpBindle: string;
 		readonly signingSecretRef: string;
 	};
+	readonly campAuthority: string;
 }
 
 export function parseBetterAuthHostDotEnv(
@@ -34,15 +36,24 @@ export function parseBetterAuthHostDotEnv(
 ): BetterAuthHostStackInputs {
 	const basePath = env.HOBO_AUTH_BASE_PATH;
 	const secretRef = env.HOBO_AUTH_SECRET_REF;
+	const campAuthority = env.HOBO_AUTH_CAMP_AUTHORITY;
 	const profile = env.HOBO_AUTH_DATABASE_PROFILE;
 	const relationalBindle = env.HOBO_AUTH_RELATIONAL_BINDLE;
 	const httpBindle = env.HOBO_AUTH_HTTP_BINDLE;
-	if (!basePath || !secretRef || !profile || !relationalBindle || !httpBindle) {
+	if (
+		!basePath ||
+		!secretRef ||
+		!campAuthority ||
+		!profile ||
+		!relationalBindle ||
+		!httpBindle
+	) {
 		throw new Error(
 			"better-auth host dotenv is missing a required HOBO_AUTH_* construction key",
 		);
 	}
 	return Object.freeze({
+		campAuthority,
 		configInput: Object.freeze({
 			basePath,
 			secretRef,
@@ -96,7 +107,8 @@ export function createBetterAuthHostHarness(options?: {
 		dispose() {
 			if (previousHome === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = previousHome;
-			if (previousTelemetry === undefined) delete process.env.ALCHEMY_TELEMETRY_DISABLED;
+			if (previousTelemetry === undefined)
+				delete process.env.ALCHEMY_TELEMETRY_DISABLED;
 			else process.env.ALCHEMY_TELEMETRY_DISABLED = previousTelemetry;
 			rmSync(directory, { recursive: true, force: true });
 		},

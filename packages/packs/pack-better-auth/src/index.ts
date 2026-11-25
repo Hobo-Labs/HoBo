@@ -26,6 +26,17 @@ export {
 } from "./plan.js";
 
 export {
+	type BetterAuthRelationalMigrationPlan,
+	planBetterAuthRelationalMigrations,
+} from "./migrations.js";
+
+export {
+	type BetterAuthSigningSecretWire,
+	campSecretNameFromBetterAuthRef,
+	wireBetterAuthSigningSecret,
+} from "./secrets.js";
+
+export {
 	assertBetterAuthRuntimeAvailable,
 	BETTER_AUTH_RUNTIME_MODULE,
 	BetterAuthRuntimeUnavailableError,
