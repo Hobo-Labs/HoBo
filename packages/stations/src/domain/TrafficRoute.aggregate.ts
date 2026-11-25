@@ -217,7 +217,7 @@ export class FlagCutoverReconciliation extends Domain.Command(
 			reason: NonEmptyReason,
 		},
 		events: [CutoverReconciliationRequired],
-		rejects: [],
+		rejects: [CutoverPreconditionRefused],
 	},
 	{
 		description:
@@ -293,6 +293,7 @@ export const ReconciliationRequiredRouteState = Schema.TaggedStruct(
 		policy: Schema.NullOr(StabilityPolicy),
 		ttlSeconds: Schema.NullOr(TtlSeconds),
 		swapsInWindow: NonNegativeCount,
+		flipWindowStartMs: Schema.NullOr(EpochMs),
 		lastCompletedAtMs: Schema.NullOr(EpochMs),
 		reason: NonEmptyReason,
 	},
@@ -559,9 +560,16 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 				}),
 			];
 		},
-		FlagCutoverReconciliation: (_state, cmd) => [
-			new CutoverReconciliationRequired({ reason: cmd.reason }),
-		],
+		FlagCutoverReconciliation: (state, cmd) => {
+			if (state._tag === "Unregistered") {
+				return new CutoverPreconditionRefused({
+					reason: "incumbent-not-registered",
+				});
+			}
+			return [
+				new CutoverReconciliationRequired({ reason: cmd.reason }),
+			];
+		},
 		ResolveTrafficCutoverReconciliation: (state, cmd) => {
 			if (state._tag !== "ReconciliationRequired") {
 				return new CutoverPreconditionRefused({
@@ -717,6 +725,8 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 				state._tag === "Unregistered" ? ZERO_COUNT : state.swapsInWindow,
 			lastCompletedAtMs:
 				state._tag === "Unregistered" ? null : state.lastCompletedAtMs,
+			flipWindowStartMs:
+				state._tag === "Unregistered" ? null : state.flipWindowStartMs,
 			reason: event.reason,
 		}),
 		CutoverReconciliationResolved: (state, event) => ({
@@ -728,7 +738,10 @@ export class TrafficRoute extends Domain.Aggregate("TrafficRoute", {
 				state._tag === "ReconciliationRequired"
 					? state.swapsInWindow
 					: ZERO_COUNT,
-			flipWindowStartMs: null,
+			flipWindowStartMs:
+				state._tag === "ReconciliationRequired"
+					? state.flipWindowStartMs
+					: null,
 			lastCompletedAtMs: event.resolvedAtMs,
 		}),
 	},

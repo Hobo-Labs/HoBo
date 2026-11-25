@@ -124,6 +124,13 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 			previousTtlSeconds,
 			completedAtMs,
 		}) {
+			const flagReconciliation = (reason: NonEmptyReason) =>
+				routes
+					.send(key, new FlagCutoverReconciliation({ reason }))
+					.pipe(
+						Effect.catchTag("CutoverPreconditionRefused", () => Effect.void),
+						Effect.asVoid,
+					);
 			const lowered = yield* Activity.make({
 				name: "lower-dns-ttl",
 				success: Schema.Struct({
@@ -141,12 +148,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 			if (lowered._tag === "Failure") {
 				yield* Activity.make({
 					name: "flag-ttl-reconciliation",
-					execute: routes
-						.send(
-							key,
-							new FlagCutoverReconciliation({ reason: lowered.failure.reason }),
-						)
-						.pipe(Effect.asVoid),
+					execute: flagReconciliation(lowered.failure.reason),
 				});
 				return;
 			}
@@ -154,14 +156,9 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 			if (lowered.success.waitedSeconds < previousTtlSeconds) {
 				yield* Activity.make({
 					name: "flag-ttl-wait-reconciliation",
-					execute: routes
-						.send(
-							key,
-							new FlagCutoverReconciliation({
-								reason: NonEmptyReason.make("ttl-wait-insufficient"),
-							}),
-						)
-						.pipe(Effect.asVoid),
+					execute: flagReconciliation(
+						NonEmptyReason.make("ttl-wait-insufficient"),
+					),
 				});
 				return;
 			}
@@ -183,7 +180,22 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 						}),
 					)
 					.pipe(Effect.asVoid),
-			});
+			}).pipe(
+				ExecuteProgressiveCutover.withCompensation(() =>
+					Activity.make({
+						name: "compensate-restore-ttl-after-record",
+						execute: backend
+							.restoreTtl({
+								routeId: key,
+								ttlSeconds: previousTtlSeconds,
+							})
+							.pipe(
+								Effect.catchTag("RoutingMutationAmbiguous", () => Effect.void),
+								Effect.asVoid,
+							),
+					}),
+				),
+			);
 
 			for (const weightPercent of rampPlan) {
 				const applied = yield* Activity.make({
@@ -200,14 +212,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				if (applied._tag === "Failure") {
 					yield* Activity.make({
 						name: `flag-weight-reconciliation-${weightPercent}`,
-						execute: routes
-							.send(
-								key,
-								new FlagCutoverReconciliation({
-									reason: applied.failure.reason,
-								}),
-							)
-							.pipe(Effect.asVoid),
+						execute: flagReconciliation(applied.failure.reason),
 					});
 					return;
 				}
@@ -245,14 +250,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				if (health._tag === "Failure") {
 					yield* Activity.make({
 						name: `flag-health-reconciliation-${weightPercent}`,
-						execute: routes
-							.send(
-								key,
-								new FlagCutoverReconciliation({
-									reason: health.failure.reason,
-								}),
-							)
-							.pipe(Effect.asVoid),
+						execute: flagReconciliation(health.failure.reason),
 					});
 					return;
 				}
@@ -277,9 +275,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 									);
 						yield* Activity.make({
 							name: `flag-restore-reconciliation-${weightPercent}`,
-							execute: routes
-								.send(key, new FlagCutoverReconciliation({ reason }))
-								.pipe(Effect.asVoid),
+							execute: flagReconciliation(reason),
 						});
 						return;
 					}
@@ -297,14 +293,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 					if (ttlRestored._tag === "Failure") {
 						yield* Activity.make({
 							name: `flag-ttl-restore-reconciliation-${weightPercent}`,
-							execute: routes
-								.send(
-									key,
-									new FlagCutoverReconciliation({
-										reason: ttlRestored.failure.reason,
-									}),
-								)
-								.pipe(Effect.asVoid),
+							execute: flagReconciliation(ttlRestored.failure.reason),
 						});
 						return;
 					}
