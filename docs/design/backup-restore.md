@@ -16,7 +16,7 @@ Branch evidence is summarized in
 M1 launch-drill proof lives in
 [`src/draft/exp-proofs/dx/backup-restore-launch-drill-contract`](../../src/draft/exp-proofs/dx/backup-restore-launch-drill-contract/README.md)
 with branch evidence in
-[`proofs/hobo-498-backup-restore-launch-drill`](./proofs/hobo-498-backup-restore-launch-drill/README.md).
+[`proofs/hobo-498-backup-restore-launch-drill`](https://linear.app/quickdeploy-ai/document/hobo-498-backup-restore-launch-drill-evidence-archived-d7ece0b538c4).
 
 ## M0 Acceptance Record
 
