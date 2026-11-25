@@ -529,11 +529,33 @@ describe("release workflow sparse-checkout sync", () => {
 			action.indexOf("Materialize required sparse paths"),
 		);
 		expect(block).toMatch(/sparse checkout did not materialize required path/);
-		expect(block).toMatch(/sparse checkout missing \$\{wit_file\}/);
+		expect(block).toMatch(/sparse checkout missing or empty/);
+		expect(block).toMatch(/does not match HEAD/);
+		expect(block).toMatch(/ls -la "\$path"/);
+		expect(block).not.toMatch(
+			/if \[ -e "\$target" \]; then[\s\S]*return 0/,
+		);
 		expect(block).toMatch(
 			/git sparse-checkout add --skip-checks -- "\$target"/,
 		);
 		expect(block).toMatch(/git checkout HEAD -- "\$target"/);
+		expect(block).toMatch(/git hash-object "\$wit_file"/);
+	});
+
+	it("materialize always refreshes paths even when left on disk (run 45539357482)", () => {
+		const action = readFileSync(
+			join(root, ".github/actions/hobo-checkout/action.yml"),
+			"utf8",
+		);
+		const block = action.slice(
+			action.indexOf("Materialize required sparse paths"),
+			action.indexOf("Initialize submodules"),
+		);
+		expect(block).toMatch(/materialize_path/);
+		const fn = block.slice(block.indexOf("materialize_path()"));
+		expect(fn).not.toMatch(/if \[ -e "\$target" \]/);
+		expect(fn).toMatch(/git checkout HEAD -- "\$target"/);
+		expect(block).toMatch(/assert_wit_station_file/);
 	});
 
 	it("hobo-checkout rejects nested file paths in cone initialization", () => {
