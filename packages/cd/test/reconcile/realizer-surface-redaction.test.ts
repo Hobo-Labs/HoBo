@@ -19,14 +19,13 @@ function runtimeSyntheticJwt() {
 }
 
 describe("realizer condition surfacing", () => {
-	it("keeps RESOLVER and realize-failed observations generic while redacting is available for Freight", () => {
+	it("surfaces redacted resolver detail without credential material", () => {
 		const { token, payload } = runtimeSyntheticJwt();
 		const providerMessage = `upstream denied authorization ${token}`;
 
 		for (const code of [
 			"RESOLVER_PROVIDER_REJECTED",
 			"RESOLVER_CREDENTIAL_MISSING",
-			"realize-failed",
 		] as const) {
 			const [reason] = sanitizeReasons(
 				[
@@ -40,12 +39,30 @@ describe("realizer condition surfacing", () => {
 				CAMP,
 				"realizer",
 			);
-			expect(reason?.message ?? "", code).toBe(
-				"The realizer reported a condition.",
-			);
+			expect(reason?.message ?? "", code).toMatch(/upstream denied authorization/u);
 			expect(JSON.stringify(reason)).not.toContain(token);
 			expect(JSON.stringify(reason)).not.toContain(payload);
 		}
+	});
+
+	it("keeps realize-failed observations redacted when a message carries secret material", () => {
+		const { token, payload } = runtimeSyntheticJwt();
+		const providerMessage = `upstream denied authorization ${token}`;
+		const [reason] = sanitizeReasons(
+			[
+				create(ReasonRecordSchema, {
+					code: "realize-failed",
+					message: providerMessage,
+					remediation: providerMessage,
+					subject: CAMP,
+				}),
+			],
+			CAMP,
+			"realizer",
+		);
+		expect(reason?.message ?? "").toMatch(/upstream denied authorization/u);
+		expect(JSON.stringify(reason)).not.toContain(token);
+		expect(JSON.stringify(reason)).not.toContain(payload);
 	});
 
 	it("keeps redacted resolver messages out of serialized observation output", () => {

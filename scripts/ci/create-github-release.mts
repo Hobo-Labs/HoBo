@@ -275,6 +275,20 @@ const TERMINAL = new Set([
 const codesOf = (reasons: readonly CdReason[] | undefined) =>
 	(reasons ?? []).map((r) => r.code ?? "").filter((c) => c !== "");
 
+/** Operator-safe blocked promotion text: stable code plus redacted resolver detail. */
+export function releaseBlockedRealizerMessage(
+	reasons: readonly CdReason[] | undefined,
+): string {
+	const parts = (reasons ?? []).map((reason) => {
+		const code = reason.code?.trim() || "unknown";
+		const redacted = redactRealizerConditionText(reason.message ?? "");
+		if (redacted === "The realizer reported a condition.") return code;
+		return `${code}: ${redacted}`;
+	});
+	if (parts.length === 0) return "The realizer reported a condition.";
+	return parts.join("; ");
+}
+
 /**
  * Read a driven promotion as a release verdict (fail closed): PROMOTED is the
  * only qualification; a realizer refusal, a terminal promotion or not
@@ -297,9 +311,7 @@ export function classifyRelease(
 		return {
 			outcome: "blocked",
 			codes,
-			message: redactRealizerConditionText(
-				(at.observedReasons ?? []).map((r) => r.message ?? "").join("; "),
-			),
+			message: releaseBlockedRealizerMessage(at.observedReasons),
 			promotionId,
 		};
 	}
@@ -359,10 +371,16 @@ export type ReleaseCredentials = Readonly<{
 
 const GITHUB_APP_REF = "github-app://";
 
+/** Credential scope the catalog resolver passes (`cd-realize:<campId>`). */
+export function releaseCampRealizeScope(camp: (typeof camps)[number]): string {
+	const campId = camp.logicalId?.trim() || camp.campId;
+	return `cd-realize:${campId}`;
+}
+
 export function releaseWorkflowGithubAppScopes(): ReadonlySet<string> {
 	return new Set([
 		"release-probe",
-		...camps.map((camp) => `cd-realize:${camp.campId}`),
+		...camps.map((camp) => releaseCampRealizeScope(camp)),
 	]);
 }
 

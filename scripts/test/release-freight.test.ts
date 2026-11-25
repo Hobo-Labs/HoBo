@@ -30,6 +30,8 @@ import {
 	releaseDriveFor,
 	releaseFreightManifest,
 	releasePagesWallBudgetMs,
+	releaseBlockedRealizerMessage,
+	releaseCampRealizeScope,
 	releaseSource,
 	releaseWorkflowCredentials,
 	releaseWorkflowGithubAppScopeAllowed,
@@ -54,7 +56,17 @@ describe("releaseWorkflowCredentials", () => {
 		expect(releaseWorkflowGithubAppScopeAllowed("release-probe")).toBe(true);
 		expect(
 			releaseWorkflowGithubAppScopeAllowed(
+				"cd-realize:hobo-release/oci-candidate",
+			),
+		).toBe(true);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed(
 				"cd-realize:hobo-release-oci/oci-candidate",
+			),
+		).toBe(false);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed(
+				"cd-realize:hobo-release/pages-candidate",
 			),
 		).toBe(true);
 		expect(
@@ -79,6 +91,12 @@ describe("releaseWorkflowCredentials", () => {
 		await expect(
 			credentials.resolve("github-app://Hobo-Labs/HoBo", "evil-scope"),
 		).rejects.toThrow(/scope evil-scope is not allowed/u);
+		await expect(
+			credentials.resolve(
+				"github-app://Hobo-Labs/HoBo",
+				"cd-realize:hobo-release/pages-candidate",
+			),
+		).resolves.toEqual({ token: "synthetic-job-token" });
 		await expect(
 			releaseWorkflowCredentials({
 				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
@@ -278,6 +296,34 @@ describe("release topology names", () => {
 				expectStatus: 200,
 			});
 		}
+	});
+});
+
+describe("releaseCampRealizeScope", () => {
+	it("uses logical Camp ids so conductor scopes match pipeline promotion ids", () => {
+		const pages = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		);
+		expect(pages).toBeDefined();
+		expect(releaseCampRealizeScope(pages ?? camps[0]!)).toBe(
+			"cd-realize:hobo-release/pages-candidate",
+		);
+	});
+});
+
+describe("releaseBlockedRealizerMessage", () => {
+	it("labels each blocked reason with its code and redacted resolver text", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "realize-failed",
+					message:
+						"release Freight refuses github-app://Hobo-Labs/HoBo: scope cd-realize:hobo-release/pages-candidate is not allowed for workflow github-app credentials",
+				},
+			]),
+		).toMatch(
+			/realize-failed: release Freight refuses.*pages-candidate is not allowed/u,
+		);
 	});
 });
 

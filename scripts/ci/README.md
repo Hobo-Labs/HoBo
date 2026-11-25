@@ -41,7 +41,9 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
 `releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
 locators authorize through the workflow job `GITHUB_TOKEN` only when
 `GITHUB_REPOSITORY` is set and matches the locator case-insensitively and the
-resolver scope is `release-probe` or `cd-realize:<campId>` (`releaseWorkflowGithubAppScopeAllowed`).
+resolver scope is `release-probe` or `cd-realize:<logicalCampId>` (for example
+`cd-realize:hobo-release/pages-candidate`, matching pipeline promotion ids;
+`releaseWorkflowGithubAppScopeAllowed`).
 Blocked release verdicts and `::error::` lines run operator reason text through
 `scripts/lib/redact-operator-condition.mts` (`@hobo/provider-redaction`) before
 aggregation or logging. The `release-contract` job builds those workspace
@@ -63,7 +65,7 @@ empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
 builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) copies the wit tree
 into a workspace-local work root (`.cache/browser-wit-componentize/`, then `realpath`), not `os.tmpdir()`,
-and passes `station.wit` (not the wit directory) to `componentize-js` before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
+and passes `station.wit` inline as `witWorld` to `componentize-js` before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
 logs `componentize-js` / `preview2-shim` resolution, `TMPDIR`, `/tmp` mount metadata, runner identity,
 and container hints on the release path. Host `readFile` on sandbox `station.wit` passing while
 componentize fails indicates a **host vs WASI/preview2-shim view mismatch** (not only sparse checkout:
