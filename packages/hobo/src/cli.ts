@@ -365,17 +365,22 @@ export function createComposedHoboCli(
 						const cdOwner = familyOwner("cd", input.context.cwd);
 						const relayUpDeps: Parameters<
 							typeof createCiRelayUpCommand
-						>[2] = {};
-						if (options.ownerSession !== undefined) {
-							relayUpDeps.owner = {
-								credentials: options.ownerSession.credentials,
-								entries: options.ownerSession.entries,
-							};
-						}
-						if (cdOwner?.vault) relayUpDeps.ownerSession = cdOwner.vault;
-						if (cdOwner?.storeSettings) {
-							relayUpDeps.ownerSettings = cdOwner.storeSettings;
-						}
+						>[2] = {
+							...(options.ownerSession !== undefined
+								? {
+										owner: {
+											credentials: options.ownerSession.credentials,
+											entries: options.ownerSession.entries,
+										},
+									}
+								: undefined),
+							...(cdOwner?.vault
+								? { ownerSession: cdOwner.vault }
+								: undefined),
+							...(cdOwner?.storeSettings
+								? { ownerSettings: cdOwner.storeSettings }
+								: undefined),
+						};
 						return createCiRelayUpCommand(
 							credentials,
 							up,
