@@ -40,7 +40,8 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
 [`create-github-release.mts`](create-github-release.mts) opens release CD with
 `releaseWorkflowCredentials`: camps that declare `github-app://<owner>/<repo>`
 locators authorize through the workflow job `GITHUB_TOKEN` only when
-`GITHUB_REPOSITORY` is set and matches the locator case-insensitively.
+`GITHUB_REPOSITORY` is set and matches the locator case-insensitively and the
+resolver scope is `release-probe` or `cd-realize:<campId>` (`releaseWorkflowGithubAppScopeAllowed`).
 Blocked release verdicts and `::error::` lines run operator reason text through
 `scripts/lib/redact-operator-condition.mts` (`@hobo/provider-redaction`) before
 aggregation or logging. The `release-contract` job builds those workspace

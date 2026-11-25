@@ -92,11 +92,19 @@ describe("architecture", () => {
 			join(ROOT, "adapters", "orchestrator.ts"),
 			join(ROOT, "adapters", "hosting-transition.ts"),
 		];
-		const forbidden =
-			/from "@hobo\/(provider-(?!redaction)|iac-|runtime-|ci|broker|cli|hobo|resolver-components)|from "(@kubernetes|kubernetes|@aws-sdk|@azure|@google-cloud|argo|flux)/u;
-		const offenders = files.filter((file) =>
-			forbidden.test(readFileSync(file, "utf8")),
-		);
+		const forbiddenPackage =
+			/^@hobo\/(?:provider-(?!redaction(?:\/|$))[\w-]+|iac(?:-[\w-]+)?|runtime-[\w-]+|ci(?:-[\w-]+)?|broker|cli|hobo|resolver-components)(?:\/.*)?$/u;
+		const forbiddenVendor =
+			/^(@kubernetes\/client-node|kubernetes\/client-node|@aws-sdk\/|@azure\/|@google-cloud\/|argo-|flux)/u;
+		const offenders = files.filter((file) => {
+			const text = readFileSync(file, "utf8");
+			for (const match of text.matchAll(/from ["']([@\w][^"']+)["']/gu)) {
+				const spec = match[1] ?? "";
+				if (forbiddenPackage.test(spec) || forbiddenVendor.test(spec))
+					return true;
+			}
+			return false;
+		});
 		expect(offenders.map((f) => relative(ROOT, f))).toEqual([]);
 	});
 

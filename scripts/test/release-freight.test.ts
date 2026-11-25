@@ -32,6 +32,7 @@ import {
 	releasePagesWallBudgetMs,
 	releaseSource,
 	releaseWorkflowCredentials,
+	releaseWorkflowGithubAppScopeAllowed,
 	siteTree,
 	startReleasePagesWall,
 } from "../ci/create-github-release.mts";
@@ -49,6 +50,16 @@ const source = releaseSource({
 });
 
 describe("releaseWorkflowCredentials", () => {
+	it("allows only release-probe and cd-realize camp scopes for github-app", () => {
+		expect(releaseWorkflowGithubAppScopeAllowed("release-probe")).toBe(true);
+		expect(
+			releaseWorkflowGithubAppScopeAllowed("cd-realize:hobo-release-oci"),
+		).toBe(true);
+		expect(releaseWorkflowGithubAppScopeAllowed("registry:evil:pull")).toBe(
+			false,
+		);
+	});
+
 	it("resolves github-app:// for the job repository from GITHUB_TOKEN only", async () => {
 		const credentials = releaseWorkflowCredentials({
 			GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
@@ -60,6 +71,9 @@ describe("releaseWorkflowCredentials", () => {
 		await expect(
 			credentials.resolve("github-app://Other/Repo", "release-probe"),
 		).rejects.toThrow(/refuses github-app:\/\/Other\/Repo/u);
+		await expect(
+			credentials.resolve("github-app://Hobo-Labs/HoBo", "evil-scope"),
+		).rejects.toThrow(/scope evil-scope is not allowed/u);
 		await expect(
 			releaseWorkflowCredentials({
 				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",

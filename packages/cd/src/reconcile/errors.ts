@@ -3,7 +3,11 @@
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
 import { RESOLVER_ERROR_CODES, type ResolverErrorCode } from "@hobo/core";
-import { redactProviderText } from "@hobo/provider-redaction";
+import {
+	JWT_DETECTOR,
+	PRIVATE_KEY_DETECTOR,
+	redactProviderText,
+} from "@hobo/provider-redaction";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { AGENT_FAILURES } from "../agent/errors.js";
 import { FEED_FAILURES } from "../feed/errors.js";
@@ -175,6 +179,14 @@ function isResolverErrorCode(code: string): code is ResolverErrorCode {
 	return false;
 }
 
+function providerTextSafeAfterRedaction(text: string): boolean {
+	const trimmed = text.trim();
+	if (!trimmed) return false;
+	if (JWT_DETECTOR.test(trimmed) || PRIVATE_KEY_DETECTOR.test(trimmed))
+		return false;
+	return true;
+}
+
 export function redactRealizerConditionText(message: string): string {
 	return redactProviderText(message);
 }
@@ -188,7 +200,9 @@ function surfaceRealizerConditionMessage(entry: ReasonRecord): string {
 			RESOLVER_ERROR_CODES.includes(entry.code));
 	if (!surface) return "The realizer reported a condition.";
 	const redacted = redactRealizerConditionText(raw);
-	return redacted.trim() || "The realizer reported a condition.";
+	if (!providerTextSafeAfterRedaction(redacted))
+		return "The realizer reported a condition.";
+	return redacted;
 }
 
 export function sanitizeReasons(

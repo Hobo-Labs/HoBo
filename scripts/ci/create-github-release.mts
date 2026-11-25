@@ -357,6 +357,12 @@ export type ReleaseCredentials = Readonly<{
 }>;
 
 const GITHUB_APP_REF = "github-app://";
+const RELEASE_GITHUB_APP_SCOPE =
+	/^release-probe$|^cd-realize:[A-Za-z0-9._-]+$/u;
+
+export function releaseWorkflowGithubAppScopeAllowed(scope: string): boolean {
+	return RELEASE_GITHUB_APP_SCOPE.test(scope.trim());
+}
 
 export function releaseWorkflowCredentials(
 	env: Readonly<Record<string, string | undefined>>,
@@ -367,6 +373,10 @@ export function releaseWorkflowCredentials(
 			if (!ref.startsWith(GITHUB_APP_REF))
 				throw new Error(
 					`release Freight does not resolve credential ${ref} (${scope})`,
+				);
+			if (!releaseWorkflowGithubAppScopeAllowed(scope))
+				throw new Error(
+					`release Freight refuses ${ref}: scope ${scope} is not allowed for workflow github-app credentials`,
 				);
 			if (!repository)
 				throw new Error(
