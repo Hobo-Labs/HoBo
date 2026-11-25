@@ -174,7 +174,8 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			requestedScope: "cd-realize:hobo-release/pages-candidate",
 			detailKind: "github-permission-missing",
 		});
-		if (!pagesReject) throw new Error("expected github pages structured fixture");
+		if (!pagesReject)
+			throw new Error("expected github pages structured fixture");
 		expect(
 			vet(
 				"ReasonStructuredDetail",

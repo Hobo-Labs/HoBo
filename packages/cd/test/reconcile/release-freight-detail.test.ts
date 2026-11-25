@@ -174,10 +174,7 @@ describe("formatReleaseFreightBlockedReason for github pages", () => {
 			detailKind: "github-permission-missing",
 		});
 		expect(
-			formatReleaseFreightBlockedReason(
-				"RESOLVER_PROVIDER_REJECTED",
-				detail,
-			),
+			formatReleaseFreightBlockedReason("RESOLVER_PROVIDER_REJECTED", detail),
 		).toBe(
 			"RESOLVER_PROVIDER_REJECTED: provider=github pages-reason=github-permission-missing scope=cd-realize:hobo-release/pages-candidate credential=github-app://Hobo-Labs/HoBo",
 		);
