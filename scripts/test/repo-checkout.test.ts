@@ -154,7 +154,8 @@ describe("clearSparseCheckoutConfig", () => {
 		expect(sparseCheckoutEnabled(work)).toBe(true);
 		expect(clearSparseCheckoutConfig(work)).toBe(true);
 		expect(sparseCheckoutEnabled(work)).toBe(false);
-		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
+		git(work, ["checkout", "-f", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
 	});
 });
 

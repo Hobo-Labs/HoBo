@@ -199,6 +199,47 @@ function gitDirPath(cwd: string, env: NodeJS.ProcessEnv): string | null {
 	return resolve(resolved, gitDir.stdout.trim());
 }
 
+export function clearSkipWorktreeFromSparseCone(
+	cwd: string,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	const listed = git(cwd, ["ls-files", "-v", "-z"], env);
+	if (!listed.ok) {
+		return false;
+	}
+	const paths: string[] = [];
+	for (const entry of listed.stdout.split("\0")) {
+		if (!entry) {
+			continue;
+		}
+		if (entry[0] !== "S") {
+			continue;
+		}
+		const path = entry.slice(2).trim();
+		if (path) {
+			paths.push(path);
+		}
+	}
+	if (paths.length === 0) {
+		return true;
+	}
+	const input = `${paths.join("\0")}\0`;
+	const update = spawnSync(
+		"git",
+		["update-index", "--no-skip-worktree", "-z", "--stdin"],
+		{
+			cwd: resolve(cwd),
+			env,
+			input,
+			encoding: "utf8",
+		},
+	);
+	if (update.error) {
+		return false;
+	}
+	return update.status === 0;
+}
+
 export function clearSparseCheckoutConfig(
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
@@ -220,6 +261,9 @@ export function clearSparseCheckoutConfig(
 	for (const scope of ["--worktree", "--local"] as const) {
 		git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
 		git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
+	}
+	if (!clearSkipWorktreeFromSparseCone(cwd, env)) {
+		return false;
 	}
 	return sparseCheckoutEnabled(cwd, env) === false;
 }
