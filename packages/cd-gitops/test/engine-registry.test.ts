@@ -1,11 +1,8 @@
 import { create } from "@bufbuild/protobuf";
-import { describe, expect, it } from "vitest";
-import {
-	ReconcileObservationRecordSchema,
-	ReconcileStatus,
-} from "@hobo/cd";
-import { CD_ENGINE_KIND } from "@hobo/cd/compose";
 import type { PublisherPort } from "@hobo/cd";
+import { ReconcileObservationRecordSchema, ReconcileStatus } from "@hobo/cd";
+import { CD_ENGINE_KIND } from "@hobo/cd/compose";
+import { describe, expect, it } from "vitest";
 import {
 	cdEngineRegistrations,
 	createCdEngineRegistryFromGitops,

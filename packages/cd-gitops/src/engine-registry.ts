@@ -1,10 +1,10 @@
+import type { PublisherPort } from "@hobo/cd";
 import {
+	type CdEngineRegistration,
 	type CdEngineRegistry,
 	createCdEngineRegistry,
 	gitopsPublisherRegistration,
-	type CdEngineRegistration,
 } from "@hobo/cd/compose";
-import type { PublisherPort } from "@hobo/cd";
 import type { PublisherRegistry } from "./publisher.js";
 
 export function cdEngineRegistrations(
