@@ -27,8 +27,8 @@ const FORBIDDEN_SCOPE_PATTERNS = [
 const REQUIRED_DEPENDENCIES = [
   "docs/design/reliability-observability-cost.md#plan-05",
   "https://linear.app/quickdeploy-ai/document/e2e-test-matrix-scope-and-acceptance-archived-599c0572bef7",
-  "docs/design/launch-e2e-persona-matrix.md",
-  "docs/design/pre-launch-outcome-contract.md",
+  "https://linear.app/quickdeploy-ai/document/launch-e2e-persona-matrix-archived-3f08fe802ba7",
+  "https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203",
   "docs/design/adr/02-identity-security.md#adr-0045",
   "docs/design/adr/02-identity-security.md#adr-0082",
 ];
@@ -102,11 +102,11 @@ export const PERFORMANCE_LOAD_TESTS_SCOPE = {
       reason: "Defines launch journey rows and fixture boundaries that performance scenarios extend with expected-load evidence.",
     },
     {
-      source: "docs/design/launch-e2e-persona-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-e2e-persona-matrix-archived-3f08fe802ba7",
       reason: "Defines persona journey thresholds that later performance rows must not silently weaken or override.",
     },
     {
-      source: "docs/design/pre-launch-outcome-contract.md",
+      source: "https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203",
       reason: "Defines outcome and safe-test evidence that performance/load claims compare against before launch.",
     },
     {

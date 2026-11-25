@@ -14,7 +14,7 @@ without becoming final tutorial content.
 
 ## Evidence
 
-- Source record: [`tutorials-walkthroughs.md`](../../tutorials-walkthroughs.md).
+- Source record: [`tutorials-walkthroughs.md`](https://linear.app/quickdeploy-ai/document/tutorials-and-walkthroughs-scope-and-acceptance-archived-08c16563db7f).
 - Role source: [`walkthrough.md`](../../walkthrough.md).
 - Quickstart source: [`resource-lifecycle-quickstart-examples`](../resource-lifecycle-quickstart-examples/README.md).
 - DX matrix source: [`dx-resource-lifecycle-scenario-matrix`](../dx-resource-lifecycle-scenario-matrix/README.md).

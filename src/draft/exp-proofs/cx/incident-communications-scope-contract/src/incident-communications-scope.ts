@@ -4,7 +4,7 @@ export const REQUIRED_DEPENDENCY_TARGETS = [
   "docs/design/launch-support-escalation.md",
   "docs/design/public-status-page-incident-communication.md",
   "docs/design/support-sla-channels.md",
-  "docs/design/product-notifications-lifecycle.md",
+  "https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816",
   "docs/design/launch-messaging-claims.md",
   "docs/design/adr/02-identity-security.md#adr-0045",
   "docs/design/adr/03-data-plane.md#adr-0058",
@@ -182,7 +182,7 @@ export const INCIDENT_COMMUNICATIONS_SCOPE = {
       reason: "Defines support channel coverage, response-target language, unsupported request routing, and owner signoff boundaries.",
     },
     {
-      target: "docs/design/product-notifications-lifecycle.md",
+      target: "https://linear.app/quickdeploy-ai/document/product-notifications-and-lifecycle-communications-archived-d1866ae22816",
       reason: "Defines product lifecycle notification classes, preference/delivery evidence, and notification ownership boundaries.",
     },
     {

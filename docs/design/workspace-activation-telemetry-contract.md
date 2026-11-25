@@ -51,7 +51,7 @@ first useful handoff and where recovery failed.
 | Owner mapping | Workspace & Onboarding UX | Design record |
 | First-run recovery mapping | Support & Debug Tools | Support handoff |
 | Privacy and opt-out rules | V1 Legal, Privacy & Terms Readiness | Launch limitation record |
-| Pre-launch value comparison | Plan/Diff Viewer / Workspace & Onboarding UX | Link to the [pre-launch outcome contract](./pre-launch-outcome-contract.md) |
+| Pre-launch value comparison | Plan/Diff Viewer / Workspace & Onboarding UX | Link to the [pre-launch outcome contract](https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203) |
 
 ## Scope Out
 

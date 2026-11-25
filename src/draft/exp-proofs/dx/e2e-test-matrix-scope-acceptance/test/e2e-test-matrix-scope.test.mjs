@@ -39,7 +39,7 @@ test("M0 record maps dependencies to authoritative design sources", () => {
       "docs/design/developer-experience.md#plan-07",
       "docs/design/architecture.md#plan-10",
       "docs/design/adr/02-identity-security.md#adr-0082",
-      "docs/design/launch-e2e-persona-matrix.md",
+      "https://linear.app/quickdeploy-ai/document/launch-e2e-persona-matrix-archived-3f08fe802ba7",
       "docs/design/release-notes-upgrade-guide.md",
     ],
   );

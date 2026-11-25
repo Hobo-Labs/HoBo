@@ -427,7 +427,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-552", "app developer, platform engineer, GitOps, SecOps, DevOps, and SRE tutorial outlines", "Tutorials & Walkthroughs", "M1", 3, [
       "tutorial outline",
       "fixtures",
-    ], ["docs/design/tutorials-walkthroughs.md", "docs/design/walkthrough.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/tutorials-and-walkthroughs-scope-and-acceptance-archived-08c16563db7f", "docs/design/walkthrough.md"]),
     child("HOBO-553", "diagnostic decision trees for install, auth, plan, deploy, policy, and support failures", "Troubleshooting Guides", "M1", 3, [
       "decision trees",
       "fixtures",

@@ -20,7 +20,7 @@
           "packagePath": "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines",
           "proofPath": "docs/design/proofs/vibe-role-tutorial-outlines/README.md",
           "designRefs": [
-            "docs/design/tutorials-walkthroughs.md",
+            "https://linear.app/quickdeploy-ai/document/tutorials-and-walkthroughs-scope-and-acceptance-archived-08c16563db7f",
             "docs/design/walkthrough.md",
             "docs/design/worked-example.md#plan-19",
             "docs/design/developer-experience.md#plan-07",

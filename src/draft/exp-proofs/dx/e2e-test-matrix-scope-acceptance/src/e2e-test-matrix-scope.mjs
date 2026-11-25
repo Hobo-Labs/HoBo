@@ -91,7 +91,7 @@ export const E2E_TEST_MATRIX_SCOPE = {
       reason: "Pins Golden Suites as default-on deploy verification with coverage honesty and A2H handoff on failure.",
     },
     {
-      source: "docs/design/launch-e2e-persona-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-e2e-persona-matrix-archived-3f08fe802ba7",
       reason: "Provides the downstream launch persona matrix and thresholds that consume this M0 scope boundary.",
     },
     {

@@ -200,7 +200,7 @@ export const ACCESSIBILITY_USABILITY_BASELINE = {
       reason: "Routes usability beta feedback to Product UX and launch cutline owners.",
     },
     {
-      source: "docs/design/pre-launch-outcome-contract.md",
+      source: "https://linear.app/quickdeploy-ai/document/pre-launch-outcome-contract-and-value-baseline-archived-fd0978d0f203",
       reason: "Maps launch evidence into plan/diff, go/no-go, telemetry, support, and release-note surfaces.",
     },
     {
