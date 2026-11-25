@@ -726,7 +726,9 @@ the RivetKit 3 runtime package in one host-shaped fixture. It imports the
 Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
 declarations (the same peer-aligned instances the adapter resolves) and builds
 its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
-`test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+`test/better-auth-session-durability.test.ts` simulates sign-in, a process
+restart (SQLite file reopen), and brokered signing-secret re-resolution so
+session rows and cookie integrity survive host recycle. `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort` broker
 wire (synthetic signing material only; no live Worker/D1 deploy).
