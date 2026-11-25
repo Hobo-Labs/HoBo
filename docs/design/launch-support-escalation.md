@@ -12,7 +12,7 @@ Source issue: HOBO-408.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-support-escalation-matrix`](../../src/draft/exp-proofs/cx/launch-support-escalation-matrix/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-408-launch-support-escalation`](./proofs/hobo-408-launch-support-escalation/index.md).
+[`proofs/hobo-408-launch-support-escalation`](https://linear.app/quickdeploy-ai/document/hobo-408-launch-support-escalation-proof-archived-53b14e44d082).
 
 ## M0 Acceptance Record
 
@@ -176,7 +176,7 @@ Source issue: HOBO-481.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-support-ga-handoff-evidence-contract`](../../src/draft/exp-proofs/cx/launch-support-ga-handoff-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-481-launch-support-ga-handoff`](./proofs/hobo-481-launch-support-ga-handoff/index.md).
+[`proofs/hobo-481-launch-support-ga-handoff`](https://linear.app/quickdeploy-ai/document/hobo-481-launch-support-ga-handoff-proof-archived-24bd228c0796).
 
 The M4 gate records eight support evidence items:
 

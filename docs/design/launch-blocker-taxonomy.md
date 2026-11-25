@@ -12,7 +12,7 @@ Source issue: HOBO-402.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-blocker-taxonomy-contract`](../../src/draft/exp-proofs/cx/launch-blocker-taxonomy-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-402-launch-blocker-taxonomy`](./proofs/hobo-402-launch-blocker-taxonomy/index.md).
+[`proofs/hobo-402-launch-blocker-taxonomy`](https://linear.app/quickdeploy-ai/document/hobo-402-launch-blocker-taxonomy-proof-archived-e149a1658e08).
 
 ## M0 Acceptance Record
 

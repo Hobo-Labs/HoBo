@@ -12,7 +12,7 @@ Source issue: HOBO-509.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/pre-launch-outcome-contract`](../../src/draft/exp-proofs/cx/pre-launch-outcome-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-509-pre-launch-outcome-contract`](./proofs/hobo-509-pre-launch-outcome-contract/index.md).
+[`proofs/hobo-509-pre-launch-outcome-contract`](https://linear.app/quickdeploy-ai/document/hobo-509-pre-launch-outcome-contract-proof-archived-0a1376173a8e).
 
 ## M0 Acceptance Record
 

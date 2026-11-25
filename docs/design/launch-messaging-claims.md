@@ -118,7 +118,7 @@ HOBO-472 records the M3 release-candidate evidence gate for launch site, messagi
 assets. The executable proof lives in
 [`src/draft/exp-proofs/cx/launch-site-release-candidate-evidence-contract`](../../src/draft/exp-proofs/cx/launch-site-release-candidate-evidence-contract/README.md),
 with branch evidence summarized in
-[`proofs/hobo-472-launch-site-release-candidate`](./proofs/hobo-472-launch-site-release-candidate/index.md).
+[`proofs/hobo-472-launch-site-release-candidate`](https://linear.app/quickdeploy-ai/document/hobo-472-launch-site-release-candidate-evidence-archived-c3663f1bcc27).
 
 The release-candidate gate may draft launch-site and demo messaging only when owner-mapped
 evidence, blocker dispositions, accepted risks, release-cutline dependencies, missing-evidence
@@ -142,7 +142,7 @@ release-candidate evidence into GA/public launch claims.
 HOBO-479 adds the M4 GA handoff gate for this project. The executable proof lives in
 [`src/draft/exp-proofs/cx/launch-site-ga-handoff-evidence-contract`](../../src/draft/exp-proofs/cx/launch-site-ga-handoff-evidence-contract/README.md),
 with branch evidence summarized in
-[`proofs/hobo-479-launch-site-ga-handoff`](./proofs/hobo-479-launch-site-ga-handoff/index.md).
+[`proofs/hobo-479-launch-site-ga-handoff`](https://linear.app/quickdeploy-ai/document/hobo-479-launch-site-ga-handoff-evidence-archived-3fe1b5fae0df).
 
 GA launch messaging may consume the claim register, golden-path demo record, private-beta launch-site
 evidence, GA asset-manifest handoff, release cutline, release notes, support, legal/privacy, and

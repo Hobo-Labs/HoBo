@@ -12,7 +12,7 @@ Source issue: HOBO-409.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/workspace-onboarding-scope-acceptance`](../../src/draft/exp-proofs/ux/workspace-onboarding-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-409-workspace-onboarding-scope`](./proofs/hobo-409-workspace-onboarding-scope/index.md).
+[`proofs/hobo-409-workspace-onboarding-scope`](https://linear.app/quickdeploy-ai/document/hobo-409-workspace-and-onboarding-ux-m0-scope-proof-archived-ce3585b1801b).
 
 ## M0 Acceptance Record
 
