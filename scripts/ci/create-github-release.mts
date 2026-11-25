@@ -39,14 +39,22 @@ import {
 } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { create } from "@bufbuild/protobuf";
+import { createRequire } from "node:module";
+import { ReasonStructuredDetailSchema } from "../../packages/cd/src/_generated/cd_pb.ts";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
+// SAFETY: release-contract builds @hobo/cd before plain-node invocation; dist exports match the checked-in TypeScript module.
+const releaseFreightDetail = createRequire(import.meta.url)(
+	"../../packages/cd/dist/reconcile/release-freight-detail.js",
+) as typeof import("../../packages/cd/src/reconcile/release-freight-detail.ts");
+
+const {
 	formatReleaseFreightBlockedReason,
 	parseReleaseFreightAuthorMessage,
 	ReleaseFreightBlockedError,
 	releaseFreightLogFragment,
 	validateReasonStructuredDetail,
-} from "../../packages/cd/dist/reconcile/release-freight-detail.js";
+} = releaseFreightDetail;
 import { camps } from "../../release/hobo-release.delivery.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
@@ -292,12 +300,19 @@ const codesOf = (reasons: readonly CdReason[] | undefined) =>
 function cdReasonStructured(
 	reason: CdReason,
 ): ReturnType<typeof validateReasonStructuredDetail> {
-	if (!reason.structured) return undefined;
-	return validateReasonStructuredDetail({
-		credentialRef: reason.structured.credentialRef,
-		requestedScope: reason.structured.requestedScope,
-		detailKind: reason.structured.detailKind,
-	});
+	const raw = reason.structured;
+	if (!raw) return undefined;
+	const credentialRef = raw.credentialRef?.trim() ?? "";
+	const requestedScope = raw.requestedScope?.trim() ?? "";
+	const detailKind = raw.detailKind?.trim() ?? "";
+	if (!credentialRef || !requestedScope || !detailKind) return undefined;
+	return validateReasonStructuredDetail(
+		create(ReasonStructuredDetailSchema, {
+			credentialRef,
+			requestedScope,
+			detailKind,
+		}),
+	);
 }
 
 export function releaseBlockedRealizerMessage(
@@ -312,15 +327,16 @@ export function releaseBlockedRealizerMessage(
 			reason.message ?? "",
 			allowed,
 		);
-		if (parsed)
-			return formatReleaseFreightBlockedReason(
-				code,
-				validateReasonStructuredDetail({
+		if (parsed) {
+			const structured = validateReasonStructuredDetail(
+				create(ReasonStructuredDetailSchema, {
 					credentialRef: parsed.credentialRef,
 					requestedScope: parsed.requestedScope,
 					detailKind: parsed.detailKind,
 				}),
 			);
+			if (structured) return formatReleaseFreightBlockedReason(code, structured);
+		}
 		return code;
 	});
 	if (parts.length === 0) return "The realizer reported a condition.";

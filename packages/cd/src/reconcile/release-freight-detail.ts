@@ -63,12 +63,16 @@ export function isReleaseFreightScopeAllowed(
 	return isValidReleaseFreightScope(scope) && allowedScopes.has(scope.trim());
 }
 
+function isReleaseFreightDetailKind(
+	value: string,
+): value is ReleaseFreightDetailKind {
+	return RELEASE_FREIGHT_DETAIL_KINDS.some((kind) => kind === value);
+}
+
 export function releaseFreightDetailKindOf(
 	value: string,
 ): ReleaseFreightDetailKind | undefined {
-	return (RELEASE_FREIGHT_DETAIL_KINDS as readonly string[]).includes(value)
-		? (value as ReleaseFreightDetailKind)
-		: undefined;
+	return isReleaseFreightDetailKind(value) ? value : undefined;
 }
 
 function isValidStructuredScope(
@@ -244,18 +248,20 @@ export class ReleaseFreightBlockedError extends Error {
 	}
 }
 
-export function releaseFreightRefusalOf(error: unknown): Readonly<{
+export type ReleaseFreightRefusal = Readonly<{
 	code: string;
 	structured?: ReasonStructuredDetail;
-}> {
+}>;
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only ReleaseFreightBlockedError carries structured detail.
+export function releaseFreightRefusalOf(error: unknown): ReleaseFreightRefusal {
 	if (error instanceof ReleaseFreightBlockedError) {
 		const structured = validateReasonStructuredDetail(
 			error.toStructuredDetail(),
 		);
-		return {
-			code: "realize-failed",
-			...(structured ? { structured } : {}),
-		};
+		if (structured) {
+			return { code: "realize-failed", structured };
+		}
 	}
 	return { code: "realize-failed" };
 }

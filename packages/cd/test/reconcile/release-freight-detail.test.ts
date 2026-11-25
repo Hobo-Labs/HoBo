@@ -146,7 +146,7 @@ describe("releaseFreightLogFragment", () => {
 		);
 		expect(
 			releaseFreightLogFragment(
-				"release promotion refused: registry bearer ghp_abcdefghijklmnopqrstuvwxyz",
+				`release promotion refused: registry bearer ghp_${"a".repeat(36)}`,
 			),
 		).toBe("");
 	});

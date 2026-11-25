@@ -917,14 +917,18 @@ export function withRunnerHostRealization(
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
 function refusalOf(error: Error) {
 	const refused = releaseFreightRefusalOf(error);
-	return {
-		code:
-			error instanceof ResolverError || error instanceof CatalogRealizerError
-				? error.code
-				: refused.code,
-		message: error.message,
-		...(refused.structured ? { structured: refused.structured } : {}),
-	};
+	const code =
+		error instanceof ResolverError || error instanceof CatalogRealizerError
+			? error.code
+			: refused.code;
+	if (refused.structured) {
+		return {
+			code,
+			message: error.message,
+			structured: refused.structured,
+		};
+	}
+	return { code, message: error.message };
 }
 
 function realizerReason(
@@ -933,11 +937,18 @@ function realizerReason(
 	remediation: string,
 	structured?: ReasonStructuredDetail,
 ) {
+	if (structured) {
+		return create(ReasonRecordSchema, {
+			code,
+			message,
+			remediation,
+			structured,
+		});
+	}
 	return create(ReasonRecordSchema, {
 		code,
 		message,
 		remediation,
-		...(structured ? { structured } : {}),
 	});
 }
 

@@ -190,12 +190,22 @@ export function sanitizeReasons(
 			source === "realizer"
 				? GENERIC_REALIZER_CONDITION
 				: "The reconciler transport reported a condition.";
+		const code = remediation === undefined ? fallback : entry.code;
+		const remediationText = remediation ?? RECONCILE_FAILURES[fallback];
+		if (structured) {
+			return create(ReasonRecordSchema, {
+				code,
+				message,
+				remediation: remediationText,
+				subject,
+				structured,
+			});
+		}
 		return create(ReasonRecordSchema, {
-			code: remediation === undefined ? fallback : entry.code,
+			code,
 			message,
-			remediation: remediation ?? RECONCILE_FAILURES[fallback],
+			remediation: remediationText,
 			subject,
-			...(structured ? { structured } : {}),
 		});
 	});
 }
