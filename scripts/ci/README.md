@@ -61,7 +61,10 @@ passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 `HEAD` by blob id, log `ls -la` on the wit tree, and fail closed when the file is absent,
 empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild.mts)
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
-builds site `examples:runtime`.
+builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) (via
+[`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts))
+copies that wit tree into the temp `hobo-browser-wit-*` workRoot and passes the
+sandbox path to `componentize-js`, because WASI preopens only the guest temp dir (run 45546344117).
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in
