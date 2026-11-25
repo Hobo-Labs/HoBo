@@ -201,10 +201,7 @@ describe("release topology names", () => {
 				};
 			return { status: 200, headers: {}, body: "{}" };
 		};
-		const probe = githubApiProbeTransport(
-			{ GITHUB_TOKEN: "release-probe-token" },
-			inner,
-		);
+		const probe = githubApiProbeTransport("release-probe-token", inner);
 		const latestBuild = () =>
 			probe({
 				method: "GET",
@@ -245,7 +242,7 @@ describe("release topology names", () => {
 				body: JSON.stringify({ status: "building", commit: COMMIT }),
 			};
 		};
-		const probe = githubApiProbeTransport({}, inner);
+		const probe = githubApiProbeTransport(undefined, inner);
 
 		const response = await probe({
 			method: "GET",
@@ -260,6 +257,19 @@ describe("release topology names", () => {
 		expect(seen[0]?.headers.authorization).toBeUndefined();
 		expect(seen[0]?.headers.accept).toBe("application/vnd.github+json");
 		expect(seen[0]?.maxResponseBytes).toBeLessThan(64 * 1024);
+	});
+
+	it("binds the GitHub Camps to HoBo's GitHub App installation on the release repository", () => {
+		const githubCamps = camps.filter(
+			(camp) =>
+				camp.labels["hobo.release/family"] === "oci" ||
+				camp.labels["hobo.release/family"] === "pages",
+		);
+		expect(githubCamps).toHaveLength(4);
+		for (const camp of githubCamps)
+			expect(camp.labels["hobo.cd/credential-ref"]).toMatch(
+				/^github-app:\/\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/u,
+			);
 	});
 
 	it("probes the latest Pages build for every promotion node", () => {
