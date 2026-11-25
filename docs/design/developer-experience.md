@@ -179,7 +179,7 @@ The normative matrix below pins **local lifecycle behavior per annotation class*
 
 **Shutdown and reload.** On source hot reload, wasm/component lanes swap artifacts and replay event-backed state ([ADR-0037](./adr/01-architecture-core.md#adr-0037)); `addContainer` lanes restart-on-change per [ADR-0042](./adr/07-portability-extensibility.md#adr-0042). Tear-down on `hobo dev` stop walks the DAG in **reverse dependency order** (dependents first) — the inverse of startup choreography. `withLifetime("persistent")` resources may be left running across stop when `.hobo/persistent.keep` is set (opt-in; default is full tear-down).
 
-Executable acceptance for this matrix lives in [`src/draft/technical-proofs/local-dev-orchestration-contract`](../../src/draft/technical-proofs/local-dev-orchestration-contract/README.md) ([HOBO-694 proof](./proofs/hobo-694-local-dev-orchestration/index.md)).
+Executable acceptance for this matrix lives in [`src/draft/technical-proofs/local-dev-orchestration-contract`](../../src/draft/technical-proofs/local-dev-orchestration-contract/README.md) ([HOBO-694 proof](https://linear.app/quickdeploy-ai/document/hobo-694-local-dev-orchestration-proof-archived-f080783e1f3a)).
 
 Local resilience diagnostics use the same rule: the developer-facing output is a
 projection of persisted facts, not process memory. The HOBO-520 proof command in
@@ -194,7 +194,7 @@ State preservation is replay-based and therefore toolchain-neutral: run state li
 
 | Workload lane | Watch → recompile path | Latency class | Run state across reload | Regenerated artifacts | Under `hobo dev`? | Status |
 |---|---|---|---|---|---|---|
-| TS/JS (`jco` + `componentize-js`) | transpile + re-componentize on save | fast | preserved (replay from `.hobo/`) | `_generated/` TS clients on WIT/Zod/`.allow()`/`bind` edits | yes | **proven** ([HOBO-122 proof](./proofs/hobo-122-dev-loop/index.md)) |
+| TS/JS (`jco` + `componentize-js`) | transpile + re-componentize on save | fast | preserved (replay from `.hobo/`) | `_generated/` TS clients on WIT/Zod/`.allow()`/`bind` edits | yes | **proven** ([HOBO-122 proof](https://linear.app/quickdeploy-ai/document/hobo-122-dev-loop-proof-archived-d4ba66511f44)) |
 | Rust (`cargo-component`) | debounced `cargo component build` | medium | preserved (replay) | wit-bindgen bindings on WIT edits (+ `_generated/` TS only if the WIT changed) | yes | design-pinned |
 | Go (TinyGo) | debounced `tinygo build` to component | medium | preserved (replay) | same as Rust | yes | design-pinned |
 | Python (`componentize-py`) | re-componentize on save | medium | preserved (replay) | same as Rust | yes | design-pinned |
