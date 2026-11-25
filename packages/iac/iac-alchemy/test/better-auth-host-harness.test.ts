@@ -20,7 +20,10 @@ describe("better-auth Alchemy host harness", () => {
 		const harness = createBetterAuthHostHarness();
 		try {
 			const inputs = parseBetterAuthHostDotEnv(harness.dotEnv);
-			const bundlePlan = planBetterAuthBundle(inputs.configInput, inputs.portsInput);
+			const bundlePlan = planBetterAuthBundle(
+				inputs.configInput,
+				inputs.portsInput,
+			);
 			const migrations = planBetterAuthRelationalMigrations(bundlePlan);
 			expect(migrations.migrationPlan.steps.length).toBeGreaterThan(0);
 			expect(harness.createInMemoryAlchemyState()).toBeDefined();
@@ -33,11 +36,18 @@ describe("better-auth Alchemy host harness", () => {
 		const harness = createBetterAuthHostHarness();
 		try {
 			const inputs = parseBetterAuthHostDotEnv(harness.dotEnv);
-			const bundlePlan = planBetterAuthBundle(inputs.configInput, inputs.portsInput);
+			const bundlePlan = planBetterAuthBundle(
+				inputs.configInput,
+				inputs.portsInput,
+			);
 			const port = createMemorySecretsPort({ id: "secrets:better-auth-host" });
-			const name = campSecretNameFromBetterAuthRef(bundlePlan.config.secretRef);
+			const name = campSecretNameFromBetterAuthRef(
+				bundlePlan.config.secretRef,
+				inputs.campAuthority,
+			);
 			await port.put(name, SYNTHETIC_SIGNING);
 			const wire = await wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: inputs.campAuthority,
 				now: "2026-11-25T00:00:00.000Z",
 			});
 			expect(wire.secretsPortId).toBe("secrets:better-auth-host");

@@ -3,7 +3,10 @@ import {
 	betterAuthSecretRefScheme,
 } from "@hobo/auth-adapter-contract";
 import { parseSecretRef } from "@hobo/bindings";
-import { requireNoPlaintextConformance, type SecretsPort } from "@hobo/identity";
+import {
+	requireNoPlaintextConformance,
+	type SecretsPort,
+} from "@hobo/identity";
 
 import { BetterAuthBundlePlanError } from "./errors.js";
 import type { BetterAuthBundlePlan } from "./plan.js";
@@ -25,8 +28,23 @@ function refuse(
 	throw new BetterAuthBundlePlanError(code, message, remediation);
 }
 
-export function campSecretNameFromBetterAuthRef(ref: BetterAuthSecretRef): string {
+export function campSecretNameFromBetterAuthRef(
+	ref: BetterAuthSecretRef,
+	campAuthority: string,
+): string {
 	const parsed = parseSecretRef(ref);
+	if (
+		parsed.scheme !== "hobo-secret" ||
+		campAuthority === "" ||
+		parsed.authority !== campAuthority ||
+		parsed.field !== undefined
+	) {
+		refuse(
+			"BETTER_AUTH_BUNDLE_PORT_INVALID",
+			"signing secret locator does not identify this camp's secret port",
+			"use an unfragmented hobo-secret locator for the selected camp; other providers require a matching resolver",
+		);
+	}
 	const segments = parsed.path.filter((segment) => segment.length > 0);
 	if (segments.length === 0) {
 		refuse(
@@ -41,7 +59,7 @@ export function campSecretNameFromBetterAuthRef(ref: BetterAuthSecretRef): strin
 export async function wireBetterAuthSigningSecret(
 	bundlePlan: BetterAuthBundlePlan,
 	secretsPort: SecretsPort,
-	options?: { readonly now?: string },
+	options: { readonly campAuthority: string; readonly now?: string },
 ): Promise<BetterAuthSigningSecretWire> {
 	const ref = bundlePlan.config.secretRef;
 	if (bundlePlan.ports.signingSecretRef !== ref) {
@@ -51,7 +69,7 @@ export async function wireBetterAuthSigningSecret(
 			"align BetterAuthBundlePortRefs.signingSecretRef with the parsed config locator before broker resolution",
 		);
 	}
-	const name = campSecretNameFromBetterAuthRef(ref);
+	const name = campSecretNameFromBetterAuthRef(ref, options.campAuthority);
 	const access = await secretsPort.access(name);
 	if (access.status !== "ok") {
 		refuse(
@@ -64,7 +82,7 @@ export async function wireBetterAuthSigningSecret(
 	if (!material || material.length < MIN_SIGNING_SECRET_LENGTH) {
 		refuse(
 			"BETTER_AUTH_SIGNING_SECRET_WEAK",
-			"brokered signing secret is missing or shorter than the minimum entropy floor",
+			"brokered signing secret is missing or shorter than the minimum length",
 			`provision at least ${MIN_SIGNING_SECRET_LENGTH} bytes of signing material in custody; never author the value inline`,
 		);
 	}
@@ -72,7 +90,7 @@ export async function wireBetterAuthSigningSecret(
 		secretRef: ref,
 		secretScheme: betterAuthSecretRefScheme(ref),
 		secretsPortId: secretsPort.id,
-		resolvedAtIso: options?.now ?? new Date().toISOString(),
+		resolvedAtIso: options.now ?? new Date().toISOString(),
 	});
 	requireNoPlaintextConformance({
 		agentContext: wire,
