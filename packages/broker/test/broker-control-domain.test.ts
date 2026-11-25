@@ -16,22 +16,32 @@ import {
 	BudgetExposureView,
 	BudgetHoldId,
 	BudgetHoldMarkedUncertain,
+	BudgetHoldReleased,
+	BudgetHoldResolved,
+	BudgetHoldsExpired,
 	BudgetHoldReserved,
 	BudgetHoldSettled,
+	BudgetHoldNotReleasable,
+	BudgetHoldNotResolvable,
 	BudgetLimitExceeded,
 	ConfigureBudgetAccount,
 	ConnectionAlreadyRevoked,
 	ConnectionRebindRefused,
 	ConnectionStatusView,
+	ExpireBudgetHolds,
 	MarkBudgetHoldUncertain,
 	ProviderConnection,
 	ProviderConnectionAuthorized,
 	ProviderConnectionId,
 	ProviderConnectionRevoked,
+	ReleaseBudgetHold,
+	ResolveBudgetHold,
 	ReserveBudgetHold,
 	RevokeProviderConnection,
 	SettleBudgetHold,
+	SettlementExceedsHold,
 	UncertainBudgetHoldNotSettleable,
+	UnknownBudgetHold,
 } from "../src/domain/index.js";
 
 const story = Story.make(BrokerControl, {
@@ -70,6 +80,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: hold1,
 						providerId: "vercel",
 						amountMicros: 85_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.then(
@@ -78,6 +89,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: hold1,
 						providerId: "vercel",
 						amountMicros: 85_000,
+						expiresAtMs: null,
 					}),
 					new BudgetAlertThresholdCrossed({
 						exposureMicros: 85_000,
@@ -90,6 +102,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: hold2,
 						providerId: "cloudflare",
 						amountMicros: 20_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.rejected(
@@ -124,6 +137,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: hold2,
 						providerId: "cloudflare",
 						amountMicros: 10_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.then(
@@ -132,6 +146,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: hold2,
 						providerId: "cloudflare",
 						amountMicros: 10_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.when(
@@ -156,10 +171,217 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 					}),
 				),
 				Story.rejected(new UncertainBudgetHoldNotSettleable({ holdId: hold2 })),
+				Story.when(
+					acct,
+					new ResolveBudgetHold({
+						holdId: hold2,
+						evidenceRef: "evidence:cf-reconcile",
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldResolved({
+						holdId: hold2,
+						evidenceRef: "evidence:cf-reconcile",
+					}),
+				),
+				Story.when(
+					acct,
+					new SettleBudgetHold({
+						holdId: hold2,
+						settledMicros: 5_000,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldSettled({
+						holdId: hold2,
+						reservedMicros: 10_000,
+						settledMicros: 5_000,
+					}),
+				),
 				Story.view(BudgetExposureView, acct, {
-					settledMicros: 40_000,
+					settledMicros: 45_000,
+					heldMicros: 0,
+					uncertainHoldCount: 0,
+					alertActive: false,
+				}),
+			),
+		);
+	});
+
+	it("bounds settlement, releases unused holds, resolves uncertainty, and expires deadlines", async () => {
+		const acct = BudgetAccount.ref(BudgetAccountId.make("acct-lifecycle"));
+		const boundedHold = BudgetHoldId.make("hold-bounded");
+		const releaseHold = BudgetHoldId.make("hold-release");
+		const timedHold = BudgetHoldId.make("hold-timed");
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					acct,
+					new ConfigureBudgetAccount({
+						ceilingMicros: 50_000,
+						alertThresholdMicros: 40_000,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetCeilingConfigured({
+						ceilingMicros: 50_000,
+						alertThresholdMicros: 40_000,
+					}),
+				),
+				Story.when(
+					acct,
+					new ReserveBudgetHold({
+						holdId: boundedHold,
+						providerId: "vercel",
+						amountMicros: 10_000,
+						expiresAtMs: null,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldReserved({
+						holdId: boundedHold,
+						providerId: "vercel",
+						amountMicros: 10_000,
+						expiresAtMs: null,
+					}),
+				),
+				Story.when(
+					acct,
+					new SettleBudgetHold({
+						holdId: boundedHold,
+						settledMicros: 15_000,
+					}),
+				),
+				Story.rejected(
+					new SettlementExceedsHold({
+						holdId: boundedHold,
+						reservedMicros: 10_000,
+						settledMicros: 15_000,
+					}),
+				),
+				Story.when(
+					acct,
+					new ReserveBudgetHold({
+						holdId: releaseHold,
+						providerId: "cloudflare",
+						amountMicros: 5_000,
+						expiresAtMs: null,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldReserved({
+						holdId: releaseHold,
+						providerId: "cloudflare",
+						amountMicros: 5_000,
+						expiresAtMs: null,
+					}),
+				),
+				Story.when(
+					acct,
+					new ResolveBudgetHold({
+						holdId: releaseHold,
+						evidenceRef: "evidence:premature",
+					}),
+				),
+				Story.rejected(new BudgetHoldNotResolvable({ holdId: releaseHold })),
+				Story.when(
+					acct,
+					new MarkBudgetHoldUncertain({
+						holdId: releaseHold,
+						reason: "provider-ack-timeout",
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldMarkedUncertain({
+						holdId: releaseHold,
+						reason: "provider-ack-timeout",
+					}),
+				),
+				Story.when(
+					acct,
+					new ReleaseBudgetHold({
+						holdId: releaseHold,
+						reason: "unused-after-reconcile",
+					}),
+				),
+				Story.rejected(new BudgetHoldNotReleasable({ holdId: releaseHold })),
+				Story.when(
+					acct,
+					new ResolveBudgetHold({
+						holdId: releaseHold,
+						evidenceRef: "evidence:unused",
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldResolved({
+						holdId: releaseHold,
+						evidenceRef: "evidence:unused",
+					}),
+				),
+				Story.when(
+					acct,
+					new ReleaseBudgetHold({
+						holdId: releaseHold,
+						reason: "unused-after-reconcile",
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldReleased({
+						holdId: releaseHold,
+						reason: "unused-after-reconcile",
+						releasedMicros: 5_000,
+					}),
+				),
+				Story.when(
+					acct,
+					new ResolveBudgetHold({
+						holdId: releaseHold,
+						evidenceRef: "evidence:stale",
+					}),
+				),
+				Story.rejected(new UnknownBudgetHold({ holdId: releaseHold })),
+				Story.when(
+					acct,
+					new ReserveBudgetHold({
+						holdId: timedHold,
+						providerId: "vercel",
+						amountMicros: 8_000,
+						expiresAtMs: 1_000,
+					}),
+				),
+				Story.then(
+					acct,
+					new BudgetHoldReserved({
+						holdId: timedHold,
+						providerId: "vercel",
+						amountMicros: 8_000,
+						expiresAtMs: 1_000,
+					}),
+				),
+				Story.when(acct, new ExpireBudgetHolds({ nowMs: 999 })),
+				Story.then(acct),
+				Story.when(acct, new ExpireBudgetHolds({ nowMs: 1_000 })),
+				Story.then(
+					acct,
+					new BudgetHoldsExpired({
+						nowMs: 1_000,
+						expiredHoldIds: [timedHold],
+						releasedMicros: 8_000,
+					}),
+				),
+				Story.view(BudgetExposureView, acct, {
+					settledMicros: 0,
 					heldMicros: 10_000,
-					uncertainHoldCount: 1,
+					uncertainHoldCount: 0,
 					alertActive: false,
 				}),
 			),
@@ -177,6 +399,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: BudgetHoldId.make("hold-none"),
 						providerId: "vercel",
 						amountMicros: 1_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.rejected(
@@ -204,6 +427,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: BudgetHoldId.make("hold-liability"),
 						providerId: "vercel",
 						amountMicros: 30_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.then(
@@ -212,6 +436,7 @@ describe("@hobo/broker/domain BrokerControl Alchemy Domain model", () => {
 						holdId: BudgetHoldId.make("hold-liability"),
 						providerId: "vercel",
 						amountMicros: 30_000,
+						expiresAtMs: null,
 					}),
 				),
 				Story.when(
