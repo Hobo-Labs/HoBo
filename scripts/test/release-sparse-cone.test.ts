@@ -14,8 +14,8 @@ import {
 	requiredPathsForHoboReleasePages,
 	requiredPathsForTsAutocodeReleaseContract,
 	rootVitestSetupFiles,
-	splitSparseCheckoutPaths,
 	sparsePathLooksLikeNestedFile,
+	splitSparseCheckoutPaths,
 	tsAutocodeReleaseSparseCones,
 } from "../lib/release-sparse-cone.mts";
 
