@@ -105,7 +105,7 @@ Source issue: HOBO-460.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-support-dogfood-alpha-evidence`](../../src/draft/exp-proofs/cx/launch-support-dogfood-alpha-evidence/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-460-launch-support-dogfood-alpha`](./proofs/hobo-460-launch-support-dogfood-alpha/README.md).
+[`proofs/hobo-460-launch-support-dogfood-alpha`](https://linear.app/quickdeploy-ai/document/hobo-460-launch-support-dogfoodalpha-m1-proof-archived-e031ec9168d5).
 
 The M1 gate records six support evidence items:
 

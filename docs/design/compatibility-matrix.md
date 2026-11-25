@@ -14,9 +14,9 @@ Executable proof lives in
 M0 scope proof lives in
 [`src/draft/exp-proofs/cx/compatibility-matrix-scope-contract`](../../src/draft/exp-proofs/cx/compatibility-matrix-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-511-supported-platform-matrix`](./proofs/hobo-511-supported-platform-matrix/README.md).
+[`proofs/hobo-511-supported-platform-matrix`](https://linear.app/quickdeploy-ai/document/hobo-511-supported-platform-matrix-proof-archived-ea42b0383560).
 M0 branch evidence is summarized in
-[`proofs/hobo-432-compatibility-matrix`](./proofs/hobo-432-compatibility-matrix/README.md).
+[`proofs/hobo-432-compatibility-matrix`](https://linear.app/quickdeploy-ai/document/hobo-432-compatibility-matrix-proof-archived-73c93674138a).
 
 ## M0 Scope Acceptance
 
