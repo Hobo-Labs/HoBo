@@ -71,9 +71,7 @@ it.each(
 
 it.each(
 	RESOLVER_ERROR_CODES,
-)(
-	"surfaces redacted resolver code %s provider detail without private hosts",
-	(code) => {
+)("surfaces redacted resolver code %s provider detail without private hosts", (code) => {
 	const providerMessage =
 		"registry ghcr.io redirected a blob read to pkg-containers.githubusercontent.com, which is not an allowlisted blob host";
 	const observation = sanitizeObservation({
@@ -99,8 +97,7 @@ it.each(
 	expect(observation.reasons[0]?.message ?? "").toMatch(
 		/registry ghcr\.io redirected a blob read/u,
 	);
-	},
-);
+});
 
 it.each(
 	RESOLVER_ERROR_CODES,
