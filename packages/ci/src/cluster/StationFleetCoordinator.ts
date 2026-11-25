@@ -1,8 +1,8 @@
+import * as Cron from "effect/Cron";
 import * as ClusterCron from "effect/cluster/ClusterCron";
 import * as ClusterSchema from "effect/cluster/ClusterSchema";
 import * as Entity from "effect/cluster/Entity";
 import * as Singleton from "effect/cluster/Singleton";
-import * as Cron from "effect/Cron";
 import * as Effect from "effect/Effect";
 import * as Rpc from "effect/rpc/Rpc";
 import * as Schema from "effect/Schema";
@@ -250,7 +250,10 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 							reasons.push(`${pool.spec.poolId}:not-isolated`);
 							continue;
 						}
-						if (requirements.publicRepository && !pool.spec.publicRepositories) {
+						if (
+							requirements.publicRepository &&
+							!pool.spec.publicRepositories
+						) {
 							reasons.push(`${pool.spec.poolId}:private-only`);
 							continue;
 						}
@@ -416,7 +419,10 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 export function createFleetLeaseReaperSingleton(options: {
 	readonly stationIds: readonly string[];
 	readonly nowMs: () => number;
-	readonly onReaped?: (stationId: string, reapedSlotIds: readonly string[]) => void;
+	readonly onReaped?: (
+		stationId: string,
+		reapedSlotIds: readonly string[],
+	) => void;
 }) {
 	return Singleton.make(
 		"hobo-ci-fleet-lease-reaper",
@@ -436,7 +442,10 @@ export function createFleetHealthSweepCron(options: {
 	readonly stationIds: readonly string[];
 	readonly cronExpression?: string;
 	readonly nowMs: () => number;
-	readonly onSweep?: (stationId: string, reapedSlotIds: readonly string[]) => void;
+	readonly onSweep?: (
+		stationId: string,
+		reapedSlotIds: readonly string[],
+	) => void;
 }) {
 	const cron = Cron.parseUnsafe(options.cronExpression ?? "*/5 * * * *");
 	return ClusterCron.make({

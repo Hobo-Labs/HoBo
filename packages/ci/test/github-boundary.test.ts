@@ -71,7 +71,9 @@ describe("GitHub isolation boundary for non-GitHub CI packages", () => {
 				violations.push(`${manifestPath} depends on @hobo/ci-gh-actions`);
 			}
 
-			for (const file of collectTypeScriptFiles(join(PACKAGES_DIR, pkg, "src"))) {
+			for (const file of collectTypeScriptFiles(
+				join(PACKAGES_DIR, pkg, "src"),
+			)) {
 				const content = readFileSync(file, "utf8");
 				for (const token of FORBIDDEN_IN_UNRELATED_CI_PACKAGES) {
 					if (content.includes(token)) {
@@ -86,7 +88,9 @@ describe("GitHub isolation boundary for non-GitHub CI packages", () => {
 			"utf8",
 		);
 		if (ciManifest.includes("@hobo/ci-gh-actions")) {
-			violations.push("packages/ci/package.json depends on @hobo/ci-gh-actions");
+			violations.push(
+				"packages/ci/package.json depends on @hobo/ci-gh-actions",
+			);
 		}
 
 		expect(violations).toEqual([]);
