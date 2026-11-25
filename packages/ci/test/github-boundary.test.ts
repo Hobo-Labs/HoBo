@@ -5,7 +5,20 @@ import { importSpecifiersOf } from "../../../scripts/lib/test-import-specifiers.
 
 const PACKAGES_DIR = resolve(import.meta.dirname, "../..");
 
-const HOST_LAYER_ESCAPE = /\.\.\/host(?:\/|$)/u;
+function hostLayerEscapeSpecifier(specifier: string): boolean {
+	const normalized = specifier.replaceAll("\\", "/");
+	const parts: string[] = [];
+	for (const segment of normalized.split("/")) {
+		if (segment === "" || segment === ".") continue;
+		if (segment === "..") {
+			if (parts.length === 0) return true;
+			parts.pop();
+			continue;
+		}
+		parts.push(segment);
+	}
+	return parts[0] === "host" || parts.includes("host");
+}
 
 function collectTypeScriptFiles(dir: string): string[] {
 	const results: string[] = [];
@@ -118,7 +131,7 @@ describe("GitHub isolation boundary for non-GitHub CI packages", () => {
 		for (const file of neutralCore) {
 			const content = readFileSync(file, "utf8");
 			for (const entry of importSpecifiersOf(content, file)) {
-				if (HOST_LAYER_ESCAPE.test(entry.specifier.replaceAll("\\", "/"))) {
+				if (hostLayerEscapeSpecifier(entry.specifier)) {
 					violations.push(
 						`${file} escapes into the host layer via "${entry.specifier}"`,
 					);

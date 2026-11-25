@@ -51,7 +51,7 @@ const FORBIDDEN_IO_MODULES = new Set([
 ]);
 
 const SECRET_FIELD_PATTERN =
-	/\b(token|apiKey|secret|password|privateKey|accessToken|refreshToken)\s*:/giu;
+	/\b(?:token|apiKey|api_key|secret|password|privateKey|accessToken|refreshToken|clientSecret|githubToken|credential)\s*:/giu;
 
 const DOMAIN_PURE_IMPORT_PREFIXES = [
 	"rivetkit",
@@ -60,10 +60,23 @@ const DOMAIN_PURE_IMPORT_PREFIXES = [
 	"@effect/",
 ] as const;
 
-const HOST_LAYER_ESCAPE = /\.\.\/host(?:\/|$)/u;
-
 function toPosix(pathValue: string): string {
 	return pathValue.replaceAll("\\", "/");
+}
+
+function hostLayerEscapeSpecifier(specifier: string): boolean {
+	const normalized = toPosix(specifier);
+	const parts: string[] = [];
+	for (const segment of normalized.split("/")) {
+		if (segment === "" || segment === ".") continue;
+		if (segment === "..") {
+			if (parts.length === 0) return true;
+			parts.pop();
+			continue;
+		}
+		parts.push(segment);
+	}
+	return parts[0] === "host" || parts.includes("host");
 }
 
 export function isDomainPureImport(specifier: string): boolean {
@@ -77,7 +90,7 @@ export function isDomainPureImport(specifier: string): boolean {
 }
 
 function isHostLayerEscape(specifier: string): boolean {
-	return HOST_LAYER_ESCAPE.test(toPosix(specifier));
+	return hostLayerEscapeSpecifier(specifier);
 }
 
 function isForbiddenIoSpecifier(specifier: string): boolean {
