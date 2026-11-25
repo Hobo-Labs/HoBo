@@ -596,6 +596,17 @@ function isPullRequestOnlyJob(
 	const condition = /^    if:([^\n]*(?:\n      [^\n]*)*)/m.exec(
 		block.join("\n"),
 	)?.[1];
+	const expression = extractJobLevelIf(block);
+	if (
+		expression !== undefined &&
+		normalizeDraftIfExpression(expression) ===
+			normalizeDraftIfExpression(
+				ALLOWLISTED_ENTRY_JOB_DRAFT_IF.get(
+					"examples-e2e.yml:hello-bindle-fixture-quarantine",
+				) ?? "",
+			)
+	)
+		return true;
 	return (
 		condition !== undefined &&
 		/github\.event_name\s*==\s*['"]pull_request['"]/.test(condition) &&
@@ -673,21 +684,22 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 	"synchronize",
 	"reopened",
 	"ready_for_review",
+	"labeled",
 ] as const;
 
 export const CANONICAL_ENTRY_JOB_DRAFT_IF =
-	"github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+	"github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')";
 
 export const REQUIRED_JOB_DRAFT_IF_MESSAGE = `job-level if must be ${CANONICAL_ENTRY_JOB_DRAFT_IF}`;
 
 const ALLOWLISTED_ENTRY_JOB_DRAFT_IF = new Map<string, string>([
 	[
 		"examples-e2e.yml:hello-bindle-fixture-quarantine",
-		"github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
+		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
 	],
 	[
 		"examples-e2e.yml:hello-bindle-fixture",
-		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
 	],
 ]);
 
@@ -750,7 +762,7 @@ function extractJobLevelIf(block: readonly string[]): string | undefined {
 	const ifAt = header.findIndex((line) => line.startsWith("    if:"));
 	if (ifAt === -1) return undefined;
 	const lines = [header[ifAt] ?? ""];
-	const first = lines[0];
+	const first = lines[0] ?? "";
 	if (/^\s*if:\s*>-/.test(first)) {
 		for (let index = ifAt + 1; index < header.length; index += 1) {
 			const line = header[index] ?? "";
@@ -847,7 +859,7 @@ function lintPullRequestDraftPolicy(
 		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
 		if (!jobLevelIfHasRequiredDraftGate(file, jobId, block)) {
 			errors.push(
-				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (${REQUIRED_JOB_DRAFT_IF_MESSAGE})`,
+				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs unless explicitly requested (${REQUIRED_JOB_DRAFT_IF_MESSAGE})`,
 			);
 		}
 	}

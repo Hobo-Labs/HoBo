@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { evaluateExpression } from "../ci/attested-jobs.mts";
 import {
 	CANONICAL_ENTRY_JOB_DRAFT_IF,
 	draftGateEntryJobs,
@@ -28,15 +29,15 @@ const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workflowDir = join(repoRoot, ".github", "workflows");
 
 const pullRequestOn =
-	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n  push:\n    branches: [main]\n";
+	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review, labeled]\n  push:\n    branches: [main]\n";
 const routeJobGood =
-	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 const trunkJob =
 	'  trunk:\n    runs-on: ${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}\n    steps:\n      - run: "true"\n';
 
 const actionsLockOn = `on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   merge_group:
 `;
 const actionsLockJob = (jobIf: string) => `  actions-lock:
@@ -133,10 +134,63 @@ function assertDraftPolicyOnlyFailure(
 	const draftErrors = draftGateErrors(result.stderr);
 	assert.equal(draftErrors.length, 1, result.stderr);
 	assert.match(draftErrors[0] ?? "", new RegExp(jobRef));
-	assert.match(draftErrors[0] ?? "", new RegExp(REQUIRED_JOB_DRAFT_IF_MESSAGE));
+	assert.ok((draftErrors[0] ?? "").includes(REQUIRED_JOB_DRAFT_IF_MESSAGE));
 }
 
 describe("draft pull request CI policy", () => {
+	it("runs a draft head only when the dedicated label is added", () => {
+		for (const [event, draft, action, label, expected] of [
+			["pull_request", true, "opened", "", false],
+			["pull_request", true, "synchronize", "", false],
+			["pull_request", true, "labeled", "other", false],
+			["pull_request", true, "labeled", "ci:run-draft-checks", true],
+			["pull_request", false, "ready_for_review", "", true],
+			["merge_group", false, "checks_requested", "", true],
+		] as const) {
+			const values = new Map<string, string | boolean>([
+				["github.event_name", event],
+				["github.event.pull_request.draft", draft],
+				["github.event.action", action],
+				["github.event.label.name", label],
+			]);
+			assert.equal(
+				evaluateExpression(
+					CANONICAL_ENTRY_JOB_DRAFT_IF,
+					(path) => values.get(path) ?? null,
+				),
+				expected,
+			);
+		}
+	});
+
+	it("keeps the required PR impact gate running after a skipped draft route", () => {
+		const block = jobBlockFromText(
+			readFileSync(join(workflowDir, "hobo-ci.yml"), "utf8"),
+			"pr-gate",
+		).join("\n");
+		assert.match(
+			block,
+			/if: \$\{\{ always\(\) && \(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) \}\}/u,
+		);
+		assert.match(
+			block,
+			/\[ "\$\{ROUTE_RESULT:-\}" = "success" \] \|\| return 1/u,
+		);
+	});
+
+	it("requires the labeled event so the draft check request can start", async () => {
+		const withoutLabel = pullRequestOn.replace(
+			", ready_for_review, labeled",
+			", ready_for_review",
+		);
+		const result = await lintFixtureWorkflow(
+			"hobo-ci.yml",
+			`${withoutLabel}jobs:\n${routeJobGood}${trunkJob}`,
+		);
+		assert.equal(result.exitCode, 1);
+		assert.match(result.stderr, /pull_request\.types must include labeled/u);
+	});
+
 	it("lists every workflow that listens on pull_request", () => {
 		assert.deepEqual(workflowsWithPullRequest(), [
 			"actions-lock.yml",
@@ -204,7 +258,7 @@ describe("draft pull request CI policy", () => {
 	});
 
 	it("rejects a route conjunct that adds event_name == pull_request after the OR gate", async () => {
-		const body = `${pullRequestOn}jobs:\n  route:\n    if: \${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && github.event_name == 'pull_request' }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n${trunkJob}`;
+		const body = `${pullRequestOn}jobs:\n  route:\n    if: \${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && github.event_name == 'pull_request' }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n${trunkJob}`;
 		assertDraftPolicyOnlyFailure(
 			await lintFixtureWorkflow("hobo-ci.yml", body),
 			"hobo-ci.yml:.*: job route",
