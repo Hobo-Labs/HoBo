@@ -218,10 +218,10 @@ describe("hobo-checkout mirror and partial clone contract", () => {
 	it("retains the pinned blobless, tag-free, non-cleaning checkout", () => {
 		expect(
 			action.match(new RegExp(`actions/checkout@${checkoutSha}`, "g")),
-		).toHaveLength(3);
+		).toHaveLength(4);
 		expect(action.match(/filter: blob:none/g)).toHaveLength(3);
-		expect(action.match(/fetch-tags: false/g)).toHaveLength(3);
-		expect(action.match(/clean: false/g)).toHaveLength(3);
+		expect(action.match(/fetch-tags: false/g)).toHaveLength(4);
+		expect(action.match(/clean: false/g)).toHaveLength(4);
 	});
 
 	it("probes the box mirror before any checkout attempt", () => {
@@ -232,6 +232,19 @@ describe("hobo-checkout mirror and partial clone contract", () => {
 		expect(probe).toBeLessThan(stabilize);
 		expect(probe).toBeLessThan(checkout);
 		expect(action).toContain('echo "GIT_CONFIG_SYSTEM=$cfg" >> "$GITHUB_ENV"');
+	});
+
+	it("falls back to a full non-partial sparse checkout before failing", () => {
+		expect(action).toContain("Sparse checkout (full clone fallback)");
+		expect(action).toContain(
+			"Partial sparse checkout failed after 3 promisor attempts",
+		);
+		expect(action).toMatch(
+			/Sparse checkout \(full clone fallback\)[\s\S]*?sparse-checkout-cone-mode: true/,
+		);
+		expect(action).not.toMatch(
+			/Sparse checkout \(full clone fallback\)[\s\S]*?filter: blob:none/,
+		);
 	});
 
 	it("leaves the box mirror after the first failed attempt", () => {
