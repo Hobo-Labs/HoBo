@@ -5,19 +5,24 @@ import { importSpecifiersOf } from "../../../scripts/lib/test-import-specifiers.
 
 const PACKAGES_DIR = resolve(import.meta.dirname, "../..");
 
-function hostLayerEscapeSpecifier(specifier: string): boolean {
-	const normalized = specifier.replaceAll("\\", "/");
+function resolveImportSegments(specifier: string): readonly string[] {
 	const parts: string[] = [];
-	for (const segment of normalized.split("/")) {
+	for (const segment of specifier.replaceAll("\\", "/").split("/")) {
 		if (segment === "" || segment === ".") continue;
 		if (segment === "..") {
-			if (parts.length === 0) return true;
-			parts.pop();
+			if (parts.length > 0) parts.pop();
 			continue;
 		}
 		parts.push(segment);
 	}
-	return parts[0] === "host" || parts.includes("host");
+	return parts;
+}
+
+function hostLayerEscapeSpecifier(specifier: string): boolean {
+	if (!specifier.includes("..")) return false;
+	const parts = resolveImportSegments(specifier);
+	if (parts[0] === "host") return true;
+	return parts[0] === "ci-gh-actions" || parts.includes("ci-gh-actions");
 }
 
 function collectTypeScriptFiles(dir: string): string[] {
@@ -141,7 +146,14 @@ describe("GitHub isolation boundary for non-GitHub CI packages", () => {
 		expect(violations).toEqual([]);
 	});
 
-	it("keeps non-GitHub CI packages (ci-ado, ci-cf, ci-dagger) isolated from @hobo/ci-gh-actions and GitHub Actions runner logic", () => {
+	it("flags host-layer and cross-package ci-gh-actions import escapes after normalization", () => {
+	expect(hostLayerEscapeSpecifier("../host/rivet.js")).toBe(true);
+	expect(hostLayerEscapeSpecifier(".././host/rivet.js")).toBe(true);
+	expect(hostLayerEscapeSpecifier("../../ci-gh-actions/src/foo.js")).toBe(true);
+	expect(hostLayerEscapeSpecifier("../domain/ids.js")).toBe(false);
+});
+
+it("keeps non-GitHub CI packages (ci-ado, ci-cf, ci-dagger) isolated from @hobo/ci-gh-actions and GitHub Actions runner logic", () => {
 		const packages = ["ci-ado", "ci-cf", "ci-dagger"] as const;
 		const violations: string[] = [];
 

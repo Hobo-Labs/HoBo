@@ -129,4 +129,27 @@ describe("checkDomainBoundaries", () => {
 			);
 		});
 	});
+
+	it("forbids domain imports that normalize .././host and ../../ci-gh-actions escapes", () => {
+		withTempWorkspace((root) => {
+			const domainDir = join(root, "packages", "sample", "src", "domain");
+			mkdirSync(domainDir, { recursive: true });
+			writeFileSync(
+				join(domainDir, "dot-host.ts"),
+				'import { x } from ".././host/index.js";\nexport const y = x;\n',
+			);
+			writeFileSync(
+				join(domainDir, "cross-pkg.ts"),
+				'import { x } from "../../ci-gh-actions/src/index.js";\nexport const z = x;\n',
+			);
+
+			const report = checkDomainBoundaries(root);
+			assert.equal(report.violations.length, 2);
+			assert.ok(
+				report.violations.every(
+					(violation) => violation.rule === "domain-no-host-layer-import",
+				),
+			);
+		});
+	});
 });

@@ -51,7 +51,7 @@ const FORBIDDEN_IO_MODULES = new Set([
 ]);
 
 const SECRET_FIELD_PATTERN =
-	/\b(?:token|apiKey|api_key|secret|password|privateKey|accessToken|refreshToken|clientSecret|githubToken|credential)\s*:/giu;
+	/\b(token|apiKey|api_key|secret|password|privateKey|accessToken|refreshToken|clientSecret|githubToken|credential)\s*:/giu;
 
 const DOMAIN_PURE_IMPORT_PREFIXES = [
 	"rivetkit",
@@ -64,19 +64,24 @@ function toPosix(pathValue: string): string {
 	return pathValue.replaceAll("\\", "/");
 }
 
-function hostLayerEscapeSpecifier(specifier: string): boolean {
-	const normalized = toPosix(specifier);
+function resolveImportSegments(specifier: string): readonly string[] {
 	const parts: string[] = [];
-	for (const segment of normalized.split("/")) {
+	for (const segment of toPosix(specifier).split("/")) {
 		if (segment === "" || segment === ".") continue;
 		if (segment === "..") {
-			if (parts.length === 0) return true;
-			parts.pop();
+			if (parts.length > 0) parts.pop();
 			continue;
 		}
 		parts.push(segment);
 	}
-	return parts[0] === "host" || parts.includes("host");
+	return parts;
+}
+
+function hostLayerEscapeSpecifier(specifier: string): boolean {
+	if (!specifier.includes("..")) return false;
+	const parts = resolveImportSegments(specifier);
+	if (parts[0] === "host") return true;
+	return parts[0] === "ci-gh-actions" || parts.includes("ci-gh-actions");
 }
 
 export function isDomainPureImport(specifier: string): boolean {
