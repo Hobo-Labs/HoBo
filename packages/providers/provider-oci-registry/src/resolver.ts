@@ -195,6 +195,7 @@ function unexpected(response: TransportResponse, what: string): never {
 	);
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: catch values at the resolver seam; only the release Freight error name and fields are interpreted.
 function isReleaseFreightBlockedError(error: unknown): boolean {
 	return (
 		error instanceof Error &&

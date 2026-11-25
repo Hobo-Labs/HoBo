@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand declared camp and conductor ids; the catalog realizer never reads the CD context. */
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -11,18 +12,18 @@ import {
 	SetRecordSchema,
 } from "@hobo/cd";
 import {
-	ReleaseFreightBlockedError,
 	formatReleaseFreightBlockedReason,
+	ReleaseFreightBlockedError,
 	validateReasonStructuredDetail,
 } from "@hobo/cd/reconcile";
 import { describe, expect, it } from "vitest";
+import { SITE_V1 } from "../../providers/provider-github/test/support/world.js";
+import {
+	digestOf as npmDigestOf,
+	TARBALL,
+} from "../../providers/provider-npm/test/support/world.js";
 import { createCatalogResolverRealizer } from "../src/cd-runtime.js";
 import { CATALOG_REALIZER_LABELS as L } from "../src/provider-hosting-catalog.js";
-import {
-	TARBALL,
-	digestOf as npmDigestOf,
-} from "../../providers/provider-npm/test/support/world.js";
-import { SITE_V1 } from "../../providers/provider-github/test/support/world.js";
 
 const DIGEST = `sha256:${"c".repeat(64)}`;
 
@@ -136,56 +137,52 @@ describe("release Freight structured detail through catalog resolvers", () => {
 			],
 			blobs: [TARBALL],
 		},
-	])(
-		"surfaces structured scope-not-allowed for $family",
-		async ({ campId, provider, labels, artifacts, blobs }) => {
-			const declared = camp(campId, provider, labels);
-			const realizer = createCatalogResolverRealizer({
-				topology: {
-					camps: async () => [declared],
-					camp: async () => declared,
+	])("surfaces structured scope-not-allowed for $family", async ({
+		campId,
+		provider,
+		labels,
+		artifacts,
+		blobs,
+	}) => {
+		const declared = camp(campId, provider, labels);
+		const realizer = createCatalogResolverRealizer({
+			topology: {
+				camps: async () => [declared],
+				camp: async () => declared,
+			},
+			freight: async (id: FreightId) =>
+				id === DIGEST ? freight(artifacts) : undefined,
+			artifacts: artifactStore(...blobs),
+			http: async () => {
+				throw new Error("transport must not run");
+			},
+			credentials: {
+				resolve: async (ref, scope) => {
+					throw new ReleaseFreightBlockedError("scope-not-allowed", ref, scope);
 				},
-				freight: async (id: FreightId) =>
-					id === DIGEST ? freight(artifacts) : undefined,
-				artifacts: artifactStore(...blobs),
-				http: async () => {
-					throw new Error("transport must not run");
-				},
-				credentials: {
-					resolve: async (ref, scope) => {
-						throw new ReleaseFreightBlockedError(
-							"scope-not-allowed",
-							ref,
-							scope,
-						);
-					},
-				},
-				now: () => 0,
-			});
-			const observed = await realizer.converge(
-				{
-					campId,
-					desired: set(campId),
-					resolved: {} as never,
-					reconcilerId: "conductor:test" as never,
-					fence: 1n as never,
-					signal: new AbortController().signal,
-				},
-				realizeCtx,
-			);
-			expect(observed.status).toBe(ReconcileStatus.BLOCKED);
-			const structured = validateReasonStructuredDetail(
-				observed.reasons[0]?.structured,
-			);
-			expect(structured?.detailKind).toBe("scope-not-allowed");
-			expect(structured?.requestedScope).toBe(`cd-realize:${campId}`);
-			expect(
-				formatReleaseFreightBlockedReason(
-					observed.reasons[0]?.code,
-					structured,
-				),
-			).toContain("scope-not-allowed");
-			expect(JSON.stringify(observed)).not.toContain("npm_");
-		},
-	);
+			},
+			now: () => 0,
+		});
+		const observed = await realizer.converge(
+			{
+				campId,
+				desired: set(campId),
+				resolved: {} as never,
+				reconcilerId: "conductor:test" as never,
+				fence: 1n as never,
+				signal: new AbortController().signal,
+			},
+			realizeCtx,
+		);
+		expect(observed.status).toBe(ReconcileStatus.BLOCKED);
+		const structured = validateReasonStructuredDetail(
+			observed.reasons[0]?.structured,
+		);
+		expect(structured?.detailKind).toBe("scope-not-allowed");
+		expect(structured?.requestedScope).toBe(`cd-realize:${campId}`);
+		expect(
+			formatReleaseFreightBlockedReason(observed.reasons[0]?.code, structured),
+		).toContain("scope-not-allowed");
+		expect(JSON.stringify(observed)).not.toContain("npm_");
+	});
 });

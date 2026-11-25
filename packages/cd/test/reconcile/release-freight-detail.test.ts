@@ -188,9 +188,7 @@ describe("releaseFreightLogFragment", () => {
 			detailKind: "repository-mismatch",
 		});
 		expect(detail).toBeDefined();
-		expect(
-			formatReleaseFreightBlockedReason("realize-failed", detail),
-		).toBe(
+		expect(formatReleaseFreightBlockedReason("realize-failed", detail)).toBe(
 			"realize-failed: credential=github-app://Hobo-Labs/HoBo expected-repository=owner://NPM_TOKEN repository-mismatch",
 		);
 	});

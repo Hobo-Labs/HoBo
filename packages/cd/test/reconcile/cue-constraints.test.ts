@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
-// Vets real reconcile status-event bodies against data-models/reconcile.cue
-// (the constraints src/reconcile mirrors). Skips with a visible reason when no
-// `cue` binary exists.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,12 +10,12 @@ import {
 	ReasonStructuredDetailSchema,
 	ReconcilerMode,
 } from "../../src/_generated/cd_pb.js";
-import { validateReasonStructuredDetail } from "../../src/reconcile/release-freight-detail.js";
 import {
 	createCampReconciler,
 	createDriftPolicy,
 	createInProcessTransport,
 } from "../../src/reconcile/index.js";
+import { validateReasonStructuredDetail } from "../../src/reconcile/release-freight-detail.js";
 import {
 	asCamp,
 	asReconciler,
@@ -38,6 +35,19 @@ const schema = fileURLToPath(
 	new URL("../../data-models/reconcile.cue", import.meta.url),
 );
 
+function cueBinaryOnPath(
+	command: string,
+	args: readonly string[],
+): string | undefined {
+	try {
+		return (
+			execFileSync(command, args, { encoding: "utf8" }).trim() || undefined
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 function findCue(): string | undefined {
 	if (process.env.HOBO_CUE_BIN && existsSync(process.env.HOBO_CUE_BIN))
 		return process.env.HOBO_CUE_BIN;
@@ -51,21 +61,10 @@ function findCue(): string | undefined {
 			}
 		dir = join(dir, "..");
 	}
-	try {
-		return (
-			execFileSync("which", ["cue"], { encoding: "utf8" }).trim() || undefined
-		);
-	} catch {
-		/* try mise next */
-	}
-	try {
-		return (
-			execFileSync("mise", ["which", "cue"], { encoding: "utf8" }).trim() ||
-			undefined
-		);
-	} catch {
-		return undefined;
-	}
+	return (
+		cueBinaryOnPath("which", ["cue"]) ??
+		cueBinaryOnPath("mise", ["which", "cue"])
+	);
 }
 
 const cue = findCue();
@@ -147,8 +146,8 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			requestedScope: "cd-realize:hobo-release/pages-candidate",
 			detailKind: "scope-not-allowed",
 		});
-		expect(structured).toBeDefined();
-		const json = toJson(ReasonStructuredDetailSchema, structured!);
+		if (!structured) throw new Error("expected structured fixture");
+		const json = toJson(ReasonStructuredDetailSchema, structured);
 		const result = vet("ReasonStructuredDetail", json);
 		expect(result.ok, result.output).toBe(true);
 		const mismatch = validateReasonStructuredDetail({
@@ -156,10 +155,12 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			requestedScope: "github-app://Other/Repo",
 			detailKind: "repository-mismatch",
 		});
-		expect(mismatch).toBeDefined();
+		if (!mismatch) throw new Error("expected repository-mismatch fixture");
 		expect(
-			vet("ReasonStructuredDetail", toJson(ReasonStructuredDetailSchema, mismatch!))
-				.ok,
+			vet(
+				"ReasonStructuredDetail",
+				toJson(ReasonStructuredDetailSchema, mismatch),
+			).ok,
 		).toBe(true);
 		expect(
 			vet("ReasonStructuredDetail", {
