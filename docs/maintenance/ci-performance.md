@@ -92,12 +92,20 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   rebuilt all 135 packages. Turbo caches only successful tasks, so a partial save is still correct.
   `scripts/ci/turbo-cache-prune.mts` (node builtins only) runs first as a workflow step: it keeps every
   entry a `.turbo/runs` summary from this job named and stamps it used, keeps other entries used within
-  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. It outputs `save=false` when no task
+  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. When
+  `HOBO_TURBO_CACHE_RUN_SHARED=1` and `TURBO_CACHE` has no `remote:` tier, it keeps only misses for
+  run-scoped `actions/cache` saves on merge-group shards. It outputs `save=false` when no task
   missed the cache and left an entry, and the save step is skipped, so a fully cached run never starts
   the save composite (whose `actions/cache/save` resolve once timed out for 2 minutes). Keeping only the
   entries one run touched shrank main's cache to an affected-only run's handful of packages, and the next
   run rebuilt the rest cold. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
-  push-to-main saves are the ones every PR and merge group restores.
+  push-to-main saves are the ones every PR and merge group restores. Merge-group validation and
+  workspace shards opt into run-scoped keys containing `github.run_id` and `github.run_attempt`
+  (turbo-cache input `shared-run`): shards prefer validation's completed save, then the newest same-run
+  shard save, before the older per-job fallback. Every merge-group shard saves under its own job and
+  matrix-index key, so concurrent saves do not contend for one immutable key. These caches share only
+  within the run; fork PRs never opt in. Run-scoped saves contain only entries written for this job's
+  misses, avoiding a full copy of every restored shard in every save.
 - **Main seeds a whole-workspace build cache.** The `main_build_cache` job builds every package on
   each push to main (on the routed runner, with the workspace shards' checkout and install, so the
   build hashes match theirs; on the box the shared host cache already holds them) and saves `.turbo/cache` under `turbo-<os>-main-build-…`, pruned with
