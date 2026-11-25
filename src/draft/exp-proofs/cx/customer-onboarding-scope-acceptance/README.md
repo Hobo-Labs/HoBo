@@ -49,4 +49,4 @@ pnpm.cmd run architecture:guard -- --base=origin/main
 The proof is also referenced by the design records:
 
 - [Customer Onboarding design record](../../../../docs/design/customer-onboarding.md)
-- [HOBO-449 proof record](../../../../docs/design/proofs/hobo-449-customer-onboarding-scope/README.md)
+- [HOBO-449 proof record](https://linear.app/quickdeploy-ai/document/hobo-449-customer-onboarding-proof-archived-9fb996307d5b)

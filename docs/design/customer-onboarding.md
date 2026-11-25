@@ -12,7 +12,7 @@ Source issues: HOBO-449 and HOBO-487.
 Scope proof lives in
 [`src/draft/exp-proofs/cx/customer-onboarding-scope-acceptance`](../../src/draft/exp-proofs/cx/customer-onboarding-scope-acceptance/README.md),
 with branch evidence summarized in
-[`proofs/hobo-449-customer-onboarding-scope`](./proofs/hobo-449-customer-onboarding-scope/README.md).
+[`proofs/hobo-449-customer-onboarding-scope`](https://linear.app/quickdeploy-ai/document/hobo-449-customer-onboarding-proof-archived-9fb996307d5b).
 
 Script proof lives in
 [`src/draft/exp-proofs/cx/customer-onboarding-script-contract`](../../src/draft/exp-proofs/cx/customer-onboarding-script-contract/README.md).
