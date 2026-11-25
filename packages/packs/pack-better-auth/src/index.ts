@@ -23,3 +23,9 @@ export {
 	type BetterAuthRelationalMigrationPlan,
 	planBetterAuthRelationalMigrations,
 } from "./migrations.js";
+
+export {
+	campSecretNameFromBetterAuthRef,
+	type BetterAuthSigningSecretWire,
+	wireBetterAuthSigningSecret,
+} from "./secrets.js";
