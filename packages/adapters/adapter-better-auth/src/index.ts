@@ -19,7 +19,7 @@ export {
 	type BetterAuthConfig,
 	type BetterAuthConfigInput,
 	parseBetterAuthConfig,
-} from "./config.js";
+} from "@hobo/auth-adapter-contract";
 
 export {
 	AUTH_ADAPTER_HOSTINGS,
@@ -29,7 +29,7 @@ export {
 	BETTER_AUTH_DESCRIPTOR,
 	BETTER_AUTH_REQUIRED_PORTS,
 	BETTER_AUTH_RUNTIME_MODULE,
-} from "./descriptor.js";
+} from "@hobo/auth-adapter-contract";
 
 export {
 	BETTER_AUTH_CLAIMS_ERROR_CODES,
@@ -39,13 +39,13 @@ export {
 	BetterAuthConfigError,
 	type BetterAuthConfigErrorCode,
 	BetterAuthRuntimeUnavailableError,
-} from "./errors.js";
+} from "@hobo/auth-adapter-contract";
 
 export {
 	AUTH_ADAPTER_CONTRACT,
 	BETTER_AUTH_ADAPTER_ID,
 	BETTER_AUTH_CLAIMS_MAPPING_VERSION,
-} from "./ids.js";
+} from "@hobo/auth-adapter-contract";
 
 export {
 	BETTER_AUTH_SECRET_REF_SCHEMES,
@@ -53,4 +53,4 @@ export {
 	type BetterAuthSecretRefScheme,
 	betterAuthSecretRefScheme,
 	parseBetterAuthSecretRef,
-} from "./secret-locator.js";
+} from "@hobo/auth-adapter-contract";

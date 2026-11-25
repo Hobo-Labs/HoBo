@@ -15,17 +15,19 @@ export {
 	parseBetterAuthBundlePortRefs,
 } from "./ports.js";
 
-export { type BetterAuthBundlePlan, planBetterAuthBundle } from "./plan.js";
-
-export { BETTER_AUTH_RELATIONAL_SCHEMA_IR } from "./fixtures/better-auth-schema-ir.js";
+export {
+	type BetterAuthBundlePlanRecord,
+	toBetterAuthBundlePlanRecord,
+} from "./record.js";
 
 export {
-	type BetterAuthRelationalMigrationPlan,
-	planBetterAuthRelationalMigrations,
-} from "./migrations.js";
+	type BetterAuthBundlePlan,
+	planBetterAuthBundle,
+} from "./plan.js";
 
 export {
-	campSecretNameFromBetterAuthRef,
-	type BetterAuthSigningSecretWire,
-	wireBetterAuthSigningSecret,
-} from "./secrets.js";
+	assertBetterAuthRuntimeAvailable,
+	BETTER_AUTH_RUNTIME_MODULE,
+	BetterAuthRuntimeUnavailableError,
+	parseBetterAuthConfig,
+} from "@hobo/auth-adapter-contract";
