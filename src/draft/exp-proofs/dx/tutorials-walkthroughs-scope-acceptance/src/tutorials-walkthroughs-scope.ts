@@ -90,7 +90,7 @@ export const TUTORIALS_WALKTHROUGHS_SCOPE = {
       reason: "Defines CLI, dashboard, local-dev, and inspection surfaces that tutorial steps exercise.",
     },
     {
-      source: "docs/design/example-apps.md",
+      source: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9",
       reason: "Supplies example-app proof modes and fixtures that tutorials can reuse.",
     },
     {

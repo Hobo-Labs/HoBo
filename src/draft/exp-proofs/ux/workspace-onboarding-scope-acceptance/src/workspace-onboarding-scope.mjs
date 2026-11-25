@@ -86,7 +86,7 @@ export const WORKSPACE_ONBOARDING_SCOPE = {
       reason: "Provides the snapshop example path that onboarding can use as a stable activation fixture.",
     },
     {
-      source: "docs/design/example-apps.md",
+      source: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9",
       reason: "Supplies accepted example proof modes and command paths without making onboarding own examples.",
     },
     {

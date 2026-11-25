@@ -105,7 +105,7 @@ export const launchSiteGaHandoffEvidence: LaunchSiteGaHandoffEvidenceRecord = {
     {
       id: "golden-path-demo-record",
       ownerProject: "Example Apps",
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
       proofMode: "design-record",
       status: "accepted",
       acceptanceBullet: "Required evidence for this phase is listed and mapped to owning projects.",
@@ -194,7 +194,7 @@ export const launchSiteGaHandoffEvidence: LaunchSiteGaHandoffEvidenceRecord = {
       ownerProject: "V1 Launch Site, Messaging & Demo Assets",
       readinessDomain: "productization",
       cutlineCategory: "v1-blocker.productization",
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     },
     {
       id: "hosted-demo-operations-readiness",

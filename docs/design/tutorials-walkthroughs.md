@@ -81,7 +81,7 @@ example apps, docs portal, support workflow, or launch marketing assets they ref
   end-to-end example that tutorial paths can reference.
 - [developer-experience.md#plan-07](./developer-experience.md#plan-07) defines CLI, dashboard,
   local-dev, and inspection surfaces that tutorial steps exercise.
-- [example-apps.md](./example-apps.md) supplies example-app proof modes and fixtures that tutorials
+- [example-apps.md](https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9) supplies example-app proof modes and fixtures that tutorials
   can reuse.
 - [workspace-onboarding-ux.md](./workspace-onboarding-ux.md) defines first-run activation stages and
   stalled-state handoff inputs consumed by tutorials.

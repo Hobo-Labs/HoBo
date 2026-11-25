@@ -188,11 +188,11 @@ engineering gaps without reading private customer data.
 
 - [Workspace & Onboarding UX](./workspace-onboarding-ux.md) defines first-run activation stages,
   stalled states, and support handoff fields consumed by pilot scripts.
-- [Example Apps](./example-apps.md) supplies accepted sample-app proof modes when a pilot chooses a
+- [Example Apps](https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9) supplies accepted sample-app proof modes when a pilot chooses a
   sample project instead of a real project.
 - [Beta Pilot Feedback](./beta-pilot-feedback.md) defines comparable feedback intake and
   release-candidate exit rules for private-beta evidence.
-- [Launch Demo Golden Path](./launch-demo-golden-path.md) keeps launch demo assets separate from
+- [Launch Demo Golden Path](https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084) keeps launch demo assets separate from
   customer onboarding while reusing proof-mode language.
 - [Launch Support Escalation](./launch-support-escalation.md) defines support escalation language
   that the script may hand off to without creating support tooling.

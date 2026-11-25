@@ -57,7 +57,7 @@ cutline dependencies, follow-up rules, and parent-initiative status behavior.
 | Claim | State | Evidence owner | Evidence source | Risk | Disposition |
 |---|---|---|---|---|---|
 | HoBo is an AI-native meta-cloud that maps one app description onto provider-owned infrastructure through cloud-agnostic ports. | `implemented` | V1 Release Program & Cutline | [`v1-cutline-contract`](../../src/draft/technical-proofs/v1-cutline-contract/README.md) | Medium | Candidate with M1 dogfood/alpha cutline evidence; beta/GA evidence still required before broader operational claims. |
-| Launch demos can use accepted example-app proof modes to separate live behavior from reference or simulated evidence. | `simulated-reference` | Example Apps | [example-apps.md#M0 Acceptance Record](./example-apps.md#m0-acceptance-record) | Medium | Candidate with proof-mode label. |
+| Launch demos can use accepted example-app proof modes to separate live behavior from reference or simulated evidence. | `simulated-reference` | Example Apps | [example-apps.md#M0 Acceptance Record](https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9#m0-acceptance-record) | Medium | Candidate with proof-mode label. |
 | Dogfood and beta operations evidence can support private-beta messaging before broader GA operational claims are made. | `beta-only` | V1 Dogfood Yard & Hosted Operations | HOBO-403 | High | Follow-up before public use. |
 | Customer-facing release notes will distinguish supported install paths, upgrade guidance, known limitations, and support contacts. | `future-roadmap` | V1 Release Notes & Upgrade Guide | [known-limitations-register.md](./known-limitations-register.md) | Medium | Follow-up before launch publication; scope-out claims must pass the known-limitation guard. |
 | Built-in operator agents are part of the product story, but launch wording must stay tied to current Crew design and proof evidence. | `future-roadmap` | Operators/SRE | [operators-sre.md#PLAN-40](./operators-sre.md#plan-40) | High | Scope out until proof evidence exists. |
@@ -83,7 +83,7 @@ cutline dependencies, follow-up rules, and parent-initiative status behavior.
 ## Authoritative Dependencies
 
 - [vision.md#plan-17](./vision.md#plan-17) defines competitive positioning and scope honesty.
-- [example-apps.md](./example-apps.md) defines proof modes launch demos can consume.
+- [example-apps.md](https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9) defines proof modes launch demos can consume.
 - [developer-experience.md#plan-07](./developer-experience.md#plan-07) owns CLI/demo command surfaces.
 - [operators-sre.md#plan-40](./operators-sre.md#plan-40) owns Crew/operator-agent claims.
 - [ADR-0064](./adr/07-portability-extensibility.md#adr-0064) keeps monetization and business

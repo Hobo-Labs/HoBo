@@ -271,7 +271,7 @@ const STORYBOARD_STEPS: readonly SnapshopStoryboardStep[] = [
 const ASSET_MAP: readonly SnapshopAssetMapEntry[] = [
   {
     kind: "screenshots",
-    source: "docs/design/launch-demo-golden-path.md#required-assets",
+    source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084#required-assets",
     owner: "V1 Launch Site, Messaging & Demo Assets",
     proofMode: "live",
     refreshTrigger: "Any screen, command wording, output, or proof-mode label changes.",
@@ -307,7 +307,7 @@ const ASSET_MAP: readonly SnapshopAssetMapEntry[] = [
   },
   {
     kind: "docs",
-    source: "docs/design/launch-demo-golden-path.md",
+    source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     owner: "Example Apps",
     proofMode: "reference fixture",
     refreshTrigger: "Any acceptance, owner, scope, proof mode, or public-claim boundary changes.",
@@ -322,7 +322,7 @@ export const VIBE_SNAPSHOP_LAUNCH_DEMO_STORYBOARD: VibeSnapshopLaunchDemoStorybo
   packagePath: "src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard",
   proofPath: "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md",
   designRefs: [
-    "docs/design/launch-demo-golden-path.md",
+    "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     "docs/design/launch-messaging-claims.md",
     "docs/design/known-limitations-register.md",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",

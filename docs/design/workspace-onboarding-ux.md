@@ -81,7 +81,7 @@ project.
   and the app-developer first-run path.
 - [worked-example.md#plan-19](./worked-example.md#plan-19) supplies the `snapshop` activation
   fixture.
-- [example-apps.md](./example-apps.md) supplies proof modes and example command paths that onboarding
+- [example-apps.md](https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9) supplies proof modes and example command paths that onboarding
   can consume.
 - [ADR-0064](./adr/07-portability-extensibility.md#adr-0064) keeps monetization/business mechanics
   outside this platform scope record.

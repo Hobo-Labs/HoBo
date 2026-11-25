@@ -140,7 +140,7 @@ export const VIBE_FIRST_CUSTOMER_PILOT_STORYBOARD: VibeFirstCustomerPilotStorybo
     "docs/design/customer-onboarding.md",
     "docs/design/workspace-onboarding-ux.md",
     "docs/design/beta-pilot-feedback.md",
-    "docs/design/launch-demo-golden-path.md",
+    "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
     "docs/design/launch-support-escalation.md",
     "docs/design/launch-blocker-taxonomy.md",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",

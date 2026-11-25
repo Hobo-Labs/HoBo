@@ -46,7 +46,7 @@ export const launchDemoGoldenPath = {
     {
       id: "accepted-example-apps-scope",
       requirement: "Example Apps M0 scope is accepted before launch-demo assets consume it.",
-      evidenceSource: "docs/design/example-apps.md#m0-acceptance-record",
+      evidenceSource: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9#m0-acceptance-record",
     },
     {
       id: "claim-register",
@@ -56,7 +56,7 @@ export const launchDemoGoldenPath = {
     {
       id: "no-provider-secrets",
       requirement: "The path starts with fixtures and simulated/reference boundaries; no provider credentials are required.",
-      evidenceSource: "docs/design/example-apps.md#scope-out-and-non-goals",
+      evidenceSource: "https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9#scope-out-and-non-goals",
     },
   ],
   commandPath: [
@@ -210,7 +210,7 @@ export const launchDemoGoldenPath = {
       kind: "docs",
       owner: "Example Apps",
       proofMode: "design-record",
-      source: "docs/design/launch-demo-golden-path.md",
+      source: "https://linear.app/quickdeploy-ai/document/launch-demo-golden-path-archived-bf2336f97084",
       refreshTrigger: "Any acceptance, owner, scope, or public-claim boundary changes.",
     },
   ],

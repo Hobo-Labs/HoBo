@@ -81,7 +81,7 @@ blocked, and which owning project receives the next handoff.
   plan, up, inspect, logs, and human/agent parity surfaces.
 - [worked-example.md#plan-19](./worked-example.md#plan-19) keeps the outcome story tied to the
   end-to-end `snapshop` path.
-- [example-apps.md](./example-apps.md) supplies safe-test proof modes and example command paths.
+- [example-apps.md](https://linear.app/quickdeploy-ai/document/example-apps-scope-and-acceptance-archived-ca6e70d1cfb9) supplies safe-test proof modes and example command paths.
 - [traceability.md](./traceability.md) owns the durable plan/ADR-to-proof map.
 - [ADR-0064](./adr/07-portability-extensibility.md#adr-0064) keeps product UI generation and broad
   business mechanics outside the platform scope.
