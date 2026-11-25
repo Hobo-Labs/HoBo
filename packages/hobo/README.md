@@ -197,7 +197,7 @@ journal and two SQLite authority connections. It covers admission races, shared
 free allocation, tampering, restart, reservation adoption and final settlement.
 The wire contracts and CUE/PACT fixtures live with `@hobo/cloud` and
 `@hobo/broker`; these offline tests do not verify a live provider API. See the
-[hosting transition design](../../docs/design/hosting-budget-transitions.md).
+[hosting transition design](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/hosting-budget-transitions.md).
 
 `createProductionYardRuntime` is the async production composition. It requires a
 caller-owned persistent directory and trusted clock. `configureHosting` receives

@@ -77,13 +77,13 @@ HoBo's goal is a third path: **cloud portability without hiding the cloud**.
 ## Core ideas
 
 Core cloud hosting budget decisions and movement follow the
-[budgeted hosting transition contract](./docs/design/hosting-budget-transitions.md):
+[budgeted hosting transition contract](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/hosting-budget-transitions.md):
 effects and resilience are explicit, bounded commitments are reserved before activation,
 unknown provider outcomes retain their holds, and recovery/retirement require observations.
-The [provider production walkthrough](./docs/design/hosting-provider-production.md)
+The [provider production walkthrough](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/hosting-provider-production.md)
 records native execution support, enforceable operating bounds, credential custody,
 and actual anonymous acceptance separately from modeled provider tests.
-The [shared budget policy](./docs/design/shared-budget-policy.md) applies the same
+The [shared budget policy](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/shared-budget-policy.md) applies the same
 authored controls and financial authority to CI, with explicit routing objectives,
 required workload metrics and durable attempt/usage handling.
 

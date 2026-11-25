@@ -29,7 +29,7 @@ competitor:
 > Research date **2026-11-16**, read for HoBo CI from the public repository at commit
 > `43b7c4c` (Apache-2.0): the product docs under `apps/site`, the routing, retry and
 > provider-health code under `apps/api`, the shared packages and the CLI. Nothing was run
-> against the hosted service. Read alongside [CI fleet balancing](../design/ci-fleet-balancing.md),
+> against the hosted service. Read alongside [CI fleet balancing](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/ci-fleet-balancing.md),
 > [routing slips](../design/adr/routing-slips.md) and the
 > [runner order](../../packages/ci/RUNNER-ORDER.md).
 
