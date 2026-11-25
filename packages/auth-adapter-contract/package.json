@@ -1,0 +1,39 @@
+{
+	"name": "@hobo/auth-adapter-contract",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "Better Auth adapter planning contract: versioned ids, locator-only config parse, required ports descriptor, and runtime gate vocabulary shared by the adapter and implementation pack.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./json": {
+			"types": "./dist/json.d.ts",
+			"default": "./dist/json.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}
