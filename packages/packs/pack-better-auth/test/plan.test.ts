@@ -7,6 +7,7 @@ import {
 	BetterAuthRuntimeUnavailableError,
 	parseBetterAuthConfig,
 	planBetterAuthBundle,
+	toBetterAuthBundlePlanRecord,
 } from "../src/index.js";
 
 const CONFIG_INPUT = {
@@ -33,6 +34,16 @@ describe("planBetterAuthBundle", () => {
 		expect(plan.routePattern).toBe("/api/auth/*");
 		expect(plan.ports.relationalBindle).toBe("auth_db");
 		expect(Object.isFrozen(plan)).toBe(true);
+	});
+
+	it("projects the full parsed config into the durable plan record", () => {
+		const plan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		const record = toBetterAuthBundlePlanRecord(plan);
+		expect(record.parsed_config.database_profile).toBe("data.relational/v1");
+		expect(record.parsed_config.email_and_password_enabled).toBe(true);
+		expect(record.parsed_config.social_providers).toEqual(["github"]);
+		expect(record.parsed_config.organizations_enabled).toBe(true);
+		expect(record.parsed_config.secret_ref).toBe(CONFIG.secretRef);
 	});
 
 	it("refuses a signing locator mismatch", () => {

@@ -71,6 +71,10 @@ const pactFile = join(
 const interactions = parsePactInteractions(readFileSync(pactFile, "utf8"));
 
 describe("auth-adapter-config boundary pact", () => {
+	it("loads every interaction from the pact file", () => {
+		expect(interactions.length).toBeGreaterThan(0);
+	});
+
 	for (const interaction of interactions) {
 		it(interaction.description, () => {
 			const config = parseBetterAuthConfig(interaction.configBody);
