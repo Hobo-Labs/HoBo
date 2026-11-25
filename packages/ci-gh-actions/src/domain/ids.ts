@@ -125,8 +125,20 @@ export const GH_LINT_TOOLS = [
 	"zizmor",
 	"typos",
 ] as const;
+export const GH_DEFAULT_LINT_TOOLS = [
+	"actionlint",
+	"shellcheck",
+	"oxlint",
+	"ruff",
+	"typos",
+] as const satisfies readonly (typeof GH_LINT_TOOLS)[number][];
 export const GhLintTool = Schema.Literals(GH_LINT_TOOLS);
 export type GhLintTool = typeof GhLintTool.Type;
+
+export const GhRelayNodeId = Schema.NonEmptyString.pipe(
+	Schema.brand("GhRelayNodeId"),
+);
+export type GhRelayNodeId = typeof GhRelayNodeId.Type;
 
 export const GhSkipReason = Schema.Literals([
 	"not_configured",
@@ -223,6 +235,7 @@ export const GhJobContext = Schema.Struct({
 	hasNonCheckSteps: Schema.Boolean,
 	pullRequestTitle: Schema.NullOr(Schema.String),
 	nowMs: EpochMs,
+	claimNodeId: GhRelayNodeId,
 });
 export type GhJobContext = typeof GhJobContext.Type;
 

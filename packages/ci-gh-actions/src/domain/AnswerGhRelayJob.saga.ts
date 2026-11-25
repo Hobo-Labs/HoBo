@@ -30,7 +30,7 @@ import {
 } from "./GhRelayJob.aggregate.js";
 import { GhRelayRouter, RouteGhJob } from "./GhRelayRouter.aggregate.js";
 import {
-	GH_LINT_TOOLS,
+	GH_DEFAULT_LINT_TOOLS,
 	GhJobContext,
 	GhMachineId,
 	GhRelayJobId,
@@ -171,7 +171,7 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 				success: Schema.Void,
 				error: GhJobNotQueued,
 				execute: jobs
-					.send(key, new ClaimGhRelayJob({ nodeId: "hobo-relay-node" }))
+					.send(key, new ClaimGhRelayJob({ nodeId: context.claimNodeId }))
 					.pipe(Effect.asVoid),
 			});
 
@@ -190,7 +190,9 @@ export const AnswerGhRelayJobLive = AnswerGhRelayJob.toLayer(
 						continue;
 					}
 					const tools =
-						checkStep.tools.length > 0 ? checkStep.tools : [...GH_LINT_TOOLS];
+						checkStep.tools.length > 0
+							? checkStep.tools
+							: [...GH_DEFAULT_LINT_TOOLS];
 					for (const tool of tools) {
 						const run = yield* Activity.make({
 							name: `lint-${tool}`,

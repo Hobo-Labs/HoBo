@@ -237,11 +237,21 @@ export function createGhPickRunnerRegistry(
 					input.nodeId,
 					input.jobId,
 				);
-				const claimed: GhPickRunnerJobRecord = {
-					...toRecord(existing),
-					status: "claimed",
-					nodeId: input.nodeId,
-				};
+				const afterClaim = decodePickRunnerRows(
+					await c.db.execute(
+						"SELECT job_id, repository, runs_on, status, node_id, chosen_runner, queued_at_ms, rescue_at_ms FROM gh_pick_runner_jobs WHERE job_id = ?",
+						input.jobId,
+					),
+				);
+				const row = afterClaim[0];
+				if (
+					row === undefined ||
+					row.status !== "claimed" ||
+					row.node_id !== input.nodeId
+				) {
+					return null;
+				}
+				const claimed = toRecord(row);
 				c.broadcast("relayUpdated", { action: "claimed", job: claimed });
 				return claimed;
 			},

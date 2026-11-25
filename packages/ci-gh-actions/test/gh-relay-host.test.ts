@@ -19,6 +19,7 @@ import {
 	GhMachineId,
 	GhRelayApi,
 	GhRelayJobId,
+	GhRelayNodeId,
 	GhRepoSlug,
 	GhRunnerLabel,
 	GhRunnerProtocol,
@@ -153,6 +154,7 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 						hasNonCheckSteps: false,
 						pullRequestTitle: null,
 						nowMs: T0,
+						claimNodeId: GhRelayNodeId.make("hobo-relay-node"),
 					},
 				});
 
@@ -209,6 +211,7 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 							hasNonCheckSteps: false,
 							pullRequestTitle: "feat: durable check",
 							nowMs: T0,
+							claimNodeId: GhRelayNodeId.make("hobo-relay-node"),
 						},
 					});
 					for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -292,6 +295,13 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 				});
 				expect(claimed?.status).toBe("claimed");
 				expect(claimed?.nodeId).toBe("relay-node-a");
+
+				const raced = await conn.claimJob({
+					jobId: GhRelayJobId.make("gh-job-1"),
+					nodeId: "relay-node-b",
+				});
+				expect(raced?.status).toBe("claimed");
+				expect(raced?.nodeId).toBe("relay-node-a");
 
 				const answered = await conn.answerJob({
 					jobId: GhRelayJobId.make("gh-job-1"),

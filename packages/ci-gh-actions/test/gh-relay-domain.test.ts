@@ -42,6 +42,7 @@ import {
 	GhRelayJobClaimed,
 	GhRelayJobFailed,
 	GhRelayJobId,
+	GhRelayNodeId,
 	GhRelayJobQueued,
 	GhRelayJobRouted,
 	GhRelayJobWaiting,
@@ -107,6 +108,7 @@ function jobContext(
 		readonly hasNonCheckSteps: boolean;
 		readonly pullRequestTitle: string | null;
 		readonly nowMs: EpochMs;
+		readonly claimNodeId: GhRelayNodeId;
 	}> = {},
 ) {
 	return {
@@ -131,6 +133,8 @@ function jobContext(
 		hasNonCheckSteps: overrides.hasNonCheckSteps ?? false,
 		pullRequestTitle: overrides.pullRequestTitle ?? null,
 		nowMs: overrides.nowMs ?? T0,
+		claimNodeId:
+			overrides.claimNodeId ?? GhRelayNodeId.make("hobo-relay-node"),
 	};
 }
 
