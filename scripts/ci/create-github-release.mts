@@ -40,14 +40,14 @@ import {
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { camps } from "../../release/hobo-release.delivery.ts";
 import {
 	formatReleaseFreightBlockedReason,
-	ReleaseFreightBlockedError,
 	parseReleaseFreightAuthorMessage,
+	ReleaseFreightBlockedError,
 	releaseFreightLogFragment,
 	validateReasonStructuredDetail,
 } from "../../packages/cd/dist/reconcile/release-freight-detail.js";
+import { camps } from "../../release/hobo-release.delivery.ts";
 
 // ── Release Freight ─────────────────────────────────────────────────────────
 
@@ -307,8 +307,7 @@ export function releaseBlockedRealizerMessage(
 	const parts = (reasons ?? []).map((reason) => {
 		const code = reason.code?.trim() || "unknown";
 		const structured = cdReasonStructured(reason);
-		if (structured)
-			return formatReleaseFreightBlockedReason(code, structured);
+		if (structured) return formatReleaseFreightBlockedReason(code, structured);
 		const parsed = parseReleaseFreightAuthorMessage(
 			reason.message ?? "",
 			allowed,
@@ -446,11 +445,7 @@ export function releaseWorkflowCredentials(
 					scope,
 				);
 			if (!releaseWorkflowGithubAppScopeAllowed(scope))
-				throw new ReleaseFreightBlockedError(
-					"scope-not-allowed",
-					ref,
-					scope,
-				);
+				throw new ReleaseFreightBlockedError("scope-not-allowed", ref, scope);
 			if (!repository)
 				throw new ReleaseFreightBlockedError(
 					"missing-GITHUB_REPOSITORY",
