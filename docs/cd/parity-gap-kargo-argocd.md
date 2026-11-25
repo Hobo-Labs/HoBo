@@ -37,7 +37,7 @@ reverses the ADR or competitor capture.
 | GitOps publisher | `packages/cd-gitops/` (`PublisherPort` for Argo CD + Flux) |
 | Kubernetes fleet | `packages/cd-kube-fleet/` (OCM/Karmada, not Argo CD hub) |
 | Hosted tick + CD API | `packages/cd-vercel/`, `packages/hobo-cd/` |
-| CLI composition | `packages/cd/compose/` (`hobo serve cd`, engine wiring) |
+| CLI composition | `packages/cd/src/compose/` (`@hobo/cd/compose`; `hobo serve cd`, engine wiring) |
 | Prior mapping | `docs/competitors/kargo.md`, `docs/competitors/argo-cd.md`, `docs/design/continuous-delivery.md` |
 | Kargo-named tests | `packages/cd/test/pipelines/*.test.ts` (`Kargo parity:` cases) |
 
@@ -57,21 +57,24 @@ and `scripts/ci/create-github-release.mts` (parallel release fix).
 
 ## Summary counts
 
-Counts are derived only from the tables in the next sections (not estimates).
+Counts are derived only from the numbered scorecard tables in the next sections
+(not estimates). The three optional formalization **not-built** rows under
+§ Cross-cutting scorecard are **excluded** from the cross-cutting column here;
+they are scoped separately in that subsection.
 
 | State | Kargo primitive map (§) | Argo CD primitive map (§) | Cross-cutting scorecard (§) |
 | --- | --- | --- | --- |
-| pass | 9 | 2 | 3 |
-| partial | 5 | 5 | 5 |
-| built-not-proven | 0 | 3 | 0 |
+| pass | 9 | 1 | 3 |
+| partial | 5 | 6 | 5 |
+| built-not-proven | 0 | 4 | 0 |
 | not-built | 1 | 0 | 2 |
-| met-differently | 2 | 2 | 2 |
+| met-differently | 2 | 2 | 0 |
 | intentional-gap | 3 | 0 | 2 |
 
 ## Kargo primitive map
 
 HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
-**parity state** and **target package**.
+**parity state** and evidence pointers.
 
 | Kargo primitive | HoBo counterpart | State | Evidence / gap |
 | --- | --- | --- | --- |
@@ -86,7 +89,7 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 | **Implicit Argo CD health wait** | Publisher `observe()` + rollout converge | **partial** | GitOps publisher waits for sync/health; no Kargo `argocd-wait` step semantics or sync-window attribution (manual vs auto). |
 | **Manual Freight approval** | `freight.Approved` | **pass** | Policy-gated, expiring; audited in journal. |
 | **Auto-promotion Newest / MatchUpstream / MatchNode** | `AUTO_PROMOTION_*` on pipeline nodes | **pass** | Proto (`AUTO_PROMOTION_MATCH_NODE` et al.), controller, fan-out catch-up tests (`packages/cd/test/pipelines/`, `fanout/`). |
-| **Auto-promotion holds** | — | **not-built** | Kargo holds auto-promotion while manual work is in flight; no equivalent in controller yet. |
+| **Auto-promotion holds** | — | **not-built** | Kargo sets hold keys on Stages and blocks auto-promotion while a manual promotion for **non-candidate** Freight is in flight (until cleared or timed out). HoBo `PipelineController` has no hold key / tick-skip path yet (`packages/cd/src/pipelines/controller.ts`; P4). |
 | **Project-level auto-promotion toggle** | Per-node `auto_promotion` only | **partial** | Kargo `ProjectConfig` gates who may enable auto-promotion. HoBo uses pipeline node fields + `pipeline.apply` authz; no project-wide admin-only switch. |
 | **Promotion template + steps** | Promotion saga + typed hooks | **met-differently** | No `git-clone`, `git-commit`, `argocd-update`, OCI copy, Helm, etc. Hooks: `RUNBOOK`, `NOTIFY`, `SUITE` only (ADR-0182 D4; `packages/cd/src/promotion/README.md`). |
 | **Stage / promotion variables + `${{ }}` expressions** | — | **intentional-gap** | Kargo Stage `spec.vars` and promotion expressions. HoBo has no expression runtime (ADR-0182 D4; rejected in ADR-0182 consequences). |
@@ -126,7 +129,7 @@ behavior, rendered Applications, and observable convergence.
 | **Application (source → destination)** | Rendered `argo-cd.application.json` + ConfigMap set | **built-not-proven** | `packages/cd-gitops/src/render.ts`; golden tests. Consumer PACT — not provider-verified traffic; no production publisher→Argo observation yet (P9). |
 | **Sync / health status** | `observe()` → CONVERGED / CONVERGING / BLOCKED | **built-not-proven** | PACT + unit tests; revision must match Git commit. Same production observation gap. |
 | **Pull-based GitOps** | Publisher commits; engine pulls | **built-not-proven** | No Argo CD write API (by design). Channel rule needs one linked CONVERGED observation. |
-| **Flux alternative** | Same publisher package | **pass** | `flux.kustomization.json` path; unit/golden tests in `@hobo/cd-gitops`. |
+| **Flux alternative** | Same publisher package | **built-not-proven** | `flux.kustomization.json` path; same consumer PACT / golden proof as Argo (`packages/cd-gitops/README.md` Proof). No linked production publisher→Flux CONVERGED observation (P9 is Argo-only today). |
 | **AppProject / RBAC** | `@hobo/cd/authz` + Station policy packs | **met-differently** | `authz` evaluates `@hobo/contracts` rules on the Station pack (`packages/cd/src/authz/README.md`). Not AppProject-shaped. `@hobo/policy` posture is separate (ADR-0182 D25). |
 | **OutOfSync / per-resource diff UI** | Drift events + `drift.DiffProposed` | **partial** | Reconciler emits drift; no Argo-like resource tree or live manifest diff UI. |
 | **ApplicationSet / matrix generators** | Placement + fan-out | **partial** | Fan-out is journal-driven over Camps; no Git-rendered ApplicationSet CRD. |
@@ -155,8 +158,9 @@ new hook kinds without an **ADR-0182 amendment**.
 
 ## Cross-cutting scorecard
 
-Explicit rows for engine layout, formalization proposals, and release touchpoints.
-State counts appear in the summary table above.
+Explicit rows for engine layout and release touchpoints. State counts for this
+12-row table appear in the summary table above. Optional formalization ideas
+below are **not** included in those counts.
 
 | Topic | State | Notes |
 | --- | --- | --- |
@@ -200,7 +204,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row (syncPolicy already in render when `autoSync`) |
 | **P7** | CLI/MCP: promotion graph + freight timeline first-class | Promotion UI partial |
 | **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
-| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows |
+| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo (+ Flux publisher) channel rows |
 
 Additional engines (e.g. Octopus) follow the same registry pattern only if product
 rejects the **intentional-gap** on a second promotion brain.
