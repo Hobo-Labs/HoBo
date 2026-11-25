@@ -12,7 +12,7 @@ Source issue: HOBO-496.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/support-sla-channels-contract`](../../src/draft/exp-proofs/cx/support-sla-channels-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-496-support-sla-channels`](./proofs/hobo-496-support-sla-channels/README.md).
+[`proofs/hobo-496-support-sla-channels`](https://linear.app/quickdeploy-ai/document/hobo-496-support-sla-channels-m0-proof-archived-910dfb9351ff).
 
 ## M0 Acceptance Record
 

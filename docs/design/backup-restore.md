@@ -12,7 +12,7 @@ Source issue: HOBO-429.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/backup-restore-scope-contract`](../../src/draft/exp-proofs/dx/backup-restore-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-429-backup-restore`](./proofs/hobo-429-backup-restore/README.md).
+[`proofs/hobo-429-backup-restore`](https://linear.app/quickdeploy-ai/document/hobo-429-backup-and-restore-scope-evidence-archived-ad95d77f95ed).
 M1 launch-drill proof lives in
 [`src/draft/exp-proofs/dx/backup-restore-launch-drill-contract`](../../src/draft/exp-proofs/dx/backup-restore-launch-drill-contract/README.md)
 with branch evidence in

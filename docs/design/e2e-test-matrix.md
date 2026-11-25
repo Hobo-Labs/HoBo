@@ -12,7 +12,7 @@ Source issue: HOBO-438.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/e2e-test-matrix-scope-acceptance`](../../src/draft/exp-proofs/dx/e2e-test-matrix-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-438-e2e-test-matrix`](./proofs/hobo-438-e2e-test-matrix/README.md).
+[`proofs/hobo-438-e2e-test-matrix`](https://linear.app/quickdeploy-ai/document/hobo-438-e2e-test-matrix-m0-scope-proof-archived-c937561365a3).
 
 ## M0 Acceptance Record
 

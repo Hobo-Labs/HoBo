@@ -12,7 +12,7 @@ Source issue: HOBO-431.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/release-channels-scope`](../../src/draft/exp-proofs/dx/release-channels-scope/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-431-release-channels`](./proofs/hobo-431-release-channels/README.md).
+[`proofs/hobo-431-release-channels`](https://linear.app/quickdeploy-ai/document/hobo-431-release-channels-m0-scope-proof-archived-4276859724fb).
 
 ## M0 Acceptance Record
 

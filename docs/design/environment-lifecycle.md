@@ -12,7 +12,7 @@ Source issue: HOBO-414.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/environment-lifecycle-scope`](../../src/draft/exp-proofs/dx/environment-lifecycle-scope/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-414-environment-lifecycle`](./proofs/hobo-414-environment-lifecycle/README.md).
+[`proofs/hobo-414-environment-lifecycle`](https://linear.app/quickdeploy-ai/document/hobo-414-environment-lifecycle-m0-scope-proof-archived-45fcb5211226).
 
 ## M0 Acceptance Record
 
