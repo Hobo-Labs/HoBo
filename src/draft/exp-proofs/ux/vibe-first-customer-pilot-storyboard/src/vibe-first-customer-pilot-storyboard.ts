@@ -86,7 +86,7 @@ type VibeFirstCustomerPilotStoryboard = {
   readonly issue: "HOBO-549";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard";
-  readonly proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly QuickstartFixtureRef[];
   readonly personas: readonly PilotPersona[];
@@ -135,7 +135,7 @@ export const VIBE_FIRST_CUSTOMER_PILOT_STORYBOARD: VibeFirstCustomerPilotStorybo
   issue: "HOBO-549",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard",
-  proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3",
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
@@ -371,7 +371,7 @@ export function validateVibeFirstCustomerPilotStoryboard(
   if (storyboard.packagePath !== "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (storyboard.proofPath !== "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md") {
+  if (storyboard.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(storyboard.personas, REQUIRED_PILOT_STORYBOARD_PERSONAS)) {

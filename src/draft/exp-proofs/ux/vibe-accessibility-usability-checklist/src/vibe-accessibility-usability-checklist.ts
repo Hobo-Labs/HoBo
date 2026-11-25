@@ -118,7 +118,7 @@ type VibeAccessibilityChecklist = {
   readonly issue: "HOBO-554";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist";
-  readonly proofPath: "docs/design/proofs/vibe-accessibility-usability-checklist/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-554-vibe-accessibility-usability-checklist-proof-archived-2202c0f8c9dc";
   readonly designRefs: readonly string[];
   readonly quickstartFixtureRefs: readonly AccessibilityQuickstartFixtureReference[];
   readonly checks: readonly AccessibilityCheck[];
@@ -370,7 +370,7 @@ export const VIBE_ACCESSIBILITY_USABILITY_CHECKLIST: VibeAccessibilityChecklist 
   issue: "HOBO-554",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist",
-  proofPath: "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-554-vibe-accessibility-usability-checklist-proof-archived-2202c0f8c9dc",
   designRefs: [
     "docs/design/accessibility-usability-launch-baseline.md",
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
@@ -479,7 +479,7 @@ export function validateVibeAccessibilityChecklist(
   if (checklist.packagePath !== "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (checklist.proofPath !== "docs/design/proofs/vibe-accessibility-usability-checklist/README.md") {
+  if (checklist.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-554-vibe-accessibility-usability-checklist-proof-archived-2202c0f8c9dc") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(checklist.checks.map((check) => check.id), REQUIRED_ACCESSIBILITY_CHECKS)) {

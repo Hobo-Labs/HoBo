@@ -8,7 +8,7 @@ package vibe_launch_asset_refresh_plan
 	schema: "hobo.vibe-launch-asset-refresh-plan/v1"
 	issue: "HOBO-556"
 	target_package_path: "src/draft/exp-proofs/ux/vibe-launch-asset-refresh-plan"
-	proof_note_path: "docs/design/proofs/vibe-launch-asset-refresh-plan/README.md"
+	proof_note_path: "https://linear.app/quickdeploy-ai/document/hobo-556-vibe-launch-asset-refresh-plan-proof-archived-aa444a865a7a"
 	source_refs: [...string] & [_, ...]
 	audience: [...string] & [_, ...]
 	assets: [...#LaunchAsset]

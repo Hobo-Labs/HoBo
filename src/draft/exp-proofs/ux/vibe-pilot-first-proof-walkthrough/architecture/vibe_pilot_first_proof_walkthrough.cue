@@ -9,7 +9,7 @@ package architecture_evidence
 #VibePilotFirstProofConsumedStoryboard: {
 	source_issue: "HOBO-549"
 	package_path: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard"
-	proof_path:   "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md"
+	proof_path:   "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb"
 	stages:       [...#PilotStage]
 }
 

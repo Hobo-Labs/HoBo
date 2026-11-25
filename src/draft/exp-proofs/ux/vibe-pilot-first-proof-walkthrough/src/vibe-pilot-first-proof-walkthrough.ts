@@ -32,7 +32,7 @@ type PilotFirstProofMode = (typeof REQUIRED_PILOT_FIRST_PROOF_PROOF_MODES)[numbe
 type ConsumedStoryboard = {
   readonly sourceIssue: "HOBO-549";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard";
-  readonly proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb";
   readonly stages: readonly PilotStage[];
 };
 
@@ -107,12 +107,12 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
     "docs/design/support-workflow.md",
     "docs/design/beta-pilot-feedback.md",
     "docs/design/launch-blocker-taxonomy.md",
-    "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb",
   ],
   consumedStoryboard: {
     sourceIssue: "HOBO-549",
     packagePath: "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard",
-    proofPath: "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md",
+    proofPath: "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb",
     stages: REQUIRED_PILOT_STORYBOARD_STAGES,
   },
   steps: [
@@ -361,7 +361,7 @@ function validateConsumedStoryboard(
   if (consumed.packagePath !== "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard") {
     errors.push({ code: "wrong-consumed-package", message: "HOBO-549 package path drifted" });
   }
-  if (consumed.proofPath !== "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md") {
+  if (consumed.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb") {
     errors.push({ code: "wrong-consumed-proof", message: "HOBO-549 proof path drifted" });
   }
   if (!arraysEqual(consumed.stages, REQUIRED_PILOT_STORYBOARD_STAGES)) {

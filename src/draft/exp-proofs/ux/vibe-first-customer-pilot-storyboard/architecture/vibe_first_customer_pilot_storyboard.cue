@@ -40,7 +40,7 @@ package architecture_evidence
 	issue:                   "HOBO-549"
 	phase:                   "M1"
 	package_path:            "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard"
-	proof_path:              "docs/design/proofs/vibe-first-customer-pilot-storyboard/README.md"
+	proof_path:              "https://linear.app/quickdeploy-ai/document/hobo-549-vibe-first-customer-pilot-storyboard-proof-archived-c50c314c3edb"
 	design_refs:             [...string]
 	quickstart_fixture_refs: [...#VibeFirstCustomerPilotQuickstartFixtureReference]
 	personas:                [...string]
