@@ -123,7 +123,7 @@ export const RELEASE_NOTES_PRIVATE_BETA_EVIDENCE: ReleaseNotesPrivateBetaEvidenc
       id: "docs-copy-owner-and-limitation-register",
       status: "accepted",
       owningProject: "V1 Docs",
-      proofSource: ["docs/design/docs-portal.md", "docs/design/proofs/hobo-407-release-notes-upgrade-guide/index.md"],
+      proofSource: ["docs/design/docs-portal.md", "https://linear.app/quickdeploy-ai/document/hobo-407-release-notes-and-upgrade-guide-proof-archived-ee58bdd74348"],
       feeds: ["known-limitations", "customer-safe-copy-ownership"]
     }
   ],
