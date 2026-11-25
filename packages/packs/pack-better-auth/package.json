@@ -18,16 +18,8 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@hobo/adapter-better-auth": "workspace:*",
+		"@hobo/auth-adapter-contract": "workspace:*",
 		"@hobo/core": "workspace:*"
-	},
-	"peerDependencies": {
-		"better-auth": ">=1.7.5"
-	},
-	"peerDependenciesMeta": {
-		"better-auth": {
-			"optional": true
-		}
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
