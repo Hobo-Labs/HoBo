@@ -254,6 +254,7 @@ export class ControlModel {
 		capabilityId: string,
 		verbs: readonly Verb[],
 	): void {
+		const ownedVerbs = Object.freeze(checkedVerbs(verbs));
 		const existing = this.capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.tick();
@@ -261,10 +262,14 @@ export class ControlModel {
 			return;
 		}
 		this.tick();
-		this.capabilities.set(capabilityId, { id: capabilityId, tenantId, verbs });
+		this.capabilities.set(capabilityId, {
+			id: capabilityId,
+			tenantId,
+			verbs: ownedVerbs,
+		});
 		this.append(tenantId, "capability.added", {
 			capabilityId,
-			verbs: verbs.join(","),
+			verbs: ownedVerbs.join(","),
 		});
 	}
 
@@ -273,6 +278,7 @@ export class ControlModel {
 		capabilityId: string,
 		keep: readonly Verb[],
 	): void {
+		const ownedKeep = checkedVerbs(keep);
 		const cap = this.capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
@@ -282,7 +288,7 @@ export class ControlModel {
 		}
 		this.tick();
 		const allowed = new Set(cap.verbs);
-		cap.verbs = keep.filter((verb) => allowed.has(verb));
+		cap.verbs = ownedKeep.filter((verb) => allowed.has(verb));
 		this.append(cap.tenantId, "capability.attenuated", {
 			capabilityId,
 			verbs: cap.verbs.join(","),
@@ -596,11 +602,21 @@ function tenantFingerprint(blob: SnapshotBlob, tenantId: string): string {
 	return scratch.fingerprint(tenantId);
 }
 
+function isVerb(value: string): value is Verb {
+	return ALL_VERBS.some((verb) => verb === value);
+}
+
+function checkedVerbs(verbs: readonly Verb[]): Verb[] {
+	const owned = [...verbs];
+	if (!owned.every(isVerb)) throw new TypeError("invalid capability verb");
+	return owned;
+}
+
 function parseVerbs(raw: string | undefined): Verb[] {
-	return (raw ?? "").split(",").filter((verb): verb is Verb =>
-		// SAFETY: ALL_VERBS is the runtime source for the Verb union.
-		(ALL_VERBS as readonly string[]).includes(verb),
-	);
+	if (raw === undefined || raw === "") return [];
+	const verbs = raw.split(",");
+	if (!verbs.every(isVerb)) throw new TypeError("invalid capability verb");
+	return verbs;
 }
 
 export function verdict(

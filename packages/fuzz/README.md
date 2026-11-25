@@ -19,6 +19,9 @@ The in-process API surface is described by
 | `pnpm run test:fuzz` | Jazzer-shaped serialized-input smoke | yes, as part of the package `test` script |
 | `pnpm run test:fuzz:nightly` | prints the docker-gated nightly plan | no |
 
+The reference model rejects unknown capability verbs and sparse verb arrays during
+creation and attenuation before changing its clock, state, or event history.
+
 Trainable gold/silver: `fuzzTrainable(fn, seeds)` runs seed-holds,
 determinism, fail-closed, pollution, and bound checks against a live
 `"use training"` function. Outputs may be circular, bigint, `Date`, or
