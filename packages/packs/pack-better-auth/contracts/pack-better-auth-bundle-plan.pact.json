@@ -1,0 +1,61 @@
+{
+	"consumer": { "name": "hobo-pack-better-auth" },
+	"provider": { "name": "hobo-auth-bundle-host" },
+	"interactions": [
+		{
+			"description": "a bundle plan is accepted when every required port is wired and the signing locator matches config",
+			"request": {
+				"method": "POST",
+				"path": "/auth/bundles/plan",
+				"body": {
+					"config": {
+						"contract": "hobo.auth-adapter/v1",
+						"adapterId": "better-auth",
+						"basePath": "/api/auth",
+						"secretRef": "hobo-secret://tenant-1/auth/better-auth-signing"
+					},
+					"ports": {
+						"relationalBindle": "auth-db",
+						"httpBindle": "auth-http",
+						"signingSecretRef": "hobo-secret://tenant-1/auth/better-auth-signing"
+					},
+					"forExecution": false
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"packId": "pack.better-auth/v1",
+					"descriptorId": "better-auth",
+					"routePattern": "/api/auth/*"
+				}
+			}
+		},
+		{
+			"description": "a bundle plan is refused when the signing locator on ports disagrees with parsed config",
+			"request": {
+				"method": "POST",
+				"path": "/auth/bundles/plan",
+				"body": {
+					"config": {
+						"contract": "hobo.auth-adapter/v1",
+						"adapterId": "better-auth",
+						"basePath": "/api/auth",
+						"secretRef": "hobo-secret://tenant-1/auth/better-auth-signing"
+					},
+					"ports": {
+						"relationalBindle": "auth-db",
+						"httpBindle": "auth-http",
+						"signingSecretRef": "hobo-secret://tenant-1/auth/other-signing"
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "BETTER_AUTH_BUNDLE_PORT_INVALID"
+				}
+			}
+		}
+	]
+}
