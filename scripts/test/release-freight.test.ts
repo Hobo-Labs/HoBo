@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
+import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 import {
 	announceVerdict,
 	awaitReleasePagesWall,
@@ -644,6 +645,18 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		const gate = job("release-pr-gate");
 		expect(gate).toMatch(/needs: \[[^\]]*\brelease-realize\b[^\]]*\]/u);
 		expect(gate).toContain("needs.release-realize.result");
+	});
+
+	it("builds script package dist before release-contract vitest", () => {
+		const contract = job("release-contract");
+		for (const pkg of RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS) {
+			expect(contract).toContain(`--filter=${pkg}`);
+		}
+		before(
+			contract,
+			"Build release-contract script dependencies",
+			"pnpm exec vitest run",
+		);
 	});
 
 	it("runs and triggers on the release Freight CLI tests", () => {
