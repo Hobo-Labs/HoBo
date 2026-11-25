@@ -1,7 +1,7 @@
 import {
 	type FleetFinancialModel,
 	parseFleetFinancialModel,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 const MB = 1024 * 1024;
 

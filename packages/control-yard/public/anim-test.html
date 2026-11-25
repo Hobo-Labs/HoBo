@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bo Animation Test — measure-first harness</title>
+    <style>
+      body { margin: 0; font-family: monospace; background: #222; color: #eee; }
+      #hud { padding: 8px 12px; }
+      canvas { display: block; margin: 12px auto; background: #3a4a3a; image-rendering: pixelated; border: 1px solid #666; }
+      button { font: inherit; margin-right: 6px; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <strong>AnimTest</strong>
+      <span id="label">loading…</span>
+      <div>
+        <button type="button" data-anim="bo.idle">idle</button>
+        <button type="button" data-anim="bo.walk.east">walk east</button>
+        <button type="button" data-anim="bo.walk.west">walk west</button>
+        <button type="button" data-anim="guest.swe-claude.idle">guest idle</button>
+        <button type="button" data-anim="guest.swe-claude.work">guest work</button>
+      </div>
+      <p>phaser-gamedev AnimTest pattern: isolate each sheet before gameplay. ← → or buttons.</p>
+    </div>
+    <canvas id="c" width="640" height="480"></canvas>
+    <script type="module" src="./anim-test.js"></script>
+  </body>
+</html>

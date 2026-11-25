@@ -16,6 +16,7 @@
 - deploy (delivery): Attested continuous delivery status/logs/rollback (secret-free) — CLI `hobo deploy`; MCP tool `deploy`
 - ci (delivery): Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project — CLI `hobo ci`; MCP tool `ci`
 - cd (delivery): Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy — CLI `hobo cd`; MCP tool `cd`
+- fleet (control plane): Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops) — CLI `hobo fleet`; MCP tool `fleet`
 - incident (delivery): CD failure disposition: A2H handoff or sandboxed self-heal — CLI `hobo incident`; MCP tool `incident`
 - claim (identity): Bind an anonymous deployment to an account — CLI `hobo claim`; MCP tool `claim`
 - recipes (read-only): List and inspect deployment recipes and their claim terms — CLI `hobo recipes`; MCP tool `recipes`

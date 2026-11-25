@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	clone,
 	create,
+	fromBinary,
 	fromJsonString,
 	toJsonString,
 } from "@bufbuild/protobuf";
@@ -30,6 +31,20 @@ import {
 	SandboxPricingSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
+import {
+	FLEET_VIEW_CONTEXT,
+	type FleetClient,
+	type FleetFailure,
+	type FleetId,
+	type FleetVerdict,
+	type FleetView,
+	FleetViewSchema,
+	MEMBER_RECORD_CONTEXT,
+	type MemberList,
+	MemberListSchema,
+	type MemberRecord,
+	MemberRecordSchema,
+} from "@hobo/fleet";
 import { z } from "zod";
 import {
 	accountLease,
@@ -46,14 +61,6 @@ import {
 	IsolatedOnboardingError,
 	prepareIsolatedConnection,
 } from "./isolated-onboarding.js";
-import {
-	createMeshNodesReader,
-	type MeshNodesReader,
-} from "./mesh-nodes-reader.js";
-import {
-	meshNodeReportsForAccount,
-	meshNodeReportsJson,
-} from "./mesh-records.js";
 import {
 	applyOnboarding,
 	connectRepository,
@@ -185,8 +192,83 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
-// public-contract: the relay route that lists the mesh's nodes.
-export const MESH_NODES_PATH = "/v1/mesh/nodes";
+// public-contract: the relay route that lists the members of the fleet it reads.
+export const RELAY_FLEET_MEMBERS_PATH = "/v1/fleet/members";
+
+export type RelayFleetReads = Pick<
+	FleetClient,
+	"listMembers" | "fleetView" | "fleetVerdict"
+>;
+
+export type RelayFleet = Readonly<{
+	reads: RelayFleetReads;
+	fleetId: FleetId;
+}>;
+
+export function relayFleetReads(client: FleetClient): RelayFleetReads {
+	return {
+		listMembers: (request) => client.listMembers(request),
+		fleetView: (request) => client.fleetView(request),
+		fleetVerdict: (request) => client.fleetVerdict(request),
+	};
+}
+
+// public-contract: the refusal of a relay composed without a fleet.
+export const RELAY_READS_NO_FLEET = "this relay reads no fleet";
+
+function authorityRefusal(error: FleetFailure): ControlError {
+	const status =
+		error.code === "fleet-unknown" || error.code === "member-unknown"
+			? 404
+			: error.code === "unavailable"
+				? 503
+				: 502;
+	return new ControlError(
+		status,
+		`the fleet authority refused the read (${error.code})`,
+	);
+}
+
+function configured(fleet: RelayFleet | undefined): RelayFleet {
+	if (!fleet) throw new ControlError(503, RELAY_READS_NO_FLEET);
+	return fleet;
+}
+
+export async function relayFleetMemberList(
+	fleet: RelayFleet | undefined,
+): Promise<MemberList> {
+	const { reads, fleetId } = configured(fleet);
+	const answer = await reads.listMembers({ fleet: fleetId });
+	if (!answer.ok) throw authorityRefusal(answer.error);
+	return answer.value;
+}
+
+export function relayMemberRecords(list: MemberList): MemberRecord[] {
+	return list.members
+		.filter((envelope) => envelope.context === MEMBER_RECORD_CONTEXT)
+		.map((envelope) => fromBinary(MemberRecordSchema, envelope.payload));
+}
+
+export async function relayFleetView(
+	fleet: RelayFleet | undefined,
+): Promise<FleetView> {
+	const { reads, fleetId } = configured(fleet);
+	const answer = await reads.fleetView({ fleetId });
+	if (!answer.ok) throw authorityRefusal(answer.error);
+	if (answer.value.context !== FLEET_VIEW_CONTEXT)
+		throw new ControlError(502, "the fleet authority answered another record");
+	return fromBinary(FleetViewSchema, answer.value.payload);
+}
+
+export async function relayFleetVerdict(
+	fleet: RelayFleet | undefined,
+	label: string,
+): Promise<FleetVerdict> {
+	const { reads, fleetId } = configured(fleet);
+	const answer = await reads.fleetVerdict({ fleetId, label });
+	if (!answer.ok) throw authorityRefusal(answer.error);
+	return answer.value;
+}
 
 /**
  * The control routes that write configuration, or keep records a relay with
@@ -233,12 +315,7 @@ export function createHostedControlPlane(options: {
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
-	/**
-	 * What the relay mesh looks like from this host, for `GET /v1/mesh/nodes`.
-	 * A host with no mesh leaves it out, and the route then answers
-	 * `mesh: "not-configured"`: an answer, not an error.
-	 */
-	meshNodes?: MeshNodesReader | undefined;
+	fleet?: RelayFleet | undefined;
 	/**
 	 * The relay reads its configuration from a config service and never
 	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
@@ -248,7 +325,6 @@ export function createHostedControlPlane(options: {
 	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
 }) {
 	const { store, relay } = options;
-	const meshNodes = options.meshNodes ?? createMeshNodesReader();
 	const state = (): Promise<ConfigurationState> => configurationState(store);
 	async function scope(
 		principal: ControlPrincipal,
@@ -295,7 +371,7 @@ export function createHostedControlPlane(options: {
 		if (
 			!path.startsWith("/v1/accounts/self/") &&
 			!path.startsWith("/v2/accounts/self/") &&
-			path !== MESH_NODES_PATH
+			path !== RELAY_FLEET_MEMBERS_PATH
 		)
 			return undefined;
 		if (options.readOnlyConfig && isConfigWriteRoute(request.method, path))
@@ -330,27 +406,15 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
-			// The mesh is the relay's own infrastructure, not one account's: any
 			// account credential that may read (`policy:read`) may see it. The
-			// answer names nodes, capacity and public keys, never a secret.
-			if (path === MESH_NODES_PATH) {
+			if (path === RELAY_FLEET_MEMBERS_PATH) {
 				if (request.method !== "GET")
 					throw new ControlError(405, "method not allowed");
-				// A machine running jobs for one repository is shown in full only
-				// to the account that owns that repository.
-				const connections =
-					(await store.configuration())?.configuration?.connections ?? [];
 				return response(
 					200,
-					meshNodeReportsJson(
-						meshNodeReportsForAccount(
-							await meshNodes(),
-							new Set(
-								connections
-									.filter((entry) => entry.accountId === principal.accountId)
-									.map((entry) => entry.repository),
-							),
-						),
+					toJsonString(
+						MemberListSchema,
+						await relayFleetMemberList(options.fleet),
 					),
 				);
 			}

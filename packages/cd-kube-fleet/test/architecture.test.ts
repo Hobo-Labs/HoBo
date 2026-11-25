@@ -1,3 +1,7 @@
+// I11 and D26 as architecture tests: no Kubernetes type crosses into
+// @hobo/cd; this package speaks Kubernetes over HttpTransport with no client
+// library; and it never uses a fleet manager's own rollout, placement,
+// override or failover machinery.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,9 +25,12 @@ function files(
 	return out.sort();
 }
 
+// Kubernetes fleet vocabulary that must stay inside this adapter package.
 const KUBE_TYPES =
 	/\b(ManifestWork|ManifestWorkReplicaSet|PropagationPolicy|ClusterPropagationPolicy|OverridePolicy|ResourceBinding|ClusterProfile|ManagedCluster|AddOnPlacementScore)\b|open-cluster-management\.io|karmada\.io|multicluster\.x-k8s\.io|cd-kube-fleet/u;
 
+// REST resources whose use would hand scheduling, rollout, override or
+// failover to the fleet manager (D26).
 const FORBIDDEN_RESOURCES =
 	/"[^"\n]*\b(manifestworkreplicasets|placements|placementdecisions|addonplacementscores|overridepolicies|clusteroverridepolicies|clusterpropagationpolicies|workloadrebalancers)\b[^"\n]*"|`[^`\n]*\b(manifestworkreplicasets|placements|placementdecisions|overridepolicies|clusteroverridepolicies)\b[^`\n]*`/u;
 
@@ -46,13 +53,15 @@ describe("I11 neutral core and D26 transport-only", () => {
 		expect(KUBE_TYPES.test(proto)).toBe(false);
 	});
 
-	it("@hobo/cd does not depend on this adapter; this adapter depends on @hobo/cd and @hobo/core only", () => {
+	it("@hobo/cd does not depend on this adapter; this adapter depends on @hobo/cd, @hobo/core and @hobo/fleet (TARGET declaration) only", () => {
+		// SAFETY: package manifests are JSON objects.
 		const cd = JSON.parse(
 			readFileSync(join(cdRoot, "package.json"), "utf8"),
 		) as { dependencies?: Record<string, string> };
 		expect(Object.keys(cd.dependencies ?? {})).not.toContain(
 			"@hobo/cd-kube-fleet",
 		);
+		// SAFETY: package manifests are JSON objects.
 		const own = JSON.parse(
 			readFileSync(join(packageRoot, "package.json"), "utf8"),
 		) as {
@@ -63,6 +72,7 @@ describe("I11 neutral core and D26 transport-only", () => {
 			"@bufbuild/protobuf",
 			"@hobo/cd",
 			"@hobo/core",
+			"@hobo/fleet",
 		]);
 		expect(own.devDependencies).toBeUndefined();
 	});
@@ -74,7 +84,7 @@ describe("I11 neutral core and D26 transport-only", () => {
 				/@kubernetes\/client-node|kubernetes-client|\bfetch\(|KUBECONFIG|process\.env|node:https?"/u,
 			);
 			expect(source, relative(packageRoot, path)).not.toMatch(
-				/from "@hobo\/(?!cd"|core")/u,
+				/from "@hobo\/(?!cd"|cd\/inventory"|core"|fleet")/u,
 			);
 		}
 	});

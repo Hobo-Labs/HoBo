@@ -15,6 +15,7 @@ node_modules
 # Logs / OS cruft
 *.log
 .tmp/
+.cache/browser-wit-componentize/
 .DS_Store
 
 # NOTE: committed on purpose so clones get the tooling wired up —
@@ -134,4 +135,6 @@ reports/mutation/
 # An interrupted Control Yard capture must remain invalid until it is rerun.
 src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete
 
+# fleet:verify run report (CI uploads it as an artifact)
+/fleet-verification.json
 **/deploy/secret-store.binding.json

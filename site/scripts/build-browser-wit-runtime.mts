@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import {
 	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
+	realpath,
 	rename,
 	rm,
 	writeFile,
@@ -13,6 +13,24 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { logBrowserWitReleaseEnvironment } from "../../scripts/lib/browser-wit-componentize-diagnostics.mts";
+import {
+	assertGuestSourceUnderWorkRoot,
+	assertSandboxWitBeforeComponentize,
+	copyHostWitTreeIntoWorkRoot,
+	guestSourcePathInWorkRoot,
+	readInlineComponentizeWit,
+	resolveComponentizeHostWitPath,
+} from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
+import {
+	logBrowserWitComponentizeToolchain,
+	resolveBrowserWitComponentizeToolchain,
+} from "../../scripts/lib/browser-wit-toolchain.mts";
+import {
+	browserWitComponentizeProofPath,
+	createBrowserWitComponentizeWorkRoot,
+	removeBrowserWitWorkRoot,
+} from "../../scripts/lib/browser-wit-work-root.mts";
 import { loadExamplesCatalog } from "../src/lib/examples/catalog.js";
 import { buildBrowserStationGuestSource } from "../src/lib/examples/runtime/guest-source.js";
 import {
@@ -34,7 +52,7 @@ const WIT_WORLD = "hobo:try/browser-station@0.1.0" as const;
 interface ToolchainModule {
 	componentize(options: {
 		sourcePath: string;
-		witPath: string;
+		witWorld: string;
 		worldName: string;
 		disableFeatures: string[];
 		env?: { XDG_CACHE_HOME: string } | undefined;
@@ -82,22 +100,31 @@ export async function buildBrowserWitRuntime(
 	const sourceDigest = sha256(new TextEncoder().encode(guestSource));
 	const toolchain = await resolveToolchain();
 	const buildDigest = await calculateBuildDigest(sourceDigest, toolchain.versions);
-	const cached = await reuseVerifiedRuntime(outputRoot, {
-		sourceDigest,
-		buildDigest,
-		toolchain: toolchain.versions,
-	});
-	if (cached) {
-		process.stderr.write("browser-wit: verified runtime cache hit\n");
-		return { outputRoot, componentDigest: cached };
+	const forceComponentize =
+		process.env.HOBO_BROWSER_WIT_FORCE_COMPONENTIZE === "1";
+	if (!forceComponentize) {
+		const cached = await reuseVerifiedRuntime(outputRoot, {
+			sourceDigest,
+			buildDigest,
+			toolchain: toolchain.versions,
+		});
+		if (cached) {
+			process.stderr.write("browser-wit: verified runtime cache hit\n");
+			return { outputRoot, componentDigest: cached };
+		}
+	} else {
+		process.stderr.write(
+			"browser-wit: HOBO_BROWSER_WIT_FORCE_COMPONENTIZE=1 (skip runtime cache)\n",
+		);
 	}
-	const workRoot = await mkdtemp(path.join(tmpdir(), "hobo-browser-wit-"));
+	const { logical: workRootLogical, canonical: workRoot } =
+		await createBrowserWitComponentizeWorkRoot(REPO_ROOT);
 	const outputParent = path.dirname(outputRoot);
 	await mkdir(outputParent, { recursive: true });
 	const staging = await mkdtemp(path.join(outputParent, ".runtime-build-"));
 	const cleanup = async () => {
 		await Promise.all([
-			rm(workRoot, { recursive: true, force: true }),
+			removeBrowserWitWorkRoot(workRootLogical),
 			rm(staging, { recursive: true, force: true }),
 		]);
 	};
@@ -108,14 +135,63 @@ export async function buildBrowserWitRuntime(
 	process.once("SIGTERM", interrupt);
 
 	try {
-		const guestPath = path.join(workRoot, "station-guest.mjs");
+		const guestPath = guestSourcePathInWorkRoot(workRoot);
 		await writeFile(guestPath, guestSource, "utf8");
+		const gitRef =
+			process.env.HOBO_RELEASE_CHECKOUT_REF?.trim() ||
+			process.env.GITHUB_SHA?.trim() ||
+			"HEAD";
+		const sandboxWitDir = await copyHostWitTreeIntoWorkRoot(WIT_DIR, workRoot);
+		const hostWitPath = await resolveComponentizeHostWitPath(sandboxWitDir);
+		assertGuestSourceUnderWorkRoot(guestPath, workRoot);
+		await assertSandboxWitBeforeComponentize(
+			sandboxWitDir,
+			workRoot,
+			REPO_ROOT,
+			WIT_DIR,
+			gitRef,
+		);
+		const hostSourcePath = await realpath(guestPath);
+		await logBrowserWitReleaseEnvironment({
+			repoRoot: REPO_ROOT,
+			workRoot,
+			workRootLogical,
+			toolchain: {
+				componentize: toolchain.componentize,
+				componentizePackageRoot: toolchain.componentizePackageRoot,
+				versions: toolchain.versions,
+			},
+		});
+		const inlineWit = await readInlineComponentizeWit(sandboxWitDir);
+		logBrowserWitComponentizeToolchain(
+			{
+				componentize: toolchain.componentize,
+				componentizePackageRoot: toolchain.componentizePackageRoot,
+				versions: toolchain.versions,
+			},
+			{
+				workRoot,
+				sourcePath: hostSourcePath,
+				hostWitPath,
+			},
+		);
 		process.stderr.write("browser-wit: componentizing real guest\n");
+		await writeFile(
+			browserWitComponentizeProofPath(REPO_ROOT),
+			`${JSON.stringify({
+				schemaVersion: "hobo.browser-wit-componentize-proof/v1",
+				workRoot,
+				workRootLogical,
+				startedAt: new Date().toISOString(),
+			})}\n`,
+			"utf8",
+		);
 		const cacheHome = process.env.XDG_CACHE_HOME;
-		const built = await toolchain.componentize.componentize({
+		let built: { component: Uint8Array };
+		built = await toolchain.componentize.componentize({
 			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
-			sourcePath: guestPath,
-			witPath: WIT_DIR,
+			sourcePath: hostSourcePath,
+			witWorld: inlineWit,
 			worldName: "browser-station",
 			disableFeatures: ["random", "clocks", "stdio", "http"],
 		});
@@ -204,6 +280,17 @@ export async function buildBrowserWitRuntime(
 
 		await rm(outputRoot, { recursive: true, force: true });
 		await rename(staging, outputRoot);
+		await writeFile(
+			browserWitComponentizeProofPath(REPO_ROOT),
+			`${JSON.stringify({
+				schemaVersion: "hobo.browser-wit-componentize-proof/v1",
+				workRoot,
+				workRootLogical,
+				componentDigest,
+				finishedAt: new Date().toISOString(),
+			})}\n`,
+			"utf8",
+		);
 		process.stderr.write("browser-wit: runtime assets ready\n");
 		return { outputRoot, componentDigest };
 	} finally {
@@ -248,6 +335,7 @@ export async function reuseVerifiedRuntime(
 		if (
 			error instanceof Error &&
 			"code" in error &&
+			// SAFETY: assertion required at this I/O boundary.
 			(error as NodeJS.ErrnoException).code === "ENOENT"
 		) {
 			return null;
@@ -258,6 +346,7 @@ export async function reuseVerifiedRuntime(
 
 async function resolveToolchain(): Promise<{
 	readonly componentize: ToolchainModule;
+	readonly componentizePackageRoot: string;
 	readonly jco: JcoModule;
 	readonly jcoEntry: string;
 	readonly esbuild: EsbuildModule;
@@ -266,34 +355,31 @@ async function resolveToolchain(): Promise<{
 	const runtimeRequire = createRequire(
 		path.join(REPO_ROOT, "packages", "runtimes", "runtime-wasm", "package.json"),
 	);
+	const componentizeToolchain =
+		await resolveBrowserWitComponentizeToolchain(REPO_ROOT);
 	const jcoEntry = runtimeRequire.resolve("@bytecodealliance/jco");
-	const jcoManifestPath = path.join(path.dirname(jcoEntry), "..", "package.json");
-	const componentizeRoot = path.join(
-		path.dirname(jcoManifestPath),
-		"..",
-		"componentize-js",
-	);
-	const componentizeEntry = path.join(componentizeRoot, "src", "componentize.js");
-	const componentizeManifestPath = path.join(componentizeRoot, "package.json");
 	const esbuildEntry = runtimeRequire.resolve("esbuild");
-	const esbuildManifestPath = path.join(path.dirname(esbuildEntry), "..", "package.json");
-	const [jco, componentize, esbuild, jcoManifest, componentizeManifest, esbuildManifest] =
-		await Promise.all([
-			import(pathToFileURL(jcoEntry).href) as Promise<JcoModule>,
-			import(pathToFileURL(componentizeEntry).href) as Promise<ToolchainModule>,
-			import(pathToFileURL(esbuildEntry).href) as Promise<EsbuildModule>,
-			readPackageVersion(jcoManifestPath),
-			readPackageVersion(componentizeManifestPath),
-			readPackageVersion(esbuildManifestPath),
-		]);
+	const esbuildManifestPath = path.join(
+		path.dirname(esbuildEntry),
+		"..",
+		"package.json",
+	);
+	const [jco, esbuild, esbuildManifest] = await Promise.all([
+		// SAFETY: toolchain entries are loaded from resolved package paths.
+		import(pathToFileURL(jcoEntry).href) as Promise<JcoModule>,
+		// SAFETY: toolchain entries are loaded from resolved package paths.
+		import(pathToFileURL(esbuildEntry).href) as Promise<EsbuildModule>,
+		readPackageVersion(esbuildManifestPath),
+	]);
 	return {
 		jco,
 		jcoEntry,
-		componentize,
+		componentize: componentizeToolchain.componentize,
+		componentizePackageRoot: componentizeToolchain.componentizePackageRoot,
 		esbuild,
 		versions: {
-			jco: jcoManifest,
-			componentizeJs: componentizeManifest,
+			jco: componentizeToolchain.versions.jco,
+			componentizeJs: componentizeToolchain.versions.componentizeJs,
 			esbuild: esbuildManifest,
 		},
 	};
@@ -320,22 +406,25 @@ async function calculateBuildDigest(
 }
 
 async function readPackageVersion(packageJsonPath: string): Promise<string> {
+	// SAFETY: assertion required at this I/O boundary.
 	const manifest = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
 		version?: unknown;
 	};
 	if (Object.prototype.toString.call(manifest.version) !== "[object String]") {
 		throw new Error(`Toolchain package has no version: ${packageJsonPath}`);
 	}
-	return manifest.version;
+	// SAFETY: `manifest.version` was verified to be a string above.
+	return manifest.version as string;
 }
 
 function sha256(bytes: Uint8Array): `sha256:${string}` {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+const scriptEntry = process.argv[1];
 if (
-	process.argv[1] !== undefined &&
-	pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
+	scriptEntry !== undefined &&
+	pathToFileURL(path.resolve(scriptEntry)).href === import.meta.url
 ) {
 	const result = await buildBrowserWitRuntime();
 	process.stdout.write(`${JSON.stringify(result)}\n`);

@@ -23,6 +23,7 @@ import {
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
+import type { PeerCapacityWitness } from "./peer-capacity.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 
@@ -152,9 +153,7 @@ export function createHostedRelayRuntime(options: {
 		typeof HostedRelay
 	>[0]["headroomFleetDeferMs"];
 	fleetCapacity?: Readonly<{
-		snapshot: () => Promise<
-			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
-		>;
+		snapshot: () => Promise<PeerCapacityWitness & { hoboFreeSlots: number }>;
 	}>;
 	unlaunchedReservationRelease?: ConstructorParameters<
 		typeof HostedRelay

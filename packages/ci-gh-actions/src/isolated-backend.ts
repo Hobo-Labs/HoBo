@@ -1,4 +1,4 @@
-import { isIsolatedFleetProvider, type Lease, type Offer } from "@hobo/ci";
+import { isIsolatedProvider, type Lease, type Offer } from "@hobo/ci";
 
 export function isSandboxOffer(
 	offer: Pick<Offer, "provider" | "backend">,
@@ -31,11 +31,7 @@ export function isIsolatedHostLease(
 		return true;
 	if (lease.provider !== "kubernetes" || lease.backend === undefined)
 		return false;
-	return isIsolatedFleetProvider(
-		lease.provider,
-		lease.backend,
-		lease.runsOn ?? "",
-	);
+	return isIsolatedProvider(lease.provider, lease.backend, lease.runsOn ?? "");
 }
 
 export function isolatedJobRequiresHost(

@@ -17,7 +17,7 @@ import {
 } from "yaml";
 
 // public-contract: the fleet labels a job may already be routed to.
-export const FLEET_RUNNER_LABELS = ["hobo", "hobo-trunk", "hobo-box"] as const;
+export const HOBO_RUNNER_LABELS = ["hobo", "hobo-trunk", "hobo-box"] as const;
 
 // public-contract: the label a job is given when the caller names none.
 export const DEFAULT_FLEET_LABEL = "hobo";
@@ -692,7 +692,7 @@ function readRunsOn(workflow: Workflow, job: YAMLMap): RunsOn {
 function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	const lower = label.toLowerCase();
 	if (
-		FLEET_RUNNER_LABELS.some((fleet) => fleet === lower) ||
+		HOBO_RUNNER_LABELS.some((fleet) => fleet === lower) ||
 		lower === settings.fleetLabel.toLowerCase()
 	) {
 		return ROUTED;

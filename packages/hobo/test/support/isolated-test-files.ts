@@ -1,6 +1,6 @@
 export const ISOLATED_TEST_FILES = [
 	"test/auth-md-https.test.ts",
-	"test/bare-metal-mesh.test.ts",
+	"test/bare-metal-router.test.ts",
 	"test/bare-metal-yard.test.ts",
 	"test/ci-relay-delivery.test.ts",
 	"test/ci-relay-deploy.test.ts",

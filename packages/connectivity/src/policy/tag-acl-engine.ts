@@ -53,7 +53,7 @@ export function createTagAclPolicyEngine(
 			}
 
 			if (enforceEnv) {
-				const envVerdict = evaluateEnvIsolation(
+				const envVerdict = await evaluateEnvIsolation(
 					request,
 					options?.envIsolation ?? {},
 				);

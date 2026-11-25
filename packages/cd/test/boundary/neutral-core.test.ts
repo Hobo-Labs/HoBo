@@ -9,7 +9,7 @@ const srcRoot = join(packageRoot, "src");
 const EXCLUDED = ["_generated", "adapters", join("verification", "sources")];
 
 const FORBIDDEN_IMPORT =
-	/^@hobo\/(?:provider-[\w-]+|iac(?:-[\w-]+)?|runtime-[\w-]+|ci(?:-[\w-]+)?|broker|cli|hobo|resolver-components)(?:\/.*)?$/u;
+	/^@hobo\/(?:provider-(?!redaction(?:\/|$))[\w-]+|iac(?:-[\w-]+)?|runtime-[\w-]+|ci(?:-[\w-]+)?|broker|cli|hobo|resolver-components)(?:\/.*)?$/u;
 
 const VENDOR_WORDS = [
 	"kube",

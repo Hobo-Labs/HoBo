@@ -5,13 +5,10 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationSchema, parseConfiguration } from "@hobo/ci";
-import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { relayInstallAssets } from "./assets.js";
 import { createControlAuthenticator } from "./control-auth.js";
-import type { StartFencePolicy } from "./fleet-v2/start-fence-handler.js";
 import { createGithubAppTransport, type GithubAppTransport } from "./github.js";
-import { type JoinedMesh, joinMeshFromEnv } from "./mesh-join.js";
 import { createGithubOidcVerifier } from "./oidc.js";
 import { acquirePartitionLock } from "./partition-lock.js";
 import { createRelayHost, type RelayAgent } from "./relay-host.js";
@@ -49,10 +46,6 @@ export async function startRelayFromEnvironment(
 	/** A host embedding the relay may supply its own GitHub App transport. */
 	ports: {
 		github?: GithubAppTransport;
-		strictFleet?: {
-			store: StrictFleetStore;
-			policies: readonly StartFencePolicy[];
-		};
 		/**
 		 * The App's private key and webhook secret, held in memory by a host
 		 * that read them from the owner's secret store into its trusted vault.
@@ -141,44 +134,13 @@ export async function startRelayFromEnvironment(
 					}),
 				),
 		});
-		// One JSON line per mesh event, in the shape of the relay's own log.
-		const meshLog = (
-			level: "info" | "error",
+		const relayLog = (
 			event: string,
 			fields: Readonly<Record<string, string | number | boolean>>,
 		) =>
-			process.stdout.write(`${JSON.stringify({ level, event, ...fields })}\n`);
-		// The relay is a node of the mesh HOBO_CI_NATS_URL names: it takes no
-		// jobs (no slots, no labels), so what it advertises is that it is up
-		// and who it is, and the same list shows its health beside the
-		// workers'. With no mesh it is not a node, and says so when asked.
-		// Nothing about the mesh may keep the relay from starting.
-		let ready: () => boolean = () => false;
-		let mesh: JoinedMesh | undefined;
-		if (env.HOBO_CI_NATS_URL)
-			try {
-				mesh = await joinMeshFromEnv({
-					env,
-					defaultNodeId: `relay-${hostname()}`,
-					// Beside the relay's journal, readable by its owner only.
-					keyFile:
-						env.HOBO_CI_MESH_KEY_FILE ??
-						join(dirname(database), "mesh-node.key"),
-					connectionName: `hobo-ci-relay ${hostname()}`,
-					describe: () => ({
-						freeSlots: 0,
-						totalSlots: 0,
-						healthy: ready(),
-						labels: [],
-						platform: { os: process.platform, arch: process.arch },
-					}),
-					log: (event, fields) => meshLog("info", event, fields),
-				});
-			} catch (error) {
-				meshLog("error", "hobo_ci_mesh_node_unavailable", {
-					message: error instanceof Error ? error.message : "unknown",
-				});
-			}
+			process.stdout.write(
+				`${JSON.stringify({ level: "info", event, ...fields })}\n`,
+			);
 		const github =
 			ports.github ??
 			createGithubAppTransport({
@@ -205,15 +167,13 @@ export async function startRelayFromEnvironment(
 					node: `relay-${hostname()}`,
 					dashboard: ports.dashboard,
 					authenticate,
-					log: (event, fields) => meshLog("info", event, fields),
+					log: relayLog,
 				})
 			: undefined;
 		wiring = wired;
 		const { service, runtime } = createRelayHost({
 			store,
-			strictFleet: ports.strictFleet,
 			agent,
-			meshNodes: mesh?.node.reports,
 			wiring: wired && {
 				onWebhook: (webhook) => void wired.onWebhook(webhook),
 				page: (request) => wired.page(request),
@@ -240,9 +200,6 @@ export async function startRelayFromEnvironment(
 			logger: (entry) => process.stdout.write(`${JSON.stringify(entry)}\n`),
 		});
 		await service.start();
-		// What the relay advertises as its health is its own readiness probe.
-		ready = () => service.ready();
-		mesh?.start();
 		let stopping: Promise<{ drained: boolean }> | undefined;
 		return {
 			service,
@@ -251,9 +208,6 @@ export async function startRelayFromEnvironment(
 			wiring: wired,
 			stop() {
 				stopping ??= (async () => {
-					// Say so before going: the list shows the relay draining, then lost.
-					ready = () => false;
-					await mesh?.stop().catch(() => undefined);
 					const result = await service.stop();
 					wired?.close();
 					if (result.drained) await lock.release();

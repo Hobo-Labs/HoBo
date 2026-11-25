@@ -5,16 +5,18 @@ import { ciRunnerImageVersion } from "./ci-runner-contract.mts";
 
 export const DEPS_LAYER_BUCKET_SCRIPT_PATH =
 	"scripts/ci/deps-layer-buckets.mts";
+/** Staged for mount verify (`node scripts/ci/deps-layer.mts link`); not hashed into the deps key. */
 export const DEPS_LAYER_SCRIPT_PATH = "scripts/ci/deps-layer.mts";
 export const DEPS_LAYOUT_RECIPE_PATHS = [
 	"packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile",
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
 	DEPS_LAYER_BUCKET_SCRIPT_PATH,
 ] as const;
+/** Bump version when a recipe edit changes image contents or paths (payload paths, install flags, rebuilt packages, or bucket assignment); otherwise update only recipeSha256. */
 export const DEPS_LAYOUT = {
 	version: 2,
 	recipeSha256:
-		"394eeab40670ceb07cd62ffbe3f38a7d3cd01c68bc9e967a687239dd5d0f9588",
+		"d85b9f6f10ebfecd06bf73b04af6783e0e9a81198d8adcc7ff19f6ee36d74bf4",
 } as const;
 
 export type DepsKeyInputs = Readonly<{

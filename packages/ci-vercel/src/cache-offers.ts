@@ -6,7 +6,7 @@ import {
 	parseFleetFinancialModel,
 	parseFleetOffer,
 	parseFleetRoutingMarks,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { z } from "zod";
 import { RELAY_CACHE_OFFER_DEFAULTS } from "./_generated-assets/relay-offers.js";
 import {
@@ -124,6 +124,7 @@ const Document = z
 	.object({
 		offers: z.array(Offer).max(CACHE_BACKEND_IDS.length).optional(),
 		marks: Marks.optional(),
+		membershipEpochs: z.boolean().optional(),
 	})
 	.strict();
 
@@ -136,6 +137,7 @@ export const DEFAULT_CACHE_ROUTING_MARKS: FleetRoutingMarks =
 export type CacheOffers = Readonly<{
 	offers: ReadonlyMap<CacheBackendId, FleetOffer>;
 	marks: FleetRoutingMarks;
+	membershipEpochs: boolean;
 }>;
 
 export function parseCacheOffers(
@@ -144,7 +146,11 @@ export function parseCacheOffers(
 ): CacheOffers {
 	const offers = new Map(defaultCacheOffers(commands));
 	if (json === undefined || json === "")
-		return { offers, marks: DEFAULT_CACHE_ROUTING_MARKS };
+		return {
+			offers,
+			marks: DEFAULT_CACHE_ROUTING_MARKS,
+			membershipEpochs: false,
+		};
 	let document: z.infer<typeof Document>;
 	try {
 		document = Document.parse(JSON.parse(json));
@@ -179,6 +185,7 @@ export function parseCacheOffers(
 		const marks = document.marks ?? {};
 		return {
 			offers,
+			membershipEpochs: document.membershipEpochs ?? false,
 			marks: parseFleetRoutingMarks({
 				switchAt:
 					marks.switchAtPercent === undefined

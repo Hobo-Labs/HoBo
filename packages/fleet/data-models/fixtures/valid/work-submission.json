@@ -1,0 +1,34 @@
+{
+  "submissionId": "sub_01",
+  "tenant": "acme",
+  "fleet": "ci",
+  "author": "github:1234",
+  "image": "ghcr.io/acme/build:1",
+  "imageDigest": "sha256:abababababababababababababababababababababababababababababababab",
+  "argv": [
+    "make",
+    "test"
+  ],
+  "env": {
+    "CI": "1"
+  },
+  "needs": {
+    "memoryMb": 4096,
+    "diskMb": 20480,
+    "platform": {
+      "os": "linux",
+      "arch": "x64"
+    },
+    "labels": [
+      "hobo",
+      "linux-x64"
+    ],
+    "docker": true,
+    "minSandbox": "SANDBOX_TIER_S3_MICROVM"
+  },
+  "egressAllow": [
+    "registry.npmjs.org"
+  ],
+  "submittedAt": "2026-11-12T10:00:00.000Z",
+  "expiresAt": "2026-11-12T10:20:00.000Z"
+}

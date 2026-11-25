@@ -11,18 +11,49 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	ciWorkerImagePublished,
 	DEFAULT_WORKER_PULL_BUDGET_SEC,
+	ghcrWorkerPullable,
 	materializeCiWorkerImageOnly,
 	pullRequestWorkerTag,
 	pullWorkerFromGhcr,
 	releaseWorkerEnsurePath,
 	remoteWorkerTag,
 	resolveWorkerRemoteRef,
+	selectWorkerRepoDigest,
 	validatedWorkerDigestRef,
 	workerPullBudgetSec,
 } from "../ci/ensure-ci-worker-image.mts";
 
 describe("ensure-ci-worker-image", () => {
+	const workerDigest = `sha256:${"a".repeat(64)}`;
+	const workerRepoRef = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@${workerDigest}`;
+
+	it("selects the matching worker RepoDigests entry and rejects foreign digests", () => {
+		assert.equal(
+			selectWorkerRepoDigest("Hobo-Labs/HoBo", [
+				"ghcr.io/other/repo/worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				workerRepoRef,
+			]),
+			workerRepoRef,
+		);
+		assert.throws(
+			() =>
+				selectWorkerRepoDigest("Hobo-Labs/HoBo", [
+					"ghcr.io/other/repo/worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				]),
+			/no matching RepoDigests entry/u,
+		);
+		assert.throws(
+			() =>
+				selectWorkerRepoDigest("Hobo-Labs/HoBo", [
+					workerRepoRef,
+					`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"b".repeat(64)}`,
+				]),
+			/ambiguous/u,
+		);
+	});
+
 	it("tags GHCR worker refs lower-case", () => {
 		assert.equal(
 			remoteWorkerTag("Hobo-Labs/HoBo", "vdeadbeefcafe"),
@@ -38,6 +69,8 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("parses one positive pull budget and falls back on junk", () => {
+		const prev = process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC;
+		delete process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC;
 		assert.equal(
 			workerPullBudgetSec(undefined),
 			DEFAULT_WORKER_PULL_BUDGET_SEC,
@@ -54,6 +87,8 @@ describe("ensure-ci-worker-image", () => {
 			"999999999999999999999",
 		])
 			assert.equal(workerPullBudgetSec(junk), DEFAULT_WORKER_PULL_BUDGET_SEC);
+		if (prev === undefined) delete process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC;
+		else process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC = prev;
 	});
 
 	it("accepts only this repository's lowercase immutable worker ref", () => {
@@ -211,9 +246,15 @@ describe("ensure-ci-worker-image", () => {
 				[
 					"#!/bin/sh",
 					`echo "timeout $*" >> "${calls}"`,
-					'seconds="$1"; shift; "$@"',
+					"shift",
+					'exec "$@"',
 					"",
 				].join("\n"),
+				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "sleep"),
+				["#!/bin/sh", "exit 0", ""].join("\n"),
 				{ mode: 0o755 },
 			);
 			writeFileSync(
@@ -221,11 +262,19 @@ describe("ensure-ci-worker-image", () => {
 				[
 					"#!/bin/sh",
 					'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
-					'if [ "$1 $2 $3" = "manifest inspect -v" ]; then',
+					'if [ "$1" = pull ]; then',
+					manifest ? "  exit 0" : "  exit 1",
+					"fi",
+					'if [ "$1 $2" = "manifest inspect" ]; then',
+					manifest ? "  exit 0" : "  exit 1",
+					"fi",
+					'if [ "$1 $2" = "image inspect" ]; then',
 					manifest
-						? `  printf '%s\\n' '[{"Descriptor":{"digest":"${digest}"}}]'`
+						? [
+								`  printf '%s\\n' '["ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}"]'`,
+								"  exit 0",
+							].join("\n")
 						: "  exit 1",
-					"  exit 0",
 					"fi",
 					"exit 1",
 					"",
@@ -244,10 +293,11 @@ describe("ensure-ci-worker-image", () => {
 					encoding: "utf8",
 					env: {
 						...process.env,
-						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						PATH: `${bin}:/usr/bin:/bin`,
 						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
 						GITHUB_TOKEN: "token-for-test",
 						GITHUB_OUTPUT: out,
+						HOBO_CI_WORKER_PULL_BUDGET_SEC: "5",
 					},
 				},
 			);
@@ -271,16 +321,15 @@ describe("ensure-ci-worker-image", () => {
 			resolved.output,
 			new RegExp(`^image_ref=${ref}\\nversion=v[0-9a-f]+\\n$`, "u"),
 		);
-		assert.match(
-			resolved.calls,
-			/^timeout 60 docker manifest inspect -v ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v[0-9a-f]+$/mu,
-		);
 	});
 
 	it("fails clearly when the release toolchain manifest is absent", () => {
 		const resolved = resolveDigestWithStub(false);
 		assert.notEqual(resolved.result.status, 0);
-		assert.match(resolved.result.stderr, /GHCR manifest absent or unreadable/u);
+		assert.match(
+			resolved.result.stderr,
+			/timed out after 5s waiting for pullable worker image|GHCR manifest absent or unreadable/u,
+		);
 		assert.equal(resolved.output, "");
 	});
 
@@ -300,6 +349,8 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("exposes materialize-only without throwing on missing image", () => {
+		// A stub Docker CLI with nothing local: a self-hosted runner shares the
+		// host's Docker, which may already hold this tree's worker image.
 		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-missing-"));
 		writeFileSync(
 			join(bin, "docker"),
@@ -561,16 +612,73 @@ describe("ensure-ci-worker-image", () => {
 		assert.doesNotMatch(recorded, /pr-2953-/u);
 	});
 
-	function publishedStatus(stub: { host: boolean; manifest: boolean }) {
+	// The post-green publisher asks what GHCR has for this tree (finding 113).
+	function withWorkerPublishStub(
+		stub: { host: boolean; manifest: boolean; pull?: boolean },
+		run: () => void,
+	) {
+		const pullOk = stub.pull ?? stub.manifest;
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-"));
+		const prev = {
+			PATH: process.env.PATH,
+			GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+			GITHUB_ACTOR: process.env.GITHUB_ACTOR,
+			GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+		};
 		try {
+			writeFileSync(
+				join(bin, "timeout"),
+				["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+				{ mode: 0o755 },
+			);
 			writeFileSync(
 				join(bin, "docker"),
 				[
 					"#!/bin/sh",
 					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
-					'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
+					'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
 					`if [ "$1 $2" = "manifest inspect" ]; then exit ${stub.manifest ? 0 : 1}; fi`,
+					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
+					"exit 0",
+					"",
+				].join("\n"),
+				{ mode: 0o755 },
+			);
+			process.env.PATH = `${bin}:${prev.PATH ?? ""}`;
+			process.env.GITHUB_REPOSITORY = "Hobo-Labs/HoBo";
+			process.env.GITHUB_ACTOR = "github-actions";
+			process.env.GITHUB_TOKEN = "token-for-test";
+			run();
+		} finally {
+			for (const [key, value] of Object.entries(prev)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	function publishedStatus(stub: {
+		host: boolean;
+		manifest: boolean;
+		pull?: boolean;
+	}) {
+		const pullOk = stub.pull ?? stub.manifest;
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-cli-"));
+		try {
+			writeFileSync(
+				join(bin, "timeout"),
+				["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "docker"),
+				[
+					"#!/bin/sh",
+					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
+					'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
+					`if [ "$1 $2" = "manifest inspect" ]; then exit ${stub.manifest ? 0 : 1}; fi`,
+					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
 					"exit 0",
 					"",
 				].join("\n"),
@@ -605,13 +713,23 @@ describe("ensure-ci-worker-image", () => {
 	}
 
 	it("needs nothing when the box and GHCR both have this tree's image", () => {
+		withWorkerPublishStub({ host: true, manifest: true, pull: true }, () => {
+			const status = ciWorkerImagePublished();
+			assert.equal(status.host, true);
+			assert.equal(status.ghcr, true);
+			assert.equal(status.host && status.ghcr, true);
+		});
 		assert.match(
-			publishedStatus({ host: true, manifest: true }),
+			publishedStatus({ host: true, manifest: true, pull: true }),
 			/^version=v[0-9a-f]+\nneeded=false\nghcr=true\n$/u,
 		);
 	});
 
 	it("reports an image the box has but GHCR lacks as unpublished", () => {
+		withWorkerPublishStub({ host: true, manifest: false }, () => {
+			const status = ciWorkerImagePublished();
+			assert.equal(status.ghcr, false);
+		});
 		assert.match(
 			publishedStatus({ host: true, manifest: false }),
 			/^version=v[0-9a-f]+\nneeded=true\nghcr=false\n$/u,
@@ -619,10 +737,30 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("reports an image only GHCR has as published", () => {
+		withWorkerPublishStub({ host: false, manifest: true, pull: true }, () => {
+			assert.equal(
+				ghcrWorkerPullable(
+					"Hobo-Labs/HoBo",
+					ciWorkerImagePublished().version,
+					"token-for-test",
+				),
+				true,
+			);
+			const status = ciWorkerImagePublished();
+			assert.equal(status.host, false);
+			assert.equal(status.ghcr, true);
+		});
 		assert.match(
-			publishedStatus({ host: false, manifest: true }),
+			publishedStatus({ host: false, manifest: true, pull: true }),
 			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
 		);
+	});
+
+	it("treats a manifest without pullable layers as unpublished", () => {
+		withWorkerPublishStub({ host: false, manifest: true, pull: false }, () => {
+			const status = ciWorkerImagePublished();
+			assert.equal(status.ghcr, false);
+		});
 	});
 
 	it("does not treat ordinary CI as release worker ensure", () => {

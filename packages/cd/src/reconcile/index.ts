@@ -62,6 +62,19 @@ export {
 	RECONCILE_OBSERVE_INTERVAL_MS,
 } from "./reconciler.js";
 export {
+	formatReleaseFreightBlockedDetail,
+	formatReleaseFreightBlockedReason,
+	parseReleaseFreightAuthorMessage,
+	ReleaseFreightBlockedError,
+	type ReleaseFreightDetailKind,
+	releaseFreightLogFragment,
+	releaseFreightLogLooksSensitive,
+	releaseFreightRefusalOf,
+	releaseFreightStructuredFromFields,
+	sanitizeReleaseFreightVerdictCodes,
+	validateReasonStructuredDetail,
+} from "./release-freight-detail.js";
+export {
 	applyRetained,
 	DRIFT_CLASSES,
 	type DriftClass,

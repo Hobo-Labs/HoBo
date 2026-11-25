@@ -9,7 +9,7 @@ import {
 	routingSlipJson,
 } from "../routing-slip.js";
 import type { RunnerRouting } from "../runner-routing.js";
-import type { FleetRunnersView } from "./fleet-verdict-evaluator.js";
+import type { RepositoryRunnersView } from "./routing-slip-decision.js";
 
 export const ROUTING_SLIP_WRITES_PER_MINUTE = 20;
 export const ROUTING_SLIP_WRITES_PER_HOUR = 300;
@@ -186,7 +186,7 @@ export async function readRepositoryRunners(
 	github: GithubTransport,
 	target: Readonly<{ installationId: number; repository: string }>,
 	nowMs: number,
-): Promise<FleetRunnersView | undefined> {
+): Promise<RepositoryRunnersView | undefined> {
 	try {
 		const response = await github.request(
 			target.installationId,

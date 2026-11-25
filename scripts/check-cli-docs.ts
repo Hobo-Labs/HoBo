@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SPEC_PATH = path.join("docs", "design", "cli-spec.md");
+const SPEC_PATH = path.join("docs", "cli-verbs.md");
 const DEFAULT_SCAN_PATHS = [
 	path.join("docs", "design"),
 	"README.md",

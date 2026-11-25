@@ -1,11 +1,49 @@
+/**
+ * The PostgreSQL EventStore on a fleet of backends (ADR-0135, ADR-0179).
+ *
+ * One backend is the writer; the others are standbys on other vendors. Which
+ * one writes is the fleet's assignment register (`@hobo/data-postgres`),
+ * kept on every member and decided by majority. This experimental store does
+ * fences every write at the database transaction boundary:
+ *
+ * - **Every call goes to the writer.** The store resolves the assignment and
+ *   trusts it for `leaseMs`, measured from when the read started. A sealed
+ *   fleet (a planned move in flight), an undecided epoch or no majority
+ *   refuses the call with a retryable `unavailable`; the caller retries and
+ *   a new call.
+ * - **A write commits only while its member is the writer.** Each write
+ *   transaction first takes `SHARE` on the member's own copy of the register
+ *   and reads its newest entry; unless that names this member, unsealed, the
+ *   transaction aborts with `unavailable`. A register entry is an `INSERT`,
+ *   which `SHARE` excludes, so the seal of a move and a write on the old
+ *   writer are ordered: a write that committed first is in the final copy, and
+ *   none commits after. A call dispatched under a stale lease is refused, not
+ *   lost. What this cannot fence is a writer the move never reached (an
+ *   unplanned failover from a partitioned writer): writes that land there are
+ *   inside the plan's recovery point, which is what failover accepts.
+ * - **`tick()` keeps the fleet converged.** It runs `reconcileFleet` with the
+ *   policy the Bindle declared (`continuityFleetPlan`): settle the register,
+ *   probe, copy the writer to every standby, measure, decide, act. The host
+ *   calls it on the copy cadence. A tick that is interrupted (the process
+ *   dies, a connection drops mid-copy) leaves nothing half done: a copy is
+ *   one transaction on the standby, and a move is a sealed register entry
+ *   that the next tick completes or undoes.
+ * - **A move follows the writer.** When the register names a new writer, the
+ *   next call opens that member's store; live subscriptions move with it.
+ *   Delivery across a move is not yet proven when writes race the move.
+ *
+ * The copy is a snapshot of every table in the store's schema except the
+ * fleet's own control tables and `schema_migrations` (each member migrates
+ * itself). Sequences travel with their tables, so positions keep increasing
+ * on the new writer.
+ */
+
 import {
-	assignmentKey,
 	type ContinuityFleetPlan,
 	continuityBudgetCheck,
 	type FleetBudgetCheck,
 	type FleetFinancialModel,
-	readCurrentAssignment,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import type {
 	AppendOptions,
 	AppendResult,
@@ -23,10 +61,10 @@ import type {
 	Subscription,
 } from "@hobo/core";
 import {
-	FLEET_LOCK_CLASS,
-	type FleetBackend,
-	type FleetReconcileReport,
-	type FleetSchemaRole,
+	POSTGRES_FLEET_LOCK_CLASS,
+	type PostgresBackend,
+	type PostgresFleetReconcileReport,
+	type PostgresFleetSchemaRole,
 	parseFleetLayout,
 	readAssignmentRows,
 	reconcileFleet,
@@ -34,15 +72,16 @@ import {
 	type SqlSession,
 	sqlAssignmentRegister,
 } from "@hobo/data-postgres";
+import { assignmentKey, readCurrentAssignment } from "@hobo/fleet/assignment";
 import pg from "pg";
 
 import { POSTGRES_STORE_DEFAULTS, parsePostgresStoreConfig } from "./config.js";
 import { StoragePostgresError } from "./errors.js";
 import {
 	createFleetBackups,
-	type FleetBackup,
-	type FleetBackupOutcome,
-	type FleetBackups,
+	type PostgresFleetBackup,
+	type PostgresFleetBackupOutcome,
+	type PostgresFleetBackups,
 } from "./fleet-backups.js";
 import { parseSchemaName, quoteSchema } from "./identifiers.js";
 import {
@@ -54,12 +93,18 @@ import {
 import { createPostgresEventStore, type PostgresEventStore } from "./store.js";
 
 export type PostgresFleetMember = Readonly<{
+	/** Stable id: the name the register records (`neon-eu`, `supabase`). */
 	id: string;
 	connectionString: string;
 }>;
 
 export type PostgresFleetEventStoreOptions = Readonly<{
+	/** In configured order; the first is the writer of an empty fleet. */
 	members: readonly PostgresFleetMember[];
+	/**
+	 * Members that hold only the assignment register, on other failure
+	 * domains, so a fleet of two can still decide a failover by majority.
+	 */
 	witnesses?: readonly PostgresFleetMember[];
 	plan: ContinuityFleetPlan;
 	schema?: string;
@@ -67,33 +112,55 @@ export type PostgresFleetEventStoreOptions = Readonly<{
 	statementTimeoutMs?: number;
 	minServerMajorVersion?: number;
 	applicationName?: string;
+	/** How long a resolved writer is trusted (default 30 s). */
 	leaseMs?: number;
+	/** Added to a lease while a move waits for writers to stop (default 5 s). */
 	graceMs?: number;
+	/** Plans per member, in their billing units; none means cost-blind. */
 	models?: readonly FleetFinancialModel[];
 	checkBudget?: FleetBudgetCheck;
+	/**
+	 * Where scheduled backups are kept (the plan's `backups`): a database on a
+	 * failure domain the writer does not share. Defaults to the first witness;
+	 * with neither, the fleet takes no backups (`backupsPlaced()` is false,
+	 * which `continuityShortfalls` reports).
+	 */
 	backupTo?: PostgresFleetMember;
+	/** Identifies this process in the register. */
 	decidedBy: string;
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
 	log?: (event: string) => void;
+	/** Tests inject pools; otherwise one `pg.Pool` per member. */
 	pool?: (member: PostgresFleetMember, schema: string) => PgPoolLike;
 }>;
 
-export type PostgresFleetTickReport = FleetReconcileReport &
-	Readonly<{ backup: FleetBackupOutcome | undefined }>;
+/** A tick's report, with the scheduled backup it took or skipped. */
+export type PostgresFleetTickReport = PostgresFleetReconcileReport &
+	Readonly<{ backup: PostgresFleetBackupOutcome | undefined }>;
 
 export interface PostgresFleetEventStore extends DurableEventStore {
+	/** One fleet tick: settle, copy, decide, act, then back up when due. */
 	tick(): Promise<PostgresFleetTickReport>;
+	/** Whether the plan's backups have a member to be kept on. */
 	backupsPlaced(): boolean;
-	backups(): Promise<readonly FleetBackup[]>;
+	/** The scheduled backups held, newest first (none without a schedule). */
+	backups(): Promise<readonly PostgresFleetBackup[]>;
+	/**
+	 * Copy a backup (the newest by default) into a member's journal. The
+	 * member the register names writer is refused; restore to a standby first
+	 * so a concurrent write or promotion cannot be overwritten.
+	 */
 	restore(input: {
 		readonly into: string;
 		readonly name?: string;
-	}): Promise<FleetBackup>;
+	}): Promise<PostgresFleetBackup>;
+	/** The writer the store last resolved, if any. */
 	writer(): string | undefined;
 	end(): Promise<void>;
 }
 
+/** A caller's subscription, re-attached to each new writer. */
 interface FollowedSubscription {
 	readonly filter: StreamFilter;
 	readonly handler: (event: EventEnvelope) => void | Promise<void>;
@@ -109,12 +176,14 @@ function memberPool(member: PostgresFleetMember, schema: string): PgPoolLike {
 		connectionString: member.connectionString,
 		max: POSTGRES_STORE_DEFAULTS.poolSize,
 		connectionTimeoutMillis: POSTGRES_STORE_DEFAULTS.connectionTimeoutMs,
+		// The fleet names its tables unqualified; the store qualifies its own.
 		options: `-c search_path=${schema}`,
 	});
 	pool.on("error", () => {});
 	return pool;
 }
 
+/** The fleet's SQL port over a pool: text in, text out, pinned sessions. */
 function executorOf(pool: PgPoolLike): SqlExecutor {
 	const asText = (rows: readonly PgRow[]) =>
 		rows.map((row) =>
@@ -161,6 +230,7 @@ function unavailable(message: string): StoragePostgresError {
 	return new StoragePostgresError("unavailable", message);
 }
 
+/** Open the fleet. Nothing connects until the first call or tick. */
 export function createPostgresFleetEventStore(
 	options: PostgresFleetEventStoreOptions,
 ): PostgresFleetEventStore {
@@ -197,22 +267,24 @@ export function createPostgresFleetEventStore(
 	const pools = new Map<string, PgPoolLike>();
 	const backupPools = new Set<PgPoolLike>();
 	const stores = new Map<string, PostgresEventStore>();
-	const backends: FleetBackend[] = options.members.map((member) => {
+	const backends: PostgresBackend[] = options.members.map((member) => {
 		const pool = (options.pool ?? memberPool)(member, schema);
 		pools.set(member.id, pool);
 		return { id: member.id, executor: executorOf(pool) };
 	});
-	const witnesses: FleetBackend[] = (options.witnesses ?? []).map((member) => {
-		const pool = (options.pool ?? memberPool)(member, schema);
-		pools.set(member.id, pool);
-		return { id: member.id, executor: executorOf(pool) };
-	});
+	const witnesses: PostgresBackend[] = (options.witnesses ?? []).map(
+		(member) => {
+			const pool = (options.pool ?? memberPool)(member, schema);
+			pools.set(member.id, pool);
+			return { id: member.id, executor: executorOf(pool) };
+		},
+	);
 	const register = sqlAssignmentRegister([...backends, ...witnesses], layout);
 	const backupMember =
 		options.plan.backups.everyMs > 0
 			? (options.backupTo ?? options.witnesses?.[0])
 			: undefined;
-	const backups: FleetBackups | undefined =
+	const backups: PostgresFleetBackups | undefined =
 		backupMember === undefined
 			? undefined
 			: createFleetBackups({
@@ -230,6 +302,8 @@ export function createPostgresFleetEventStore(
 	const memberById = new Map(options.members.map((m) => [m.id, m]));
 
 	const registerTable = `${quoteSchema(schemaName)}.${layout.assignmentTable}`;
+	// The commit-boundary fence (see the module comment). The tick's own
+	// standby copies do not use a member's store, so they are not fenced.
 	const fenceWrite = async (client: PgClientLike, id: string) => {
 		await client.query(`LOCK TABLE ${registerTable} IN SHARE MODE`);
 		const newest = (
@@ -266,6 +340,7 @@ export function createPostgresFleetEventStore(
 				applicationName: options.applicationName ?? "hobo-fleet",
 			},
 			pool,
+			// LISTEN needs its own connection to this member, not the pool's.
 			listener: () =>
 				createPgListener(
 					parsePostgresStoreConfig({
@@ -325,8 +400,8 @@ export function createPostgresFleetEventStore(
 	};
 
 	const ensureSchema = async (
-		backend: FleetBackend,
-		_role: FleetSchemaRole,
+		backend: PostgresBackend,
+		_role: PostgresFleetSchemaRole,
 	): Promise<void> => {
 		await storeFor(backend.id).ready();
 	};
@@ -336,6 +411,7 @@ export function createPostgresFleetEventStore(
 			try {
 				await storeFor(backend.id).ready();
 			} catch {
+				// An unreachable member is the fleet's to judge, not the tick's.
 			}
 		}
 		for (const witness of witnesses) {
@@ -344,6 +420,7 @@ export function createPostgresFleetEventStore(
 					`CREATE SCHEMA IF NOT EXISTS ${quoteSchema(schemaName)}`,
 				);
 			} catch {
+				// A silent witness is one fewer vote, not a failed tick.
 			}
 		}
 		const report = await reconcileFleet({
@@ -365,6 +442,7 @@ export function createPostgresFleetEventStore(
 				((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
 			log: (event) => options.log?.(event.kind),
 		});
+		// A tick may have moved the writer: re-resolve on the next call.
 		resolved = undefined;
 		const writer = report.assignment?.active;
 		const source = backends.find((backend) => backend.id === writer);
@@ -416,12 +494,17 @@ export function createPostgresFleetEventStore(
 				target: target.executor,
 				...(name !== undefined ? { name } : undefined),
 				admit: async (to) => {
+					// Replication and assignment acceptance use this same advisory
+					// lock. Hold it for the entire restore, not just the check.
 					const lock = await to.query(
 						"SELECT pg_try_advisory_xact_lock($1::int, hashtext($2))::text AS locked",
-						[FLEET_LOCK_CLASS, layout.assignmentTable],
+						[POSTGRES_FLEET_LOCK_CLASS, layout.assignmentTable],
 					);
 					if (lock.rows[0]?.locked !== "true")
 						throw unavailable(`${into} is busy with another fleet operation`);
+					// All fleet writes take SHARE on this table before touching the
+					// journal. EXCLUSIVE waits for them and prevents new writes or
+					// a local promotion until the restore commits.
 					await to.query(`LOCK TABLE ${registerTable} IN EXCLUSIVE MODE`);
 					const local = (await readAssignmentRows(to, layout, 1)).at(-1);
 					if (

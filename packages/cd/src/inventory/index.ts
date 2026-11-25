@@ -3,6 +3,7 @@ export {
 	type ContactState,
 	claimConflicts,
 	deriveStatus,
+	type MemberLifecycle,
 	negativeSignals,
 	noRunPermitted,
 	RESERVED_TAINT_PREFIX,
@@ -10,6 +11,8 @@ export {
 } from "./derive.js";
 export {
 	type CampInventoryDeps,
+	type CampMembers,
+	campMemberName,
 	createCampInventory,
 	mergeContact,
 } from "./inventory.js";
@@ -28,3 +31,9 @@ export {
 	type ParsedSelector,
 	parseSelector,
 } from "./selector.js";
+export {
+	type CampTargetDeclarer,
+	type CampTargetInput,
+	createCampTargetDeclarer,
+	declareCampTarget,
+} from "./targets.js";

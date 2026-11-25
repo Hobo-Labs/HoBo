@@ -112,9 +112,10 @@ describe("provider neutrality", () => {
 		) as PackageManifest;
 		const names = Object.keys(manifest.dependencies ?? {});
 		expect(names).toEqual([
-			"@hobo/backend-fleet",
+			"@hobo/backend-routing",
 			"@hobo/capability-profiles",
 			"@hobo/data-core",
+			"@hobo/fleet",
 		]);
 	});
 

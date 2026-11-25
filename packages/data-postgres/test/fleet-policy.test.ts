@@ -1,43 +1,59 @@
-import { describe, expect, it } from "vitest";
+/**
+ * The fleet policy and the usage meter, offline.
+ *
+ * Every plan number in this file is a PLACEHOLDER chosen to make the
+ * arithmetic easy to read. None of them describes a real product or price.
+ */
 import {
-	billingPeriod,
-	createUsageMeter,
 	DEFAULT_FLEET_POLICY,
 	decideFleet,
 	type FleetBudgetRequest,
 	type FleetDecisionInput,
-	type PostgresFleetAssignment,
-	type PostgresFleetFinancialModel,
-	type PostgresFleetObservation,
-	parseFleetAssignment,
+	type FleetFinancialModel,
 	parseFleetFinancialModel,
-	parseFleetLayout,
 	parseFleetPolicy,
+} from "@hobo/backend-routing";
+import {
+	type AssignmentEntry,
+	Health,
+	type NamedObservation,
+	parseMemberName,
+} from "@hobo/fleet";
+import { parseAssignmentEntry } from "@hobo/fleet/assignment";
+import { describe, expect, it } from "vitest";
+import { postgresObservation } from "../src/fleet/records.js";
+import {
+	billingPeriod,
+	createUsageMeter,
+	parseFleetLayout,
 	type SqlExecutor,
 } from "../src/index.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+// Ten days into a thirty-day month.
 const NOW = Date.UTC(2026, 10, 11);
 const period = billingPeriod(NOW);
 
 function assignment(
 	active: string,
-	overrides: Partial<PostgresFleetAssignment> = {},
-): PostgresFleetAssignment {
-	return parseFleetAssignment({
+	overrides: Partial<AssignmentEntry> = {},
+): AssignmentEntry {
+	return parseAssignmentEntry({
 		epoch: 4,
-		active,
+		active: parseMemberName(active),
 		sealed: false,
 		target: undefined,
 		reason: "test",
 		lossWindowMs: undefined,
 		decidedAtMs: NOW - 7 * DAY,
 		decidedBy: "test",
+		members: undefined,
 		...overrides,
 	});
 }
 
+/** PLACEHOLDER plan: `included` operations a month, then the service stops. */
 function capped(backend: string, included: number) {
 	return parseFleetFinancialModel({
 		backend,
@@ -55,6 +71,7 @@ function capped(backend: string, included: number) {
 	});
 }
 
+/** PLACEHOLDER plan whose allowance nobody has verified. */
 function unverified(backend: string) {
 	return parseFleetFinancialModel({
 		backend,
@@ -72,27 +89,36 @@ function unverified(backend: string) {
 	});
 }
 
+type Seen = Readonly<{
+	health?: Health;
+	failingForMs?: number;
+	ready?: boolean;
+	lagMs?: number | undefined;
+	usage?: readonly Readonly<{ unit: string; used: number }>[];
+}>;
+
 function seen(
 	backend: string,
 	operations: number,
-	overrides: Partial<PostgresFleetObservation> = {},
-): PostgresFleetObservation {
+	overrides: Seen = {},
+): NamedObservation {
 	return {
-		backend,
-		health: "reachable",
-		probeLatencyMs: 10,
-		failingForMs: 0,
-		schemaCurrent: true,
-		standbyLagMs: 5 * 60_000,
-		usage: [{ unit: "operations", used: operations }],
-		...overrides,
+		name: parseMemberName(backend),
+		observation: postgresObservation({
+			health: overrides.health ?? Health.REACHABLE,
+			probeLatencyMs: 10,
+			failingForMs: overrides.failingForMs ?? 0,
+			ready: overrides.ready ?? true,
+			lagMs: "lagMs" in overrides ? overrides.lagMs : 5 * 60_000,
+			usage: overrides.usage ?? [{ unit: "operations", used: operations }],
+		}),
 	};
 }
 
 function input(
 	overrides: Partial<FleetDecisionInput> & {
-		observations: readonly PostgresFleetObservation[];
-		models: readonly PostgresFleetFinancialModel[];
+		observations: readonly NamedObservation[];
+		models: readonly FleetFinancialModel[];
 	},
 ): FleetDecisionInput {
 	return {
@@ -143,6 +169,7 @@ describe("parsing", () => {
 
 describe("keep", () => {
 	it("keeps a healthy writer that is far from its allowance", () => {
+		// 10,000 used in ten days of thirty: on course for 30,000 of 100,000.
 		const decision = decideFleet(
 			input({
 				observations: [seen("a", 10_000), seen("b", 500), seen("c", 500)],
@@ -177,6 +204,7 @@ describe("keep", () => {
 });
 
 describe("planned switch", () => {
+	// 9,000 a day: 90,000 used of 100,000, so about 1.1 days are left.
 	const exhausting = seen("a", 90_000);
 
 	it("switches before a hard allowance runs out, to the standby with most headroom", () => {
@@ -204,6 +232,7 @@ describe("planned switch", () => {
 	});
 
 	it("does not flap: the standby it left is not a place to go back to", () => {
+		// After moving to c, a is still nearly spent this month.
 		const decision = decideFleet(
 			input({
 				assignment: assignment("c"),
@@ -253,11 +282,14 @@ describe("planned switch", () => {
 				},
 			}),
 		);
+		// The writer's cost is unknown, so nothing is concluded about it.
 		expect(asked).toEqual(["b"]);
 		expect(decision.action).toBe("keep");
 	});
 
 	it("needs a margin: headroom of one horizon is not enough", () => {
+		// b would last about four days under this workload: more than the
+		// three-day horizon, less than the six days the margin requires.
 		const decision = decideFleet(
 			input({
 				observations: [exhausting, seen("b", 0)],
@@ -293,8 +325,8 @@ describe("planned switch", () => {
 				observations: [
 					exhausting,
 					seen("b", 0),
-					seen("c", 0, { schemaCurrent: false }),
-					seen("d", 0, { health: "unreachable", failingForMs: HOUR }),
+					seen("c", 0, { ready: false }),
+					seen("d", 0, { health: Health.UNREACHABLE, failingForMs: HOUR }),
 				],
 				models: [
 					capped("a", 100_000),
@@ -335,6 +367,7 @@ describe("planned switch", () => {
 			target: "b",
 			reasons: ["budget-infeasible:budget.policy.exhausted"],
 		});
+		// b: 300 already spent plus twenty more days at 1,000 a day.
 		expect(requests.find((request) => request.backend === "b")).toEqual({
 			backend: "b",
 			costBoundMicros: 0,
@@ -369,6 +402,7 @@ describe("planned switch", () => {
 				},
 			}),
 		);
+		// 20,000 projected, 15,000 beyond the allowance at 10 micros each.
 		expect(
 			requests.find((request) => request.backend === "b")?.costBoundMicros,
 		).toBe(1_150_000);
@@ -387,10 +421,10 @@ describe("planned switch", () => {
 					},
 				],
 			});
-		const sized = (backend: string): PostgresFleetObservation => ({
-			...seen(backend, 0),
-			usage: [{ unit: "storage-bytes", used: 2_000_000_000 }],
-		});
+		const sized = (backend: string): NamedObservation =>
+			seen(backend, 0, {
+				usage: [{ unit: "storage-bytes", used: 2_000_000_000 }],
+			});
 		const decision = decideFleet(
 			input({
 				observations: [sized("a"), sized("b"), sized("c")],
@@ -410,8 +444,10 @@ describe("planned switch", () => {
 });
 
 describe("failover", () => {
-	const down = (failingForMs: number) =>
-		seen("a", 0, { health: "unreachable", failingForMs, usage: [] });
+	const down = (
+		failingForMs: number,
+		usage: readonly Readonly<{ unit: string; used: number }>[] = [],
+	) => seen("a", 0, { health: Health.UNREACHABLE, failingForMs, usage });
 	const models = [
 		capped("a", 100_000),
 		capped("b", 100_000),
@@ -436,8 +472,8 @@ describe("failover", () => {
 			input({
 				observations: [
 					down(2 * 60_000),
-					seen("b", 0, { standbyLagMs: 9 * 60_000 }),
-					seen("c", 0, { standbyLagMs: 4 * 60_000 }),
+					seen("b", 0, { lagMs: 9 * 60_000 }),
+					seen("c", 0, { lagMs: 4 * 60_000 }),
 				],
 				models,
 			}),
@@ -454,7 +490,7 @@ describe("failover", () => {
 		const decision = decideFleet(
 			input({
 				observations: [
-					seen("a", 0, { health: "quota-exhausted", failingForMs: HOUR }),
+					seen("a", 0, { health: Health.QUOTA_EXHAUSTED, failingForMs: HOUR }),
 					seen("b", 0),
 				],
 				models,
@@ -472,8 +508,8 @@ describe("failover", () => {
 			input({
 				observations: [
 					down(HOUR),
-					seen("b", 0, { standbyLagMs: 21 * 60_000 }),
-					seen("c", 0, { standbyLagMs: undefined }),
+					seen("b", 0, { lagMs: 21 * 60_000 }),
+					seen("c", 0, { lagMs: undefined }),
 				],
 				models,
 			}),
@@ -496,12 +532,12 @@ describe("failover", () => {
 				observations: [
 					down(HOUR),
 					seen("b", 0, {
-						health: "auth",
+						health: Health.AUTH,
 						failingForMs: HOUR,
-						standbyLagMs: 1000,
+						lagMs: 1000,
 					}),
-					seen("c", 0, { schemaCurrent: false, standbyLagMs: 1000 }),
-					seen("d", 0, { standbyLagMs: 10 * 60_000 }),
+					seen("c", 0, { ready: false, lagMs: 1000 }),
+					seen("d", 0, { lagMs: 10 * 60_000 }),
 				],
 				models: [...models, capped("d", 100_000)],
 			}),
@@ -524,9 +560,10 @@ describe("failover", () => {
 		const decision = decideFleet(
 			input({
 				observations: [
-					{ ...down(HOUR), usage: [{ unit: "operations", used: 1000 }] },
-					seen("b", 0, { standbyLagMs: 60_000 }),
-					seen("c", 0, { standbyLagMs: 10 * 60_000 }),
+					// The writer's last measured use is still known to the host.
+					down(HOUR, [{ unit: "operations", used: 1000 }]),
+					seen("b", 0, { lagMs: 60_000 }),
+					seen("c", 0, { lagMs: 10 * 60_000 }),
 				],
 				models,
 				checkBudget: (request) =>
@@ -543,7 +580,10 @@ describe("holding", () => {
 	it("decides nothing while a switch is in flight", () => {
 		const decision = decideFleet(
 			input({
-				assignment: assignment("a", { sealed: true, target: "b" }),
+				assignment: assignment("a", {
+					sealed: true,
+					target: parseMemberName("b"),
+				}),
 				observations: [seen("a", 0), seen("b", 0)],
 				models: [capped("a", 1), capped("b", 1)],
 			}),

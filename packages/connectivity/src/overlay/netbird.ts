@@ -19,7 +19,6 @@ export function createNetbirdOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly managementUrl?: string;
 	readonly accessToken?: string;
-	readonly setupKey?: string;
 	readonly fetchImpl?: typeof fetch;
 	readonly api?: NetbirdApiClient;
 }): OverlayNetwork {
@@ -33,14 +32,10 @@ export function createNetbirdOverlay(options?: {
 		if (options?.api) return options.api;
 		if (!managementUrl) return null;
 		const accessToken = options?.accessToken;
-		const setupKey = options?.setupKey;
 		return createNetbirdApiClient({
 			managementUrl,
 			...(accessToken !== undefined && accessToken.length > 0
 				? { accessToken }
-				: undefined),
-			...(setupKey !== undefined && setupKey.length > 0
-				? { setupKey }
 				: undefined),
 			...(options?.fetchImpl !== undefined
 				? { fetchImpl: options.fetchImpl }
@@ -104,7 +99,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird: set NETBIRD_MANAGEMENT_URL and pass setupKey (or accessToken) from the owner's store (owner://NETBIRD_SETUP_KEY) for live join",
+					"netbird: set NETBIRD_MANAGEMENT_URL and join with the OverlayJoin from fleet enrollment for a live join",
 				);
 			}
 

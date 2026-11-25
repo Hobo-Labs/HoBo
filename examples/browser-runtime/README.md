@@ -12,11 +12,12 @@ node --import tsx site/scripts/build-browser-wit-runtime.mts
 ```
 
 The build uses the pinned `componentize-js` and jco installations already owned
-by `@hobo/runtime-wasm`, bundles jco's browser shims, and writes generated assets
-to `site/public/examples/runtime/`. It does not consume the synthetic contract
-bytes from `@hobo/componentize`. Component bytes from `componentize-js` are not
-byte-reproducible; the generated manifest records the exact build digest and
-source digest used by the page.
+by `@hobo/runtime-wasm`, passes the sandbox `station.wit` **inline as `witWorld`**
+(not as a `witPath` file read inside componentize-js), bundles jco's browser shims,
+and writes generated assets to `site/public/examples/runtime/`. It does not consume
+the synthetic contract bytes from `@hobo/componentize`. Component bytes from
+`componentize-js` are not byte-reproducible; the generated manifest records the
+exact build digest and source digest used by the page.
 
 The Home Station fetches those static bytes, but the sandboxed blob document
 creates the module/WASM blob URLs, initializes the component, and invokes it.

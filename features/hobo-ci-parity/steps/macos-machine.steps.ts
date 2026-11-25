@@ -9,7 +9,7 @@ import {
 	type RelayJobAnswer,
 	registryMachineCandidates,
 } from "../../../packages/ci/src/index.js";
-import { generateMeshIdentity } from "../../../packages/ci/src/mesh/index.js";
+import { generateMachineIdentity } from "../../../packages/ci/src/runner-order/machine-identity.js";
 import {
 	InMemoryMachineRegistry,
 	testRelayJobMessage,
@@ -112,7 +112,7 @@ Given("a connected macOS machine", async () => {
 			isolation: plan.isolation,
 			...OWNER,
 		},
-		identity: generateMeshIdentity().identity,
+		identity: generateMachineIdentity().identity,
 		sink: registryAdvertSink(mac.registry, OWNER),
 		jobs: githubQueueJobSource({
 			github,

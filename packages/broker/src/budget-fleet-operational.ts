@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ImmutableJournal } from "@hobo/backend-fleet";
-import { ImmutableJournalError } from "@hobo/backend-fleet";
+import {
+	type ImmutableJournal,
+	ImmutableJournalError,
+} from "@hobo/backend-routing";
 import type { AsyncActorLeaseHost } from "@hobo/core";
 import type {
 	BudgetIdentity,

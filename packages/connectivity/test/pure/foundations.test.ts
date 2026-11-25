@@ -26,6 +26,7 @@ import {
 	createTenantIsolationRegistry,
 	tenantFromSlug,
 } from "../../src/tenancy/isolation.js";
+import { fleetDouble } from "../support/fleet-agent.js";
 
 describe("connectivity config + naming (pure)", () => {
 	it("parses public DNS managedBy modes", () => {
@@ -158,6 +159,7 @@ describe("overlay CLI stubs (no HTTP)", () => {
 				cloud: "aws",
 			},
 			overlay,
+			fleet: fleetDouble().fleet,
 			policy,
 			metering: bus,
 		});
@@ -338,9 +340,13 @@ describe("named endpoints + portless (pure)", () => {
 
 describe("multi-tenant isolation + dynamic DNS (pure)", () => {
 	it("gives hard-isolated tenants distinct overlays and control-plane partitions", () => {
-		const registry = createTenantIsolationRegistry({
-			defaultMode: "soft",
-		});
+		const registry = createTenantIsolationRegistry(
+			{
+				shared: createTailscaleOverlay(),
+				forTenant: () => createTailscaleOverlay(),
+			},
+			{ defaultMode: "soft" },
+		);
 		const softA = registry.registerTenant(tenantFromSlug("soft-a", "soft"));
 		const softB = registry.registerTenant(tenantFromSlug("soft-b", "soft"));
 		const hardA = registry.registerTenant(
@@ -434,6 +440,7 @@ describe("multi-tenant isolation + dynamic DNS (pure)", () => {
 				],
 			},
 			overlay,
+			fleet: fleetDouble().fleet,
 			metering: bus,
 			publicDns: dns,
 		});

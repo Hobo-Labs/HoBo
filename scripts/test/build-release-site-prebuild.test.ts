@@ -17,6 +17,17 @@ describe("release site prebuild turbo args", () => {
 		]);
 	});
 
+	// Finding 125: the affected form failed with "no merge base found" once
+	// main had moved past the commit under release.
+	it("preflights browser-runtime wit before turbo (before examples:runtime)", () => {
+		const source = readFileSync(
+			join(import.meta.dirname, "..", "ci/build-release-site-prebuild.mts"),
+			"utf8",
+		);
+		expect(source).toMatch(/assertReleasePagesBrowserRuntimeWit/);
+		expect(source).toMatch(/HOBO_RELEASE_CHECKOUT_REF/);
+	});
+
 	it("never narrows the build to what changed since a base", () => {
 		const source = readFileSync(
 			join(import.meta.dirname, "..", "ci/build-release-site-prebuild.mts"),

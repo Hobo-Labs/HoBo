@@ -1,25 +1,12 @@
+import { create } from "@bufbuild/protobuf";
 import {
-	type AssignmentResolution,
 	billingPeriod,
-	bootstrapAssignment,
-	completeAssignment,
-	type EphemeralAssignmentReplica,
-	ephemeralAssignmentRegister,
-	ephemeralAssignmentReplica,
-	type FleetAssignment,
-	type FleetBackendHealth,
-	type FleetFailureClass,
 	type FleetRoute,
-	type FleetRoutingObservation,
 	type FleetUsageMeasurement,
 	type FleetUsageUnit,
-	proposeAssignment,
-	readAssignmentReplies,
-	readCurrentAssignment,
-	rejoinAssignmentReplicas,
-	resolveAssignment,
+	parseFleetUsageUnit,
 	routeFleetByBudget,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import {
 	EPHEMERAL_STATE_COMMAND_COST,
 	EPHEMERAL_STATE_MAX_TTL_MS,
@@ -27,7 +14,36 @@ import {
 	type EphemeralStatePort,
 	parseEphemeralKey,
 	parseEphemeralTtlMs,
+	parseTenantId,
 } from "@hobo/core";
+import {
+	ApprovalMode,
+	type AssignmentEntry,
+	CoordinationMode,
+	type EphemeralAssignmentReplica,
+	type FleetLog,
+	FleetPolicySchema,
+	type FleetRecord,
+	Health,
+	MemberKind,
+	type MemberRecord,
+	type NamedObservation,
+	type Observation,
+	ObservationSchema,
+	type OneActiveAction,
+	type OneActiveDeps,
+	type OneActiveTick,
+	parseFleetId,
+	parseMemberName,
+	type RegistryView,
+	UsageMeasurementSchema,
+} from "@hobo/fleet";
+import {
+	createOneActiveFleet,
+	ephemeralAssignmentRegister,
+	ephemeralAssignmentReplica,
+} from "@hobo/fleet/assignment";
+import { createLocalFleet } from "@hobo/fleet/membership";
 import type {
 	CacheBackendId,
 	CacheUsage,
@@ -35,6 +51,7 @@ import type {
 } from "./cache-backend.js";
 import type { CacheOffers } from "./cache-offers.js";
 
+/** A structured log line: an event name, then names, ids and numbers. */
 export type CacheFleetLogLine = Readonly<
 	{ event: string } & Record<
 		string,
@@ -46,6 +63,7 @@ export type CacheFleetLogLine = Readonly<
 	>
 >;
 
+/** The fleet cannot say which backend is active right now. Retry later. */
 export class CacheFleetUnavailableError extends Error {
 	readonly retryable = true;
 	readonly reason: string;
@@ -72,6 +90,7 @@ type PortOperation =
 	| "increment"
 	| "expire";
 
+/** Port calls this instance routed, by operation, plus keys asked by `getMany`. */
 type PortTally = Record<PortOperation, number> & { getManyKeys: number };
 
 type CostTables = Readonly<{
@@ -89,6 +108,12 @@ type CostTables = Readonly<{
 	>;
 }>;
 
+/**
+ * What a tally of port calls costs in one unit, by the bindings' own tables:
+ * one command per call on a Redis-protocol store, rows from
+ * `LIBSQL_EPHEMERAL_COST`, Blob operations (the uncontended path) from
+ * `VERCEL_BLOB_EPHEMERAL_COST`.
+ */
 export function tallyCost(
 	tally: PortTally,
 	unit: FleetUsageUnit,
@@ -143,93 +168,108 @@ async function loadCostTables(): Promise<CostTables> {
 	};
 }
 
-export function classifyCacheFailure(
-	error: Error | undefined,
-): FleetFailureClass {
-	if (error === undefined) return "unknown";
+/** Which class of failure a cache call ended in. Only the class leaves. */
+export function classifyCacheFailure(error: Error | undefined): Health {
+	if (error === undefined) return Health.UNKNOWN;
 	const text = `${"code" in error ? String(error.code) : ""} ${error.message}`;
 	if (
 		/quota|limit (?:has been )?(?:reached|exceeded)|max (?:daily|monthly) request|exceeded/iu.test(
 			text,
 		)
 	)
-		return "quota-exhausted";
+		return Health.QUOTA_EXHAUSTED;
 	if (/unauthori[sz]ed|forbidden|WRONGPASS|NOAUTH|\b40[13]\b|auth/iu.test(text))
-		return "auth";
-	return "unreachable";
+		return Health.AUTH;
+	return Health.UNREACHABLE;
 }
-
-export type CacheFleetTick = Readonly<{
-	action:
-		| "single"
-		| "bootstrap"
-		| "activate"
-		| "sealed-waiting"
-		| "reseal"
-		| FleetRoute["action"]
-		| "no-majority"
-		| "undecided";
-	epoch: number;
-	active: string | undefined;
-	target: string | undefined;
-	reasons: readonly string[];
-}>;
 
 export type CacheFleetOptions = Readonly<{
 	backends: readonly OpenedCacheBackend[];
+	/** Cache namespace: production, preview and local never share keys. */
 	environment: string;
 	offers: CacheOffers;
 	now?: () => number;
 	log?: (line: CacheFleetLogLine) => void;
+	/** Deliver a repair tick in `delaySeconds` (the activation of a sealed move). */
 	scheduleActivation?: (delaySeconds: number, epoch: number) => Promise<void>;
 	assignmentTtlMs?: number;
 	sealWaitMs?: number;
+	/** Who proposes entries; a short token, never a person. */
 	decidedBy?: string;
+	/** Usage is written to the members at most this often, outside a tick. */
 	flushIntervalMs?: number;
 	sleep?: (ms: number) => Promise<void>;
 }>;
 
+export type CacheLocalFleet = Readonly<{
+	registry: RegistryView;
+	fleet: FleetRecord;
+	members: readonly MemberRecord[];
+}>;
+
 export type CacheFleet = Readonly<{
+	/** The port the relay uses: every call goes to the active backend. */
 	state: EphemeralStatePort;
 	members: readonly CacheBackendId[];
+	/** The active backend as last resolved, without a read. */
 	activeId(): string | undefined;
-	tick(): Promise<CacheFleetTick>;
+	/** The repair tick: usage, register upkeep, the budget decision. */
+	tick(): Promise<OneActiveTick>;
+	/** Write usage now (a tick does) or when the interval has passed. */
 	flushUsage(force?: boolean): Promise<void>;
+	localFleet(): Promise<CacheLocalFleet>;
 	close(): Promise<void>;
 }>;
 
-type View =
-	| { readonly kind: "active"; readonly id: string; readonly epoch: number }
-	| { readonly kind: "refused"; readonly reason: string };
+const CACHE_TENANT = "relay"; // public-contract: the local-mode tenant named in the cache fleet's records
+const CACHE_FLEET_ID = "cache"; // public-contract: the local-mode fleet id named in the cache fleet's records
 
-function viewOf(resolution: AssignmentResolution): View {
-	switch (resolution.status) {
-		case "current": {
-			const entry = resolution.assignment;
-			if (entry.sealed) return { kind: "refused", reason: "sealed" };
-			if (entry.active === undefined)
-				return { kind: "refused", reason: "no-active-backend" };
-			return { kind: "active", id: entry.active, epoch: entry.epoch };
-		}
-		case "no-majority":
-			return { kind: "refused", reason: "no-majority" };
-		case "undecided":
-			return { kind: "refused", reason: "undecided" };
-		case "empty":
-			return { kind: "refused", reason: "empty" };
+type RoutingHealth =
+	| "reachable"
+	| "unreachable"
+	| "quota-exhausted"
+	| "auth"
+	| "unknown";
+// domain-view: the flat per-member fields today's routeFleetByBudget reads, beside the NamedObservation the frozen one reads (§7.3).
+type RoutedObservation = NamedObservation &
+	Readonly<{
+		backend: string;
+		health: RoutingHealth;
+		failingForMs: number;
+		usage: readonly FleetUsageMeasurement[];
+	}>;
+
+function healthToken(health: Health): RoutingHealth {
+	switch (health) {
+		case Health.REACHABLE:
+			return "reachable";
+		case Health.UNREACHABLE:
+			return "unreachable";
+		case Health.QUOTA_EXHAUSTED:
+			return "quota-exhausted";
+		case Health.AUTH:
+			return "auth";
+		default:
+			return "unknown";
 	}
 }
 
-function reasonToken(text: string): string {
-	return (
-		text
-			.toLowerCase()
-			.replace(/[^a-z0-9:._ -]+/gu, "")
-			.trim()
-			.replace(/\s+/gu, "-")
-			.slice(0, 120) || "decided"
-	);
+function refusalReason(reason: string | undefined): string {
+	if (reason === "no-active-member") return "no-active-backend";
+	return reason ?? "unavailable";
 }
+
+type OneActiveFleet = ReturnType<typeof createOneActiveFleet>;
+type ChooseInput = Parameters<OneActiveDeps["chooseAction"]>[0];
+
+const MOVED: ReadonlySet<OneActiveTick["action"]> = new Set([
+	"bootstrap",
+	"activate",
+	"reseal",
+	"switch",
+	"failover",
+	"membership",
+]);
 
 export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 	const now = options.now ?? Date.now;
@@ -248,57 +288,75 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 	const backends = options.backends;
 	if (backends.length === 0) throw new Error("a cache fleet needs a member");
 	const members = backends.map((backend) => backend.binding.id);
-	const byId = new Map<string, OpenedCacheBackend>(
+	const byName = new Map<string, OpenedCacheBackend>(
 		backends.map((backend) => [backend.binding.id, backend]),
 	);
 	const single = backends.length === 1 ? backends[0] : undefined;
 	const logKey = `hobo-ci:${options.environment}:fleet:assignment`;
-	const replicas: EphemeralAssignmentReplica[] = backends.map((backend) =>
-		ephemeralAssignmentReplica(backend.state, backend.binding.id, {
-			key: logKey,
-		}),
-	);
+	const failingSince = new Map<string, number>();
+
+	const seen = new Map<string, Health>();
+	let newest: AssignmentEntry | undefined;
+	const replicas: EphemeralAssignmentReplica[] = backends.map((backend) => {
+		const replica = ephemeralAssignmentReplica(
+			backend.state,
+			parseMemberName(backend.binding.id),
+			{ key: logKey },
+		);
+		return Object.freeze({
+			...replica,
+			async read(limit?: number): Promise<readonly AssignmentEntry[]> {
+				try {
+					const rows = await replica.read(limit);
+					seen.set(replica.id, Health.REACHABLE);
+					const last = rows.at(-1);
+					if (last !== undefined && last.epoch > (newest?.epoch ?? 0))
+						newest = last;
+					return rows;
+				} catch (error) {
+					seen.set(
+						replica.id,
+						classifyCacheFailure(error instanceof Error ? error : undefined),
+					);
+					throw error;
+				}
+			},
+		});
+	});
 	const register = ephemeralAssignmentRegister(replicas, {
 		classify: classifyCacheFailure,
 	});
 
-	let cached: { view: View; readStartedAt: number } | undefined;
-	let pending: Promise<View> | undefined;
-	const failingSince = new Map<string, number>();
-
-	async function resolveView(): Promise<View> {
-		if (cached) {
-			const age = now() - cached.readStartedAt;
-			const limit =
-				cached.view.kind === "active" ? ttlMs : UNAVAILABLE_RETRY_MS;
-			if (age < limit) return cached.view;
-		}
-		pending ??= (async () => {
-			const startedAt = now();
-			let resolution = await readCurrentAssignment(register);
-			if (resolution.status === "empty") {
-				await bootstrapAssignment(register, members[0] ?? "memory");
-				resolution = await readCurrentAssignment(register);
-			} else if (resolution.status === "undecided") {
-				resolution = await completeAssignment(register);
-			}
-			const view = viewOf(resolution);
-			cached = { view, readStartedAt: startedAt };
-			return view;
-		})().finally(() => {
-			pending = undefined;
+	const fleetLog: FleetLog = (event, fields) => log({ event, ...fields });
+	let declared: Promise<CacheLocalFleet> | undefined;
+	function localFleet(): Promise<CacheLocalFleet> {
+		declared ??= createLocalFleet({
+			tenant: parseTenantId(CACHE_TENANT),
+			fleetId: parseFleetId(CACHE_FLEET_ID),
+			coordination: CoordinationMode.ONE_ACTIVE,
+			policy: create(FleetPolicySchema, {
+				approval: ApprovalMode.AUTO_OWNER,
+				allowedKinds: [MemberKind.BACKEND],
+				failoverAfterMs: options.offers.marks.failoverAfterMs,
+				membershipEpochs: options.offers.membershipEpochs,
+			}),
+			owner: { kind: "service", id: "hosted-relay" },
+			members: backends.map((backend) => ({
+				kind: MemberKind.BACKEND,
+				name: parseMemberName(backend.binding.id),
+				displayName: backend.binding.kind,
+				credentialRef: backend.binding.names
+					.map((name) => `env://${name}`)
+					.join(","),
+				endpointDigest: "",
+			})),
+			now,
+			log: fleetLog,
+		}).catch((error: Error) => {
+			declared = undefined;
+			throw error;
 		});
-		return pending;
-	}
-
-	async function active(): Promise<OpenedCacheBackend> {
-		if (single) return single;
-		const view = await resolveView();
-		if (view.kind === "refused")
-			throw new CacheFleetUnavailableError(view.reason);
-		const backend = byId.get(view.id);
-		if (!backend) throw new CacheFleetUnavailableError("unknown-backend");
-		return backend;
+		return declared;
 	}
 
 	const tally: PortTally = {
@@ -311,41 +369,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		increment: 0,
 		expire: 0,
 	};
-	async function routed<T>(
-		operation: PortOperation,
-		call: (port: EphemeralStatePort) => Promise<T>,
-	): Promise<T> {
-		const backend = await active();
-		tally[operation] += 1;
-		try {
-			const result = await call(backend.state);
-			failingSince.delete(backend.binding.id);
-			return result;
-		} catch (error) {
-			if (!failingSince.has(backend.binding.id))
-				failingSince.set(backend.binding.id, now());
-			throw error;
-		}
-	}
-	const state: EphemeralStatePort = {
-		get: (key) => routed("get", (port) => port.get(key)),
-		getMany: (keys) => {
-			tally.getManyKeys += keys.length;
-			return routed("getMany", (port) => port.getMany(keys));
-		},
-		putIfAbsent: (key, value, ttl) =>
-			routed("putIfAbsent", (port) => port.putIfAbsent(key, value, ttl)),
-		compareAndSet: (key, expected, value, ttl) =>
-			routed("compareAndSet", (port) =>
-				port.compareAndSet(key, expected, value, ttl),
-			),
-		delete: (key, expected) =>
-			routed("delete", (port) => port.delete(key, expected)),
-		increment: (key, by, ttl, mode) =>
-			routed("increment", (port) => port.increment(key, by, ttl, mode)),
-		expire: (key, ttl) => routed("expire", (port) => port.expire(key, ttl)),
-	};
-
 	const flushed = new Map<string, Partial<Record<FleetUsageUnit, number>>>();
 	let lastFlushAt = Number.NEGATIVE_INFINITY;
 	let flushing: Promise<void> | undefined;
@@ -382,6 +405,7 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 				)?.included;
 				if (included !== undefined) allowance[unit] = included;
 			} catch {
+				// Kept for the next flush: nothing dropped, nothing counted twice.
 			}
 		}
 		flushed.set(backend.binding.id, done);
@@ -437,6 +461,7 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		}
 	}
 
+	/** The month's workload in every unit, from each member's spend and the call mix. */
 	async function workload(
 		spends: ReadonlyMap<string, readonly FleetUsageMeasurement[]>,
 	): Promise<FleetUsageMeasurement[]> {
@@ -457,6 +482,7 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 			if (native === undefined || !measured) continue;
 			const base = tallyCost(tally, native, tables);
 			for (const unit of units) {
+				// With no calls seen yet, assume one unit per unit: conservative.
 				const ratio = base > 0 ? tallyCost(tally, unit, tables) / base : 1;
 				totals.set(unit, (totals.get(unit) ?? 0) + measured * ratio);
 			}
@@ -467,27 +493,185 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		}));
 	}
 
-	async function probe(
-		replica: EphemeralAssignmentReplica,
-	): Promise<FleetBackendHealth> {
-		let health: FleetBackendHealth = "unknown";
+	async function probe(name: string): Promise<Health> {
+		const replica = replicas.find((each) => each.id === name);
+		let health: Health = Health.UNKNOWN;
+		if (replica === undefined) return health;
 		for (let attempt = 0; attempt < PROBE_ATTEMPTS; attempt += 1) {
 			if (attempt > 0) await sleep(PROBE_INTERVAL_MS);
 			try {
 				await replica.read(1);
-				failingSince.delete(replica.id);
-				return "reachable";
+				failingSince.delete(name);
+				return Health.REACHABLE;
 			} catch (error) {
 				health = classifyCacheFailure(
 					error instanceof Error ? error : undefined,
 				);
-				if (!failingSince.has(replica.id)) failingSince.set(replica.id, now());
+				if (!failingSince.has(name)) failingSince.set(name, now());
 			}
 		}
 		return health;
 	}
 
-	function report(tick: CacheFleetTick, route?: FleetRoute): CacheFleetTick {
+	async function observe(record: MemberRecord): Promise<Observation> {
+		const name =
+			record.memberships.find(
+				(membership) => membership.fleet === CACHE_FLEET_ID,
+			)?.name ?? "";
+		let health = seen.get(name) ?? Health.UNKNOWN;
+		if (
+			health !== Health.REACHABLE &&
+			(name === newest?.active || name === newest?.target)
+		)
+			health = await probe(name);
+		const backend = byName.get(name);
+		const usage =
+			health === Health.REACHABLE && backend !== undefined
+				? await spent(backend, now())
+				: undefined;
+		const since = failingSince.get(name);
+		return create(ObservationSchema, {
+			memberId: record.memberId,
+			observerId: record.memberId,
+			fleets: [CACHE_FLEET_ID],
+			health,
+			failingForMs:
+				health === Health.REACHABLE ? 0 : Math.max(0, now() - (since ?? now())),
+			usage: (usage ?? []).map((entry) =>
+				create(UsageMeasurementSchema, entry),
+			),
+		});
+	}
+
+	let lastRoute: FleetRoute | undefined;
+	async function chooseAction(input: ChooseInput): Promise<OneActiveAction> {
+		const spends = new Map<string, readonly FleetUsageMeasurement[]>();
+		const observations: RoutedObservation[] = input.observations.map(
+			(entry) => {
+				const usage = entry.observation.usage.map(
+					(measurement): FleetUsageMeasurement => ({
+						unit: parseFleetUsageUnit(measurement.unit),
+						used: measurement.used,
+					}),
+				);
+				if (usage.length > 0) spends.set(entry.name, usage);
+				return {
+					name: entry.name,
+					observation: entry.observation,
+					backend: entry.name,
+					health: healthToken(entry.observation.health),
+					failingForMs: entry.observation.failingForMs,
+					usage,
+				};
+			},
+		);
+		const route = routeFleetByBudget({
+			assignment: input.assignment,
+			members: input.members,
+			observations,
+			workload: await workload(spends),
+			offers: [...options.offers.offers.values()],
+			marks: options.offers.marks,
+			period: billingPeriod(input.nowMs),
+			nowMs: input.nowMs,
+		});
+		lastRoute = route;
+		const target = input.members.find((name) => name === route.target);
+		if (
+			(route.action === "switch" || route.action === "failover") &&
+			target !== undefined
+		)
+			return {
+				action: route.action,
+				target,
+				lossWindowMs: undefined,
+				reasons: route.reasons,
+			};
+		return {
+			action: route.action === "hold" ? "hold" : "keep",
+			reasons: route.reasons,
+		};
+	}
+
+	let loop: Promise<OneActiveFleet> | undefined;
+	function oneActive(): Promise<OneActiveFleet> {
+		loop ??= localFleet().then(({ registry, fleet }) =>
+			createOneActiveFleet({
+				fleet,
+				registry,
+				register,
+				observe,
+				chooseAction,
+				async scheduleActivation(epoch, afterMs) {
+					await options.scheduleActivation?.(
+						Math.max(1, Math.ceil(afterMs / 1000)),
+						epoch,
+					);
+				},
+				decidedBy,
+				sealWaitMs,
+				viewTtlMs: ttlMs,
+				refusedTtlMs: UNAVAILABLE_RETRY_MS,
+				now,
+				log: fleetLog,
+			}),
+		);
+		return loop;
+	}
+
+	let lastActive: string | undefined;
+	async function active(): Promise<OpenedCacheBackend> {
+		if (single) return single;
+		const answer = await (await oneActive()).active();
+		if (!answer.ok) {
+			lastActive = undefined;
+			const reason = answer.error.detail?.reason;
+			throw new CacheFleetUnavailableError(
+				refusalReason(reason === undefined ? undefined : String(reason)),
+			);
+		}
+		const backend = byName.get(answer.value);
+		if (!backend) throw new CacheFleetUnavailableError("unknown-backend");
+		lastActive = answer.value;
+		return backend;
+	}
+
+	async function routed<T>(
+		operation: PortOperation,
+		call: (port: EphemeralStatePort) => Promise<T>,
+	): Promise<T> {
+		const backend = await active();
+		tally[operation] += 1;
+		try {
+			const result = await call(backend.state);
+			failingSince.delete(backend.binding.id);
+			return result;
+		} catch (error) {
+			if (!failingSince.has(backend.binding.id))
+				failingSince.set(backend.binding.id, now());
+			throw error;
+		}
+	}
+	const state: EphemeralStatePort = {
+		get: (key) => routed("get", (port) => port.get(key)),
+		getMany: (keys) => {
+			tally.getManyKeys += keys.length;
+			return routed("getMany", (port) => port.getMany(keys));
+		},
+		putIfAbsent: (key, value, ttl) =>
+			routed("putIfAbsent", (port) => port.putIfAbsent(key, value, ttl)),
+		compareAndSet: (key, expected, value, ttl) =>
+			routed("compareAndSet", (port) =>
+				port.compareAndSet(key, expected, value, ttl),
+			),
+		delete: (key, expected) =>
+			routed("delete", (port) => port.delete(key, expected)),
+		increment: (key, by, ttl, mode) =>
+			routed("increment", (port) => port.increment(key, by, ttl, mode)),
+		expire: (key, ttl) => routed("expire", (port) => port.expire(key, ttl)),
+	};
+
+	function report(tick: OneActiveTick, route: FleetRoute | undefined): void {
 		const percent: Record<string, number> = {};
 		const cost: Record<string, number> = {};
 		for (const candidate of route?.candidates ?? []) {
@@ -512,279 +696,28 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 			projectedPercent: percent,
 			projectedCostMicros: cost,
 		});
-		return tick;
 	}
 
-	async function schedule(epoch: number, waitMs: number) {
-		try {
-			await options.scheduleActivation?.(
-				Math.max(1, Math.ceil(waitMs / 1000)),
-				epoch,
-			);
-		} catch {
-			log({ event: "hobo_ci_cache_fleet_activation_unscheduled", epoch });
-		}
-	}
-
-	async function seal(
-		current: FleetAssignment,
-		target: string,
-		reason: string,
-		keepActive: boolean,
-	): Promise<FleetAssignment | undefined> {
-		const outcome = await proposeAssignment(register, {
-			expectedEpoch: current.epoch,
-			value: {
-				active: keepActive ? current.active : undefined,
-				sealed: true,
-				target,
-				reason,
-				lossWindowMs: undefined,
-			},
-			decidedBy,
-			nowMs: now(),
-		});
-		cached = undefined;
-		if (outcome.status !== "decided") return undefined;
-		await schedule(outcome.assignment.epoch, sealWaitMs);
-		return outcome.assignment;
-	}
-
-	async function tick(): Promise<CacheFleetTick> {
+	async function tick(): Promise<OneActiveTick> {
 		await flushUsage(true);
-		if (single)
-			return {
-				action: "single",
-				epoch: 0,
-				active: single.binding.id,
-				target: undefined,
-				reasons: ["one-member"],
-			};
-		const at = now();
-		const replies = await readAssignmentReplies(register);
-		let resolution = resolveAssignment(members, replies);
-		if (
-			resolution.status === "undecided" ||
-			(resolution.status === "current" && resolution.behind.length > 0)
-		)
-			resolution = await completeAssignment(register);
-		await rejoinAssignmentReplicas(register, replies).catch(() => []);
-		await Promise.all(
-			replicas.map((replica) => replica.refresh().catch(() => false)),
-		);
-		if (
-			resolution.status === "no-majority" ||
-			resolution.status === "undecided"
-		)
-			return report({
-				action: resolution.status,
-				epoch: 0,
-				active: undefined,
-				target: undefined,
-				reasons: [`${resolution.status}`],
-			});
-		if (resolution.status === "empty") {
-			const first = members[0] ?? "memory";
-			await bootstrapAssignment(register, first);
-			cached = undefined;
-			return report({
-				action: "bootstrap",
-				epoch: 1,
-				active: first,
-				target: undefined,
-				reasons: ["empty-register"],
-			});
-		}
-		const current = resolution.assignment;
-
-		const observations: FleetRoutingObservation[] = [];
-		const spends = new Map<string, readonly FleetUsageMeasurement[]>();
-		for (const replica of replicas) {
-			const reply = replies.find((entry) => entry.replica === replica.id);
-			let health: FleetBackendHealth =
-				reply && "rows" in reply ? "reachable" : (reply?.failure ?? "unknown");
-			if (
-				health !== "reachable" &&
-				(replica.id === current.active || replica.id === current.target)
-			)
-				health = await probe(replica);
-			const backend = byId.get(replica.id);
-			const usage =
-				health === "reachable" && backend
-					? await spent(backend, at)
-					: undefined;
-			if (usage) spends.set(replica.id, usage);
-			const since = failingSince.get(replica.id);
-			observations.push({
-				backend: replica.id,
-				health,
-				failingForMs:
-					health === "reachable" ? 0 : Math.max(0, now() - (since ?? now())),
-				usage: usage ?? [],
-			});
-		}
-
-		if (current.sealed) {
-			const target = current.target;
-			const waited = at - current.decidedAtMs;
-			const targetSeen = observations.find((entry) => entry.backend === target);
-			if (target === undefined)
-				return report({
-					action: "undecided",
-					epoch: current.epoch,
-					active: current.active,
-					target,
-					reasons: ["sealed-without-target"],
-				});
-			if (targetSeen?.health !== "reachable") {
-				const route = routeFleetByBudget({
-					assignment: {
-						...current,
-						active: target,
-						sealed: false,
-						target: undefined,
-					},
-					members,
-					observations: observations.map((entry) =>
-						entry.backend === target
-							? { ...entry, failingForMs: Number.MAX_SAFE_INTEGER }
-							: entry,
-					),
-					workload: await workload(spends),
-					offers: [...options.offers.offers.values()],
-					marks: options.offers.marks,
-					period: billingPeriod(at),
-					nowMs: at,
-				});
-				if (route.action === "failover" && route.target !== undefined) {
-					const resealed = await seal(
-						current,
-						route.target,
-						`failover:${targetSeen?.health ?? "unknown"}`,
-						false,
-					);
-					return report(
-						{
-							action: "reseal",
-							epoch: resealed?.epoch ?? current.epoch,
-							active: undefined,
-							target: route.target,
-							reasons: [`target-${targetSeen?.health ?? "unknown"}`],
-						},
-						route,
-					);
-				}
-				return report(
-					{
-						action: "sealed-waiting",
-						epoch: current.epoch,
-						active: current.active,
-						target,
-						reasons: [
-							`target-${targetSeen?.health ?? "unknown"}`,
-							...route.reasons,
-						],
-					},
-					route,
-				);
-			}
-			if (waited < sealWaitMs) {
-				await schedule(current.epoch, sealWaitMs - waited);
-				return report({
-					action: "sealed-waiting",
-					epoch: current.epoch,
-					active: current.active,
-					target,
-					reasons: ["seal-wait-not-over"],
-				});
-			}
-			const outcome = await proposeAssignment(register, {
-				expectedEpoch: current.epoch,
-				value: {
-					active: target,
-					sealed: false,
-					target: undefined,
-					reason: "activate",
-					lossWindowMs: undefined,
-				},
-				decidedBy,
-				nowMs: now(),
-			});
-			cached = undefined;
-			return report({
-				action: "activate",
-				epoch:
-					outcome.status === "decided"
-						? outcome.assignment.epoch
-						: current.epoch,
-				active: outcome.status === "decided" ? target : current.active,
-				target,
-				reasons: [`proposal-${outcome.status}`],
-			});
-		}
-
-		const route = routeFleetByBudget({
-			assignment: current,
-			members,
-			observations,
-			workload: await workload(spends),
-			offers: [...options.offers.offers.values()],
-			marks: options.offers.marks,
-			period: billingPeriod(at),
-			nowMs: at,
-		});
-		if (
-			(route.action === "switch" || route.action === "failover") &&
-			route.target !== undefined
-		) {
-			const failover = route.action === "failover";
-			const activeHealth =
-				observations.find((entry) => entry.backend === current.active)
-					?.health ?? "unknown";
-			const sealed = await seal(
-				current,
-				route.target,
-				failover
-					? `failover:${activeHealth}`
-					: `switch:${reasonToken(route.reasons[0] ?? "budget")}`,
-				!failover,
-			);
-			return report(
-				{
-					action: route.action,
-					epoch: sealed?.epoch ?? current.epoch,
-					active: sealed ? sealed.active : current.active,
-					target: route.target,
-					reasons: sealed
-						? route.reasons
-						: [...route.reasons, "seal-not-decided"],
-				},
-				route,
-			);
-		}
-		return report(
-			{
-				action: route.action,
-				epoch: current.epoch,
-				active: current.active,
-				target: undefined,
-				reasons: route.reasons,
-			},
-			route,
-		);
+		const fleet = await oneActive();
+		seen.clear();
+		newest = undefined;
+		lastRoute = undefined;
+		const result = await fleet.tick();
+		if (result.action === "single") return result;
+		if (MOVED.has(result.action)) lastActive = undefined;
+		report(result, result.route === undefined ? undefined : lastRoute);
+		return result;
 	}
 
 	return Object.freeze({
 		state,
 		members,
-		activeId: () =>
-			single
-				? single.binding.id
-				: cached?.view.kind === "active"
-					? cached.view.id
-					: undefined,
+		activeId: () => (single ? single.binding.id : lastActive),
 		tick,
 		flushUsage,
+		localFleet,
 		async close() {
 			await Promise.all(
 				backends.map((backend) => backend.close().catch(() => undefined)),

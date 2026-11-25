@@ -8,6 +8,7 @@ export interface OverlayIdentity {
 	readonly overlayIps: readonly string[];
 	readonly tags: readonly string[];
 	readonly tenantId: TenantId;
+	readonly memberId?: string;
 }
 
 export interface OverlayJoinOptions {

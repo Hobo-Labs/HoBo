@@ -79,7 +79,7 @@ function isMarkdown(file: string) {
 }
 
 function cliFiles(markdownFiles: string[]) {
-	if (markdownFiles.includes("docs/design/cli-spec.md")) return undefined;
+	if (markdownFiles.includes("docs/cli-verbs.md")) return undefined;
 	return markdownFiles.filter((file) => {
 		return (
 			file === "README.md" ||

@@ -1,0 +1,359 @@
+{
+  "meta": {
+    "version": 2,
+    "root": ".",
+    "defaultFps": 10,
+    "measuredAt": "2026-07-27",
+    "artBible": "site/public/parallax/README.md",
+    "probedWith": "gamedev-assets/scripts/asset_sheet_probe.py via uv",
+    "notes": [
+      "Reuse site parallax Bo sheets only \u2014 idle + walk-east are good plates.",
+      "West is site bo-walk-left with feet re-registered to east baseline row 153 (no redraw, no mirror).",
+      "Environment: site ink-on-paper plates (trail, poles, clouds) \u2014 never generative color plates.",
+      "Rubberhose: ink #101010 / paper #ffffff / spark / go accents only.",
+      "Stable animation ids under animationIds \u2014 never hard-code clip names."
+    ],
+    "designSystem": "site/src/styles/global.css and packages/control-yard/public/yard.css"
+  },
+  "backgrounds": {
+    "sky-cloud": {
+      "path": "cloud-1.png",
+      "width": 354,
+      "height": 159
+    },
+    "trail": {
+      "path": "trail.png",
+      "width": 2918,
+      "height": 600
+    },
+    "trail-front": {
+      "path": "trail-front.png",
+      "width": 2918,
+      "height": 600
+    },
+    "poles": {
+      "path": "poles.png",
+      "width": 2400,
+      "height": 600
+    }
+  },
+  "images": {
+    "cargo-particle": {
+      "path": "particles/cargo.png",
+      "width": 8,
+      "height": 8
+    },
+    "connection-bay": {
+      "path": "chrome/connection-bay.png",
+      "width": 32,
+      "height": 32
+    }
+  },
+  "spritesheets": {
+    "bo-idle": {
+      "id": "bo-idle",
+      "path": "bo/bo-idle.png",
+      "width": 2484,
+      "height": 230,
+      "frameWidth": 207,
+      "frameHeight": 230,
+      "columns": 12,
+      "rows": 1,
+      "margin": 0,
+      "spacing": 0,
+      "fps": 8,
+      "frameMs": 125,
+      "origin": {
+        "x": 0.5,
+        "y": 1
+      },
+      "anchor": "feet-baseline",
+      "frames": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          5,
+          0
+        ],
+        [
+          6,
+          0
+        ],
+        [
+          7,
+          0
+        ],
+        [
+          8,
+          0
+        ],
+        [
+          9,
+          0
+        ],
+        [
+          10,
+          0
+        ],
+        [
+          11,
+          0
+        ]
+      ],
+      "emptyCount": 0,
+      "animations": {
+        "idle": {
+          "id": "bo.idle",
+          "sourceClipName": "bo-idle",
+          "fps": 8,
+          "frameRate": 8,
+          "repeat": -1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ]
+        }
+      }
+    },
+    "bo-walk-east": {
+      "id": "bo-walk-east",
+      "path": "bo/bo-walk.png",
+      "width": 960,
+      "height": 942,
+      "frameWidth": 160,
+      "frameHeight": 157,
+      "columns": 6,
+      "rows": 6,
+      "margin": 0,
+      "spacing": 0,
+      "fps": 20,
+      "frameMs": 50,
+      "origin": {
+        "x": 0.5,
+        "y": 1
+      },
+      "anchor": "feet-baseline",
+      "note": "Source art cells were 554\u00d7542; delivery repack is 160\u00d7157. Cadence remains 50ms/frame (9 frames/step, 18/stride).",
+      "frames": "all",
+      "frameCount": 36,
+      "emptyCount": 0,
+      "animations": {
+        "walk": {
+          "id": "bo.walk.east",
+          "sourceClipName": "bo-walk-east",
+          "fps": 20,
+          "frameRate": 20,
+          "repeat": -1,
+          "frames": "all",
+          "frameCount": 36
+        }
+      }
+    },
+    "bo-walk-west": {
+      "id": "bo-walk-west",
+      "path": "bo/bo-walk-left.png",
+      "width": 960,
+      "height": 942,
+      "frameWidth": 160,
+      "frameHeight": 157,
+      "columns": 6,
+      "rows": 6,
+      "margin": 0,
+      "spacing": 0,
+      "fps": 20,
+      "frameMs": 50,
+      "origin": {
+        "x": 0.5,
+        "y": 1
+      },
+      "anchor": "feet-baseline",
+      "frames": "all",
+      "frameCount": 36,
+      "emptyCount": 0,
+      "animations": {
+        "walk": {
+          "id": "bo.walk.west",
+          "sourceClipName": "bo-walk-west",
+          "fps": 20,
+          "frameRate": 20,
+          "repeat": -1,
+          "frames": "all",
+          "frameCount": 36
+        }
+      },
+      "baselineStabilized": true,
+      "baselineTargetRow": 153,
+      "regenerated": "site-original-feet-lock-only",
+      "source": "site/public/parallax/bo-walk-left.png (feet locked to 153)",
+      "neverMirrorFrom": "bo-walk-east"
+    },
+    "guest-swe-claude": {
+      "id": "guest-swe-claude",
+      "path": "guests/guest-swe-claude.png",
+      "width": 512,
+      "height": 64,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "columns": 8,
+      "rows": 1,
+      "margin": 0,
+      "spacing": 0,
+      "fps": 8,
+      "origin": {
+        "x": 0.5,
+        "y": 1
+      },
+      "frames": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          5,
+          0
+        ],
+        [
+          6,
+          0
+        ],
+        [
+          7,
+          0
+        ]
+      ],
+      "emptyCount": 0,
+      "animations": {
+        "idle": {
+          "id": "guest.swe-claude.idle",
+          "sourceClipName": "guest-swe-claude",
+          "fps": 6,
+          "frameRate": 6,
+          "repeat": -1,
+          "frames": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "walk": {
+          "id": "guest.swe-claude.walk",
+          "sourceClipName": "guest-swe-claude",
+          "fps": 8,
+          "frameRate": 8,
+          "repeat": -1,
+          "frames": [
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        "work": {
+          "id": "guest.swe-claude.work",
+          "sourceClipName": "guest-swe-claude",
+          "fps": 6,
+          "frameRate": 6,
+          "repeat": -1,
+          "frames": [
+            6,
+            7
+          ]
+        },
+        "error": {
+          "id": "guest.swe-claude.error",
+          "sourceClipName": "guest-swe-claude",
+          "fps": 1,
+          "frameRate": 1,
+          "repeat": 0,
+          "frames": [
+            3
+          ]
+        }
+      }
+    }
+  },
+  "animationIds": {
+    "bo.idle": {
+      "sheet": "bo-idle",
+      "animation": "idle"
+    },
+    "bo.walk.east": {
+      "sheet": "bo-walk-east",
+      "animation": "walk"
+    },
+    "bo.walk.west": {
+      "sheet": "bo-walk-west",
+      "animation": "walk"
+    },
+    "guest.swe-claude.idle": {
+      "sheet": "guest-swe-claude",
+      "animation": "idle"
+    },
+    "guest.swe-claude.walk": {
+      "sheet": "guest-swe-claude",
+      "animation": "walk"
+    },
+    "guest.swe-claude.work": {
+      "sheet": "guest-swe-claude",
+      "animation": "work"
+    },
+    "guest.swe-claude.error": {
+      "sheet": "guest-swe-claude",
+      "animation": "error"
+    }
+  },
+  "zoneAssetKeys": {
+    "platformRest": "bo.idle",
+    "bootstrapDesk": "bo.idle",
+    "activeRailTrack": "bo.walk.east",
+    "connectionBay": "connection-bay",
+    "policyBoard": "bo.idle",
+    "costBooth": "bo.idle",
+    "errorBunker": "bo.idle"
+  }
+}

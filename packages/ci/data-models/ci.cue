@@ -221,7 +221,7 @@ import "list"
 #SequencedCiEvent: {seq: int & >0, event: #CiEvent}
 #CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0, more?: bool, truncated?: bool}
 
-#Ci: #FleetRoutes | #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
+#Ci: #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
 
 #PipelineStep: {id: string & !="", argv: [string & !="", ...string], cwd: string, env: [string & !="__proto__"]: string}
 #Pipeline: {
@@ -280,6 +280,7 @@ import "list"
  budgetPolicy?: #CommonBudgetPolicyJson
 }
 
+// Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
  kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare" | "agent37"
@@ -352,6 +353,8 @@ import "list"
  budgetPolicy?: #CommonBudgetPolicyJson
 }
 
+// Struct's JSON shape; the canonical @hobo/core parser owns complete shared
+// constraint semantics and rejects unknown controls before any admission.
 #CommonBudgetPolicyJson: {
  schemaVersion: "hobo.budget-policy/v1"
  tenantId: string & !=""
@@ -369,12 +372,4 @@ import "list"
  if periodKind == "fixed-window" {periodStartsAtMs: int & >=0, periodEndsAtMs: int & >periodStartsAtMs}
  if periodKind == "manual" {periodStartsAtMs?: _|_, periodEndsAtMs?: _|_}
  constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
-}
-
-#FleetRouteLabel: string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"^(?i)ubuntu-latest$"
-#FleetRoutes: {
- pr: #FleetRouteLabel
- fork: #FleetRouteLabel
- trunk: #FleetRouteLabel
- [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
 }

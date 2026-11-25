@@ -14,8 +14,19 @@ import type {
 	RoutingPlan,
 	RoutingPlanId,
 	RoutingStatus,
+	TenantId,
 	TrafficRoutingOfferingId,
 } from "@hobo/core";
+import type {
+	CredentialRequest,
+	CredentialResponse,
+	EnrollmentAuthority,
+	EnrollmentRequest,
+	FleetClient,
+	FleetId,
+	MemberId,
+	RegistryView,
+} from "@hobo/fleet";
 import type {
 	ArtifactKind,
 	ArtifactRef,
@@ -769,8 +780,16 @@ export interface DeliveryFeedHandler {
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
 }
 
+export type DeliveryFleet = Readonly<{
+	tenant: TenantId;
+	fleet: FleetId;
+	origin: string;
+	station: Pick<FleetClient, "issueToken" | "approveKey" | "accept" | "revoke">;
+	forward(dpopProof: string): Pick<FleetClient, "enroll" | "credentials">;
+	authenticate: EnrollmentAuthority["authenticate"];
+}>;
+
 export interface AgentEnrollment {
-	/** Single-use bootstrap token scoped to one Camp set (D19). */
 	issueToken(
 		input: Readonly<{
 			campSet: string;
@@ -780,12 +799,11 @@ export interface AgentEnrollment {
 		}>,
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ token: string; expiresAtMs: number }>>>;
-	/** Register a public JWK. PENDING until both grants or a Rail auto-accept (I24). */
 	enroll(
 		input: Readonly<{
-			token: string;
-			publicJwk: JsonObject;
-			claims: readonly CampClaimRecord[];
+			request: EnrollmentRequest;
+			dpopProof: string;
+			campIds: readonly CampId[];
 		}>,
 		ctx: CdContext,
 	): Promise<
@@ -801,29 +819,19 @@ export interface AgentEnrollment {
 		input: Readonly<{ reconcilerId: ReconcilerId; campIds: readonly CampId[] }>,
 		ctx: CdContext,
 	): Promise<Outcome<ReconcilerRecord>>;
-	/** After acceptance, exchange a DPoP proof of key possession for a key-bound JWT-SVID (cnf.jkt). */
-	activate(
-		input: Readonly<{ reconcilerId: ReconcilerId; dpopProof: string }>,
-		ctx: CdContext,
-	): Promise<
-		Outcome<
-			Readonly<{
-				reconciler: ReconcilerRecord;
-				svid: string;
-				expiresAtMs: number;
-			}>
-		>
-	>;
 	refresh(
-		input: Readonly<{ svid: string; dpopProof: string }>,
+		input: Readonly<{
+			memberId: MemberId;
+			request: CredentialRequest;
+			dpopProof: string;
+		}>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ svid: string; expiresAtMs: number }>>>;
+	): Promise<Outcome<CredentialResponse>>;
 	revoke(
 		reconcilerId: ReconcilerId,
 		reason: string,
 		ctx: CdContext,
 	): Promise<Outcome<ReconcilerRecord>>;
-	/** Verify a request's JWT-SVID and DPoP proof (RFC 9449) with jti replay protection. */
 	verify(request: FeedRequest): Promise<Outcome<ReconcilerRecord>>;
 }
 
@@ -943,6 +951,11 @@ export type CampTopology = Readonly<{
 	envType: string;
 	labels: Readonly<Record<string, string>>;
 	management: CampManagement;
+}>;
+
+export type CampMembers = Readonly<{
+	registry: Pick<RegistryView, "membersOf" | "view">;
+	fleetOf(yardId: string): string | undefined;
 }>;
 
 export interface TopologyReader {
@@ -1373,12 +1386,12 @@ export interface CdFactories {
 			readonly telemetry: TelemetrySink;
 		},
 	): RolloutOrchestrator;
-	/** "./agent" (WP11) */
 	createAgentEnrollment(
 		d: CdBase & {
 			readonly authorizer: CdAuthorizer;
 			readonly rails: RailDeliveryReader;
 			readonly inventory: CampInventory;
+			readonly fleet?: DeliveryFleet | undefined;
 		},
 	): AgentEnrollment;
 	/** "./agent" (WP11) */
@@ -1389,6 +1402,7 @@ export interface CdFactories {
 			reconcilerId: ReconcilerId;
 			privateJwk: JsonObject;
 			svid: string;
+			credential?: (() => Promise<string>) | undefined;
 			now: () => number;
 		}>,
 	): ReconcilerTransport;
@@ -1435,6 +1449,7 @@ export interface CdFactories {
 			readonly desired: DesiredStateReader;
 			readonly authorizer: CdAuthorizer;
 			readonly telemetry: TelemetrySink;
+			readonly members?: CampMembers | undefined;
 		},
 	): CampInventory;
 	/** "./placement" (WP22) */

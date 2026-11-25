@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+	generateMachineIdentity,
 	type MachineAdvert,
 	type MachineRegistry,
 	receiveMachineAdvert,
 	registryMachineCandidates,
 	signMachineAdvert,
 } from "@hobo/ci";
-import { generateMeshIdentity } from "@hobo/ci/mesh";
 import { SqliteMachineRegistry } from "@hobo/ci/runner-order/machine-registry-sqlite";
 import {
 	InMemoryMachineRegistry,
@@ -27,8 +27,8 @@ import {
 } from "../src/ci-machine.js";
 
 const NOW = 1_763_337_600_000;
-const studioKey = generateMeshIdentity().identity;
-const thiefKey = generateMeshIdentity().identity;
+const studioKey = generateMachineIdentity().identity;
+const thiefKey = generateMachineIdentity().identity;
 
 const directories: string[] = [];
 afterEach(async () => {

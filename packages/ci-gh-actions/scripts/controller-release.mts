@@ -13,10 +13,6 @@ export const CONTROLLER_RELEASE_ENTRIES: readonly ControllerReleaseEntry[] =
 			artifactName: "hobo-ci-worker-release",
 			entry: "scripts/isolated-worker-daemon-main.mts",
 		},
-		{
-			artifactName: "hobo-ci-local-runner-release",
-			entry: "scripts/local-runner.ts",
-		},
 	]);
 
 export type ControllerRelease = Readonly<{

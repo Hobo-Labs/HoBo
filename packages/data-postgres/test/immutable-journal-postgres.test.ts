@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
 	createImmutableJournal,
 	type ImmutableJournalMember,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { createPostgresImmutableJournalReplica } from "../src/fleet/immutable-journal.js";

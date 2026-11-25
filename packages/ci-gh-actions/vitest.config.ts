@@ -3,7 +3,6 @@ import { defineConfig } from "vitest/config";
 
 const ISOLATED = [
 	"contracts/backend-swap.consumer.test.ts",
-	"contracts/local-github.pact.test.ts",
 	"contracts/local-runner.pact.test.ts",
 	"test/ci-store-contract.test.ts",
 	"test/pact-broker.test.ts",

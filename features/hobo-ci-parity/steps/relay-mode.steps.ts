@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { Before, Given, Then, When } from "@cucumber/cucumber";
-import {
-	createMemoryMesh,
-	createMeshCoordinator,
-} from "../../../packages/ci/src/mesh/index.js";
 import { create } from "@bufbuild/protobuf";
 import {
 	type RelayJobMessage,
@@ -16,6 +12,10 @@ import {
 	type RelayAnswerer,
 	type RelayTurn,
 } from "../../../packages/ci-gh-actions/src/relay-answer/index.js";
+import {
+	createRelayTurn,
+	type RelayTurnPeer,
+} from "../../../packages/ci-gh-actions/src/relay-turn.js";
 import { testJitConfig } from "../../../packages/ci-gh-actions/src/runner-protocol/port.js";
 import {
 	GithubSimulator,
@@ -27,7 +27,7 @@ const ACCOUNT = "acct-parity";
 const RELAY_SCENARIOS = "@R01 or @R13 or @R16 or @X01 or @X03";
 const TITLE_CHECK = "hobo-labs/hobo/checks/pr-title@v1";
 const POLL_INTERVAL_MS = 30_000;
-const MESH_STEP_MS = 20_000;
+const TURN_STEP_MS = 20_000;
 
 type RelayNode = Readonly<{
 	name: string;
@@ -154,26 +154,36 @@ Given("the next webhook is lost", () => {
 });
 
 Given("two relay nodes and the hosted one is down", async () => {
-	const mesh = createMemoryMesh({ now: () => world.sim.nowMs() });
-	const nodes = ["hosted", "box"].map((id) => {
-		const coordinator = createMeshCoordinator({
-			self: () => ({
-				id,
-				freeSlots: 1,
-				healthy: true,
-				labels: ["hobo-relay"],
-				validUntilMs: world.sim.nowMs() + 60_000,
+	const members = [
+		{ id: "hosted", memberId: `dev_${"a".repeat(32)}` },
+		{ id: "box", memberId: `dev_${"b".repeat(32)}` },
+	];
+	const peers: RelayTurnPeer[] = members.map(({ memberId }) => ({
+		memberId,
+		freeSlots: 1,
+		healthy: true,
+		labels: ["hobo-relay"],
+	}));
+	const holders = new Map<number, string>();
+	world.nodes = members.map(({ id, memberId }) =>
+		relayNode(
+			id,
+			createRelayTurn({
+				self: memberId,
+				peers: async () => peers,
+				claims: {
+					async claim(jobId, member) {
+						const holder = holders.get(jobId);
+						if (holder !== undefined && holder !== member) return "held";
+						holders.set(jobId, member);
+						return "claimed";
+					},
+				},
+				stepMs: TURN_STEP_MS,
+				nowMs: () => world.sim.nowMs(),
 			}),
-			board: mesh.board,
-			claims: mesh.claims,
-			stepMs: MESH_STEP_MS,
-			viewMaxAgeMs: 0,
-			now: () => world.sim.nowMs(),
-		});
-		return { coordinator, node: relayNode(id, coordinator) };
-	});
-	for (const { coordinator } of nodes) await coordinator.advertise();
-	world.nodes = nodes.map(({ node }) => node);
+		),
+	);
 	world.hosted = undefined;
 });
 
@@ -190,7 +200,7 @@ When("the queued webhook is delivered", async () => {
 	for (let poll = 0; poll < 6 && relayJob().status === "queued"; poll += 1) {
 		for (const node of world.nodes.slice(1))
 			await node.answerer.rescue(connections());
-		if (relayJob().status === "queued") world.sim.advance(MESH_STEP_MS);
+		if (relayJob().status === "queued") world.sim.advance(TURN_STEP_MS);
 	}
 });
 

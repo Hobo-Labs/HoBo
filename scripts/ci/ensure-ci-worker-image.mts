@@ -128,6 +128,26 @@ export function validatedWorkerDigestRef(
 	return /^sha256:[a-f0-9]{64}$/u.test(ref.slice(prefix.length)) ? ref : null;
 }
 
+export function selectWorkerRepoDigest(
+	repo: string,
+	repoDigests: readonly string[],
+): string {
+	const matches = repoDigests
+		.map((entry) => validatedWorkerDigestRef(repo, entry.trim()))
+		.filter((ref): ref is string => ref !== null);
+	const image = `ghcr.io/${repo.toLowerCase()}/hobo-ci-worker`;
+	const [match] = matches;
+	if (matches.length === 1 && match !== undefined) return match;
+	if (matches.length === 0) {
+		throw new Error(
+			`local worker digest unavailable for ${image}; no matching RepoDigests entry`,
+		);
+	}
+	throw new Error(
+		`local worker digest ambiguous for ${image}; found ${matches.length} matching RepoDigests entries`,
+	);
+}
+
 export function resolveWorkerRemoteRef(
 	repo: string,
 	version: string,
@@ -210,6 +230,23 @@ export function ghcrWorkerManifestReachable(
 	return workerManifestReachable(remoteWorkerTag(repo, version), token);
 }
 
+const WORKER_PUBLISH_PROBE_BUDGET_SEC = 120;
+
+export function ghcrWorkerPullable(
+	repo: string,
+	version: string,
+	token: string,
+): boolean {
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	if (!dockerLoginGhcr(actor, token)) return false;
+	const remote = remoteWorkerTag(repo, version);
+	if (!workerManifestReachable(remote, token)) return false;
+	return pullWorkerFromGhcr(remote, {
+		attempts: 1,
+		budgetSec: WORKER_PUBLISH_PROBE_BUDGET_SEC,
+	});
+}
+
 export function digestFromVerboseManifest(stdout: string): string | null {
 	const digests = new Set<string>();
 	for (const match of stdout.matchAll(
@@ -250,6 +287,103 @@ export function resolveWorkerDigestRef(repo: string, version: string): string {
 		);
 	}
 	return `${remote.slice(0, remote.lastIndexOf(":"))}@${digest}`;
+}
+
+export function resolveWorkerDigestRefFromPulledImage(
+	repo: string,
+	version: string,
+): string {
+	const remote = remoteWorkerTag(repo, version);
+	const inspected = spawnSync(
+		"docker",
+		["image", "inspect", remote, "--format", "{{json .RepoDigests}}"],
+		{ cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+	);
+	if (inspected.status !== 0) {
+		throw new Error(
+			`local worker inspect failed for ${remote} (status ${inspected.status ?? "unknown"})`,
+		);
+	}
+	let repoDigests: unknown;
+	try {
+		repoDigests = JSON.parse(inspected.stdout.trim() || "[]");
+	} catch {
+		throw new Error(
+			`local worker inspect returned invalid RepoDigests JSON for ${remote}`,
+		);
+	}
+	if (!Array.isArray(repoDigests)) {
+		throw new Error(
+			`local worker inspect returned non-array RepoDigests for ${remote}`,
+		);
+	}
+	return selectWorkerRepoDigest(repo, repoDigests);
+}
+
+function workerDigestWaitSleepSec(
+	attempt: number,
+	remainingSec: number,
+	random: () => number,
+): number {
+	if (remainingSec <= 0) return 0;
+	const backoffCap = Math.min(60, 5 * 2 ** Math.min(attempt - 1, 4));
+	return Math.min(Math.floor(random() * (backoffCap + 1)) + 5, remainingSec);
+}
+
+export function resolveWorkerDigestRefWhenPullable(
+	repo: string,
+	version: string,
+	options?: Readonly<{
+		budgetSec?: number;
+		now?: () => number;
+		random?: () => number;
+	}>,
+): string {
+	const token = ghcrAuthToken();
+	if (!repo || !token) {
+		throw new Error(
+			"resolving the GHCR worker digest requires repository and token",
+		);
+	}
+	const budgetSec = options?.budgetSec ?? workerPullBudgetSec();
+	const now = options?.now ?? Date.now;
+	const random = options?.random ?? Math.random;
+	const deadline = now() + budgetSec * 1000;
+	let lastError = "worker image not yet pullable";
+	let attempt = 0;
+	while (now() < deadline) {
+		attempt += 1;
+		if (ghcrWorkerPullable(repo, version, token)) {
+			try {
+				const imageRef = resolveWorkerDigestRefFromPulledImage(repo, version);
+				if (
+					pullWorkerFromGhcr(imageRef, {
+						attempts: 1,
+						budgetSec: WORKER_PUBLISH_PROBE_BUDGET_SEC,
+						now,
+						random,
+					})
+				) {
+					return imageRef;
+				}
+				lastError = `GHCR pull failed for digest-pinned ref ${imageRef}`;
+			} catch (error) {
+				lastError = error instanceof Error ? error.message : String(error);
+			}
+		} else {
+			lastError = `${remoteWorkerTag(repo, version)} not pullable yet`;
+		}
+		const remainingSec = Math.floor((deadline - now()) / 1000);
+		if (remainingSec <= 0) break;
+		const sleepFor = workerDigestWaitSleepSec(attempt, remainingSec, random);
+		console.log(
+			`worker image wait attempt ${attempt}: ${lastError}; retrying in ${sleepFor}s`,
+		);
+		spawnSync("sleep", [String(sleepFor)], { stdio: "ignore" });
+	}
+	throw new Error(
+		`timed out after ${budgetSec}s waiting for pullable worker image ${version}: ${lastError}`,
+	);
 }
 
 export function materializeCiWorkerImageOnly(): string | null {
@@ -363,10 +497,7 @@ export function ciWorkerImagePublished(): CiWorkerImagePresence {
 	const token = ghcrAuthToken();
 	let ghcr = false;
 	if (repo && token) {
-		const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
-		ghcr =
-			dockerLoginGhcr(actor, token) &&
-			ghcrWorkerManifestReachable(repo, version, token);
+		ghcr = ghcrWorkerPullable(repo, version, token);
 	}
 	return { version, host, ghcr };
 }
@@ -375,7 +506,7 @@ function main(): void {
 	if (process.argv.includes("--resolve-digest")) {
 		const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
 		const version = ciRunnerImageVersion(root);
-		const imageRef = resolveWorkerDigestRef(repo, version);
+		const imageRef = resolveWorkerDigestRefWhenPullable(repo, version);
 		console.log(imageRef);
 		const out = process.env.GITHUB_OUTPUT;
 		if (out) {

@@ -2,17 +2,17 @@ import {
 	billingPeriod,
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
-import { column, type FleetBackend, parseCount } from "./sql.js";
+import { column, type PostgresBackend, parseCount } from "./sql.js";
 
 export {
 	type BillingPeriod,
 	billingPeriod,
 	FLEET_USAGE_UNITS,
 	type FleetUsageUnit,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 // parallel-type-allowed: the parsed in-process measurement read back through readUsage; the proto PostgresFleetUsage is its wire projection.
 export type PostgresFleetUsage = {
@@ -32,7 +32,7 @@ function parseUnit(value: string): FleetUsageUnit {
 }
 
 export async function addUsage(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 	usage: PostgresFleetUsage,
 ): Promise<void> {
@@ -52,7 +52,7 @@ export async function addUsage(
 }
 
 export async function readUsage(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 	period: string,
 ): Promise<readonly PostgresFleetUsage[]> {
@@ -69,7 +69,7 @@ export async function readUsage(
 }
 
 export async function measureStorageBytes(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 ): Promise<number> {
 	const result = await backend.executor.query(
 		"SELECT pg_database_size(current_database())::text AS bytes",
@@ -81,7 +81,7 @@ export type UsageMeter = {
 	record(backendId: string, statements?: number): void;
 	pending(backendId: string): number;
 	flush(
-		backends: readonly FleetBackend[],
+		backends: readonly PostgresBackend[],
 		layout: FleetLayout,
 		nowMs: number,
 	): Promise<void>;

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
 	type ContinuityFleetPlan,
 	continuityFleetPlan,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import pg from "pg";
 import { afterAll, expect, it } from "vitest";
 

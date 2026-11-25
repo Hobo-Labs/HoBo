@@ -23,10 +23,15 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   runner's own content-keyed image, else a GHCR pull with the job token
   (`packages: read`), and `build.sh` only when neither has it. Tag releases resolve
   the worker tag to one immutable digest in `release-toolchain-image` before either
-  matrix starts. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
+  matrix starts. `--resolve-digest` waits until the version tag is pullable from GHCR,
+  pins the digest from that pulled image, and confirms the digest ref pulls, so release
+  never races `ci-deps-publish.yml`'s
+  worker push on a green main run. That job's timeout is 15 minutes so the wait can
+  use the full `HOBO_CI_WORKER_PULL_BUDGET_SEC`. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
   immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
   an empty or invalid value fails the job instead of falling back to the version
-  tag, and only an absent variable uses the version tag. Build and publish legs pull that digest under one overall
+  tag, and only an absent variable uses the version tag. Materialization with a
+  supplied digest ref never falls back to the mutable version tag. Build and publish legs pull that digest under one overall
   `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
   four attempts and exponential backoff plus jitter instead of 120-second
   per-attempt kills; their ensure steps have a 10-minute bound. The
@@ -87,12 +92,20 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   rebuilt all 135 packages. Turbo caches only successful tasks, so a partial save is still correct.
   `scripts/ci/turbo-cache-prune.mts` (node builtins only) runs first as a workflow step: it keeps every
   entry a `.turbo/runs` summary from this job named and stamps it used, keeps other entries used within
-  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. It outputs `save=false` when no task
+  `HOBO_TURBO_CACHE_KEEP_DAYS` (default 7), and drops the rest. When
+  `HOBO_TURBO_CACHE_RUN_SHARED=1` and `TURBO_CACHE` has no `remote:` tier, it keeps only misses for
+  run-scoped `actions/cache` saves on merge-group shards. It outputs `save=false` when no task
   missed the cache and left an entry, and the save step is skipped, so a fully cached run never starts
   the save composite (whose `actions/cache/save` resolve once timed out for 2 minutes). Keeping only the
   entries one run touched shrank main's cache to an affected-only run's handful of packages, and the next
   run rebuilt the rest cold. Saves from PRs stay scoped to the PR ref (no cross-PR poisoning);
-  push-to-main saves are the ones every PR and merge group restores.
+  push-to-main saves are the ones every PR and merge group restores. Merge-group validation and
+  workspace shards opt into run-scoped keys containing `github.run_id` and `github.run_attempt`
+  (turbo-cache input `shared-run`): shards prefer validation's completed save, then the newest same-run
+  shard save, before the older per-job fallback. Every merge-group shard saves under its own job and
+  matrix-index key, so concurrent saves do not contend for one immutable key. These caches share only
+  within the run; fork PRs never opt in. Run-scoped saves contain only entries written for this job's
+  misses, avoiding a full copy of every restored shard in every save.
 - **Main seeds a whole-workspace build cache.** The `main_build_cache` job builds every package on
   each push to main (on the routed runner, with the workspace shards' checkout and install, so the
   build hashes match theirs; on the box the shared host cache already holds them) and saves `.turbo/cache` under `turbo-<os>-main-build-…`, pruned with

@@ -1,8 +1,8 @@
 import type { Job, Lease } from "@hobo/ci";
 import {
-	type FleetCapacityWitness,
-	fleetCanAbsorbUnlaunchedRelease,
-} from "./fleet-absorb.js";
+	type PeerCapacityWitness,
+	peersCanAbsorbUnlaunchedRelease,
+} from "./peer-capacity.js";
 import {
 	type TrunkWaitCache,
 	type TrunkWaitState,
@@ -11,9 +11,9 @@ import {
 } from "./trunk-wait.js";
 
 export {
-	type FleetCapacityWitness,
-	fleetCanAbsorbUnlaunchedRelease,
-} from "./fleet-absorb.js";
+	type PeerCapacityWitness,
+	peersCanAbsorbUnlaunchedRelease,
+} from "./peer-capacity.js";
 
 export const DEFAULT_UNLAUNCHED_RESERVE_MS = 25_000;
 export const DEFAULT_UNLAUNCHED_BACKLOG_MIN_AGE_MS = 25_000;
@@ -72,10 +72,10 @@ export function unlaunchedReservationAgeMs(
 
 function fleetWitnessFromReleaseContext(
 	context: Pick<UnlaunchedReleaseContext, "fleetWitness" | "nonLocalFreeSlots">,
-): FleetCapacityWitness | undefined {
+): PeerCapacityWitness | undefined {
 	if (context.fleetWitness) return context.fleetWitness;
 	if (context.nonLocalFreeSlots === undefined) return undefined;
-	return { arcFreeSlots: context.nonLocalFreeSlots };
+	return { fleetFreeSlots: context.nonLocalFreeSlots };
 }
 
 export type UnlaunchedReleaseContext = Readonly<{
@@ -85,8 +85,9 @@ export type UnlaunchedReleaseContext = Readonly<{
 	unlaunchedCount: number;
 	launchSlots: number;
 	liveContainerCount: number;
+	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
-	fleetWitness?: FleetCapacityWitness;
+	fleetWitness?: PeerCapacityWitness;
 	/** @deprecated use fleetWitness */
 	nonLocalFreeSlots?: number;
 }>;
@@ -97,7 +98,7 @@ export function unlaunchedReleaseReason(
 	context: UnlaunchedReleaseContext,
 ): string | undefined {
 	if (!isUnlaunchedReservation(lease)) return undefined;
-	if (!fleetCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
+	if (!peersCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
 		return undefined;
 	const ageMs = unlaunchedReservationAgeMs(lease, nowMs);
 	if (ageMs >= context.boundMs) return "launch-bound-exceeded";
@@ -112,12 +113,13 @@ export function unlaunchedReleaseReason(
 	return undefined;
 }
 
+/** Oldest unlaunched reservations first so newer demand can still launch locally. */
 export function pickUnlaunchedReservationsToRelease(
 	leases: readonly UnlaunchedReservationLease[],
 	nowMs: number,
 	context: UnlaunchedReleaseContext,
 ): ReadonlyArray<Readonly<{ leaseId: string; jobId: number; reason: string }>> {
-	const canFleetAbsorb = fleetCanAbsorbUnlaunchedRelease(
+	const canFleetAbsorb = peersCanAbsorbUnlaunchedRelease(
 		fleetWitnessFromReleaseContext(context),
 	);
 	if (!canFleetAbsorb) return [];
@@ -159,7 +161,7 @@ export function pickTrunkHeadroomFleetReleases(
 	nowMs: number,
 	context: Readonly<{
 		deferMs: number;
-		fleetWitness?: FleetCapacityWitness;
+		fleetWitness?: PeerCapacityWitness;
 		nonLocalFreeSlots?: number;
 	}>,
 ): ReadonlyArray<
@@ -171,7 +173,7 @@ export function pickTrunkHeadroomFleetReleases(
 		waitedMs: number;
 	}>
 > {
-	if (!fleetCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
+	if (!peersCanAbsorbUnlaunchedRelease(fleetWitnessFromReleaseContext(context)))
 		return [];
 	const releases: {
 		leaseId: string;

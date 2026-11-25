@@ -1,9 +1,4 @@
-import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import type { ControlAuthenticator } from "./control-auth.js";
-import {
-	createStartFenceHandler,
-	type StartFencePolicy,
-} from "./fleet-v2/start-fence-handler.js";
 import type { GithubAppTransport } from "./github.js";
 import {
 	createHostedControlPlane,
@@ -20,7 +15,6 @@ import {
 	type StubEngine,
 	type VerifiedWebhook,
 } from "./http-handler.js";
-import type { MeshNodesReader } from "./mesh-nodes-reader.js";
 import type { IdentityVerifier } from "./oidc.js";
 import { createRelayMcp, isRelayMcpPath } from "./relay-mcp.js";
 import type { RelayMcpStore } from "./relay-mcp-server.js";
@@ -30,8 +24,13 @@ import {
 	type RelayServiceLog,
 } from "./service.js";
 
+/**
+ * An optional CI agent beside the relay (see `@hobo/ci-agent`). The relay
+ * only schedules it; what a pass does is the agent's own business.
+ */
 export type RelayAgent = Readonly<{
 	tick(): Promise<void>;
+	/** How often a pass starts; one minute when omitted. */
 	intervalMs?: number;
 }>;
 
@@ -41,22 +40,28 @@ export type RelayHostWiring = Readonly<{
 	control(request: Request): Promise<Response | undefined>;
 }>;
 
+/**
+ * The relay as a long-running Node service over one store partition: the host
+ * behind `hobo ci serve` and the container image. It composes the same relay
+ * core, control plane and HTTP handler as every other host, and adds the
+ * listener, the tick timer, the readiness probe and the drain.
+ */
 export function createRelayHost(options: {
 	store: HostedInboxStore &
 		HostedControlStore &
 		RelayMcpStore & { close(): void };
+	/**
+	 * What the MCP server reads through, when the store's own reads take a
+	 * lock that admission also takes: that store's observer. Defaults to the
+	 * store itself, which is right for a single-writer SQLite file.
+	 */
 	mcpStore?: RelayMcpStore;
 	github: GithubAppTransport;
-	strictFleet?:
-		| {
-				store: StrictFleetStore;
-				policies: readonly StartFencePolicy[];
-		  }
-		| undefined;
 	identity: IdentityVerifier;
 	webhookSecret: string;
 	ingressForwardSecret?: string | undefined;
 	authenticate: ControlAuthenticator;
+	/** The public origin; an `http:` one must be explicitly allowed loopback. */
 	publicOrigin: string;
 	allowLoopbackHttp?: boolean;
 	assets: { workflow: string; bootstrap: string };
@@ -68,21 +73,19 @@ export function createRelayHost(options: {
 	probeIntervalMs?: number;
 	probeTimeoutMs?: number;
 	drainTimeoutMs?: number;
+	/** Off unless supplied. It never delays the worker tick or fails the relay. */
 	agent?: RelayAgent | undefined;
-	meshNodes?: MeshNodesReader | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
 	wiring?: RelayHostWiring | undefined;
 }) {
 	const { store, github, identity, webhookSecret } = options;
-	const startFence = options.strictFleet
-		? createStartFenceHandler({ ...options.strictFleet, github })
-		: undefined;
 	const now = options.now ?? (() => new Date().toISOString());
 	const log = (entry: RelayServiceLog) => {
 		try {
 			options.logger?.(entry);
 		} catch {
+			// A failed logger must not fail a tick or a request.
 		}
 	};
 	const relay = async () => {
@@ -103,20 +106,17 @@ export function createRelayHost(options: {
 		github,
 		identity,
 		webhookSecret,
-		control: async (request) => {
-			const startResponse = await startFence?.(request);
-			if (startResponse) return startResponse;
-			return createHostedControlPlane({
+		control: async (request) =>
+			createHostedControlPlane({
 				relay: await relay(),
 				store,
 				github,
 				authenticate: options.authenticate,
 				publicOrigin: options.publicOrigin,
 				assets: options.assets,
+				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
-				meshNodes: options.meshNodes,
-			})(request);
-		},
+			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
 		now,
@@ -128,12 +128,13 @@ export function createRelayHost(options: {
 				agentIntervalMs: agent.intervalMs ?? 60_000,
 			}
 		: {};
+	// This process outlives a request, so it holds MCP sessions and pushes
+	// resource updates to their subscribers.
 	const mcp = createRelayMcp({
 		store: options.mcpStore ?? store,
 		relay,
 		authenticate: options.authenticate,
 		ready: async () => service.ready(),
-		meshNodes: options.meshNodes,
 		publicOrigin: options.publicOrigin,
 		sessions: "memory",
 		cursorSecret: webhookSecret,
@@ -178,6 +179,8 @@ export function createRelayHost(options: {
 		close: () => store.close(),
 		streams: isRelayMcpPath,
 		quiesce: () => mcp.close(),
+		// Deployment readiness is local partition integrity. A real runner acceptance
+		// workflow separately verifies external installation permissions and execution.
 		readinessProbe: async (signal) => {
 			signal.throwIfAborted();
 			return runtime.ready();

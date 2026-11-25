@@ -811,6 +811,7 @@ export function selectRelevantChecks(
 				"--filter=@hobo/hobo^...",
 				"--filter=@hobo/ci-gh-actions^...",
 				"--filter=@hobo/ci-dashboard^...",
+				"--filter=@hobo/fleet-authority...",
 				"--output-logs=new-only",
 				"--concurrency=100%",
 			],
