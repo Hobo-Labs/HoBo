@@ -8,8 +8,8 @@ tags: [hobo, auth, secrets, alchemy, better-auth, onboarding, maintenance]
 # Alchemy-aligned auth, secrets, and onboarding — codebase audit
 
 **Date checked:** 2026-11-25  
-**Alchemy doc index:** [`https://alchemy.run/llms.txt`](https://alchemy.run/llms.txt) (v2 beta; HoBo pins `alchemy@2.0.0-beta.87`)  
-**Request:** Map Alchemy's auth providers, secrets/config, secret providers, Better Auth, Domain, and testing model onto HoBo's current auth, secrets, and onboarding surfaces. Identify what is already built, what ADRs already decided, and what implementation remains for **durable sessions across restart** and **sessions across machines**.
+**Alchemy doc index:** [`https://alchemy.run/llms.txt`](https://alchemy.run/llms.txt) (v2 beta). HoBo's lockfile pins `alchemy@2.0.0-beta.87`, `@alchemy.run/cloudflare@2.0.0-beta.87`, and `@alchemy.run/rivet@2.0.0-beta.87` only; packages such as `@alchemy.run/better-auth`, `@alchemy.run/domain`, and `@alchemy.run/test` are **not** pinned and each needs an explicit dependency decision before use.  
+**Scope:** Map Alchemy's auth providers, secrets/config, secret providers, Better Auth, Domain, and testing model onto HoBo's current auth, secrets, and onboarding surfaces. Identify what is already built, what ADRs already decided, and what implementation remains for **durable sessions across restart** and **sessions across machines**.
 
 This document is evidence for implementation work; it does not replace [`docs/design/adr/02-identity-security.md`](../design/adr/02-identity-security.md) (ADR-0038, ADR-0113, ADR-0161) or [`docs/competitors/alchemy.md`](../competitors/alchemy.md).
 
@@ -53,7 +53,7 @@ Source: [`environments/secret-providers`](https://alchemy.run/environments/secre
 | **Exemptions** | `ALCHEMY_PROFILE` never from providers; Doppler/Infisical tokens read from process env only |
 | **Debug** | Names loaded, never values |
 
-HoBo analogue: owner-chosen **SecretsPort** adapters (1Password, Bitwarden, Infisical, auth-md claim path) at **owner** scope, not per-stack Effect providers.
+HoBo analogue: owner-chosen **SecretsPort** adapters (**1Password, Bitwarden, Infisical**) at **owner** scope via `choose_secret_store` / `owner://`, not per-stack Effect providers. `@hobo/auth-md` is the **agent-principal** plane (OAuth anonymous agent + human claim), not a SecretsPort adapter.
 
 ### 1.4 Better Auth on Alchemy
 
@@ -74,11 +74,11 @@ Source: [`domain`](https://alchemy.run/domain).
 
 | Concept | Behavior |
 | --- | --- |
-| **Model** | Commands, aggregates, events, views, projections, policies; `@alchemy.run/domain` |
+| **Model** | Commands, aggregates, events, views, projections, policies; `@alchemy.run/domain` (not in HoBo lockfile) |
 | **Tests** | In-memory **stories** (`Story.given/when/then`); production on Cloudflare DO / Rivet / Effect Cluster |
 | **Agent skill** | `alchemy-domain` shipped with package |
 
-HoBo analogue: CQRS/event store/actors (ADR-0135) and draft proofs; **no** Alchemy Domain dependency. Onboarding **design** contracts exist ([`docs/design/workspace-onboarding-ux.md`](../design/workspace-onboarding-ux.md)); they are not wired to Alchemy Domain stories.
+HoBo analogue: CQRS/event store/actors for the control plane; **ADR-0135** covers the **Camp EventStore / actor journal**, not Better Auth `session` rows on `hobo:data/relational`. **No** `@alchemy.run/domain` dependency. Onboarding **design** contracts exist ([`docs/design/workspace-onboarding-ux.md`](../design/workspace-onboarding-ux.md)); they are not wired to Alchemy Domain stories.
 
 ### 1.6 Testing
 
@@ -89,9 +89,9 @@ Sources: [`testing`](https://alchemy.run/testing), [`testing/testing-a-stack`](h
 | **Default** | Real cloud: `beforeAll(deploy(Stack))` → HTTP assertions → `afterAll(destroy)` |
 | **Stage** | `test_$USER`, `ci-pr-N` isolation |
 | **Local** | `dev: true` → workerd emulators, same suite |
-| **Runner** | `@alchemy.run/test` adapters for alchemy-test, Bun, Vitest |
+| **Runner** | `@alchemy.run/test` adapters for alchemy-test, Bun, Vitest (Alchemy package; not a HoBo lockfile pin) |
 
-HoBo analogue: PACT/mocked boundaries policy (no default live E2E); `@hobo/iac-alchemy` uses Alchemy in **package tests** (secrets, state, Rivet/Cloudflare fixtures); root `test:behavior` for fleet onboarding. ADR-0159 targets **credentials-as-code CI + OOB harness** aligned with Alchemy's deploy-test loop — partially reflected in iac-alchemy tests, not yet an auth onboarding story suite on Alchemy `Test.make`.
+HoBo analogue: **PACT / mocked boundaries** and **no traditional full-stack E2E** ([`AGENTS.md`](../../AGENTS.md)). [**ADR-0159**](../design/adr/07-portability-extensibility.md#adr-0159) adopts **`@hobo/testing`** `createTestHarness` (in-process by default, fidelity-labelled; ephemeral Camp fails closed) — not Alchemy `Test.make` or default real-cloud deploy loops. `@hobo/iac-alchemy` already exercises Alchemy in **scoped package tests** (secrets, state, Rivet/Cloudflare fixtures). Root `test:behavior` runs Cucumber suites under `cucumber.yaml` (epic/project proof features, `features/fleet/`, control-yard, CI parity) — not a dedicated auth-onboarding lane. **Gap:** auth bundle onboarding stories beside `createTestHarness` / package-local harness once runtime exists; do **not** add unpinned `@alchemy.run/test` or committed `.env` paths.
 
 ---
 
@@ -101,13 +101,13 @@ HoBo analogue: PACT/mocked boundaries policy (no default live E2E); `@hobo/iac-a
 
 | Plane | Packages / entry | Purpose |
 | --- | --- | --- |
-| **End-user / app auth (`hobo:auth`)** | `bindles` `auth()`, `@hobo/adapter-better-auth`, design proofs under `hobo-63-*` / ADR-0038 | JWT verify, session verbs on port; issuer adapters |
+| **End-user / app auth (`hobo:auth`)** | `bindles` `auth()` catalog handle, `@hobo/adapter-better-auth`, design proofs under `hobo-63-*` / ADR-0038 | **Contract** surface for issuer/session port verbs and dev principal shape; **JWT/JWKS verification is not asserted** in the [hobo-63 proof](../design/proofs/hobo-63-auth-contract/index.md) |
 | **Human / owner infrastructure** | `packages/hobo` owner store session, `hobo login`, MCP `choose_secret_store` | CI/CD credentials, relay; **not** app user sessions |
-| **Agent principals** | `@hobo/auth-md` | OAuth anonymous agent + human claim; separate from `hobo login` |
+| **Agent principals** | `@hobo/auth-md` | OAuth anonymous agent + human claim; separate from `hobo login` and from camp `SecretsPort` |
 | **Fleet device enrollment** | `@hobo/fleet-authority`, `@hobo/fleet` | RS256 enrollment tokens, OIDC/GitHub/atproto sign-in for **devices** |
-| **Relay secret store onboarding** | `@hobo/secret-store-claim` | Claim bundle for Infisical / auth-md / Cloudflare temporary (ADR-0179 amendment) |
+| **Relay secret store onboarding** | `@hobo/secret-store-claim` | Claim bundle for Infisical (built) plus **designed** `auth-md` and `cloudflare-temporary` offers ([`packages/secret-store-claim/README.md`](../../packages/secret-store-claim/README.md); hard-gated unless `allowDesigned`) |
 
-Tyler's request targets **HoBo product auth** using Alchemy's Better Auth + secrets stack — i.e. **`hobo:auth` bundle + deploy/onboarding**, not replacing owner store or fleet authority.
+This audit targets **HoBo product auth** — the **`hobo:auth` bundle + deploy/onboarding** path — not replacing owner store or fleet authority.
 
 ### 2.2 Better Auth adapter (`@hobo/adapter-better-auth`)
 
@@ -130,20 +130,18 @@ ADR-0161 decisions already recorded:
 | **Authoring** | `@hobo/bindles` `secret.string().source(...)`, `secretRef`; gate `evaluateSecretlessConfigGate` |
 | **Resolution** | `@hobo/identity` `resolveConfigSchema` ladder (ADR-0027) |
 | **Owner store** | `packages/hobo/src/owner-store-session.ts` — Infisical / 1Password / Bitwarden sign-in, `owner://` resolver for CD |
-| **Relay claim** | `@hobo/secret-store-claim` — provision + one-time claim actions |
+| **Relay claim** | `@hobo/secret-store-claim` — Infisical provision/claim **built**; `auth-md` / Cloudflare temporary **designed**, not default-offer runnable |
 | **IaC secrets** | `@hobo/iac-alchemy` — Redacted fingerprinting, Cloudflare secret name derivation, `secret-persistence.test.ts` proves Alchemy **state** round-trip for redacted props (host-owned state dir), not Better Auth signing secret |
 
-**Gap vs Alchemy secret providers:** HoBo has no stack-level `secrets: [DotEnv, Doppler, …]` equivalent on Yard/Station; binding is camp/owner mediated. For Better Auth OAuth client ids, Alchemy expects Construction-time `Config` discovery; HoBo expects **locators** and brokered resolution at runtime/deploy gates.
+**Gap vs Alchemy secret providers:** HoBo has no stack-level `secrets: [DotEnv, Doppler, …]` on Yard/Station; binding is camp/owner mediated. Tests use **synthetic construction records and memory `SecretsPort`** — never committed `.env` files ([`AGENTS.md`](../../AGENTS.md)). For Better Auth OAuth client ids, Alchemy expects Construction-time `Config` discovery; HoBo expects **locators** and brokered resolution at runtime/deploy gates.
 
 ### 2.4 IaC Alchemy (`@hobo/iac-alchemy`)
 
-**Status:** Production-portable IaC adapter (Cloudflare, Rivet extensions), heavy test surface, pinned `alchemy@2.0.0-beta.87`.
+**Status:** Optional IaC adapter using pinned `alchemy` / `@alchemy.run/cloudflare` / `@alchemy.run/rivet` beta.87; the **host** supplies stack, runtime layer, attestation, and financial port ([`packages/iac/iac-alchemy/README.md`](../../packages/iac/iac-alchemy/README.md)). Substantial package-test surface; many primitives are explicitly rejected or partial.
 
-Explicit non-binding note for auth primitive:
+Explicit non-binding note for auth primitive ([`packages/iac/iac-alchemy/src/cloudflare.ts`](../../packages/iac/iac-alchemy/src/cloudflare.ts)):
 
-```131:131:packages/iac/iac-alchemy/src/cloudflare.ts
-		auth: "Auth.OAuthClient and AuthProvider are available, but HoBo identity verification and sessions are not bound.",
-```
+> Auth.OAuthClient and AuthProvider are available, but HoBo identity verification and sessions are not bound.
 
 **Gap:** No bridge from Alchemy `AuthProvider` registry to HoBo owner session; no `BetterAuth` resource mapping in iac-alchemy.
 
@@ -152,11 +150,11 @@ Explicit non-binding note for auth primitive:
 | Surface | Status |
 | --- | --- |
 | **Workspace onboarding UX** | Design contracts + telemetry map (`docs/design/workspace-onboarding-ux.md`); M0 evidence-oriented |
-| **Secret store claim** | Implemented claim plane for relay owner |
+| **Secret store claim** | Infisical paths **built**; relay `auth-md` / Cloudflare temporary **designed** only |
 | **Owner MCP onboarding** | `choose_secret_store`, owner page tests in `packages/hobo/test/mcp-*.test.ts` |
 | **Alchemy Domain stories** | Not present for auth onboarding |
 
-**Gap:** No step-by-step **executable** onboarding path that provisions Better Auth + shared session store + verifies login from a second host, using Alchemy `Test.make` or HoBo draft proofs.
+**Gap:** No **executable** auth-onboarding story using `@hobo/testing` `createTestHarness` (or equivalent scoped package harness) that provisions Better Auth + shared session store + cross-host check once runtime exists.
 
 ### 2.6 Human `hobo login` vs app sessions
 
@@ -170,10 +168,10 @@ Explicit non-binding note for auth primitive:
 
 | Requirement | Alchemy pattern | HoBo today | Gap |
 | --- | --- | --- | --- |
-| Session rows durable | Relational DB + migrations on deploy | Adapter **declares** `hobo:data/relational`; no bundle provisions store or runs Better Auth migrations | Implement relational bindle + ADR-0160 migration gate for Better Auth schema |
+| Session rows durable | Relational DB + migrations on deploy | Adapter **declares** `hobo:data/relational`; no bundle provisions store or runs Better Auth migrations | Implement relational bindle + **ADR-0160** migration gate for Better Auth schema (postgres-shaped `SchemaIr` fixture; not the EventStore journal) |
 | Cookie signing key stable | `Alchemy.Random` persisted in state | ADR-0161: **brokered** `secretRef`, never IaC state file | Provision secret once into brokered custody; same locator across restarts |
-| Process restart | DB + secret stable → sessions valid | No running Better Auth runtime | Ship bundle runtime + integration tests |
-| Deploy/restart of **HoBo control plane** | Alchemy state store separate from app DB | Owner store ≠ session DB | Session DB must be a declared app resource, not `HOBO_HOME` sqlite |
+| Process restart | DB + secret stable → sessions valid | No running Better Auth runtime | Ship bundle runtime + integration tests (`createTestHarness` or package-local harness; synthetic secrets only) |
+| Deploy/restart of **HoBo control plane** | Alchemy state store separate from app DB | Owner store ≠ session DB | Session backing must be a declared **`hobo:data/relational`** app resource, not `HOBO_HOME` sqlite or the Camp EventStore partition |
 
 ### 3.2 Sessions work logging in from a different box
 
@@ -182,57 +180,57 @@ Explicit non-binding note for auth primitive:
 | Shared session state | DB (+ optional Redis secondary with consistency contract) | No shared session layer | Deploy relational store accessible from all app instances; optional secondary storage port adapter (Redis-class) if not relying on DB-only session mode |
 | Cookie scope | `baseURL` / trusted origins / HTTPS | Config parse has `basePath`; no runtime cookie policy | Production auth guide parity: trusted origins, OAuth callbacks, SMTP |
 | Multiple Workers/regions | Secondary storage guide (Redis REST) | Not implemented | If horizontal scale: implement `SecondaryStorage` behind `hobo:` port or host-specific Layer in bundle |
-| Browser on machine B | Same API origin or shared parent domain | Named endpoints ADR-0130 (`.hobo.localhost` / `.hobo.test`) for local overlay | Wire auth routes to stable named URL; test cross-host with two browsers or HTTP clients sharing cookie jar |
+| Browser on machine B | Same API origin or shared parent domain | Named endpoints ADR-0130 (`.hobo.localhost` / `.hobo.test`) for local overlay | Wire auth routes to stable named URL; test cross-host with mocked boundaries (PACT / package tests, not live E2E) |
 
 ### 3.3 Use Alchemy auth providers, secrets, secret providers
 
 | Alchemy piece | Intended use in HoBo auth work | Fit |
 | --- | --- | --- |
-| **Auth providers** | Credentials for **deploying** stacks that include auth Worker/Lambda | Use in **iac-alchemy** / future `alchemy.run.ts` host for auth bundle deploy tests; **not** a substitute for Better Auth end-user OAuth |
-| **Secrets & Config** | Bind OAuth client secrets, SMTP, `AUTH_BASE_URL` at Construction | Map to HoBo: camp resolution feeding deploy bindings, or iac-alchemy host passing Redacted into Alchemy resources; respect locator-only rule for signing secret |
-| **Secret providers** | DotEnv/Doppler/Infisical for stack config | Optional **host** for local/CI auth stack tests; owner store remains for HoBo operator credentials |
-| **Better Auth package** | Runtime issuer | ADR-0161 adapter + new bundle package(s) executing `better-auth` behind membrane |
+| **Auth providers** | Credentials for **deploying** stacks that include auth Worker/Lambda | Use in **iac-alchemy** host programs for bundle deploy tests under ADR-0159 harness; **not** a substitute for Better Auth end-user OAuth |
+| **Secrets & Config** | Bind OAuth client secrets, SMTP, `AUTH_BASE_URL` at Construction | Map to HoBo: camp resolution and owner store feeding deploy bindings; iac-alchemy Redacted props; respect locator-only rule for signing secret |
+| **Secret providers** | DotEnv/Doppler/Infisical on Alchemy stacks | **Do not** mirror with repo `.env` files. Optional **test-only** construction-key layering in package harness; operator material stays **`owner://`** / broker |
+| **Better Auth package** | Runtime issuer | ADR-0161 adapter + bundle package(s) executing `better-auth` behind membrane |
 
 ### 3.4 Alchemy Domains + step-by-step testing
 
 | Alchemy pattern | HoBo alignment |
 | --- | --- |
-| Domain stories for commands (register, sign-in, claim) | Can mirror in `src/draft/exp-proofs/ux/` **or** package tests; repo rules forbid new planning-only docs |
-| `Test.make` deploy → HTTP sign-in → destroy | Fits ADR-0159; should live beside auth bundle once runtime exists (scoped package test, not full-repo E2E) |
+| Domain stories for commands (register, sign-in, claim) | Mirror in `src/draft/exp-proofs/ux/` **or** package tests; repo rules forbid new planning-only docs |
+| Alchemy real-cloud deploy → HTTP sign-in → destroy | **Not** the default HoBo lane; use **`@hobo/testing` `createTestHarness`** scoped package tests with mocked boundaries (ADR-0159) |
 | `alchemy-domain` skill | Not required for HoBo; use existing `draft` / `tdd` / PACT patterns |
 
 ---
 
-## 4. Architectural constraints (already decided)
+## 4. Architectural constraints (implementation must comply)
 
-These are **not** gaps to re-litigate; implementation must comply:
+These are recorded ADRs and repository rules; treat mismatches as defects, not optional design:
 
-1. **Brokered signing secret** (ADR-0161) — do not persist Better Auth signing material in Alchemy state like upstream Alchemy demo.
-2. **Federate + verify** (ADR-0038) — Better Auth is issuer; JWKS verify path unchanged.
-3. **Agents never store secrets** — synthetic CI secrets only; OAuth client secrets via owner store / broker at deploy, not committed.
-4. **No vendored auth server in adapter package** — runtime lives in bundle/host package with dependency on `better-auth`.
-5. **Portable SQLite EventStore** (ADR-0135) — session DB may be SQLite **partition** for single-writer paths; multi-box requires network relational store or explicitly consistent secondary storage — not multi-writer NFS WAL.
-6. **Parallel agents** — avoid broad edits to `AGENTS.md`, root `package.json`, shared CI workflows in this workstream.
+1. **Brokered signing secret** ([ADR-0161](../design/adr/02-identity-security.md)) — do not persist Better Auth signing material in Alchemy state like upstream Alchemy demo.
+2. **Federate + verify** ([ADR-0038](../design/adr/02-identity-security.md)) — Better Auth is issuer; JWKS verify path is a separate gate from the hobo-63 contract proof.
+3. **Agents never store secrets** ([`AGENTS.md`](../../AGENTS.md)) — synthetic CI secrets only in tests; OAuth client secrets via owner store / broker at deploy; **no** committed `.env` or `env://` shortcuts.
+4. **No vendored auth server in adapter package** ([ADR-0161](../design/adr/02-identity-security.md)) — runtime lives in bundle/host package with dependency on `better-auth`.
+5. **Relational session backing ≠ EventStore journal** — Better Auth `session` rows belong to **`hobo:data/relational`** with **ADR-0160**-governed migrations (postgres-shaped fixture today). **ADR-0135** SQLite partitions apply to the **Camp EventStore / actor journal**, not as a shortcut around the relational migration gate.
+6. **Workstream hygiene** — parallel agents avoid broad edits to `AGENTS.md`, root `package.json`, and shared CI workflows unless the task requires them.
 
 ---
 
-## 5. Suggested incremental PR stack (implementation sequence)
+## 5. Incremental delivery record (auth stack PRs)
 
-Ordered for **small green PRs** off `origin/main`; each row is one mergeable unit. Names are illustrative branch themes, not pre-created branches.
+Ordered **merge units** delivered as a stacked PR series off `origin/main` (branches `cursor/alchemy-auth-*-d77e`). This table records **what shipped** in that workstream — not a standing roadmap.
 
-| # | Scope | Delivers | Primary touch |
+| # | Scope | Delivered | Primary touch |
 | --- | --- | --- | --- |
-| 1 | **This audit** | Shared map for reviewers | `docs/maintenance/alchemy-auth-secrets-onboarding-audit.md` |
-| 2 | **Auth bundle skeleton** | Package that composes `better-auth` behind membrane ports; fails closed without deps; no cloud pin | New package under `packages/` (narrow), PACT boundary extension |
-| 3 | **Relational + migrations wire** | Gated Better Auth schema via ADR-0160 path against `hobo:data/relational` fixture | Bundle + migration fixtures |
-| 4 | **Secret broker wire** | Signing `secretRef` resolution at bundle init; refusal on inline material | `@hobo/identity` / camp secrets port integration in bundle |
-| 5 | **iac-alchemy host fixture** | Minimal Alchemy stack test: Worker + D1 or local SQLite + Construction-time Config from DotEnv provider; Vitest `Test.make` or package-local harness | `@hobo/iac-alchemy/test/` + small fixture only |
-| 6 | **Session durability tests** | Automated: sign-in → restart process / redeploy stack → session still valid | Package test with synthetic secrets |
-| 7 | **Cross-box session test** | Two clients against shared DB URL; cookie replay or second browser lane (mocked boundaries) | Behavior or component test per repo policy |
-| 8 | **Onboarding step tests** | One executable step per claim (store sign-in, auth route live, first session) aligned with workspace onboarding evidence map | `src/draft/exp-proofs/ux/` or package tests |
-| 9 | **Secret providers in host** | Stage-scoped DotEnv + Infisical/Doppler optional Layer for auth stack CI only | iac-alchemy host, docs touch in same PR |
+| 1 | **This audit** | Evidence map for reviewers | `docs/maintenance/alchemy-auth-secrets-onboarding-audit.md` |
+| 2 | **Auth bundle skeleton** | `@hobo/pack-better-auth` plan/ports/PACT | `packages/packs/pack-better-auth/` |
+| 3 | **Relational + migrations wire** | ADR-0160 `diffSchemaIr` plan vs Better Auth `SchemaIr` | Bundle `migrations.ts` + fixtures |
+| 4 | **Secret broker wire** | `wireBetterAuthSigningSecret` via camp `SecretsPort` | Bundle `secrets.ts` |
+| 5 | **iac-alchemy host fixture** | Package-local harness: `HOBO_AUTH_*` construction records, in-memory Alchemy state, pack planning wire (beta.87 has no `Test.make`) | `@hobo/iac-alchemy/test/better-auth-host-harness.*` |
+| 6 | **Session durability tests** | File-backed SQLite session row survives simulated restart + signing re-wire | `better-auth-session-durability.*` |
+| 7 | **Cross-box session test** | Two harnesses, one shared session DB path | `better-auth-cross-box-session.test.ts` |
+| 8 | **Onboarding step tests** | Chained pack planning + broker + first session row | `better-auth-onboarding-steps.test.ts` |
+| 9 | **Construction-key layering** | Stage-scoped provider **ordering** fixture (dotenv-shaped merge only; no `.env` files) | `better-auth-secret-providers.*` |
 
-Dependencies: 2→3→4 sequential; 5 can parallel 3–4 once bundle API stable; 6–7 require 2–5; 8 can start after 6 green; 9 optional for CI parity with Alchemy docs.
+Dependencies followed 2→3→4; host tests 5–9 layered on pack APIs with synthetic secrets only.
 
 ---
 
@@ -242,6 +240,7 @@ Dependencies: 2→3→4 sequential; 5 can parallel 3–4 once bundle API stable;
 | --- | --- |
 | Alchemy competitor capture | [`docs/competitors/alchemy.md`](../competitors/alchemy.md) |
 | Yard bindings / Alchemy-informed ADRs | [`docs/design/yard-bindings.md`](../design/yard-bindings.md), ADR-0157–0161 |
+| ADR-0159 test harness | [`docs/design/adr/07-portability-extensibility.md`](../design/adr/07-portability-extensibility.md#adr-0159) |
 | Better Auth adapter | [`packages/adapters/adapter-better-auth/`](../../packages/adapters/adapter-better-auth/) |
 | IaC Alchemy | [`packages/iac/iac-alchemy/README.md`](../../packages/iac/iac-alchemy/README.md) |
 | Owner store session | [`packages/hobo/src/owner-store-session.ts`](../../packages/hobo/src/owner-store-session.ts) |
@@ -252,6 +251,6 @@ Dependencies: 2→3→4 sequential; 5 can parallel 3–4 once bundle API stable;
 
 ## 7. Audit conclusion
 
-HoBo **already decided** the Better Auth shape (ADR-0161) and **implemented** the adapter contract surface, owner/relay secret onboarding, and a substantial **iac-alchemy** bridge — but **does not yet run** Better Auth, **does not bind** Alchemy auth providers to product sessions, and **does not prove** cross-restart or cross-machine session continuity.
+HoBo **already decided** the Better Auth shape (ADR-0161) and **implemented** the adapter contract surface, owner onboarding for **built** secret-store offers, and a substantial **iac-alchemy** bridge — but **does not yet run** Better Auth HTTP, **does not bind** Alchemy deploy auth providers to product sessions, and **does not prove** cross-restart or cross-machine session continuity at the full runtime layer.
 
-Closing Tyler's goals requires a **bundle runtime** (not adapter-only), **shared durable session backing**, **stable brokered signing identity**, and **Alchemy-style integration tests** scoped to the auth package — using Alchemy secret providers and Config binding where they accelerate deploy-time OAuth/SMTP wiring, while keeping HoBo's brokered-secret and governance rules intact.
+Closing the remaining goals requires a **bundle runtime** (not adapter-only), **shared durable relational session backing** under ADR-0160, **stable brokered signing identity**, and **ADR-0159-scoped harness tests** — keeping HoBo's owner-store, brokered-secret, and no-`.env` governance rules intact.
