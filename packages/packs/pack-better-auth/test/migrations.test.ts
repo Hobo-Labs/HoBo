@@ -11,7 +11,7 @@ import {
 	BETTER_AUTH_RELATIONAL_TABLES,
 } from "../src/fixtures/better-auth-schema-ir.js";
 import { planBetterAuthBundle } from "../src/plan.js";
-import { planBetterAuthRelationalMigrations } from "../src/migrations.js";
+import { planBetterAuthRelationalMigrations } from "../src/index.js";
 
 const CONFIG_INPUT = {
 	basePath: "/api/auth",

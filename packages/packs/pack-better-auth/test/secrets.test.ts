@@ -7,7 +7,7 @@ import { planBetterAuthBundle } from "../src/plan.js";
 import {
 	campSecretNameFromBetterAuthRef,
 	wireBetterAuthSigningSecret,
-} from "../src/secrets.js";
+} from "../src/index.js";
 
 const CONFIG_INPUT = {
 	basePath: "/api/auth",
