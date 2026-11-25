@@ -1,16 +1,24 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
 import {
+	ExternalRunnerId,
+	JobConclusion,
 	JobDispatchId,
+	JobDispatchStatusTag,
 	JobRequirements,
+	NonEmptyReason,
+	NonNegativeMicros,
+	PositiveAttempts,
+	PositiveSeconds,
 	RunnerPoolId,
 	RunnerTier,
+	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
 
 export class JobNotQueued extends Domain.Rejection("JobNotQueued", {
-	currentState: Schema.String,
+	currentState: JobDispatchStatusTag,
 }) {}
 
 export class StartBindingConflict extends Domain.Rejection(
@@ -23,13 +31,13 @@ export class StartBindingConflict extends Domain.Rejection(
 ) {}
 
 export class JobNotBound extends Domain.Rejection("JobNotBound", {
-	currentState: Schema.String,
+	currentState: JobDispatchStatusTag,
 }) {}
 
 export class JobDispatchObserved extends Domain.Event("JobDispatchObserved", {
 	stationId: StationId,
 	requirements: JobRequirements,
-	deadlineSeconds: Schema.NullOr(Schema.Int),
+	deadlineSeconds: Schema.NullOr(PositiveSeconds),
 }) {}
 
 export class RunnerStartBound extends Domain.Event("RunnerStartBound", {
@@ -37,24 +45,24 @@ export class RunnerStartBound extends Domain.Event("RunnerStartBound", {
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
 	slotId: SlotId,
-	runsOn: Schema.String,
-	externalRunnerId: Schema.String,
-	attempts: Schema.Int,
+	runsOn: RunsOnLabel,
+	externalRunnerId: ExternalRunnerId,
+	attempts: PositiveAttempts,
 }) {}
 
 export class JobDispatchCompleted extends Domain.Event("JobDispatchCompleted", {
 	stationId: StationId,
 	slotId: SlotId,
-	settledMicros: Schema.Int,
-	conclusion: Schema.Literals(["succeeded", "failed", "cancelled"]),
+	settledMicros: NonNegativeMicros,
+	conclusion: JobConclusion,
 }) {}
 
 export class JobDispatchFailed extends Domain.Event("JobDispatchFailed", {
-	reason: Schema.String,
+	reason: NonEmptyReason,
 }) {}
 
 export class JobDispatchExpired extends Domain.Event("JobDispatchExpired", {
-	reason: Schema.String,
+	reason: NonEmptyReason,
 }) {}
 
 export class ObserveJobDispatch extends Domain.Command(
@@ -64,7 +72,7 @@ export class ObserveJobDispatch extends Domain.Command(
 		input: {
 			stationId: StationId,
 			requirements: JobRequirements,
-			deadlineSeconds: Schema.NullOr(Schema.Int),
+			deadlineSeconds: Schema.NullOr(PositiveSeconds),
 		},
 		events: [JobDispatchObserved],
 		rejects: [],
@@ -80,9 +88,9 @@ export class BindRunnerStart extends Domain.Command(
 			poolId: RunnerPoolId,
 			tier: RunnerTier,
 			slotId: SlotId,
-			runsOn: Schema.String,
-			externalRunnerId: Schema.String,
-			attempts: Schema.Int,
+			runsOn: RunsOnLabel,
+			externalRunnerId: ExternalRunnerId,
+			attempts: PositiveAttempts,
 		},
 		events: [RunnerStartBound],
 		rejects: [JobNotQueued, StartBindingConflict],
@@ -98,8 +106,8 @@ export class CompleteJobDispatch extends Domain.Command(
 	{
 		target: JobDispatchId,
 		input: {
-			settledMicros: Schema.Int,
-			conclusion: Schema.Literals(["succeeded", "failed", "cancelled"]),
+			settledMicros: NonNegativeMicros,
+			conclusion: JobConclusion,
 		},
 		events: [JobDispatchCompleted],
 		rejects: [JobNotBound],
@@ -115,7 +123,7 @@ export class FailJobDispatch extends Domain.Command(
 	{
 		target: JobDispatchId,
 		input: {
-			reason: Schema.String,
+			reason: NonEmptyReason,
 		},
 		events: [JobDispatchFailed],
 		rejects: [],
@@ -130,7 +138,7 @@ export class ExpireJobDispatch extends Domain.Command(
 	{
 		target: JobDispatchId,
 		input: {
-			reason: Schema.String,
+			reason: NonEmptyReason,
 		},
 		events: [JobDispatchExpired],
 		rejects: [],
@@ -141,7 +149,7 @@ export class ExpireJobDispatch extends Domain.Command(
 	},
 ) {}
 
-const JobDispatchState = Schema.Union([
+export const JobDispatchState = Schema.Union([
 	Schema.TaggedStruct("Unobserved", {}),
 	Schema.TaggedStruct("Queued", {
 		stationId: StationId,
@@ -152,25 +160,26 @@ const JobDispatchState = Schema.Union([
 		poolId: RunnerPoolId,
 		tier: RunnerTier,
 		slotId: SlotId,
-		runsOn: Schema.String,
-		externalRunnerId: Schema.String,
-		attempts: Schema.Int,
+		runsOn: RunsOnLabel,
+		externalRunnerId: ExternalRunnerId,
+		attempts: PositiveAttempts,
 	}),
 	Schema.TaggedStruct("Completed", {
 		stationId: StationId,
 		poolId: RunnerPoolId,
 		tier: RunnerTier,
 		slotId: SlotId,
-		settledMicros: Schema.Int,
-		conclusion: Schema.Literals(["succeeded", "failed", "cancelled"]),
+		settledMicros: NonNegativeMicros,
+		conclusion: JobConclusion,
 	}),
 	Schema.TaggedStruct("Failed", {
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	}),
 	Schema.TaggedStruct("Expired", {
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	}),
 ]);
+export type JobDispatchState = typeof JobDispatchState.Type;
 
 export class JobDispatch extends Domain.Aggregate("JobDispatch", {
 	id: JobDispatchId,
@@ -233,7 +242,7 @@ export class JobDispatch extends Domain.Aggregate("JobDispatch", {
 				new JobDispatchCompleted({
 					stationId: state.stationId,
 					slotId: state.slotId,
-					settledMicros: Math.max(0, cmd.settledMicros),
+					settledMicros: cmd.settledMicros,
 					conclusion: cmd.conclusion,
 				}),
 			];

@@ -1,6 +1,7 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Effect from "effect/Effect";
 import { DispatchJob } from "./DispatchJob.saga.js";
+import { NonEmptyReason } from "./ids.js";
 import {
 	ExpireJobDispatch,
 	JobDispatch,
@@ -31,10 +32,12 @@ export const JobObservedPolicyLive = JobObservedPolicy.toLayer(
 				stationId: event.stationId,
 				requirements: event.requirements,
 			});
-			if (event.deadlineSeconds !== null && event.deadlineSeconds > 0) {
+			if (event.deadlineSeconds !== null) {
 				yield* jobs.schedule(
 					source,
-					new ExpireJobDispatch({ reason: "queue-deadline-elapsed" }),
+					new ExpireJobDispatch({
+						reason: NonEmptyReason.make("queue-deadline-elapsed"),
+					}),
 					{ after: `${event.deadlineSeconds} seconds` },
 				);
 			}

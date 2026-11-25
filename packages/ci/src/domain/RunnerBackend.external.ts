@@ -1,9 +1,12 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
 import {
+	ExternalRunnerId,
 	JobDispatchId,
+	NonEmptyReason,
 	RunnerPoolId,
 	RunnerTier,
+	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -12,7 +15,7 @@ export class RunnerCapacityExhausted extends Domain.Rejection(
 	"RunnerCapacityExhausted",
 	{
 		poolId: RunnerPoolId,
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	},
 ) {}
 
@@ -20,7 +23,7 @@ export class RunnerProvisionFailed extends Domain.Rejection(
 	"RunnerProvisionFailed",
 	{
 		poolId: RunnerPoolId,
-		reason: Schema.String,
+		reason: NonEmptyReason,
 	},
 ) {}
 
@@ -31,11 +34,11 @@ export class RunnerBackend extends Domain.ExternalSystem("RunnerBackend", {
 			jobId: JobDispatchId,
 			poolId: RunnerPoolId,
 			tier: RunnerTier,
-			runsOn: Schema.String,
+			runsOn: RunsOnLabel,
 			slotId: SlotId,
 		},
 		success: {
-			externalRunnerId: Schema.String,
+			externalRunnerId: ExternalRunnerId,
 		},
 		error: [RunnerCapacityExhausted, RunnerProvisionFailed],
 	},

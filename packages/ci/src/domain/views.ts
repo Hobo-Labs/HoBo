@@ -1,42 +1,64 @@
 import * as Domain from "@alchemy.run/domain";
 import * as Schema from "effect/Schema";
 import {
+	ExternalRunnerId,
+	JobConclusion,
+	NonEmptyReason,
+	NonNegativeCount,
+	NonNegativeMicros,
 	PoolRole,
+	PositiveAttempts,
+	PositiveConcurrency,
 	RunnerPoolHealth,
 	RunnerPoolId,
 	RunnerTier,
+	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
 import { JobDispatch } from "./JobDispatch.aggregate.js";
 import { StationFleet } from "./StationFleet.aggregate.js";
 
+const ZERO_MICROS = NonNegativeMicros.make(0);
+const ZERO_COUNT = NonNegativeCount.make(0);
+
+function toNonNegativeMicros(value: number): NonNegativeMicros {
+	return NonNegativeMicros.make(value <= 0 ? 0 : value);
+}
+
+function toNonNegativeCount(value: number): NonNegativeCount {
+	return NonNegativeCount.make(value <= 0 ? 0 : value);
+}
+
 const PoolCapacitySnapshot = Schema.Struct({
 	poolId: RunnerPoolId,
 	tier: RunnerTier,
 	role: PoolRole,
-	runsOn: Schema.String,
-	concurrency: Schema.Int,
-	activeJobs: Schema.Int,
-	dispatchedCount: Schema.Int,
+	runsOn: RunsOnLabel,
+	concurrency: PositiveConcurrency,
+	activeJobs: NonNegativeCount,
+	dispatchedCount: NonNegativeCount,
 	health: RunnerPoolHealth,
 	enabled: Schema.Boolean,
 });
 type PoolCapacitySnapshot = typeof PoolCapacitySnapshot.Type;
+
+export const FleetCapacityState = Schema.Struct({
+	ceilingMicros: Schema.NullOr(NonNegativeMicros),
+	exposureMicros: NonNegativeMicros,
+	pools: Schema.Array(PoolCapacitySnapshot),
+});
+export type FleetCapacityState = typeof FleetCapacityState.Type;
 
 export class FleetCapacityView extends Domain.View(
 	"FleetCapacityView",
 	{
 		from: [StationFleet],
 		key: StationFleet,
-		state: Schema.Struct({
-			ceilingMicros: Schema.NullOr(Schema.Int),
-			exposureMicros: Schema.Int,
-			pools: Schema.Array(PoolCapacitySnapshot),
-		}),
+		state: FleetCapacityState,
 		initial: {
 			ceilingMicros: null,
-			exposureMicros: 0,
+			exposureMicros: ZERO_MICROS,
 			pools: [],
 		},
 		evolve: {
@@ -54,8 +76,8 @@ export class FleetCapacityView extends Domain.View(
 					role: event.spec.role,
 					runsOn: event.spec.runsOn,
 					concurrency: event.spec.concurrency,
-					activeJobs: existing?.activeJobs ?? 0,
-					dispatchedCount: existing?.dispatchedCount ?? 0,
+					activeJobs: existing?.activeJobs ?? ZERO_COUNT,
+					dispatchedCount: existing?.dispatchedCount ?? ZERO_COUNT,
 					health: existing?.health ?? "healthy",
 					enabled: existing?.enabled ?? true,
 				};
@@ -78,26 +100,29 @@ export class FleetCapacityView extends Domain.View(
 			}),
 			BalancedSlotReserved: (view, event) => ({
 				...view,
-				exposureMicros: view.exposureMicros + event.reservedMicros,
+				exposureMicros: NonNegativeMicros.make(
+					view.exposureMicros + event.reservedMicros,
+				),
 				pools: view.pools.map((pool) =>
 					pool.poolId === event.poolId
 						? {
 								...pool,
-								activeJobs: pool.activeJobs + 1,
-								dispatchedCount: pool.dispatchedCount + 1,
+								activeJobs: NonNegativeCount.make(pool.activeJobs + 1),
+								dispatchedCount: NonNegativeCount.make(
+									pool.dispatchedCount + 1,
+								),
 							}
 						: pool,
 				),
 			}),
 			BalancedSlotReleased: (view, event) => ({
 				...view,
-				exposureMicros: Math.max(
-					0,
+				exposureMicros: toNonNegativeMicros(
 					view.exposureMicros + event.settledMicros - event.reservedMicros,
 				),
 				pools: view.pools.map((pool) =>
 					pool.poolId === event.poolId
-						? { ...pool, activeJobs: Math.max(0, pool.activeJobs - 1) }
+						? { ...pool, activeJobs: toNonNegativeCount(pool.activeJobs - 1) }
 						: pool,
 				),
 			}),
@@ -109,51 +134,69 @@ export class FleetCapacityView extends Domain.View(
 	},
 ) {}
 
+export const RoutingAuditState = Schema.Union([
+	Schema.TaggedStruct("Unobserved", {}),
+	Schema.TaggedStruct("Queued", {
+		stationId: StationId,
+	}),
+	Schema.TaggedStruct("Bound", {
+		stationId: StationId,
+		poolId: RunnerPoolId,
+		tier: RunnerTier,
+		slotId: SlotId,
+		runsOn: RunsOnLabel,
+		externalRunnerId: ExternalRunnerId,
+		attempts: PositiveAttempts,
+	}),
+	Schema.TaggedStruct("Completed", {
+		stationId: StationId,
+		poolId: RunnerPoolId,
+		tier: RunnerTier,
+		slotId: SlotId,
+		runsOn: RunsOnLabel,
+		externalRunnerId: ExternalRunnerId,
+		attempts: PositiveAttempts,
+		settledMicros: NonNegativeMicros,
+		conclusion: JobConclusion,
+	}),
+	Schema.TaggedStruct("Failed", {
+		stationId: Schema.NullOr(StationId),
+		reason: NonEmptyReason,
+	}),
+	Schema.TaggedStruct("Expired", {
+		stationId: Schema.NullOr(StationId),
+		reason: NonEmptyReason,
+	}),
+]);
+export type RoutingAuditState = typeof RoutingAuditState.Type;
+
+function stationIdOf(view: RoutingAuditState): StationId | null {
+	switch (view._tag) {
+		case "Unobserved":
+			return null;
+		case "Queued":
+		case "Bound":
+		case "Completed":
+		case "Failed":
+		case "Expired":
+			return view.stationId;
+	}
+}
+
 export class RoutingAuditView extends Domain.View(
 	"RoutingAuditView",
 	{
 		from: [JobDispatch],
 		key: JobDispatch,
-		state: Schema.Struct({
-			status: Schema.Literals([
-				"unobserved",
-				"queued",
-				"bound",
-				"completed",
-				"failed",
-				"expired",
-			]),
-			stationId: Schema.NullOr(StationId),
-			poolId: Schema.NullOr(RunnerPoolId),
-			tier: Schema.NullOr(RunnerTier),
-			slotId: Schema.NullOr(SlotId),
-			runsOn: Schema.NullOr(Schema.String),
-			externalRunnerId: Schema.NullOr(Schema.String),
-			attempts: Schema.Int,
-			settledMicros: Schema.Int,
-			reason: Schema.NullOr(Schema.String),
-		}),
-		initial: {
-			status: "unobserved",
-			stationId: null,
-			poolId: null,
-			tier: null,
-			slotId: null,
-			runsOn: null,
-			externalRunnerId: null,
-			attempts: 0,
-			settledMicros: 0,
-			reason: null,
-		},
+		state: RoutingAuditState,
+		initial: { _tag: "Unobserved" },
 		evolve: {
-			JobDispatchObserved: (view, event) => ({
-				...view,
-				status: "queued" as const,
+			JobDispatchObserved: (_view, event) => ({
+				_tag: "Queued" as const,
 				stationId: event.stationId,
 			}),
-			RunnerStartBound: (view, event) => ({
-				...view,
-				status: "bound" as const,
+			RunnerStartBound: (_view, event) => ({
+				_tag: "Bound" as const,
 				stationId: event.stationId,
 				poolId: event.poolId,
 				tier: event.tier,
@@ -162,19 +205,29 @@ export class RoutingAuditView extends Domain.View(
 				externalRunnerId: event.externalRunnerId,
 				attempts: event.attempts,
 			}),
-			JobDispatchCompleted: (view, event) => ({
-				...view,
-				status: "completed" as const,
-				settledMicros: event.settledMicros,
-			}),
+			JobDispatchCompleted: (view, event) =>
+				view._tag === "Bound"
+					? {
+							_tag: "Completed" as const,
+							stationId: event.stationId,
+							poolId: view.poolId,
+							tier: view.tier,
+							slotId: event.slotId,
+							runsOn: view.runsOn,
+							externalRunnerId: view.externalRunnerId,
+							attempts: view.attempts,
+							settledMicros: event.settledMicros,
+							conclusion: event.conclusion,
+						}
+					: view,
 			JobDispatchFailed: (view, event) => ({
-				...view,
-				status: "failed" as const,
+				_tag: "Failed" as const,
+				stationId: stationIdOf(view),
 				reason: event.reason,
 			}),
 			JobDispatchExpired: (view, event) => ({
-				...view,
-				status: "expired" as const,
+				_tag: "Expired" as const,
+				stationId: stationIdOf(view),
 				reason: event.reason,
 			}),
 		},
