@@ -66,6 +66,8 @@ export type PositiveSwapLimit = typeof PositiveSwapLimit.Type;
 
 export const StabilityPolicy = Schema.Struct({
 	cooldownMs: NonNegativeMs,
+	rollbackCooldownMs: NonNegativeMs,
+	flipWindowMs: NonNegativeMs,
 	maxSwapsPerWindow: PositiveSwapLimit,
 });
 export type StabilityPolicy = typeof StabilityPolicy.Type;
@@ -128,11 +130,14 @@ export type CutoverPhase = typeof CutoverPhase.Type;
 
 export const CutoverRefusalReason = Schema.Literals([
 	"incumbent-not-registered",
+	"incumbent-already-registered",
 	"cutover-already-in-progress",
 	"reconciliation-pending",
+	"not-awaiting-reconciliation",
 	"target-matches-incumbent",
 	"preconditions-failed",
 	"ttl-not-lowered",
+	"ttl-wait-insufficient",
 	"ramp-not-monotonic",
 	"ramp-incomplete",
 ]);

@@ -18,7 +18,6 @@ const shared = [
 	"core",
 	"bindles",
 	"cloud",
-	"dispatcher",
 	"policy",
 	"pricing",
 	"provider-manifest",
@@ -44,10 +43,6 @@ const extensions = new Set([
 	".wit",
 ]);
 
-const ALCHEMY_DOMAIN_IMPORT = /@alchemy\.run\/domain(?:\/[A-Za-z0-9_.-]+)*/gi;
-
-const DISPATCHER_ALCHEMY_DOMAIN_BDD_ONLY = new Set<string>(["dispatcher"]);
-
 function containsReference(value: string): boolean {
 	const decoded = value.replace(
 		/\\(?:u\{([0-9a-f]{1,6})\}|u([0-9a-f]{4})|x([0-9a-f]{2}))/giu,
@@ -66,57 +61,6 @@ function containsReference(value: string): boolean {
 	return /alchemy/iu.test(decoded);
 }
 
-function packageFromRepoPath(root: string, path: string): string | null {
-	const relativePath = relative(root, path).split(sep).join("/");
-	const match = /^packages\/([^/]+)/u.exec(relativePath);
-	return match?.[1] ?? null;
-}
-
-function stripAllowedDomainImports(packageName: string, text: string): string {
-	if (!DISPATCHER_ALCHEMY_DOMAIN_BDD_ONLY.has(packageName)) {
-		return text;
-	}
-	return text.replace(ALCHEMY_DOMAIN_IMPORT, "");
-}
-
-function packageJsonViolations(
-	packageName: string,
-	text: string,
-): string | null {
-	if (!containsReference(text)) return null;
-	if (!DISPATCHER_ALCHEMY_DOMAIN_BDD_ONLY.has(packageName)) {
-		return "package.json";
-	}
-	// SAFETY: package.json text is read from repo paths or mkdtemp fixtures in this test file only.
-	const parsed = JSON.parse(text) as {
-		dependencies?: Record<string, string>;
-		devDependencies?: Record<string, string>;
-		optionalDependencies?: Record<string, string>;
-		peerDependencies?: Record<string, string>;
-	};
-	const depSections = [
-		parsed.dependencies,
-		parsed.devDependencies,
-		parsed.optionalDependencies,
-		parsed.peerDependencies,
-	];
-	for (const section of depSections) {
-		if (!section) continue;
-		for (const key of Object.keys(section)) {
-			if (!/alchemy/iu.test(key)) continue;
-			if (key === "@alchemy.run/domain") continue;
-			return "package.json";
-		}
-	}
-	const scrubbed = stripAllowedDomainImports(packageName, text);
-	return containsReference(scrubbed) ? "package.json" : null;
-}
-
-function sourceViolations(packageName: string, text: string): boolean {
-	const scrubbed = stripAllowedDomainImports(packageName, text);
-	return containsReference(scrubbed);
-}
-
 function references(root: string, packages: readonly string[]): string[] {
 	const found: string[] = [];
 	const pending: string[] = [];
@@ -127,22 +71,12 @@ function references(root: string, packages: readonly string[]): string[] {
 		if (++visited > 4096 || info.size > 4 * 1024 * 1024)
 			throw new Error("provider isolation input exceeds its bounds");
 		const name = label(path);
-		const packageName = packageFromRepoPath(root, path);
-		if (info.isSymbolicLink() || containsReference(name)) {
+		if (
+			info.isSymbolicLink() ||
+			containsReference(name) ||
+			containsReference(readFileSync(path, "utf8"))
+		)
 			found.push(name);
-			return;
-		}
-		const text = readFileSync(path, "utf8");
-		if (path.endsWith(`${sep}package.json`) && packageName) {
-			const violation = packageJsonViolations(packageName, text);
-			if (violation) found.push(name);
-			return;
-		}
-		if (packageName && sourceViolations(packageName, text)) {
-			found.push(name);
-		} else if (!packageName && containsReference(text)) {
-			found.push(name);
-		}
 	};
 	for (const name of packages) {
 		const path = join(root, "packages", name);
@@ -200,74 +134,6 @@ it("detects references in package metadata and nested source files", () => {
 			"packages/core/package.json",
 			"packages/core/src/nested/escaped.tsx",
 			"packages/core/src/nested/provider.ts",
-		]);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-it("allows only @alchemy.run/domain imports in dispatcher", () => {
-	const root = mkdtempSync(
-		join(tmpdir(), "hobo-provider-isolation-dispatcher-"),
-	);
-	try {
-		const path = join(root, "packages", "dispatcher");
-		mkdirSync(join(path, "src"), { recursive: true });
-		writeFileSync(
-			join(path, "package.json"),
-			JSON.stringify({
-				dependencies: { "@alchemy.run/domain": "2.0.0-beta.87" },
-			}),
-		);
-		writeFileSync(
-			join(path, "src", "model.ts"),
-			'import * as Domain from "@alchemy.run/domain";\nimport { Story } from "@alchemy.run/domain/Story";',
-		);
-		expect(references(root, ["dispatcher"])).toEqual([]);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-it("fails when dispatcher package.json uses JSON-escaped Alchemy dependency keys", () => {
-	const root = mkdtempSync(
-		join(tmpdir(), "hobo-provider-isolation-dispatcher-escape-"),
-	);
-	try {
-		const path = join(root, "packages", "dispatcher");
-		mkdirSync(join(path, "src"), { recursive: true });
-		writeFileSync(
-			join(path, "package.json"),
-			'{"dependencies":{"@\\u0061lchemy.run/rivet":"0.1.0"}}',
-		);
-		expect(references(root, ["dispatcher"])).toEqual([
-			"packages/dispatcher/package.json",
-		]);
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-it("fails when dispatcher imports other Alchemy packages", () => {
-	const root = mkdtempSync(
-		join(tmpdir(), "hobo-provider-isolation-dispatcher-bad-"),
-	);
-	try {
-		const path = join(root, "packages", "dispatcher");
-		mkdirSync(join(path, "src"), { recursive: true });
-		writeFileSync(
-			join(path, "package.json"),
-			JSON.stringify({
-				dependencies: {
-					"@alchemy.run/domain": "2.0.0-beta.87",
-					"@alchemy.run/rivet": "0.1.0",
-				},
-			}),
-		);
-		writeFileSync(join(path, "src", "leak.ts"), 'import "@alchemy.run/rivet";');
-		expect(references(root, ["dispatcher"])).toEqual([
-			"packages/dispatcher/package.json",
-			"packages/dispatcher/src/leak.ts",
 		]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });

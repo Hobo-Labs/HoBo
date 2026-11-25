@@ -1,16 +1,27 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 let directory = "";
 
 beforeAll(() => {
-	directory = join(packageDir, "dist");
-	expect(existsSync(join(directory, "cloudflare-capacity.js"))).toBe(true);
-	expect(existsSync(join(directory, "cloudflare-native-await.js"))).toBe(true);
+	directory = mkdtempSync(join(packageDir, ".cloudflare-test-dist-"));
+	const compiler = createRequire(import.meta.url).resolve("typescript/bin/tsc");
+	const compiled = spawnSync(
+		process.execPath,
+		[compiler, "-p", join(packageDir, "tsconfig.json"), "--outDir", directory],
+		{ encoding: "utf8", timeout: 30_000 },
+	);
+	expect(compiled.error).toBeUndefined();
+	expect(compiled.status, compiled.stderr).toBe(0);
+}, 45_000);
+
+afterAll(() => {
+	if (directory !== "") rmSync(directory, { recursive: true, force: true });
 });
 
 function run(program: string) {

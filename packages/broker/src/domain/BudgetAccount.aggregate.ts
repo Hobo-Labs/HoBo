@@ -148,7 +148,11 @@ export class SettleBudgetHold extends Domain.Command(
 			settledMicros: Schema.Int,
 		},
 		events: [BudgetHoldSettled, BudgetAlertThresholdRecovered],
-		rejects: [UnknownBudgetHold, UncertainBudgetHoldNotSettleable],
+		rejects: [
+			UnknownBudgetHold,
+			UncertainBudgetHoldNotSettleable,
+			BudgetNegativeAmountRejected,
+		],
 	},
 	{
 		description:

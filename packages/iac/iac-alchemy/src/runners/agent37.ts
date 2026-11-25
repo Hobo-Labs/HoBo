@@ -130,10 +130,7 @@ export function Agent37RunnerProvider(options: Agent37RunnerProviderOptions) {
 		reconcile: ({ news, output }) =>
 			Effect.gen(function* () {
 				const locator = parseOwnerCredentialLocator(news.credentialLocator);
-				if (
-					output !== undefined &&
-					agent37RunnerConfigMatches(output, news)
-				) {
+				if (output !== undefined && agent37RunnerConfigMatches(output, news)) {
 					return {
 						...output,
 						labels: [...news.labels],

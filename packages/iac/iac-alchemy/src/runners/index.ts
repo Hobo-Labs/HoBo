@@ -30,7 +30,6 @@ export {
 	type HostingerRunnerTransport,
 	type HostingerRunnerTransportRequest,
 	type HostingerRunnerTransportResponse,
-	HOSTINGER_PINNED_API_ORIGIN,
 	isAllowedHostingerFleetRoute,
 	resolveHostingerFleetUrl,
 } from "./hostinger.js";

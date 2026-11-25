@@ -45,6 +45,7 @@ export const StartCutoverPolicyLive = StartCutoverPolicy.toLayer(
 				to: event.to,
 				rampPlan: DEFAULT_RAMP_PLAN,
 				lowTtlSeconds: DEFAULT_LOW_TTL,
+				previousTtlSeconds: event.previousTtlSeconds,
 				completedAtMs: decodeEpochMs(event.proposedAtMs + 4_000),
 			});
 		});
@@ -174,7 +175,7 @@ export class TrafficRoutingView extends Domain.View("TrafficRoutingView", {
 			return {
 				_tag: "RolledBack" as const,
 				incumbent: event.restored,
-				ttlSeconds: state.ttlSeconds,
+				ttlSeconds: event.restoredTtlSeconds,
 				swapsCompleted: state.swapsCompleted,
 				reason: event.reason,
 			};
@@ -185,6 +186,15 @@ export class TrafficRoutingView extends Domain.View("TrafficRoutingView", {
 			swapsCompleted:
 				state._tag === "Unregistered" ? ZERO_SWAPS : state.swapsCompleted,
 			reason: event.reason,
+		}),
+		CutoverReconciliationResolved: (state, event) => ({
+			_tag: "Steady" as const,
+			incumbent: event.incumbent,
+			ttlSeconds: event.ttlSeconds,
+			swapsCompleted:
+				state._tag === "ReconciliationRequired"
+					? state.swapsCompleted
+					: ZERO_SWAPS,
 		}),
 	},
 }) {}
@@ -211,6 +221,7 @@ export class StationRoutingApi extends Domain.Api(
 			"RegisterTrafficIncumbent",
 			"ProposeBudgetMigration",
 			"FlagCutoverReconciliation",
+			"ResolveTrafficCutoverReconciliation",
 		],
 		views: ["TrafficRoutingView"],
 	},

@@ -53,8 +53,7 @@ export function createInMemoryLocalRunnerRegistry(): LocalRunnerRegistry & {
 	const slotsByMachine = new Map<string, Set<string>>();
 	return {
 		async registerSlot(input) {
-			const slots =
-				slotsByMachine.get(input.machineId) ?? new Set<string>();
+			const slots = slotsByMachine.get(input.machineId) ?? new Set<string>();
 			if (slots.size >= input.maxConcurrency) {
 				throw new LocalRunnerError({
 					code: "LOCAL_CONCURRENCY_EXCEEDED",

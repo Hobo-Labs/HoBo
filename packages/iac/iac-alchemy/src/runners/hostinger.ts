@@ -9,6 +9,7 @@ import {
 	resolveOwnerCredential,
 } from "./owner-credentials.js";
 
+// public-contract: pinned Hostinger API origin fleet transports allowlist against.
 export const HOSTINGER_PINNED_API_ORIGIN = "https://developers.hostinger.com";
 const HOSTINGER_API_HOST = "developers.hostinger.com";
 const HOSTINGER_VIRTUAL_MACHINES_PATH = "/api/vps/v1/virtual-machines";

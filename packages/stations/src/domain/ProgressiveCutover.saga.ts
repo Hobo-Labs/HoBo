@@ -5,6 +5,8 @@ import { Activity } from "effect/workflow";
 import {
 	CloudBackendTarget,
 	EpochMs,
+	decodeLoweredTtlEvidence,
+	decodeNonNegativeSeconds,
 	NonEmptyReason,
 	ProgressiveRampPlan,
 	RampWeightPercent,
@@ -36,9 +38,11 @@ export class TrafficRoutingBackend extends Domain.ExternalSystem(
 			args: {
 				routeId: TrafficRouteId,
 				ttlSeconds: TtlSeconds,
+				previousTtlSeconds: TtlSeconds,
 			},
 			success: {
 				appliedTtlSeconds: TtlSeconds,
+				waitedSeconds: Schema.Int,
 			},
 			error: [RoutingMutationAmbiguous],
 		},
@@ -75,6 +79,16 @@ export class TrafficRoutingBackend extends Domain.ExternalSystem(
 			},
 			error: [RoutingMutationAmbiguous],
 		},
+		restoreTtl: {
+			args: {
+				routeId: TrafficRouteId,
+				ttlSeconds: TtlSeconds,
+			},
+			success: {
+				appliedTtlSeconds: TtlSeconds,
+			},
+			error: [RoutingMutationAmbiguous],
+		},
 	},
 ) {}
 
@@ -86,6 +100,7 @@ export class ExecuteProgressiveCutover extends Domain.Saga(
 			to: CloudBackendTarget,
 			rampPlan: ProgressiveRampPlan,
 			lowTtlSeconds: TtlSeconds,
+			previousTtlSeconds: TtlSeconds,
 			completedAtMs: EpochMs,
 		},
 		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
@@ -106,15 +121,20 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 			to,
 			rampPlan,
 			lowTtlSeconds,
+			previousTtlSeconds,
 			completedAtMs,
 		}) {
 			const lowered = yield* Activity.make({
 				name: "lower-dns-ttl",
-				success: Schema.Struct({ appliedTtlSeconds: TtlSeconds }),
+				success: Schema.Struct({
+					appliedTtlSeconds: TtlSeconds,
+					waitedSeconds: Schema.Int,
+				}),
 				error: RoutingMutationAmbiguous,
 				execute: backend.lowerTtl({
 					routeId: key,
 					ttlSeconds: lowTtlSeconds,
+					previousTtlSeconds,
 				}),
 			}).pipe(Effect.result);
 
@@ -131,6 +151,21 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				return;
 			}
 
+			if (lowered.success.waitedSeconds < previousTtlSeconds) {
+				yield* Activity.make({
+					name: "flag-ttl-wait-reconciliation",
+					execute: routes
+						.send(
+							key,
+							new FlagCutoverReconciliation({
+								reason: NonEmptyReason.make("ttl-wait-insufficient"),
+							}),
+						)
+						.pipe(Effect.asVoid),
+				});
+				return;
+			}
+
 			yield* Activity.make({
 				name: "record-ttl-lowered",
 				error: Schema.Union([CutoverNotInProgress, CutoverPreconditionRefused]),
@@ -138,7 +173,13 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 					.send(
 						key,
 						new RecordTtlLowered({
-							ttlSeconds: lowered.success.appliedTtlSeconds,
+							evidence: decodeLoweredTtlEvidence({
+								previousTtlSeconds,
+								loweredTtlSeconds: lowered.success.appliedTtlSeconds,
+								waitedSeconds: decodeNonNegativeSeconds(
+									lowered.success.waitedSeconds,
+								),
+							}),
 						}),
 					)
 					.pipe(Effect.asVoid),
@@ -243,13 +284,41 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 						return;
 					}
 
+					const ttlRestored = yield* Activity.make({
+						name: `restore-ttl-${weightPercent}`,
+						success: Schema.Struct({ appliedTtlSeconds: TtlSeconds }),
+						error: RoutingMutationAmbiguous,
+						execute: backend.restoreTtl({
+							routeId: key,
+							ttlSeconds: previousTtlSeconds,
+						}),
+					}).pipe(Effect.result);
+
+					if (ttlRestored._tag === "Failure") {
+						yield* Activity.make({
+							name: `flag-ttl-restore-reconciliation-${weightPercent}`,
+							execute: routes
+								.send(
+									key,
+									new FlagCutoverReconciliation({
+										reason: ttlRestored.failure.reason,
+									}),
+								)
+								.pipe(Effect.asVoid),
+						});
+						return;
+					}
+
 					yield* Activity.make({
 						name: `record-rollback-${weightPercent}`,
 						error: CutoverNotInProgress,
 						execute: routes
 							.send(
 								key,
-								new RollbackTrafficCutover({ reason: health.success.summary }),
+								new RollbackTrafficCutover({
+									reason: health.success.summary,
+									rolledBackAtMs: completedAtMs,
+								}),
 							)
 							.pipe(Effect.asVoid),
 					});

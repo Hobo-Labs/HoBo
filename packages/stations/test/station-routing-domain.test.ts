@@ -12,8 +12,10 @@ import {
 	CutoverPreconditionRefused,
 	CutoverRampAdvanced,
 	CutoverReconciliationRequired,
+	CutoverReconciliationResolved,
 	CutoverRolledBack,
 	CutoverTtlLowered,
+	FlagCutoverReconciliation,
 	decodeEpochMs,
 	decodeLoweredTtlEvidence,
 	decodeNonNegativeCount,
@@ -26,6 +28,8 @@ import {
 	NonEmptyReason,
 	ProposeBudgetMigration,
 	RegisterTrafficIncumbent,
+	ResolveTrafficCutoverReconciliation,
+	RollbackTrafficCutover,
 	RoutingMutationAmbiguous,
 	StationRouting,
 	StationRoutingHandlers,
@@ -72,7 +76,9 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 		expect(() =>
 			decodeProgressiveRampPlan([WEIGHT_50, WEIGHT_10, WEIGHT_100]),
 		).toThrow();
-		expect(() => decodeProgressiveRampPlan([WEIGHT_10, WEIGHT_50])).toThrow();
+		expect(() =>
+			decodeProgressiveRampPlan([WEIGHT_10, WEIGHT_50]),
+		).toThrow();
 		expect(() =>
 			decodeLoweredTtlEvidence({
 				previousTtlSeconds: TTL_300,
@@ -127,6 +133,8 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 				ttlSeconds: 300,
 				policy: {
 					cooldownMs: decodeNonNegativeMs(0),
+					rollbackCooldownMs: decodeNonNegativeMs(0),
+					flipWindowMs: decodeNonNegativeMs(86_400_000),
 					maxSwapsPerWindow: decodePositiveSwapLimit(1),
 				},
 			});
@@ -141,6 +149,8 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 		const route = TrafficRoute.ref(routeId);
 		const policy = {
 			cooldownMs: decodeNonNegativeMs(60_000),
+			rollbackCooldownMs: decodeNonNegativeMs(60_000),
+			flipWindowMs: decodeNonNegativeMs(86_400_000),
 			maxSwapsPerWindow: decodePositiveSwapLimit(1),
 		};
 		const budgetReason = NonEmptyReason.make(
@@ -198,14 +208,17 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 						to: CLOUDFLARE_TARGET,
 						reason: budgetReason,
 						proposedAtMs: decodeEpochMs(1_000),
+						previousTtlSeconds: TTL_300,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.lowerTtl, {
 					routeId,
 					ttlSeconds: TTL_30,
+					previousTtlSeconds: TTL_300,
 				}),
 				Story.succeed(TrafficRoutingBackend.lowerTtl, {
 					appliedTtlSeconds: TTL_30,
+					waitedSeconds: 300,
 				}),
 				Story.then(route, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
 				Story.call(TrafficRoutingBackend.applyWeight, {
@@ -335,6 +348,8 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 		const reconcileRoute = TrafficRoute.ref(reconcileRouteId);
 		const policy = {
 			cooldownMs: decodeNonNegativeMs(0),
+			rollbackCooldownMs: decodeNonNegativeMs(30_000),
+			flipWindowMs: decodeNonNegativeMs(86_400_000),
 			maxSwapsPerWindow: decodePositiveSwapLimit(4),
 		};
 		const canaryFailure = NonEmptyReason.make("5xx spike on canary");
@@ -380,19 +395,19 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 						to: VERCEL_TARGET,
 						reason: replenishReason,
 						proposedAtMs: decodeEpochMs(1_000),
+						previousTtlSeconds: TTL_300,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.lowerTtl, {
 					routeId: rollbackRouteId,
 					ttlSeconds: TTL_30,
+					previousTtlSeconds: TTL_300,
 				}),
 				Story.succeed(TrafficRoutingBackend.lowerTtl, {
 					appliedTtlSeconds: TTL_30,
+					waitedSeconds: 300,
 				}),
-				Story.then(
-					rollbackRoute,
-					new CutoverTtlLowered({ ttlSeconds: TTL_30 }),
-				),
+				Story.then(rollbackRoute, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
 				Story.call(TrafficRoutingBackend.applyWeight, {
 					routeId: rollbackRouteId,
 					to: VERCEL_TARGET,
@@ -424,16 +439,26 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 				Story.succeed(TrafficRoutingBackend.restoreIncumbent, {
 					restored: true,
 				}),
+				Story.call(TrafficRoutingBackend.restoreTtl, {
+					routeId: rollbackRouteId,
+					ttlSeconds: TTL_300,
+				}),
+				Story.succeed(TrafficRoutingBackend.restoreTtl, {
+					appliedTtlSeconds: TTL_300,
+				}),
 				Story.then(
 					rollbackRoute,
 					new CutoverRolledBack({
 						restored: CLOUDFLARE_TARGET,
 						reason: canaryFailure,
+						rolledBackAtMs: decodeEpochMs(5_000),
+						restoredTtlSeconds: TTL_300,
 					}),
 				),
 				Story.view(TrafficRoutingView, rollbackRoute, {
 					_tag: "RolledBack",
 					incumbent: CLOUDFLARE_TARGET,
+					ttlSeconds: TTL_300,
 					reason: canaryFailure,
 				}),
 				Story.when(
@@ -468,11 +493,13 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 						to: CLOUDFLARE_TARGET,
 						reason: shiftReason,
 						proposedAtMs: decodeEpochMs(3_000),
+						previousTtlSeconds: TTL_300,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.lowerTtl, {
 					routeId: reconcileRouteId,
 					ttlSeconds: TTL_30,
+					previousTtlSeconds: TTL_300,
 				}),
 				Story.fail(
 					TrafficRoutingBackend.lowerTtl,
@@ -526,6 +553,8 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 		const route = TrafficRoute.ref(routeId);
 		const policy = {
 			cooldownMs: decodeNonNegativeMs(0),
+			rollbackCooldownMs: decodeNonNegativeMs(30_000),
+			flipWindowMs: decodeNonNegativeMs(86_400_000),
 			maxSwapsPerWindow: decodePositiveSwapLimit(4),
 		};
 		const canaryFailure = NonEmptyReason.make("canary-5xx-burst");
@@ -566,14 +595,17 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 						to: CLOUDFLARE_TARGET,
 						reason: shiftReason,
 						proposedAtMs: decodeEpochMs(1_000),
+						previousTtlSeconds: TTL_300,
 					}),
 				),
 				Story.call(TrafficRoutingBackend.lowerTtl, {
 					routeId,
 					ttlSeconds: TTL_30,
+					previousTtlSeconds: TTL_300,
 				}),
 				Story.succeed(TrafficRoutingBackend.lowerTtl, {
 					appliedTtlSeconds: TTL_30,
+					waitedSeconds: 300,
 				}),
 				Story.then(route, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
 				Story.call(TrafficRoutingBackend.applyWeight, {
@@ -615,6 +647,338 @@ describe("@hobo/stations/domain StationRouting (static invariants + BDD)", () =>
 				Story.view(TrafficRoutingView, route, {
 					_tag: "ReconciliationRequired",
 					reason: restoreFailure,
+				}),
+			),
+		);
+	});
+
+	it("decays flip-window swap counts after the window elapses", async () => {
+		const routeId = TrafficRouteId.make("route-flip-decay");
+		const route = TrafficRoute.ref(routeId);
+		const policy = {
+			cooldownMs: decodeNonNegativeMs(0),
+			rollbackCooldownMs: decodeNonNegativeMs(0),
+			flipWindowMs: decodeNonNegativeMs(1_000),
+			maxSwapsPerWindow: decodePositiveSwapLimit(1),
+		};
+		const shiftReason = NonEmptyReason.make("budget-shift");
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					route,
+					new RegisterTrafficIncumbent({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.then(
+					route,
+					new TrafficIncumbentRegistered({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						nowMs: decodeEpochMs(1_000),
+						preconditionsMet: true,
+					}),
+				),
+				Story.then(
+					route,
+					new BudgetMigrationProposed({
+						from: VERCEL_TARGET,
+						to: CLOUDFLARE_TARGET,
+						reason: shiftReason,
+						proposedAtMs: decodeEpochMs(1_000),
+						previousTtlSeconds: TTL_300,
+					}),
+				),
+				Story.call(TrafficRoutingBackend.lowerTtl, {
+					routeId,
+					ttlSeconds: TTL_30,
+					previousTtlSeconds: TTL_300,
+				}),
+				Story.succeed(TrafficRoutingBackend.lowerTtl, {
+					appliedTtlSeconds: TTL_30,
+					waitedSeconds: 300,
+				}),
+				Story.then(route, new CutoverTtlLowered({ ttlSeconds: TTL_30 })),
+				Story.call(TrafficRoutingBackend.applyWeight, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_10,
+				}),
+				Story.succeed(TrafficRoutingBackend.applyWeight, {
+					appliedWeightPercent: WEIGHT_10,
+				}),
+				Story.then(
+					route,
+					new CutoverRampAdvanced({
+						targetWeightPercent: WEIGHT_10,
+						to: CLOUDFLARE_TARGET,
+					}),
+				),
+				Story.call(TrafficRoutingBackend.observeHealth, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_10,
+				}),
+				Story.succeed(TrafficRoutingBackend.observeHealth, {
+					healthy: true,
+					summary: NonEmptyReason.make("ok"),
+				}),
+				Story.call(TrafficRoutingBackend.applyWeight, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_50,
+				}),
+				Story.succeed(TrafficRoutingBackend.applyWeight, {
+					appliedWeightPercent: WEIGHT_50,
+				}),
+				Story.then(
+					route,
+					new CutoverRampAdvanced({
+						targetWeightPercent: WEIGHT_50,
+						to: CLOUDFLARE_TARGET,
+					}),
+				),
+				Story.call(TrafficRoutingBackend.observeHealth, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_50,
+				}),
+				Story.succeed(TrafficRoutingBackend.observeHealth, {
+					healthy: true,
+					summary: NonEmptyReason.make("ok"),
+				}),
+				Story.call(TrafficRoutingBackend.applyWeight, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_100,
+				}),
+				Story.succeed(TrafficRoutingBackend.applyWeight, {
+					appliedWeightPercent: WEIGHT_100,
+				}),
+				Story.then(
+					route,
+					new CutoverRampAdvanced({
+						targetWeightPercent: WEIGHT_100,
+						to: CLOUDFLARE_TARGET,
+					}),
+				),
+				Story.call(TrafficRoutingBackend.observeHealth, {
+					routeId,
+					to: CLOUDFLARE_TARGET,
+					weightPercent: WEIGHT_100,
+				}),
+				Story.succeed(TrafficRoutingBackend.observeHealth, {
+					healthy: true,
+					summary: NonEmptyReason.make("ok"),
+				}),
+				Story.then(
+					route,
+					new CutoverCompleted({
+						incumbent: CLOUDFLARE_TARGET,
+						completedAtMs: decodeEpochMs(5_000),
+						swapsInWindow: decodeNonNegativeCount(1),
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: VERCEL_TARGET,
+						reason: NonEmptyReason.make("inside-flip-window"),
+						nowMs: decodeEpochMs(5_500),
+						preconditionsMet: true,
+					}),
+				),
+				Story.rejected(
+					new CutoverFlipLimitExceeded({
+						swapsInWindow: decodeNonNegativeCount(1),
+						maxSwapsPerWindow: decodePositiveSwapLimit(1),
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: VERCEL_TARGET,
+						reason: NonEmptyReason.make("after-flip-window-decay"),
+						nowMs: decodeEpochMs(6_500),
+						preconditionsMet: true,
+					}),
+				),
+				Story.then(
+					route,
+					new BudgetMigrationProposed({
+						from: CLOUDFLARE_TARGET,
+						to: VERCEL_TARGET,
+						reason: NonEmptyReason.make("after-flip-window-decay"),
+						proposedAtMs: decodeEpochMs(6_500),
+						previousTtlSeconds: TTL_30,
+					}),
+				),
+			),
+		);
+	});
+
+	it("enforces rollback cooldown before proposing after RolledBack", async () => {
+		const routeId = TrafficRouteId.make("route-rollback-cooldown");
+		const route = TrafficRoute.ref(routeId);
+		const policy = {
+			cooldownMs: decodeNonNegativeMs(0),
+			rollbackCooldownMs: decodeNonNegativeMs(30_000),
+			flipWindowMs: decodeNonNegativeMs(86_400_000),
+			maxSwapsPerWindow: decodePositiveSwapLimit(4),
+		};
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					route,
+					new RegisterTrafficIncumbent({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.then(
+					route,
+					new TrafficIncumbentRegistered({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: CLOUDFLARE_TARGET,
+						reason: NonEmptyReason.make("shift"),
+						nowMs: decodeEpochMs(1_000),
+						preconditionsMet: true,
+					}),
+				),
+				Story.then(
+					route,
+					new BudgetMigrationProposed({
+						from: VERCEL_TARGET,
+						to: CLOUDFLARE_TARGET,
+						reason: NonEmptyReason.make("shift"),
+						proposedAtMs: decodeEpochMs(1_000),
+						previousTtlSeconds: TTL_300,
+					}),
+				),
+				Story.when(
+					route,
+					new RollbackTrafficCutover({
+						reason: NonEmptyReason.make("canary-failed"),
+						rolledBackAtMs: decodeEpochMs(5_000),
+					}),
+				),
+				Story.then(
+					route,
+					new CutoverRolledBack({
+						restored: VERCEL_TARGET,
+						reason: NonEmptyReason.make("canary-failed"),
+						rolledBackAtMs: decodeEpochMs(5_000),
+						restoredTtlSeconds: TTL_300,
+					}),
+				),
+				Story.when(
+					route,
+					new ProposeBudgetMigration({
+						to: CLOUDFLARE_TARGET,
+						reason: NonEmptyReason.make("too-soon-after-rollback"),
+						nowMs: decodeEpochMs(10_000),
+						preconditionsMet: true,
+					}),
+				),
+				Story.rejected(
+					new CutoverCooldownActive({
+						nextAllowedAtMs: decodeEpochMs(35_000),
+						nowMs: decodeEpochMs(10_000),
+					}),
+				),
+				Story.call(TrafficRoutingBackend.lowerTtl, {
+					routeId,
+					ttlSeconds: TTL_30,
+					previousTtlSeconds: TTL_300,
+				}),
+				Story.succeed(TrafficRoutingBackend.lowerTtl, {
+					appliedTtlSeconds: TTL_30,
+					waitedSeconds: 300,
+				}),
+			),
+		);
+	});
+
+	it("clears ReconciliationRequired via ResolveTrafficCutoverReconciliation", async () => {
+		const routeId = TrafficRouteId.make("route-resolve");
+		const route = TrafficRoute.ref(routeId);
+		const policy = {
+			cooldownMs: decodeNonNegativeMs(0),
+			rollbackCooldownMs: decodeNonNegativeMs(0),
+			flipWindowMs: decodeNonNegativeMs(86_400_000),
+			maxSwapsPerWindow: decodePositiveSwapLimit(4),
+		};
+
+		await Effect.runPromise(
+			story(
+				Story.when(
+					route,
+					new RegisterTrafficIncumbent({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.then(
+					route,
+					new TrafficIncumbentRegistered({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+					}),
+				),
+				Story.when(
+					route,
+					new FlagCutoverReconciliation({
+						reason: NonEmptyReason.make("ambiguous-dns"),
+					}),
+				),
+				Story.then(
+					route,
+					new CutoverReconciliationRequired({
+						reason: NonEmptyReason.make("ambiguous-dns"),
+					}),
+				),
+				Story.when(
+					route,
+					new ResolveTrafficCutoverReconciliation({
+						resolvedAtMs: decodeEpochMs(8_000),
+					}),
+				),
+				Story.then(
+					route,
+					new CutoverReconciliationResolved({
+						incumbent: VERCEL_TARGET,
+						ttlSeconds: TTL_300,
+						policy,
+						resolvedAtMs: decodeEpochMs(8_000),
+					}),
+				),
+				Story.view(TrafficRoutingView, route, {
+					_tag: "Steady",
+					incumbent: VERCEL_TARGET,
+					ttlSeconds: TTL_300,
+					swapsCompleted: decodeNonNegativeCount(0),
 				}),
 			),
 		);
