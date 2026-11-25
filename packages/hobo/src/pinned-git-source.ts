@@ -19,7 +19,6 @@ const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 25_000;
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
-
 export function pinnedGitEnvironment(): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { ...withoutSecretEnv(process.env) };
 	for (const name of Object.keys(env)) {
