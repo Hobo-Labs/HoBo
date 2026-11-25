@@ -14,7 +14,9 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+	assertComponentizeWitPathIsGuestRelative,
 	assertSandboxWitBeforeComponentize,
+	componentizeGuestRelativeWitPath,
 	copyHostWitTreeIntoWorkRoot,
 } from "../../scripts/lib/browser-wit-componentize-sandbox.mts";
 import { loadExamplesCatalog } from "../src/lib/examples/catalog.js";
@@ -119,6 +121,8 @@ export async function buildBrowserWitRuntime(
 			process.env.GITHUB_SHA?.trim() ||
 			"HEAD";
 		const sandboxWitDir = await copyHostWitTreeIntoWorkRoot(WIT_DIR, workRoot);
+		const guestWitPath = componentizeGuestRelativeWitPath();
+		assertComponentizeWitPathIsGuestRelative(guestWitPath);
 		await assertSandboxWitBeforeComponentize(
 			sandboxWitDir,
 			workRoot,
@@ -126,15 +130,25 @@ export async function buildBrowserWitRuntime(
 			WIT_DIR,
 			gitRef,
 		);
-		process.stderr.write("browser-wit: componentizing real guest\n");
+		process.stderr.write(
+			`browser-wit: componentizing real guest (witPath=${guestWitPath} under ${workRoot})\n`,
+		);
 		const cacheHome = process.env.XDG_CACHE_HOME;
-		const built = await toolchain.componentize.componentize({
-			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
-			sourcePath: guestPath,
-			witPath: sandboxWitDir,
-			worldName: "browser-station",
-			disableFeatures: ["random", "clocks", "stdio", "http"],
-		});
+		const guestSourcePath = path.basename(guestPath);
+		const previousCwd = process.cwd();
+		let built: { component: Uint8Array };
+		try {
+			process.chdir(workRoot);
+			built = await toolchain.componentize.componentize({
+				env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
+				sourcePath: guestSourcePath,
+				witPath: guestWitPath,
+				worldName: "browser-station",
+				disableFeatures: ["random", "clocks", "stdio", "http"],
+			});
+		} finally {
+			process.chdir(previousCwd);
+		}
 		const componentDigest = sha256(built.component);
 		process.stderr.write("browser-wit: transpiling component for browser\n");
 		const transpiled = await toolchain.jco.transpile(built.component, {

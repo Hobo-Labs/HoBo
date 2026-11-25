@@ -5,6 +5,26 @@ import { assertReleasePagesBrowserRuntimeWit } from "./release-pages-wit.mts";
 
 export const SANDBOX_WIT_DIR_NAME = "wit" as const;
 
+export function componentizeGuestRelativeWitPath(): string {
+	return SANDBOX_WIT_DIR_NAME;
+}
+
+export function assertComponentizeWitPathIsGuestRelative(
+	witPath: string,
+): void {
+	if (path.isAbsolute(witPath)) {
+		throw new Error(
+			`browser-wit: componentize witPath must be relative to the guest workRoot (WASI mapdir), not absolute: ${witPath}`,
+		);
+	}
+	const normalized = path.normalize(witPath);
+	if (normalized.startsWith("..") || path.isAbsolute(normalized)) {
+		throw new Error(
+			`browser-wit: componentize witPath must stay inside guest workRoot: ${witPath}`,
+		);
+	}
+}
+
 export function componentizeWitDirUnderWorkRoot(workRoot: string): string {
 	return path.join(workRoot, SANDBOX_WIT_DIR_NAME);
 }

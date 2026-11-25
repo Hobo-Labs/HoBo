@@ -64,7 +64,9 @@ re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately befor
 builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) (via
 [`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts))
 copies that wit tree into the temp `hobo-browser-wit-*` workRoot and passes the
-sandbox path to `componentize-js`, because WASI preopens only the guest temp dir (run 45546344117).
+guest-relative `wit` path with `chdir(workRoot)` so `componentize-js` wizer
+`--mapdir=/::workRoot` can open it (absolute host paths fail in WASI after
+copy; runs 45546344117, 45552772772).
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in

@@ -5,7 +5,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+	assertComponentizeWitPathIsGuestRelative,
 	assertSandboxWitBeforeComponentize,
+	componentizeGuestRelativeWitPath,
 	componentizeWitDirUnderWorkRoot,
 	copyHostWitTreeIntoWorkRoot,
 	witPathIsUnderWorkRoot,
@@ -14,7 +16,7 @@ import {
 const repoRoot = path.join(import.meta.dirname, "..", "..");
 const hostWitDir = path.join(repoRoot, "examples", "browser-runtime", "wit");
 
-describe("browser WIT componentize sandbox (run 45546344117)", () => {
+describe("browser WIT componentize sandbox (runs 45546344117, 45552772772)", () => {
 	it("repo wit path is outside a temp workRoot (WASI cannot preopen it)", () => {
 		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
 		expect(witPathIsUnderWorkRoot(hostWitDir, workRoot)).toBe(false);
@@ -26,15 +28,31 @@ describe("browser WIT componentize sandbox (run 45546344117)", () => {
 		).toBe(true);
 	});
 
-	it("build script passes sandbox wit under workRoot, not host WIT_DIR", () => {
+	it("build script passes guest-relative witPath inside workRoot, not repo or absolute paths", () => {
 		const source = readFileSync(
 			path.join(repoRoot, "site/scripts/build-browser-wit-runtime.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/witPath:\s*sandboxWitDir/);
+		expect(source).toMatch(/witPath:\s*guestWitPath/);
 		expect(source).not.toMatch(/witPath:\s*WIT_DIR/);
+		expect(source).not.toMatch(/witPath:\s*sandboxWitDir/);
+		expect(source).toMatch(/process\.chdir\(workRoot\)/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
 		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
+	});
+
+	it("rejects absolute witPath for componentize (run 45552772772)", () => {
+		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
+		const absolute = componentizeWitDirUnderWorkRoot(workRoot);
+		expect(path.isAbsolute(absolute)).toBe(true);
+		expect(() => assertComponentizeWitPathIsGuestRelative(absolute)).toThrow(
+			/not absolute/,
+		);
+		const relative = componentizeGuestRelativeWitPath();
+		expect(path.isAbsolute(relative)).toBe(false);
+		expect(() =>
+			assertComponentizeWitPathIsGuestRelative(relative),
+		).not.toThrow();
 	});
 
 	it("copies host wit into workRoot and asserts before componentize", async () => {
