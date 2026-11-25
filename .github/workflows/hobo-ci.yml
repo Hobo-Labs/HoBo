@@ -795,6 +795,7 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
@@ -1943,6 +1944,9 @@ jobs:
         id: deps-layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
