@@ -378,49 +378,7 @@ Documentation-level only: no code, no .wit files, no schema/scripts changes. Nev
 - **Evidence:** `docs/design/finops-budget-routing-control-plane.md:128` · `docs/design/finops-budget-routing-control-plane.md:51` · `docs/design/event-families.md:77` · `docs/design/reliability-observability-cost.md:238` · `docs/design/operators-sre.md:121`
 - **Effort:** M · **Delivery:** [HOBO-678](https://linear.app/quickdeploy-ai/issue/HOBO-678) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Close gap cand-12 by specifying the FinOps advisory plane (anomaly detection, forecasts, rightsizing/commitment recommendations) at design level, with an owning mechanism and a `cost.*` event family. Documentation only — amend 7 existing files, create no new files. Do the steps IN THIS ORDER (the event-family catalog must gain the row before any other doc uses the names, or `docs:design-lint` fails).
-
-STEP 0 — pick the ADR ID. Open `docs/design/adr/index.md`, find the highest numbered row (ADR-0104 at drafting time), and use the next free global ID (call it ADR-0NNN below; do NOT renumber or edit any existing ADR).
-
-STEP 1 — `docs/design/event-families.md`: insert one table row between the `contract.*` and `credit.*` rows (alphabetical):
-`| \`cost.*\` | \`cost.AnomalyDetected\`, \`cost.AnomalyResolved\`, \`cost.ForecastUpdated\`, \`cost.RecommendationIssued\` |`
-
-STEP 2 — `docs/design/adr/02-identity-security.md` (theme file that owns ADR-0039 metering/cost and ADR-0045 SLO/alerting): append a new `## ADR-0NNN` section after `## ADR-0104` (which ends near line 609), following the house style of ADR-0104 (bold one-line title, then `### Context` / `### Decision` / `### Consequences`):
-- Title line: **FinOps advisory plane: cost anomaly detection, forecasting & rightsizing as deterministic MeteringView projections emitting advisory `cost.*` facts.**
-- `### Context` — The FinX surface and FinOps Framework standards baseline promise "budgets, forecasts, attribution, anomaly signals, commitments, and optimization recommendations" ([finops-budget-routing-control-plane.md](../finops-budget-routing-control-plane.md) Product Surfaces + Standards Baseline), and a `Forecast` contract shape already exists there; but no design doc specified how anomalies/forecasts are computed, no `cost.*` event family existed, "rightsizing" appeared nowhere, and the only cost-reactive mechanisms were threshold breakers/degradation tiers ([ADR-0039](#adr-0039)).
-- `### Decision` — numbered: (1) a **`FinOpsAdvisoryView` projection** (data-plane projection pattern, [Plan 11](../data-plane.md#plan-11)) folds the existing `MeteringView` counters at a pinned `seq` (same pinned-snapshot replayability discipline as [ADR-0071](./01-architecture-core.md#adr-0071)) into per-dimension, per-attribution-scope (tenant→Camp→Bindle) rolling baselines and spend velocity — no new instrumentation; (2) **anomaly detection** is a deterministic rule — current-window spend deviating from the rolling baseline beyond a policy-configured band emits `cost.AnomalyDetected` (carries dimension, scope, baseline, observed value, ledger seq); recovery emits `cost.AnomalyResolved`; anomalies route through existing `alert.*`/incident paths, never auto-remediate; (3) **forecasts** extrapolate spend velocity to period end per budget scope (the `Forecast` shape from the FinOps control-plane contract) and emit `cost.ForecastUpdated`, feeding the policy plane's "do we cross tier N before period end" question; (4) **rightsizing and commitment recommendations** are advisory `cost.RecommendationIssued` facts comparing observed utilization against the provisioned Workload Profile and `cost.json` unit prices (rightsizing = smaller profile / scale-to-zero candidates; commitments = savings-plan/reserved-capacity opportunities); they are applied only through the Crew/SRE propose branch as gated Deltas/obligations ([Plan 40](../operators-sre.md#plan-40)), never auto-purchased or auto-resized; (5) the built-in deterministic detector/forecaster is the default; smarter models are an optional `finops-engine` behind a port (engines-behind-ports pattern, [ADR-0054](./03-data-plane.md#adr-0054)); the `cost.*` facts remain the contract either way; (6) enforcement stays with the existing breakers/degradation tiers ([ADR-0039](#adr-0039)) — this plane observes, predicts, and proposes only.
-- `### Consequences` — (+) FinX promises now trace to a named mechanism, owner, and replayable facts; (+) reuses MeteringView, so every advisory figure traces to logged facts; (−) the built-in window-based detector will miss seasonality — sophisticated detection is deferred to the engine port; (−) one more projection and event family to maintain.
-
-STEP 3 — `docs/design/adr/index.md`: add one row at the bottom of the Index table:
-`| 0NNN | FinOps advisory plane: cost anomaly detection, forecasting & rightsizing as deterministic MeteringView projections (advisory \`cost.*\` facts, gated proposals only) | [identity-security](02-identity-security.md#adr-0nnn) |`
-
-STEP 4 — `docs/design/traceability.md`: (a) add a row after the ADR-0104 row (~line 362): `| ADR-0NNN | [identity-security](./adr/02-identity-security.md#adr-0nnn) | Cost anomaly detection, forecasting, and rightsizing/commitment recommendations are deterministic MeteringView projections emitting advisory cost.* facts; recommendations are gated Crew proposals, never auto-applied; enforcement remains with ADR-0039 breakers/tiers. | HOBO-<id of the Linear issue created for this remediation> |`; (b) in the "ADR Numbering and Status Audit" section (~line 370), change "Explicit numbering gaps through `ADR-0104`" to name the new max ADR ID (the gap ID list itself is unchanged).
-
-STEP 5 — `docs/design/reliability-observability-cost.md`: insert a new `####` subsection between "#### Cost-driven graceful degradation & availability" (ends line 236) and "#### Optional dimensions" (line 238), heading exactly: `#### FinOps advisory plane: anomaly detection, forecasts & rightsizing ([ADR-0NNN](./adr/02-identity-security.md#adr-0nnn))`. Content: an intro line (advisory vs enforcement split — breakers/tiers above enforce; this plane observes, predicts, proposes) plus five bullets mirroring the ADR decisions: **`FinOpsAdvisoryView` projection** (deterministic fold over `MeteringView` at pinned seq, rebuildable from zero); **Anomaly detection** (`cost.AnomalyDetected`/`cost.AnomalyResolved`, deterministic baseline-deviation rule, routes via `alert.*`/incident, never auto-remediates); **Forecasts** (`cost.ForecastUpdated`, spend-velocity extrapolation per budget scope, feeds the tier-crossing policy question above and the FinX surface); **Rightsizing & commitment recommendations** (`cost.RecommendationIssued`, utilization vs Workload Profile + `cost.json`; gated propose-only path); **Engine behind a port** (optional `finops-engine`). Then edit the "#### Optional dimensions" bullet "**Commitment optimization**" (line 240) to end with a cross-reference: "…surfaced as `cost.RecommendationIssued` facts via the FinOps advisory plane above."
-
-STEP 6 — `docs/design/finops-budget-routing-control-plane.md`: after the FinX bullet in "## Product Surfaces" (line 131-132), add one paragraph: "The FinX forecasts, anomaly signals, and optimization recommendations are the advisory `cost.ForecastUpdated`, `cost.AnomalyDetected`, and `cost.RecommendationIssued` facts computed by the FinOps advisory plane ([Plan 5](./reliability-observability-cost.md#plan-05), [ADR-0NNN](./adr/02-identity-security.md#adr-0nnn)); FinX reads them alongside the `DecisionGraph` rather than inventing a separate computation."
-
-STEP 7 — `docs/design/operators-sre.md`: add one row to the "Runtime failure-taxonomy → safe-fix map" table, after the "**Cost-induced degradation**" row (line 122): `| **Cost anomaly** (spend deviates from baseline) | \`cost.AnomalyDetected\` | SRE *proposes* rightsizing/commitment remediation as a gated obligation ([ADR-0NNN](./adr/02-identity-security.md#adr-0nnn)); enforcement stays with breakers/tiers ([ADR-0039](./adr/02-identity-security.md#adr-0039)) |`
-
-STEP 8 — `docs/design/glossary.md`: add two alphabetically-placed rows to the term table: `| FinOps advisory plane | Deterministic MeteringView projections that emit advisory cost anomaly, forecast, and rightsizing/commitment recommendation facts; it proposes through gated obligations and never enforces. |` and `| Rightsizing | Advisory recommendation to shrink or scale-to-zero an over-provisioned workload, derived from observed utilization versus the provisioned Workload Profile and applied only through gated proposals. |`
-
-**Acceptance**
-
-Checklist (run from C:/src/hobo):
-1. `pnpm run docs:okf` — passes (only existing OKF-frontmattered docs amended; no new files, no index.md frontmatter added).
-2. `pnpm run docs:design-lint` — passes; this is the gate that fails if `cost.AnomalyDetected` / `cost.ForecastUpdated` / `cost.RecommendationIssued` / `cost.AnomalyResolved` are used anywhere in docs/design without the `cost.*` row in `docs/design/event-families.md`.
-3. `node --import tsx scripts/validate-traceability.ts` — the real traceability gate (there is no `pnpm run traceability` script; it is wired via `scripts/relevant-check-policy.ts:149` and fires from agent:check whenever `docs/design/adr/**` or `docs/design/traceability.md` changes). Must report the new ADR count with 0 failures — it fails if ADR-0NNN is in `docs/design/adr/index.md` but missing from `docs/design/traceability.md`.
-4. `git add -A` then `pnpm agent:check -- --staged` — passes (auto-includes the traceability check plus staged doc linters/link checks).
-5. `rg -i "rightsizing" docs/design | wc -l` returns >= 3 (reliability-observability-cost.md, adr/02-identity-security.md, glossary.md at minimum) — closes the "rightsizing appears nowhere" claim.
-6. `rg "cost\.AnomalyDetected" docs/design/event-families.md` returns exactly the new catalog row.
-7. `git diff main -- docs/design/adr/index.md` shows exactly one added row and zero modified/removed existing ADR rows (no renumbering).
-Cross-links that must exist and resolve (all relative): reliability-observability-cost.md -> ./adr/02-identity-security.md#adr-0nnn; finops-budget-routing-control-plane.md -> ./reliability-observability-cost.md#plan-05 and ./adr/02-identity-security.md#adr-0nnn; operators-sre.md -> ./adr/02-identity-security.md#adr-0nnn; adr/index.md row -> 02-identity-security.md#adr-0nnn; traceability.md row -> ./adr/02-identity-security.md#adr-0nnn (validate-traceability.ts checks traceability links exist on disk). Hub/index files gaining entries: docs/design/adr/index.md (new ADR row), docs/design/traceability.md (new ADR row + updated max-ID line), docs/design/event-families.md (new family row), docs/design/glossary.md (two term rows). docs/design/index.md needs NO change (no new doc created).
-
-**Guardrails**
-
-Documentation-level only: touch nothing outside docs/design/. Do not create new files — every change amends an existing doc, so no new OKF frontmatter is needed; never add frontmatter to any index.md. Never renumber, edit, or move existing ADR sections; ADR-0NNN is the next free global ID read from docs/design/adr/index.md at execution time (0105 if the max is still 0104) and lives only in docs/design/adr/02-identity-security.md. Do the event-families.md edit first — docs:design-lint rejects any backticked event name not in the catalog. The advisory plane is observe/predict/propose only: do not weaken or replace the existing enforcement mechanisms (spend circuit breaker, degradation tiers, ADR-0039) and do not introduce auto-purchase/auto-resize behavior anywhere. Do not add new event families beyond `cost.*`, no new Crew operator row, and no new SDK surface. The Nomad->wasmCloud pivot is accepted — do not touch runtime/host decisions. Keep all links relative .md links; do not use bare URLs to repo files. Do not edit generated files or src/; do not mark the Linear issue done — this entry only documents the remediation.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-013-historical-remediation-plan-a194a57d5a95).
 
 ### REM-014 (for GAP-011)
 
@@ -428,51 +386,7 @@ Documentation-level only: touch nothing outside docs/design/. Do not create new 
 - **Evidence:** `docs/design/adr/03-data-plane.md:230` · `docs/design/operators-sre.md:46` · `docs/design/finops-budget-routing-control-plane.md:128` · `docs/design/reliability-observability-cost.md:240` · `docs/design/usage-metering.md:35`
 - **Effort:** M · **Delivery:** [HOBO-679](https://linear.app/quickdeploy-ai/issue/HOBO-679) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-REM for cand-13 — add a **FinOps operator to the Crew** (sketch option 1) as a new ADR plus roster/ownership amendments. All paths relative to repo root C:/src/hobo.
-
-**1. `docs/design/adr/03-data-plane.md` — new ADR section (appended at end of file, after ADR-0099).**
-Heading `## ADR-<next-free>` — use the next free global ADR ID = max existing + 1. Verify with `rg -o "ADR-[0-9]{4}" docs/design/adr/ | sort -u | tail -3` before writing (ADR-0100 at drafting time; re-verify, never renumber existing ADRs). Title: **"FinOps operator (the Crew's cost specialist): advisory-only ownership of the FinX outputs and commitment optimization."** Section outline (match ADR-0054/0058 house style):
-- `### Context` — HoBo has the FinOps substrate (MeteringView/showback [ADR-0039](02-identity-security.md#adr-0039), CreditLedgerView/Dispatcher [ADR-0071](01-architecture-core.md#adr-0071), spend circuit-breaker + costAvailabilityProfile [Plan 5](../reliability-observability-cost.md#plan-05), the FinX surface [FinOps Budget Routing Control Plane](../finops-budget-routing-control-plane.md)) but the ADR-0054 Crew roster names no cost operator; the FinX advisory outputs (forecasts, anomaly signals, commitments, optimization recommendations) and the "Commitment optimization" advisory have no named owner.
-- `### Decision` — 4 numbered points: (1) add **FinOps** to the ADR-0054 roster on the unchanged shared model (SVID principal, per-agent policy + spend caps, engine behind a `finops-engine` port with built-in default, sandboxed under ADR-0061 governance); (2) it **owns** forecasts, anomaly signals, commitment/savings-plan recommendations, and optimization proposals — the FinX surface outputs and the reliability-observability-cost.md "Commitment optimization" advisory; (3) **advisory-only and off-path**: reads MeteringView/CreditLedgerView/DecisionGraph projections autonomously; every write is a gated Delta/PR or require-approval obligation (Plan 29); it never auto-purchases commitments and never sits on the deterministic Matching/Dispatcher path — cite [ADR-0071](01-architecture-core.md#adr-0071) point 3's off-path advisory layer and ADR-0033 determinism; (4) boundaries: SRE keeps `spend.DegradationRequired` enforcement, Endpoint Monitor keeps signal emission, Platform Engineer keeps Resource Definitions; FinOps escalates via `crew.HandoffRequested`; **no new event families** (rides `crew.*`/`spend.*`/`policy.Decided`).
-- `### Consequences` — (+) every FinX advisory output has a named, audited, policy-gated owner; (−) one more trust surface in the roster; recommendation quality bounded by best-effort credit/usage reconciliation (ADR-0071 point 6).
-
-**2. `docs/design/adr/03-data-plane.md` — amend ADR-0054 Decision point 1 roster list (~line 236, after the SWE bullet):** add bullet `- **FinOps** → cost forecasts + anomaly signals + commitment/optimization recommendations, advisory-only via gated Deltas ([ADR-<next-free>](#adr-<next-free>)).`
-
-**3. `docs/design/operators-sre.md` (Plan 40) — four edits:**
-- Mermaid CREW subgraph (~line 29–44): add node `FIN["FinOps"]` and edge `FIN -->|forecast / anomaly / commitment / optimization proposals| ADV["FinX advisory outputs -> gated Deltas (ADR-0039/0071)"]`.
-- Roster table (~line 47): new row `| **FinOps** | forecasts · anomaly signals · commitment recommendations · optimization proposals (**advisory-only**) | MeteringView + showback ([ADR-0039](./adr/02-identity-security.md#adr-0039)), CreditLedgerView + off-path Dispatcher advisory ([ADR-0071](./adr/01-architecture-core.md#adr-0071)), spend breaker + costAvailabilityProfile ([Plan 5](./reliability-observability-cost.md#plan-05)), FinX surface ([FinOps control plane](./finops-budget-routing-control-plane.md)) | external cost-recommendation engine behind a port | MCP forecast/recommend-commitment/propose-optimization; opens gated Deltas/PRs; rides crew.*/spend.*/policy.Decided; AI counterpart to the human FinOps-owner persona ([usage metering](./usage-metering.md)) |`
-- Scope bullet (~line 73): extend the bold roster enumeration to `**SRE · Endpoint Monitor · GitOps · Platform Engineer · SWE · UX Designer · FinOps**`.
-- Verification (~line 63–70): add bullet: FinOps recommends a savings-plan purchase → `crew.ActionProposed` + gated Delta with a require-approval obligation; it is never auto-purchased; the decision is replayable via `policy.Decided`.
-
-**4. `docs/design/reliability-observability-cost.md` — "Optional dimensions" → "Commitment optimization" bullet (~line 240):** append owner: `— owned by the **FinOps operator** ([Plan 40](./operators-sre.md#plan-40), [ADR-<next-free>](./adr/03-data-plane.md#adr-<next-free>))`.
-
-**5. `docs/design/finops-budget-routing-control-plane.md` — "Product Surfaces" section (~line 131):** after the FinX bullet add one sentence: the FinX outputs are owned/actioned by the **FinOps Crew operator** ([Plan 40](./operators-sre.md#plan-40), [ADR-<next-free>](./adr/03-data-plane.md#adr-<next-free>)), advisory-only, writes gated.
-
-**6. `docs/design/glossary.md` (~line 51, "Operator Agents" entry):** add FinOps to the enumerated roster.
-
-**7. `docs/design/adr/index.md` — Index table:** add row `| <next-free> | FinOps operator (Crew cost specialist): advisory-only ownership of FinX outputs & commitment optimization | [data-plane](03-data-plane.md#adr-<next-free>) |` in numeric order. (This file has NO frontmatter — keep it that way.)
-
-**8. `docs/design/traceability.md`:** add row for the new ADR following the ADR-0098/0099 row format (~line 356): `| ADR-<next-free> | [data-plane](./adr/03-data-plane.md#adr-<next-free>) | <one-line statement> | HOBO-<this remediation's Linear issue id> |`.
-
-**9. `GAPS.md`:** under `## Remediations` add `### REM-014` (Action = this entry, Acceptance, Effort M, Delivery link = the PR/Linear issue) and set the cand-13 gap-register row status to 🧯 remediation documented.
-
-No new files are created; all touched docs already carry valid OKF frontmatter (do not add frontmatter to index.md files). Do NOT edit `docs/archive/**` (FR-080/TR-160 roster enumerations there are frozen history).
-
-**Acceptance**
-
-- [ ] New ADR section exists in `docs/design/adr/03-data-plane.md` with Context/Decision/Consequences, uses the next free global ID (max existing + 1; verified via `rg -o "ADR-[0-9]{4}" docs/design/adr/ | sort -u | tail -3`), and no existing ADR was renumbered or moved.
-- [ ] ADR-0054 roster bullet, operators-sre.md mermaid + roster table + Scope enumeration + Verification bullet, reliability-observability-cost.md commitment-optimization owner, finops-budget-routing-control-plane.md FinX owner sentence, and glossary.md roster all name **FinOps** consistently and mark it advisory-only.
-- [ ] Cross-links added both directions: new ADR ↔ Plan 40 (operators-sre.md), new ADR ↔ finops-budget-routing-control-plane.md, new ADR ↔ reliability-observability-cost.md; hub files gain links: `docs/design/adr/index.md` (new table row) and `docs/design/traceability.md` (new ADR row with a HOBO- issue ref). All links are relative `.md` links that resolve.
-- [ ] `pnpm run docs:okf` passes (OKF frontmatter intact; no frontmatter added to index.md files).
-- [ ] `pnpm agent:check -- --staged` passes with all changed files staged (touching `docs/design/adr/` makes it run the traceability gate).
-- [ ] Traceability gate passes directly: `node --import tsx scripts/validate-traceability.ts` (this is the real gate — there is no dedicated pnpm script; it requires the new ADR ID in both `docs/design/adr/index.md` and `docs/design/traceability.md`, with no undocumented numbering gap — using max+1 avoids gap documentation).
-- [ ] `GAPS.md` REM-014 recorded and cand-13 register row updated to 🧯 with the delivery link.
-
-**Guardrails**
-
-Documentation-only — no code, no `src/` changes. The FinOps operator is strictly **advisory/off-path**: it must never be placed on the deterministic Matching/Dispatcher selection path (would violate ADR-0033/ADR-0071 determinism) and must never auto-purchase commitments (reliability-observability-cost.md already says "advisory, never auto-purchased without approval" — preserve that wording). Reuse existing event families (`crew.*`, `spend.*`, `policy.Decided`); do not invent a `finops.*` event family or touch `docs/design/event-families.md` with new families. Never renumber or relocate existing ADRs; the new ADR goes only in `docs/design/adr/03-data-plane.md`. Do not edit `docs/archive/**` (frozen requirements). Do not reverse or re-litigate the Nomad→wasmCloud pivot (untouched by this change). Keep index.md files frontmatter-free; keep every added link relative and resolving.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-014-historical-remediation-plan-63cc2b695381).
 
 ### REM-015 (for DRIFT-004)
 
@@ -480,44 +394,7 @@ Documentation-only — no code, no `src/` changes. The FinOps operator is strict
 - **Evidence:** `docs/design/adr/07-portability-extensibility.md:277-282` · `docs/design/index.md:28-112` · `docs/design/go-no-go-decision-record.md:36-95` · `docs/design/traceability.md:10` · `docs/design/known-limitations-register.md:35-36`
 - **Effort:** M · **Delivery:** [HOBO-680](https://linear.app/quickdeploy-ai/issue/HOBO-680) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Amend five existing files; create no new files (so no new OKF frontmatter is needed). All edits are documentation-level.
-
-1. `docs/design/adr/07-portability-extensibility.md` — add ONE new ADR section using the next free global ADR ID (= highest ID in `docs/design/adr/index.md` + 1; the index currently ends at ADR-0104 — verify at edit time; never fill a documented gap ID such as 0013/0016/0017/0020/0022/0029/0030/0065–0068). Insert the section after `## ADR-0103` (ends ~line 341) and before `## Open / proposed decisions (ADR-Pn)` (~line 342). Title heading `## ADR-NNNN` followed by a bold one-line decision statement (house style), then:
-   - **Bold statement:** "Productization release program: the M0–M4 phase-gate model over the single designed scope." (1 line)
-   - `### Context` — ADR-0063 states there is "no version ladder and no deferred-feature bucket in the design" and that delivery phasing is archived (`07-portability-extensibility.md:277-282`), yet docs/design/ now carries a phased v1 release program: ~90 "Productization M0/M1" index rows (`docs/design/index.md:28-112`), beta/release-candidate/GA go/no-go gates with M3/M4 evidence gates (`docs/design/go-no-go-decision-record.md:36-95`), a self-described "M0 traceability gate" (`docs/design/traceability.md:10`), and `deferred`/`post-ga` known-limitation states (`docs/design/known-limitations-register.md:35-36`) — while the M0–M4 taxonomy is defined only in the Linear backlog legend. No decision record covers the category or the phase model.
-   - `### Decision` — five numbered items: (1) recognize the **productization/release-program document category** in docs/design/ ("Productization M0/M1 …" rows define release-readiness scope and acceptance evidence, not new platform capabilities); (2) define the canonical **M0–M4 taxonomy inside the design**: `M0` Contracts → `M1` Skeleton → `M2` Core → `M3` Hardening → `M4` GA; (3) the **phase-gate rule**: M0 acceptance blocks all M1–M4 work (M1–M4 are blocked by the HOBO-521 M0 acceptance record); beta/RC/GA go/no-go decisions attach to M3 (release candidate, HOBO-468) and M4 (GA handoff, HOBO-475) per `go-no-go-decision-record.md`; (4) **scope ADR-0063's claim to the platform-capability surface**: the capability docs remain one undivided scope with no deferred-feature bucket; M0–M4 sequences *release-readiness evidence*, and known-limitations `deferred`/`post-ga` states are customer-communication states, not capability cuts; (5) the archived roadmap **stages 0–6** (`docs/archive/roadmap.md`) are **superseded** as phasing vocabulary — include a 3-row mapping note (stages 0–2 → M0/M1 contracts+skeleton; stages 3–5 → M2 core; stage 6 → M3/M4 hardening+GA) and state the archive is historical only.
-   - `### Consequences` — one (+) bullet (the release program has a decision record; "M0" in any Productization doc now resolves to one canonical definition inside docs/design/) and one (−) bullet (two ladders coexist — capability scope stays flat while readiness evidence is phased — so future docs must say which surface they phase).
-
-2. Same file — amend `## ADR-0063` (lines 277–282): keep the existing text intact and append one short paragraph beginning `**Amended (2026-07, ADR-NNNN):**` stating (a) the "no version ladder and no deferred-feature bucket" claim is scoped to the **platform-capability design surface**; (b) the productization/release-program docs run the M0–M4 phase-gate model recorded in [ADR-NNNN](#adr-nnnn); (c) the archived `docs/archive/roadmap.md` stages 0–6 vocabulary is superseded by M0–M4 for release phasing.
-
-3. `docs/design/adr/index.md` — add one row at the bottom of the ID table (after the `0104` row, line ~112): `| NNNN | Productization release program: M0–M4 phase gates over the single designed scope | [portability-extensibility](07-portability-extensibility.md#adr-nnnn) |`. This file is an index.md: it has NO frontmatter — do not add any.
-
-4. `docs/design/index.md` — two sentence-level amendments: (a) in the **Scope.** paragraph (~line 120), after "Build sequencing/phasing is deferred planning (archived).", append: "The exception is the **productization release program** — the 'Productization M0/M1' docs above — which phases *release-readiness evidence* (not capabilities) through the M0–M4 gates recorded in [ADR-NNNN](./adr/07-portability-extensibility.md#adr-nnnn)."; (b) in the **Archived planning material** paragraph (~line 116), after the roadmap mention, add: "the archived roadmap's stages 0–6 are superseded by the M0–M4 phase model ([ADR-NNNN](./adr/07-portability-extensibility.md#adr-nnnn))". index.md has no frontmatter — keep it that way.
-
-5. `docs/design/traceability.md` — (a) add one ADR coverage row after the `ADR-0104` row (line 362), matching the existing 4-column format: `| ADR-NNNN | [portability-extensibility](./adr/07-portability-extensibility.md#adr-nnnn) | The productization document category and M0→M4 phase-gate model are a recorded design decision; M0-acceptance-blocks-M1–M4 is proven by the HOBO-521 M0 acceptance record and enforced by this traceability gate. | HOBO-521, HOBO-11 |`; (b) in the "ADR Numbering and Status Audit" section (~line 370), update "Explicit numbering gaps through `ADR-0104`" to name the new max ADR ID (the gap list itself is unchanged if the next-free ID is used).
-
-
-All anchors must be lowercase `#adr-nnnn` form; all links relative `.md` links as shown.
-
-**Acceptance**
-
-Checklist:
-1. New ADR section exists in `docs/design/adr/07-portability-extensibility.md` with the next free global ID (highest existing + 1; not a documented gap ID), placed before `## Open / proposed decisions (ADR-Pn)`, containing the bold statement, Context, a 5-item Decision (category recognition; M0–M4 definition; M0-blocks-M1–M4 gate rule; ADR-0063 claim scoped to the platform-capability surface; stages 0–6 superseded with mapping note), and Consequences.
-2. ADR-0063 has an appended `**Amended (2026-07, ADR-NNNN):**` paragraph; its original text is otherwise untouched.
-3. `docs/design/adr/index.md` has the new row; `docs/design/traceability.md` has the new ADR coverage row (citing HOBO-521 and HOBO-11) and its numbering-gap audit line covers the new max ID; `docs/design/index.md` Scope and Archived-planning paragraphs both link the new ADR.
-4. Runnable validation (from repo root):
-   - `pnpm run docs:okf` (OKF frontmatter check — must stay green; no frontmatter added to either index.md)
-   - `pnpm agent:check -- --staged` (with all six files staged; this auto-runs the traceability gate because `docs/design/adr/**`, `docs/design/index.md`, and `docs/design/traceability.md` changed — see `scripts/relevant-check-policy.ts:74,149`)
-   - `node --import tsx scripts/validate-traceability.ts` (the traceability gate itself — there is no package.json alias for it; it fails if the new ADR ID is missing from `docs/design/traceability.md` or the gap audit is stale)
-   - `pnpm run docs:design-lint` (fails on unindexed ADR references and broken internal links/anchors)
-5. Cross-links to update are exactly: `docs/design/adr/index.md` (ID table), `docs/design/traceability.md` (ADR row + gap-audit line), `docs/design/index.md` (Scope + Archived paragraphs). Verify every new relative link resolves from its containing file.
-6. GAPS.md register: record this as the `### REM-NNN` entry for cand-17 with status moving to "remediation documented" (documented, not applied, per the register's standing decision 3).
-
-**Guardrails**
-
-Do not renumber, retitle, or rewrite any existing ADR — ADR-0063 gets only the appended amendment paragraph and its "no version ladder" sentence must stay (scope it, don't delete it). Take the next free global ADR ID (max existing + 1, read from docs/design/adr/index.md at edit time); never reuse the documented gap IDs (0013, 0016, 0017, 0020, 0022, 0029, 0030, 0065–0068). Do not revive or edit docs/archive/roadmap.md — only mark its stage vocabulary superseded from the design side. Do not touch the ~90 Productization docs themselves; the ADR records the category, it does not re-specify their content. Do not add YAML frontmatter to docs/design/index.md or docs/design/adr/index.md (index files must have none). Do not propose reversing the Nomad->wasmCloud pivot or un-archiving the requirements suite (ADR-0018 stands). Documentation-only change: no code, no scripts, no Linear mutations.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-015-historical-remediation-plan-40c8177565e0).
 
 ### REM-016 (for GAP-012)
 
@@ -525,85 +402,7 @@ Do not renumber, retitle, or rewrite any existing ADR — ADR-0063 gets only the
 - **Evidence:** `docs/design/vision.md:14` · `docs/design/vision.md:43` · `docs/design/index.md:136-144` · `docs/competitors/index.md:5-23` · `docs/competitors/gap-analysis.md:10`
 - **Effort:** M · **Delivery:** [HOBO-681](https://linear.app/quickdeploy-ai/issue/HOBO-681) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-REM for cand-18 (L-CONS, MED): Ground the Lakebed competitive claims by adding the missing capture, then link every design-suite Lakebed characterization to it. Option A of the sketch (add the capture) is chosen; do NOT soften vision.md — the Lakebed characterization is load-bearing (borrows list, differentiator #6, risk mitigations, `hobo import`).
-
-FILE 1 — CREATE `docs/competitors/lakebed.md`
-Follow the standard capture layout used by `docs/competitors/shoo.md` and `docs/competitors/nitric.md`. Start with OKF YAML frontmatter (all four keys, non-empty `type`):
-```yaml
----
-type: Competitive Reference
-title: "Lakebed — Competitor Reference"
-description: "Lakebed is an agent-native closed PaaS: one full-stack TypeScript app per 'Capsule' on Lakebed's own hosted runtime, sync RPC (queries/mutations), machine-readable contracts (llms.txt), and instant zero-config onboarding."
-tags: [hobo, competitors]
----
-```
-Section outline (h2/h3):
-- `# Lakebed — Competitor Reference` — h1 title.
-- Opening blockquote — provenance note (see PROVENANCE RULE below) + pointer to the `#hobo-mapping` section, matching shoo.md line 10's pattern.
-- Intro paragraph + summary dimension table — category / unit of deploy / cloud model / runtime model / agents / self-host / escape hatches, seeded from the existing landscape row (`docs/design/vision.md:50`) and the competitive-frame table (`docs/design/index.md:137-144`).
-- `## Positioning` — what Lakebed is (agent-native closed PaaS) and who it targets; one line on why HoBo tracks it (named head-on competitor).
-- `## Feature surface`
-  - `### Capsule model & deployment` — the "Capsule" unit: one full-stack TS app on their runtime (source: design/index.md frame table).
-  - `### Runtime model` — synchronous RPC queries/mutations, server authority, no exposed IaC (sources: vision.md:50, index.md:141-142).
-  - `### Machine-readable contracts` — `llms.txt` / agent-readable app contracts (sources: vision.md:70, ai-native-agent-auth.md:155).
-  - `### Onboarding & local ergonomics` — "ruthless onboarding" / instant-deploy feel HoBo explicitly matches (sources: vision.md:70,108; developer-experience.md:138,155; sdk-api.md:292).
-  - `### Auth` — basic guest/Google auth for agents/users (source: vision.md:50, index.md:143).
-  - `### Escape hatches & lock-in` — endpoints/env only; no self-host; migration off = rewrite (sources: vision.md:50,89).
-- `## Differentiators`
-  - `### Headline differentiators` — what Lakebed does genuinely well (onboarding, agent-readability, simplicity).
-  - `### Gaps / limitations (opportunities for HoBo)` — closed single runtime, no cloud-agnosticism, no durable workflows, no import path.
-- `## HoBo mapping` — MUST render the `#hobo-mapping` anchor. Per-feature parity table (✅ has / ➕ adds / 🔜 planned) mapping: Capsule→Bindle (Plan 21, `../design/authoring-resources-wiring.md#plan-21`); sync RPC→actors+durable workflows+sagas (Plan 2 `../design/sdk-api.md#plan-02`, Plan 11 `../design/data-plane.md#plan-11`); llms.txt→llms.txt-for-operations + MCP (Plan 6 `../design/ai-native-agent-auth.md#plan-06`); onboarding→`hobo dev`/anonymous `npx hobo up` (Plan 7 `../design/developer-experience.md#plan-07`); closed runtime→self-hosted Yard + `hobo import` adopt-in-place (ADR-0041 `../design/adr/07-portability-extensibility.md#adr-0041`); basic auth→agents as first-class principals (Plan 6).
-  - `### Where HoBo deliberately exceeds Lakebed` — the borrow-and-extend list from vision.md:70 (extend machine-readable from app to operations).
-  - `### Open parity items (iteration hooks)` — anything HoBo has not yet matched (at minimum: Lakebed's single-runtime simplicity as a DX bar).
-- `## Sources & provenance` — see PROVENANCE RULE.
-
-PROVENANCE RULE (mandatory): `docs/competitors/index.md` promises "faithful captures" that link upstream sources. If you can verify against official Lakebed docs, link them and quote only factual interface surface per `docs/competitors/index.md#sources--fair-use`. If you cannot (no web access), every claim in the capture must instead cite the in-repo file:line it consolidates (listed per-section above), and the opening blockquote plus `## Sources & provenance` must carry an explicit callout: "Consolidated from the HoBo design suite's existing Lakebed characterization; primary-source verification pending — do not treat as a faithful upstream capture until verified." Do not invent any Lakebed fact not already asserted in this repo.
-
-FILE 2 — AMEND `docs/competitors/index.md` (NO frontmatter — this index has none; keep it that way)
-Add one row to the competitor table (after the **Encore** row, line 16):
-`| **Lakebed** | Agent-native closed PaaS (Capsules, sync RPC, llms.txt) — _named head-on competitor_ | [`lakebed.md`](lakebed.md) | [HoBo mapping](lakebed.md#hobo-mapping) |`
-If the capture is repo-consolidated (unverified), append "— _capture consolidated from design suite; verification pending_" to the "What it is" cell.
-
-FILE 3 — AMEND `docs/design/vision.md` (link insertions only; no wording changes)
-- Line 14: first "Lakebed" in "competes head-on with **Convex, Lakebed, and Nitric**" → `**[Lakebed](../competitors/lakebed.md)**`.
-- Line 43: same edit for the Plan 17 head-on sentence.
-- Line 79: change "Lakebed (agent-native PaaS, above)" → "Lakebed (agent-native PaaS, above; [`docs/competitors/lakebed`](../competitors/lakebed.md))" — mirroring how Convex is linked in the same sentence.
-- Line 66: in "(Detailed Nitric capture + parity in ...)" optionally extend to "(Detailed Nitric and Lakebed captures + parity in [`docs/competitors/nitric`](../competitors/nitric.md) / [`docs/competitors/lakebed`](../competitors/lakebed.md).)" — optional but preferred.
-
-FILE 4 — AMEND `docs/design/index.md`
-Under `### Competitive frame vs Lakebed (what we deliberately do differently)` (line 136), add one sentence directly below the heading, before the table: `Full capture + parity tracker: [`docs/competitors/lakebed`](../competitors/lakebed.md#hobo-mapping).`
-
-FILE 5 — AMEND `docs/competitors/gap-analysis.md`
-Line 10: link the "Lakebed" mention in "the **Convex / Lakebed / Nitric** set" to `lakebed.md` (same-directory relative link), matching how Aspire/Nitric/etc. are linked in that sentence.
-
-NO new ADR is needed — this is a documentation-consistency fix, not a decision change; do not touch `docs/design/adr/`.
-
-CROSS-LINK BOOKKEEPING: if `GAPS.md` carries a cand-18 row in its Gap register / a `### REM-` section for cand-18 at implementation time, set its Status to remediated (✔) and add the delivery PR link per GAPS.md conventions.
-
-**Acceptance**
-
-1. `docs/competitors/lakebed.md` exists with OKF frontmatter (`type: Competitive Reference`, non-empty title/description, `tags: [hobo, competitors]`) and contains all outlined sections including a working `## HoBo mapping` section (anchor `#hobo-mapping`) and a `## Sources & provenance` section that either links official Lakebed sources or carries the explicit "verification pending" callout with per-claim in-repo citations.
-2. `docs/competitors/index.md` table has a Lakebed row linking `lakebed.md` and `lakebed.md#hobo-mapping`; the file still has NO YAML frontmatter.
-3. `docs/design/vision.md` lines ~14, ~43, ~79 link Lakebed to `../competitors/lakebed.md`; `docs/design/index.md` "Competitive frame vs Lakebed" section links the capture; `docs/competitors/gap-analysis.md` line ~10 links `lakebed.md`. All links are relative `.md` links and resolve.
-4. No existing ADRs renumbered; no files under `docs/design/adr/` modified; no wording of competitive claims softened or removed; the Nomad→wasmCloud pivot untouched.
-5. Runnable checks all pass (run from repo root, changes staged):
-   - `pnpm run docs:okf`
-   - `pnpm agent:check -- --staged`
-   - `node --import tsx scripts/validate-traceability.ts` (required — `docs/design/` is touched; this is the real traceability gate per CONTRIBUTING.md / PR template; there is no package.json "traceability" script)
-   - `pnpm run docs:design-lint` (broken-link/anchor gate for the new relative links in `docs/design/`)
-6. GAPS.md cand-18 register row/REM entry (if present at implementation time) updated to remediated status with delivery link.
-
-**Guardrails**
-
-- Documentation-only: create/amend the five named files; write no code, no ADRs, no renames/renumbers of existing captures or ADRs.
-- Do NOT soften, hedge, or delete the "competes head-on with Convex, Lakebed, and Nitric" claims — the chosen remediation grounds them with a capture; option B (softening) is rejected because the Lakebed characterization is load-bearing across vision.md (borrows, differentiator #6, risk mitigations) and ADR-0041.
-- Do NOT fabricate Lakebed facts: every statement in lakebed.md must trace to an official Lakebed source (linked, fair-use excerpting per docs/competitors/index.md#sources--fair-use) or to a cited in-repo assertion, with the "verification pending" callout in the unverified case.
-- `docs/competitors/index.md` must remain frontmatter-free; the new `lakebed.md` must have OKF frontmatter with non-empty `type:`.
-- Use relative links only (`../design/...` from competitors docs; `../competitors/lakebed.md` from design docs); verify anchors (`#hobo-mapping`, `#plan-NN`, `#adr-NNNN`) exist before linking.
-- Never propose or imply reversing the Nomad→wasmCloud pivot.
-- Conventional scoped commit (e.g. `docs(competitors): add Lakebed capture and link design-suite claims (cand-18)`); do not commit if any acceptance check fails.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-016-historical-remediation-plan-e2ddd9b6211b).
 
 ### REM-017 (for DRIFT-005)
 
@@ -611,38 +410,7 @@ CROSS-LINK BOOKKEEPING: if `GAPS.md` carries a cand-18 row in its Gap register /
 - **Evidence:** `docs/design/platform-engineering.md:229` · `docs/design/adr/07-portability-extensibility.md#adr-0043` · `docs/design/control-plane.md:93` · `docs/design/data-plane.md:601`
 - **Effort:** S · **Delivery:** ✔ [HOBO-682](https://linear.app/quickdeploy-ai/issue/HOBO-682) — Q20 federation-out-of-scope claims repointed to ADR-0043 Junction
 
-**Action**
-
-Amend three existing files (no new files, no new ADR — ADR-0036/ADR-0043 already state the correct design; this aligns the three downstream references to them).
-
-1. C:/src/hobo/docs/design/platform-engineering.md, line 229 (Plan 25, "Air-gapped (zero-egress) profile" subsection, the blockquote immediately after the mermaid diagram). Replace the whole line:
-OLD: `> Air-gap is a **single in-boundary Yard**; multi-Yard **federation** (multi-region/regulatory) is out of scope ([Q20](./generated-stack.md#plan-09)).`
-NEW: `> Air-gap is a **single in-boundary Yard** that may **stand alone or join a Junction** ([ADR-0036](./adr/07-portability-extensibility.md#adr-0036)); multi-Yard **federation** (multi-region/regulatory/cross-cloud) is designed first-class as the **Junction** ([ADR-0043](./adr/07-portability-extensibility.md#adr-0043), [Plan 4](./control-plane.md#plan-04) §Yard scope & multi-Yard).`
-
-2. C:/src/hobo/docs/design/data-plane.md, line 601 (Plan 32, "Embeddings — the `embed` capability" bullet list). Replace the whole line:
-OLD: `- **Local / in-boundary model** — for \`hobo dev\` and **air-gapped** Camps (no egress; relates to [Q20](./generated-stack.md#plan-09) / the air-gap gap).`
-NEW: `- **Local / in-boundary model** — for \`hobo dev\` and **air-gapped** Camps (no egress; the air-gapped profile, [ADR-0036](./adr/07-portability-extensibility.md#adr-0036)).`
-
-3. C:/src/hobo/docs/competitors/gap-analysis.md, line 69 (section "B. Designed-but-shallow", bullet "G6 — Air-gapped / sovereign mode"). Replace only the final sentence of the bullet:
-OLD: `The deterministic core works with no egress. Multi-Yard **federation** stays deferred ([Q20](../design/generated-stack.md#plan-09)).`
-NEW: `The deterministic core works with no egress. Multi-Yard **federation** is designed as the **Junction** ([ADR-0043](../design/adr/07-portability-extensibility.md#adr-0043)); an air-gapped Yard may stand alone or join a Junction.`
-
-Rationale to cite in the commit/issue: `docs/design/generated-stack.md` §Open design questions (line 352) contains no Q-numbered items, so `[Q20](...#plan-09)` is a dangling label; ADR-0043 (docs/design/adr/07-portability-extensibility.md, `## ADR-0043` at line 139) fully designs multi-Yard federation (the Junction), and control-plane.md:93 + ADR-0036's consequence (adr/07-portability-extensibility.md:121) already say an air-gapped Yard "may stand alone or join a Junction". Link targets used above all exist and are verified: `#adr-0036` and `#adr-0043` headings in docs/design/adr/07-portability-extensibility.md; `## Plan 04` at docs/design/control-plane.md:12. No new doc/section is created, so no section outline, no OKF frontmatter additions, and no index.md/hub link changes are required. Commit style: `docs(design): repoint stale Q20 federation-out-of-scope claims to ADR-0043 Junction`.
-
-**Acceptance**
-
-1. Stale label gone repo-wide: `rg -n "Q20" docs/` returns no matches (baseline before the fix: exactly 3 hits — docs/design/platform-engineering.md:229, docs/design/data-plane.md:601, docs/competitors/gap-analysis.md:69).
-2. New link targets resolve: `rg -n "^## ADR-0036$|^## ADR-0043$" docs/design/adr/07-portability-extensibility.md` prints both headings, and `rg -n "^## Plan 04$" docs/design/control-plane.md` prints one.
-3. `pnpm run docs:okf` passes (frontmatter untouched; platform-engineering.md keeps `type: Reference`).
-4. Stage the three files (`git add docs/design/platform-engineering.md docs/design/data-plane.md docs/competitors/gap-analysis.md`), then `pnpm agent:check -- --staged` passes.
-5. Traceability gate (docs/design/ touched; there is no npm alias — the real command is the script named in scripts/relevant-check-policy.ts:149): `node --import tsx scripts/validate-traceability.ts` passes.
-6. Optional but cheap: `pnpm run docs:design-lint` passes for the two design docs.
-7. Cross-link consistency: the edited lines' wording matches ADR-0036 consequence (docs/design/adr/07-portability-extensibility.md:121) and docs/design/control-plane.md:93 — no remaining text anywhere in docs/ claims multi-Yard federation is "out of scope" or "deferred" (`rg -in "federation.*(out of scope|deferred)" docs/` returns only historical-note hits outside these three lines, ideally none).
-8. GAPS.md register: flip cand-19 status from confirmed to remediation-documented per the register's own workflow (handled by the register commit that embeds this entry, not by the doc edits themselves).
-
-**Guardrails**
-
-Do NOT edit any file under docs/design/adr/ — ADR-0036 and ADR-0043 are already correct and ADRs are never renumbered or reworded by this fix. Do NOT touch the sibling stale labels Q22/Q23 (docs/competitors/gap-analysis.md:63,67) or the "#16/#18/#19/#20" note at gap-analysis.md:127 — same stale-label class but out of scope for cand-19; file separately if confirmed. Do NOT add a Q20 item back into generated-stack.md §Open design questions — the fix direction is repointing references to ADR-0043, not resurrecting the dead question. Do NOT reintroduce any "federation is out of scope/deferred" phrasing anywhere. Keep relative-link conventions exactly as shown (`./adr/...` from docs/design/*, `../design/...` from docs/competitors/*). Documentation-only change; the Nomad→wasmCloud pivot is accepted and untouched. index.md files must gain no frontmatter (none are edited here).
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-017-historical-remediation-plan-503fdc73c6f9).
 
 ### REM-018 (for DRIFT-006)
 
@@ -650,65 +418,7 @@ Do NOT edit any file under docs/design/adr/ — ADR-0036 and ADR-0043 are alread
 - **Evidence:** `docs/competitors/nitric.md:313` · `docs/competitors/nitric.md:336` · `docs/competitors/nitric.md:355` · `docs/design/developer-experience.md:71` · `docs/design/wasm-runtime-wit.md:201` · `docs/design/authoring-resources-wiring.md:127`
 - **Effort:** S · **Delivery:** ✔ [HOBO-683](https://linear.app/quickdeploy-ai/issue/HOBO-683) — nitric.md HoBo-mapping reconciled
 
-**Action**
-
-Amend ONE file (plus one optional one-line sibling fix). No new files, no new ADRs — every drifted claim already has a resolving design doc/ADR to link to.
-
-FILE 1 (required): docs/competitors/nitric.md — refresh only the "## HoBo mapping" layer (lines 288-359). Do NOT touch anything above "## HoBo mapping" (the Nitric-offering sections are a faithful capture of Nitric and are correct).
-
-Edit 1 — line 313, "### Resource catalog" table, `schedule` row. Replace:
-`| \`schedule\` (cron/interval) | \`hobo:schedule\` (control-plane \`cron\`) | ✅ |`
-with:
-`| \`schedule\` (cron/interval) | \`hobo:scheduler\` (control-plane \`every(spec)\`/\`cron(expr)\`) | ✅ |`
-Rationale: the design's port is `hobo:scheduler` — see docs/design/wasm-runtime-wit.md:166 and docs/design/authoring-resources-wiring.md:44.
-
-Edit 2 — line 336, "### CLI, local dev, deployment" table, `nitric run` row. Replace:
-`| \`nitric run\` (containers) | \`hobo dev --containers\` (wasm host or OCI) | ✅ | [15](../design/developer-experience.md#plan-07) |`
-with:
-`| \`nitric run\` (containers) | \`hobo dev\` on \`runtime-local\` (Wasmtime host); container execution is the wasm-in-container OCI floor, not a flag | ✅ | [15](../design/developer-experience.md#plan-07), [ADR-0031](../design/adr/01-architecture-core.md#adr-0031) |`
-Rationale: the design defines no `--containers` flag (docs/design/developer-experience.md:71-108); ADR-0031 (docs/design/adr/01-architecture-core.md:76-89) makes wasm-in-container the zero-infra floor and Wasmtime the `hobo dev` host of record.
-
-Edit 3 — line 337, same table, `nitric up/down/spec/build` row. Replace:
-`| \`nitric up/down/spec/build\` | \`hobo deploy/destroy/plan/build\` | ✅ | [15](../design/developer-experience.md#plan-07) |`
-with:
-`| \`nitric up/down/spec/build\` | \`hobo up/down\` (the only lifecycle verbs — no \`deploy\`/\`destroy\`) + \`hobo collect\` (≈ \`nitric spec\`) / \`hobo plan\` (dry-run) / \`hobo build\` | ✅ | [15](../design/developer-experience.md#plan-07) |`
-Rationale: the CLI collapsed to `hobo up`/`hobo down` (docs/design/developer-experience.md:71-89: "There is no separate deploy/destroy"); `hobo collect` is explicitly "à la nitric spec" (docs/design/developer-experience.md:62,95).
-
-Edit 4 — "### Open parity items (iteration hooks)" (lines 354-359). Replace the four-bullet list so the two resolved items are struck and cross-linked, keeping the two genuinely open ones first. New section body outline:
-- (h3, existing) "Open parity items (iteration hooks)" — keep heading unchanged.
-  - Bullet: Bucket-event + presigned-URL semantics (`hobo:blob-events`) — keep verbatim (still open).
-  - Bullet: Per-language IfC collection fidelity — keep verbatim (still open).
-  - New sub-list intro line "Resolved since capture:" — one-line lead-in for struck items.
-  - Bullet: `~~WebSocket port WIT shape (no standard \`wasi:websocket\` yet)~~ — resolved by [ADR-0075](../design/adr/07-portability-extensibility.md#adr-0075): vendored preview \`wasi:websocket@0.0.x-draft\` + \`hobo:websocket\` thin extension ([Plan 20](../design/wasm-runtime-wit.md#plan-20)).`
-  - Bullet: `~~\`sql\` migrations workflow parity (Nitric's \`migrations/<db>/*.up.sql\`)~~ — resolved by [ADR-0032](../design/adr/03-data-plane.md#adr-0032)/[Plan 32](../design/data-plane.md#plan-32): declarative desired-schema + auto-diff (raw \`.up.sql\`-style escape hatch), gated expand/backfill/contract apply + snapshot rollback.`
-Anchor targets verified to exist: `## ADR-0075` at docs/design/adr/07-portability-extensibility.md:229, `## ADR-0032` at docs/design/adr/03-data-plane.md:88, `#plan-32` anchor used throughout docs/design/data-plane.md, `#plan-20` in docs/design/wasm-runtime-wit.md, `#adr-0031` at docs/design/adr/01-architecture-core.md:76.
-
-FILE 2 (optional, same drift class, one word): docs/competitors/nomad.md line 175 — change `hobo:schedule` to `hobo:scheduler` in the "Periodic jobs" row. (docs/competitors/dapr.md already uses the correct `hobo:scheduler`.)
-
-Frontmatter: nitric.md already has valid OKF frontmatter (`type: Competitive Reference`) — do not change it. No new docs, so no new frontmatter and no index.md changes are needed (docs/competitors/index.md already links nitric.md).
-
-**Acceptance**
-
-Checklist (run from repo root C:/src/hobo):
-1. `pnpm run docs:okf` — passes (frontmatter untouched, but gate must stay green).
-2. `pnpm agent:check -- --staged` — passes with the nitric.md (and optional nomad.md) edits staged.
-3. `node --import tsx scripts/validate-traceability.ts` — passes; this is the repo's traceability/link gate (there is NO pnpm alias for it — package.json has no traceability script; the command comes from CONTRIBUTING.md:39 and .github/pull_request_template.md:21). Required here because the edit adds four new relative links from docs/competitors/nitric.md into docs/design/adr/01-architecture-core.md, docs/design/adr/03-data-plane.md, docs/design/adr/07-portability-extensibility.md, docs/design/data-plane.md, and docs/design/wasm-runtime-wit.md.
-4. Grep assertions (all must return zero matches):
-   - `pnpm run search -- "hobo dev --containers" docs/competitors`
-   - `pnpm run search -- "hobo deploy/destroy" docs/competitors`
-   - `pnpm run search -- "hobo:schedule\b" docs/competitors/nitric.md` (and docs/competitors/nomad.md if the optional fix is applied)
-5. Grep assertion (must return matches): `pnpm run search -- "adr-0075" docs/competitors/nitric.md` and `pnpm run search -- "adr-0032" docs/competitors/nitric.md` — confirms the resolved-parity links landed.
-6. Manual: the "Open parity items" section still lists exactly two open bullets (blob-events, per-language IfC fidelity) and two struck/resolved bullets with ADR links; nothing above "## HoBo mapping" in nitric.md changed.
-Cross-links to update: none in hub/index files — no files are created; docs/competitors/index.md already links nitric.md.
-
-**Guardrails**
-
-- Documentation-only; edit the HoBo-mapping layer of nitric.md, never the Nitric-offering capture above "## HoBo mapping" (it intentionally documents Nitric's own `nitric run`/containers model faithfully).
-- Do not create or renumber ADRs; this remediation needs no new ADR — it only links existing ADR-0031, ADR-0032, ADR-0075.
-- Do not "fix" docs/archive/requirements/requirements.md (`hobo deploy` there is an immutable archived snapshot). docs/technologies/cloud-foundry-pcf.md:28,32 has the same `hobo deploy` drift but is OUT OF SCOPE for cand-20 — leave it for a separate finding; do not expand this change beyond docs/competitors/.
-- Keep the ✅/➕/🔜 legend semantics and existing table column structure; keep all links relative `.md` links (repo norm).
-- Do not mark the `hobo:blob-events` or per-language-IfC bullets resolved — the finding only established WebSocket (ADR-0075) and sql-migrations (ADR-0032/Plan 32) as resolved.
-- The Nomad→wasmCloud pivot is accepted; nothing here may imply revisiting it (ADR-0031's wasmCloud default is cited as-is).
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-018-historical-remediation-plan-b05a1ae0ece4).
 
 ### REM-019 (for GAP-013)
 
@@ -716,49 +426,7 @@ Cross-links to update: none in hub/index files — no files are created; docs/co
 - **Evidence:** `docs/design/adr/02-identity-security.md:282` · `docs/design/finops-budget-routing-control-plane.md:108` · `docs/standards/index.md` · `docs/competitors/index.md` · `docs/competitors/antimetal.md:173`
 - **Effort:** M · **Delivery:** [HOBO-684](https://linear.app/quickdeploy-ai/issue/HOBO-684) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-Create 2 files and amend 4 (docs-only; no new ADR — ADR-0039 already made the adoption decision, this remediation adds the missing research notes and back-links).
-
-1) CREATE C:/src/hobo/docs/standards/focus-opencost.md — mirror docs/standards/openslo.md exactly. OKF YAML frontmatter: `type: Reference Standard`, `title: "FOCUS & OpenCost"`, non-empty `description:`, `tags: [hobo, standards]`. Then `# FOCUS & OpenCost`, a blockquote line ("**Standard** · ..." with sources focus.finops.org, finops.org/framework, opencost.io, github.com/opencost/opencost + fair-use note), and sections:
-- `## What it is` — one paragraph each: FOCUS 1.4 (FinOps Foundation's open billing-data spec: a normalized column taxonomy for cost/usage across providers) and OpenCost (CNCF cost-allocation specification + implementation: how to attribute infrastructure cost to workloads); why one note covers both (the data format + the allocation method HoBo adopted together).
-- `## Key features` with three h3s: `### FOCUS 1.4` (core columns: BilledCost/EffectiveCost/ListCost/ContractedCost, charge categories, SKU/pricing dimensions, provider adoption AWS/Azure/GCP/OCI, what 1.4 added); `### OpenCost allocation spec` (allocation = usage x price per resource dimension, idle-cost and shared-cost distribution rules, the API surface, relationship to Kubecost); `### FinOps Framework` (short: Inform/Optimize/Operate phases + capability vocabulary, since docs/design/finops-budget-routing-control-plane.md:109 baselines it).
-- `## Relevance to HoBo` — map to: ADR-0039 §1 MeteringView dimensions (control-plane ops, compute-seconds, storage-GB, egress-GB, generation runs) vs FOCUS columns; ADR-0039 §3 showback "modeled on the OpenCost open standard" (link [ADR-0039](../design/adr/02-identity-security.md#adr-0039)); ADR-0071 CreditLedgerView "effective marginal cost" vs FOCUS EffectiveCost-vs-ListCost distinction (link [ADR-0071](../design/adr/01-architecture-core.md#adr-0071)); `FocusCostLedgerEntry` + the standards-baseline table in [finops-budget-routing-control-plane.md](../design/finops-budget-routing-control-plane.md#standards-baseline); the boundary stance parallel to CloudEvents/OCSF in [ADR-0046](../design/adr/02-identity-security.md#adr-0046) (showback figures should export FOCUS-conformant). End with a "Boundaries / caveats" paragraph: FOCUS is a billing-data format but HoBo ships no billing (ADR-0064); OpenCost is Kubernetes-centric — HoBo's wasm runtime needs its own usage→price mapping while keeping the allocation-spec shape.
-- `## Sources` — bulleted external links + one "HoBo:" line of cross-links (copy the openslo.md:66-71 pattern).
-
-2) CREATE C:/src/hobo/docs/competitors/finops-tooling.md — landscape entry mirroring docs/competitors/wasm-hosts.md / antimetal.md. Frontmatter: `type: Competitive Reference`, `title: "FinOps tooling landscape - Competitor Reference"`, non-empty `description:`, `tags: [hobo, competitors]`. Sections:
-- `# FinOps tooling landscape - Competitor Reference`; blockquote with researched date + sources (kubecost.com, opencost.io, infracost.io, vantage.sh, cast.ai) + adjacency note ("adjacent; FinOps/showback benchmark — none is a meta-cloud, all overlap ADR-0039/ADR-0071/Plan 5").
-- `## What it is` — a Dimension|... comparison table across the four products.
-- `## Feature surface` with h3 per product: `### Kubecost / OpenCost` (K8s cost allocation, idle/shared cost, savings insights); `### Infracost` (plan-time cost estimation on Terraform PRs — pressure-tests HoBo's plan-time cost estimation in Plan 5); `### Vantage` (multi-cloud cost observability/showback SaaS, per-team attribution, anomaly alerts); `### Cast.ai` (automated optimization/rightsizing — pressure-tests cost-driven degradation tiers and the Planner "minimize cost subject to availability floor").
-- `## Differentiators` and `## Gaps a competitor could exploit` — bullets.
-- `## HoBo mapping` — table (Feature | HoBo equivalent / delta | Status) mapping to [ADR-0039](../design/adr/02-identity-security.md#adr-0039) metering/showback/quota/degradation, [ADR-0071](../design/adr/01-architecture-core.md#adr-0071) Dispatcher/CreditLedgerView cost routing, [Plan 5](../design/reliability-observability-cost.md#plan-05) budgets/spend-caps/estimation, and the FinX surface of [finops-budget-routing-control-plane.md](../design/finops-budget-routing-control-plane.md#product-surfaces).
-- `## Verdict` — is showback+cost-routing-inside-the-control-plane a real differentiator vs these tools bolted onto any cluster.
-
-3) AMEND C:/src/hobo/docs/standards/index.md — add one row to the Index table (after OCSF, line 17): `| **FOCUS & OpenCost** (FinOps Foundation / CNCF) | Normalized cost/usage billing-data spec + cost-allocation spec | [`focus-opencost.md`](./focus-opencost.md) |`; extend the "See also" blockquote (line 19) with a clause pointing at ADR-0039 showback and the FinOps control plane: `cost standards ground showback ([ADR-0039](../design/adr/02-identity-security.md#adr-0039)) and the [FinOps budget-routing control plane](../design/finops-budget-routing-control-plane.md#standards-baseline)`. NO frontmatter on this file.
-
-4) AMEND C:/src/hobo/docs/competitors/index.md — add one table row after Wasm hosts (line 17): `| **FinOps tooling** | Cost allocation/estimation/optimization landscape (Kubecost/OpenCost · Infracost · Vantage · Cast.ai) — _adjacent; showback/FinOps benchmark_ | [`finops-tooling.md`](finops-tooling.md) | [HoBo mapping](finops-tooling.md#hobo-mapping) |`. NO frontmatter on this file.
-
-5) AMEND C:/src/hobo/docs/design/adr/02-identity-security.md line 282 (ADR-0039 §3): after `**modeled on the [OpenCost](https://opencost.io) open standard** (the CNCF cost-allocation spec)` insert ` — captured with FOCUS in [`../../standards/focus-opencost.md`](../../standards/focus-opencost.md) —`. Do not change any other decision text; never renumber ADRs.
-
-6) AMEND C:/src/hobo/docs/design/finops-budget-routing-control-plane.md — in the Standards Baseline section (line 104-109), add one sentence after the table intro or below the table: `FOCUS and OpenCost are captured as a standards research note in [`../standards/focus-opencost.md`](../standards/focus-opencost.md).`
-
-7) OPTIONAL (include if capacity allows): add `## 3e. Survey - FinOps tooling (2026-07-01)` to C:/src/hobo/docs/competitors/gap-analysis.md — 3-6 bullets stating whether the landscape exposes new gaps or confirms ADR-0039/ADR-0071 coverage, following the 3d Antimetal re-survey pattern.
-
-**Acceptance**
-
-- [ ] docs/standards/focus-opencost.md exists with frontmatter `type: Reference Standard` (non-empty) and sections What it is / Key features / Relevance to HoBo / Sources, matching the openslo.md shape.
-- [ ] docs/competitors/finops-tooling.md exists with frontmatter `type: Competitive Reference`, covers Kubecost/OpenCost, Infracost, Vantage, Cast.ai, and ends with a `## HoBo mapping` table whose anchor `#hobo-mapping` resolves.
-- [ ] Index/hub files gained links: docs/standards/index.md table row -> ./focus-opencost.md; docs/competitors/index.md table row -> finops-tooling.md + finops-tooling.md#hobo-mapping. Neither index.md gained frontmatter.
-- [ ] Back-links added: docs/design/adr/02-identity-security.md ADR-0039 §3 -> ../../standards/focus-opencost.md; docs/design/finops-budget-routing-control-plane.md Standards Baseline -> ../standards/focus-opencost.md.
-- [ ] All new cross-doc links are relative .md links and resolve (spot-check: from docs/standards/ use ../design/...; from docs/competitors/ use ../design/...; from docs/design/adr/ use ../../standards/...).
-- [ ] Run: `pnpm run docs:okf` — passes (frontmatter rules).
-- [ ] Run: `pnpm agent:check -- --staged` (with all changed files staged) — passes; because docs/design/adr/** and docs/design/*.md are touched this automatically includes the traceability gate wired in scripts/relevant-check-policy.ts.
-- [ ] Traceability gate directly (the real command; there is no package.json alias): `node --import tsx scripts/validate-traceability.ts` — passes.
-- [ ] Run: `pnpm run lint:docs:staged` — passes (link/lint checks on the staged docs).
-
-**Guardrails**
-
-Documentation-only: create/amend the six listed files, nothing else. Do NOT create a new ADR (ADR-0039 already decided FOCUS/OpenCost adoption; this fills the missing research notes) and never renumber or rewrite existing ADR decision text beyond the single §3 cross-link insertion. Do not touch the Nomad->wasmCloud pivot or docs/competitors/nomad.md. New docs need OKF frontmatter with non-empty type:; index.md files must have NO frontmatter. Follow the fair-use conventions already in docs/standards/index.md and docs/competitors/index.md: quote only factual spec/API surface, attribute sources, keep excerpts minimal. Both new docs must state facts with source links (focus.finops.org, opencost.io, infracost.io, vantage.sh, cast.ai) — no invented pricing/feature claims. Keep every cross-doc link relative; verify anchors (#adr-0039, #adr-0071, #plan-05, #standards-baseline, #hobo-mapping) exist before linking.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-019-historical-remediation-plan-a71701fdf79e).
 
 ### REM-020 (for GAP-014)
 
@@ -809,48 +477,7 @@ No index/hub updates needed: no new files are created, so `docs/design/index.md`
 - **Evidence:** `docs/design/index.md:120` · `docs/design/index.md:53-57` · `docs/design/index.md:66-67` · `docs/design/adr/07-portability-extensibility.md:294`
 - **Effort:** S · **Delivery:** [HOBO-686](https://linear.app/quickdeploy-ai/issue/HOBO-686) (Intent-Alignment Gap Remediation project)
 
-**Action**
-
-REM-cand-26 — Restate the design-suite Scope paragraph with both bounds (platform capability surface + productization/launch records).
-
-AMEND (1 file): `docs/design/index.md` — replace the single **Scope.** paragraph at line 120. No new headings, no frontmatter (index.md files must have NO frontmatter; this file has none — keep it that way). Replace this exact paragraph:
-
-"**Scope.** The whole suite is **one scope** — every plan is in scope, bounded only by the AI-native-meta-cloud-minus-monetization line ([ADR-0063](./adr/07-portability-extensibility.md#adr-0063)/[ADR-0064](./adr/07-portability-extensibility.md#adr-0064)). Build sequencing/phasing is deferred planning (archived)."
-
-with this exact paragraph:
-
-"**Scope.** The suite covers one designed platform surface plus its launch program, with two distinct bounds. (1) **Platform capability surface:** every numbered plan is in scope, bounded by the AI-native-meta-cloud-minus-monetization line ([ADR-0063](./adr/07-portability-extensibility.md#adr-0063)/[ADR-0064](./adr/07-portability-extensibility.md#adr-0064)) — HoBo the product ships no billing/monetization capability (no `billing` port, invoicing, tax, rev-share, or subscriptions); build sequencing/phasing of this surface is deferred planning (archived). (2) **Productization & launch records:** the \"Productization M0/M1\" rows in the index above (for example [`billing-launch-policy.md`](./billing-launch-policy.md), [`usage-metering.md`](./usage-metering.md), [`usage-to-invoice-reconciliation.md`](./usage-to-invoice-reconciliation.md), [`entitlements-plan-limits.md`](./entitlements-plan-limits.md), [`tax-currency-receipt-obligations.md`](./tax-currency-receipt-obligations.md), [`marketplace-payout-hooks.md`](./marketplace-payout-hooks.md)) describe how the hosted HoBo offering itself is launched, billed, and operated as a business — vendor operating records with their own M0/M1 phasing, not platform capabilities, so they do not move the ADR-0064 cut line."
-
-CONDITIONAL LINK STEP: open `docs/design/adr/index.md` and search its Index table for an ADR whose title covers the productization/launch-record scope boundary (it would have been added by the remediations for findings cand-16/cand-17, in `docs/design/adr/07-portability-extensibility.md` under the next free global ADR ID). If such an ADR exists, append to the end of item (2) of the new paragraph: " Boundary decision: [ADR-NNNN](./adr/07-portability-extensibility.md#adr-nnnn)." with NNNN replaced by that real ID. If no such ADR exists, append nothing and leave the paragraph exactly as given above (no dangling link, no placeholder).
-
-DO NOT create any new file, new ADR, or new index row. All six linked docs already exist in `docs/design/`. Register bookkeeping (done in the same change, per GAPS.md conventions): add a `### REM-cand-26` entry under `## Remediations` in `GAPS.md` recording Action/Acceptance/Effort/Delivery-link, and set cand-26's Drift-register row status to 🧯 remediation documented.
-
-**Acceptance**
-
-Checklist:
-1. `docs/design/index.md` Scope paragraph names BOTH bounds; the phrase "bounded only by" no longer appears anywhere in the file (verify: `grep -c "bounded only by" docs/design/index.md` returns 0).
-2. The paragraph keeps working relative links to `./adr/07-portability-extensibility.md#adr-0063` and `#adr-0064`, and to the six existing commercial-record docs (`billing-launch-policy.md`, `usage-metering.md`, `usage-to-invoice-reconciliation.md`, `entitlements-plan-limits.md`, `tax-currency-receipt-obligations.md`, `marketplace-payout-hooks.md`) — all six files already exist under `docs/design/`.
-3. `docs/design/index.md` still has NO YAML frontmatter (first line remains `# HoBo — Design Plan Suite`), and no table rows, `#plan-NN` anchors, or other paragraphs changed.
-4. No boundary-ADR link is present unless the referenced `#adr-NNNN` anchor actually exists in `docs/design/adr/07-portability-extensibility.md` and is listed in `docs/design/adr/index.md`.
-5. `GAPS.md` gains the `### REM-cand-26` entry and the cand-26 drift-register row is flipped to 🧯.
-
-Runnable validation (from repo root, after `git add docs/design/index.md GAPS.md`):
-- `pnpm run docs:okf`
-- `pnpm run docs:design-lint`  (catches broken internal links/anchors introduced by the paragraph rewrite)
-- `node --import tsx scripts/validate-traceability.ts`  (the real traceability gate — required because `docs/design/index.md` is touched; `scripts/relevant-check-policy.ts` triggers it on exactly this path; there is no shorter pnpm alias)
-- `pnpm agent:check -- --staged`
-
-Cross-links to update: none gained elsewhere — the edit is inside the design-suite hub itself; no other index/hub file (docs/index.md, docs/design/adr/index.md, AGENTS.md, README.md) references the old scope wording, so nothing else needs a link or text change.
-
-**Guardrails**
-
-- Documentation-only: change one paragraph in `docs/design/index.md` plus GAPS.md bookkeeping; do not edit, renumber, or reword ADR-0063/ADR-0064 themselves — their decisions stand, only the hub's summary sentence was stale.
-- Do NOT create the productization-boundary ADR here; that belongs to the cand-16/cand-17 remediations. Only link it if it already exists (verified via `docs/design/adr/index.md`), otherwise omit — never insert an `ADR-NNNN` placeholder or guess an ID.
-- Do NOT add YAML frontmatter to `docs/design/index.md` (index.md files must have none).
-- Do NOT delete or relocate the commercial-record docs or their index rows; the remediation legitimizes them as a named category, it does not remove them.
-- Keep all links relative (`./…` / `./adr/…`); do not introduce absolute or repo-root paths inside docs/design/.
-- Standing rule: the Nomad→wasmCloud pivot is accepted; nothing in this change may reopen it.
-- Commit style: conventional scoped commit (e.g. `docs(design): state both scope bounds in design-suite index (cand-26)`).
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-021-historical-remediation-plan-fa76a17909b4).
 
 ### REM-022 (for DRIFT-008)
 
@@ -915,57 +542,7 @@ Documentation-only; no code, no requirement changes, and the Nomad→wasmCloud p
 - **Evidence:** `docs/archive/requirements/index.md:20-39` · `docs/archive/requirements/requirements.md:25-35` · `docs/archive/roadmap.md:22` · `docs/design/adr/index.md:10-14`
 - **Effort:** M · **Delivery:** ✔ [HOBO-689](https://linear.app/quickdeploy-ai/issue/HOBO-689) — archive link remap in `docs/archive/requirements/*.md` and `docs/archive/roadmap.md`
 
-**Action**
-
-Amend exactly three archived docs (no files created, no docs/design/ changes, no new ADR needed — this is a pure link-remap; next free ADR ID is not consumed).
-
-FILE 1 + 2 — C:/src/hobo/docs/archive/requirements/index.md and C:/src/hobo/docs/archive/requirements/requirements.md
-Apply these literal find-replace passes IN THIS ORDER, across the whole file including the YAML frontmatter of requirements.md (its `description:` field contains a stale link):
-1. `../design/adr/08-scope-and-requirements.md#` -> `../design/adr/07-portability-extensibility.md#`  (covers adr-0018/0019/0021/0063/0064; verified those `## ADR-00xx` headings exist in 07-portability-extensibility.md)
-2. `../design/adr/04-governance-verification.md#` -> `../design/adr/02-identity-security.md#`  (covers adr-0039/0045/0046/0060/0061; requirements.md uses 0046/0061)
-3. `../design/adr/06-ai-generation-operators.md#` -> `../design/adr/03-data-plane.md#`  (covers adr-0025/0056)
-4. `../design/forge-generated-stack.md` -> `../design/generated-stack.md`  (anchors #plan-09 and #plan-23 exist in docs/design/generated-stack.md)
-5. `../design/roadmap.md` -> `../roadmap.md`  (the roadmap itself moved to docs/archive/roadmap.md; anchors #plan-08 and #per-stage-build-detail-stages-06 exist there; requirements.md has 11 such links, index.md has 1)
-6. `](../competitors/` -> `](../../competitors/`  (targets aspire/convex/humanitec/nitric/shoo/index.md all exist under docs/competitors/)
-7. LAST: `](../design/` -> `](../../design/`  (generic base-path fix for every remaining design link, ~184 in requirements.md, ~14 in index.md; do NOT touch plain-text/code-span mentions of `docs/design/*` — only occurrences prefixed by `](`)
-Then add one archive-note line:
-- index.md: append to the top blockquote (after the `**Status:**` line, as a new `>` line): `> **Archive note:** this suite was moved under docs/archive/ and its links remapped — design paths resolve via ../../design/, the roadmap lives beside this suite at ../roadmap.md, forge-generated-stack.md is now generated-stack.md, and the former ADR theme docs 04/05/06/08 were consolidated into the four current theme docs (see ../../design/adr/index.md).`
-- requirements.md: same sentence appended as a new `>` line at the end of the intro blockquote (after the current line 12). Keep the existing OKF frontmatter (type: Archived Reference) untouched apart from the pass-1/7 rewrite inside `description:`. index.md must remain frontmatter-free.
-
-FILE 3 — C:/src/hobo/docs/archive/roadmap.md
-Apply IN THIS ORDER:
-1. `](./adr/08-scope-and-requirements.md#` -> `](../design/adr/07-portability-extensibility.md#`  (3 occurrences, adr-0064)
-2. `](./adr/04-governance-verification.md#` -> `](../design/adr/02-identity-security.md#`  (6 occurrences: adr-0039/0045/0060/0061)
-3. `](./adr/05-config-matching-environments.md#` -> `](../design/adr/01-architecture-core.md#`  (1 occurrence, adr-0040)
-4. `](./forge-generated-stack.md` -> `](../design/generated-stack.md`  (13 occurrences)
-5. `](./adr/` -> `](../design/adr/`  (remaining links to theme docs 01/02/03/07 — already correctly named, only the base path changes)
-6. LAST: `](./` -> `](../design/`  (all remaining same-dir design links, ~130 occurrences; within-doc anchors use `](#...` and are untouched by this pattern)
-Then add the archive-note line directly under the existing line 10 ("This capability doc consolidates Plan 8 ..."): `> **Archive note:** this doc was moved under docs/archive/ and its links remapped — design paths resolve via ../design/, forge-generated-stack.md is now generated-stack.md, and the former ADR theme docs 04/05/08 were consolidated into the four current theme docs (see ../design/adr/index.md).` Keep its existing OKF frontmatter untouched.
-
-Hub/index files: NONE need new links — docs/index.md line 27 already links `./archive/` and docs/design/index.md line 116 already links `../archive/`; do not edit them. Do NOT extend scripts/check-design-docs.ts (DEFAULT_SCAN_PATHS) to docs/archive/ in this change — its event-family and SDK-disambiguation checks would false-positive on archived content; that is a separate optional follow-up finding.
-
-**Acceptance**
-
-All commands from repo root C:/src/hobo (use Git Bash for the node one-liner).
-1. `pnpm run docs:okf` — passes: requirements.md and roadmap.md keep non-empty `type:` frontmatter; docs/archive/requirements/index.md stays frontmatter-free.
-2. `git add docs/archive && pnpm agent:check -- --staged` — passes (staged relevant-checks lane).
-3. Traceability gate: NOT triggered — this change touches no docs/design/ file. (If any docs/design/ file were touched, the real gate is `node --import tsx scripts/validate-traceability.ts`, which `pnpm agent:check -- --staged` auto-includes per scripts/relevant-check-policy.ts lines 74/149 — there is no package.json alias for it.)
-4. Stale-pattern greps — each must produce NO output (rg exit code 1):
-   - `rg '\]\(\.\./design/' docs/archive/requirements`
-   - `rg '\]\(\./' docs/archive/roadmap.md`
-   - `rg 'forge-generated-stack' docs/archive`
-   - `rg 'adr/0[4568]-' docs/archive`
-   - `rg 'design/roadmap\.md' docs/archive`
-   - `rg '\]\(\.\./competitors/' docs/archive`
-5. Link-target resolution (must print nothing and exit 0):
-   `node -e "const fs=require('fs'),p=require('path');let bad=0;for(const f of ['docs/archive/requirements/index.md','docs/archive/requirements/requirements.md','docs/archive/roadmap.md']){const c=fs.readFileSync(f,'utf8');for(const m of c.matchAll(/\]\(([^)#\s]+\.md)/g)){const t=p.resolve(p.dirname(f),m[1]);if(!fs.existsSync(t)){bad++;console.log(f,'->',m[1]);}}}process.exit(bad?1:0)"`
-6. Spot anchor checks — each must match: `rg -c '^## ADR-0063' docs/design/adr/07-portability-extensibility.md`; `rg -c '^## Plan 09' docs/design/generated-stack.md`; `rg -c '^## Plan 08' docs/archive/roadmap.md`; `rg -c '^### Per-stage build detail' docs/archive/roadmap.md`.
-7. Each of the three files contains exactly one "**Archive note:**" line: `rg -c 'Archive note' docs/archive` shows 1 per file.
-Cross-links to update: only the three archive files themselves; docs/index.md, docs/design/index.md, and CLAUDE.md already point at docs/archive/ correctly and must not change.
-
-**Guardrails**
-
-Documentation-only: touch nothing outside docs/archive/requirements/index.md, docs/archive/requirements/requirements.md, docs/archive/roadmap.md. Do not move the archived docs back under docs/design/ and do not reverse any archive/pivot decision (Nomad->wasmCloud pivot is accepted and unrelated). Do not create or renumber ADRs; do not edit docs/design/adr/* or any docs/design/ file (that would trigger the traceability gate needlessly). Do not modify scripts/check-design-docs.ts or any script. Preserve existing OKF frontmatter (`type: Archived Reference`) on requirements.md and roadmap.md; keep docs/archive/requirements/index.md free of frontmatter. Apply the find-replace passes in the exact order given (specific renames/retargets BEFORE the generic `](../design/` -> `](../../design/` and `](./` -> `](../design/` passes, otherwise the generic pass corrupts the specific targets). Preserve all `#anchor` fragments verbatim (lowercase); only file paths change except where the mapping table says the ADR theme filename changes. Do not "fix" plain-text or code-span mentions like `docs/design/0–36` — only markdown link targets starting with `](`.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-024-historical-remediation-plan-72057e165f94).
 
 ### REM-025 (for GAP-017)
 
@@ -973,52 +550,7 @@ Documentation-only: touch nothing outside docs/archive/requirements/index.md, do
 - **Evidence:** `docs/design/glossary.md:10-14` · `docs/design/finops-budget-routing-control-plane.md:51-83` · `docs/design/glossary.md:49-62` · `docs/design/index.md:24`
 - **Effort:** S · **Delivery:** ✔ [HOBO-690](https://linear.app/quickdeploy-ai/issue/HOBO-690) — seven FinOps/Crew rows in `docs/design/glossary.md`
 
-**Action**
-
-Amend ONE existing file: `docs/design/glossary.md` (keep its existing OKF frontmatter untouched; do NOT create any new file, ADR, or index row — the glossary is already linked from `docs/design/index.md` line "The canonical term source is [`glossary.md`](./glossary.md)").
-
-Insert exactly 7 new rows into the existing `| Term | Definition |` table, preserving the table's alphabetical ordering (backticked `@hobo/*`/`hobo:sdk` rows stay at the bottom). Exact rows and placement:
-
-1. Between `| Contract Manifest | ... |` and `| Cross-App Access | ... |` insert:
-`| Crew | Alias for Operator Agents — the built-in autonomous Yard services roster; see the Operator Agents row and [operators-sre.md](./operators-sre.md#plan-40). |`
-
-2. Between `| Cross-App Access | ... |` and `| Delta | ... |` insert:
-`| Decision graph | Per-decision explainability artifact (\`DecisionGraph\`) emitted by the FinOps routing control plane, recording candidates generated/rejected, constraint results, policy outcomes, metric vectors, Pareto frontier, preference result, stability decision, rationale, and audit references; DX/OpsX/FinX surfaces read this same graph ([finops-budget-routing-control-plane.md](./finops-budget-routing-control-plane.md)). |`
-
-3. Between `| Driver | ... |` and `| Environment group | ... |` insert:
-`| DX / OpsX / FinX surfaces | The three FinOps control-plane product surfaces over the same decision graph: DX (intent spec, dry-run preview, simulation, "why this placement?"), OpsX (override, freeze, rollback, migrate, incident reroute, blast-radius controls), and FinX (budgets, forecasts, attribution, anomaly signals, commitments, optimization recommendations). |`
-
-4. Between `| Meta-cloud Broker | ... |` and `| Obligation | ... |` insert:
-`| Metric contract | Governed definition (\`MetricContract\`) of a routing metric's semantics, units, source, normalization, and version under the three-tier model: Tier 0 immutable system metrics, Tier 1 derived metrics via approved transforms, Tier 2 composition-only approved user metrics. |`
-
-5. Immediately after the new `Metric contract` row insert:
-`| MetricVector | Per-candidate vector of metric-contract values (cost, reliability, latency, risk, approved custom metrics) evaluated after constraint filtering and used to build the Pareto frontier. |`
-
-6. Between `| Operator Agents | ... |` and `| Planner | ... |` insert:
-`| Pareto frontier | Non-dominated candidate set (\`ParetoFrontier\`) built across metric dimensions; preference weights select only within it — the router never uses one global weighted score, and a stability controller may still override the preferred candidate. |`
-
-7. Between `| ResourceActor | ... |` and `| Run | ... |` insert:
-`| ResourceIntent | Provider-neutral infrastructure request that enters the FinOps routing pipeline as its canonical input, before candidate generation; the router core must not see provider names, SKUs, regions, account IDs, or backend API names. |`
-
-Do NOT edit `docs/design/finops-budget-routing-control-plane.md`, `docs/design/index.md`, or `docs/design/operators-sre.md`. Do NOT add a design-lint rule in this change; if desired, record the sketch's lint idea ("terms coined/bolded in capability docs must appear in the glossary") only as an optional follow-up note in the Linear issue body, not as code.
-
-**Acceptance**
-
-Checklist:
-1. `docs/design/glossary.md` gains exactly 7 rows (Crew, Decision graph, DX / OpsX / FinX surfaces, Metric contract, MetricVector, Pareto frontier, ResourceIntent) at the alphabetical positions listed in the action; no existing row is removed, reworded, or reordered; frontmatter unchanged.
-2. No term duplicates an existing Term-column entry (the `docs:design-lint` gate fails on `duplicate-glossary-term`).
-3. Relative links used in the new rows resolve from `docs/design/`: `./operators-sre.md#plan-40` and `./finops-budget-routing-control-plane.md` (both files exist in the same directory).
-4. No new files created, so no index/hub links need to change; `docs/design/index.md` already links the glossary.
-
-Runnable validation commands (from repo root, after `pnpm run setup` if needed):
-- `pnpm run docs:okf`
-- `pnpm run docs:design-lint` (this is the gate that owns the glossary table: duplicate terms, broken relative links/anchors)
-- `pnpm agent:check -- --staged` (stage the glossary change first with `git add docs/design/glossary.md`)
-- `node --import tsx scripts/validate-traceability.ts` (traceability gate; there is no pnpm alias for it in package.json — this is the exact command CONTRIBUTING.md and the PR template use; run it because `docs/design/` is touched, expect it to pass unchanged)
-
-**Guardrails**
-
-Documentation-only change: touch a single existing file, no code, no new lint rules, no changes to scripts/. Never renumber or reword existing glossary rows or ADRs; only insert rows. Keep the table's one-sentence definition style and escape any literal pipe characters inside definitions. Use relative `.md` links only (same-directory `./` form). Do not touch the Nomad->wasmCloud pivot or any runtime decisions. Do not add frontmatter changes to glossary.md and do not add frontmatter to any index.md. If `docs:design-lint` flags a duplicate term, resolve by merging into the existing row rather than renaming the canonical term.
+Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-025-historical-remediation-plan-16e40bfbcc66).
 
 ### REM-004 (for GAP-001)
 
