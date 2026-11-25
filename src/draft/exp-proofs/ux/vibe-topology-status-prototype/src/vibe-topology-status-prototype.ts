@@ -141,7 +141,7 @@ export interface VibeTopologyStatusPrototype {
   readonly issue: "HOBO-561";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-topology-status-prototype";
-  readonly proofNote: "docs/design/proofs/vibe-topology-status-prototype/README.md";
+  readonly proofNote: "https://linear.app/quickdeploy-ai/document/topology-status-prototype-proof-archived-1dafb5c52eb4";
   readonly designRefs: readonly string[];
   readonly sourceDependencies: readonly TopologyStatusSourceDependency[];
   readonly quickstartFixtureRefs: readonly TopologyStatusQuickstartFixtureRef[];
@@ -253,7 +253,7 @@ export const VIBE_TOPOLOGY_STATUS_PROTOTYPE = {
   issue: "HOBO-561",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ux/vibe-topology-status-prototype",
-  proofNote: "docs/design/proofs/vibe-topology-status-prototype/README.md",
+  proofNote: "https://linear.app/quickdeploy-ai/document/topology-status-prototype-proof-archived-1dafb5c52eb4",
   designRefs: [
     "docs/design/deployment-dashboard-topology-explorer.md",
     "docs/design/developer-experience.md#plan-07",
@@ -473,7 +473,7 @@ export function parseVibeTopologyStatusPrototype(value: JsonValue): VibeTopology
   );
   expectLiteral(
     prototype.proofNote,
-    "docs/design/proofs/vibe-topology-status-prototype/README.md",
+    "https://linear.app/quickdeploy-ai/document/topology-status-prototype-proof-archived-1dafb5c52eb4",
     "proofNote",
   );
 

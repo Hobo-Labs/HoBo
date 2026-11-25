@@ -27,7 +27,7 @@ describe("HOBO-560 plan/diff review prototype", () => {
     );
     assert.equal(
       prototype.proofNote,
-      "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+      "https://linear.app/quickdeploy-ai/document/plan-diff-review-prototype-proof-archived-5c92d7f5beb8",
     );
     assert.deepEqual(
       prototype.goldenFixtures.map((fixture) => fixture.state),
