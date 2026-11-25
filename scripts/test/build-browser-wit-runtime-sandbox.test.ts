@@ -38,17 +38,29 @@ describe("browser WIT componentize sandbox", () => {
 		expect(source).toMatch(/witPath:\s*hostWitPath/);
 		expect(source).toMatch(/sourcePath:\s*hostSourcePath/);
 		expect(source).not.toMatch(/process\.chdir\(workRoot\)/);
-		expect(source).toMatch(/resolveComponentizeHostWitPath/);
+		expect(source).toMatch(/await resolveComponentizeHostWitPath/);
 		expect(source).toMatch(/copyHostWitTreeIntoWorkRoot/);
-		expect(source).toMatch(/logBrowserWitComponentizeToolchain/);
+		expect(source).toMatch(/assertSandboxWitBeforeComponentize/);
+		expect(source).toMatch(/createBrowserWitComponentizeWorkRoot/);
+		expect(source).toMatch(/logBrowserWitReleaseEnvironment/);
+		expect(source).not.toMatch(/mkdtemp\(path\.join\(tmpdir\(\)/);
 	});
 
-	it("resolveComponentizeHostWitPath returns an absolute path under workRoot", () => {
-		const workRoot = path.join(tmpdir(), "hobo-browser-wit-test");
-		const sandbox = componentizeWitDirUnderWorkRoot(workRoot);
-		const resolved = resolveComponentizeHostWitPath(sandbox);
-		expect(path.isAbsolute(resolved)).toBe(true);
-		expect(witPathIsUnderWorkRoot(resolved, workRoot)).toBe(true);
+	it("resolveComponentizeHostWitPath returns an absolute real path under workRoot", async () => {
+		const workRoot = await import("node:fs/promises").then((fs) =>
+			fs.mkdtemp(path.join(tmpdir(), "hobo-browser-wit-test-")),
+		);
+		try {
+			const sandbox = componentizeWitDirUnderWorkRoot(workRoot);
+			await mkdir(sandbox, { recursive: true });
+			const resolved = await resolveComponentizeHostWitPath(sandbox);
+			expect(path.isAbsolute(resolved)).toBe(true);
+			expect(witPathIsUnderWorkRoot(resolved, workRoot)).toBe(true);
+		} finally {
+			await import("node:fs/promises").then((fs) =>
+				fs.rm(workRoot, { recursive: true, force: true }),
+			);
+		}
 	});
 
 	it("guest source must use the fixed name under workRoot", () => {

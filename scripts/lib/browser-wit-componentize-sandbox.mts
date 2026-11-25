@@ -1,4 +1,4 @@
-import { cp, readdir, readFile, stat } from "node:fs/promises";
+import { cp, readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { assertReleasePagesBrowserRuntimeWit } from "./release-pages-wit.mts";
@@ -10,8 +10,10 @@ export function componentizeWitDirUnderWorkRoot(workRoot: string): string {
 	return path.join(workRoot, SANDBOX_WIT_DIR_NAME);
 }
 
-export function resolveComponentizeHostWitPath(sandboxWitDir: string): string {
-	return path.resolve(sandboxWitDir);
+export async function resolveComponentizeHostWitPath(
+	sandboxWitDir: string,
+): Promise<string> {
+	return realpath(path.resolve(sandboxWitDir));
 }
 
 export function guestSourcePathInWorkRoot(workRoot: string): string {
@@ -24,12 +26,10 @@ export function assertGuestSourceUnderWorkRoot(
 ): void {
 	const resolvedSource = path.resolve(sourcePath);
 	const resolvedRoot = path.resolve(workRoot);
-	const relative = path.relative(resolvedRoot, resolvedSource);
-	if (
-		relative === "" ||
-		relative.startsWith("..") ||
-		path.isAbsolute(relative)
-	) {
+	const rootPrefix = resolvedRoot.endsWith(path.sep)
+		? resolvedRoot
+		: `${resolvedRoot}${path.sep}`;
+	if (!resolvedSource.startsWith(rootPrefix)) {
 		throw new Error(
 			`browser-wit: componentize sourcePath must live under workRoot (${workRoot}); got ${sourcePath}`,
 		);

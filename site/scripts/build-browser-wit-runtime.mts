@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import {
 	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
+	realpath,
 	rename,
 	rm,
 	writeFile,
@@ -13,6 +13,7 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { logBrowserWitReleaseEnvironment } from "../../scripts/lib/browser-wit-componentize-diagnostics.mts";
 import {
 	assertGuestSourceUnderWorkRoot,
 	assertSandboxWitBeforeComponentize,
@@ -24,6 +25,10 @@ import {
 	logBrowserWitComponentizeToolchain,
 	resolveBrowserWitComponentizeToolchain,
 } from "../../scripts/lib/browser-wit-toolchain.mts";
+import {
+	createBrowserWitComponentizeWorkRoot,
+	removeBrowserWitWorkRoot,
+} from "../../scripts/lib/browser-wit-work-root.mts";
 import { loadExamplesCatalog } from "../src/lib/examples/catalog.js";
 import { buildBrowserStationGuestSource } from "../src/lib/examples/runtime/guest-source.js";
 import {
@@ -102,13 +107,14 @@ export async function buildBrowserWitRuntime(
 		process.stderr.write("browser-wit: verified runtime cache hit\n");
 		return { outputRoot, componentDigest: cached };
 	}
-	const workRoot = await mkdtemp(path.join(tmpdir(), "hobo-browser-wit-"));
+	const { logical: workRootLogical, canonical: workRoot } =
+		await createBrowserWitComponentizeWorkRoot(REPO_ROOT);
 	const outputParent = path.dirname(outputRoot);
 	await mkdir(outputParent, { recursive: true });
 	const staging = await mkdtemp(path.join(outputParent, ".runtime-build-"));
 	const cleanup = async () => {
 		await Promise.all([
-			rm(workRoot, { recursive: true, force: true }),
+			removeBrowserWitWorkRoot(workRootLogical),
 			rm(staging, { recursive: true, force: true }),
 		]);
 	};
@@ -126,7 +132,7 @@ export async function buildBrowserWitRuntime(
 			process.env.GITHUB_SHA?.trim() ||
 			"HEAD";
 		const sandboxWitDir = await copyHostWitTreeIntoWorkRoot(WIT_DIR, workRoot);
-		const hostWitPath = resolveComponentizeHostWitPath(sandboxWitDir);
+		const hostWitPath = await resolveComponentizeHostWitPath(sandboxWitDir);
 		assertGuestSourceUnderWorkRoot(guestPath, workRoot);
 		await assertSandboxWitBeforeComponentize(
 			sandboxWitDir,
@@ -135,7 +141,17 @@ export async function buildBrowserWitRuntime(
 			WIT_DIR,
 			gitRef,
 		);
-		const hostSourcePath = path.resolve(guestPath);
+		const hostSourcePath = await realpath(guestPath);
+		await logBrowserWitReleaseEnvironment({
+			repoRoot: REPO_ROOT,
+			workRoot,
+			workRootLogical,
+			toolchain: {
+				componentize: toolchain.componentize,
+				componentizePackageRoot: toolchain.componentizePackageRoot,
+				versions: toolchain.versions,
+			},
+		});
 		logBrowserWitComponentizeToolchain(
 			{
 				componentize: toolchain.componentize,
@@ -364,7 +380,8 @@ async function readPackageVersion(packageJsonPath: string): Promise<string> {
 	if (Object.prototype.toString.call(manifest.version) !== "[object String]") {
 		throw new Error(`Toolchain package has no version: ${packageJsonPath}`);
 	}
-	return manifest.version;
+	// SAFETY: `manifest.version` was verified to be a string above.
+	return manifest.version as string;
 }
 
 function sha256(bytes: Uint8Array): `sha256:${string}` {

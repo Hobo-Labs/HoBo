@@ -61,16 +61,16 @@ passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 `HEAD` by blob id, log `ls -la` on the wit tree, and fail closed when the file is absent,
 empty, or stale. [`build-release-site-prebuild.mts`](build-release-site-prebuild.mts)
 re-runs the same assertion against `HOBO_RELEASE_CHECKOUT_REF` immediately before turbo
-builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) (via
-[`browser-wit-componentize-sandbox.mts`](../lib/browser-wit-componentize-sandbox.mts) and
-[`browser-wit-toolchain.mts`](../lib/browser-wit-toolchain.mts)) copies that wit tree into
-the temp `hobo-browser-wit-*` workRoot, logs resolved `componentize-js` / `jco` versions, and
-passes **host-absolute** `witPath` and `sourcePath` into the same `componentize-js` entry the
-release build resolves under `@hobo/runtime-wasm`. Wizer `--mapdir=/::dirname(source)` only
-preopens the JS source directory; `witPath` is read host-side (`maybeWindowsPath` → `path.resolve`).
-Release `ENOENT` failures traced to sparse wit trees or stale runner worktrees (#2995–#2997), not
-absolute `/tmp/.../wit` paths. Relative `wit` without a matching cwd fails (`os error 44`); the build
-does not mutate `process.cwd`.
+builds site `examples:runtime`. [`build-browser-wit-runtime.mts`](../../site/scripts/build-browser-wit-runtime.mts) copies the wit tree
+into a workspace-local work root (`.cache/browser-wit-componentize/`, then `realpath`), not `os.tmpdir()`,
+before componentize. [`browser-wit-componentize-diagnostics.mts`](../lib/browser-wit-componentize-diagnostics.mts)
+logs `componentize-js` / `preview2-shim` resolution, `TMPDIR`, `/tmp` mount metadata, runner identity,
+and container hints on the release path. Host `readFile` on sandbox `station.wit` passing while
+componentize fails indicates a **host vs WASI/preview2-shim view mismatch** (not only sparse checkout:
+#2995–#2997 still materialize and byte-compare before componentize). PR job
+`release-pages-browser-wit-smoke` on the **`hobo`** runner runs
+[`build-release-browser-wit-on-runner.mts`](build-release-browser-wit-on-runner.mts) — the same
+prebuild + `examples:runtime` chain as Pages publish, without pushing gh-pages.
 
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in

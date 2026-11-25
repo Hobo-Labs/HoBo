@@ -87,7 +87,7 @@ export function logBrowserWitComponentizeToolchain(
 		`browser-wit: toolchain jco@${toolchain.versions.jco} componentize-js@${toolchain.versions.componentizeJs} esbuild@${toolchain.versions.esbuild} (resolved ${toolchain.componentizePackageRoot})\n`,
 	);
 	process.stderr.write(
-		`browser-wit: componentize host paths workRoot=${context.workRoot} source=${context.sourcePath} wit=${context.witPath} (wizer --mapdir=/::dirname(source); wit is host-resolved, not guest-only)\n`,
+		`browser-wit: componentize canonical paths workRoot=${context.workRoot} source=${context.sourcePath} wit=${context.witPath} (wizer --mapdir=/::dirname(source))\n`,
 	);
 }
 

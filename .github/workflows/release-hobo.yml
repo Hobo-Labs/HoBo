@@ -27,6 +27,7 @@ on:
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
+      - "scripts/ci/build-release-browser-wit-on-runner.mts"
       - "scripts/ci/publish-npm-sdk.mts"
       - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
@@ -62,6 +63,7 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
+      - "scripts/test/build-release-browser-wit-on-runner.test.ts"
       - "scripts/test/release-freight.test.ts"
       - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
@@ -105,6 +107,7 @@ on:
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
       - "scripts/ci/build-release-site-prebuild.mts"
+      - "scripts/ci/build-release-browser-wit-on-runner.mts"
       - "scripts/ci/publish-npm-sdk.mts"
       - "scripts/test/publish-npm-sdk.test.ts"
       - "scripts/ci/resolve-release-version.mts"
@@ -140,6 +143,7 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
+      - "scripts/test/build-release-browser-wit-on-runner.test.ts"
       - "scripts/test/release-freight.test.ts"
       - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
@@ -440,6 +444,7 @@ jobs:
           scripts/test/stage-release-oci-app.test.ts
           scripts/test/stage-sdk-artifacts.test.ts
           scripts/test/build-release-site-prebuild.test.ts
+          scripts/test/build-release-browser-wit-on-runner.test.ts
           scripts/test/nbgv-release-version.test.ts
           scripts/test/release-freight.test.ts
           scripts/test/release-freight-cli.test.ts
@@ -563,6 +568,56 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
+
+  release-pages-browser-wit-smoke:
+    name: Pages browser-wit build (hobo runner)
+    needs: route
+    if: >-
+      !cancelled() && needs.route.result == 'success' &&
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 30
+    env:
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.sha }}
+      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_TURBO_CONCURRENCY: "1"
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
+          materialize-paths: ${{ env.RELEASE_PAGES_MATERIALIZE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Componentize browser WIT runtime (Pages release path)
+        env:
+          XDG_CACHE_HOME: ${{ runner.temp }}/xdg-cache
+        run: |
+          set -euo pipefail
+          mkdir -p "$XDG_CACHE_HOME"
+          node --no-warnings scripts/ci/build-release-browser-wit-on-runner.mts
 
   # The offline proof of the release realizer path: the built hobo CD
   # composition with release/hobo-release.delivery.ts as topology, against the
@@ -1796,7 +1851,7 @@ jobs:
   release-pr-gate:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [route, release-contract, release-realize]
+    needs: [route, release-contract, release-realize, release-pages-browser-wit-smoke]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1806,6 +1861,7 @@ jobs:
         env:
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
           REALIZE_RESULT: ${{ needs.release-realize.result }}
+          BROWSER_WIT_SMOKE_RESULT: ${{ needs.release-pages-browser-wit-smoke.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1829,6 +1885,10 @@ jobs:
           # The realize proof has no local attestation: it must pass here.
           if [ "${REALIZE_RESULT:-}" != "success" ]; then
             echo "::error::Release Freight realize proof must pass (result=${REALIZE_RESULT:-})"
+            exit 1
+          fi
+          if [ "${BROWSER_WIT_SMOKE_RESULT:-}" != "success" ]; then
+            echo "::error::Pages browser-wit build on hobo runner must pass (result=${BROWSER_WIT_SMOKE_RESULT:-})"
             exit 1
           fi
           case "${CONTRACT_RESULT:-}" in

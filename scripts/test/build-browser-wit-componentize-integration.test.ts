@@ -1,39 +1,30 @@
 import { spawnSync } from "node:child_process";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+const repoRoot = path.join(import.meta.dirname, "..", "..");
 const worker = path.join(
 	import.meta.dirname,
-	"browser-wit-componentize-integration-worker.mts",
+	"browser-wit-production-build-worker.mts",
 );
 
-function runWorker(mode: "absolute" | "relative-wit"): void {
-	const result = spawnSync(
-		process.execPath,
-		["--import", "tsx", worker, mode],
-		{
-			cwd: path.join(import.meta.dirname, "..", ".."),
+describe("browser WIT production build integration", () => {
+	it("buildBrowserWitRuntime on production env (release entry)", async () => {
+		const xdg = await mkdtemp(path.join(tmpdir(), "browser-wit-xdg-"));
+		const result = spawnSync(process.execPath, ["--import", "tsx", worker], {
+			cwd: repoRoot,
 			encoding: "utf8",
-			env: process.env,
-		},
-	);
-	expect(result.status, result.stderr || result.stdout).toBe(0);
-	if (mode === "absolute") {
-		const bytes = Number.parseInt(result.stdout.trim(), 10);
-		expect(bytes).toBeGreaterThan(0);
-	}
-}
-
-describe("browser WIT componentize integration (componentize-js host witPath)", () => {
-	it(
-		"absolute sandbox wit and source paths componentize (HoBo release path)",
-		() => runWorker("absolute"),
-		180_000,
-	);
-
-	it(
-		"relative wit without cwd mutation fails closed (regression of #2999)",
-		() => runWorker("relative-wit"),
-		180_000,
-	);
+			timeout: 300_000,
+			maxBuffer: 10 * 1024 * 1024,
+			env: {
+				...process.env,
+				HOBO_RELEASE_CHECKOUT_REF: "HEAD",
+				XDG_CACHE_HOME: xdg,
+			},
+		});
+		expect(result.status, result.stderr || result.stdout).toBe(0);
+		expect(result.stdout.trim()).toMatch(/^sha256:[0-9a-f]{64}$/);
+	}, 330_000);
 });
