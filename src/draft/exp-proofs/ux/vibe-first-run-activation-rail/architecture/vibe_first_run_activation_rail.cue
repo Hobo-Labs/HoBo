@@ -45,7 +45,7 @@ package vibe_first_run_activation_rail
   issue: "HOBO-540"
   phase: "M1"
   targetPackage: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail"
-  proofNote: "docs/design/proofs/vibe-first-run-activation-rail/README.md"
+  proofNote: "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6"
   designRefs: [...string] & len(_) > 0
   scopeOut: [...string] & len(_) >= 5
   wireframes: [...#ActivationRailWireframe]

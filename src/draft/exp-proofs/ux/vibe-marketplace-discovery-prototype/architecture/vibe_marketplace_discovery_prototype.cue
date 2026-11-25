@@ -61,7 +61,7 @@ import "list"
 	issue:         "HOBO-562"
 	phase:         "M2"
 	targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype"
-	proofNote:     "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md"
+	proofNote:     "https://linear.app/quickdeploy-ai/document/hobo-562-vibe-marketplace-discovery-prototype-proof-archived-abac9a541f32"
 	designRefs:    [...string] & list.MinItems(1)
 	sourceIssues:  [...#SourceIssue] & list.MinItems(3)
 	catalog:       [...#CatalogFixture] & list.MinItems(6)

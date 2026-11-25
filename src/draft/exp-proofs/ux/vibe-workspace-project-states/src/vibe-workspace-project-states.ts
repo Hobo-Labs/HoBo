@@ -112,7 +112,7 @@ export type VibeWorkspaceProjectStateModel = {
   readonly issue: "HOBO-541";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-workspace-project-states";
-  readonly proofNote: "docs/design/proofs/vibe-workspace-project-states/README.md";
+  readonly proofNote: "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2";
   readonly designRefs: readonly string[];
   readonly scopeOut: readonly string[];
   readonly modeNotes: readonly WorkspaceProjectModeNote[];
@@ -138,7 +138,7 @@ export const VIBE_WORKSPACE_PROJECT_STATE_MODEL = {
   issue: "HOBO-541",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/ux/vibe-workspace-project-states",
-  proofNote: "docs/design/proofs/vibe-workspace-project-states/README.md",
+  proofNote: "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
@@ -410,7 +410,7 @@ export function parseVibeWorkspaceProjectStateModel(
   );
   assertLiteral(
     model.proofNote,
-    "docs/design/proofs/vibe-workspace-project-states/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2",
     "proofNote",
   );
   assertNonEmptyStringArray(model.designRefs, "designRefs");

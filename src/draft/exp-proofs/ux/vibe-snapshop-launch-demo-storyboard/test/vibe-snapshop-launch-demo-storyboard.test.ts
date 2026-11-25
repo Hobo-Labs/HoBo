@@ -29,7 +29,7 @@ test("HOBO-555 pins issue, target paths, story steps, and proof modes", () => {
   );
   assert.equal(
     parsed.proofPath,
-    "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-555-vibe-snapshop-launch-demo-storyboard-proof-archived-5d82dfd337b7",
   );
   assert.deepEqual(
     parsed.storyboardSteps.map((step) => step.id),

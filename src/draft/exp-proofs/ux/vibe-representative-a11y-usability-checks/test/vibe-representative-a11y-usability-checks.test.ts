@@ -30,7 +30,7 @@ describe("vibe representative accessibility and usability checks", () => {
     );
     assert.equal(
       parsed.proofPath,
-      "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md",
+      "https://linear.app/quickdeploy-ai/document/hobo-565-vibe-representative-a11y-usability-checks-proof-archived-fdb735638204",
     );
     assert.deepEqual(
       parsed.artifactChecks.map((artifact) => artifact.artifact),

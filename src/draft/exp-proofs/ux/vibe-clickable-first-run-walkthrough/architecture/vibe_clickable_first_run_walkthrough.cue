@@ -9,14 +9,14 @@ package architecture_evidence
 #VibeClickableFirstRunConsumedActivationRail: {
 	source_issue: "HOBO-540"
 	package_path: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail"
-	proof_path:   "docs/design/proofs/vibe-first-run-activation-rail/README.md"
+	proof_path:   "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6"
 	stages:       [...string]
 }
 
 #VibeClickableFirstRunConsumedWorkspaceProjectStates: {
 	source_issue: "HOBO-541"
 	package_path: "src/draft/exp-proofs/ux/vibe-workspace-project-states"
-	proof_path:   "docs/design/proofs/vibe-workspace-project-states/README.md"
+	proof_path:   "https://linear.app/quickdeploy-ai/document/hobo-541-vibe-workspace-project-states-proof-archived-07098524afc2"
 	states:       [...string]
 }
 

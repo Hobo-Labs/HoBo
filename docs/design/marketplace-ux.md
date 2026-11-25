@@ -163,7 +163,7 @@ HOBO-562 branch evidence for the deterministic marketplace discovery and
 install-intent prototype lives in
 [`src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype`](../../src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype/README.md)
 and
-[`proofs/vibe-marketplace-discovery-prototype`](./proofs/vibe-marketplace-discovery-prototype/README.md).
+[`proofs/vibe-marketplace-discovery-prototype`](https://linear.app/quickdeploy-ai/document/hobo-562-vibe-marketplace-discovery-prototype-proof-archived-abac9a541f32).
 It composes accepted HOBO-546 mockup fixtures, HOBO-547 trust-copy fixtures, and
 HOBO-577 quickstart fixture ids into preview-only, limited-beta, installable,
 policy-blocked, deprecated, and yanked discovery paths. The proof is still a

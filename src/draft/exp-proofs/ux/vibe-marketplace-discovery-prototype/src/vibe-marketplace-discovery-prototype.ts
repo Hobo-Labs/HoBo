@@ -124,7 +124,7 @@ export type MarketplaceDiscoveryPrototype = {
   readonly issue: "HOBO-562";
   readonly phase: "M2";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype";
-  readonly proofNote: "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md";
+  readonly proofNote: "https://linear.app/quickdeploy-ai/document/hobo-562-vibe-marketplace-discovery-prototype-proof-archived-abac9a541f32";
   readonly designRefs: readonly string[];
   readonly sourceIssues: readonly MarketplaceDiscoverySourceIssue[];
   readonly catalog: readonly MarketplaceDiscoveryCatalogFixture[];
@@ -162,7 +162,7 @@ export const MARKETPLACE_DISCOVERY_PROTOTYPE: MarketplaceDiscoveryPrototype = {
   issue: "HOBO-562",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype",
-  proofNote: "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md",
+  proofNote: "https://linear.app/quickdeploy-ai/document/hobo-562-vibe-marketplace-discovery-prototype-proof-archived-abac9a541f32",
   designRefs: [
     "docs/design/marketplace-ux.md",
     "docs/design/org-catalogs.md",
@@ -455,7 +455,7 @@ export function validateMarketplaceDiscoveryPrototype(
   if (prototype.targetPackage !== "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype") {
     errors.push({ code: "wrong-package", message: "target package drifted" });
   }
-  if (prototype.proofNote !== "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md") {
+  if (prototype.proofNote !== "https://linear.app/quickdeploy-ai/document/hobo-562-vibe-marketplace-discovery-prototype-proof-archived-abac9a541f32") {
     errors.push({ code: "wrong-proof-note", message: "target proof note drifted" });
   }
 

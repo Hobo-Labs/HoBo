@@ -111,7 +111,7 @@ export type VibeRepresentativeA11yUsabilityChecks = {
   readonly issue: "HOBO-565";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks";
-  readonly proofPath: "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-565-vibe-representative-a11y-usability-checks-proof-archived-fdb735638204";
   readonly designRefs: readonly string[];
   readonly sourceIssues: readonly RepresentativeSourceIssue[];
   readonly quickstartFixtureRefs: readonly RepresentativeQuickstartFixtureReference[];
@@ -311,7 +311,7 @@ export const VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS: VibeRepresentativeA11yUs
   issue: "HOBO-565",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks",
-  proofPath: "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-565-vibe-representative-a11y-usability-checks-proof-archived-fdb735638204",
   designRefs: [
     "docs/design/accessibility-usability-launch-baseline.md",
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
@@ -441,7 +441,7 @@ export function validateVibeRepresentativeA11yUsabilityChecks(
   if (checks.packagePath !== "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (checks.proofPath !== "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md") {
+  if (checks.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-565-vibe-representative-a11y-usability-checks-proof-archived-fdb735638204") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(checks.sourceIssues, REQUIRED_REPRESENTATIVE_SOURCE_ISSUES)) {

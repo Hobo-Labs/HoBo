@@ -78,7 +78,7 @@ export type VibeFirstRunActivationRail = {
   readonly issue: "HOBO-540";
   readonly phase: "M1";
   readonly targetPackage: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail";
-  readonly proofNote: "docs/design/proofs/vibe-first-run-activation-rail/README.md";
+  readonly proofNote: "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6";
   readonly designRefs: readonly string[];
   readonly scopeOut: readonly string[];
   readonly wireframes: readonly ActivationRailWireframe[];
@@ -102,7 +102,7 @@ export const VIBE_FIRST_RUN_ACTIVATION_RAIL = {
   issue: "HOBO-540",
   phase: "M1",
   targetPackage: "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
-  proofNote: "docs/design/proofs/vibe-first-run-activation-rail/README.md",
+  proofNote: "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
     "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
@@ -312,7 +312,7 @@ export function parseVibeFirstRunActivationRail(value: JsonValue): VibeFirstRunA
   );
   assertLiteral(
     value.proofNote,
-    "docs/design/proofs/vibe-first-run-activation-rail/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-540-vibe-first-run-activation-rail-proof-archived-bc191bfcb3e6",
     "proofNote",
   );
   assertNonEmptyStringArray(value.designRefs, "designRefs");

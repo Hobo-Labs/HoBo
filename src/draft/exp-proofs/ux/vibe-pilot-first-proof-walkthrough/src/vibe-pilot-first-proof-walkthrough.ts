@@ -79,7 +79,7 @@ type VibePilotFirstProofWalkthrough = {
   readonly issue: "HOBO-563";
   readonly phase: "M2";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough";
-  readonly proofPath: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-563-vibe-pilot-first-proof-walkthrough-proof-archived-1e8feb2e1840";
   readonly designRefs: readonly string[];
   readonly consumedStoryboard: ConsumedStoryboard;
   readonly steps: readonly WalkthroughStep[];
@@ -100,7 +100,7 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
   issue: "HOBO-563",
   phase: "M2",
   packagePath: "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough",
-  proofPath: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-563-vibe-pilot-first-proof-walkthrough-proof-archived-1e8feb2e1840",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3",
     "https://linear.app/quickdeploy-ai/document/workspace-and-onboarding-ux-scope-and-acceptance-archived-2ab506908a35",
@@ -260,7 +260,7 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
   supportHandoffEvidence: {
     severity: "SEV3 pilot workflow blocked",
     redactionState: "customer-safe redacted evidence only",
-    evidenceLink: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
+    evidenceLink: "https://linear.app/quickdeploy-ai/document/hobo-563-vibe-pilot-first-proof-walkthrough-proof-archived-1e8feb2e1840",
     nextUpdateCondition: "support updates customer when owner route accepts evidence or blocker status changes",
   },
   accessibilityNotes: [
@@ -331,7 +331,7 @@ export function validateVibePilotFirstProofWalkthrough(
   if (walkthrough.packagePath !== "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (walkthrough.proofPath !== "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md") {
+  if (walkthrough.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-563-vibe-pilot-first-proof-walkthrough-proof-archived-1e8feb2e1840") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
 
