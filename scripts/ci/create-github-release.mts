@@ -54,7 +54,7 @@ const {
 	ReleaseFreightBlockedError,
 	releaseFreightLogFragment,
 	releaseFreightStructuredFromFields,
-	sanitizeReleaseFreightVerdictCodes,
+	releaseFreightVerdictCodesForAnnounce,
 } = releaseFreightDetail;
 
 // ── Release Freight ─────────────────────────────────────────────────────────
@@ -1005,11 +1005,16 @@ export function announceVerdict(
 	verdict: ReleaseVerdict,
 	env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-	const codes = sanitizeReleaseFreightVerdictCodes(verdict.codes);
+	const fragment = releaseFreightLogFragment(verdict.message);
+	const codes = releaseFreightVerdictCodesForAnnounce(
+		verdict.codes,
+		fragment.length > 0 ? fragment : verdict.message,
+	);
 	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(family, channel)}: ${verdict.outcome} (${codes.join(", ") || "none"})`;
 	const allowed = verdict.outcome === "qualified";
 	if (!allowed) {
-		const detail = releaseFreightLogFragment(verdict.message);
+		const detail =
+			fragment.length > 0 && !codes.includes(fragment) ? fragment : "";
 		console.error(detail ? `::error::${line} ${detail}` : `::error::${line}`);
 	} else console.log(line);
 	if (env.GITHUB_STEP_SUMMARY)
