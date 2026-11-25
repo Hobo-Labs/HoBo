@@ -52,6 +52,10 @@ Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
 
+Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
+(`examples` covers `examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
+nested file paths through `sparse-checkout add`, not cone `set`.
+
 [`ensure-ci-worker-image.mts`](ensure-ci-worker-image.mts) materialize and digest
 resolution contracts are exercised in
 [`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).

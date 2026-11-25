@@ -98,11 +98,23 @@ runs:
           done
           return 1
         }
+        looks_like_nested_file() {
+          local candidate="$1"
+          case "$candidate" in
+            */*)
+              local base="${candidate##*/}"
+              case "$base" in
+                *.*) return 0 ;;
+              esac
+              ;;
+          esac
+          return 1
+        }
         dir_cones=()
         checkout_root=()
         while IFS= read -r path; do
           [ -z "$path" ] && continue
-          if is_root_file "$path"; then
+          if is_root_file "$path" || looks_like_nested_file "$path"; then
             checkout_root+=("$path")
           else
             dir_cones+=("$path")
