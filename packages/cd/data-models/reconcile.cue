@@ -34,6 +34,8 @@ package cd
 	detail_kind?:     "scope-not-allowed" | "credential-unresolved" | "repository-mismatch" | "missing-GITHUB_REPOSITORY" | "missing-GITHUB_TOKEN"
 }
 
+ReasonStructuredDetail: #reconcileReasonStructured
+
 #reconcileReason: {
 	code:         =~"^[a-z][a-z0-9-]*$"
 	message?:     string
