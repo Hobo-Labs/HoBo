@@ -221,7 +221,7 @@ export const TEARDOWN_RECOVERY_SCOPE = Object.freeze({
     "docs/design/reliability-observability-cost.md#plan-05",
     "docs/design/developer-experience.md#plan-07",
     "docs/design/platform-engineering.md#plan-25",
-    "docs/design/environment-lifecycle.md",
+    "https://linear.app/quickdeploy-ai/document/environment-lifecycle-scope-and-acceptance-archived-699ab449c2a6",
     "docs/design/resource-garbage-collection.md",
     "docs/design/backup-restore.md",
     "docs/design/upgrade-migration-engine.md",

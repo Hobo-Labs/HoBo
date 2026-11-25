@@ -79,7 +79,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`go-no-go-decision-record.md`](./go-no-go-decision-record.md) | Productization M0 go/no-go decision record and risk-acceptance workflow | — |
 | [`organization-workspace-model.md`](./organization-workspace-model.md) | Productization M0 scope and acceptance for organization, workspace, project, tenant, and environment ownership | — |
 | [`workspace-activation-telemetry-contract.md`](./workspace-activation-telemetry-contract.md) | Productization M0 contract for first-run workspace activation telemetry and privacy boundaries | — |
-| [`e2e-test-matrix.md`](./e2e-test-matrix.md) | Productization M0 scope and acceptance for the E2E Test Matrix project | — |
+| [`e2e-test-matrix.md`](https://linear.app/quickdeploy-ai/document/e2e-test-matrix-scope-and-acceptance-archived-599c0572bef7) | Productization M0 scope and acceptance for the E2E Test Matrix project | — |
 | [`performance-load-tests.md`](https://linear.app/quickdeploy-ai/document/performance-and-load-tests-archived-16faf7e829d8) | Productization M0 scope, launch envelope, capacity assumptions, deterministic fixtures, threshold handoffs, and acceptance for Performance & Load Tests | — |
 | [`persona-operating-profile.md`](https://linear.app/quickdeploy-ai/document/persona-operating-profile-and-recommendation-memory-archived-e3cb2a547f5c) | Productization M0 contract for persona operating profile fields and v1 recommendation memory boundaries | — |
 | [`launch-e2e-persona-matrix.md`](./launch-e2e-persona-matrix.md) | Productization M0 contract for launch e2e persona journeys and pass/fail thresholds | — |
@@ -147,7 +147,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`bootstrap-installer.md`](./bootstrap-installer.md) | Productization M0 scope and acceptance for SaaS, self-host, and local/dev bootstrap installer paths | — |
 | [`backup-restore.md`](./backup-restore.md) | Productization M0 scope and acceptance for backup sources, restore paths, RPO/RTO drill evidence, and recovery handoffs | — |
 | [`settings-project-lifecycle.md`](./settings-project-lifecycle.md) | Productization M0 settings and project lifecycle scope, state model, ownership, and evidence gate | — |
-| [`environment-lifecycle.md`](./environment-lifecycle.md) | Productization M0 scope and acceptance for environment classes, lifecycle states, transition owners, support evidence, and follow-up gates | — |
+| [`environment-lifecycle.md`](https://linear.app/quickdeploy-ai/document/environment-lifecycle-scope-and-acceptance-archived-699ab449c2a6) | Productization M0 scope and acceptance for environment classes, lifecycle states, transition owners, support evidence, and follow-up gates | — |
 | [`admin-console.md`](./admin-console.md) | Productization M0 scope and acceptance for Admin Console navigation, read models, action intents, audit/redaction, and support/security boundaries | — |
 | [`admin-support-breakglass-boundaries.md`](./admin-support-breakglass-boundaries.md) | Productization M0 boundary for admin/support emergency access, approval, audit, TTL, notification, revocation, and unsupported actions | — |
 | [`audit-explorer.md`](./audit-explorer.md) | Productization M0 scope and acceptance for Audit Explorer audit facts, tenant-first filters, export evidence, redaction, and support/security/governance boundaries | — |

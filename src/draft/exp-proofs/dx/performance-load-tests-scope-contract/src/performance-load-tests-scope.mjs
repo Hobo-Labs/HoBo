@@ -26,7 +26,7 @@ const FORBIDDEN_SCOPE_PATTERNS = [
 
 const REQUIRED_DEPENDENCIES = [
   "docs/design/reliability-observability-cost.md#plan-05",
-  "docs/design/e2e-test-matrix.md",
+  "https://linear.app/quickdeploy-ai/document/e2e-test-matrix-scope-and-acceptance-archived-599c0572bef7",
   "docs/design/launch-e2e-persona-matrix.md",
   "docs/design/pre-launch-outcome-contract.md",
   "docs/design/adr/02-identity-security.md#adr-0045",
@@ -98,7 +98,7 @@ export const PERFORMANCE_LOAD_TESTS_SCOPE = {
       reason: "Defines SLOs, error-budget gates, observability signals, capacity targets, and cost visibility consumed by performance evidence.",
     },
     {
-      source: "docs/design/e2e-test-matrix.md",
+      source: "https://linear.app/quickdeploy-ai/document/e2e-test-matrix-scope-and-acceptance-archived-599c0572bef7",
       reason: "Defines launch journey rows and fixture boundaries that performance scenarios extend with expected-load evidence.",
     },
     {
