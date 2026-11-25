@@ -212,10 +212,10 @@ export function clearSkipWorktreeFromSparseCone(
 		if (!entry) {
 			continue;
 		}
-		if (entry[0] !== "S") {
+		if (entry[0] !== "S" && entry[0] !== "s") {
 			continue;
 		}
-		const path = entry.slice(2).trim();
+		const path = entry.slice(2);
 		if (path) {
 			paths.push(path);
 		}

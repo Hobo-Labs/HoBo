@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	checkoutFromBareMirror,
 	classifyCheckoutTransportError,
+	clearSkipWorktreeFromSparseCone,
 	clearSparseCheckoutConfig,
 	disableSparseCheckoutIfActive,
 	mirrorObjectsPath,
@@ -138,6 +139,23 @@ describe("disableSparseCheckoutIfActive", () => {
 });
 
 describe("clearSparseCheckoutConfig", () => {
+	it("clears skip-worktree for whitespace paths and assume-unchanged entries", () => {
+		const work = join(temp, "work-sparse-special-paths");
+		execFileSync("git", ["clone", source, work]);
+		const whitespace = "other/deep/ leading and trailing .txt ";
+		const assumed = "other/deep/assumed.txt";
+		writeFileSync(join(work, whitespace), "whitespace\n");
+		writeFileSync(join(work, assumed), "assumed\n");
+		git(work, ["add", "--", whitespace, assumed]);
+		git(work, ["update-index", "--skip-worktree", "--", whitespace, assumed]);
+		git(work, ["update-index", "--assume-unchanged", "--", assumed]);
+		expect(git(work, ["ls-files", "-v", "--", whitespace])[0]).toBe("S");
+		expect(git(work, ["ls-files", "-v", "--", assumed])[0]).toBe("s");
+		expect(clearSkipWorktreeFromSparseCone(work)).toBe(true);
+		expect(git(work, ["ls-files", "-v", "--", whitespace])[0]).toBe("H");
+		expect(git(work, ["ls-files", "-v", "--", assumed])[0]).toBe("h");
+	});
+
 	it("clears sparse config on a blob:none clone without materializing missing blobs", () => {
 		const work = join(temp, "work-blob-none-sparse");
 		execFileSync("git", [
