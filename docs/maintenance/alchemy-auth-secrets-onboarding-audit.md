@@ -210,27 +210,27 @@ These are recorded ADRs and repository rules; treat mismatches as defects, not o
 3. **Agents never store secrets** ([`AGENTS.md`](../../AGENTS.md)) — synthetic CI secrets only in tests; OAuth client secrets via owner store / broker at deploy; **no** committed `.env` or `env://` shortcuts.
 4. **No vendored auth server in adapter package** ([ADR-0161](../design/adr/02-identity-security.md)) — runtime lives in bundle/host package with dependency on `better-auth`.
 5. **Relational session backing ≠ EventStore journal** — Better Auth `session` rows belong to **`hobo:data/relational`** with **ADR-0160**-governed migrations (postgres-shaped fixture today). **ADR-0135** SQLite partitions apply to the **Camp EventStore / actor journal**, not as a shortcut around the relational migration gate.
-6. **Workstream hygiene** — parallel agents avoid broad edits to `AGENTS.md`, root `package.json`, and shared CI workflows unless the task requires them.
+6. **Workstream hygiene** ([`AGENTS.md`](../../AGENTS.md) parallel-work rule) — parallel agents avoid broad edits to `AGENTS.md`, root `package.json`, and shared CI workflows unless the task requires them.
 
 ---
 
-## 5. Incremental delivery record (auth stack PRs)
+## 5. Open stacked PRs (auth implementation series)
 
-Ordered **merge units** delivered as a stacked PR series off `origin/main` (branches `cursor/alchemy-auth-*-d77e`). This table records **what shipped** in that workstream — not a standing roadmap.
+Ordered merge units on branches `cursor/alchemy-auth-*-d77e` stacked above this audit. **Only row 1 is in the tree when [#3004](https://github.com/Hobo-Labs/HoBo/pull/3004) merges to `main`; rows 2–9 are open stacked PRs, not behavior on `main` yet** — do not read this table as shipped product state until each PR merges.
 
-| # | Scope | Delivered | Primary touch |
-| --- | --- | --- | --- |
-| 1 | **This audit** | Evidence map for reviewers | `docs/maintenance/alchemy-auth-secrets-onboarding-audit.md` |
-| 2 | **Auth bundle skeleton** | `@hobo/pack-better-auth` plan/ports/PACT | `packages/packs/pack-better-auth/` |
-| 3 | **Relational + migrations wire** | ADR-0160 `diffSchemaIr` plan vs Better Auth `SchemaIr` | Bundle `migrations.ts` + fixtures |
-| 4 | **Secret broker wire** | `wireBetterAuthSigningSecret` via camp `SecretsPort` | Bundle `secrets.ts` |
-| 5 | **iac-alchemy host fixture** | Package-local harness: `HOBO_AUTH_*` construction records, in-memory Alchemy state, pack planning wire (beta.87 has no `Test.make`) | `@hobo/iac-alchemy/test/better-auth-host-harness.*` |
-| 6 | **Session durability tests** | File-backed SQLite session row survives simulated restart + signing re-wire | `better-auth-session-durability.*` |
-| 7 | **Cross-box session test** | Two harnesses, one shared session DB path | `better-auth-cross-box-session.test.ts` |
-| 8 | **Onboarding step tests** | Chained pack planning + broker + first session row | `better-auth-onboarding-steps.test.ts` |
-| 9 | **Construction-key layering** | Stage-scoped provider **ordering** fixture (dotenv-shaped merge only; no `.env` files) | `better-auth-secret-providers.*` |
+| # | PR | Status | Intended scope | Primary touch (when merged) |
+| --- | --- | --- | --- | --- |
+| 1 | [#3004](https://github.com/Hobo-Labs/HoBo/pull/3004) | **open** | Evidence map for reviewers | `docs/maintenance/alchemy-auth-secrets-onboarding-audit.md` |
+| 2 | [#3008](https://github.com/Hobo-Labs/HoBo/pull/3008) | **open** | Auth bundle skeleton: plan/ports/PACT | `packages/packs/pack-better-auth/` |
+| 3 | [#3010](https://github.com/Hobo-Labs/HoBo/pull/3010) | **open** | Relational migration **plan** via ADR-0160 `diffSchemaIr` vs Better Auth `SchemaIr` (planning gate, not SQL apply) | Bundle `migrations.ts` + fixtures |
+| 4 | [#3011](https://github.com/Hobo-Labs/HoBo/pull/3011) | **open** | `wireBetterAuthSigningSecret` via camp `SecretsPort` | Bundle `secrets.ts` |
+| 5 | [#3012](https://github.com/Hobo-Labs/HoBo/pull/3012) | **open** | Package-local harness: `HOBO_AUTH_*` construction records, in-memory Alchemy state, pack planning wire (`@alchemy.run/test` unpinned in lockfile) | `@hobo/iac-alchemy/test/better-auth-host-harness.*` |
+| 6 | [#3014](https://github.com/Hobo-Labs/HoBo/pull/3014) | **open** | **Synthetic/mocked** file-backed SQLite session row + signing re-wire across simulated restart — **not** ADR-0160 relational apply or Better Auth runtime durability | `better-auth-session-durability.*` |
+| 7 | [#3015](https://github.com/Hobo-Labs/HoBo/pull/3015) | **open** | **Synthetic/mocked** two-harness shared session store path — **not** production cross-box proof | `better-auth-cross-box-session.test.ts` |
+| 8 | [#3017](https://github.com/Hobo-Labs/HoBo/pull/3017) | **open** | **Synthetic/mocked** onboarding chain (plan + broker + fixture session row) | `better-auth-onboarding-steps.test.ts` |
+| 9 | [#3018](https://github.com/Hobo-Labs/HoBo/pull/3018) | **open** | **Synthetic/mocked** construction-key provider-order labels — **not** live Infisical/DotEnv providers | `better-auth-secret-providers.*` |
 
-Dependencies followed 2→3→4; host tests 5–9 layered on pack APIs with synthetic secrets only.
+Dependencies: 2→3→4; host tests 5–9 depend on pack APIs. All PR tests use synthetic secrets and memory `SecretsPort` only.
 
 ---
 
