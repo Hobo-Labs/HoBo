@@ -1,0 +1,8 @@
+{
+  "fleet": "ci",
+  "label": "hobo",
+  "state": "VERDICT_STATE_NO_CAPACITY",
+  "members": 3,
+  "asOf": "2026-11-12T10:00:00.000Z",
+  "expiresAt": "2026-11-12T10:05:00.000Z"
+}

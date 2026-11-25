@@ -11,14 +11,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHoboCli } from "@hobo/cli";
 import type { HttpTransport } from "@hobo/core";
-import { createTrustedVault } from "@hobo/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
-import {
-	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-	type readRelayDeployToken,
-} from "../src/ci-relay-deploy-credential.js";
+import { RELAY_DEPLOY_TOKEN_REF } from "../src/ci-relay-deploy-credential.js";
 import {
 	isJsonArray,
 	isJsonObject,
@@ -273,25 +269,17 @@ async function deploy(
 		readonly now?: () => number;
 	},
 ) {
-	const deployCredentials = createTrustedVault();
-	deployCredentials.put("VERCEL_TOKEN", TOKEN);
-	const readDeployCredential: typeof readRelayDeployToken = async () => ({
-		token: TOKEN,
-		secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
-		identityId: "ci-deploy-reader-identity",
-		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-	});
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: {
-					...options.env,
-					ACTIONS_ID_TOKEN_REQUEST_URL:
-						"https://token.actions.example.test/token?api-version=2.0",
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
-				},
-				deployCredentials,
-				readDeployCredential,
+				env: options.env,
+				ownerCredentials: () => ({
+					async resolve(ref) {
+						if (ref !== RELAY_DEPLOY_TOKEN_REF)
+							throw new Error(`unexpected credential ${ref}`);
+						return { token: TOKEN };
+					},
+				}),
 				ownerEntries: () => ownerStoreEntries(OWNER_STORE),
 				vercelFetch: options.fetch,
 				vercelBuild: options.build,

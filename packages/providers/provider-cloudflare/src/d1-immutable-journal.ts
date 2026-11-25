@@ -5,16 +5,15 @@
  */
 import { createHash } from "node:crypto";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
-import {
-	assignmentKey,
-	type FleetAssignment,
-	type ImmutableJournalMember,
-	type ImmutableJournalReplica,
-	type ImmutableJournalSeal,
-	parseFleetAssignment,
-	type SealableImmutableJournalReplica,
-} from "@hobo/backend-fleet";
+import type {
+	ImmutableJournalMember,
+	ImmutableJournalReplica,
+	ImmutableJournalSeal,
+	SealableImmutableJournalReplica,
+} from "@hobo/backend-routing";
 import { createBoundedFetchTransport, guardTransport } from "@hobo/core";
+import { type AssignmentEntry, parseMemberName } from "@hobo/fleet";
+import { assignmentKey, parseAssignmentEntry } from "@hobo/fleet/assignment";
 import { z } from "zod";
 import { D1JournalLogSchema } from "./_generated/hobo/provider/cloudflare/d1_journal/v1/d1_immutable_journal_pb.js";
 
@@ -280,7 +279,7 @@ export function createD1ImmutableJournalReplica(
 			.optional(),
 	});
 	function encode(
-		entries: readonly FleetAssignment[],
+		entries: readonly AssignmentEntry[],
 		seal?: ImmutableJournalSeal,
 	) {
 		const record = create(D1JournalLogSchema, {
@@ -310,17 +309,24 @@ export function createD1ImmutableJournalReplica(
 		}
 		let previous = root;
 		const entries = parsed.entries.map((item, index) => {
-			let value: FleetAssignment;
+			let value: AssignmentEntry;
 			try {
-				value = parseFleetAssignment({
+				value = parseAssignmentEntry({
 					epoch: item.epoch,
-					active: item.active,
+					active:
+						item.active === undefined
+							? undefined
+							: parseMemberName(item.active, "active"),
 					sealed: item.sealed,
-					target: item.target,
+					target:
+						item.target === undefined
+							? undefined
+							: parseMemberName(item.target, "target"),
 					reason: item.reason,
 					lossWindowMs: item.lossWindowMs,
 					decidedAtMs: item.decidedAtMs,
 					decidedBy: item.decidedBy,
+					members: undefined,
 				});
 			} catch {
 				throw new D1ImmutableJournalError("invalid-log");
@@ -449,7 +455,7 @@ export function createD1ImmutableJournalReplica(
 			throw new D1ImmutableJournalError("schema-unverified");
 	}
 	const replica: SealableImmutableJournalReplica = {
-		id: member.id,
+		id: parseMemberName(member.id),
 		async read(limit) {
 			if (
 				limit !== undefined &&
@@ -460,9 +466,9 @@ export function createD1ImmutableJournalReplica(
 			return entries.slice(-(limit ?? entries.length));
 		},
 		async accept(input) {
-			let proposed: FleetAssignment;
+			let proposed: AssignmentEntry;
 			try {
-				proposed = parseFleetAssignment(input);
+				proposed = parseAssignmentEntry(input);
 			} catch {
 				throw new D1ImmutableJournalError("invalid-assignment");
 			}

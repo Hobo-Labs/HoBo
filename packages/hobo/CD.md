@@ -83,6 +83,8 @@ Camp's labels bind where (`CATALOG_REALIZER_LABELS` in
 | oci-registry | `hobo.cd/oci.registry` (host), `hobo.cd/oci.auth-realm`, `hobo.cd/oci.username` (non-secret), optional `hobo.cd/oci.tags` | `OCI_IMAGE` artifacts with a `<host>/<repo>@<digest>` coordinate on that host (already there, or every blob in the artifact store: the realizer pushes them on a byte transport), label `hobo.cd/oci.tags`, optional `hobo.cd/oci.mount-from` (a repository on that host to cross-mount blobs from) |
 | github | `hobo.cd/github.repository` (`owner/repo`), `hobo.cd/github.pages.branch`, `hobo.cd/github.pages.path` | a `STATIC_ASSETS` `hobo.static-site-tree/v1` index (its file blobs in the store), label `hobo.cd/github.commit-message` |
 
+GHCR OCI Camps allowlist `pkg-containers.githubusercontent.com` for cross-repository blob redirects. Release Freight (`scripts/ci/create-github-release.mts` `openReleaseCd`) maps each camp's `github-app://<owner>/<repo>` locator to the workflow job `GITHUB_TOKEN` for that repository.
+
 CONVERGED is reported only when every resolver outcome reads `ready` from its
 own observation; a resolver refusal is a BLOCKED observation carrying its
 typed code. A missing or invalid label, or a Freight artifact the Camp cannot
@@ -125,6 +127,15 @@ Each subcommand takes exactly the flags its usage line names, plus `--format`,
 | Fleet | `campset define`, `campset list`, `camp list`, `camp show`, `camp taint`, `camp untaint`, `camp manage`, `placement define`, `placement decide`, `placement show`, `scores report`, `fanout show`, `fanout halt`, `fanout resume`, `fanout rollback`, `failover list`, `failover approve`, `rebalance` |
 | Policy | `compliance show`; Rails promote with `promote` and Rail Freight |
 | Hosting | `hosting-status`, `hosting-resume`, `hosting-cancel`, `hosting-resume-mutation` (unchanged) |
+
+After a restart, any `hobo cd` subcommand given `--relay` and the relay's https
+origin (or HoBo MCP's `relay_login`) signs in to the owner's already configured CI relay with one
+GitHub confirmation and resolves `github-app://<owner>/<repo>` and
+`owner://HOBO_CI_ACCOUNT_TOKEN` through it for that process only; `--relay` is
+taken off the arguments before the subcommand parses them. Long-lived provider
+entries (a Vercel or Hostinger token) are not handed out by the relay, so the
+steps that read them still need the owner's store session
+([CI.md](CI.md#reconnect-after-a-restart-hobo-login---relay)).
 
 Promotions and rollbacks derive a deterministic idempotency key from their
 inputs (override with `--idempotency-key`), so the same request twice is one

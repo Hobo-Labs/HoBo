@@ -1,0 +1,18 @@
+{
+  "state": "st_9f8e7d",
+  "principal": "github:1234",
+  "hostName": "laptop",
+  "deviceName": "box-a",
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "fingerprintWords": [
+    "amber",
+    "harbor",
+    "kettle",
+    "violet"
+  ],
+  "deviceFlow": true,
+  "expiresAt": "2026-11-12T10:20:00.000Z"
+}

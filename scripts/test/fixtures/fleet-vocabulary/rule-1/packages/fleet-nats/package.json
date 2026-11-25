@@ -1,0 +1,5 @@
+{
+	"name": "fixture-fleet-nats",
+	"private": true,
+	"dependencies": { "@nats-io/transport-node": "3.4.0" }
+}

@@ -24,6 +24,14 @@ export {
 	REPLAY_CORPUS_SEED,
 } from "./corpus/replay.js";
 export * from "./diff.js";
+export {
+	DURABLE_MESSAGING_CONFORMANCE,
+	DURABLE_MESSAGING_CONFORMANCE_CASES,
+	type DurableMessagingConformanceCase,
+	type DurableMessagingConformanceHarness,
+	type DurableMessagingConformanceReport,
+	runDurableMessagingConformance,
+} from "./durable-messaging-conformance.js";
 export * from "./golden-ir.js";
 export type {
 	LiveAdapterFactory,
@@ -161,7 +169,6 @@ export {
 	CAMP_EVENTSTORE_RUNTIME_PORT_CONTRACT_VERSION,
 	runEventStoreConformance,
 } from "./suites/eventstore.js";
-export { MESSAGING_CONFORMANCE_SUITE } from "./suites/messaging.js";
 export type {
 	ProduceRealizationResult,
 	RealizationResultAssertion,

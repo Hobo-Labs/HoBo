@@ -25,6 +25,13 @@ git merge-base --is-ancestor <head> origin/main && echo landed
 git merge-base --is-ancestor <head> <other-open-pr-head> && echo superseded
 ```
 
+- List the session's workstreams before starting: one branch and one pull request each. The pre-tool hook refuses a fourth unlanded pull request from one session's branches.
+- Merge groups run on `merge_group` from a detached checkout with no `GITHUB_HEAD_REF`; PR CI runs its test shards the same way, so tests must not read the branch name. The queue's merge method is the owner's ruleset setting; local signoff accepts only a squash group commit on the current base. Never change the ruleset.
+- A group that passes the queue's time limit (`CI_TIMEOUT`) drops the pull request and is not rerun; re-queue it once the cause is fixed.
+- The supersession workflow closes a pull request whose head is in `main` or is an ancestor of another open pull request's head.
+- Merges resolve the `scripts/ci/attestation.mts` pins and `docs/ci/errors.md` through the drivers `scripts/ensure-hooks-path.sh` registers. When a driver leaves one conflicted, resolve the rest, then run `node --experimental-strip-types --no-warnings scripts/ci/merge-driver.mts refresh`.
+- Merged pull requests do not finish a task; check the delivery goal in `PRODUCT.md` and its evidence.
+
 ## `--finish`
 
 `/sdlc --finish` authorizes landing the current session: commit remaining work, fetch and merge the latest `origin/main` in, resolve conflicts keeping both sides' work, run the supersession check, open or update the one workstream pull request, push, review its combined diff against `main`, resolve every actionable review thread, repair real check failures, and land it with a merge commit. Billing or quota failures that stop checks from running do not block the merge; real test, lint, or type failures do.

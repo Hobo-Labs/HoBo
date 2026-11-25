@@ -32,7 +32,10 @@ export {
 	type PostgresFleetMember,
 	type PostgresFleetTickReport,
 } from "./fleet.js";
-export type { FleetBackup, FleetBackupOutcome } from "./fleet-backups.js";
+export type {
+	PostgresFleetBackup,
+	PostgresFleetBackupOutcome,
+} from "./fleet-backups.js";
 export {
 	notifyChannel,
 	parseSchemaName,

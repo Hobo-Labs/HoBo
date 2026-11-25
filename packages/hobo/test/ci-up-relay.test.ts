@@ -142,6 +142,51 @@ describe("hobo ci up through the relay's Yards", () => {
 		);
 	});
 
+	it("up hands the deploy the owner's store session of the project, not of the snapshot", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
+		const sessionKeys: string[] = [];
+		let delivered: Parameters<typeof runCiRelayDeploy>[0] | undefined;
+		const up = createCiRelayUpCommand(vault, never, {
+			owner: {
+				credentials: (cwd) => {
+					sessionKeys.push(cwd);
+					return {
+						async resolve() {
+							return { token: "from-the-session" };
+						},
+					};
+				},
+				entries: (cwd) => {
+					sessionKeys.push(cwd);
+					return {
+						async read() {
+							return undefined;
+						},
+						async write() {},
+					};
+				},
+			},
+			head: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
+			snapshot: async () => ({ dir: RELAY, close: async () => {} }),
+			platformDrift: async () => [],
+			deploy: async (request) => {
+				delivered = request;
+				return {
+					ok: true,
+					status: "deployed",
+					code: "HOBO_OK",
+					message: "ok",
+					data: {},
+				};
+			},
+		});
+		await up.run(input());
+		expect(sessionKeys).toEqual([CI_PROJECT, CI_PROJECT]);
+		expect(delivered?.ownerCredentials).toBeDefined();
+		expect(delivered?.bindingStore).toBeDefined();
+	});
+
 	it("deploys to the Vercel team saved alongside the token", async () => {
 		const vault = createTrustedVault();
 		vault.put("VERCEL_TOKEN", "from-the-store");

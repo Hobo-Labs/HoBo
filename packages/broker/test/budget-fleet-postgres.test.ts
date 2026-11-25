@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import {
 	createImmutableJournal,
 	type ImmutableJournalMember,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import {
 	createPostgresImmutableJournalReplica,
 	type SqlExecutor,

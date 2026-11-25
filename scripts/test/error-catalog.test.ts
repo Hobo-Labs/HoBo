@@ -168,11 +168,11 @@ describe("S07 error catalog: collecting codes from source", () => {
 			new Map([
 				[
 					"packages/ci-gh-actions/src/main.ts",
-					`const FLEET_ROUTES_VARIABLE = "HOBO_CI_FLEET_ROUTES";
+					`const WIRING_DB_VARIABLE = "HOBO_CI_WIRING_DB";
 					function required(env: NodeJS.ProcessEnv, name: string): string { return env[name] ?? ""; }
 					function integer(name: string, fallback: number): number { return fallback; }
 					export function f(env: NodeJS.ProcessEnv) {
-						return [required(env, "HOBO_CI_DB"), env.HOBO_CI_RELAY_URL, integer("HOBO_CI_SLOTS", 2), FLEET_ROUTES_VARIABLE];
+						return [required(env, "HOBO_CI_DB"), env.HOBO_CI_RELAY_URL, integer("HOBO_CI_SLOTS", 2), WIRING_DB_VARIABLE];
 					}`,
 				],
 			]),
@@ -251,7 +251,7 @@ describe("S07 error catalog: the page", () => {
 		for (const setting of [
 			"HOBO_CI_DB",
 			"HOBO_CI_RELAY_URL",
-			"HOBO_CI_FLEET_ROUTES",
+			"HOBO_CI_WIRING_DB",
 			"HOBO_CI_WEBHOOK_SECRET",
 			"HOBO_CI_ACCOUNT_TOKEN",
 		])

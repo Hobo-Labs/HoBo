@@ -50,6 +50,7 @@ import {
 	retainPreparedOnDown,
 } from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
+import { openBrowser } from "./ci-github-connect.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
 import {
 	createCiRelayPlanCommand,
@@ -71,6 +72,8 @@ import { createDriftCommand } from "./drift-command.js";
 import { createEraseCommand } from "./erase-command.js";
 import { resolveCdProject, resolveCiProject } from "./family-projects.js";
 import { createFeatureCommand } from "./feature-command.js";
+import { createFleetCommand } from "./fleet-command.js";
+import { createFleetRuntime } from "./fleet-runtime.js";
 import { createGenerateCommand } from "./generate-command.js";
 import type { createProductionHostingExecution } from "./hosting-execution.js";
 import { createIdentityCommand } from "./identity-command.js";
@@ -88,6 +91,7 @@ import type { OwnerStoreSessions } from "./owner-store-session.js";
 import { createProviderCeremonyUp } from "./provider-ceremony.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
+import type { RelayOwnerSessions } from "./relay-owner-session.js";
 import { createReplayCommand } from "./replay-command.js";
 import { createRunbookCommand } from "./runbook-command.js";
 import {
@@ -121,6 +125,7 @@ export interface ComposedHoboCliOptions {
 		OwnerStoreSessions,
 		"credentials" | "status" | "entries" | "agentVault"
 	>;
+	readonly relaySessions?: RelayOwnerSessions;
 	/**
 	 * The clock steps that wait on a provider use (the Vercel device grant's
 	 * polling, RFC 8628): the system's by default; a spec drives it virtually.
@@ -359,7 +364,17 @@ export function createComposedHoboCli(
 					run: (input) => {
 						const cdOwner = familyOwner("cd", input.context.cwd);
 						return createCiRelayUpCommand(credentials, up, {
-							...(cdOwner?.vault ? { ownerSession: cdOwner.vault } : undefined),
+							...(options.ownerSession !== undefined
+								? {
+										owner: {
+											credentials: options.ownerSession.credentials,
+											entries: options.ownerSession.entries,
+										},
+									}
+								: {}),
+							...(cdOwner?.vault
+								? { ownerSession: cdOwner.vault }
+								: undefined),
 							...(cdOwner?.storeSettings
 								? { ownerSettings: cdOwner.storeSettings }
 								: undefined),
@@ -424,6 +439,9 @@ export function createComposedHoboCli(
 							}),
 				fallback: deploy,
 			}),
+			fleet: createFleetCommand((progress) =>
+				createFleetRuntime({ env: process.env, progress }),
+			),
 			build: createBuildCommand({ requireRealComponentize: true }),
 			// Local loop: open the Yard, place the Bindle into a Camp, run the Camp's
 			// component host (services__* + bindle env + external-only TCP).
@@ -486,7 +504,14 @@ export function createComposedHoboCli(
 			// Identity plane: persist profile + optional default broker association.
 			// The composition root injects the platform fetch — the login/grant
 			// modules never reach for the global, so tests drive them offline.
-			login: createBrokerAwareLoginCommand({ fetchImpl: fetch }),
+			login: createBrokerAwareLoginCommand({
+				fetchImpl: fetch,
+				...(options.ownerChannel !== undefined
+					? { relay: "owner-channel" as const }
+					: options.relaySessions !== undefined
+						? { relay: { sessions: options.relaySessions, openBrowser } }
+						: undefined),
+			}),
 			// Durable Connections: authorize once, mint short-lived tokens thereafter.
 			connection: createConnectionCommand(),
 			// Continuous identity migration observe surface (Matching/policy-driven; zero Bindle config).

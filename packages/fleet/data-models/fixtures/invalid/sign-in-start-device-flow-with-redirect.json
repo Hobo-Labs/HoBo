@@ -1,0 +1,7 @@
+{
+  "provider": "github",
+  "redirectUri": "http://127.0.0.1:53682/callback",
+  "codeChallenge": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
+  "dpopThumbprint": "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20",
+  "deviceFlow": true
+}

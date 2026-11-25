@@ -34,4 +34,10 @@ The scripts lane loses one serial stage and one runner pickup, about 3 to 5 minu
 
 - A change that reaches many packages the scripts tests import rebuilds them in all four shards rather than once; the main build cache only covers what main already built.
 
+## Follow-up
+
+The shard build step ran `turbo run build --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}`, but the workflow-level env sets `HOBO_TURBO_CONCURRENCY: "1"` to serialize tests, so each shard built one package at a time. Merge-group run 45393405752 (job 138443029109) restored the `main-build` cache from an older lockfile key, so all 170 build tasks missed the cache and executed; three of the four shards hit "The action 'Build the packages the scripts tests import' has timed out after 6 minutes".
+
+The step now passes `--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}`, the build knob the workspace shards honor and the full concurrency `main_build_cache` uses. That job's whole-workspace build took at most 2 minutes 40 seconds in recent pushes to main on the same `ubuntu-24.04` runner, so the six-minute limit stays.
+
 `.github/workflows/actions.lock` no longer pins `actions/download-artifact` for `hobo-ci.yml`, which stopped using it with the build job.

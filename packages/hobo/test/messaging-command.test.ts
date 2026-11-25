@@ -26,7 +26,13 @@ describe("createMessagingCommand", () => {
 		expect(result.data).toMatchObject({
 			command: "messaging",
 			subcommand: "status",
-			wit: "wasi:messaging/messaging@0.2.0",
+			wit: "hobo:durable-messaging/messaging@0.1.0",
+			componentBindings: {
+				kafka: "unsupported",
+				dapr: "unsupported",
+				rivet: "requires-host-integration",
+				defaultRuntime: "unsupported",
+			},
 			defaultRuntime: "in-process-wasm",
 			daprOptional: true,
 			adr: "ADR-0138",

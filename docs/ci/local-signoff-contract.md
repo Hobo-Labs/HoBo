@@ -17,6 +17,14 @@ only after they pass, calls [basecamp/gh-signoff](https://github.com/basecamp/gh
 The [runbook](../../packages/ci/RUNNER-QUEUE.md#sign-off-without-an-actions-runner)
 has setup and operational commands.
 
+The workspace test shards and the scripts test shards run their tests from a
+detached `HEAD` with `GITHUB_HEAD_REF` and `GITHUB_BASE_REF` unset on
+`pull_request` as on `merge_group`, and a local signoff runs them the same way
+at the detached merge commit, so a test that depends on the pull request's
+branch name fails before the merge queue rather than only inside it.
+`scripts/test/scripts-tests-job.test.ts` pins the scripts lane's
+`env -u GITHUB_HEAD_REF -u GITHUB_BASE_REF` command.
+
 ## Selection contract
 
 A configured pin or valid pinned slip wins before availability is read. An
@@ -26,14 +34,19 @@ A slip choosing a fallback records a fleet refusal, but a fresh healthy fleet
 pickup takes precedence. A slip choosing an enrolled local runner does not
 establish that it is taking jobs; the queue must establish its availability or
 refusal. A GitHub slip does not rule out a local runner enrolled since the slip
-was issued. An unusable, expired, unreadable, or tier/label-contradictory slip
-leaves the queue rule to decide.
+was issued. An `agent37` slip is valid only when its runner matches a label in
+committed `runnerRouting.externalPools`; provider declarations alone and unknown
+tiers do not authorize a slip. An unusable, expired, unreadable, or
+tier/label-contradictory slip leaves the queue rule to decide.
 
 After pins and slips, availability means *observed* availability, not a
 reservation or a guarantee that a runner will still be free. The generic
 selector uses HoBo, ARC, local, then GitHub-hosted order. The checkout
 coordinator also considers enabled provider and external-pool inventory from the
-trusted base. Providers sharing a label remain separate observations. Capacity
+trusted base. Providers sharing a label remain separate observations. Agent37
+provider and external-pool declarations are opaque to this generic selection:
+a healthy Actions queue pickup cannot establish pool availability without the
+route action's trusted `observeAgent37Pool` observer. Capacity
 with no useful queue evidence remains unknown unless the operator independently
 observes its outage and names that enabled member with `--provider-unavailable=ID`.
 Unsupported inventory stays unknown. An Actions workflow continues
@@ -226,7 +239,7 @@ branch-protection rule is changed.
 
 ## Evidence and live boundary
 
-- [`fleet-overflow.test.ts`](../../packages/ci/test/fleet-overflow.test.ts)
+- [`runner-routing-tiers.test.ts`](../../packages/ci/test/runner-routing-tiers.test.ts)
   exhausts all 512 combinations of four tiers in up, down, unknown, or disabled
   states and both opt-in settings, and checks malformed observations.
 - [`fleet-signoff.test.ts`](../../scripts/test/fleet-signoff.test.ts) covers
@@ -240,7 +253,9 @@ branch-protection rule is changed.
   signatures, target and base identity, trusted job policy, omitted jobs,
   per-event execution, repeated commands, failed retries, and `gh` publication
   errors. The real upstream extension has also been exercised against a mocked
-  GitHub API; neither fixture establishes a live status on GitHub.
+  GitHub API; neither fixture establishes a live status on GitHub. Its two
+  cleanup-failure cases make the temporary Git view unremovable through its
+  mode, which root ignores, so they are skipped when the suite runs as root.
 
 **Built, not yet proven in production:** a real local `ci-guard` run passed,
 but GitHub returned HTTP 403 when the upstream extension attempted to create a

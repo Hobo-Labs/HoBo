@@ -1,4 +1,5 @@
 import { createHash, type KeyObject, sign, verify } from "node:crypto";
+import { types as utilTypes } from "node:util";
 
 export type RivetJournalAction =
 	| "acquire"
@@ -7,7 +8,8 @@ export type RivetJournalAction =
 	| "append"
 	| "read";
 
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: action arguments and signed capabilities are untrusted Rivet RPC data. */
+// SAFETY: action arguments and signed capabilities are untrusted Rivet RPC data.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 export interface RivetOperation {
 	readonly actorKey: readonly string[];
 	readonly action: RivetJournalAction;
@@ -80,11 +82,16 @@ function canonical(
 			throw new RivetCapabilityError("INVALID_INPUT");
 		return ["number", String(value)];
 	}
-	if (typeof value !== "object" || ancestors.has(value))
+	if (
+		typeof value !== "object" ||
+		utilTypes.isProxy(value) ||
+		ancestors.has(value)
+	)
 		throw new RivetCapabilityError("INVALID_INPUT");
 	ancestors.add(value);
 	try {
 		const fields = Object.getOwnPropertyDescriptors(value);
+		Object.setPrototypeOf(fields, null);
 		if (Object.getOwnPropertySymbols(value).length > 0)
 			throw new RivetCapabilityError("INVALID_INPUT");
 		if (Array.isArray(value)) {
@@ -101,7 +108,7 @@ function canonical(
 				const descriptor = fields[String(index)];
 				if (
 					descriptor === undefined ||
-					!("value" in descriptor) ||
+					!Object.hasOwn(descriptor, "value") ||
 					!descriptor.enumerable
 				)
 					throw new RivetCapabilityError("INVALID_INPUT");
@@ -120,7 +127,7 @@ function canonical(
 				budget.bytes < 0 ||
 				key.length > 200 ||
 				field === undefined ||
-				!("value" in field) ||
+				!Object.hasOwn(field, "value") ||
 				!field.enumerable
 			)
 				throw new RivetCapabilityError("INVALID_INPUT");
@@ -146,6 +153,8 @@ const ACTIONS = new Set(["acquire", "check", "release", "append", "read"]);
 export function computeRivetOperationDigest(operation: RivetOperation): string {
 	try {
 		if (
+			utilTypes.isProxy(operation) ||
+			utilTypes.isProxy(operation.actorKey) ||
 			!Array.isArray(operation.actorKey) ||
 			operation.actorKey.length !== 4 ||
 			operation.actorKey[0] !== "hobo" ||
@@ -214,9 +223,15 @@ export function issueRivetCapability(
 
 function readCapability(input: unknown): RivetSignedCapability | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			utilTypes.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
+		Object.setPrototypeOf(properties, null);
 		if (
 			Object.getOwnPropertySymbols(input).length !== 0 ||
 			Object.keys(properties).length !== 9
@@ -224,7 +239,7 @@ function readCapability(input: unknown): RivetSignedCapability | undefined {
 			return undefined;
 		const read = (key: string): unknown => {
 			const descriptor = properties[key];
-			if (descriptor === undefined || !("value" in descriptor))
+			if (descriptor === undefined || !Object.hasOwn(descriptor, "value"))
 				throw new Error("missing capability field");
 			return descriptor.value;
 		};

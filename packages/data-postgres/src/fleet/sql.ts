@@ -16,15 +16,8 @@
  *   `ROLLBACK` itself, which works through a transaction-mode pooler because a
  *   pooler pins a connection for exactly that span.
  */
-import type { FleetFailureClass } from "@hobo/backend-fleet";
+import { Health } from "@hobo/fleet";
 import { PostgresDataError } from "../errors.js";
-
-// Backend ids and failure classes are engine-neutral (`@hobo/backend-fleet`).
-export {
-	FLEET_FAILURE_CLASSES,
-	type FleetFailureClass,
-	parseFleetBackendId,
-} from "@hobo/backend-fleet";
 
 export type SqlParameter = string | number | boolean | null;
 
@@ -46,8 +39,7 @@ export type SqlExecutor = SqlSession & {
 	session<T>(run: (session: SqlSession) => Promise<T>): Promise<T>;
 };
 
-/** One member of a fleet: an opaque id and the way to reach it. */
-export type FleetBackend = {
+export type PostgresBackend = {
 	readonly id: string;
 	readonly executor: SqlExecutor;
 };
@@ -163,22 +155,15 @@ const NETWORK_CODES = new Set([
 const NETWORK_MESSAGE =
 	/timeout|timed out|connection terminated|connection refused|connection reset|could not connect|server closed the connection|the database system is (?:starting up|shutting down)/iu;
 
-/**
- * Classify a failed statement from its SQLSTATE or driver code and its text.
- *
- * Only the class leaves this function. The message is read and never returned,
- * because a driver's message can carry a host name or a connection string.
- */
-export function classifyFleetFailure(
-	error: Error | undefined,
-): FleetFailureClass {
-	if (error === undefined) return "unknown";
+export function classifyFleetFailure(error: Error | undefined): Health {
+	if (error === undefined) return Health.UNKNOWN;
 	const code = "code" in error ? String(error.code) : "";
 	// 53xxx is "insufficient resources"; a provider that enforces a plan reports
 	// it either there or only in the message, so the message is checked first.
-	if (QUOTA_MESSAGE.test(error.message)) return "quota-exhausted";
-	if (code.startsWith("28") || AUTH_MESSAGE.test(error.message)) return "auth";
-	if (code === "53100" || code === "53400") return "quota-exhausted";
+	if (QUOTA_MESSAGE.test(error.message)) return Health.QUOTA_EXHAUSTED;
+	if (code.startsWith("28") || AUTH_MESSAGE.test(error.message))
+		return Health.AUTH;
+	if (code === "53100" || code === "53400") return Health.QUOTA_EXHAUSTED;
 	if (
 		code.startsWith("08") ||
 		code.startsWith("57P") ||
@@ -186,8 +171,8 @@ export function classifyFleetFailure(
 		NETWORK_CODES.has(code) ||
 		NETWORK_MESSAGE.test(error.message)
 	)
-		return "unreachable";
-	return "unknown";
+		return Health.UNREACHABLE;
+	return Health.UNKNOWN;
 }
 
 /** SQLSTATE of a failed statement, when the driver exposed one. */

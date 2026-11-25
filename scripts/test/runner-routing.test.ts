@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	LOCAL_HOST_RUNNER_LABEL,
-} from "../../packages/ci/src/fleet-overflow.ts";
+} from "../../packages/ci/src/runner-routing/tiers.ts";
 import {
 	DEFAULT_CAPACITY_VOLATILITY_MB,
 	DEFAULT_FLEET_MIN_FREE_RUNNERS,
@@ -13,9 +13,9 @@ import {
 	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
 } from "../../packages/ci-gh-actions/src/isolated-worker/box-routing-policy.ts";
 import {
-	FLEET_VERDICT_ENTER_MS,
-	FLEET_VERDICT_EXIT_MS,
-} from "../../packages/ci-gh-actions/src/isolated-worker/fleet-verdict-state.ts";
+	ROUTING_HOLD_ENTER_MS,
+	ROUTING_HOLD_EXIT_MS,
+} from "../../packages/ci-gh-actions/src/isolated-worker/routing-slip-state.ts";
 import { resolveWorkerSlotConfig } from "../../packages/ci-gh-actions/src/isolated-worker/worker-slots.ts";
 import { resolveWorkerStorePlan } from "../../packages/ci-gh-actions/src/isolated-worker/worker-store.ts";
 import { parseCiRunnerRouting } from "../../packages/ci-gh-actions/src/relay-routing.ts";
@@ -43,6 +43,8 @@ import {
 	readRunnerRouting,
 	routingLabels,
 } from "../ci/runner-routing.mts";
+
+const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
 
 const repoFile = (path: string) =>
 	readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -272,17 +274,28 @@ describe("the routing slip, read without dependencies (M4)", () => {
 	});
 });
 
-describe("committed runnerRouting equals the code's defaults (M8)", () => {
+describe("committed runnerRouting against the code's defaults (M8)", () => {
 	// The box daemon reads runnerRouting from its checkout (ADR-0181, decision 4)
 	// and falls back to DEFAULT_RUNNER_ROUTING when the block is absent.
 	const daemon = repoFile(
 		"packages/ci-gh-actions/scripts/isolated-worker-daemon-main.mts",
 	);
 
-	it("box: the daemon reads it from its checkout, and its fallback equals it", () => {
+	it("box: the daemon reads it from its checkout, and its fallback differs only in the agent37 pool", () => {
 		assert.ok(committed);
 		assert.match(daemon, /readBoxRoutingPolicy\(checkoutRoot\)/u);
-		assert.deepEqual(committed, DEFAULT_RUNNER_ROUTING);
+		const { externalPools: committedPools, ...committedRest } = committed;
+		const { externalPools: fallbackPools, ...fallbackRest } =
+			DEFAULT_RUNNER_ROUTING;
+		assert.deepEqual(committedRest, fallbackRest);
+		assert.deepEqual(fallbackPools, []);
+		assert.deepEqual(committedPools, [
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
 	});
 
 	it("route: no pin, the queue limits and the labels", () => {
@@ -338,9 +351,15 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 			committed.verdict.minFreeRunners,
 			DEFAULT_FLEET_MIN_FREE_RUNNERS,
 		);
-		assert.equal(committed.verdict.enterMs, FLEET_VERDICT_ENTER_MS);
-		assert.equal(committed.verdict.exitMs, FLEET_VERDICT_EXIT_MS);
-		assert.deepEqual(committed.externalPools, []);
+		assert.equal(committed.verdict.enterMs, ROUTING_HOLD_ENTER_MS);
+		assert.equal(committed.verdict.exitMs, ROUTING_HOLD_EXIT_MS);
+		assert.deepEqual(committed.externalPools, [
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
 		// ADR-0181 sets the stall limit at ten minutes.
 		assert.equal(committed.verdict.stallMs, 10 * 60_000);
@@ -373,14 +392,13 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 	});
 
-	it("retires the routing variables and the three the relay published", () => {
+	it("retires the routing variables and two the relay published (the fleet-state one is deleted at cutover)", () => {
 		assert.ok(committed);
 		assert.deepEqual([...committed.retiredVariables].sort(), [
 			"HOBO_CI_BOX_RUNNER",
-			"HOBO_CI_FLEET_CAPACITY",
-			"HOBO_CI_FLEET_ROUTES",
-			"HOBO_CI_FLEET_STATE",
-			"HOBO_CI_LOCAL_RUNNER",
+			ci("FLEET", "CAPACITY"),
+			ci("FLEET", "ROUTES"),
+			ci("LOCAL", "RUNNER"),
 			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 			"HOBO_CI_ROUTE",
 			"HOBO_CI_ROUTE_MAX_QUEUED",

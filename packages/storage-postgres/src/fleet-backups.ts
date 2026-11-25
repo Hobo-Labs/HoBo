@@ -19,7 +19,7 @@
  */
 import {
 	copySnapshot,
-	type FleetLayout,
+	type PostgresFleetLayout,
 	type SqlExecutor,
 	type SqlSession,
 } from "@hobo/data-postgres";
@@ -33,41 +33,45 @@ import {
 import type { PgPoolLike } from "./pg.js";
 import { createPostgresEventStore } from "./store.js";
 
-export type FleetBackup = Readonly<{
+export type PostgresFleetBackup = Readonly<{
 	name: string;
 	takenAtMs: number;
 	source: string;
 	rows: number;
 }>;
 
-export type FleetBackupOutcome =
-	| Readonly<{ kind: "taken"; backup: FleetBackup; pruned: readonly string[] }>
+export type PostgresFleetBackupOutcome =
+	| Readonly<{
+			kind: "taken";
+			backup: PostgresFleetBackup;
+			pruned: readonly string[];
+	  }>
 	| Readonly<{ kind: "not-due"; nextAtMs: number }>
 	| Readonly<{ kind: "failed"; message: string }>;
 
-export interface FleetBackups {
+export interface PostgresFleetBackups {
 	/** Take a backup of `source` when one is due. */
 	run(input: {
 		readonly source: string;
 		readonly executor: SqlExecutor;
 		readonly nowMs: number;
-	}): Promise<FleetBackupOutcome>;
+	}): Promise<PostgresFleetBackupOutcome>;
 	/** Backups held, newest first. */
-	list(): Promise<readonly FleetBackup[]>;
+	list(): Promise<readonly PostgresFleetBackup[]>;
 	/** Copy a backup (the newest by default) into `target`'s journal. */
 	restore(input: {
 		readonly target: SqlExecutor;
 		readonly name?: string;
 		/** Fence and admit the target inside the copy's transaction. */
 		readonly admit: (target: SqlSession) => Promise<void>;
-	}): Promise<FleetBackup>;
+	}): Promise<PostgresFleetBackup>;
 }
 
-export type FleetBackupsOptions = Readonly<{
+export type PostgresFleetBackupsOptions = Readonly<{
 	schema: SchemaName;
 	everyMs: number;
 	kept: number;
-	layout: FleetLayout;
+	layout: PostgresFleetLayout;
 	/** A pool on the backup member whose search path is `schema`. */
 	pool: (schema: string) => PgPoolLike;
 	/** The SQL port over a pool (the fleet's own). */
@@ -76,7 +80,7 @@ export type FleetBackupsOptions = Readonly<{
 
 function backupFromRow(
 	row: Readonly<Record<string, string | null>>,
-): FleetBackup {
+): PostgresFleetBackup {
 	return {
 		name: String(row.name),
 		takenAtMs: Number(row.taken_at_ms),
@@ -85,7 +89,9 @@ function backupFromRow(
 	};
 }
 
-export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
+export function createFleetBackups(
+	options: PostgresFleetBackupsOptions,
+): PostgresFleetBackups {
 	const catalogSchema = parseSchemaName(`${options.schema}_backups`);
 	const catalog = `${quoteSchema(catalogSchema)}.catalog`;
 	const home = options.pool(catalogSchema);
@@ -113,7 +119,7 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 		return prepared;
 	};
 
-	const list = async (): Promise<readonly FleetBackup[]> => {
+	const list = async (): Promise<readonly PostgresFleetBackup[]> => {
 		await prepare();
 		const result = await homeSql.query(
 			`SELECT name, taken_at_ms::text AS taken_at_ms, source, rows::text AS rows
@@ -150,7 +156,7 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 					};
 				const name = parseSchemaName(`${options.schema}_b${nowMs}`);
 				const pool = await migrated(name);
-				let backup: FleetBackup;
+				let backup: PostgresFleetBackup;
 				try {
 					backup = await copySnapshot({
 						source: executor,

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-
+import type { CredentialResolver } from "@hobo/cd";
 import {
 	type CommandModule,
 	type CommandResult,
@@ -23,8 +23,10 @@ import { relayCommitSnapshot } from "./ci-relay-snapshot.js";
 export { relayCommitSnapshot } from "./ci-relay-snapshot.js";
 
 import { loadRelayJoinedYards, loadRelayYard } from "./ci-relay-yard.js";
+import { ownerSecretStoreBindingStore } from "./ci-secret-store.js";
 import { parseJsonValue } from "./json.js";
 import { loadOwnerDeployCredentials } from "./owner-deploy-credentials.js";
+import type { OwnerStoreEntries } from "./owner-store-session.js";
 
 // `hobo ci up|plan` place the CI project through the relay's own Yards
 // (`packages/ci-vercel/deploy/yard.ts`): the Vercel Yard that runs the relay as
@@ -152,7 +154,13 @@ export async function relayCommitPlatformDrift(
 	}
 }
 
+export interface CiRelayUpOwnerSession {
+	readonly credentials: (cwd: string) => CredentialResolver;
+	readonly entries: (cwd: string) => OwnerStoreEntries;
+}
+
 export interface CiRelayUpDeps {
+	readonly owner?: CiRelayUpOwnerSession;
 	readonly deploy?: typeof runCiRelayDeploy;
 	readonly head?: typeof gitHead;
 	readonly snapshot?: typeof relayCommitSnapshot;
@@ -261,21 +269,19 @@ export function createCiRelayUpCommand(
 					target: "preview",
 					team,
 				};
-				if (deps.deploy !== undefined)
-					return await deps.deploy({
-						cwd: snapshot.dir,
-						values,
-						env: deps.env ?? process.env,
-						credentials,
-						emitProgress: input.emitProgress,
-					});
-				return await runCiRelayManaged({
-					cwd: relayDir,
-					values: { ref: head.ref, sha: head.sha, target: "preview" },
+				const sessionKey = projectOf(input);
+				return await (deps.deploy ?? runCiRelayDeploy)({
+					cwd: snapshot.dir,
+					values,
 					env: deps.env ?? process.env,
 					credentials,
-					...(deps.ownerSession
-						? { ownerSession: deps.ownerSession }
+					...(deps.owner !== undefined
+						? {
+								ownerCredentials: deps.owner.credentials(sessionKey),
+								bindingStore: ownerSecretStoreBindingStore(
+									deps.owner.entries(sessionKey),
+								),
+							}
 						: undefined),
 					emitProgress: input.emitProgress,
 				});
