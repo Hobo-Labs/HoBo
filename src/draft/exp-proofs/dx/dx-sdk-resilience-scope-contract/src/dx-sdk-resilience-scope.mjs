@@ -57,7 +57,7 @@ export const DX_SDK_RESILIENCE_SCOPE_CONTRACT = Object.freeze({
     "Pin the SDK-facing resilience semantics vocabulary, child issue matrix, initiative linkage, and guardrails before SDK helper or conformance work fans out.",
   designRefs: Object.freeze([
     "docs/design/README.md",
-    "docs/design/dx-sdk-resilience-semantics.md",
+    "https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185",
     "docs/design/sdk-contracts.md",
   ]),
   initiatives: REQUIRED_INITIATIVES,
@@ -87,7 +87,7 @@ export const DX_SDK_RESILIENCE_SCOPE_CONTRACT = Object.freeze({
       phase: "M0",
       title: "Define DX SDK resilience semantics vocabulary and acceptance matrix",
       statusAtClaim: "Done",
-      targetPath: "docs/design/dx-sdk-resilience-semantics.md",
+      targetPath: "https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185",
       verificationCommands: Object.freeze([
         "npm.cmd run docs:design-lint",
         "node scripts\\validate-sdk-contracts.mjs",
@@ -290,7 +290,7 @@ export function validateDxSdkResilienceScope(contract) {
 
   for (const ref of [
     "docs/design/README.md",
-    "docs/design/dx-sdk-resilience-semantics.md",
+    "https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185",
     "docs/design/sdk-contracts.md",
   ]) {
     if (!contract.designRefs?.includes(ref)) {

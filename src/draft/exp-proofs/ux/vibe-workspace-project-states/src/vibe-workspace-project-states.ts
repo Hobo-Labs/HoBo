@@ -141,7 +141,7 @@ export const VIBE_WORKSPACE_PROJECT_STATE_MODEL = {
   proofNote: "docs/design/proofs/vibe-workspace-project-states/README.md",
   designRefs: [
     "docs/design/workspace-onboarding-ux.md",
-    "docs/design/outcome-activation-rail.md",
+    "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
     "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
   ],
   scopeOut: requiredScopeOut,

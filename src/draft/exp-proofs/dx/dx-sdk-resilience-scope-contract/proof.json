@@ -9,7 +9,7 @@
     "epicProofs": [],
     "expProofs": [],
     "designDocs": [
-      "docs/design/dx-sdk-resilience-semantics.md",
+      "https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185",
       "https://linear.app/quickdeploy-ai/document/hobo-514-dx-sdk-resilience-scope-proof-archived-340bcae93e40",
       "docs/design/sdk-contracts.md"
     ]

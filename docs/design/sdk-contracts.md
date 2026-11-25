@@ -230,7 +230,7 @@ const internalAgent = connector("internal-agent", { protocol: "acp" });
 
 ### DX SDK resilience semantics
 
-**Contract record.** [`dx-sdk-resilience-semantics.md`](./dx-sdk-resilience-semantics.md) is the M0 vocabulary and acceptance matrix for retry, cancellation, deadline, lifecycle, supervision, cleanup, and replay-derived inspection behavior. Contract-IR visibility of effects and secondary resiliency metadata is defined in [ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md) (`EffectSpec` / `ResilienceProfile` on `@hobo/contracts`).
+**Contract record.** [`dx-sdk-resilience-semantics.md`](https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185) is the M0 vocabulary and acceptance matrix for retry, cancellation, deadline, lifecycle, supervision, cleanup, and replay-derived inspection behavior. Contract-IR visibility of effects and secondary resiliency metadata is defined in [ADR-0136](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md) (`EffectSpec` / `ResilienceProfile` on `@hobo/contracts`).
 
 **Semantics.** Resilience helpers remain idiom-layer-only over the canonical `hobo:sdk` WIT surface. Effect and XState are reference inputs, not public dependencies. A transient failure may retry only through a deterministic schedule with persisted facts; `policy.Decided` denial and terminal WIT failures never retry; cancellation is caller-owned and stops pending retries; inspection is reconstructed from replayable event facts rather than process memory.
 

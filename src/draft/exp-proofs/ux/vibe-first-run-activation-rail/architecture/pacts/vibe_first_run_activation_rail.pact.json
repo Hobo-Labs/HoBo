@@ -21,7 +21,7 @@
           "proofNote": "docs/design/proofs/vibe-first-run-activation-rail/README.md",
           "designRefs": [
             "docs/design/workspace-onboarding-ux.md",
-            "docs/design/outcome-activation-rail.md",
+            "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc",
             "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
           ],
           "scopeOut": [

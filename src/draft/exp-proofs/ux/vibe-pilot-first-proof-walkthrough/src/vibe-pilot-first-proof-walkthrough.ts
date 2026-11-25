@@ -102,7 +102,7 @@ export const VIBE_PILOT_FIRST_PROOF_WALKTHROUGH: VibePilotFirstProofWalkthrough 
   packagePath: "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough",
   proofPath: "docs/design/proofs/vibe-pilot-first-proof-walkthrough/README.md",
   designRefs: [
-    "docs/design/customer-onboarding.md",
+    "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3",
     "docs/design/workspace-onboarding-ux.md",
     "docs/design/support-workflow.md",
     "docs/design/beta-pilot-feedback.md",

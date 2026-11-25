@@ -4,7 +4,7 @@ Executable M0 proof for HOBO-443, defining Resource Garbage Collection scope and
 later design or implementation work fans out.
 
 The authoritative design record is
-[`docs/design/resource-garbage-collection.md`](../../../../../docs/design/resource-garbage-collection.md).
+[`docs/design/resource-garbage-collection.md`](https://linear.app/quickdeploy-ai/document/resource-garbage-collection-scope-and-acceptance-archived-62969e85b633).
 
 ## Focused Gate
 

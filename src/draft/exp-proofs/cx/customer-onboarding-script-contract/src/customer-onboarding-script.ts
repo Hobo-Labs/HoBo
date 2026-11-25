@@ -173,7 +173,7 @@ export const CUSTOMER_ONBOARDING_SCRIPT = {
       prompt: "Confirm pilot persona, consent, support window, workspace invite, and success definition before exposure.",
       expectedEvidence: "Pilot intake record with persona, consent, support owner, and target workflow.",
       proofMode: "design-record",
-      source: "docs/design/customer-onboarding.md#script-stages",
+      source: "https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3#script-stages",
     },
     {
       id: "workspace-setup",

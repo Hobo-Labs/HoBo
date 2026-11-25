@@ -52,6 +52,6 @@ npm.cmd --prefix src\draft\exp-proofs\dx-sdk-resilience-scope-contract test
 
 Related records:
 
-- [DX SDK resilience semantics](../../../../../docs/design/dx-sdk-resilience-semantics.md)
+- [DX SDK resilience semantics](https://linear.app/quickdeploy-ai/document/dx-sdk-resilience-semantics-archived-112e69714185)
 - [SDK contracts](../../../../../docs/design/sdk-contracts.md)
 - [HOBO-514 proof record](https://linear.app/quickdeploy-ai/document/hobo-514-dx-sdk-resilience-scope-proof-archived-340bcae93e40)

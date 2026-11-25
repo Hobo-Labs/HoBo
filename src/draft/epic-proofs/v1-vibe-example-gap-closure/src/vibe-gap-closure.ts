@@ -379,7 +379,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-540", "first-run activation rail mockups and state model", "Workspace & Onboarding UX", "M1", 3, [
       "mockups",
       "state model",
-    ], ["docs/design/workspace-onboarding-ux.md", "docs/design/outcome-activation-rail.md"]),
+    ], ["docs/design/workspace-onboarding-ux.md", "https://linear.app/quickdeploy-ai/document/v1-outcome-activation-rail-archived-abae252bf9cc"]),
     child("HOBO-541", "workspace/project empty, blocked, recovery, and value-proof states", "Workspace & Onboarding UX", "M1", 3, [
       "mockups",
       "state model",
@@ -415,7 +415,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-549", "first-customer pilot storyboard and script artifacts", "Customer Onboarding", "M1", 3, [
       "storyboard",
       "script",
-    ], ["docs/design/customer-onboarding.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3"]),
     child("HOBO-550", "support intake, triage, owner-route, and customer update mockups", "Support Workflow", "M1", 3, [
       "mockups",
       "wireframes",
@@ -472,7 +472,7 @@ export const VIBE_GAP_CLOSURE_BACKLOG: VibeGapClosureBacklog = {
     child("HOBO-563", "pilot workspace-to-first-proof walkthrough with blocker routing", "Customer Onboarding", "M2", 5, [
       "clickable prototype",
       "fixtures",
-    ], ["docs/design/customer-onboarding.md", "docs/design/workspace-onboarding-ux.md"]),
+    ], ["https://linear.app/quickdeploy-ai/document/customer-onboarding-scope-script-and-success-criteria-archived-955b752fbbd3", "docs/design/workspace-onboarding-ux.md"]),
     child("HOBO-564", "support case prototype with redacted evidence pack", "Support Workflow", "M2", 5, [
       "reference prototype",
       "fixtures",
