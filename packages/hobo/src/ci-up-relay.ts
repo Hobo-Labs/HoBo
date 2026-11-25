@@ -16,8 +16,7 @@ import { withoutSecretEnv } from "@hobo/hobo-ci";
 import { vercelPlatformDrift } from "@hobo/provider-vercel";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
-import type { runCiRelayDeploy } from "./ci-relay-deploy.js";
-import { runCiRelayManaged } from "./ci-relay-managed.js";
+import { runCiRelayDeploy } from "./ci-relay-deploy.js";
 import { relayCommitSnapshot } from "./ci-relay-snapshot.js";
 
 export { relayCommitSnapshot } from "./ci-relay-snapshot.js";

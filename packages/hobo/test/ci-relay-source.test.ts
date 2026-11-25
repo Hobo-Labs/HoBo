@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
 	importerClosure,
 	parseLockfile,
-} from "../../../scripts/ci/release-oci-affected.mts";
+} from "../../../scripts/lib/pnpm-lockfile.mts";
 import {
 	pnpmWorkspaceClosure,
 	readRelaySource,

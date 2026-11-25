@@ -19,7 +19,7 @@ import {
 	verbHelpText,
 	type YardRuntime,
 } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, TrustedVault } from "@hobo/core";
 import type { Outcome } from "@hobo/fleet";
 import {
 	type AppHandOffMode,
