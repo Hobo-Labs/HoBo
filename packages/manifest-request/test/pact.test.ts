@@ -1,19 +1,3 @@
-/**
- * The PACT in `contracts/pacts/` is executed here, not left as a data file.
- *
- * A contract nobody runs records what someone once intended. Running it makes
- * it a gate: tightening a refusal message without updating the contract fails
- * here, and so does a change to the canonical bytes — which is the half that
- * matters, because those bytes are folded into the catalog digest and then
- * into a signed resolution receipt.
- *
- * The boundary is real. A catalog publishes candidate rows to the Planner;
- * `packages/cloud/contracts/pacts/resource-definition-catalog.pact.json`
- * already pins the *response* side of that exchange (`catalogHash`,
- * `candidates`, `winner`), naming candidates only by id. What a candidate row
- * actually contains is the part this package owns, and that is what these six
- * interactions pin.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -69,7 +53,6 @@ describe("hobo-selection-candidate-catalog (provider contract)", () => {
 				(interaction) =>
 					(interaction.request.body as { definitionId: string }).definitionId,
 			);
-		// Transcribed from @hobo/provider-neon and @hobo/provider-cloudflare.
 		expect(accepted).toStrictEqual([
 			"neon.claimable-postgres/v1",
 			"cloudflare.temporary-hyperdrive/v1",
@@ -91,8 +74,6 @@ describe("hobo-selection-candidate-catalog (provider contract)", () => {
 				const parsed = parseSelectionCandidate(interaction.request.body);
 				const canonical = canonicalSelectionCandidateJson(parsed);
 				expect(canonical).toBe(interaction.response.body.canonical);
-				// The bytes the contract publishes must survive a decode/encode
-				// cycle unchanged, or two packages digesting the same row disagree.
 				expect(
 					canonicalSelectionCandidateJson(
 						fromSelectionCandidateRecord(JSON.parse(canonical)),
@@ -122,7 +103,6 @@ describe("hobo-selection-candidate-catalog (provider contract)", () => {
 		const authored = (
 			neon?.request.body as { producesBindingProfiles: readonly string[] }
 		).producesBindingProfiles;
-		// @hobo/provider-neon lists postgresql before neon-serverless.
 		expect(authored).toStrictEqual([
 			"binding.postgresql/v1",
 			"binding.neon-serverless/v1",

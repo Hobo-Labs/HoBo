@@ -1,7 +1,3 @@
-/**
- * Minimal Wasp webApp marker for `b.web(waspApp(root))`.
- * Open SaaS: https://github.com/wasp-lang/open-saas · https://docs.opensaas.sh/
- */
 import type { ProviderAnnotation } from "@hobo/bindles";
 import { COMPONENT_METADATA } from "@hobo/runtime";
 import {
@@ -12,7 +8,6 @@ import {
 } from "./parse.js";
 
 export const WASP_WEBAPP_METADATA = Symbol.for("hobo.webapp.wasp");
-/** Shared meta symbol — Bindle detects any `{ framework, root }` webApp. */
 export const WEBAPP_META = Symbol.for("hobo.webapp.meta");
 // public-contract: Bindle provider annotations use this stable option name.
 export const WEBAPP_OPTION = "webapp" as const;
@@ -25,10 +20,7 @@ export type WaspWebAppMeta = {
 const METADATA_SYMBOL =
 	(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 
-/** DeclaredComponent for Bindle — only stamps `root` (repo-relative Wasp app dir). */
 export function waspApp(root: string): new () => object {
-	// The marker is stamped once and read back much later, so the path is
-	// parsed here rather than wherever it is eventually resolved.
 	const trimmed = parseWaspRelativeRoot(root);
 
 	const meta: WaspWebAppMeta = Object.freeze({
@@ -82,18 +74,11 @@ export function isWaspWebAppAnnotation(
 	try {
 		return parseWaspWebAppAnnotation(annotation) !== undefined;
 	} catch (error) {
-		// A malformed Wasp annotation is a rejection, not a "no". Anything else
-		// is not this package's annotation and answers false.
 		if (error instanceof WaspInputRejectedError) throw error;
 		return false;
 	}
 }
 
-/**
- * The root a Bindle definition says its web Kit is. Untrusted on the way in —
- * the definition is assembled by the author's own code — and a repo-relative
- * path with no traversal on the way out.
- */
 export function waspRootFromAnnotations(
 	annotations: readonly ProviderAnnotation[],
 ): string {

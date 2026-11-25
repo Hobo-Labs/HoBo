@@ -1,36 +1,18 @@
-/**
- * Layout-as-data for the yard world.
- *
- * The spatial arrangement of a station's floor — grid size, camp room rects +
- * colors, character desks, junction corridor paths — is a serializable
- * `WorldLayout`, stored on `WorldState.layouts[stationId]`. The simulator and
- * the OTLP auto-materialization derive a default layout from topology; the
- * hosting service may replace it wholesale (e.g. an editor PUT); `validateLayout`
- * checks an untrusted replacement (rooms non-overlapping, desks inside their
- * room, corridors walkable). Persistence lives in the node-only
- * `layout-store.ts` entry — this module is pure.
- */
 import type { TilePoint, TileRect, WorldState } from "./model.js";
 
 export interface LayoutRoom {
 	rect: TileRect;
-	/** Accent color (room border + name tag). */
 	color: string;
 }
 
 export interface WorldLayout {
 	version: 1;
-	/** Tile grid extents for the station's floor. */
 	grid: { w: number; h: number };
-	/** campId → room. */
 	rooms: Record<string, LayoutRoom>;
-	/** characterId → desk tile. */
 	desks: Record<string, TilePoint>;
-	/** junctionId → corridor path (contiguous, walkable tiles). */
 	corridors: Record<string, TilePoint[]>;
 }
 
-/** Room accent palette, assigned per-yard so a floor reads as one zone. */
 const ROOM_PALETTE = [
 	"#7c4dff",
 	"#00acc1",
@@ -54,7 +36,6 @@ export function insideRect(p: TilePoint, r: TileRect): boolean {
 	return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h;
 }
 
-/** Camp ids that belong to a station (camps hang off yards, yards off stations). */
 export function stationCampIds(state: WorldState, stationId: string): string[] {
 	const yardIds = new Set(
 		Object.values(state.yards)
@@ -72,11 +53,6 @@ function stationJunctionIds(state: WorldState, campIds: Set<string>): string[] {
 		.map((j) => j.id);
 }
 
-/**
- * Derive the default layout for a station from current topology: rooms from
- * camp rects, desks from characters, corridors from junctions, grid sized to
- * content plus a margin. Deterministic — same topology, same layout.
- */
 export function deriveLayout(
 	state: WorldState,
 	stationId: string,
@@ -118,11 +94,6 @@ export function deriveLayout(
 	};
 }
 
-/**
- * Keep a station's layout in sync as OTLP auto-materialization adds topology:
- * derive when absent, otherwise fill in entries for new camps/characters/
- * junctions (existing edits are preserved).
- */
 export function syncLayout(state: WorldState, stationId: string): WorldLayout {
 	const existing = state.layouts[stationId];
 	if (existing === undefined) {
@@ -159,10 +130,6 @@ export function syncLayout(state: WorldState, stationId: string): WorldLayout {
 	return existing;
 }
 
-/**
- * Apply a validated layout to the live state: camp rects, character desks
- * (positions snap to the new desk), junction corridors. Mutates `state`.
- */
 export function applyLayout(
 	state: WorldState,
 	stationId: string,
@@ -211,7 +178,6 @@ function isRect(r: unknown): r is TileRect {
 	);
 }
 
-/** Consecutive tiles are 4-connected. */
 export function isContiguous(path: TilePoint[]): boolean {
 	for (let i = 1; i < path.length; i += 1) {
 		const a = path[i - 1];
@@ -227,11 +193,6 @@ export interface LayoutValidation {
 	reasons: string[];
 }
 
-/**
- * Structural + semantic validation of an untrusted layout payload against the
- * live topology of one station. Every rule violation is reported (no early
- * exit) so the editor can show all problems at once.
- */
 export function validateLayout(
 	raw: unknown,
 	state: WorldState,
@@ -279,7 +240,6 @@ export function validateLayout(
 	);
 	const junctionIds = new Set(stationJunctionIds(state, campSet));
 
-	// Rooms: complete, well-formed, inside grid, pairwise non-overlapping.
 	for (const campId of campIds) {
 		if (rooms[campId] === undefined)
 			reasons.push(`missing room for camp ${campId}`);
@@ -325,7 +285,6 @@ export function validateLayout(
 		}
 	}
 
-	// Desks: complete, well-formed, inside their character's camp room, unique.
 	for (const ch of characters) {
 		if (desks[ch.id] === undefined)
 			reasons.push(`missing desk for character ${ch.id}`);
@@ -356,8 +315,6 @@ export function validateLayout(
 		seenDesks.set(key, charId);
 	}
 
-	// Corridors: complete, non-empty, in-grid, contiguous, and walkable (no
-	// tile inside any room of the station).
 	for (const jnId of junctionIds) {
 		if (corridors[jnId] === undefined)
 			reasons.push(`missing corridor for junction ${jnId}`);
@@ -414,11 +371,6 @@ export function validateLayout(
 	};
 }
 
-/**
- * Breadth-first path between two tiles through free tiles (in-grid, not inside
- * a blocked rect). Used by the editor to reroute junction corridors. Returns
- * the path including both endpoints, or undefined when unreachable.
- */
 export function findPath(
 	grid: { w: number; h: number },
 	blocked: TileRect[],

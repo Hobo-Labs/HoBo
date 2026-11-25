@@ -1,20 +1,3 @@
-/**
- * Parsing service declarations and build artifacts.
- *
- * A build artifact record is what a later deploy resolves and ships, so the
- * fields here are the ones that decide *which bytes run in production*. The
- * digest is the load-bearing one: it is how a deploy verifies it got the
- * artifact the build produced rather than something else with the same path. A
- * malformed digest accepted here would be compared against and never match, or —
- * worse, if the comparison were lenient anywhere downstream — would let an
- * unverified artifact through.
- *
- * The other rule worth naming is that an **OCI fallback must say why it fell
- * back**. A wasm component is the intended output; an OCI container means
- * componentization did not happen. Recording that without a reason would leave a
- * deployment that silently is not what the project asked for, and nothing in the
- * artifact to say so.
- */
 import { describe, expect, it } from "vitest";
 
 import { BuildError } from "../src/build/errors.js";
@@ -25,11 +8,6 @@ import {
 	parseServiceDeclaration,
 } from "../src/build/parse.js";
 
-/**
- * Artifacts are parsed as part of a manifest rather than on their own, so every
- * artifact assertion goes through `parseBuildManifest` with a single-artifact
- * manifest. That is also how the code is really reached in production.
- */
 function parseBuildArtifact(raw: unknown) {
 	const parsed = parseBuildManifest({
 		schema: BUILD_MANIFEST_SCHEMA,
@@ -64,8 +42,6 @@ function codeOf(run: () => unknown): string {
 
 describe("parseServiceDeclaration", () => {
 	it("accepts a minimal declaration and derives its paths", () => {
-		// Only the name is required; the entrypoint and source root are derived.
-		// Requiring all three would make the common case verbose for no gain.
 		const parsed = parseServiceDeclaration({ name: "api" });
 		expect(parsed.name).toBe("api");
 		expect(parsed.entrypoint.length).toBeGreaterThan(0);
@@ -83,9 +59,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("derives the source root from the entrypoint's directory", () => {
-		// So a service with a nested entrypoint gets a source root that actually
-		// contains it. Defaulting to the project root would hand the whole tree
-		// to the componentizer.
 		expect(
 			parseServiceDeclaration({ name: "api", entrypoint: "src/api/main.ts" })
 				.sourceRoot,
@@ -101,10 +74,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("refuses a name that is not a lowercase identifier", () => {
-		// Service names become directory names, artifact filenames, and manifest
-		// keys. An uppercase or space-bearing name would work on one filesystem
-		// and break on another — the worst kind of portability bug, since it
-		// passes locally.
 		for (const name of ["API", "my api", "my_api", "9api", "-api", "", "a/b"]) {
 			expect(codeOf(() => parseServiceDeclaration({ name }))).toBe(
 				"HOBO_BUILD_SERVICE_INVALID",
@@ -119,7 +88,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("names the offending service in the refusal detail", () => {
-		// A bindle with a dozen services needs to say which one is malformed.
 		try {
 			parseServiceDeclaration({ name: "BAD" });
 			expect.unreachable("an invalid name must be refused");
@@ -130,9 +98,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("refuses a missing name rather than defaulting one", () => {
-		// `String(record.name ?? "")` produces an empty string, which the pattern
-		// rejects. A default like "service" would build something the author
-		// never declared.
 		expect(codeOf(() => parseServiceDeclaration({}))).toBe(
 			"HOBO_BUILD_SERVICE_INVALID",
 		);
@@ -156,9 +121,6 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("accepts only the two artifact kinds that exist", () => {
-		// The kind decides which runtime path a deploy takes. An unrecognised one
-		// would be carried into a manifest and fail at the point something tried
-		// to run it.
 		for (const kind of [
 			"",
 			"wasm",
@@ -180,9 +142,6 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("requires a full sha256 digest", () => {
-		// The verification anchor. A truncated or differently-prefixed digest
-		// would be compared against and never match — or, if any comparison
-		// downstream were lenient, would let through an artifact nobody checked.
 		for (const digest of [
 			"",
 			"abc",
@@ -209,8 +168,6 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("refuses an absolute or traversing artifact path", () => {
-		// The artifact path is joined against a project root and read. An
-		// absolute path ignores the root; a traversing one walks out of it.
 		for (const path of [
 			"/etc/passwd",
 			"../outside.wasm",
@@ -223,10 +180,6 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("requires an OCI fallback to say why it fell back", () => {
-		// The honesty rule. A wasm component is the intended output; an OCI
-		// container means componentization did not happen, and an artifact that
-		// recorded the substitution without the reason would deploy something
-		// other than what the project asked for with nothing saying so.
 		expect(
 			codeOf(() =>
 				parseBuildArtifact({
@@ -248,8 +201,6 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("treats an empty fallback reason as no reason", () => {
-		// `!fallbackReason` — an empty string explains nothing, and accepting it
-		// would satisfy the rule while defeating its purpose.
 		expect(
 			codeOf(() =>
 				parseBuildArtifact({
@@ -262,21 +213,14 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("does not require a reason from a wasm component", () => {
-		// The intended path needs no explanation; demanding one would make every
-		// successful build carry a field about a fallback that did not happen.
 		expect(() => parseBuildArtifact(ARTIFACT)).not.toThrow();
 	});
 
 	it("omits the WIT world when the artifact does not name one", () => {
-		// Conditional spread. A `witWorld: undefined` key would read to a
-		// consumer as a component that declares an empty world rather than one
-		// that declares none.
 		expect(Object.hasOwn(parseBuildArtifact(ARTIFACT), "witWorld")).toBe(false);
 	});
 
 	it("carries a stated WIT world through", () => {
-		// The world is the component's contract. Dropping it would leave a
-		// deploy unable to check that a host can serve what the component needs.
 		expect(
 			parseBuildArtifact({ ...ARTIFACT, witWorld: "hobo:sdk/sdk" }).witWorld,
 		).toBe("hobo:sdk/sdk");
@@ -293,13 +237,6 @@ describe("parseBuildArtifact", () => {
 	});
 
 	it("defaults the descriptive fields rather than dropping them", () => {
-		// `String(record.x ?? "")` on service, mediaType, runtime and source. An
-		// artifact missing one of these is still resolvable — the digest and path
-		// are what a deploy needs — so the parser fills a blank rather than
-		// refusing. Pinned because the blanks are deliberate: an `undefined`
-		// would vanish from the serialized manifest, and a consumer checking
-		// `"runtime" in artifact` would get a different answer than one checking
-		// `artifact.runtime === ""`.
 		const sparse = parseBuildArtifact({
 			kind: "wasm-component",
 			digest: DIGEST,
@@ -327,15 +264,10 @@ describe("normalizeTargetRuntime", () => {
 	});
 
 	it("folds component onto wasm", () => {
-		// Two words for one target. A component *is* the wasm output, and
-		// carrying both spellings downstream would make every comparison check
-		// two strings — and one place would forget.
 		expect(normalizeTargetRuntime("component")).toBe("wasm");
 	});
 
 	it("is case-insensitive", () => {
-		// `--runtime WASM` from a shell with an uppercase variable is the same
-		// request. Rejecting it would be a distinction with no meaning.
 		for (const runtime of ["AUTO", "Wasm", "COMPONENT", "Container"]) {
 			expect(() => normalizeTargetRuntime(runtime)).not.toThrow();
 		}
@@ -343,9 +275,6 @@ describe("normalizeTargetRuntime", () => {
 	});
 
 	it("refuses a runtime nothing supports", () => {
-		// The target decides which build path runs. An unrecognised one carried
-		// through would fail deep inside a builder rather than at the flag that
-		// named it.
 		for (const runtime of ["", "docker", "native", "wasm32", "auto "]) {
 			expect(codeOf(() => normalizeTargetRuntime(runtime))).toBe(
 				"HOBO_BUILD_RUNTIME_INVALID",
@@ -354,8 +283,6 @@ describe("normalizeTargetRuntime", () => {
 	});
 
 	it("echoes the rejected runtime in the message and detail", () => {
-		// Echoed in its original case, so the user sees what they typed rather
-		// than the lowercased form the check compared.
 		try {
 			normalizeTargetRuntime("Docker");
 			expect.unreachable("an unknown runtime must be refused");

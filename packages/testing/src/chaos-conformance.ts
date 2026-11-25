@@ -55,11 +55,6 @@ import type { HttpTransport } from "@hobo/core";
 
 import { type ChaosFault, chaosTransport } from "./chaos.js";
 
-/**
- * The faults that leave a write ambiguous. `rate-limited` is deliberately
- * excluded: a 429 means the provider refused the request, so nothing was
- * applied and there is no ambiguity to converge out of.
- */
 export const AMBIGUOUS_FAULTS: readonly ChaosFault[] = Object.freeze([
 	"network-error",
 	"timeout",
@@ -68,63 +63,34 @@ export const AMBIGUOUS_FAULTS: readonly ChaosFault[] = Object.freeze([
 	"malformed-body",
 ]);
 
-/** One resolver under test, wired to whatever transport the suite supplies. */
 export interface ChaosSubject {
-	/** Names the provider and product in failure output. */
 	readonly label: string;
-	/**
-	 * Builds a fresh world and a resolver for it, called once per scenario so no
-	 * state leaks between faults.
-	 *
-	 * The subject owns its fake provider transport — only it knows that API's
-	 * shape — and passes that transport through `wrap` before binding the
-	 * resolver to the result. Inverting it (suite supplies the transport) cannot
-	 * work: the wrapper has to sit around a fake the subject has not built yet.
-	 */
 	readonly create: (
 		wrap: (inner: HttpTransport) => HttpTransport,
 	) => ChaosSubjectRun;
 }
 
 export interface ChaosSubjectRun {
-	/** Reconciles once. May reject; the suite treats a rejection as the fault landing. */
 	readonly reconcile: () => Promise<{
 		readonly physicalId?: string;
 		readonly action?: string;
 	}>;
-	/** How many resources exist in the fake world right now. */
 	readonly countResources: () => number;
-	/** How many create-shaped calls the transport has seen. */
 	readonly countCreates: () => number;
 }
 
 export interface ChaosScenarioResult {
 	readonly label: string;
 	readonly fault: ChaosFault;
-	/** Did the first (faulted) reconcile reject, or return despite the fault? */
 	readonly firstRejected: boolean;
-	/**
-	 * Did the create reach the provider before the fault fired? This is what
-	 * separates "nothing was applied, so create again" from "it was applied and
-	 * you did not hear about it, so adopt".
-	 */
 	readonly writeLandedFirstAttempt: boolean;
 	readonly resourcesAfterRetry: number;
 	readonly createsAfterRetry: number;
 	readonly physicalIdStable: boolean;
 	readonly retryAction: string | undefined;
-	/** Every way this scenario violated the convergence property. */
 	readonly violations: readonly string[];
 }
 
-/**
- * Drives one subject through every ambiguous fault, injecting each on the call
- * that writes.
- *
- * `writeCallIndex` is which transport call performs the create — resolvers read
- * before they write, so it is rarely 0, and injecting on the read would test
- * something else entirely (a failed read is unambiguous: nothing was applied).
- */
 export async function runChaosConformance(
 	subject: ChaosSubject,
 	options: { readonly writeCallIndex: number },
@@ -142,9 +108,6 @@ async function runOne(
 	fault: ChaosFault,
 	writeCallIndex: number,
 ): Promise<ChaosScenarioResult> {
-	// The fault fires once, on the write. The retry runs against a clean
-	// transport so the second attempt is not itself sabotaged — the question is
-	// whether the resolver recovers, not whether it survives a second hit.
 	let injecting = true;
 	const run = subject.create((inner) => {
 		const faulted = chaosTransport(inner, [{ at: writeCallIndex, fault }]);
@@ -219,7 +182,6 @@ async function runOne(
 	};
 }
 
-/** Every violation across a run, formatted for one assertion. */
 export function chaosViolations(
 	results: readonly ChaosScenarioResult[],
 ): readonly string[] {

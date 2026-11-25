@@ -10,12 +10,6 @@ import {
 	generateAgentDocs,
 } from "./generate.js";
 
-// S3-05 — the agent-docs freshness gate. Mirrors src/build/codegen-gate.ts
-// (assertGeneratedFresh): regenerate the artifact set from the single source
-// (CANONICAL_VERBS + the MCP tool surface), diff it against what is checked in,
-// and fail on drift. `hobo codegen --check` is the sibling idiom; this is the
-// same regenerate -> compare -> fail contract for the agent-docs surface. The
-// CI wiring (S3-07) is out of scope; this is the library gate it will call.
 
 export type AgentDocsDriftStatus = "missing" | "changed" | "extra";
 
@@ -30,8 +24,6 @@ export class AgentDocsError extends Error {
 	constructor(
 		readonly code: string,
 		message: string,
-		// Carried for reporting, never read back as JSON here -- the drift entries
-		// this is handed are domain records, not `JsonValue` leaves.
 		readonly detail: Readonly<Record<string, unknown>> = {},
 	) {
 		super(message);
@@ -45,12 +37,6 @@ async function readIfPresent(target: string): Promise<string | undefined> {
 		: undefined;
 }
 
-/**
- * Compare a directory of checked-in agent-docs artifacts against a fresh
- * generation. Returns one drift entry per file that is missing or changed. Pure
- * relative to the generator, so `hobo`'s `--check` path and any CI gate agree by
- * construction.
- */
 export async function compareAgentDocs(
 	dir: string,
 	input: GenerateAgentDocsInput = {},
@@ -80,11 +66,6 @@ export async function compareAgentDocs(
 	return drift;
 }
 
-/**
- * Assert the checked-in agent-docs artifacts in `dir` are fresh. Throws an
- * AgentDocsError with HOBO_AGENT_DOCS_DRIFT (carrying the drift entries) when any
- * artifact is missing or stale — the fail-closed drift gate.
- */
 export async function assertAgentDocsFresh(
 	dir: string,
 	input: GenerateAgentDocsInput = {},
@@ -99,10 +80,6 @@ export async function assertAgentDocsFresh(
 	}
 }
 
-/**
- * Write the generated agent-docs artifacts into `dir` (creating it as needed).
- * Returns the artifact-relative paths written.
- */
 export async function writeAgentDocs(
 	dir: string,
 	input: GenerateAgentDocsInput = {},
