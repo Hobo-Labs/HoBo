@@ -14,6 +14,14 @@ scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
 `PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
 Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
 
+## Runtime test reaches
+
+Package tests that load another workspace package through a computed path must
+declare that edge in `scripts/test-deps-runtime-reaches.json` so Fabric's
+`check-test-workspace-deps` gate schedules the right builds. Owner-ceremony evals
+under `packages/hobo/test/evals/` that touch `packages/ci-vercel` and CD listener
+tests that reach `@hobo/camps` are registered there.
+
 ## Routing
 
 `route-runner.mts` is the route job of the six routed workflows. It runs on a

@@ -78,6 +78,21 @@
 			"from": "packages/hobo/test/ci-relay-prebuilt.test.ts",
 			"needs": ["@hobo/ci-vercel#build"],
 			"why": "copies packages/ci-vercel into a fixture rooted under ../../ci-vercel at run time"
+		},
+		{
+			"from": "packages/hobo/test/cd-listener.test.ts",
+			"needs": ["@hobo/camps#build"],
+			"why": "reaches @hobo/camps at run time through a path it assembles (/v1/cd/feed/../camps)"
+		},
+		{
+			"from": "packages/hobo/test/evals/owner-ceremony-smoke.eval.test.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "names packages/ci-vercel as the owner ceremony project at run time"
+		},
+		{
+			"from": "packages/hobo/test/evals/ceremony-explorer.eval.test.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "names packages/ci-vercel as the owner ceremony project at run time"
 		}
 	]
 }
