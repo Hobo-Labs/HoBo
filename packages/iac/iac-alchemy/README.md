@@ -162,6 +162,10 @@ Requirements, declarations, annotations and edges must be bounded, acyclic data;
 the mapper copies and freezes them before invoking provider callbacks. Invalid,
 accessor-backed or oversized data is rejected. The host remains responsible for
 attesting callback code and captured state.
+An optional `validateGraph` callback receives the complete immutable declaration
+graph and dependency names before any mapper registers resources. It must return
+synchronously; rejection or an asynchronous result stops the mapping. Graph
+validators do not receive application entrypoints.
 Only explicit registry entries count as mappings. Connector declarations are
 rejected until their authorization and runtime bindings can be mapped.
 `describeAlchemyPrimitiveSupport` reports supported, partial and
