@@ -1,13 +1,9 @@
-// public-contract: zone label that namespaces all HoBo hierarchical names.
 export const HOBO_ZONE_LABEL = "hobo" as const;
 
-// public-contract: default TLD for pure-local / portless names.
 export const DEFAULT_LOCAL_TLD = "localhost" as const;
 
-// public-contract: default TLD for overlay / internal names (RFC 6761 .test).
 export const DEFAULT_OVERLAY_TLD = "test" as const;
 
-// public-contract: environment segment value that is omitted from names.
 export const DEFAULT_OMITTED_ENV = "prod" as const;
 
 const BARE_HOBO_SUFFIX = `.${HOBO_ZONE_LABEL}`;

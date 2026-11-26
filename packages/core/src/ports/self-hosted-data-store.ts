@@ -12,7 +12,6 @@ import {
 } from "./data-store-catalog.js";
 import { DataStoreOfferingParseError } from "./data-store-offerings.js";
 
-// public-contract: the facet vocabulary a self-host assessment reports in.
 export const SELF_HOST_FACETS = Object.freeze([
 	"long-running-compute",
 	"persistent-volume",
@@ -26,7 +25,6 @@ export type SelfHostFacetState = "declared" | "undeclared" | "absent";
 
 export type SelfHostVerdict = "can" | "cannot" | "undetermined";
 
-// public-contract: the host forms a provider may declare a compute product to be.
 export const SELF_HOST_FORMS = Object.freeze(["vm", "container"] as const);
 
 export type SelfHostForm = (typeof SELF_HOST_FORMS)[number];
@@ -92,7 +90,6 @@ export interface SelfHostAssessment {
 	readonly summary: string;
 }
 
-// public-contract: the feature tokens a compute declaration is read for.
 export const SELF_HOST_FEATURE_TOKENS = Object.freeze({
 	vm: "vm",
 	container: "container",

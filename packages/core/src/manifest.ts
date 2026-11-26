@@ -17,7 +17,6 @@ import {
 } from "./parse-utils.js";
 import type { InterfaceStability } from "./ports.js";
 
-// public-contract: the core manifest schema version consumers pin against.
 export const CORE_SCHEMA_VERSION = "hobo.core/v1";
 
 const STABILITIES = new Set<InterfaceStability>([

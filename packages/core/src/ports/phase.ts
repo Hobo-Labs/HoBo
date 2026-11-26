@@ -7,7 +7,6 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-// public-contract: the closed phase vocabulary hosts and manifests share.
 export const DEPLOYMENT_PHASES = Object.freeze([
 	"plan",
 	"init",
@@ -47,8 +46,8 @@ const CAPABILITY_PHASES: Readonly<
 	requestSpan: "handle",
 } as const);
 
-export const HOBO_PHASE_ENV = "HOBO_PHASE"; // public-contract: the env-var name hosts and guests agree on
-export const HOBO_DEV_ENV = "HOBO_DEV"; // public-contract: the env-var name hosts and guests agree on
+export const HOBO_PHASE_ENV = "HOBO_PHASE";
+export const HOBO_DEV_ENV = "HOBO_DEV";
 export const HOBO_DEV_VALUES = Object.freeze(["0", "1"] as const);
 
 export interface PhaseScope {

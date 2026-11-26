@@ -46,10 +46,8 @@ import { deepFreeze } from "../parse-utils.js";
 import { CAPABILITY_SLOTS, type CapabilitySlot } from "./capability-slot.js";
 import type { HttpTransport } from "./http-transport.js";
 
-// public-contract: versioned identity stamped on every resolver outcome.
 export const RESOLVER_CONTRACT = "hobo.resource-resolver/v1";
 
-// public-contract: the closed set of outcomes a reconcile may report.
 export const RESOLVER_ACTIONS = Object.freeze([
 	"create",
 	"update",
@@ -154,7 +152,6 @@ export interface ResourceResolver {
 	): Promise<boolean>;
 }
 
-// public-contract: every refusal the resolver contract can report.
 export const RESOLVER_ERROR_CODES = Object.freeze([
 	"RESOLVER_CREDENTIAL_MISSING",
 	"RESOLVER_CREDENTIAL_NOT_A_REF",

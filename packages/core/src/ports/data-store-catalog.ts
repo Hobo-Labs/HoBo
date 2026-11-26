@@ -18,7 +18,6 @@ import type {
 	OfferingStability,
 } from "./offering-resolution.js";
 
-// public-contract: the realization vocabulary every catalog claim is written in.
 export const DATA_STORE_CLAIM_REALIZATIONS = Object.freeze([
 	"native",
 	"fallback",
@@ -30,7 +29,6 @@ export const DATA_STORE_CLAIM_REALIZATIONS = Object.freeze([
 export type DataStoreClaimRealization =
 	(typeof DATA_STORE_CLAIM_REALIZATIONS)[number];
 
-// public-contract: who operates a catalogued store.
 export const DATA_STORE_MANAGEMENT_MODES = Object.freeze([
 	"managed",
 	"self-hosted",
@@ -38,7 +36,6 @@ export const DATA_STORE_MANAGEMENT_MODES = Object.freeze([
 
 export type DataStoreManagement = (typeof DATA_STORE_MANAGEMENT_MODES)[number];
 
-// public-contract: the stability-basis vocabulary a catalog entry is written in.
 export const DATA_STORE_STABILITY_BASES = Object.freeze([
 	"vendor-stated",
 	"inferred",

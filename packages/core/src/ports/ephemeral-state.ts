@@ -1,7 +1,6 @@
 import { CoreParseError } from "../errors.js";
 import type { JsonValue } from "../json.js";
 
-// public-contract: version tag a binding reports so a host can refuse a mismatch.
 export const EPHEMERAL_STATE_PORT_CONTRACT_VERSION =
 	"hobo.core.ephemeral-state/v1" as const;
 
@@ -53,7 +52,6 @@ export interface EphemeralStatePort {
 	expire(key: EphemeralKey, ttlMs: EphemeralTtlMs): Promise<boolean>;
 }
 
-// public-contract: per-operation command budget the relay meters against.
 export const EPHEMERAL_STATE_COMMAND_COST = Object.freeze({
 	get: 1,
 	getMany: 1,

@@ -2,7 +2,6 @@ import { CoreParseError } from "./errors.js";
 import type { JsonValue } from "./json.js";
 import { deepFreeze, nonEmptyString } from "./parse-utils.js";
 
-// public-contract: extension-point id pattern `hobo.<name>/v<major>` (dots/dashes allowed in name).
 const EXTENSION_POINT_PATTERN = /^hobo\.[a-z0-9][a-z0-9.-]*\/v[0-9]+$/;
 
 export class ExtensionRegistryError extends CoreParseError {
