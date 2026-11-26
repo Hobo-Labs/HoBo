@@ -55,9 +55,7 @@ import {
 	instrumentResolvers,
 	type ResolverTelemetryOptions,
 } from "./delivery-coverage.js";
-import {
-	refuse,
-} from "./errors.js";
+import { refuse } from "./errors.js";
 import {
 	isJsonArray,
 	isJsonBoolean,
@@ -593,7 +591,7 @@ export function createOciRegistryResolvers(
 		)
 			refuse(
 				"oci-upload-foreign-host",
-				url.hostname,
+				"foreign-host",
 				"registry handed an upload session on a foreign host",
 				"uploads to a foreign host would carry the registry credential there",
 			);

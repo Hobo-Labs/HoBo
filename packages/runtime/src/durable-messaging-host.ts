@@ -1675,6 +1675,27 @@ export interface BindleTopicHostClaim {
 	readonly subscription?: DurableTopicSubscriptionGrant;
 }
 
+export interface BindleTopicClient {
+	readonly publishEnabled: boolean;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+	publish(
+		input: Omit<Wit.PublishRequest, "topic">,
+	): Promise<Wit.PublishOutcome>;
+	ensureSubscription(input: {
+		readonly operation: Wit.Operation;
+		readonly consumerGroup: string;
+		readonly maxDeliveryAttempts: number;
+		readonly startAt: Wit.StartAt;
+	}): Promise<Wit.SubscriptionOutcome>;
+	consume(
+		input: Omit<Wit.ConsumeRequest, "topic">,
+	): Promise<Wit.ConsumeOutcome>;
+	ack(
+		input: Omit<Wit.AcknowledgementRequest, "topic">,
+	): Promise<Wit.MessageOutcome>;
+	nack(input: Omit<Wit.RejectionRequest, "topic">): Promise<Wit.NackOutcome>;
+}
+
 export function createBindleTopicWitHost(
 	port: DurableMessaging,
 	bindle: Parameters<typeof compileBindleTopicGrants>[0] & {
@@ -1688,6 +1709,7 @@ export function createBindleTopicWitHost(
 ): {
 	readonly host: DurableMessagingWitHost;
 	readonly bindings: readonly BindleTopicGrant[];
+	readonly topic: (resourceName: string) => BindleTopicClient;
 	readonly revoke: () => void;
 } {
 	const config = record(
@@ -1759,7 +1781,153 @@ export function createBindleTopicWitHost(
 		port,
 		hostOptions as DurableMessagingWitHostOptions,
 	);
-	return Object.freeze({ host, bindings, revoke: policy.revoke });
+	const byResource = new Map(
+		bindings.map((binding) => [binding.resourceName, binding]),
+	);
+	const topic = (resourceName: string): BindleTopicClient => {
+		const binding = byResource.get(
+			text(resourceName, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		if (binding === undefined) return invalid();
+		const call = async <T>(
+			input: unknown,
+			fields: readonly string[],
+			run: (
+				data: Record<string, unknown>,
+				op: DurableMessagingOperation,
+			) => Promise<WitOutcome<T>>,
+		): Promise<WitOutcome<T>> => {
+			const op = requestOperation(input);
+			try {
+				return await run(record(input, ["operation", ...fields]), op);
+			} catch {
+				return { tag: "unknown", val: witOperation(op) };
+			}
+		};
+		return Object.freeze({
+			publishEnabled: binding.grant.publish,
+			subscriptions: binding.grant.subscriptions,
+			publish: (input: Omit<Wit.PublishRequest, "topic">) =>
+				call(input, ["message"], (data, op) =>
+					host.publish({
+						operation: witOperation(op),
+						topic: binding.grant.topic,
+						message: witMessage(data.message, DURABLE_MESSAGING_LIMITS),
+					}),
+				),
+			ensureSubscription: (
+				input: Parameters<BindleTopicClient["ensureSubscription"]>[0],
+			) =>
+				call(
+					input,
+					["consumerGroup", "maxDeliveryAttempts", "startAt"],
+					(data, op) => {
+						const group = text(
+							data.consumerGroup,
+							DURABLE_MESSAGING_LIMITS.nameBytes,
+						);
+						const destination = binding.grant.subscriptions.find(
+							(item) => item.consumerGroup === group,
+						);
+						if (destination === undefined)
+							return Promise.resolve({ tag: "unknown", val: witOperation(op) });
+						if (data.startAt !== "earliest" && data.startAt !== "latest")
+							return invalid();
+						return host.ensureSubscription({
+							operation: witOperation(op),
+							subscription: {
+								topic: binding.grant.topic,
+								consumerGroup: group,
+								deadLetterTopic: destination.deadLetterTopic,
+								maxDeliveryAttempts: integer(
+									data.maxDeliveryAttempts,
+									DURABLE_MESSAGING_LIMITS.deliveryAttempts,
+									1,
+								),
+								startAt: data.startAt,
+							},
+						});
+					},
+				),
+			consume: (input: Omit<Wit.ConsumeRequest, "topic">) =>
+				call(
+					input,
+					["consumerGroup", "maxMessages", "visibilityTimeoutMs"],
+					(data, op) =>
+						host.consume({
+							operation: witOperation(op),
+							topic: binding.grant.topic,
+							consumerGroup: text(
+								data.consumerGroup,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							maxMessages: integer(
+								data.maxMessages,
+								DURABLE_MESSAGING_LIMITS.batchSize,
+								1,
+							),
+							visibilityTimeoutMs: BigInt(
+								fromU64(
+									data.visibilityTimeoutMs,
+									DURABLE_MESSAGING_LIMITS.leaseMs,
+									1,
+								),
+							),
+						}),
+				),
+			ack: (input: Omit<Wit.AcknowledgementRequest, "topic">) =>
+				call(
+					input,
+					["consumerGroup", "messageId", "sequence", "leaseId"],
+					(data, op) =>
+						host.ack({
+							operation: witOperation(op),
+							topic: binding.grant.topic,
+							consumerGroup: text(
+								data.consumerGroup,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							messageId: text(
+								data.messageId,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							sequence: BigInt(
+								fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1),
+							),
+							leaseId: text(data.leaseId, DURABLE_MESSAGING_LIMITS.nameBytes),
+						}),
+				),
+			nack: (input: Omit<Wit.RejectionRequest, "topic">) =>
+				call(
+					input,
+					["consumerGroup", "messageId", "sequence", "leaseId", "reason"],
+					(data, op) =>
+						host.nack({
+							operation: witOperation(op),
+							topic: binding.grant.topic,
+							consumerGroup: text(
+								data.consumerGroup,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							messageId: text(
+								data.messageId,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							sequence: BigInt(
+								fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1),
+							),
+							leaseId: text(data.leaseId, DURABLE_MESSAGING_LIMITS.nameBytes),
+							reason: text(
+								data.reason,
+								DURABLE_MESSAGING_LIMITS.reasonBytes,
+								true,
+								true,
+							),
+						}),
+				),
+		});
+	};
+	return Object.freeze({ host, bindings, topic, revoke: policy.revoke });
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 

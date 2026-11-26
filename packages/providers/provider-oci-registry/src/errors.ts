@@ -1,15 +1,5 @@
-/**
- * Typed refusals of the OCI registry realizer.
- *
- * Every refusal is a core `ResolverError` (`RESOLVER_PROVIDER_REJECTED`).
- * `reason` is a closed vocabulary. `scopePayload` stored on the error is a
- * closed token: a DNS hostname, `METHOD:status`, `registry-basic`,
- * `registry-token`, or one fixed scope word. A Location, query string, upload
- * id, token, or credential is stored as empty. Release logs validate the
- * token again before printing it.
- */
 import { ResolverError } from "@hobo/core";
-import { isRegistryHost, OCI_REGISTRY_IMAGE_PRODUCT_ID } from "./reference.js";
+import { OCI_REGISTRY_IMAGE_PRODUCT_ID } from "./reference.js";
 
 // public-contract: closed oci registry structured refusal reasons for release logs.
 export const OCI_REGISTRY_REFUSAL_REASONS = Object.freeze([
@@ -27,7 +17,6 @@ export type OciRegistryRefusalReason =
 const HTTP_STATUS_SCOPE =
 	/^(?:GET|HEAD|POST|PUT|PATCH|DELETE):(?:[1-5][0-9]{2})$/u;
 
-/** Drop anything that is not the closed token for `reason`. */
 function closedOciScopePayload(
 	reason: OciRegistryRefusalReason,
 	scopePayload: string,
@@ -35,7 +24,7 @@ function closedOciScopePayload(
 	const scope = scopePayload.trim();
 	switch (reason) {
 		case "oci-upload-foreign-host":
-			return isRegistryHost(scope) ? scope : "";
+			return "foreign-host";
 		case "oci-http-status":
 			return HTTP_STATUS_SCOPE.test(scope) ? scope : "";
 		case "oci-upload-path":

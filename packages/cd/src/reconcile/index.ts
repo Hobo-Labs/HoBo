@@ -81,9 +81,9 @@ export {
 } from "./release-freight-detail.js";
 export {
 	formatOciBlockedDetail,
-	type ReleaseOciDetailKind,
-	RELEASE_OCI_DETAIL_KINDS,
 	ociStructuredScopePayload,
+	RELEASE_OCI_DETAIL_KINDS,
+	type ReleaseOciDetailKind,
 	validateOciReasonStructuredDetail,
 } from "./release-oci-detail.js";
 export {

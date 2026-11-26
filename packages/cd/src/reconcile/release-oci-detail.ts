@@ -22,13 +22,10 @@ export const RELEASE_OCI_DETAIL_KINDS = [
 export type ReleaseOciDetailKind = (typeof RELEASE_OCI_DETAIL_KINDS)[number];
 
 const OCI_UPLOAD_PATH_SCOPE = "blob-upload-path";
+const OCI_FOREIGN_HOST_SCOPE = "foreign-host";
 const OCI_BLOB_SIZE_SCOPE = "over-transport-bound";
 const OCI_BLOB_NOT_OBSERVED_SCOPE = "post-upload";
 
-// Closed DNS hostname. data-models/reconcile.cue ANDs `^.{1,253}$` with the
-// label pattern because CUE's RE2 rejects the length lookahead.
-const OCI_REGISTRY_HOST =
-	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
 const OCI_HTTP_STATUS_SCOPE =
 	/^(?:GET|HEAD|POST|PUT|PATCH|DELETE):(?:[1-5][0-9]{2})$/u;
 
@@ -48,10 +45,7 @@ function isValidOciRequestedScope(
 ): boolean {
 	switch (kind) {
 		case "oci-upload-foreign-host":
-			return (
-				isSingleLineBounded(requestedScope, 253) &&
-				OCI_REGISTRY_HOST.test(requestedScope)
-			);
+			return requestedScope === OCI_FOREIGN_HOST_SCOPE;
 		case "oci-upload-path":
 			return requestedScope === OCI_UPLOAD_PATH_SCOPE;
 		case "oci-http-status":
@@ -99,7 +93,7 @@ export function formatOciBlockedDetail(
 	const base = `${code}: provider=oci-registry oci-reason=${validated.detailKind} credential=${validated.credentialRef}`;
 	switch (validated.detailKind) {
 		case "oci-upload-foreign-host":
-			return `${base} host=${validated.requestedScope}`;
+			return base;
 		case "oci-upload-path":
 			return `${base} ${validated.detailKind}`;
 		case "oci-http-status":
@@ -122,6 +116,8 @@ export function ociStructuredScopePayload(
 	switch (reason) {
 		case "oci-credential-refused":
 			return realizeScope;
+		case "oci-upload-foreign-host":
+			return OCI_FOREIGN_HOST_SCOPE;
 		case "oci-upload-path":
 			return OCI_UPLOAD_PATH_SCOPE;
 		case "oci-blob-size":

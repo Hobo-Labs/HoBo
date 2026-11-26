@@ -26,58 +26,53 @@ package cd
 #reconcileDriftKind: "" | =~"^(modified|deleted|orphan|external|[a-z][a-z-]*)(:[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*)?$"
 
 #releaseFreightCredentialRef: string & !~"[\\r\\n]" & =~"^(github-app://[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}|owner://[A-Z][A-Z0-9_]{0,63})$"
-#releaseFreightScope: string & !~"[\\r\\n]" & (=~"^release-probe$" | =~"^cd-realize:[a-z0-9][a-z0-9-]{0,62}(/[a-z0-9][a-z0-9-]{0,62})?$")
+#releaseFreightScope:         string & !~"[\\r\\n]" & (=~"^release-probe$" | =~"^cd-realize:[a-z0-9][a-z0-9-]{0,62}(/[a-z0-9][a-z0-9-]{0,62})?$")
 
 #reconcileReasonStructuredScope: {
-	credentialRef: #releaseFreightCredentialRef
+	credentialRef:  #releaseFreightCredentialRef
 	requestedScope: #releaseFreightScope
-	detailKind: "scope-not-allowed" | "credential-unresolved" | "missing-GITHUB_REPOSITORY" | "missing-GITHUB_TOKEN"
+	detailKind:     "scope-not-allowed" | "credential-unresolved" | "missing-GITHUB_REPOSITORY" | "missing-GITHUB_TOKEN"
 }
 
 #reconcileReasonStructuredRepositoryMismatch: {
-	credentialRef: #releaseFreightCredentialRef
+	credentialRef:  #releaseFreightCredentialRef
 	requestedScope: #releaseFreightCredentialRef
-	detailKind: "repository-mismatch"
+	detailKind:     "repository-mismatch"
 }
 
 #reconcileReasonStructuredGithubPages: {
-	credentialRef: #releaseFreightCredentialRef
+	credentialRef:  #releaseFreightCredentialRef
 	requestedScope: #releaseFreightScope
-	detailKind: "github-credential-rejected" | "github-permission-missing" | "github-rate-limited" | "github-pages-disabled" | "github-pages-source-mismatch" | "github-ref-not-fast-forward" | "github-pages-build-errored" | "github-pages-deployment-failed" | "github-pages-artifact-unavailable"
+	detailKind:     "github-credential-rejected" | "github-permission-missing" | "github-rate-limited" | "github-pages-disabled" | "github-pages-source-mismatch" | "github-ref-not-fast-forward" | "github-pages-build-errored" | "github-pages-deployment-failed" | "github-pages-artifact-unavailable"
 }
 
-// DNS hostname only (no port, userinfo, path, or query). RE2 has no
-// lookahead, so the 253-character cap is a separate constraint from the
-// label pattern. Keep this aligned with OCI_REGISTRY_HOST in
-// src/reconcile/release-oci-detail.ts.
-#ociRegistryHost: string & !~"[\\r\\n]" & =~"^.{1,253}$" & =~"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
 #ociHttpStatusScope: string & !~"[\\r\\n]" & =~"^(GET|HEAD|POST|PUT|PATCH|DELETE):[1-5][0-9]{2}$"
 
 #reconcileReasonStructuredOci:
 	{
-		credentialRef: #releaseFreightCredentialRef
-		requestedScope: #ociRegistryHost
-		detailKind: "oci-upload-foreign-host"
+		credentialRef:  #releaseFreightCredentialRef
+		requestedScope: "foreign-host"
+		detailKind:     "oci-upload-foreign-host"
 	} | {
-		credentialRef: #releaseFreightCredentialRef
+		credentialRef:  #releaseFreightCredentialRef
 		requestedScope: "blob-upload-path"
-		detailKind: "oci-upload-path"
+		detailKind:     "oci-upload-path"
 	} | {
-		credentialRef: #releaseFreightCredentialRef
+		credentialRef:  #releaseFreightCredentialRef
 		requestedScope: #ociHttpStatusScope
-		detailKind: "oci-http-status"
+		detailKind:     "oci-http-status"
 	} | {
-		credentialRef: #releaseFreightCredentialRef
+		credentialRef:  #releaseFreightCredentialRef
 		requestedScope: "over-transport-bound"
-		detailKind: "oci-blob-size"
+		detailKind:     "oci-blob-size"
 	} | {
-		credentialRef: #releaseFreightCredentialRef
+		credentialRef:  #releaseFreightCredentialRef
 		requestedScope: "post-upload"
-		detailKind: "oci-blob-not-observed"
+		detailKind:     "oci-blob-not-observed"
 	} | {
-		credentialRef: #releaseFreightCredentialRef
+		credentialRef:  #releaseFreightCredentialRef
 		requestedScope: #releaseFreightScope
-		detailKind: "oci-credential-refused"
+		detailKind:     "oci-credential-refused"
 	}
 
 #reconcileReasonStructured:

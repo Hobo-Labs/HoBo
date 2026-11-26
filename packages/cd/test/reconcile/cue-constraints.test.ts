@@ -211,8 +211,7 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 			return parts.join(".");
 		};
 		const accepted: readonly (readonly [string, string])[] = [
-			["oci-upload-foreign-host", "upload.foreign.test"],
-			["oci-upload-foreign-host", labels(253)],
+			["oci-upload-foreign-host", "foreign-host"],
 			["oci-upload-path", "blob-upload-path"],
 			["oci-http-status", "POST:403"],
 			["oci-http-status", "DELETE:500"],
@@ -240,6 +239,8 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 				"https://evil.example/v2/blobs/uploads/abc?_state=sekret",
 			],
 			["oci-upload-foreign-host", labels(254)],
+			["oci-upload-foreign-host", labels(253)],
+			["oci-upload-foreign-host", "upload.foreign.test"],
 			["oci-upload-path", "POST:403"],
 			["oci-http-status", "upload.foreign.test"],
 			["oci-credential-refused", "registry-basic"],

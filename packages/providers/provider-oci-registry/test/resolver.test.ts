@@ -640,12 +640,7 @@ describe("upload session Location (GHCR and foreign hosts)", () => {
 				pathRefusal ? "oci-upload-path" : "oci-upload-foreign-host",
 			);
 			expect(error.scopePayload).toBe(
-				pathRefusal
-					? "blob-upload-path"
-					: name === "a foreign host" ||
-							name === "a protocol-relative foreign host"
-						? FOREIGN
-						: TARGET,
+				pathRefusal ? "blob-upload-path" : "foreign-host",
 			);
 			expect(error.scopePayload).not.toContain("/");
 			expect(error.scopePayload).not.toContain("?");
@@ -660,6 +655,20 @@ describe("upload session Location (GHCR and foreign hosts)", () => {
 					expect(credentialHosts.has(hostname)).toBe(true);
 			}
 		});
+
+	it("does not retain an untrusted upload host in the refusal", async () => {
+		const host = `${randomUUID().replaceAll("-", "")}.example.test`;
+		const fixture = image({ platform: "amd64", binary: true });
+		const w = locationWorld({ kind: "foreign", host }, [{ host }]);
+		const error = await rejection(
+			resolverFor(fixture).reconcile(storeRequest(fixture), w.transport),
+		);
+		expect(error).toMatchObject({
+			reason: "oci-upload-foreign-host",
+			scopePayload: "foreign-host",
+		});
+		expect(JSON.stringify(error)).not.toContain(host);
+	});
 });
 
 describe("converge: body encoding honesty", () => {

@@ -25,9 +25,9 @@ describe("release oci structured detail", () => {
 	it.each([
 		[
 			"oci-upload-foreign-host",
-			() => runtimeSyntheticHost(),
-			(host: string) =>
-				`RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-upload-foreign-host credential=${CREDENTIAL} host=${host}`,
+			() => "foreign-host",
+			() =>
+				`RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-upload-foreign-host credential=${CREDENTIAL}`,
 		],
 		[
 			"oci-upload-path",
@@ -86,6 +86,10 @@ describe("release oci structured detail", () => {
 			["oci-upload-foreign-host", `uploads.example:443`],
 			["oci-upload-foreign-host", `user:pass@uploads.example`],
 			["oci-upload-foreign-host", `evil.${token}.example.com`],
+			[
+				"oci-upload-foreign-host",
+				`${randomBytes(16).toString("hex")}.example.com`,
+			],
 			["oci-upload-path", location],
 			[
 				"oci-upload-path",
@@ -142,7 +146,7 @@ describe("release oci structured detail", () => {
 		expect(
 			ociStructuredScopePayload("oci-credential-refused", token, REALIZE),
 		).toBe(REALIZE);
-		const leaked = releaseFreightStructuredFromFields({
+		const redacted = releaseFreightStructuredFromFields({
 			credentialRef: CREDENTIAL,
 			requestedScope: ociStructuredScopePayload(
 				"oci-upload-foreign-host",
@@ -151,10 +155,12 @@ describe("release oci structured detail", () => {
 			),
 			detailKind: "oci-upload-foreign-host",
 		});
-		expect(leaked).toBeUndefined();
+		expect(redacted?.requestedScope).toBe("foreign-host");
 		expect(
-			formatReleaseFreightBlockedReason("RESOLVER_PROVIDER_REJECTED", leaked),
-		).toBe("RESOLVER_PROVIDER_REJECTED");
+			formatReleaseFreightBlockedReason("RESOLVER_PROVIDER_REJECTED", redacted),
+		).toBe(
+			`RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-upload-foreign-host credential=${CREDENTIAL}`,
+		);
 		const host = runtimeSyntheticHost();
 		const kept = releaseFreightStructuredFromFields({
 			credentialRef: CREDENTIAL,
@@ -170,9 +176,10 @@ describe("release oci structured detail", () => {
 			kept,
 		);
 		expect(line).toBe(
-			`RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-upload-foreign-host credential=${CREDENTIAL} host=${host}`,
+			`RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-upload-foreign-host credential=${CREDENTIAL}`,
 		);
 		expect(line).not.toContain(token);
+		expect(line).not.toContain(host);
 		expect(line).not.toContain("?");
 		const maxHost = `${"a".repeat(63)}.${"a".repeat(63)}.${"a".repeat(63)}.${"a".repeat(61)}`;
 		const overHost = `${maxHost}a`;
@@ -184,7 +191,7 @@ describe("release oci structured detail", () => {
 				requestedScope: maxHost,
 				detailKind: "oci-upload-foreign-host",
 			})?.requestedScope,
-		).toBe(maxHost);
+		).toBeUndefined();
 		expect(
 			validateReasonStructuredDetail({
 				credentialRef: CREDENTIAL,
@@ -199,7 +206,7 @@ describe("release oci structured detail", () => {
 		const token = `npm_${randomBytes(12).toString("hex")}`;
 		const structured = validateReasonStructuredDetail({
 			credentialRef: CREDENTIAL,
-			requestedScope: host,
+			requestedScope: "foreign-host",
 			detailKind: "oci-upload-foreign-host",
 		});
 		expect(structured).toBeDefined();
