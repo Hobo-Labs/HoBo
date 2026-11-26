@@ -218,7 +218,8 @@ export function createRivetActorHost(options: {
 		{ lease: RivetActorLease; holderId: string; fenceToken: bigint }
 	>();
 	const journal = options.journal;
-	const tenantId = options.tenantId ?? "local";
+	const scopedTenantId = options.tenantId;
+	const tenantId = scopedTenantId ?? "local";
 	const leaseTtlMs = options.leaseTtlMs ?? 30_000;
 	if (!tenantId.trim() || !Number.isSafeInteger(leaseTtlMs) || leaseTtlMs <= 0)
 		throw new RivetJournalError("PARSE", "invalid actor host options");
@@ -229,6 +230,15 @@ export function createRivetActorHost(options: {
 		return `rivet:state:${JSON.stringify([tenantId, key])}`;
 	};
 
+	const identityFor = (input: JsonValue): LogicalActorIdentity => {
+		const identity = parseLogicalActorIdentity(input);
+		if (scopedTenantId !== undefined && identity.tenantId !== scopedTenantId)
+			throw new RivetJournalError(
+				"INBOX_CONFLICT",
+				"actor tenant does not match the configured runtime tenant",
+			);
+		return identity;
+	};
 	const streamIdFor = (identity: LogicalActorIdentity): string =>
 		actorCompoundKey(identity).join("/");
 
@@ -329,7 +339,7 @@ export function createRivetActorHost(options: {
 			};
 		},
 		accept(input) {
-			const identity = parseLogicalActorIdentity(input.identity);
+			const identity = identityFor(input.identity);
 			const digest = actorCommandDigest({
 				identity,
 				commandId: input.commandId,
@@ -348,7 +358,7 @@ export function createRivetActorHost(options: {
 			return { ...accepted, digest };
 		},
 		processNext(identityInput, fold, initialState, commandOptions) {
-			const identity = parseLogicalActorIdentity(identityInput);
+			const identity = identityFor(identityInput);
 			const streamId = streamIdFor(identity);
 			const claimed = journal.claimNext(streamId);
 			if (!claimed) return undefined;

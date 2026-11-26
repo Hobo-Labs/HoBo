@@ -90,6 +90,31 @@ describe("@hobo/runtime-rivet", () => {
 		}
 	});
 
+	it("rejects commands from a different tenant in a scoped runtime", () => {
+		const bundle = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "prod",
+			journalPath: ":memory:",
+		});
+		const foreign = { ...identity, tenantId: "other" };
+		try {
+			expect(() =>
+				bundle.actors.accept({
+					identity: foreign,
+					commandId: "foreign-command",
+					commandType: "addItem",
+					payload: { sku: "hat" },
+					expectedRevision: 0,
+				}),
+			).toThrow(/tenant/i);
+			expect(() =>
+				bundle.actors.processNext(foreign, (state) => state, {}),
+			).toThrow(/tenant/i);
+		} finally {
+			bundle.journal.close();
+		}
+	});
+
 	it("refuses to open one persistent journal for a different Camp", () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-camp-scope-"));
 		const journalPath = join(directory, "journal.sqlite");

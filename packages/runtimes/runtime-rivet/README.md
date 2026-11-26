@@ -92,7 +92,8 @@ sessions and tests. A runtime journal is bound to its tenant and Camp; opening
 it for another scope is rejected. An existing nonempty journal without a scope
 must be adopted explicitly with `adoptUnscopedJournal: true` after its owner has
 been verified. Adoption preserves its contents and cannot override an existing
-scope binding.
+scope binding. The runtime also rejects command identities from another tenant;
+callers must still authorize actor operations.
 
 ## Actor state and leases
 
