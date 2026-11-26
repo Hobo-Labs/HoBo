@@ -120,7 +120,9 @@ parsed once into derived types and never re-checked downstream:
   `retained`, `claims` (attributed to the reconciler) and `handover`
   (secret-scanned).
 - **Realizer reasons** retain the stable codes of built-in catalog, relay,
-  runner-host and resolver failures, with fixed remediations. Other codes become
+  runner-host and resolver failures, with fixed remediations. Release Freight and
+  OCI registry refusals may also carry a validated `ReasonStructuredDetail`
+  (`detailKind` plus credential ref and scope) for release logs. Other codes become
   `realizer-detail-redacted`; provider-supplied messages, remediations and
   subjects are never reported. A transport cannot use realizer-only codes.
 - **`OBSERVE_ONLY`** Camps are read and reported (`OBSERVED`), drift is
