@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,7 @@ import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { Miniflare } from "miniflare";
 import { describe, expect, it, vi } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
@@ -810,7 +812,12 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		const before = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(directory, "home");
 		try {
-			const created: { type: string; news: object; bindings?: object[] }[] = [];
+			const created: {
+				type: string;
+				fqn: string;
+				news: object;
+				bindings?: object[];
+			}[] = [];
 			const uncertain: string[] = [];
 			let admissions = 0;
 			let revokeOnFinancialRevalidation = false;
@@ -870,9 +877,9 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					),
 			};
 			const namespaceProvider = Provider.succeed(Namespace, {
-				reconcile: ({ news }) =>
+				reconcile: ({ news, fqn }) =>
 					Effect.sync(() => {
-						created.push({ type: Namespace.Type, news });
+						created.push({ type: Namespace.Type, fqn, news });
 						return {
 							...news,
 							title: news.title ?? "cache",
@@ -890,7 +897,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				{
 					reconcile: ({ news, bindings, fqn }) =>
 						Effect.sync(() => {
-							created.push({ type: Worker.Type, news, bindings });
+							created.push({ type: Worker.Type, fqn, news, bindings });
 							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this provider double supplies the workerName used by the service binding.
 							return {
 								...news,
@@ -1196,16 +1203,86 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					}),
 				]),
 			);
+			const physicalNamespace = created.find(
+				(entry) =>
+					entry.type === Namespace.Type &&
+					entry.fqn === namespaceClaim.resourceId,
+			);
+			if (proxy === undefined || physicalNamespace === undefined)
+				throw new Error("mapped KV resources missing");
+			// SAFETY: the assertion above checked the generated proxy's read-only environment.
+			const proxyEnvironment = proxy.news as {
+				env: { HOBO_KV_MODE: string; HOBO_KV_ALLOW: string };
+			};
+			const source = (name: string) =>
+				stripTypeScriptTypes(
+					readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8"),
+					{ mode: "transform" },
+				);
+			const modules = [
+				"cloudflare-kv-proxy",
+				"cloudflare-kv-protocol",
+				"async-boundary",
+				"cloudflare-capacity",
+				"cloudflare-native-promise",
+				"cloudflare-native-await",
+				"cloudflare-byte-stream",
+				"cloudflare-web-options",
+			].map((name) => ({
+				type: "ESModule" as const,
+				path: `${name}.js`,
+				contents: source(name),
+			}));
+			const workerd = new Miniflare({
+				compatibilityDate: "2026-01-01",
+				workers: [
+					{
+						name: "bridge",
+						modules: true,
+						script: `export default { fetch(request, env) { return env.PROXY.fetch("https://hobo-kv.internal/get", { method: "POST", headers: { "x-hobo-kv-key": request.headers.get("x-hobo-kv-key") } }); } };`,
+						serviceBindings: { PROXY: proxy.fqn },
+					},
+					{
+						name: proxy.fqn,
+						modules,
+						kvNamespaces: { HOBO_KV_NAMESPACE: physicalNamespace.fqn },
+						bindings: {
+							HOBO_KV_MODE: proxyEnvironment.env.HOBO_KV_MODE,
+							HOBO_KV_ALLOW: proxyEnvironment.env.HOBO_KV_ALLOW,
+						},
+					},
+				],
+			});
+			try {
+				const namespace = await workerd.getKVNamespace(
+					"HOBO_KV_NAMESPACE",
+					proxy.fqn,
+				);
+				await namespace.put(
+					"greeting",
+					new TextEncoder().encode("hello").buffer,
+				);
+				const simulatedProxy = await workerd.getWorker("bridge");
+				const result = await worker.fetch(new Request("https://app.test"), {
+					HOBO_RESOURCE_0: {
+						fetch: async (request: Request) => {
+							const response = await simulatedProxy.fetch(
+								"https://bridge.test/",
+								{ headers: Object.fromEntries(request.headers) },
+							);
+							return new Response(await response.arrayBuffer(), {
+								status: response.status,
+								headers: Object.fromEntries(response.headers),
+							});
+						},
+					},
+				});
+				expect(await result.text()).toBe("hello");
+			} finally {
+				await workerd.dispose();
+			}
 			const native = nativeNamespace();
 			native.values.set("greeting", new TextEncoder().encode("hello"));
-			const result = await worker.fetch(new Request("https://app.test"), {
-				HOBO_RESOURCE_0: service({
-					HOBO_KV_MODE: "read-only",
-					HOBO_KV_ALLOW: "get",
-					HOBO_KV_NAMESPACE: native.binding,
-				}),
-			});
-			expect(await result.text()).toBe("hello");
 
 			const writerGrant = {
 				mode: "write-only" as const,

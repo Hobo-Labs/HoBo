@@ -159,3 +159,8 @@ for proxy invocations and the underlying KV operations as well as worker and
 storage costs; otherwise the normal unknown-pricing policy applies. The host
 is responsible for enforcing any usage bounds assumed by a quote. This adapter
 view does not change the application's normal routing or budget policy.
+
+The workerd integration test configures an emulated KV namespace from the
+mapped namespace and grant identities and exercises an application read through
+the real proxy. A Node bridge forwards the request; the test does not deploy the
+application to workerd or establish production Cloudflare behavior.
