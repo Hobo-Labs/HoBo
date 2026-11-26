@@ -315,22 +315,8 @@ async function collectEvidence(root, packageRoot) {
 	};
 }
 
-//   // domain-view: <why>          — a deliberately richer parse-don't-validate
-//   // parallel-type-allowed: <why> — temporary debt awaiting migration.
 const PARALLEL_TYPE_MARKERS = ["domain-view:", "parallel-type-allowed:"];
 
-/**
- * True when the marker sits on the declaration line or anywhere in the comment
- * block immediately above it.
- *
- * This read exactly one preceding line, so a marker written as the *first* line
- * of a multi-line block — the natural place, since the reason usually needs a
- * sentence — was silently ignored and the guard reported an unannotated type
- * that was in fact annotated. `check-technical-standards.ts` had the identical
- * bug for `// public-contract:`; both are fixed, and they should stay
- * symmetric, because an author who learns the rule from one gate will apply it
- * at the other.
- */
 function hasMarkerAbove(lines, index, marker) {
 	if ((lines[index] ?? "").includes(marker)) return true;
 	for (let above = index - 1; above >= 0; above -= 1) {

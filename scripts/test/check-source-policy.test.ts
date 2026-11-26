@@ -136,6 +136,17 @@ describe("source policy", () => {
 		);
 	});
 
+	it("rejects public-contract explanations on exported constants", () => {
+		const text = [
+			"// public-contract: the schema identifier",
+			'export const SCHEMA_ID = "hobo:schema/v1";',
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1])).map((item) => item.line),
+			[1],
+		);
+	});
+
 	it("rejects explanatory type assertion annotations and deferred markers", () => {
 		const text = [
 			"// SAFETY: the value was checked at the boundary",
