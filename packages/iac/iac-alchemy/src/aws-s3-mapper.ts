@@ -27,7 +27,6 @@ export function withAwsS3<Entrypoint, Requirements>(
 		awsBoundedS3(),
 	);
 }
-/** Supply an existing AWS mapper set to compose S3 with other runtime subsets. */
 export function awsS3BindleMappers<Entrypoint, Requirements>(
 	base = awsBindleMappers<Entrypoint, Requirements>(),
 ) {

@@ -1,8 +1,6 @@
 ------------------------- MODULE AwsKvRuntime -------------------------
 EXTENDS Naturals, FiniteSets, TLC
 
-\* One bounded store instance; a call can remain in flight after its caller times out.
-\* The host's authorization decisions and transport behavior are assumptions.
 CONSTANTS Calls, Limit
 VARIABLES state, slots, permit, op, result, admitted, verified
 vars == <<state, slots, permit, op, result, admitted, verified>>
