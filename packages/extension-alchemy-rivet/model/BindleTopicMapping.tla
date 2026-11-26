@@ -1,9 +1,6 @@
 ------------------------- MODULE BindleTopicMapping -------------------------
 EXTENDS Naturals, FiniteSets
 
-\* Bounded abstraction: verifier claims are authoritative, provisioning is
-\* sequential, and retries preserve their operation identities. This model
-\* does not prove the TypeScript implementation or the external provider.
 Topics == {"orders", "audit"}
 VARIABLES phase, graphValid, scopeValid, graphApproved, cursor, confirmed,
           physicalCount, started, scopeAtStart

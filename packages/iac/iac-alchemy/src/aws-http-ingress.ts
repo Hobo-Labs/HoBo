@@ -78,7 +78,6 @@ function error(status: number): Response {
 	}
 }
 
-/** Buffer before dispatch so application code cannot receive unbounded bodies. */
 export function createAwsIngressHandler(
 	source: AwsHttpSource,
 	timerClock: IngressClock = clock,

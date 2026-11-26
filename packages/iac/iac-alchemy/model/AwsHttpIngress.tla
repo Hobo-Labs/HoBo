@@ -1,8 +1,6 @@
 -------------------------- MODULE AwsHttpIngress --------------------------
 EXTENDS Naturals, FiniteSets, TLC
 
-\* Abstract request units stand for bytes and chunks. Parser allocation, HTTP
-\* transport, timers, cancellation and application behavior are assumptions.
 CONSTANTS Requests, Limit, MaxUnits
 VARIABLES state, slots, units, dispatched, timedOut, response
 vars == <<state, slots, units, dispatched, timedOut, response>>
