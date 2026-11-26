@@ -46,7 +46,6 @@ import { createHash } from "node:crypto";
 
 // The schema discriminant of a DeploymentPlan record. It is hashed as part of
 // the plan, so a consumer pins this exact string rather than deriving it.
-// public-contract: plan schema discriminant, hashed into every plan digest.
 export const DEPLOYMENT_PLAN_SCHEMA = "hobo.deployment-plan/v1" as const;
 
 const objectTag = Object.prototype.toString;

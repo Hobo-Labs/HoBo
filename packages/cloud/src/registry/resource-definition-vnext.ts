@@ -23,7 +23,6 @@ import type {
 import type { JsonObject, JsonValue } from "../json.js";
 import type { ResourceDefinition } from "./catalog.js";
 
-// public-contract: versions the portable resource-definition schema.
 export const RESOURCE_DEFINITION_VNEXT_SCHEMA =
 	"hobo.resource-definition/vNext" as const;
 

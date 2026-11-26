@@ -66,7 +66,6 @@ import * as hostinger from "./hostinger.js";
 import * as kubernetes from "./kubernetes.js";
 import * as vercel from "./vercel.js";
 
-// public-contract: the parity level vocabulary every parity claim depends on.
 export const PARITY_LEVELS = Object.freeze([
 	"P0",
 	"L1",
@@ -80,7 +79,6 @@ export type ParityLevel = (typeof PARITY_LEVELS)[number];
 
 export type SimulatedParityLevel = "P0" | "L1-DECLARED";
 
-// public-contract: refusal codes callers may branch on.
 export type ParityErrorCode =
 	| "PARITY_PROVIDER_EMPTY"
 	| "PARITY_PRODUCT_ID_EMPTY"
@@ -160,7 +158,6 @@ export function parityRow(
 	});
 }
 
-// public-contract: the provider rows providerParity() returns and their order.
 export const PARITY_PROVIDERS = Object.freeze([
 	"aws",
 	"azure",
@@ -180,7 +177,6 @@ export interface ParitySource {
 	readonly resolved: readonly string[];
 }
 
-// public-contract: where each parity row's catalog and resolved halves are read from.
 export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 	Object.freeze({
 		aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },

@@ -11,7 +11,6 @@ import {
 	type ResourcePlan,
 } from "../plan-types.js";
 
-// public-contract: resolved deployment set schema.
 export const RESOLVED_SET_SCHEMA = "hobo.resolved-deployment-set/v1" as const;
 
 export type GatekeeperApproval = Readonly<{

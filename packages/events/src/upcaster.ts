@@ -1,11 +1,8 @@
 import { createHash } from "node:crypto";
 
-// public-contract: gate report schema id.
 export const EVENT_BODY_UPCASTER_GATE_SCHEMA =
 	"hobo.event-body-upcaster-gate/v1";
-// public-contract: corpus entry schema id.
 export const CORPUS_ENTRY_SCHEMA = "hobo.golden-replay-corpus-entry/v1";
-// public-contract: corpus baseline schema id.
 export const CORPUS_BASELINE_SCHEMA = "hobo.golden-replay-corpus-baseline/v1";
 
 export type EventFieldType = "string" | "u32" | "bool" | "strings" | "json";

@@ -17,7 +17,6 @@ import {
 	worstComponentStatus,
 } from "./types.js";
 
-// public-contract: projection name registered in the data plane.
 export const STATUS_PAGE_PROJECTION = "status-page" as const;
 
 export const HISTORY_DAY_LIMIT = 90;

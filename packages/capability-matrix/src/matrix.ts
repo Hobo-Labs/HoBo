@@ -15,7 +15,6 @@ import type {
 } from "./candidate.js";
 import type { CapabilityMatrixCellKey } from "./grid.js";
 
-// public-contract: versions serialized capability coverage reports.
 export const CAPABILITY_MATRIX_SCHEMA_VERSION = "hobo.capability-matrix/v1";
 
 export const COVERAGE_VERDICTS = [

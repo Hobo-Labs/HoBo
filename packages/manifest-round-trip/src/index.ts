@@ -38,7 +38,6 @@ import { createHash } from "node:crypto";
 
 // The schema discriminant of a round-trip report. Hashed into the report
 // digest, so a consumer pins this exact string rather than deriving it.
-// public-contract: round-trip report schema discriminant, part of every digest.
 export const ROUND_TRIP_REPORT_SCHEMA = "hobo.manifest-round-trip/v1" as const;
 
 /**
@@ -53,7 +52,6 @@ export const ROUND_TRIP_REPORT_SCHEMA = "hobo.manifest-round-trip/v1" as const;
  *   honest state when closing it is outside the closing party's reach. A
  *   divergence with no `detail` is refused.
  */
-// public-contract: the three outcomes a decomposition check can report; pinned in the CUE and the proto enum.
 export const CHECK_OUTCOMES = [
 	"single-declaration",
 	"parity",

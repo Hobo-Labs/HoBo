@@ -71,7 +71,6 @@ import {
 } from "./vocabulary.js";
 
 /** Wire identity of this manifest. Bumped only by a breaking field change. */
-// public-contract: the schema version consumers pin a candidate record to.
 export const SELECTION_CANDIDATE_SCHEMA_VERSION =
 	"hobo.selection-candidate/v1" as const;
 

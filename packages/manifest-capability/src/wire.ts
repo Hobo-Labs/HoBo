@@ -165,7 +165,6 @@ export type WireCapabilityProfileCatalog = {
 	readonly profiles: readonly WireCapabilityProfileDescriptor[];
 };
 
-// public-contract: the catalog envelope's schema identity; consumers pin it to
 // detect a catalog shape change rather than a catalog content change.
 export const CAPABILITY_PROFILE_CATALOG_SCHEMA_VERSION =
 	"hobo.capability-profile-catalog/v1";

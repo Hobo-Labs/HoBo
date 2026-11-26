@@ -29,7 +29,6 @@ import {
 } from "@hobo/core";
 
 /** UTC day every source below was read. One sweep, one date. */
-// public-contract: the observed-at date every catalog source carries.
 export const POSTGRES_BACKEND_CATALOG_OBSERVED_ON = "2026-11-10";
 
 function src(url: string, note: string) {
@@ -1111,7 +1110,6 @@ const ENTRIES = [
  * {@link postgresBackendProfiles} hands to a resolver, and it is not a
  * ranking: callers rank by cost and policy before resolving.
  */
-// public-contract: the PostgreSQL backend catalog consumers read.
 export const POSTGRES_BACKEND_CATALOG: readonly DataStoreCatalogEntry[] =
 	Object.freeze(
 		ENTRIES.map((entry, index) =>
@@ -1130,7 +1128,6 @@ export const POSTGRES_BACKEND_CATALOG: readonly DataStoreCatalogEntry[] =
  * backend for this catalog. It is recorded here so the decision is visible and
  * nobody re-derives it.
  */
-// public-contract: products considered for the catalog and excluded, with the reason.
 export const POSTGRES_BACKEND_EXCLUSIONS = Object.freeze([
 	{
 		vendor: "Amazon Web Services",

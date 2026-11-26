@@ -146,5 +146,4 @@ export {
 	validateResilienceAgainstEffects,
 } from "./resilience.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_CONTRACTS_PACKAGE = "@hobo/contracts";

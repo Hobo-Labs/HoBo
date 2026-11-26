@@ -14,7 +14,6 @@ import {
 	parseStatusScope,
 } from "./types.js";
 
-// public-contract: stable exported contract literal
 export const DEFAULT_PROJECT = "default" as const;
 
 const LABEL_SAFE = /[^a-z0-9._-]+/g;
