@@ -9,22 +9,6 @@ import {
 } from "../src/index.js";
 import { EXISTING_INTENTS } from "./fixtures/existing-intents.js";
 
-/**
- * Round trip over every `ResourceIntent` value that exists in the repository.
- *
- * The question this answers is not "does my encoder agree with my decoder" —
- * that is trivially arrangeable — but "does a value the rest of the repository
- * actually builds survive being expressed in this schema". So each fixture goes
- * all the way out to the canonical proto3-JSON wire record and all the way
- * back, twice, and the assertions are on strict structural identity with the
- * *original literal*, not with anything this package produced.
- *
- * `toStrictEqual`, not `toEqual`: `toEqual` treats `{ region: undefined }` and
- * `{}` as the same object, which is exactly the distinction
- * `exactOptionalPropertyTypes` exists to preserve and exactly the one a
- * presence-losing encoder would destroy. A round-trip suite written with
- * `toEqual` would go green on the bug it is meant to catch.
- */
 describe("round trip over the existing corpus", () => {
 	for (const entry of EXISTING_INTENTS) {
 		it(`${entry.id} survives parse -> encode -> decode`, () => {
@@ -110,8 +94,6 @@ describe("presence, the thing a proto3 default silently eats", () => {
 		objective: "min-cost",
 	};
 
-	// (`string region = 7;`, no `optional`), and it is why this package declares
-	// `optional string region = 7;` instead.
 	type JsonValue = string | number | boolean | null | JsonValue[] | JsonRecord;
 	type JsonRecord = { readonly [key: string]: JsonValue };
 	function encodeUnderImplicitPresence(intent: JsonRecord) {
