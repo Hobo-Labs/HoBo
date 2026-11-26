@@ -455,13 +455,15 @@ const provider = createAlchemyIacProvider({
 const assessment = await provider.assessPricing(host.program);
 const providerCoverage = assessment.providerCoverage.providers;
 const budgetBeforeAdmission = assessment.budget;
-const outcome = await provider.applyWithAdmission(host.program);
+const outcome = await provider.applyWithAdmission(host.program, host.persistedRequestId);
 ```
 
 The coverage report identifies each provider as quoted, unavailable, incomplete,
 or unverified, and identifies the source of a quoted model. The quote scenario
 must cover the declared inventory and its candidate indexes.
 The host must independently verify the scope and liability of its estimate.
+The host persists the request ID and reuses it for retries of the same
+operation; an uncertain outcome must be reconciled with its admission receipt.
 Destroy has its own price scenario; an apply quote is not assumed to cover it.
 To use an unpriced target, omit the pricing models and configure the broker's
 explicit unpriced policy and exposure authority. Admission otherwise refuses
