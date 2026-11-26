@@ -61,6 +61,8 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 			};
 		});
 		let starts = 0;
+		let invoked = 0;
+		let revokeOnStart = true;
 		let permitsProvisioning = false;
 		let scopeValid = true;
 		const app = createRivetBindleTopicBusApplication({
@@ -112,8 +114,13 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 			},
 			application: (host) => {
 				starts++;
+				if (revokeOnStart) {
+					revokeOnStart = false;
+					scopeValid = false;
+				}
 				const topic = host.topic("orders");
 				return async () => {
+					invoked++;
 					const outcome = await topic.publish({
 						operation: {
 							id: durableMessagingOperation(10_000, "publishnonce1234").id,
@@ -347,9 +354,10 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 				assessRequirements: () => ({ status: "supported" }),
 			}),
 		).toThrow();
+		const vars = {};
 		const request = () =>
 			app.http.handle(
-				{ name: "web", key: ["tenant-a"], vars: {} },
+				{ name: "web", key: ["tenant-a"], vars },
 				new Request("https://app.test/"),
 			);
 		const refused = await request();
@@ -368,6 +376,10 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 		expect((await inFlight).status).toBe(503);
 		expect(starts).toBe(0);
 		scopeValid = true;
+		expect((await request()).status).toBe(503);
+		expect(starts).toBe(1);
+		expect(invoked).toBe(0);
+		scopeValid = true;
 		const accepted = await request();
 		const payload = await accepted.json();
 		expect({ status: accepted.status, payload }).toEqual({
@@ -375,6 +387,7 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 			payload: { tag: "committed", messageId: "order-1" },
 		});
 		expect(starts).toBe(1);
+		expect(invoked).toBe(1);
 	} finally {
 		await fixture.controls.close();
 	}

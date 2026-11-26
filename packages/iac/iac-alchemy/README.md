@@ -641,9 +641,8 @@ uses durable transactions, idempotent enqueue keys and fenced delivery leases.
 The host supplies authorization, a trusted clock, source fencing and exclusive
 pool verification. The actor retains at most 10,000 messages and rejects new
 ones at capacity. A timeout or lost response leaves the outcome unknown;
-consumers must reconcile leases and fence their own effects. This queue is not a
-mapping for HoBo's WIT queue or asynchronous durable topic ABI, so
-those Bindle capabilities remain unsupported.
+consumers must reconcile leases and fence their own effects. This queue does not
+map HoBo's WIT queue or asynchronous durable topic ABI.
 The finite `model/RivetQueue.tla` checks queue retry, lease and completion
 decisions for one key, two payloads, at most two leases and three clock values.
 It assumes atomic transactions and a trusted clock; it does not prove the
@@ -682,9 +681,10 @@ prove those assumptions, the implementation or the provider.
 
 The separate optional `@hobo/alchemy-rivet` composition package maps the
 Rivet retained-log and asynchronous topic-bus actors to Alchemy
-`Rivet.DurableObject` resources. Its capability profiles distinguish the two;
-neither implements the legacy synchronous topic ABI. Host-owned source, pool,
-storage and authorization evidence is required for both.
+`Rivet.DurableObject` resources. Its capability profiles distinguish the two.
+The scoped topic composition can bind one HTTP application and its named
+asynchronous topics to a shared resource. Host-owned source, pool, storage and
+authorization evidence is required.
 
 The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
 declarations to Alchemy Cloudflare components, including Workers, Vite websites,

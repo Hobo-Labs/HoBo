@@ -535,6 +535,11 @@ export function createRivetBindleTopicBusApplication(
 						request: Request,
 					) => Response | Promise<Response>;
 				}
+				if (!matchesApplication(bound))
+					return Response.json(
+						{ status: "topic-unavailable", reason: "scope-unverified" },
+						{ status: 503 },
+					);
 				return handler(request);
 			};
 		},
