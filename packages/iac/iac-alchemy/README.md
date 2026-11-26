@@ -67,12 +67,12 @@ its provider choice outside the Bindle: pass the neutral Bindle through
 `withAwsDynamoKv(bindle, { cache: true })` and use
 `awsDynamoKvBindleMappers()` from `@hobo/iac-alchemy/aws/kv-mapper`. Install the
 optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
-`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS region,
+`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS partition, owner account and region,
 host-issued resource and grant epochs, an explicit operation allow-list, a
 per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
 The host must authenticate the actual table incarnation, never reuse a
 revoked epoch, fence outstanding requests during ownership changes, and enforce
-matching IAM permissions. Reads are strongly consistent; keys are limited to 2,048 UTF-8
+matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
 bytes and values to 256 KiB. A failed or timed-out write or delete has an
 unknown outcome and requires reconciliation. Each store retains capacity for a
 timed-out request until the transport settles. This subset does not bind a

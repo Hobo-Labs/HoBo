@@ -22,6 +22,8 @@ const ownKeys = Reflect.ownKeys;
 const getPrototype = Object.getPrototypeOf;
 const isArray = Array.isArray;
 const isProxy = types.isProxy;
+const accountPattern = /^\d{12}$/u;
+const partitionPattern = /^aws(?:-[a-z0-9]+){0,3}$/u;
 const tablePattern = /^[-A-Za-z0-9_.]{3,255}$/u;
 const regionPattern = /^[a-z0-9-]{3,63}$/u;
 const digestPattern = /^sha256:[a-f0-9]{64}$/u;
@@ -43,6 +45,8 @@ const byteBuffer = Object.getOwnPropertyDescriptor(
 export type AwsKvOperation = "get" | "set" | "delete";
 export interface AwsKvGrant {
 	readonly tableName: string;
+	readonly accountId: string;
+	readonly partition: string;
 	readonly region: string;
 	readonly resourceEpoch: string;
 	readonly grantEpoch: string;
@@ -104,6 +108,8 @@ export function createAwsDynamoKvStore(options: {
 	if (
 		!ownData(input, [
 			"tableName",
+			"accountId",
+			"partition",
 			"region",
 			"resourceEpoch",
 			"grantEpoch",
@@ -112,6 +118,10 @@ export function createAwsDynamoKvStore(options: {
 		typeof verify !== "function" ||
 		isProxy(verify) ||
 		typeof input.tableName !== "string" ||
+		typeof input.accountId !== "string" ||
+		!matches(accountPattern, input.accountId) ||
+		typeof input.partition !== "string" ||
+		!matches(partitionPattern, input.partition) ||
 		typeof input.region !== "string" ||
 		typeof input.resourceEpoch !== "string" ||
 		typeof input.grantEpoch !== "string" ||
@@ -144,6 +154,8 @@ export function createAwsDynamoKvStore(options: {
 	}
 	const grant: AwsKvGrant = Object.freeze({
 		tableName: input.tableName,
+		accountId: input.accountId,
+		partition: input.partition,
 		region: input.region,
 		resourceEpoch: input.resourceEpoch,
 		grantEpoch: input.grantEpoch,
@@ -159,6 +171,7 @@ export function createAwsDynamoKvStore(options: {
 			return false;
 		}
 	};
+	const tableArn = `arn:${grant.partition}:dynamodb:${grant.region}:${grant.accountId}:table/${grant.tableName}`;
 	const keyOf = (key: string): string => {
 		if (
 			typeof key !== "string" ||
@@ -203,7 +216,7 @@ export function createAwsDynamoKvStore(options: {
 				"get",
 				checkedKey,
 				DynamoDB.getItem({
-					TableName: grant.tableName,
+					TableName: tableArn,
 					region: grant.region,
 					Key: { pk: { S: checkedKey } },
 					ConsistentRead: true,
@@ -269,7 +282,7 @@ export function createAwsDynamoKvStore(options: {
 				"set",
 				checkedKey,
 				DynamoDB.putItem({
-					TableName: grant.tableName,
+					TableName: tableArn,
 					region: grant.region,
 					Item: { pk: { S: checkedKey }, value: { B: value } },
 				}),
@@ -282,7 +295,7 @@ export function createAwsDynamoKvStore(options: {
 				"delete",
 				checkedKey,
 				DynamoDB.deleteItem({
-					TableName: grant.tableName,
+					TableName: tableArn,
 					region: grant.region,
 					Key: { pk: { S: checkedKey } },
 				}),
