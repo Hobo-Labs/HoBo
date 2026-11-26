@@ -8,6 +8,10 @@
 		"dist"
 	],
 	"exports": {
+		"./cryptography": {
+			"types": "./dist/ports/cryptography.d.ts",
+			"default": "./dist/ports/cryptography.js"
+		},
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"

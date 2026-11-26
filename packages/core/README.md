@@ -263,3 +263,12 @@ The bounded `model/NotificationSubmission.tla` explores authorization at dispatc
 and disclosure, rejection before dispatch, and unknown outcomes before or after
 provider commit. The model abstracts a single submission and a trusted transport;
 it does not prove an implementation or guarantee message delivery.
+
+The `@hobo/core/cryptography` port defines bounded asynchronous encryption and
+decryption requests. Request bytes are copied before a provider can use them;
+shared-memory views are rejected. A completed result carries owned result bytes,
+a rejection occurred before dispatch, and an unknown result requires the caller
+to account for a provider operation that may have occurred. A provider may
+impose smaller input bounds and must disclose them. Signing and verification are
+separate operations and are not implied by this port. An attempt ID is for
+correlation; it does not deduplicate calls or guarantee that a retry is free.
