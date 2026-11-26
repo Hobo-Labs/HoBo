@@ -101,10 +101,21 @@ verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
 headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host captures one bounded, deterministic graph for runtime binding and
+source registration; accessors, duplicate dependencies and missing edges fail
+before application logic runs.
+`defineAwsHttpSource` resolves provisioned resource names on first use. Its
+synchronous resolver must create branded stores for those exact names; missing,
+changed or unauthorized grants fail closed. The source does not itself deploy
+an AWS web function or start an HTTP listener.
+`awsHttpBindleMappers` maps the attested application to Alchemy's
+`AWS.Lambda.WebFunction` and binds declared DynamoDB and S3 resource outputs.
+The host must authenticate the reviewed source, artifact and exact source
+binding, and select an explicit endpoint authentication mode.
 The host must authenticate HTTP requests, independently enforce IAM and fence
-in-flight AWS operations across grant or resource ownership changes. This host
-adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
-request bodies, stream responses, or provide connectors or session replay. The
+in-flight AWS operations across grant or resource ownership changes. The host
+adapter does not yet start an HTTP listener, bound incoming request bodies,
+stream responses, or provide connectors or session replay. The
 bounded `AwsHttpBindings` model checks request retirement, grant revalidation
 and timed-out capacity. It assumes host verification and transport behavior;
 it does not prove AWS, HTTP parsing, byte limits or liveness.
