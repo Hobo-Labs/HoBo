@@ -726,6 +726,12 @@ the RivetKit 3 runtime package in one host-shaped fixture. It imports the
 Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
 declarations (the same peer-aligned instances the adapter resolves) and builds
 its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
+On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator`
+runs the mapped AWS resources and budget-routing scenarios against both the
+Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
+and verifies a pinned official package, starts an isolated loopback-only
+container, and removes it afterward. An existing copy of the same package may
+be supplied with `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
