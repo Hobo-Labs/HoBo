@@ -73,6 +73,11 @@ import type {
 import { placedCampsFrom } from "../promotion/placed.js";
 import type { PromotionServiceDeps } from "../promotion/service.js";
 import { emitMetrics } from "../telemetry/advisory.js";
+import {
+	type CdEngineRegistration,
+	type CdEngineRegistry,
+	createCdEngineRegistry,
+} from "./engines.js";
 import { ComposeError } from "./errors.js";
 import {
 	unconfiguredFanoutCost,
@@ -180,6 +185,7 @@ export type CdComposeInput = Readonly<{
 	telemetryHeaders?: Readonly<Record<string, string>>;
 	members?: CampMembers;
 	fleet?: DeliveryFleet;
+	engines?: readonly CdEngineRegistration[];
 }>;
 
 export type ComposedContinuousDelivery = ContinuousDelivery &
@@ -190,6 +196,7 @@ export type ComposedContinuousDelivery = ContinuousDelivery &
 		shadow: ShadowRecorder;
 		postureSeries: PostureSeriesReader;
 		scope: CdComposeScope;
+		engines: CdEngineRegistry;
 	}>;
 
 const MODE_NAMES: ReadonlyMap<ReconcilerMode, string> = new Map([
@@ -223,6 +230,7 @@ function scopeOver(
 export function wireContinuousDelivery(
 	input: CdComposeInput,
 ): ComposedContinuousDelivery {
+	const engineRegistry = createCdEngineRegistry(input.engines ?? []);
 	const { base, factories: f, adapters: a } = input;
 	const built: Partial<Record<keyof CdComposeScope, unknown>> = {};
 	const scope = scopeOver(built);
@@ -590,6 +598,7 @@ export function wireContinuousDelivery(
 		shadow,
 		postureSeries: posture,
 		scope,
+		engines: engineRegistry,
 	});
 }
 
