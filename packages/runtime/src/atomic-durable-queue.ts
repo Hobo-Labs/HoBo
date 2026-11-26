@@ -248,6 +248,11 @@ export function createAtomicDurableQueue(
 			for (let index = 0; index < log.events.length; index++) {
 				const event = log.events[index];
 				if (event === undefined || event.atMs < last) return undefined;
+				if (
+					event.request.kind === "confirmExport" &&
+					event.request.input.expectedRevision !== base + index
+				)
+					return undefined;
 				const step = transitionAtomicQueue(
 					state,
 					event.request,

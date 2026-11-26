@@ -628,6 +628,40 @@ describe("atomic durable queue provider", () => {
 			reclaimedMessages: 1,
 		});
 	});
+	it("rejects a stored export confirmation with a forged historical revision", async () => {
+		const backing = memoryStore();
+		const bounds = { ...limits, deliveryAttempts: 1 };
+		const events = [
+			{ atMs: 1000, request: { kind: "enqueue" as const, input: message(1) } },
+			{
+				atMs: 1000,
+				request: {
+					kind: "dequeue" as const,
+					input: { operation: op(2), maxMessages: 1, visibilityTimeoutMs: 10 },
+				},
+			},
+			{
+				atMs: 10000,
+				request: {
+					kind: "confirmExport" as const,
+					input: {
+						operation: durableQueueOperation(20000, "abcdefghijklmn03"),
+						messageId: "m1",
+						expectedRevision: 4,
+						exportReceipt: "destination-receipt",
+					},
+				},
+			},
+		];
+		backing.seed(events.length, encodeAtomicQueueLog(events, bounds));
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => 10000,
+		});
+		expect(await queue.inspectExhausted()).toEqual({ status: "unknown" });
+	});
+
 	it("does not confirm an export using a stale inspection", async () => {
 		const backing = memoryStore();
 		let clock = 1000;
