@@ -162,7 +162,6 @@ function digest(bytes: Uint8Array): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-/** The host must authenticate this bucket incarnation, per-key grant and IAM scope. */
 export function createAwsS3Store(options: {
 	readonly grant: AwsS3Grant;
 	readonly verify: (
@@ -284,7 +283,6 @@ export function createAwsS3Store(options: {
 					response.ContentEncoding !== undefined ||
 					response.ContentRange !== undefined
 				) {
-					// Pull at most one chunk so the stream scope closes and cancels the response.
 					if (response.Body)
 						yield* Stream.runDrain(Stream.take(response.Body, 1)).pipe(
 							Effect.ignore,
