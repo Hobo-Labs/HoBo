@@ -205,6 +205,23 @@ describe("the journal is the authority", () => {
 });
 
 describe("repair", () => {
+	it("preserves a snapshot belonging to a different root", () => {
+		const abs = root();
+		const foreignRoot = join(abs, "other-root");
+		const path = join(abs, RIFT_DIR, "workspaces", "feature");
+		mkdirSync(path, { recursive: true });
+		const body = {
+			root: foreignRoot,
+			workspaces: [workspace("feature", path)],
+			eventCount: 2,
+		};
+		writeSnapshot(abs, body);
+
+		expect(() => rebuildRegistry(abs)).toThrow("invalid workspace snapshot");
+		expect(readSnapshotFile(abs)).toEqual(body);
+		expect(existsSync(join(abs, RIFT_DIR, "events.jsonl"))).toBe(false);
+	});
+
 	it("restores a newer snapshot after an unterminated journal tail", () => {
 		const { abs, ws } = rootWithWorkspace();
 		writeSnapshot(abs, { root: abs, workspaces: [ws], eventCount: 2 });
@@ -221,9 +238,13 @@ describe("repair", () => {
 	it("records a removal after an unterminated journal tail", () => {
 		const { abs, ws } = rootWithWorkspace();
 		writeSnapshot(abs, { root: abs, workspaces: [ws], eventCount: 2 });
-		writeFileSync(join(abs, RIFT_DIR, "events.jsonl"), '{"type":"WorkspaceCre', {
-			flag: "a",
-		});
+		writeFileSync(
+			join(abs, RIFT_DIR, "events.jsonl"),
+			'{"type":"WorkspaceCre',
+			{
+				flag: "a",
+			},
+		);
 
 		expect(removeWorkspace(abs, ws.name)).toBe(true);
 		expect(readRegistry(abs).workspaces).toEqual([]);

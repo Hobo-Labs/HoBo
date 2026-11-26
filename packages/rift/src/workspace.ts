@@ -369,7 +369,7 @@ function readSnapshotRegistry(root: string): Registry | null {
 		if (
 			!isJsonObject(snapshot) ||
 			!isJsonString(snapshot.root) ||
-			!snapshot.root ||
+			snapshot.root !== root ||
 			!Array.isArray(snapshot.workspaces) ||
 			(snapshot.eventCount !== undefined &&
 				(!isJsonNumber(snapshot.eventCount) ||
