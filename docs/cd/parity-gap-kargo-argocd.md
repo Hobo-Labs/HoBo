@@ -65,9 +65,9 @@ they are scoped separately in that subsection.
 | State | Kargo primitive map (§) | Argo CD primitive map (§) | Cross-cutting scorecard (§) |
 | --- | --- | --- | --- |
 | pass | 9 | 1 | 4 |
-| partial | 5 | 6 | 5 |
+| partial | 5 | 6 | 6 |
 | built-not-proven | 0 | 4 | 0 |
-| not-built | 1 | 0 | 1 |
+| not-built | 1 | 0 | 0 |
 | met-differently | 2 | 2 | 0 |
 | intentional-gap | 3 | 0 | 2 |
 
@@ -170,7 +170,7 @@ below are **not** included in those counts.
 | `@hobo/cd-vercel` hosted runtime | **partial** | Tick schedule **and** `cd-api` (`/v1/cd/`, agent feed, probes); journal on Neon fleet |
 | `@hobo/hobo-cd` CD Bindle + `hobo cd up` | **partial** | Vercel connection/lifecycle ceremony; not `@hobo/cd/compose` |
 | `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | `engines.ts`, `packages/cd/test/compose/engines.test.ts`, `cd-gitops` bridge (P2) |
-| `@hobo/cd-argocd` native API adapter | **not-built** | Beyond Git publisher (P3) |
+| `@hobo/cd-argocd` native API adapter | **partial** | Read/observe PACT + RUNBOOK sync observation (P3); no Argo write API |
 | Separate `@hobo/cd-kargo` promotion runtime | **intentional-gap** | Would duplicate `@hobo/cd` brain (ADR-0182) |
 | Separate `@hobo/cd-octopus` engine | **intentional-gap** | Later optional target; same registry pattern only |
 | Publisher registry lookup | **partial** | Unit test `createPublisherRegistry` in `packages/cd-gitops/test/publisher.test.ts` — not composition-suite wiring |
@@ -198,7 +198,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | --- | --- | --- |
 | **P1** | `docs/cd/*` (this audit) + index links | Baseline |
 | **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Cross-cutting: `CdEngineRegistry` — **implemented** (`engines.ts`, `cd-gitops` bridge) |
-| **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics |
+| **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics — **implemented** (`@hobo/cd-argocd`, `ARGO_CD_SYNC_RUNBOOK`, `packages/cd-argocd/test/*.test.ts`) |
 | **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row |
 | **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row |
 | **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row (syncPolicy already in render when `autoSync`) |
