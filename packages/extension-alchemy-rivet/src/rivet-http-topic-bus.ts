@@ -3,8 +3,10 @@ import { types } from "node:util";
 import type { Providers } from "@alchemy.run/rivet";
 import {
 	AlchemyIacError,
+	type AlchemyPrimitiveGraph,
 	type AlchemyPrimitiveInput,
 	type AlchemyPrimitiveMapper,
+	type PrimitiveDeclaration,
 } from "@hobo/iac-alchemy";
 import { bindRivetHttpSource } from "@hobo/iac-alchemy/rivet";
 import {
@@ -25,6 +27,7 @@ import {
 } from "@hobo/iac-alchemy/rivet/runtime";
 import {
 	type BindleTopicProvisionOperation,
+	compileBindleTopicGrants,
 	createBindleTopicPreparation,
 	type createBindleTopicWitHost,
 	type prepareBindleTopicWitHost,
@@ -41,6 +44,7 @@ import {
 	type RivetDurableTopicClientBinding,
 	type RivetDurableTopicClientOptions,
 } from "@hobo/runtime-rivet";
+import * as Effect from "effect/Effect";
 
 const isProxy = types.isProxy;
 const apply = Reflect.apply;
@@ -240,8 +244,12 @@ function clientOptions(input: unknown): RivetDurableTopicClientOptions {
 	return Object.freeze(result);
 }
 
+export type RivetHttpHandlerEntrypoint = () => (
+	request: Request,
+) => Response | Promise<Response>;
+
 export interface RivetHttpTopicBusApplication {
-	readonly http: RivetHttpBinding<RivetHttpEntrypoint>;
+	readonly http: RivetHttpBinding<RivetHttpHandlerEntrypoint>;
 	readonly bus: RivetDurableTopicBusBinding;
 	readonly client: RivetDurableTopicClient;
 }
@@ -272,10 +280,18 @@ export interface RivetHttpTopicBusApplicationOptions {
 const applications = new WeakMap<
 	object,
 	Readonly<{
-		http: RivetHttpBinding<RivetHttpEntrypoint>;
+		http: RivetHttpBinding<RivetHttpHandlerEntrypoint>;
 		bus: RivetDurableTopicBusBinding;
 		client: RivetDurableTopicClient;
 		verify: () => boolean;
+	}>
+>();
+const bindleApplications = new WeakMap<
+	object,
+	Readonly<{
+		bindleName: string;
+		applicationName: string;
+		grants: ReturnType<typeof compileBindleTopicGrants>;
 	}>
 >();
 
@@ -540,6 +556,30 @@ export function createRivetBindleTopicBusApplication(
 		data.operations as readonly BindleTopicProvisionOperation[],
 		options as Parameters<typeof prepareBindleTopicWitHost>[3],
 	);
+	const graph = fields(data.bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	if (!name(graph.bindleName) || !name(graph.applicationName))
+		return invalid("the Bindle identity is invalid");
+	// SAFETY: the compiler validates and snapshots the Bindle graph.
+	const grants = compileBindleTopicGrants({
+		applicationName: graph.applicationName,
+		resources: graph.resources,
+		edges: graph.edges,
+		bindings: graph.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	apply(weakSet, bindleApplications, [
+		bound,
+		Object.freeze({
+			bindleName: graph.bindleName,
+			applicationName: graph.applicationName,
+			grants,
+		}),
+	]);
 	return bound;
 }
 
@@ -673,6 +713,192 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 		api: describe(mappers.api),
 		web: describe(mappers.web),
 		service: describe(mappers.service),
+	});
+}
+
+export function createRivetBindleTopicBusMappers<Requirements>(
+	input: RivetHttpTopicBusMapperOptions,
+): Readonly<
+	Record<
+		"api" | "web" | "service" | "topic",
+		AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
+	>
+> {
+	const data = fields(input, [
+		"application",
+		"source",
+		"poolDigest",
+		"isolationDigest",
+		"poolHost",
+		"verifyPool",
+	]);
+	// SAFETY: the source parser validates and captures every field before invoking its verifier.
+	const source = bindRivetHttpSource(
+		data.source as RivetHttpTopicBusMapperOptions["source"],
+	);
+	const optionsRaw: unknown = Object.freeze({ ...data, source });
+	// SAFETY: the base mapper validates the captured application, pool and callback.
+	const options = optionsRaw as RivetHttpTopicBusMapperOptions;
+	const base = createRivetHttpTopicBusMappers<Requirements>(options);
+	const application = options.application;
+	// SAFETY: only applications created by the Bindle adapter have an entry here.
+	const captured = apply(weakGet, bindleApplications, [
+		application,
+	]) as ReturnType<typeof bindleApplications.get>;
+	if (
+		captured === undefined ||
+		captured.grants.length === 0 ||
+		source.resourceName !== captured.applicationName
+	)
+		return invalid("a Bindle application with named topics is required");
+	const names = captured.grants.map((grant) => grant.resourceName).sort();
+	const sourceKind = source.kind;
+	const owner = names[0];
+	if (owner === undefined) return invalid("a topic owner is required");
+	const matchesNames = (
+		actual: readonly string[],
+		expected: readonly string[],
+	) =>
+		actual.length === expected.length &&
+		[...actual].sort().every((name, index) => name === expected[index]);
+	const validateGraph = (graph: AlchemyPrimitiveGraph<Requirements>) => {
+		if (
+			!matchesApplication(application) ||
+			graph.bindleName !== captured.bindleName
+		)
+			return invalid("the Bindle topic application is no longer verified");
+		const app = graph.nodes[captured.applicationName];
+		if (
+			app === undefined ||
+			app.declaration.kind !== sourceKind ||
+			!matchesNames(app.dependencies, names)
+		)
+			return invalid(
+				"the application topic graph does not match the bound runtime",
+			);
+		const declaredTopics = Object.entries(graph.nodes)
+			.filter(([, row]) => row.declaration.kind === "topic")
+			.map(([key]) => key)
+			.sort();
+		if (!matchesNames(declaredTopics, names))
+			return invalid("the topic declarations do not match the bound runtime");
+		for (const { resourceName, grant } of captured.grants) {
+			const topic = graph.nodes[resourceName];
+			const allowed = [
+				...(grant.publish ? ["publish"] : []),
+				...(grant.subscriptions.length ? ["subscribe"] : []),
+			].sort();
+			if (
+				topic === undefined ||
+				topic.dependencies.length !== 0 ||
+				topic.declaration.annotations.length !== 0 ||
+				!matchesNames(topic.declaration.declaredAllow, allowed)
+			)
+				return invalid("a topic declaration does not match its runtime grant");
+		}
+		for (const [key, row] of Object.entries(graph.nodes))
+			if (
+				key !== captured.applicationName &&
+				row.dependencies.some((dependency) => names.includes(dependency))
+			)
+				return invalid("a topic is bound to another application");
+	};
+	const withoutDependencies = (
+		input: AlchemyPrimitiveInput<RivetHttpEntrypoint, Requirements>,
+	) => ({
+		...input,
+		declaration: { ...input.declaration, dependsOn: [] },
+		dependencyDeclarations: Object.freeze({}),
+	});
+	const appMapper = (
+		kind: "api" | "web" | "service",
+	): AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers> =>
+		Object.freeze<
+			AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
+		>({
+			resourceTypes: Object.freeze(["Rivet.DurableObject"]),
+			operations: base[kind].operations,
+			annotations: base[kind].annotations,
+			bindsEntrypoint: true,
+			limitations: Object.freeze([
+				"Only the captured application and its named asynchronous topics are bound; other dependencies require a separate mapping.",
+			]),
+			validateGraph,
+			validate: (input) => base[kind].validate(withoutDependencies(input)),
+			build: (input) => {
+				base[kind].validate(withoutDependencies(input));
+				const primary = input.dependencies[owner];
+				if (primary === undefined)
+					return invalid("the shared topic resource is missing");
+				return Effect.succeed({
+					primary,
+					resources: [],
+					sharedDependency: owner,
+					boundDependencies: [...names],
+					boundEntrypoint: application.http.entrypoint,
+				});
+			},
+		});
+	const topic: AlchemyPrimitiveMapper<
+		RivetHttpEntrypoint,
+		Requirements,
+		Providers
+	> = Object.freeze<
+		AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
+	>({
+		resourceTypes: Object.freeze(["Rivet.DurableObject"]),
+		operations: Object.freeze(["publish", "subscribe"]),
+		annotations: Object.freeze([]),
+		bindsEntrypoint: false,
+		validateGraph,
+		limitations: Object.freeze([
+			"Named asynchronous topics share the application's verified Rivet durable bus; journals are provisioned at application startup.",
+		]),
+		build: (input) => {
+			if (!names.includes(input.declaration.name))
+				return invalid("the topic was not captured by the application");
+			if (input.declaration.name !== owner) {
+				const primary = input.priorPrimitives?.[owner];
+				if (primary === undefined)
+					return invalid("the shared topic owner is missing");
+				return Effect.succeed({
+					primary,
+					resources: [],
+					sharedPrimitive: owner,
+					boundDependencies: [],
+				});
+			}
+			const declaration: PrimitiveDeclaration = {
+				kind: sourceKind,
+				name: captured.applicationName,
+				stableId: `${sourceKind}:${captured.applicationName}`,
+				declaredAllow: [],
+				dependsOn: [],
+				annotations: [],
+			};
+			return base[sourceKind]
+				.build({
+					bindleName: input.bindleName,
+					requirements: input.requirements,
+					declaration,
+					entrypoint: application.http.entrypoint,
+					dependencyDeclarations: {},
+					dependencies: {},
+				})
+				.pipe(
+					Effect.map((mapped) => ({
+						primary: mapped.primary,
+						resources: mapped.resources,
+						boundDependencies: [],
+					})),
+				);
+		},
+	});
+	return Object.freeze({
+		api: appMapper("api"),
+		web: appMapper("web"),
+		service: appMapper("service"),
+		topic,
 	});
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type */
