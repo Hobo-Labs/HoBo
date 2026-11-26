@@ -57,20 +57,13 @@ export interface HostingOperationRequest {
 	readonly signal: AbortSignal;
 }
 
-/** Mutation acknowledgement is deliberately void: advancement requires independent observation. */
 export interface HostingTransitionProvider {
 	readonly contractId: string;
-	/** Adapter conformance must prove stale/duplicate commands cannot repeat external effects. */
 	readonly executionGuarantee: "fenced-operation" | "idempotent-operation";
 	readonly effects: EffectSpec;
 	readonly resilience: ResilienceProfile;
-	/** The same durable journal used by this adapter to guard non-idempotent
-	 * substeps. Required for explicitly approved mutation resumption. */
 	readonly mutationJournal?: ResourceMutationJournal;
-	/** Production adapters require native liability proof for every destination.
-	 * Local protocol fixtures may omit this capability. */
 	readonly requiresDestinationLiabilityProof?: boolean;
-	/** Computed from the production adapter's immutable source inventory. */
 	readonly requiresSourceLiabilityProof?: boolean;
 	/** Pure lookup in the adapter's immutable artifact catalog. The catalog and
 	 * policy participate in contractId; this lookup performs no I/O. */
@@ -173,7 +166,6 @@ function phaseFor(action: Action): Phase {
 	}
 }
 
-/** No effects occur while loading/replaying. Methods are explicit command/effect boundaries. */
 export function createHostingTransitionCoordinator(
 	options: HostingTransitionCoordinatorOptions,
 ) {
@@ -432,7 +424,6 @@ export function createHostingTransitionCoordinator(
 				},
 			]);
 		}
-		// A crash after reserve/claim and before recording reuses both identities.
 		if (!plan.existingReservationId && !alreadyHeld) {
 			const result = await options.budget.reserve({
 				reservationId: loaded.state.reservationId,
@@ -626,7 +617,6 @@ export function createHostingTransitionCoordinator(
 			"mutate",
 			new Date(now()).toISOString(),
 		).map((fact) => ({ type: fact.type, data: fact }));
-		// CAS before I/O is the single-dispatch claim. Reopening starts with observation.
 		loaded = await write(
 			loaded,
 			state,
@@ -845,9 +835,6 @@ export function createHostingTransitionCoordinator(
 				!state.sourceRetirementConfirmed
 			)
 				return "source retirement must be confirmed before final settlement";
-			// An absent source has no live latency, jurisdiction or serving capability.
-			// Approval binds the source inventory before mutation; absence proof binds
-			// the exact source/operation above and must not invent serving metadata.
 			return undefined;
 		}
 		if (
@@ -942,8 +929,6 @@ export function createHostingTransitionCoordinator(
 			throw new Error("transition has no compensable hosting operation");
 		const pendingOperation = operationOf(loaded.state);
 		const observation = loaded.state.lastObservation;
-		// A scheduled operation without a durable dispatch claim cannot have run.
-		// Read-only verification creates no new external mutation to reconcile.
 		if (
 			pendingOperation.mutationDispatched &&
 			(!observation ||
@@ -981,7 +966,6 @@ export function createHostingTransitionCoordinator(
 			"observe",
 			new Date(now()).toISOString(),
 		).map((fact) => ({ type: fact.type, data: fact }));
-		// Claim one observation so concurrent workers cannot consume the retry budget twice.
 		const reading = copy(loaded.state);
 		operationOf(reading).nextObservationAtMs = hostingInteger(
 			now() + plan.observationBackoffMs,
@@ -1061,8 +1045,6 @@ export function createHostingTransitionCoordinator(
 			state.writeOwnershipEpoch,
 			observation.writeOwnershipEpoch,
 		);
-		// Retirement may succeed before the enclosing operation reports a failure.
-		// Positive retirement evidence still forbids blindly reactivating the source.
 		if (observation.sourceRetired) {
 			state.sourceRetirementConfirmed = true;
 			state.retirementEvidenceRef = observation.evidenceRef;

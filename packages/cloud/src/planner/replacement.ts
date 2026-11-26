@@ -10,14 +10,6 @@ export interface ReplacementInputs {
 	readonly prior: PriorPlacement;
 	readonly catalogContentHash: string;
 	readonly objective: string;
-	/**
-	 * Whether the prior region still satisfies residency.
-	 *
-	 * This is the *evaluated* result from `evaluateResidency`, reported by the
-	 * caller — not an assumption made here. It defaults to satisfied because a
-	 * caller that has not evaluated should not have its workload declared
-	 * unlawful; a caller that has evaluated and found a violation must say so.
-	 */
 	readonly residencyOk?: boolean;
 	readonly permittedRegions?: readonly string[];
 	readonly interruptible?: boolean;

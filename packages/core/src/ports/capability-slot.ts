@@ -57,7 +57,6 @@ export type CapabilitySlot = (typeof CAPABILITY_SLOTS)[number];
 
 export const SLOT_BINDING_CONTRACT = "hobo.slot-binding/v1";
 
-/** ADR-0151 profile grammar: `<family>.<path>/v<major>`. */
 const PROFILE_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\/v[1-9][0-9]*$/u;
 
 /** Property keys that read as a secret value rather than a locator. */
@@ -67,7 +66,6 @@ const CREDENTIAL_KEY_PATTERN =
 /** What a provider package authors: the slot plus how it is constrained. */
 export interface SlotBindingInput {
 	readonly slot: CapabilitySlot;
-	/** ADR-0151 grammar: `<family>.<path>/v<major>`. */
 	readonly profile: string;
 	readonly productId?: string;
 	readonly connectivityId?: string;
@@ -91,7 +89,6 @@ export type SlotBindingErrorCode =
 	| "SLOT_BINDING_CREDENTIAL_PROPERTY"
 	| "SLOT_BINDING_PROPERTY_NOT_JSON";
 
-/** Refusal from the `slotBinding()` parse boundary. Always carries a code. */
 export class SlotBindingError extends Error {
 	readonly code: SlotBindingErrorCode;
 	readonly slot?: string;
@@ -149,7 +146,6 @@ export function slotBinding(input: SlotBindingInput): SlotBinding {
 function parseSlot(value: JsonValue | undefined): CapabilitySlot {
 	if (
 		!isJsonString(value) ||
-		// SAFETY: assertion required at this I/O or test boundary.
 		!(CAPABILITY_SLOTS as readonly string[]).includes(value)
 	) {
 		throw new SlotBindingError(
@@ -158,7 +154,6 @@ function parseSlot(value: JsonValue | undefined): CapabilitySlot {
 			value,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return value as CapabilitySlot;
 }
 
@@ -176,11 +171,6 @@ function parseProfile(
 	return value;
 }
 
-/**
- * A constraint is present only when it is a non-blank string. A blank or
- * non-string value reads as absent so it collapses into the single
- * `SLOT_BINDING_EMPTY_CONSTRAINT` refusal instead of quietly binding `""`.
- */
 function parseConstraint(
 	value: JsonValue | undefined,
 	field: string,
@@ -211,7 +201,6 @@ function canonicalizeProperties(
 		);
 	}
 	return canonicalizeRecord(
-		// SAFETY: assertion required at this I/O or test boundary.
 		value as JsonObject,
 		"properties",
 		slot,
@@ -295,7 +284,6 @@ function enterCycleGuard(
 	seen.add(value);
 }
 
-/** Plain data only: a class instance carries behavior a row cannot serialize. */
 function isPlainObject(value: JsonValue | undefined): value is JsonObject {
 	if (value === null || !isJsonObject(value)) return false;
 	const prototype: unknown = Object.getPrototypeOf(value);
@@ -312,7 +300,6 @@ function describe(value: JsonValue | undefined): string {
 	return `a ${Object.prototype.toString.call(value)}`;
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

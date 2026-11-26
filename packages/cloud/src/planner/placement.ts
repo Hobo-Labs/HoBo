@@ -126,7 +126,6 @@ export function affinityRejection(
 		}
 		return undefined;
 	}
-	// concrete region choice happens in pickPlacementRegion.
 	if (targetRegions.size === 0) return undefined;
 	const overlap = def.regions.some((region) => targetRegions.has(region));
 	const hasEscapeRegion = def.regions.some(
@@ -173,9 +172,6 @@ export function spreadSurvivors(
 	return candidates.filter((c) => usage(c.providerId) === min);
 }
 
-// Deterministic region choice honoring region-scoped affinity/anti-affinity
-// and region spread. Falls back to the pre-E19 rule (lexicographically
-// smallest advertised region) when no criterion narrows the set.
 export function pickPlacementRegion(
 	intent: ResourceIntent,
 	def: ResourceDefinition,
