@@ -435,6 +435,44 @@ describe("releaseBlockedRealizerMessage", () => {
 			]),
 		).toBe("RESOLVER_PROVIDER_REJECTED");
 	});
+
+	it("formats structured oci-registry refusals for release logs", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					structured: {
+						credentialRef: "owner://GHCR_PUBLISH",
+						requestedScope: "POST:403",
+						detailKind: "oci-http-status",
+					},
+				},
+			]),
+		).toBe(
+			"RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-http-status credential=owner://GHCR_PUBLISH http=POST:403",
+		);
+	});
+
+	it("does not echo an upload location when oci detail is not a closed scope", () => {
+		const token = `npm_${randomBytes(8).toString("hex")}`;
+		const session = randomBytes(8).toString("hex");
+		const location = `https://uploads.example/v2/app/blobs/uploads/${session}?_state=${token}`;
+		const line = releaseBlockedRealizerMessage([
+			{
+				code: "RESOLVER_PROVIDER_REJECTED",
+				message: location,
+				structured: {
+					credentialRef: "owner://GHCR_PUBLISH",
+					requestedScope: location,
+					detailKind: "oci-upload-foreign-host",
+				},
+			},
+		]);
+		expect(line).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(line).not.toContain(token);
+		expect(line).not.toContain("_state");
+		expect(line).not.toContain(session);
+	});
 });
 
 describe("release credential scope during catalog realizes", () => {

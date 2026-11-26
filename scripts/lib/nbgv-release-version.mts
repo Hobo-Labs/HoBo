@@ -87,20 +87,49 @@ export function fixedTrainAlphaReleaseRef(
 
 export type NbgvRunner = (variable: string, commitIsh?: string) => string;
 
+function pinnedPnpmTool(repoRoot: string): string {
+	const toml = readFileSync(join(repoRoot, "mise.toml"), "utf8");
+	let inTools = false;
+	for (const line of toml.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "[tools]") {
+			inTools = true;
+			continue;
+		}
+		if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+			inTools = false;
+			continue;
+		}
+		if (!inTools || trimmed.startsWith("#")) continue;
+		const match = trimmed.match(/^pnpm\s*=\s*"([^"]+)"/);
+		if (match?.[1]) return `pnpm@${match[1]}`;
+	}
+	throw new Error("root mise.toml does not pin pnpm");
+}
+
+export function nbgvGetVersionArgv(
+	repoRoot: string,
+	variable: string,
+	commitIsh = "HEAD",
+): readonly string[] {
+	return [
+		"exec",
+		pinnedPnpmTool(repoRoot),
+		"--",
+		"pnpm",
+		"exec",
+		"nbgv",
+		"get-version",
+		commitIsh,
+		"--variable",
+		variable,
+	];
+}
+
 export function defaultNbgvRunner(repoRoot: string): NbgvRunner {
 	ensureNbgvToolchain(repoRoot);
 	return (variable, commitIsh = "HEAD") => {
-		const args = [
-			"exec",
-			"--",
-			"pnpm",
-			"exec",
-			"nbgv",
-			"get-version",
-			commitIsh,
-			"--variable",
-			variable,
-		];
+		const args = [...nbgvGetVersionArgv(repoRoot, variable, commitIsh)];
 		const result = spawnSync("mise", args, {
 			cwd: repoRoot,
 			encoding: "utf8",

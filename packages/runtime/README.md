@@ -157,6 +157,26 @@ const topicHost = createBindleTopicWitHost(authorizedMessagingPort, {
 // Call topicHost.revoke() when its authority is revoked.
 ```
 
+For JavaScript application logic, the authenticated host can pass
+`topicHost.topic("orders")` as the application's topic capability. The client
+uses the declared runtime topic and configured dead-letter destination; the
+application supplies a permitted consumer group and cannot substitute either.
+Its asynchronous inputs and outcomes use the WIT types, including `bigint`
+operation expiries. Create a distinct operation for each logical mutation and
+reuse it only when retrying that mutation.
+
+```ts
+import { durableMessagingOperation } from "@hobo/core";
+
+const orders = topicHost.topic("orders");
+const operation = durableMessagingOperation(host.expiryMs, host.randomNonce);
+const result = await orders.publish({
+  operation: { id: operation.id, expiresAtMs: BigInt(operation.expiresAtMs) },
+  message: { id: "order-1", subject: "created", payload: new Uint8Array([1]), attributes: [] },
+});
+// result.tag is committed, rejected, unknown or expired.
+```
+
 ```ts
 import {
   createDurableMessagingLifecycle,
@@ -546,3 +566,24 @@ stateDiagram-v2
   s2 --> s1: resume with recorded deadline
   s1 --> s3: recheck deadline
 ```
+
+### Durable topic provisioning
+
+The asynchronous messaging host provisions each declared topic and its
+dead-letter journals through a provider-neutral administrative port. It checks
+the full bounded request before dispatch and returns completed, uncertain and
+unattempted work explicitly. Callers must persist operation identities and
+reuse them when reconciling uncertain outcomes. The finite provisioning model
+assumes that the selected provider honors idempotent replay.
+Its retry transition abstracts replay of previously confirmed operations before
+the operation whose outcome is unknown.
+
+A scoped topic host is exposed only after all of its declared journals are
+confirmed. Rejected or uncertain provisioning leaves the host unavailable.
+`prepareBindleTopicWitHost` performs that preparation using the caller's
+persisted operation identities. The host and provisioner use the same validated
+binding snapshot if caller-owned input changes during preparation.
+
+`createBindleTopicPreparation` shares concurrent and synchronously reentrant
+preparation attempts. Retries reuse the captured operation identities, which the
+caller must persist across restarts.
