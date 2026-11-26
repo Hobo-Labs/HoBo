@@ -932,7 +932,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			const source = defineAwsHttpSource({
 				bindle: withAwsKmsCryptography(application, { key: true }),
 				applicationName: "web",
-				environment: { HOBO_RESOURCE_0: first.keyId },
+				environment: { HOBO_RESOURCE_0: first.keyArn },
 				resolveStores: () => ({ key: cryptography }),
 				verifyBinding: (claim) =>
 					claim.kind === "crypto" &&
