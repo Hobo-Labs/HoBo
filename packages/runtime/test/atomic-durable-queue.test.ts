@@ -424,6 +424,137 @@ describe("atomic durable queue provider", () => {
 		).toEqual({ status: "rejected", code: "delivery-exhausted" });
 	});
 
+	it("lists bounded exhausted messages without exposing active leases or mutable storage", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const bounds = { ...limits, batchSize: 1, deliveryAttempts: 1 };
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		await queue.enqueue(message(1, "one", [1]));
+		await queue.enqueue(message(2, "two", [2]));
+		await queue.dequeue({
+			operation: op(3),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		await queue.dequeue({
+			operation: op(4),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		const writes = backing.calls();
+		expect(await queue.inspectExhausted()).toMatchObject({
+			status: "available",
+			messages: [],
+			more: false,
+		});
+		clock = 1010;
+		const first = await queue.inspectExhausted();
+		expect(first).toMatchObject({
+			status: "available",
+			observedAtMs: 1010,
+			messages: [{ messageId: "m1", body: new Uint8Array([1]) }],
+			more: true,
+		});
+		if (first.status !== "available" || !first.messages[0])
+			throw Error("missing exhausted message");
+		first.messages[0].body[0] = 99;
+		expect(await queue.inspectExhausted()).toMatchObject({
+			status: "available",
+			messages: [{ messageId: "m1", body: new Uint8Array([1]) }],
+		});
+		expect(backing.calls()).toBe(writes);
+		clock = 10000;
+		expect(
+			await queue.redriveExhausted({
+				operation: durableQueueOperation(20000, "abcdefghijklmn05"),
+				messageId: "m1",
+			}),
+		).toMatchObject({ status: "committed" });
+		expect(await queue.inspectExhausted()).toMatchObject({
+			status: "available",
+			messages: [{ messageId: "m2" }],
+			more: false,
+		});
+		backing.corrupt();
+		expect(await queue.inspectExhausted()).toEqual({ status: "unknown" });
+	});
+
+	it("withholds exhausted payloads if read authorization is revoked before disclosure", async () => {
+		const backing = memoryStore();
+		let authorized = true;
+		let clock = 1000;
+		let revokeOnClock = false;
+		const store: AtomicQueueStore = {
+			load: () =>
+				authorized
+					? backing.store.load()
+					: Promise.resolve({ status: "unavailable" }),
+			compareAndSwap: backing.store.compareAndSwap,
+		};
+		const queue = createAtomicDurableQueue({
+			store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => {
+				if (revokeOnClock) authorized = false;
+				return clock;
+			},
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 1,
+		});
+		clock = 1010;
+		expect(await queue.inspectExhausted()).toMatchObject({
+			status: "available",
+			messages: [{ messageId: "m1" }],
+		});
+		revokeOnClock = true;
+		expect(await queue.inspectExhausted()).toEqual({ status: "unknown" });
+	});
+
+	it("reports unknown if the queue changes before an inspection is disclosed", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		let mutateOnNextLoad = false;
+		const writer = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		const observing: AtomicQueueStore = {
+			async load() {
+				if (mutateOnNextLoad) {
+					mutateOnNextLoad = false;
+					await writer.enqueue(message(3, "other"));
+				}
+				return backing.store.load();
+			},
+			compareAndSwap: backing.store.compareAndSwap,
+		};
+		const observer = createAtomicDurableQueue({
+			store: observing,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => {
+				mutateOnNextLoad = true;
+				return clock;
+			},
+		});
+		await writer.enqueue(message(1));
+		await writer.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 1,
+		});
+		clock = 1010;
+		expect(await observer.inspectExhausted()).toEqual({ status: "unknown" });
+	});
+
 	it("redrives an exhausted message once and safely replays a lost response", async () => {
 		const backing = memoryStore();
 		let clock = 1000;

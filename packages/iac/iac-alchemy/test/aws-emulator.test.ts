@@ -1052,6 +1052,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				value: { idempotencyKey: "app-job" },
 			});
 			expect(retained).toBeDefined();
+			expect(retained).not.toHaveProperty("inspectExhausted");
 			expect(retained).not.toHaveProperty("redriveExhausted");
 			expect(retained).not.toHaveProperty("reclaimCompleted");
 			expect(
@@ -1113,6 +1114,10 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				value: [{ messageId: "m2", deliveryAttempt: 2 }],
 			});
 			clock = 20000;
+			expect(await afterReclamation.inspectExhausted()).toMatchObject({
+				status: "available",
+				messages: [{ messageId: "m2", body: new Uint8Array([3]) }],
+			});
 			const redrive = {
 				operation: { id: "v1.30000.abcdefghijklmn11", expiresAtMs: 30000 },
 				messageId: "m2",

@@ -1195,3 +1195,7 @@ operations when needed. Reclaiming a completed message ends its message-key
 deduplication after live receipts expire. These storage reads and writes must be
 included in the supplied pricing model; the owner can explicitly redrive exhausted messages after their live receipts
 and final lease expire. Dead-letter export is not implemented.
+
+The trusted queue owner can inspect a bounded batch of exhausted messages and
+then redrive them. The observation can become stale and does not prove that an
+external dead-letter export committed; the owner must fence and reconcile it.
