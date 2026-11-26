@@ -74,7 +74,6 @@ function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" {
 	);
 }
 
-/** Capture the exact bounded graph used by both AWS source registration and runtime binding. */
 export function captureAwsHttpGraph<Requirements>(
 	bindle: BindleForAlchemy<AwsHttpEntrypoint, Requirements>,
 	applicationName: string,
