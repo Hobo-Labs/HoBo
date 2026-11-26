@@ -260,6 +260,7 @@ export function rebuildRegistry(root: string): RepairResult {
 				`workspace repair could not verify the restored journal; backup left at ${repairBackupPath(abs)}`,
 			);
 		writeRegistry(restored);
+		refuseRegistryWorkspaceDrop(restored);
 		rmSync(repairBackupPath(abs));
 		return restored;
 	}
@@ -362,7 +363,18 @@ function registryForWrite(root: string): Registry {
 }
 
 function readSnapshotRegistry(root: string): Registry | null {
-	const file = registryPath(root);
+	return readSnapshotFile(registryPath(root), root, false);
+}
+
+function tryReadSnapshotFile(file: string, root: string): Registry | null {
+	return readSnapshotFile(file, root, true);
+}
+
+function readSnapshotFile(
+	file: string,
+	root: string,
+	lenient: boolean,
+): Registry | null {
 	if (!existsSync(file)) return null;
 	try {
 		const snapshot = parseJsonValue(readFileSync(file, "utf8"));
@@ -438,6 +450,7 @@ function readSnapshotRegistry(root: string): Registry | null {
 				: undefined),
 		};
 	} catch {
+		if (lenient) return null;
 		throw new RiftRegistryError(
 			`invalid workspace snapshot at ${file}; file left untouched`,
 		);
@@ -464,7 +477,95 @@ function record(root: string, event: WorkspaceEvent): void {
 	});
 }
 
+function snapshotSources(root: string): Registry[] {
+	const sources: Registry[] = [];
+	const current = tryReadSnapshotFile(registryPath(root), root);
+	const backup = tryReadSnapshotFile(repairBackupPath(root), root);
+	if (current) sources.push(current);
+	if (backup) sources.push(backup);
+	return sources;
+}
+
+function droppedWorkspaceNames(registry: Registry): string[] {
+	const kept = new Set(registry.workspaces.map((workspace) => workspace.name));
+	const dropped: string[] = [];
+	const seen = new Set<string>();
+	for (const source of snapshotSources(registry.root)) {
+		for (const workspace of source.workspaces) {
+			if (kept.has(workspace.name) || seen.has(workspace.name)) continue;
+			seen.add(workspace.name);
+			dropped.push(workspace.name);
+		}
+	}
+	return dropped;
+}
+
+function completingVerifiedTruncatedRepair(registry: Registry): boolean {
+	const backup = tryReadSnapshotFile(
+		repairBackupPath(registry.root),
+		registry.root,
+	);
+	if (!backup) return false;
+	const surviving = backup.workspaces.filter((workspace) =>
+		existsSync(workspace.path),
+	);
+	return sameWorkspaces(registry.workspaces, surviving);
+}
+
+function suffixRemovesWorkspace(
+	events: readonly WorkspaceEvent[],
+	eventCount: number,
+	name: string,
+): boolean {
+	let mentioned = false;
+	let present = false;
+	for (const event of events.slice(eventCount)) {
+		if (event.type === "WorkspaceCreated" && event.workspace.name === name) {
+			mentioned = true;
+			present = true;
+		} else if (event.type === "WorkspaceRemoved" && event.name === name) {
+			mentioned = true;
+			present = false;
+		}
+	}
+	return mentioned && !present;
+}
+
+function journalAuthorizesWorkspaceDrops(
+	registry: Registry,
+	dropped: readonly string[],
+): boolean {
+	const events = readEvents(riftDir(registry.root));
+	if (registry.eventCount !== events.length) return false;
+	if (!sameWorkspaces(registry.workspaces, projectWorkspaces(events)))
+		return false;
+	return dropped.every((name) => {
+		const sources = snapshotSources(registry.root).filter((source) =>
+			source.workspaces.some((workspace) => workspace.name === name),
+		);
+		return (
+			sources.length > 0 &&
+			sources.every(
+				(source) =>
+					isJsonNumber(source.eventCount) &&
+					suffixRemovesWorkspace(events, source.eventCount, name),
+			)
+		);
+	});
+}
+
+function refuseRegistryWorkspaceDrop(registry: Registry): void {
+	const dropped = droppedWorkspaceNames(registry);
+	if (dropped.length === 0) return;
+	if (completingVerifiedTruncatedRepair(registry)) return;
+	if (journalAuthorizesWorkspaceDrops(registry, dropped)) return;
+	throw new RiftRegistryError(
+		`refusing to write ${registryPath(registry.root)}; it would drop workspace(s) ${dropped.join(", ")}`,
+	);
+}
+
 function writeRegistry(registry: Registry): void {
+	refuseRegistryWorkspaceDrop(registry);
 	mkdirSync(join(registry.root, RIFT_DIR), { recursive: true });
 	writeFileSync(
 		registryPath(registry.root),

@@ -49,6 +49,7 @@ import {
 	REGENERABLE,
 	type Registry,
 	RIFT_DIR,
+	RiftRegistryError,
 	readRegistry,
 	rebuildRegistry,
 	removeWorkspace,
@@ -249,6 +250,50 @@ describe("repair", () => {
 		expect(removeWorkspace(abs, ws.name)).toBe(true);
 		expect(readRegistry(abs).workspaces).toEqual([]);
 		expect(readSnapshotFile(abs).workspaces).toEqual([]);
+	});
+
+	it("refuses to drop a workspace when a truncated repair stops halfway and the backup is gone", () => {
+		const abs = initRoot(root()).root;
+		const stalePath = join(abs, RIFT_DIR, "workspaces", "stale");
+		const keptPath = join(abs, RIFT_DIR, "workspaces", "kept");
+		const lostPath = join(abs, RIFT_DIR, "workspaces", "lost");
+		mkdirSync(stalePath, { recursive: true });
+		mkdirSync(keptPath, { recursive: true });
+		mkdirSync(lostPath, { recursive: true });
+		const stale = workspace("stale", stalePath);
+		const kept = workspace("kept", keptPath);
+		const lost = workspace("lost", lostPath);
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: stale.createdAt,
+			workspace: stale,
+		});
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: kept.createdAt,
+			workspace: kept,
+		});
+		const body = { root: abs, workspaces: [kept, lost], eventCount: 4 };
+		writeSnapshot(abs, body);
+		const backup = join(abs, RIFT_DIR, "registry.repair-backup.json");
+		writeFileSync(backup, readFileSync(join(abs, RIFT_DIR, "registry.json")));
+		appendJournal(abs, {
+			type: "WorkspaceRemoved",
+			at: "2026-08-20T02:00:00.000Z",
+			name: stale.name,
+		});
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: kept.createdAt,
+			workspace: kept,
+		});
+		rmSync(backup);
+
+		expect(() => rebuildRegistry(abs)).toThrow(RiftRegistryError);
+		expect(() => rebuildRegistry(abs)).toThrow("would drop workspace(s) lost");
+		expect(readSnapshotFile(abs)).toEqual(body);
+		expect(existsSync(lost.path)).toBe(true);
+		expect(existsSync(backup)).toBe(false);
 	});
 
 	it("preserves the backup and refuses further changes after an interrupted repair", () => {
