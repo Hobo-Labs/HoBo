@@ -1665,6 +1665,102 @@ export function createDurableMessagingWitImports(
 		),
 	});
 }
+
+export interface BindleTopicHostClaim {
+	readonly port: DurableMessaging;
+	readonly bindleName: string;
+	readonly applicationName: string;
+	readonly binding: BindleTopicGrant;
+	readonly request: DurableMessagingAuthorization;
+	readonly subscription?: DurableTopicSubscriptionGrant;
+}
+
+export function createBindleTopicWitHost(
+	port: DurableMessaging,
+	bindle: Parameters<typeof compileBindleTopicGrants>[0] & {
+		readonly bindleName: string;
+	},
+	options: Omit<DurableMessagingWitHostOptions, "authorize"> & {
+		readonly verify: (
+			claim: BindleTopicHostClaim,
+		) => boolean | Promise<boolean>;
+	},
+): {
+	readonly host: DurableMessagingWitHost;
+	readonly bindings: readonly BindleTopicGrant[];
+	readonly revoke: () => void;
+} {
+	const config = record(
+		options,
+		["limitsGrant", "lifecycle", "verify"],
+		["timeoutMs", "portMetadataGrant"],
+	);
+	if (typeof config.verify !== "function" || types.isProxy(config.verify))
+		return invalid();
+	const verify = config.verify;
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const bindleName = text(
+		source.bindleName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const applicationName = text(
+		source.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	// SAFETY: the compiler validates all captured graph and binding fields.
+	const bindings = compileBindleTopicGrants({
+		applicationName,
+		resources: source.resources,
+		edges: source.edges,
+		bindings: source.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const byTopic = new Map(
+		bindings.map((binding) => [binding.grant.topic, binding]),
+	);
+	const policy = createDurableTopicPolicy({
+		grants: bindings.map((binding) => binding.grant),
+		verify: (claim) => {
+			const binding = byTopic.get(claim.grant.topic);
+			if (binding === undefined) return false;
+			const context = Object.freeze(
+				claim.subscription === undefined
+					? {
+							port,
+							bindleName,
+							applicationName,
+							binding,
+							request: claim.request,
+						}
+					: {
+							port,
+							bindleName,
+							applicationName,
+							binding,
+							request: claim.request,
+							subscription: claim.subscription,
+						},
+			);
+			return intrinsicApply(verify, undefined, [context]);
+		},
+	});
+	const hostOptions = {
+		...config,
+		authorize: policy.authorize,
+	};
+	Reflect.deleteProperty(hostOptions, "verify");
+	// SAFETY: the host validates the captured option fields and capability identities.
+	const host = createDurableMessagingWitHost(
+		port,
+		hostOptions as DurableMessagingWitHostOptions,
+	);
+	return Object.freeze({ host, bindings, revoke: policy.revoke });
+}
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 export { DURABLE_MESSAGING_WIT_INTERFACE };

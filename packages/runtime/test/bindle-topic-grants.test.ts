@@ -1,9 +1,55 @@
-import { describe, expect, it } from "vitest";
+import { DURABLE_MESSAGING_LIMITS, type DurableMessaging } from "@hobo/core";
+import { describe, expect, it, vi } from "vitest";
 import { bindle } from "../../bindles/src/bindle.js";
 import {
 	compileBindleTopicGrants,
+	createBindleTopicWitHost,
+	createDurableMessagingLifecycle,
+	createDurableMessagingLimitsGrant,
 	createDurableTopicPolicy,
 } from "../src/durable-messaging-host.js";
+
+function portFixture(): DurableMessaging {
+	return {
+		limits: DURABLE_MESSAGING_LIMITS,
+		ensureTopic: async ({ topic }) => ({
+			status: "committed",
+			value: { topic },
+		}),
+		ensureSubscription: async ({ subscription }) => ({
+			status: "committed",
+			value: {
+				subscription,
+				firstAvailableSequence: 1,
+				historyTruncated: false,
+			},
+		}),
+		publish: vi.fn<DurableMessaging["publish"]>(async ({ message }) => ({
+			status: "committed",
+			value: { messageId: message.id, sequence: 1 },
+		})),
+		consume: async () => ({ status: "committed", value: [] }),
+		ack: async ({ messageId, sequence }) => ({
+			status: "committed",
+			value: { messageId, sequence },
+		}),
+		nack: async ({ messageId, sequence }) => ({
+			status: "committed",
+			value: { messageId, sequence, disposition: "released" },
+		}),
+		compact: async ({ topic }) => ({
+			status: "committed",
+			value: { topic, firstAvailableSequence: 1, removedMessages: 0 },
+		}),
+		events: async ({ afterSequence }) => ({
+			status: "ok",
+			events: [],
+			firstAvailableSequence: 1,
+			nextAfterSequence: afterSequence,
+			hasMore: false,
+		}),
+	};
+}
 
 function fixture() {
 	const definition = bindle("shop", (builder) => {
@@ -32,6 +78,67 @@ function fixture() {
 }
 
 describe("provider-neutral Bindle topic grants", () => {
+	it("connects a Bindle topic to independently verified messaging ports", async () => {
+		const first = portFixture();
+		const second = portFixture();
+		let firstIsCurrent = true;
+		const claims: string[] = [];
+		const attach = (port: DurableMessaging) =>
+			createBindleTopicWitHost(
+				port,
+				{ ...fixture(), bindleName: "shop" },
+				{
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					verify: (claim) => {
+						claims.push(`${claim.binding.resourceName}:${claim.request.phase}`);
+						return (
+							claim.port === port &&
+							claim.bindleName === "shop" &&
+							claim.applicationName === "web" &&
+							claim.binding.resourceName === "orders" &&
+							(port !== first || firstIsCurrent)
+						);
+					},
+				},
+			);
+		const a = attach(first);
+		const b = attach(second);
+		expect(a.bindings).toEqual(compileBindleTopicGrants(fixture()));
+		expect(Object.isFrozen(a.bindings)).toBe(true);
+		const input = {
+			operation: {
+				id: "v1.2000000000000.abcdefghijklmnop",
+				expiresAtMs: 2000000000000n,
+			},
+			topic: "tenant.orders",
+			message: {
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array([1]),
+				attributes: [],
+			},
+		};
+		expect((await a.host.publish(input)).tag).toBe("committed");
+		expect((await b.host.publish(input)).tag).toBe("committed");
+		expect(claims).toEqual([
+			"orders:dispatch",
+			"orders:disclose",
+			"orders:dispatch",
+			"orders:disclose",
+		]);
+		expect(
+			(await a.host.publish({ ...input, topic: "tenant.audit" })).tag,
+		).toBe("unknown");
+		expect(first.publish).toHaveBeenCalledTimes(1);
+		firstIsCurrent = false;
+		expect((await a.host.publish(input)).tag).toBe("unknown");
+		expect(first.publish).toHaveBeenCalledTimes(1);
+		a.revoke();
+		firstIsCurrent = true;
+		expect((await a.host.publish(input)).tag).toBe("unknown");
+		expect((await b.host.publish(input)).tag).toBe("committed");
+	});
 	it("compiles only the application's declared topic dependency", async () => {
 		const compiled = compileBindleTopicGrants(fixture());
 		expect(compiled).toEqual([
