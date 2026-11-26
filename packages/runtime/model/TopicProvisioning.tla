@@ -1,10 +1,6 @@
 --------------------------- MODULE TopicProvisioning ---------------------------
 EXTENDS Naturals, FiniteSets, Sequences
 
-\* The caller persists and reuses the same operation identities after uncertainty.
-\* The provider is assumed to replay a committed operation idempotently.
-\* Retry abstracts replaying previously confirmed operations before the unknown one.
-
 Topics == <<"topic", "dead-letter">>
 Count == Len(Topics)
 TopicSet == {Topics[i] : i \in 1..Count}
