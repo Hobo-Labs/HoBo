@@ -864,3 +864,16 @@ or otherwise reconcile messages, and authorize destruction before deleting or
 recreating the actor: destroying its database destroys messages and deduplication
 history. Provider credentials, pool isolation, source identity, durable storage,
 and clock correctness remain independently verified host responsibilities.
+
+### AWS infrastructure and financial routing
+
+The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues
+and SNS topics for the corresponding HoBo declarations. This increment provides
+infrastructure only: runtime operations and application bindings are not yet
+supported, and unsupported operations are reported explicitly. Budget-based
+routing requires a complete supplied pricing model. An explicitly authorized
+unpriced admission instead bypasses budget evaluation and holds unbounded
+exposure; uncertain partial applies retain exposure for reconciliation. The
+mapping and budget outcomes are exercised against the Vercel Labs emulator and
+the opt-in official AWS Emulator; these tests do not establish production
+deployment or IAM behavior.
