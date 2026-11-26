@@ -692,6 +692,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				verify: () => authorized,
 				layer,
 			};
+			await store.delete("queue-state");
 			const atomic = createAwsQueueAtomicStore(atomicOptions);
 			expect(await atomic.load()).toEqual({ status: "missing" });
 			expect(await atomic.compareAndSwap(0, new Uint8Array([1]))).toEqual({
