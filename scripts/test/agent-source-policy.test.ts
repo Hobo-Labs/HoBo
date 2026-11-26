@@ -102,7 +102,6 @@ describe("agent source policy hook", () => {
 			[".claude/settings.json", "PostToolUse"],
 			[".codex/hooks.json", "PostToolUse"],
 			[".cursor/hooks.json", "afterFileEdit"],
-			[".gemini/settings.json", "AfterTool"],
 			[".github/hooks/source-policy.json", "postToolUse"],
 		] as const) {
 			const config = schema.parse(
@@ -113,6 +112,40 @@ describe("agent source policy hook", () => {
 				/scripts\/agent-source-policy\.mts/u,
 			);
 		}
+		const gemini = schema.parse(
+			JSON.parse(readFileSync(join(root, ".gemini/settings.json"), "utf8")),
+		);
+		const afterTool = z
+			.array(
+				z
+					.object({
+						matcher: z.string(),
+						hooks: z.array(
+							z
+								.object({
+									command: z.string(),
+									timeout: z.number(),
+								})
+								.loose(),
+						),
+					})
+					.loose(),
+			)
+			.parse(gemini.hooks.AfterTool);
+		const sourceHook = afterTool
+			.flatMap((group) =>
+				group.hooks.map((hook) => ({ matcher: group.matcher, hook })),
+			)
+			.find((entry) =>
+				entry.hook.command.includes("scripts/agent-source-policy.mts"),
+			);
+		assert.ok(sourceHook, "Gemini AfterTool must run the source policy");
+		assert.equal(sourceHook.matcher, "write_file|replace");
+		assert.equal(
+			sourceHook.hook.command,
+			`node --experimental-strip-types "$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts" >/dev/null && printf '{}'`,
+		);
+		assert.equal(sourceHook.hook.timeout, 60_000);
 	});
 
 	it("keeps the anti-slop installer consistent with the common comment policy", () => {

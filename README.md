@@ -219,7 +219,7 @@ mounted filesystems. The pre-commit hook leaves Git's hook environment (`GIT_IND
 worktree) in place, because its gates must read the index being committed; tests
 that build repositories of their own clear those variables themselves.
 
-The repo pre-commit hook is installed for you: the root `prepare` script points `core.hooksPath` at `.githooks` on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it when it is unset (see [`docs/agent-tooling.md`](./docs/agent-tooling.md)). Set it by hand after an install that ran no lifecycle scripts:
+The repo pre-commit hook is installed for you: the root `prepare` script points `core.hooksPath` at `.githooks` on install, and the session-start hooks of Claude Code, Codex, Cursor, Gemini and Copilot do it when it is unset (see [`docs/agent-tooling.md`](./docs/agent-tooling.md)). Set it by hand after an install that ran no lifecycle scripts:
 
 ```sh
 npm run prepare-hooks

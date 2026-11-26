@@ -134,7 +134,7 @@ marker and session identifier.
 ## Owner session and pull request guardrails
 
 The pre-tool hook [`scripts/agent-secret-policy.mts`](../scripts/agent-secret-policy.mts),
-wired the same way in Claude Code, Codex, Cursor and Copilot, also applies
+wired the same way in Claude Code, Codex, Cursor, Gemini and Copilot, also applies
 [`scripts/agent-session-policy.mts`](../scripts/agent-session-policy.mts):
 
 - It refuses a shell command that stops HoBo's MCP server or owner page

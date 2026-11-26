@@ -1,12 +1,36 @@
 {
   "hooks": {
-    "AfterTool": [
+    "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts\" --format=gemini",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace",
+        "hooks": [
+          {
+            "type": "command",
             "name": "repository-source-policy",
-            "command": "node \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\" >/dev/null && printf '{}'",
+            "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\" >/dev/null && printf '{}'",
             "timeout": 60000
           }
         ]
