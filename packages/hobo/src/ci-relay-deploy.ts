@@ -1695,7 +1695,9 @@ export async function runCiRelayDeploy(
 				currentReadError =
 					error instanceof Error
 						? error
-						: new Error("current production deployment could not be established");
+						: new Error(
+								"current production deployment could not be established",
+							);
 		}
 		if (currentReadError !== undefined)
 			return {
