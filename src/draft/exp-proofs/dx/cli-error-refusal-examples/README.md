@@ -60,4 +60,4 @@ pnpm.cmd --prefix src\draft\exp-proofs\cli-error-refusal-examples test
 
 - `architecture/` defines protobuf records and CUE constraints for the catalog.
 - `architecture/pacts/` records the Pact-style design proof boundary.
-- `ADR.md` records parse-derived types and command/event/actor/projection/read-store behavior.
+- [Architecture record](https://linear.app/quickdeploy-ai/document/hobo-558-architecture-record-archived-cb2c086eca85) records parse-derived types and command/event/actor/projection/read-store behavior.

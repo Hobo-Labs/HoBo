@@ -37,7 +37,7 @@ pnpm run test:file src/draft/technical-proofs/orchestrator-reconciliation-fsm-co
 ## Architecture evidence
 
 - `architecture/` — protobuf + CUE + PACT boundary
-- `ADR.md` — parse-don't-validate and event replay evidence
+- [Architecture record](https://linear.app/quickdeploy-ai/document/hobo-620-architecture-record-archived-472174bd5772) — parse-don't-validate and event replay evidence
 
 ## Promotion path
 
