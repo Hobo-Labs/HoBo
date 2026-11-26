@@ -373,7 +373,7 @@ HOBO-35 spikes the first opt-in adapter named by [ADR-0031](#adr-0031) and [Plan
 3. **Covered vs non-covered behavior is explicit.** The adapter report must list conformance-covered assertions: deterministic-clock replay, pinned `wasi:*` round trips, link late-binding, capability-handle isolation, NaN canonicalization, fuel/epoch scheduling, and resource-limit semantics. Wall-clock scheduling jitter and host-specific partial-failure timing stay declared non-covered divergences unless a later suite adds them.
 4. **Host-specific options are typed lock-in.** Host-specific features such as SpinKube link migration are exposed only as `host.<kind>.with(...)` options. They are inert on other hosts and always surfaced by `hobo doctor`/PortabilityReport as host lock-in.
 
-The executable spike is [`../../../src/draft/technical-proofs/component-host-adapter-certification-spike`](../../../src/draft/technical-proofs/component-host-adapter-certification-spike/README.md), with proof notes in [`../proofs/hobo-35-component-host-adapter-certification`](../proofs/hobo-35-component-host-adapter-certification/index.md).
+The executable spike is [`../../../src/draft/technical-proofs/component-host-adapter-certification-spike`](../../../src/draft/technical-proofs/component-host-adapter-certification-spike/README.md), with proof notes in [`../proofs/hobo-35-component-host-adapter-certification`](https://linear.app/quickdeploy-ai/document/hobo-35-proof-record-archived-49c7cf9cb22d).
 
 ### Consequences
 - **(+)** The opt-in adapter story has a concrete first certification target rather than an open-ended "support N hosts" claim.

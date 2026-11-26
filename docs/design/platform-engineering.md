@@ -150,7 +150,7 @@ flowchart LR
 Because `match.Decided` (above) is part of the same record, "why did preview get the cheap DB?" is always answerable.
 
 The M0 projection contract is pinned by the executable HOBO-50 proof in
-[`proofs/hobo-50-deployment-set-delta`](./proofs/hobo-50-deployment-set-delta/index.md):
+[`proofs/hobo-50-deployment-set-delta`](https://linear.app/quickdeploy-ai/document/hobo-50-proof-record-archived-21ea052e7298):
 it folds `set.Created` + `delta.*`, verifies stable Set content addressing, computes
 add/update/remove diffs, rejects overlapping Deltas and absent-resource references, and treats an
 environment group as Yard-level orchestration over member Camps rather than a new config layer.

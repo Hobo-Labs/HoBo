@@ -151,7 +151,7 @@ Source issue: HOBO-474.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/launch-support-release-candidate-evidence-contract`](../../src/draft/exp-proofs/cx/launch-support-release-candidate-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-474-launch-support-release-candidate`](./proofs/hobo-474-launch-support-release-candidate/index.md).
+[`proofs/hobo-474-launch-support-release-candidate`](https://linear.app/quickdeploy-ai/document/hobo-474-proof-record-archived-825ec9fef9d3).
 
 The M3 gate records seven support evidence items:
 
