@@ -75,7 +75,8 @@ Hermetic checks live in
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
 
 Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
-(`examples` covers `examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
+(including `src` for the gh-pages deps checkout-key path and `examples` for
+`examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
 nested file paths through `sparse-checkout add`, not cone `set`. The release-pages job also
 passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 `sparse-checkout add` plus `git checkout HEAD --` for `examples/browser-runtime/wit`
