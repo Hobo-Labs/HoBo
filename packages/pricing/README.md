@@ -1,5 +1,7 @@
 # @hobo/pricing
 
+SDK releases stage this package as `@hobo-labs/pricing`.
+
 Pure provider-cost rating for HoBo routing and FinOps. It models provider
 commercial terms only; customer billing, payments, tax, and invoices are out of
 scope. The normative design is

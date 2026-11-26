@@ -33,6 +33,43 @@ import {
 } from "../lib/release-hobo-path-filters.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("stages the complete provider-neutral financial dependency graph in order", () => {
+		const root = join(import.meta.dirname, "..", "..");
+		const map = loadNpmScopeMap();
+		const sdkNames: readonly string[] = SDK_PACKAGES;
+		const directories = [
+			"packages/pricing",
+			"packages/fleet",
+			"packages/backend-routing",
+			"packages/data-core",
+			"packages/providers/provider-cedar",
+			"packages/providers/provider-opa",
+			"packages/broker",
+			"packages/dispatcher",
+		];
+		for (const directory of directories) {
+			const manifest = JSON.parse(
+				readFileSync(join(root, directory, "package.json"), "utf8"),
+			);
+			const index = sdkNames.indexOf(manifest.name);
+			expect(index).toBeGreaterThanOrEqual(0);
+			expect(manifest.private).not.toBe(true);
+			expect(manifest.files).toContain("LICENSE");
+			expect(readFileSync(join(root, directory, "LICENSE"), "utf8")).toContain(
+				"MIT License",
+			);
+			const staged = applyScopeToManifest(manifest, map, { version: "1.0.0" });
+			for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+				if (!dependency.startsWith("@hobo/")) continue;
+				expect(map.packages[dependency]).toBeDefined();
+				expect(staged.dependencies?.[map.packages[dependency] ?? ""]).toBe(
+					"1.0.0",
+				);
+				expect(sdkNames.indexOf(dependency)).toBeGreaterThanOrEqual(0);
+				expect(sdkNames.indexOf(dependency)).toBeLessThan(index);
+			}
+		}
+	});
 	it("stages Alchemy and Rivet packages with their public dependency names", () => {
 		const root = join(import.meta.dirname, "..", "..");
 		const map = loadNpmScopeMap();
