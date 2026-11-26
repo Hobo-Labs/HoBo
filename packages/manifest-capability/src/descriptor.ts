@@ -7,14 +7,14 @@ import {
 
 export type ProfileMaturity = "stable" | "preview" | "experimental";
 
-// domain-view: the wire form (hobo.manifest.capability.v1.EvidenceSourceRef in
+// domain-view:
 export type EvidenceSourceRef = {
 	readonly url: string;
 	readonly checkedAt: string;
 	readonly note?: string;
 };
 
-// domain-view: valueKind is a closed five-member union here and a plain
+// domain-view:
 export type FeatureDescriptor = {
 	readonly key: string;
 	readonly description: string;
@@ -27,7 +27,7 @@ export type FeatureDescriptor = {
 	readonly enumValues?: readonly string[];
 };
 
-// domain-view: deliberately NOT the same type as FeatureDescriptor despite the
+// domain-view:
 export type GuaranteeDescriptor = {
 	readonly key: string;
 	readonly description: string;
@@ -35,7 +35,7 @@ export type GuaranteeDescriptor = {
 	readonly enumValues?: readonly string[];
 };
 
-// domain-view: schemaVersion is a pinned literal type and primitive is the
+// domain-view:
 export type CapabilityProfileDescriptor = {
 	readonly schemaVersion: "hobo.capability-profile/v1";
 	readonly id: string;

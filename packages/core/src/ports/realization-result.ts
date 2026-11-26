@@ -28,7 +28,6 @@ import { deepFreeze } from "../parse-utils.js";
 
 export const REALIZATION_RESULT_SCHEMA = "hobo.realization-result/v1";
 
-/** Why a raw realization result was rejected. */
 export type RealizationResultRejection =
 	| "not-an-object"
 	| "schema-mismatch"
@@ -64,14 +63,9 @@ export class RealizationResultParseError extends CoreParseError {
 
 // domain-view: parsed derived type; wire form is RealizedResourceRecord in data-models/realization_result.proto (outputs JSON-encoded on the wire).
 export interface RealizedResourceRecord {
-	/** Logical resource name inside the deployment set. */
 	readonly name: string;
 	/** Resource class/type token (e.g. `bucket`, `kv`, `convex.function`). */
 	readonly resourceClass: string;
-	/**
-	 * Stable provider-side id: adapter URN, workspace key, adopted external id
-	 * (`terraform://…`), or OCI digest for artifact resources.
-	 */
 	readonly providerId: string;
 	/** Non-sensitive outputs of this resource; secret values never ride here. */
 	readonly outputs: JsonObject;
@@ -79,13 +73,11 @@ export interface RealizedResourceRecord {
 
 // domain-view: parsed derived type; wire form is SecretRefRecord in data-models/realization_result.proto.
 export interface SecretRefRecord {
-	/** URI-shaped reference (e.g. `broker://tenant/db`) — never the value. */
 	readonly secretRef: string;
 }
 
 // domain-view: parsed derived type; wire form is RealizationBindingRecord in data-models/realization_result.proto (value JSON-encoded on the wire).
 export interface RealizationBindingRecord {
-	/** Binding key or `${resources.<name>.outputs.<key>}` placeholder. */
 	readonly key: string;
 	readonly value: JsonValue;
 }
@@ -93,13 +85,9 @@ export interface RealizationBindingRecord {
 // domain-view: parsed derived type; wire form is RealizationResultRecord in data-models/realization_result.proto.
 export interface RealizationResult {
 	readonly schema: typeof REALIZATION_RESULT_SCHEMA;
-	/** Realized/adopted backing resources, sorted by name. */
 	readonly resources: readonly RealizedResourceRecord[];
-	/** Non-sensitive stack outputs for dependents, keys sorted. */
 	readonly values: JsonObject;
-	/** Resolved binding entries, sorted by key. */
 	readonly bindings: readonly RealizationBindingRecord[];
-	/** REFERENCES ONLY — the fail-closed ref-only rule, keys sorted. */
 	readonly secrets: Readonly<Record<string, SecretRefRecord>>;
 }
 
@@ -153,7 +141,6 @@ function plainObject(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		throw new RealizationResultParseError(rejection, path, "object", value);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return value as JsonObject;
 }
 
@@ -350,7 +337,6 @@ export function parseRealizationResult(
 	});
 }
 
-/** The `{resources, stackOutputs, bindings}` triple every IaC adapter emits. */
 export interface IacOutputsLike {
 	readonly resources: Readonly<
 		Record<

@@ -20,13 +20,13 @@ export const COVERAGE_VERDICTS = [
 
 export type CoverageVerdict = (typeof COVERAGE_VERDICTS)[number];
 
-// domain-view: parsed narrowing of CapabilityMatrixBucketRecord in
+// domain-view:
 export type CapabilityMatrixBucket = {
 	readonly available: readonly string[];
 	readonly unavailable: readonly string[];
 };
 
-// domain-view: parsed narrowing of CapabilityMatrixBucketsRecord in
+// domain-view:
 export type CapabilityMatrixBuckets = {
 	readonly native: CapabilityMatrixBucket;
 	readonly pack: CapabilityMatrixBucket;
@@ -35,7 +35,7 @@ export type CapabilityMatrixBuckets = {
 	readonly sponsor: CapabilityMatrixBucket;
 };
 
-// domain-view: parsed narrowing of CapabilityMatrixCellRecord in
+// domain-view:
 export type CapabilityMatrixCell = {
 	readonly key: CapabilityMatrixCellKey;
 	readonly primitive: BindlePrimitive;
@@ -55,7 +55,7 @@ export const MATRIX_EXCLUSION_CODES = [
 
 export type MatrixExclusionCode = (typeof MATRIX_EXCLUSION_CODES)[number];
 
-// domain-view: parsed narrowing of CapabilityMatrixExclusionRecord in
+// domain-view:
 export type CapabilityMatrixExclusion = {
 	readonly definitionId: string;
 	readonly profileId: string;
@@ -63,7 +63,7 @@ export type CapabilityMatrixExclusion = {
 	readonly detail: string;
 };
 
-// domain-view: parsed narrowing of CapabilityMatrixRecord in
+// domain-view:
 export type CapabilityMatrix = {
 	readonly schemaVersion: typeof CAPABILITY_MATRIX_SCHEMA_VERSION;
 	readonly evaluatedAtMs: number;

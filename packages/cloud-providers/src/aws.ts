@@ -74,7 +74,6 @@ export {
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(aws, …).
 export const PROVIDER_ID = "aws";
 
-// public-contract: the name every default AWS Yard is registered under; changing it renames them all.
 export const DEFAULT_AWS_YARD_NAME = "aws";
 
 export interface AwsYardOptions

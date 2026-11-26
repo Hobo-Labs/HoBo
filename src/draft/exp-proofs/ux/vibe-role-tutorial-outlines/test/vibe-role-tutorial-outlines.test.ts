@@ -24,7 +24,7 @@ test("HOBO-552 tutorial outline proof pins issue, phase, package path, and proof
   assert.equal(parsed.issue, "HOBO-552");
   assert.equal(parsed.phase, "M1");
   assert.equal(parsed.packagePath, "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines");
-  assert.equal(parsed.proofPath, "docs/design/proofs/vibe-role-tutorial-outlines/README.md");
+  assert.equal(parsed.proofPath, "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1");
   assert.deepEqual(parsed.roles, REQUIRED_TUTORIAL_ROLES);
 });
 
