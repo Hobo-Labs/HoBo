@@ -50,7 +50,7 @@ missing, stale, overlong or unreadable verdict is `undefined`.
 
 Tests: `packages/fleet/test/observation/` (`pnpm exec vitest run
 packages/fleet/test/observation`). The ranking properties of
-`docs/design/ci-relay-mesh.md` "What the tests establish" hold over 6,000
+[CI relay mesh record](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10) "What the tests establish" hold over 6,000
 work digests in `ranking.property.test.ts`; `eligibility.test.ts` checks
 `eligibleForActive` against `decideFleet` and `routeFleetByBudget` for every
 observation of their tests.
