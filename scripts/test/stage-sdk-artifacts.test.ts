@@ -37,9 +37,11 @@ describe("stage-sdk-artifacts", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-bundle-"));
 		try {
 			const sibling = join(dir, "external/ts-autocode/packages/grounding");
+			const child = join(dir, "child");
 			const staged = join(dir, "staged");
 			const consumer = join(dir, "consumer");
 			mkdirSync(join(sibling, "dist"), { recursive: true });
+			mkdirSync(child, { recursive: true });
 			mkdirSync(join(staged, "dist"), { recursive: true });
 			mkdirSync(consumer, { recursive: true });
 			writeFileSync(join(dir, "external/ts-autocode/LICENSE"), "MIT fixture");
@@ -50,12 +52,23 @@ describe("stage-sdk-artifacts", () => {
 					version: "0.1.0",
 					type: "module",
 					main: "dist/index.js",
+					dependencies: { "fixture-child": "1.0.0" },
 				}),
 			);
 			writeFileSync(
 				join(sibling, "dist/index.js"),
-				"export const value = 42;\n",
+				'export { value } from "fixture-child";\n',
 			);
+			writeFileSync(
+				join(child, "package.json"),
+				JSON.stringify({
+					name: "fixture-child",
+					version: "1.0.0",
+					type: "module",
+					main: "index.js",
+				}),
+			);
+			writeFileSync(join(child, "index.js"), "export const value = 42;\n");
 			writeFileSync(
 				join(staged, "dist/index.js"),
 				'export { value } from "ts-autocode-grounding";\n',
@@ -73,6 +86,7 @@ describe("stage-sdk-artifacts", () => {
 			bundleExternalSdkWorkspaces(dir, staged, manifest, {
 				"ts-autocode-grounding": "0.1.0",
 			});
+			expect(manifest.dependencies).toMatchObject({ "fixture-child": "1.0.0" });
 			writeFileSync(join(staged, "package.json"), JSON.stringify(manifest));
 			const packed = spawnSync(
 				"npm",
@@ -89,6 +103,24 @@ describe("stage-sdk-artifacts", () => {
 			);
 			expect(packed.status, packed.stderr).toBe(0);
 			const archive = join(dir, JSON.parse(packed.stdout)[0].filename);
+			const childPacked = spawnSync(
+				"npm",
+				[
+					"pack",
+					"--json",
+					"--ignore-scripts",
+					"--cache",
+					join(dir, "cache"),
+					"--pack-destination",
+					dir,
+				],
+				{ cwd: child, encoding: "utf8" },
+			);
+			expect(childPacked.status, childPacked.stderr).toBe(0);
+			const childArchive = join(
+				dir,
+				JSON.parse(childPacked.stdout)[0].filename,
+			);
 			writeFileSync(
 				join(consumer, "package.json"),
 				'{"name":"consumer","version":"1.0.0","type":"module"}',
@@ -103,6 +135,7 @@ describe("stage-sdk-artifacts", () => {
 					"--cache",
 					join(dir, "cache"),
 					archive,
+					childArchive,
 				],
 				{ cwd: consumer, encoding: "utf8" },
 			);
@@ -126,6 +159,19 @@ describe("stage-sdk-artifacts", () => {
 					"utf8",
 				),
 			).toBe("MIT fixture");
+			expect(() =>
+				bundleExternalSdkWorkspaces(
+					dir,
+					staged,
+					{
+						dependencies: {
+							"ts-autocode-grounding": "0.1.0",
+							"fixture-child": "2.0.0",
+						},
+					},
+					{ "ts-autocode-grounding": "0.1.0" },
+				),
+			).toThrow("conflicting SDK bundled dependency");
 			expect(() =>
 				bundleExternalSdkWorkspaces(dir, staged, manifest, {
 					"ts-autocode-grounding": "0.2.0",

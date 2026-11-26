@@ -4,6 +4,7 @@ The **SDK runtime-primitives package**: app-facing authoring surfaces and the
 deterministic-replay library that backs them. SDK tarball staging bundles the
 pinned `ts-autocode-grounding` build and its license with the runtime, so the
 tarball does not require that sibling package to be published independently.
+The staged manifest also retains its registry dependencies.
 
 - **Trainable methods (ADR-0025 / ADR-0125)** — `training(fn, opts)`,
   signature-only `training.define()` empty implementations served by a

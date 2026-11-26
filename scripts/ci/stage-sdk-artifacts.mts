@@ -168,6 +168,47 @@ export function bundleExternalSdkWorkspaces(
 			("private" in sibling && sibling.private !== false)
 		)
 			throw new Error(`invalid SDK bundled dependency: ${name}`);
+		for (const field of [
+			"peerDependencies",
+			"optionalDependencies",
+			"bundleDependencies",
+			"bundledDependencies",
+		] as const) {
+			if (Object.hasOwn(sibling, field))
+				throw new Error(`unsupported SDK bundled dependency metadata: ${name}`);
+		}
+		if ("dependencies" in sibling) {
+			const dependencies = sibling.dependencies;
+			if (
+				typeof dependencies !== "object" ||
+				dependencies === null ||
+				Array.isArray(dependencies)
+			)
+				throw new Error(`invalid SDK bundled dependencies: ${name}`);
+			manifest.dependencies ??= {};
+			for (const [dependency, range] of Object.entries(dependencies)) {
+				if (
+					dependency.length === 0 ||
+					dependency.length > 214 ||
+					typeof range !== "string" ||
+					range.length === 0 ||
+					range.length > 128 ||
+					/^(?:workspace|file|link):/u.test(range)
+				)
+					throw new Error(`invalid SDK bundled dependencies: ${name}`);
+				if (
+					Object.hasOwn(manifest.dependencies, dependency) &&
+					manifest.dependencies[dependency] !== range
+				)
+					throw new Error(`conflicting SDK bundled dependency: ${dependency}`);
+				Object.defineProperty(manifest.dependencies, dependency, {
+					value: range,
+					enumerable: true,
+					configurable: true,
+					writable: true,
+				});
+			}
+		}
 		if (!existsSync(join(source, "dist", "index.js")))
 			throw new Error(`SDK bundled dependency is not built: ${name}`);
 		rmSync(target, { recursive: true, force: true });
