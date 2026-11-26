@@ -972,6 +972,64 @@ try {
 			`AwsHttpBindings ${label}: ${invariant} counterexample found\n`,
 		);
 	}
+	const ingressSource = readFileSync(
+		join(sharedDirectory, "AwsHttpIngress.tla"),
+		"utf8",
+	);
+	const ingressResult = check(
+		"AwsHttpIngress",
+		sharedDirectory,
+		join(scratch, "aws-ingress"),
+	);
+	if (
+		ingressResult.status !== 0 ||
+		!ingressResult.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`AwsHttpIngress model checking failed:\n${ingressResult.stdout}\n${ingressResult.stderr}`,
+		);
+	process.stdout.write(ingressResult.stdout);
+	const ingressCases = [
+		[
+			"dispatch-oversized",
+			'/\\ state[r] = "reading" /\\ ~timedOut[r] /\\ units[r] <= MaxUnits',
+			'/\\ state[r] = "reading" /\\ ~timedOut[r]',
+			"NoOversizedDispatch",
+		],
+		[
+			"release-on-read-timeout",
+			'TimeoutRead(r) ==\n  /\\ state[r] = "reading"\n  /\\ state\' = [state EXCEPT ![r] = "canceling"]\n  /\\ timedOut\' = [timedOut EXCEPT ![r] = TRUE]\n  /\\ response\' = [response EXCEPT ![r] = "timeout"]\n  /\\ UNCHANGED <<slots, units, dispatched>>',
+			'TimeoutRead(r) ==\n  /\\ state[r] = "reading"\n  /\\ state\' = [state EXCEPT ![r] = "canceling"]\n  /\\ timedOut\' = [timedOut EXCEPT ![r] = TRUE]\n  /\\ response\' = [response EXCEPT ![r] = "timeout"]\n  /\\ slots\' = slots \\ {r} /\\ UNCHANGED <<units, dispatched>>',
+			"OutstandingRetainsSlot",
+		],
+		["timeout-witness", undefined, undefined, "NeverTimedOut"],
+		["dispatch-witness", undefined, undefined, "NeverDispatched"],
+	] as const;
+	for (const [label, before, after, invariant] of ingressCases) {
+		if (before !== undefined && ingressSource.split(before).length !== 2)
+			throw new Error(`AwsHttpIngress ${label} mutation target changed`);
+		const isolated = join(scratch, `aws-ingress-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "AwsHttpIngress.tla"),
+			before === undefined
+				? ingressSource
+				: ingressSource.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "AwsHttpIngress.cfg"),
+			`SPECIFICATION Spec\nCONSTANTS Requests = {r1, r2}\n          Limit = 1\n          MaxUnits = 1\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check("AwsHttpIngress", isolated, join(isolated, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`AwsHttpIngress ${label} did not reach ${invariant}`);
+		process.stdout.write(
+			`AwsHttpIngress ${label}: ${invariant} counterexample found\n`,
+		);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

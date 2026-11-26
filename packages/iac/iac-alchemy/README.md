@@ -62,6 +62,11 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
+The AWS mapper also maps a secret declaration with no requested operations to
+an Alchemy `AWS.SecretsManager.Secret`, with a 30-day deletion recovery window
+and no value in the IaC configuration. This is infrastructure-only: versioned
+secret operations and application bindings are not yet provided by this mapper.
+
 AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
 its provider choice outside the Bindle: pass the neutral Bindle through
 `withAwsDynamoKv(bindle, { cache: true })` and use
@@ -95,6 +100,8 @@ SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
+The runtime reports a successful write only after transport completion, even if
+application code replaces `Promise.race`.
 The bounded `AwsS3Objects` model uses one key and a collision-free abstract
 digest. It includes out-of-band objects with foreign metadata, oversized bodies
 and corrupted digests; it does not prove the hash implementation or provider.
@@ -115,22 +122,83 @@ request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
 headers; a stalled handler keeps one of 32 capacity slots until it settles.
 The host captures one bounded, deterministic graph for runtime binding and
 source registration; accessors, duplicate dependencies and missing edges fail
-before application logic runs.
-`defineAwsHttpSource` resolves provisioned resource names on first use. Its
-synchronous resolver must create branded stores for those exact names; missing,
-changed or unauthorized grants fail closed. The source does not itself deploy
-an AWS web function or start an HTTP listener.
-`awsHttpBindleMappers` maps the attested application to Alchemy's
-`AWS.Lambda.WebFunction` and binds declared DynamoDB and S3 resource outputs.
-The host must authenticate the reviewed source, artifact and exact source
-binding, and select an explicit endpoint authentication mode.
-The host must authenticate HTTP requests, independently enforce IAM and fence
-in-flight AWS operations across grant or resource ownership changes. The host
-adapter does not yet start an HTTP listener, bound incoming request bodies,
-stream responses, or provide connectors or session replay. The
-bounded `AwsHttpBindings` model checks request retirement, grant revalidation
-and timed-out capacity. It assumes host verification and transport behavior;
-it does not prove AWS, HTTP parsing, byte limits or liveness.
+before application logic runs. The source resolver must synchronously create
+branded stores for the exact provisioned names.
+For an Alchemy AWS Web Function, create a source in the application's entry
+module. The `host` below is your own authority: it creates the branded stores
+for the provided physical names, verifies each grant, and supplies AWS clients.
+
+```ts
+import { defineAwsHttpSource } from "@hobo/iac-alchemy/aws/http-source";
+import { startAwsHttpServer } from "@hobo/iac-alchemy/aws/http-server";
+
+export const source = defineAwsHttpSource({
+  bindle: selectedBindle, // withAwsDynamoKv and withAwsS3 already applied
+  applicationName: "web",
+  environment: process.env,
+  resolveStores: (bindings) => host.resolveStores(bindings),
+  verifyBinding: (claim) => host.verifyBinding(claim),
+});
+
+if (process.env.AWS_LAMBDA_HTTP_ENDPOINT) {
+  await startAwsHttpServer(source);
+}
+```
+
+Use the same source when mapping the Bindle. `main` must be the existing
+canonical absolute path to that entry module. The host must verify that the
+reviewed module starts this exact source, and fence the source and its complete
+dependency closure throughout planning and deployment.
+
+```ts
+import { awsDynamoKvBindleMappers } from "@hobo/iac-alchemy/aws/kv-mapper";
+import { awsS3BindleMappers } from "@hobo/iac-alchemy/aws/s3-mapper";
+import { awsHttpBindleMappers } from "@hobo/iac-alchemy/aws/http-mapper";
+
+const mappers = awsHttpBindleMappers({
+  source,
+  main,
+  authType: "IamAuth",
+  maxEnvironments: 2,
+  rateLimit: 100,
+  sourceFence: host.sourceFence,
+  verifySource: (claim) => host.verifySource(claim),
+}, awsS3BindleMappers(awsDynamoKvBindleMappers()));
+// Pass selectedBindle and mappers to mapBindleToAlchemy and the normal
+// financial planning and admission flow.
+```
+
+The required endpoint limits bound the advertised execution environments and
+request rate; they do not themselves enforce a monetary budget. A supplied
+financial model must cover the Web Function and all provider-managed effects,
+including its execution role, logs, code assets, requests and storage. The host
+must verify the inventory and model; unknown or unbounded liability remains
+subject to the policy plane's explicit unpriced decision.
+The financial preview checks the mapped Web Function, DynamoDB table and S3
+bucket together. Missing or incomplete pricing is rejected for budget-based
+routing; a fully covered quote can be ranked before any budget reservation or
+provider effect. The preview test uses stub providers.
+
+The mapper creates `AWS.Lambda.WebFunction`; the listener starts the attested
+source on its supplied endpoint. The source resolves the exact mapped resource
+names from the function environment and fails closed if names or grants change.
+`ApplicationManaged` is also available when the application itself
+authenticates every request. The host must independently enforce IAM and fence
+in-flight AWS operations across grant or resource ownership changes. The
+listener buffers request bodies up to 1 MiB in at most 1,024 chunks before
+dispatch, accepts at most 32 concurrent ingress operations, and returns 408 on
+a 10-second deadline. A timed-out ingress read retains its slot until
+cancellation settles; the application runtime independently retains its slot
+until a timed-out handler settles. These limits do not bound the HTTP parser,
+network connections or upstream services; the host must set its own ingress
+and network limits. The bounded `AwsHttpIngress` model covers dispatch,
+timeout and ingress slot retention with abstract body units. It treats the
+application call as complete when its response promise settles and assumes the
+parser, transport, timer, cancellation and application behave as modeled.
+Streaming responses, connectors and session replay are not supported.
+The bounded `AwsHttpBindings` model checks request retirement, grant
+revalidation and timed-out capacity. It assumes host verification and transport
+behavior; it does not prove AWS, HTTP parsing, byte limits or liveness.
 The model explores one application with two request slots.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
