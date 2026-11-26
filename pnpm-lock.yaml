@@ -2553,6 +2553,12 @@ importers:
       '@effect/platform-node':
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../../identity
+      '@hobo/pack-better-auth':
+        specifier: workspace:*
+        version: link:../../packs/pack-better-auth
       '@types/node':
         specifier: ^24.13.2
         version: 24.13.2
