@@ -1,8 +1,3 @@
-// Engine observation: read the engine's own status API and decide whether the
-// published revision has converged. Convergence is claimed only when the
-// engine reports the exact revision applied and healthy (I5); anything else —
-// including an unreadable status — is CONVERGING or BLOCKED with a reason.
-
 import type { HttpTransport, JsonObject, JsonValue } from "@hobo/core";
 import { GitopsEngine } from "../_generated/gitops_pb.js";
 import type { PublisherConfig } from "../config.js";
@@ -14,7 +9,6 @@ import type { EngineDocumentRef } from "../render.js";
 export type EngineVerdict = Readonly<{
 	state: "converged" | "converging" | "blocked";
 	healthy: boolean;
-	/** Revision the engine reports as applied, if any. */
 	appliedRevision: string;
 	reason?: Readonly<{ code: GitopsFailureCode; message: string }>;
 }>;
@@ -48,7 +42,6 @@ function sameRevision(reported: string, published: string): boolean {
 	return sha === published;
 }
 
-/** Argo CD Application status → verdict. */
 export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 	const sync = str(get(app, "status", "sync", "status"));
 	const applied = str(get(app, "status", "sync", "revision"));
@@ -97,7 +90,6 @@ export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 	};
 }
 
-/** Flux Kustomization status → verdict. */
 export function fluxVerdict(
 	kustomization: JsonObject,
 	revision: string,
@@ -138,7 +130,6 @@ export function fluxVerdict(
 	};
 }
 
-/** Read the engine document's live status and decide. Never throws for I/O. */
 export async function observeEngine(
 	config: PublisherConfig,
 	ref: EngineDocumentRef,

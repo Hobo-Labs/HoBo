@@ -182,7 +182,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
         quickstartFixtureId: "rlq-collect-manifest-ir-v1",
       },
       proofMode: "simulated",
-      docsHandoff: "docs/design/proofs/vibe-role-tutorial-outlines/README.md#app-developer",
+      docsHandoff: "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1#app-developer",
       supportHandoff: "support routes missing project prerequisite to workspace onboarding owner",
       accessibilityNote: "Project setup labels owner, blocker, and next action as headings.",
     },
@@ -277,7 +277,7 @@ export const VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH: VibeClickableFirstRunWalkthro
       surface: "tutorials",
       trigger: "project setup or first proof needs role tutorial guidance",
       owner: "tutorial owner",
-      evidenceAnchor: "docs/design/proofs/vibe-role-tutorial-outlines/README.md",
+      evidenceAnchor: "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1",
       customerSafeMessage: "Tutorial path stays simulated and cites accepted quickstart fixture ids.",
     },
     {

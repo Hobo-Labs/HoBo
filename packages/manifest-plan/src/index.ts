@@ -44,27 +44,14 @@
 
 import { createHash } from "node:crypto";
 
-// The schema discriminant of a DeploymentPlan record. It is hashed as part of
-// the plan, so a consumer pins this exact string rather than deriving it.
 export const DEPLOYMENT_PLAN_SCHEMA = "hobo.deployment-plan/v1" as const;
 
 const objectTag = Object.prototype.toString;
 
-/**
- * A JSON object. Interface (not a `Record` alias) so consumers stay anti-slop
- * clean when they mention this type.
- */
 export interface JsonObject {
 	readonly [key: string]: JsonValue;
 }
 
-/**
- * An arbitrary JSON value, matching `google.protobuf.Value`.
- *
- * `undefined` is deliberately absent: it is not a JSON value, `JSON.stringify`
- * silently drops object properties holding it, and a silent drop changes the
- * plan digest. `parseResourcePlan` refuses it rather than normalizing it.
- */
 export type JsonValue =
 	| null
 	| boolean
@@ -167,7 +154,6 @@ export type PlanHash = `sha256:${string}`;
 
 export class ResourcePlanError extends Error {
 	readonly code = "INVALID_RESOURCE_PLAN" as const;
-	/** Dotted path of the offending field, e.g. `resources[2].productId`. */
 	readonly path: string;
 
 	constructor(path: string, detail: string) {
@@ -257,10 +243,6 @@ function isJsonRecord(value: JsonValue): value is JsonObject {
 	return value !== null && objectTag.call(value) === "[object Object]";
 }
 
-/**
- * Objects `typeof` would have called `"object"` after excluding null and
- * arrays: plain records, null-prototype records, Date, Map, class instances.
- */
 function isPlanParseObject(value: PlanParseInput): value is PlanParseObject {
 	if (value === null || value === undefined) return false;
 	if (Array.isArray(value)) return false;
@@ -346,17 +328,6 @@ function requiredString(
 	return value;
 }
 
-/**
- * Read an optional field under `exactOptionalPropertyTypes`.
- *
- * Absent and present-but-`undefined` are different inputs and this boundary
- * keeps them different: an absent key yields `undefined` and the caller omits
- * the property entirely, while a key that is present holding `undefined` (or
- * `null`) is refused. Normalizing the second into the first is the conflation
- * the flag exists to prevent, and it is not cosmetic here — `JSON.stringify`
- * drops a property whose value is `undefined`, so accepting it would let a
- * caller believe it set a field that never reached the digest.
- */
 function optionalString(
 	source: PlanParseObject,
 	key: string,
@@ -408,9 +379,6 @@ function parameterValue(
 	if (value === null) return null;
 	if (isPrimitiveBoolean(value) || isPrimitiveString(value)) return value;
 	if (isPrimitiveNumber(value)) {
-		// NaN and ±Infinity are not JSON. `JSON.stringify` turns each into
-		// `null`, so admitting one would mean the parsed value and the value
-		// that gets hashed disagree — a silent digest mutation.
 		if (!Number.isFinite(value)) {
 			fail(
 				path,
@@ -427,12 +395,6 @@ function parameterValue(
 		);
 	}
 	if (isPlanParseObject(value)) {
-		// Plain objects only. A Date, a Map, or any class instance is object-like
-		// with no own enumerable keys, so walking it as a record would quietly
-		// produce `{}` — while `JSON.stringify` would produce something else
-		// entirely (a Date serializes to a string through `toJSON`). The parsed
-		// value and the value that gets hashed would then disagree, which is the
-		// one thing this boundary exists to prevent.
 		const prototype = Object.getPrototypeOf(value);
 		if (prototype !== Object.prototype && prototype !== null) {
 			fail(
@@ -480,8 +442,6 @@ function realizationParameters(
 }
 
 function freezeResourcePlan(draft: ResourcePlanDraft): ResourcePlan {
-	// SAFETY: ResourcePlan is branded with a unique symbol this parser mints;
-	// every field has already been parsed and optionals are omitted, not undefined.
 	return Object.freeze(draft) as ResourcePlan;
 }
 
@@ -491,8 +451,6 @@ function freezeDeploymentPlan(draft: {
 	dependencyOrder: readonly string[];
 	objective: string;
 }): DeploymentPlan {
-	// SAFETY: DeploymentPlan is branded with a unique symbol this parser mints;
-	// every field has already been parsed.
 	return Object.freeze(draft) as DeploymentPlan;
 }
 
@@ -525,8 +483,6 @@ export function parseResourcePlan(
 	}
 	const deps = stringArray(source.deps, `${path}.deps`, fail, true);
 
-	// `strategy`, `region` and `deploymentId` admit "" to match the CUE
-	// constraint they were decomposed from. `productId` does not.
 	const strategy = optionalString(source, "strategy", path, fail, true);
 	const region = optionalString(source, "region", path, fail, true);
 	const deploymentId = optionalString(source, "deploymentId", path, fail, true);
@@ -707,11 +663,6 @@ function sortKeys(value: JsonValue): JsonValue {
 	return value;
 }
 
-/**
- * The byte-stable form a plan is content-addressed by.
- *
- * No indentation and no trailing newline — both are part of the digest.
- */
 export function canonicalPlanJson(plan: DeploymentPlan): string {
 	return JSON.stringify(sortKeys(deploymentPlanJson(plan)));
 }

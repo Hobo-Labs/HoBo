@@ -31,16 +31,13 @@
  * and cents are what get a cost surface disbelieved.
  */
 
-/** One published price, as an adapter read it. */
 export interface PriceObservation {
 	readonly providerId: string;
 	readonly sku: string;
 	readonly region: string;
-	/** The billing unit — "hour", "month", "gb-month". Part of the identity. */
 	readonly unit: string;
 	readonly minorUnits: number;
 	readonly currency: string;
-	/** Where this came from, so a figure can be traced back and checked. */
 	readonly source: string;
 	readonly observedAtMs: number;
 }
@@ -51,18 +48,10 @@ export interface PriceQuery {
 	readonly region: string;
 	readonly unit: string;
 	readonly nowMs: number;
-	/** How old a published price may be and still be served. */
 	readonly maxAgeMs: number;
-	/** When set, a price in another currency is refused rather than converted. */
 	readonly currency?: string;
 }
 
-/**
- * - `priced` — a fresh price in an acceptable currency.
- * - `stale` — found, but older than the caller allows.
- * - `currency-mismatch` — found, but denominated in something else.
- * - `unpriced` — the feed has nothing for this key.
- */
 export type PriceLookupStatus =
 	| "priced"
 	| "stale"
@@ -85,7 +74,6 @@ export interface PriceBookCoverage {
 	readonly priced: number;
 	readonly total: number;
 	readonly fraction: number;
-	/** The keys nothing could price, sorted, so the gap is actionable. */
 	readonly missing: readonly string[];
 }
 
@@ -98,15 +86,6 @@ function keyOf(parts: {
 	return `${parts.providerId}:${parts.sku}:${parts.region}:${parts.unit}`;
 }
 
-/**
- * Whether a record is usable at all.
- *
- * A published feed is someone else's output, so it is exactly the input most
- * likely to contain something that cannot be a price. Rejecting here means a
- * bad record never reaches a decision; note that a rejected record also must
- * not displace a good one, which is why filtering happens before the
- * newest-wins comparison rather than after it.
- */
 function usable(observation: PriceObservation): boolean {
 	if (observation.sku.length === 0) return false;
 	if (observation.providerId.length === 0) return false;
@@ -122,8 +101,6 @@ export function buildPriceBook(
 		if (!usable(observation)) continue;
 		const key = keyOf(observation);
 		const held = entries.get(key);
-		// Newest wins: feeds get re-fetched, and the newer publication is the
-		// current price regardless of the order records arrive in.
 		if (held === undefined || observation.observedAtMs > held.observedAtMs)
 			entries.set(key, observation);
 	}
@@ -143,8 +120,6 @@ export function lookupPrice(book: PriceBook, query: PriceQuery): PriceLookup {
 		};
 	}
 
-	// Clamped at zero: a publisher's clock running ahead of ours is not the
-	// operator's problem, and a negative age would read as freshness.
 	const ageMs = Math.max(0, query.nowMs - found.observedAtMs);
 	return {
 		status: ageMs > query.maxAgeMs ? "stale" : "priced",
@@ -155,13 +130,6 @@ export function lookupPrice(book: PriceBook, query: PriceQuery): PriceLookup {
 	};
 }
 
-/**
- * How much of a wanted set this book can price right now.
- *
- * This is the number that argues for or against paying for a feed, so a stale
- * price counts as uncovered: coverage is about what can be priced today, not
- * about what was once known.
- */
 export function priceBookCoverage(
 	book: PriceBook,
 	queries: readonly PriceQuery[],

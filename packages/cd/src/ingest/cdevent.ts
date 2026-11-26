@@ -65,7 +65,6 @@ function base64(text: string | undefined): Uint8Array | undefined {
 	return bytes.length > 0 ? new Uint8Array(bytes) : undefined;
 }
 
-/** The CDEvent itself: the body, or the `data` of a CloudEvents 1.0 envelope. */
 function unwrap(raw: JsonObject): JsonObject {
 	return stringAt(raw, "specversion") === "1.0"
 		? (objectAt(raw, "data") ?? raw)
