@@ -75,7 +75,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED`](#hobo_ci_deploy_live_verification_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_NOT_QUALIFIED`](#hobo_ci_deploy_not_qualified) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_NOT_READY`](#hobo_ci_deploy_not_ready) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
-| [`HOBO_CI_DEPLOY_NOT_STAGED`](#hobo_ci_deploy_not_staged) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_NOT_STAGED`](#hobo_ci_deploy_not_staged) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_NO_ANSWER`](#hobo_ci_deploy_no_answer) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_NO_CAMP`](#hobo_ci_deploy_no_camp) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_NO_HTTP_ENTRY`](#hobo_ci_deploy_no_http_entry) | `packages/hobo/src/ci-relay-deploy.ts` |
@@ -877,9 +877,13 @@ What to do:
 
 ### HOBO_CI_DEPLOY_NOT_STAGED
 
-Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+Returned from `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts`.
 
 Messages:
+
+```text
+The build staged for Freight {freightId} ({existing.id}) names commit {…}, not {pinned}: it is not promoted.
+```
 
 ```text
 Project {input.project} has no build staged for Freight {input.freightId}: production promotes only the build its staging node uploaded and verified. Run hobo ci deploy --target preview --build prebuilt for {input.sha} first.
