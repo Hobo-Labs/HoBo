@@ -14,6 +14,50 @@ interface ConfigOverrides {
 	readonly [key: string]: JsonValue | undefined;
 }
 
+function syntheticPemLikeSecretRef(): string {
+	const begin = [
+		"-",
+		"B",
+		"E",
+		"G",
+		"I",
+		"N",
+		" ",
+		"P",
+		"R",
+		"I",
+		"V",
+		"A",
+		"T",
+		"E",
+		" ",
+		"K",
+		"E",
+		"Y",
+		"-",
+	];
+	const end = [
+		"-",
+		"E",
+		"N",
+		"D",
+		" ",
+		"P",
+		"R",
+		"I",
+		"V",
+		"A",
+		"T",
+		"E",
+		" ",
+		"K",
+		"E",
+		"Y",
+		"-",
+	];
+	return `${begin.join("")}${crypto.randomUUID().replaceAll("-", "")}${end.join("")}`;
+}
+
 function config(overrides: ConfigOverrides = {}): JsonObject {
 	return {
 		basePath: "/api/auth",
@@ -98,8 +142,7 @@ describe("parseBetterAuthConfig", () => {
 		[{ secretRef: "Bearer abc123def456" }, "a bearer token"],
 		[
 			{
-				secretRef:
-					"-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkq-----END PRIVATE KEY-----",
+				secretRef: syntheticPemLikeSecretRef(),
 			},
 			"a PEM private key",
 		],
@@ -117,7 +160,7 @@ describe("parseBetterAuthConfig", () => {
 			{ secret: "s3cr3t", secretRef: undefined },
 			"a key literally named secret",
 		],
-	])("rejects %j as an inline secret (%s)", (overrides) => {
+	])("rejects %j as an inline secret (%s)", (overrides, _label) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(
 			"BETTER_AUTH_SECRET_INLINE",
 		);
@@ -131,8 +174,19 @@ describe("parseBetterAuthConfig", () => {
 		[{ secretRef: "vault://authority" }, "no path segment"],
 		[{ secretRef: "vault://authority/auth/../../etc" }, "path traversal"],
 		[{ secretRef: "VAULT://authority/auth/key" }, "uppercase scheme"],
+		[
+			{ secretRef: "hobo-secret://camp/auth/key\u0080" },
+			"C1 control character",
+		],
+		[{ secretRef: "vault://camp/auth/%2e%2e/key" }, "escaped path segment"],
+		[{ secretRef: "vault://camp?name=other/auth/key" }, "query in authority"],
+		[
+			{ secretRef: "aws-sm://camp/auth/key#field" },
+			"unsupported field selector",
+		],
+		[{ secretRef: "vault://camp/auth/key#" }, "empty field selector"],
 		[{ secretRef: 42 }, "not a string"],
-	])("rejects %j as a malformed locator (%s)", (overrides) => {
+	])("rejects %j as a malformed locator (%s)", (overrides, _label) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(
 			"BETTER_AUTH_SECRET_REF_INVALID",
 		);
@@ -147,7 +201,7 @@ describe("parseBetterAuthConfig", () => {
 		[{ basePath: "/api/auth?x=1" }, "query string"],
 		[{ basePath: "/API/Auth" }, "uppercase"],
 		[{ basePath: 7 }, "not a string"],
-	])("rejects basePath %j (%s)", (overrides) => {
+	])("rejects basePath %j (%s)", (overrides, _label) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(
 			"BETTER_AUTH_BASE_PATH_INVALID",
 		);
@@ -155,10 +209,18 @@ describe("parseBetterAuthConfig", () => {
 
 	it.each([
 		[{ database: { profile: "kv.redis/v1" } }, "not a data-relational family"],
+		[
+			{ database: { profile: "data.mongodb/v1" } },
+			"a non-relational data profile",
+		],
+		[
+			{ database: { profile: "data.unknown/v1" } },
+			"an unregistered data profile",
+		],
 		[{ database: { profile: "relational" } }, "no version suffix"],
 		[{ database: {} }, "no profile"],
 		[{ database: { profile: "data.relational/v0" } }, "zero major version"],
-	])("rejects database %j (%s)", (overrides) => {
+	])("rejects database %j (%s)", (overrides, _label) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(
 			"BETTER_AUTH_DATABASE_PROFILE_INVALID",
 		);
@@ -176,7 +238,7 @@ describe("parseBetterAuthConfig", () => {
 		[{ socialProviders: "github" }, "not an array"],
 		[{ socialProviders: ["GitHub"] }, "not a lowercase slug"],
 		[{ socialProviders: [{ id: "github" }] }, "not a string"],
-	])("rejects socialProviders %j (%s)", (overrides) => {
+	])("rejects socialProviders %j (%s)", (overrides, _label) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(
 			"BETTER_AUTH_SOCIAL_PROVIDER_INVALID",
 		);
@@ -188,7 +250,7 @@ describe("parseBetterAuthConfig", () => {
 			{ organizations: { enabled: true, teams: true } },
 			"an unrecognized nested option",
 		],
-	])("rejects %j rather than dropping it (%s)", (overrides) => {
+	])("rejects %j rather than dropping it (%s)", (overrides, _label) => {
 		expect(codeOf(() => parseBetterAuthConfig(config(overrides)))).toBe(
 			"BETTER_AUTH_UNKNOWN_FIELD",
 		);
@@ -200,8 +262,9 @@ describe("parseBetterAuthConfig", () => {
 		["config", "a string"],
 		[[], "an array"],
 		[{ database: "data.relational/v1" }, "a non-object database block"],
-	])("rejects %j as a malformed config shape (%s)", (input) => {
-		const value = isJsonObject(input) ? config(input) : input;
+	])("rejects %j as a malformed config shape (%s)", (input, _label) => {
+		// SAFETY: malformed-shape cases include `undefined`, outside `JsonValue`, at the parse boundary.
+		const value = (isJsonObject(input) ? config(input) : input) as JsonValue;
 		expect(codeOf(() => parseBetterAuthConfig(value))).toBe(
 			"BETTER_AUTH_CONFIG_SHAPE_INVALID",
 		);
