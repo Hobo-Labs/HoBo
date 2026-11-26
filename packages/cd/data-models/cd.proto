@@ -663,6 +663,12 @@ message HookRecord {
   string ref = 3;
 }
 
+message FreightOriginSlotRecord {
+  string name = 1;
+  repeated string from_sources = 2;
+  AutoPromotion auto_promotion = 3;
+}
+
 message PipelineNodeRecord {
   string name = 1;
   repeated string camp_ids = 2;
@@ -686,6 +692,7 @@ message PipelineNodeRecord {
   FailoverPolicyRecord failover = 19;
   // RAIL pipelines only (D24).
   PolicyMode policy_mode = 20;
+  repeated FreightOriginSlotRecord origin_slots = 21;
 }
 
 message PipelineRecord {

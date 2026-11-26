@@ -38,6 +38,12 @@ import (
 	ref:   #Text
 }
 
+#FreightOriginSlotRecord: {
+	name:        #Slug
+	fromSources: [string & !="", ...string & !=""]
+	autoPromotion?: #AutoPromotion
+}
+
 #FanoutRecord: {
 	strategy?:              #FanoutStrategy
 	maxConcurrency?:        int & >=0
@@ -77,6 +83,7 @@ import (
 	verification?: {...}
 	windows?: [...#Slug]
 	hooks?: [...#HookRecord]
+	originSlots?: [...#FreightOriginSlotRecord]
 	approvalRequired?: bool
 	stagePercents?:    #StagePercents
 	quorum?:           #QuorumRecord
