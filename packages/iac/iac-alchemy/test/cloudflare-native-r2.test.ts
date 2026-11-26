@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,7 @@ import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { Miniflare } from "miniflare";
 import { describe, expect, it } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
@@ -58,6 +60,8 @@ const bucketClaim = cloudflareR2BucketClaim(
 	"assets",
 	grant.bucketEpoch,
 );
+const assets = application.resources.assets;
+if (assets === undefined) throw new Error("fixture bucket is missing");
 const appSource = {
 	resourceId: "web",
 	resourceType: "Cloudflare.Worker",
@@ -161,7 +165,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 			...application,
 			resources: {
 				...application.resources,
-				assets: { ...application.resources.assets, declaredAllow: [] },
+				assets: { ...assets, declaredAllow: [] },
 			},
 		};
 		expect(() =>
@@ -255,21 +259,23 @@ describe("Cloudflare R2 Bindle mapping", () => {
 
 	it("binds the application module to the exact bucket and grant epochs", () => {
 		const original = inspectCloudflareWorker(worker)?.bindings;
-		expect(original).toEqual(
-			cloudflareDependencyBindings({ assets: application.resources.assets }),
-		);
+		expect(original).toEqual(cloudflareDependencyBindings({ assets }));
 		const nextGrant = withCloudflareR2(neutralApplication, {
 			assets: { ...grant, grantEpoch: `sha256:${"3".repeat(64)}` },
 		});
 		const nextBucket = withCloudflareR2(neutralApplication, {
 			assets: { ...grant, bucketEpoch: `sha256:${"4".repeat(64)}` },
 		});
-		expect(
-			cloudflareDependencyBindings({ assets: nextGrant.resources.assets }),
-		).not.toEqual(original);
-		expect(
-			cloudflareDependencyBindings({ assets: nextBucket.resources.assets }),
-		).not.toEqual(original);
+		const changedGrant = nextGrant.resources.assets;
+		const changedBucket = nextBucket.resources.assets;
+		if (changedGrant === undefined || changedBucket === undefined)
+			throw new Error("fixture bucket is missing");
+		expect(cloudflareDependencyBindings({ assets: changedGrant })).not.toEqual(
+			original,
+		);
+		expect(cloudflareDependencyBindings({ assets: changedBucket })).not.toEqual(
+			original,
+		);
 	});
 
 	it("captures one immutable source-fence authority for both proxy and application", () => {
@@ -441,7 +447,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 					...application,
 					name: "r2-app-two",
 					resources: {
-						assets: application.resources.assets,
+						assets,
 						cache: {
 							kind: "kv",
 							name: "cache",
@@ -643,6 +649,12 @@ describe("Cloudflare R2 Bindle mapping", () => {
 			const proxy = created.find(
 				(entry) => entry.fqn === proxySource.resourceId,
 			);
+			const physicalBucket = created.find(
+				(entry) =>
+					entry.type === Bucket.Type && entry.fqn === bucketClaim.resourceId,
+			);
+			if (proxy === undefined || physicalBucket === undefined)
+				throw new Error("mapped R2 resources missing");
 			expect(proxy?.news).toMatchObject({
 				workersDev: false,
 				domain: null,
@@ -663,6 +675,8 @@ describe("Cloudflare R2 Bindle mapping", () => {
 					}),
 				]),
 			);
+			// SAFETY: the preceding assertion checked the generated worker's read-only environment.
+			const proxyEnvironment = proxy.news as { env: { HOBO_R2_ALLOW: string } };
 			const app = created.find(
 				(entry) => entry.type === Worker.Type && entry.fqn === "web",
 			);
@@ -673,21 +687,68 @@ describe("Cloudflare R2 Bindle mapping", () => {
 					}),
 				},
 			});
-			const bytes = new TextEncoder().encode("hello");
-			const result = await worker.fetch(new Request("https://app.test"), {
-				HOBO_RESOURCE_0: {
-					fetch: async (request: Request) =>
-						new Response(bytes, {
-							headers: {
-								"x-hobo-r2-key": request.headers.get("x-hobo-r2-key") ?? "",
-								"x-hobo-r2-content-type": "text%2Fplain",
-								"x-hobo-r2-size": "5",
-								"x-hobo-r2-digest": `sha256:${"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"}`,
-							},
-						}),
-				},
+			const source = (name: string) =>
+				stripTypeScriptTypes(
+					readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8"),
+					{ mode: "transform" },
+				);
+			const modules = [
+				"cloudflare-r2-proxy",
+				"cloudflare-r2-protocol",
+				"async-boundary",
+				"cloudflare-capacity",
+				"cloudflare-native-promise",
+				"cloudflare-native-await",
+				"cloudflare-byte-stream",
+				"cloudflare-web-options",
+			].map((name) => ({
+				type: "ESModule" as const,
+				path: `${name}.js`,
+				contents: source(name),
+			}));
+			const workerd = new Miniflare({
+				compatibilityDate: "2026-01-01",
+				workers: [
+					{
+						name: "bridge",
+						modules: true,
+						script: `export default { fetch(request, env) { return env.PROXY.fetch("https://hobo-r2.internal/read", { method: "POST", headers: { "x-hobo-r2-key": request.headers.get("x-hobo-r2-key") } }); } };`,
+						serviceBindings: { PROXY: proxy.fqn },
+					},
+					{
+						name: proxy.fqn,
+						modules,
+						r2Buckets: { HOBO_R2_BUCKET: physicalBucket.fqn },
+						bindings: { HOBO_R2_ALLOW: proxyEnvironment.env.HOBO_R2_ALLOW },
+					},
+				],
 			});
-			expect(await result.text()).toBe("hello");
+			try {
+				const bucket = await workerd.getR2Bucket("HOBO_R2_BUCKET", proxy.fqn);
+				await bucket.put("hello", new TextEncoder().encode("hello"), {
+					httpMetadata: { contentType: "text/plain" },
+				});
+				const simulatedProxy = await workerd.getWorker("bridge");
+				const result = await worker.fetch(new Request("https://app.test"), {
+					HOBO_RESOURCE_0: {
+						fetch: async (request: Request) => {
+							const response = await simulatedProxy.fetch(
+								"https://bridge.test/",
+								{
+									headers: Object.fromEntries(request.headers),
+								},
+							);
+							return new Response(await response.arrayBuffer(), {
+								status: response.status,
+								headers: Object.fromEntries(response.headers),
+							});
+						},
+					},
+				});
+				expect(await result.text()).toBe("hello");
+			} finally {
+				await workerd.dispose();
+			}
 			for (const id of [
 				proxySource.resourceId,
 				otherProxy.resourceId,
