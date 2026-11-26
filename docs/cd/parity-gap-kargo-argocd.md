@@ -64,10 +64,10 @@ they are scoped separately in that subsection.
 
 | State | Kargo primitive map (§) | Argo CD primitive map (§) | Cross-cutting scorecard (§) |
 | --- | --- | --- | --- |
-| pass | 9 | 1 | 3 |
+| pass | 9 | 1 | 4 |
 | partial | 5 | 6 | 5 |
 | built-not-proven | 0 | 4 | 0 |
-| not-built | 1 | 0 | 2 |
+| not-built | 1 | 0 | 1 |
 | met-differently | 2 | 2 | 0 |
 | intentional-gap | 3 | 0 | 2 |
 
@@ -169,7 +169,7 @@ below are **not** included in those counts.
 | `@hobo/cd-kube-fleet` | **pass** | OCM/Karmada; not Argo CD hub |
 | `@hobo/cd-vercel` hosted runtime | **partial** | Tick schedule **and** `cd-api` (`/v1/cd/`, agent feed, probes); journal on Neon fleet |
 | `@hobo/hobo-cd` CD Bindle + `hobo cd up` | **partial** | Vercel connection/lifecycle ceremony; not `@hobo/cd/compose` |
-| `CdEngineRegistry` in `@hobo/cd/compose` | **not-built** | CI-style multi-package registry documented; wiring TBD (P2) |
+| `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | `engines.ts`, `packages/cd/test/compose/engines.test.ts`, `cd-gitops` bridge (P2) |
 | `@hobo/cd-argocd` native API adapter | **not-built** | Beyond Git publisher (P3) |
 | Separate `@hobo/cd-kargo` promotion runtime | **intentional-gap** | Would duplicate `@hobo/cd` brain (ADR-0182) |
 | Separate `@hobo/cd-octopus` engine | **intentional-gap** | Later optional target; same registry pattern only |
@@ -197,7 +197,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | PR | Scope | Closes (rows above) |
 | --- | --- | --- |
 | **P1** | `docs/cd/*` (this audit) + index links | Baseline |
-| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Cross-cutting: `CdEngineRegistry` |
+| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Cross-cutting: `CdEngineRegistry` — **implemented** (`engines.ts`, `cd-gitops` bridge) |
 | **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics |
 | **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row |
 | **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row |

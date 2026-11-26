@@ -712,6 +712,310 @@ export interface DurableMessagingAuthorization {
 	readonly reason?: string;
 }
 
+export interface DurableTopicSubscriptionGrant {
+	readonly consumerGroup: string;
+	readonly deadLetterTopic: string;
+}
+
+export interface DurableTopicGrant {
+	readonly topic: string;
+	readonly publish: boolean;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+}
+
+export interface DurableTopicPolicyClaim {
+	readonly request: DurableMessagingAuthorization;
+	readonly grant: DurableTopicGrant;
+	readonly subscription?: DurableTopicSubscriptionGrant;
+}
+
+export interface DurableTopicPolicy {
+	readonly authorize: (
+		request: DurableMessagingAuthorization,
+	) => Promise<boolean>;
+	readonly revoke: () => void;
+}
+
+export interface DurableTopicBinding {
+	readonly resourceName: string;
+	readonly topic: string;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+}
+
+export interface BindleTopicGrant {
+	readonly resourceName: string;
+	readonly grant: DurableTopicGrant;
+}
+
+export function compileBindleTopicGrants(input: {
+	readonly applicationName: string;
+	readonly resources: Readonly<
+		Record<
+			string,
+			{
+				readonly kind: string;
+				readonly name: string;
+				readonly declaredAllow: readonly string[];
+				readonly dependsOn: readonly string[];
+			}
+		>
+	>;
+	readonly edges: readonly { readonly from: string; readonly to: string }[];
+	readonly bindings: readonly DurableTopicBinding[];
+}): readonly BindleTopicGrant[] {
+	const inputData = record(input, [
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const applicationName = text(
+		inputData.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const source = inputData.resources;
+	if (
+		typeof source !== "object" ||
+		source === null ||
+		types.isProxy(source) ||
+		Array.isArray(source)
+	)
+		return invalid();
+	const prototype = Object.getPrototypeOf(source);
+	if (prototype !== Object.prototype && prototype !== null) return invalid();
+	const names = Reflect.ownKeys(source);
+	if (names.length > 256 || names.some((name) => typeof name !== "string"))
+		return invalid();
+	const resources = new Map<
+		string,
+		{
+			kind: string;
+			declaredAllow: readonly string[];
+			dependsOn: readonly string[];
+		}
+	>();
+	for (const key of names) {
+		if (typeof key !== "string") return invalid();
+		const name = text(key, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const descriptor = Object.getOwnPropertyDescriptor(source, key);
+		if (
+			descriptor === undefined ||
+			!Object.hasOwn(descriptor, "value") ||
+			!descriptor.enumerable
+		)
+			return invalid();
+		const resource = record(
+			descriptor.value,
+			["kind", "name", "declaredAllow", "dependsOn"],
+			["stableId", "annotations"],
+		);
+		if (resource.name !== name) return invalid();
+		const kind = text(resource.kind, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const declaredAllow = array(resource.declaredAllow, 256).map((value) =>
+			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		const dependsOn = array(resource.dependsOn, 256).map((value) =>
+			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		if (new Set(declaredAllow).size !== declaredAllow.length) return invalid();
+		resources.set(name, { kind, declaredAllow, dependsOn });
+	}
+	const application = resources.get(applicationName);
+	if (application === undefined || application.kind === "topic")
+		return invalid();
+	const selected = new Set<string>();
+	for (const item of array(inputData.edges, 1024)) {
+		const edge = record(item, ["from", "to"]);
+		const from = text(edge.from, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const to = text(edge.to, DURABLE_MESSAGING_LIMITS.nameBytes);
+		if (from !== applicationName) continue;
+		const target = resources.get(to);
+		if (target === undefined && to.startsWith("connector:")) continue;
+		if (target === undefined) return invalid();
+		if (target.kind === "topic") {
+			if (selected.has(to)) return invalid();
+			selected.add(to);
+		}
+	}
+	if (
+		application.dependsOn.filter((kind) => kind === "topic").length !==
+		selected.size
+	)
+		return invalid();
+	const bindings = array(inputData.bindings, DURABLE_MESSAGING_LIMITS.topics);
+	if (bindings.length !== selected.size) return invalid();
+	const seen = new Set<string>();
+	const namesUsed = new Set<string>();
+	let subscriptionCount = 0;
+	const result: BindleTopicGrant[] = [];
+	for (const value of bindings) {
+		const binding = record(value, ["resourceName", "topic", "subscriptions"]);
+		const resourceName = text(
+			binding.resourceName,
+			DURABLE_MESSAGING_LIMITS.nameBytes,
+		);
+		const topic = text(binding.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const resource = resources.get(resourceName);
+		if (
+			!selected.has(resourceName) ||
+			seen.has(resourceName) ||
+			namesUsed.has(topic) ||
+			resource === undefined ||
+			resource.declaredAllow.some(
+				(verb) => verb !== "publish" && verb !== "subscribe",
+			)
+		)
+			return invalid();
+		const groups = new Set<string>();
+		const subscriptions = array(
+			binding.subscriptions,
+			DURABLE_MESSAGING_LIMITS.subscriptions,
+		).map((item) => {
+			const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
+			const consumerGroup = text(
+				entry.consumerGroup,
+				DURABLE_MESSAGING_LIMITS.nameBytes,
+			);
+			const deadLetterTopic = text(
+				entry.deadLetterTopic,
+				DURABLE_MESSAGING_LIMITS.nameBytes,
+			);
+			if (
+				groups.has(consumerGroup) ||
+				deadLetterTopic === topic ||
+				++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+			)
+				return invalid();
+			groups.add(consumerGroup);
+			return Object.freeze({ consumerGroup, deadLetterTopic });
+		});
+		if (
+			resource.declaredAllow.includes("subscribe") !==
+			subscriptions.length > 0
+		)
+			return invalid();
+		seen.add(resourceName);
+		namesUsed.add(topic);
+		result.push(
+			Object.freeze({
+				resourceName,
+				grant: Object.freeze({
+					topic,
+					publish: resource.declaredAllow.includes("publish"),
+					subscriptions: Object.freeze(subscriptions),
+				}),
+			}),
+		);
+	}
+	return Object.freeze(
+		result.sort((a, b) => a.resourceName.localeCompare(b.resourceName)),
+	);
+}
+
+export function createDurableTopicPolicy(input: {
+	readonly grants: readonly DurableTopicGrant[];
+	readonly verify: (
+		claim: DurableTopicPolicyClaim,
+	) => boolean | Promise<boolean>;
+}): DurableTopicPolicy {
+	const config = record(input, ["grants", "verify"]);
+	if (typeof config.verify !== "function" || types.isProxy(config.verify))
+		return invalid();
+	const verify = config.verify;
+	const topics = new Set<string>();
+	let subscriptionCount = 0;
+	const grants = array(config.grants, DURABLE_MESSAGING_LIMITS.topics).map(
+		(item) => {
+			const data = record(item, ["topic", "publish", "subscriptions"]);
+			const topic = text(data.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+			if (
+				topics.has(topic) ||
+				(data.publish !== true && data.publish !== false)
+			)
+				return invalid();
+			topics.add(topic);
+			const groups = new Set<string>();
+			const subscriptions = array(
+				data.subscriptions,
+				DURABLE_MESSAGING_LIMITS.subscriptions,
+			).map((entry) => {
+				const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
+				const consumerGroup = text(
+					data.consumerGroup,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				const deadLetterTopic = text(
+					data.deadLetterTopic,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				if (
+					groups.has(consumerGroup) ||
+					deadLetterTopic === topic ||
+					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+				)
+					return invalid();
+				groups.add(consumerGroup);
+				return Object.freeze({ consumerGroup, deadLetterTopic });
+			});
+			return Object.freeze({
+				topic,
+				publish: data.publish,
+				subscriptions: Object.freeze(subscriptions),
+			});
+		},
+	);
+	let active = true;
+	return Object.freeze({
+		revoke: () => {
+			active = false;
+		},
+		authorize: async (
+			request: DurableMessagingAuthorization,
+		): Promise<boolean> => {
+			if (!active) return false;
+			const grant = grants.find((item) => item.topic === request.topic);
+			if (!grant) return false;
+			let subscription: DurableTopicSubscriptionGrant | undefined;
+			if (request.method === "publish") {
+				if (!grant.publish || request.scope !== "topic") return false;
+			} else if (
+				["ensureSubscription", "consume", "ack", "nack"].includes(
+					request.method,
+				)
+			) {
+				subscription = grant.subscriptions.find(
+					(item) => item.consumerGroup === request.consumerGroup,
+				);
+				if (
+					!subscription ||
+					(request.method === "ensureSubscription" &&
+						request.deadLetterTopic !== subscription.deadLetterTopic)
+				)
+					return false;
+				if (
+					request.scope !==
+					(request.method === "ack"
+						? "consumer-group"
+						: "consumer-group-and-dead-letter")
+				)
+					return false;
+			} else return false;
+			const claim = Object.freeze(
+				subscription === undefined
+					? { request, grant }
+					: { request, grant, subscription },
+			);
+			try {
+				return (
+					(await intrinsicApply(verify, undefined, [claim])) === true && active
+				);
+			} catch {
+				return false;
+			}
+		},
+	});
+}
+
 export interface DurableMessagingLimitsGrant {
 	readonly revoke: () => void;
 }
@@ -1360,6 +1664,102 @@ export function createDurableMessagingWitImports(
 			options,
 		),
 	});
+}
+
+export interface BindleTopicHostClaim {
+	readonly port: DurableMessaging;
+	readonly bindleName: string;
+	readonly applicationName: string;
+	readonly binding: BindleTopicGrant;
+	readonly request: DurableMessagingAuthorization;
+	readonly subscription?: DurableTopicSubscriptionGrant;
+}
+
+export function createBindleTopicWitHost(
+	port: DurableMessaging,
+	bindle: Parameters<typeof compileBindleTopicGrants>[0] & {
+		readonly bindleName: string;
+	},
+	options: Omit<DurableMessagingWitHostOptions, "authorize"> & {
+		readonly verify: (
+			claim: BindleTopicHostClaim,
+		) => boolean | Promise<boolean>;
+	},
+): {
+	readonly host: DurableMessagingWitHost;
+	readonly bindings: readonly BindleTopicGrant[];
+	readonly revoke: () => void;
+} {
+	const config = record(
+		options,
+		["limitsGrant", "lifecycle", "verify"],
+		["timeoutMs", "portMetadataGrant"],
+	);
+	if (typeof config.verify !== "function" || types.isProxy(config.verify))
+		return invalid();
+	const verify = config.verify;
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const bindleName = text(
+		source.bindleName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const applicationName = text(
+		source.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	// SAFETY: the compiler validates all captured graph and binding fields.
+	const bindings = compileBindleTopicGrants({
+		applicationName,
+		resources: source.resources,
+		edges: source.edges,
+		bindings: source.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const byTopic = new Map(
+		bindings.map((binding) => [binding.grant.topic, binding]),
+	);
+	const policy = createDurableTopicPolicy({
+		grants: bindings.map((binding) => binding.grant),
+		verify: (claim) => {
+			const binding = byTopic.get(claim.grant.topic);
+			if (binding === undefined) return false;
+			const context = Object.freeze(
+				claim.subscription === undefined
+					? {
+							port,
+							bindleName,
+							applicationName,
+							binding,
+							request: claim.request,
+						}
+					: {
+							port,
+							bindleName,
+							applicationName,
+							binding,
+							request: claim.request,
+							subscription: claim.subscription,
+						},
+			);
+			return intrinsicApply(verify, undefined, [context]);
+		},
+	});
+	const hostOptions = {
+		...config,
+		authorize: policy.authorize,
+	};
+	Reflect.deleteProperty(hostOptions, "verify");
+	// SAFETY: the host validates the captured option fields and capability identities.
+	const host = createDurableMessagingWitHost(
+		port,
+		hostOptions as DurableMessagingWitHostOptions,
+	);
+	return Object.freeze({ host, bindings, revoke: policy.revoke });
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
