@@ -280,6 +280,61 @@ describe("base-controlled attestation verification", () => {
 		});
 	}
 
+	it("hobo-ci.yml leaves a full worktree after a merge-group route on a reused runner", () => {
+		const doc = workflowDocument(
+			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
+		);
+		const steps =
+			asList(asObject(asObject(doc.jobs)?.route)?.steps)?.map(asObject) ?? [];
+		const cleanup = steps.at(-1);
+		assert.equal(
+			cleanup?.name,
+			"Leave a full worktree for the next job on this runner",
+		);
+		assert.equal(
+			asText(cleanup?.if),
+			"always() && github.event_name == 'merge_group'",
+		);
+		const script = asText(cleanup?.run);
+		assert.ok(script);
+		const workspace = mkdtempSync(join(tmpdir(), "hobo-route-unsparse-"));
+		const env = Object.fromEntries(
+			Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+		);
+		const git = (...args: string[]) =>
+			spawnSync("git", args, { cwd: workspace, encoding: "utf8", env });
+		try {
+			assert.equal(git("init", "-q").status, 0);
+			git("config", "user.email", "ci@example.invalid");
+			git("config", "user.name", "ci");
+			mkdirSync(join(workspace, "kept"), { recursive: true });
+			mkdirSync(join(workspace, "dropped"), { recursive: true });
+			writeFileSync(join(workspace, "kept", "a.txt"), "a\n");
+			writeFileSync(join(workspace, "dropped", "b.txt"), "b\n");
+			git("add", ".");
+			git("commit", "-q", "-m", "init");
+			git("sparse-checkout", "set", "--no-cone", "/kept/");
+			git("config", "core.sparseCheckoutCone", "true");
+			mkdirSync(join(workspace, ".ci-trusted"), { recursive: true });
+			assert.equal(existsSync(join(workspace, "dropped", "b.txt")), false);
+			const ran = spawnSync("bash", ["-c", script], {
+				cwd: workspace,
+				encoding: "utf8",
+				env,
+			});
+			assert.equal(ran.status, 0, ran.stderr);
+			assert.equal(existsSync(join(workspace, "dropped", "b.txt")), true);
+			assert.equal(existsSync(join(workspace, ".ci-trusted")), false);
+			assert.equal(git("ls-files", "-t").stdout.includes("S "), false);
+			assert.notEqual(
+				git("config", "core.sparseCheckout").stdout.trim(),
+				"true",
+			);
+		} finally {
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	});
+
 	it("decides PR Fabric reuse beside the checked-out base action, never from the candidate's copy", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-pr-fabric-route-"));
 		try {

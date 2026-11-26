@@ -146,7 +146,7 @@ function scope(
 }
 
 describe("the scripts lane is a pull-request gate", () => {
-	it("runs pnpm run test:scripts on the routed runner for pull requests and merge groups", () => {
+	it("runs pnpm run test:scripts on the routed runner for pull requests and on agent37 for merge groups", () => {
 		assert.equal(scripts.name, "Scripts tests");
 		assert.ok(scripts.needs.includes("route"));
 		assert.ok(scripts.needs.includes("ci-runner-image"));
