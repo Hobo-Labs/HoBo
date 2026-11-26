@@ -70,7 +70,7 @@ target Camp, and apply the result as a Delta.** Bytes are identical everywhere
 `infrastructure_diff`. Camp configuration lives in the declaration, so a
 config-only change is new Freight with the same artifacts.
 
-Freight is not a release channel. A [release channel](./release-channels.md)
+Freight is not a release channel. A [release channel](https://linear.app/quickdeploy-ai/document/release-channels-scope-and-acceptance-archived-fd8300aa47a2)
 names a moving stream of versions that users subscribe to; Freight is one
 version, and a pipeline decides where it may go.
 
@@ -306,7 +306,7 @@ lane. Commands and runbooks: [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
   agent enrolls with double opt-in and runs the runner-host realizer, which
   upgrades the controller (container or supervised process), checks it with
   the verify suite and restores the previous digest when verification fails.
-- **HoBo releases** ([release-channels.md](./release-channels.md#hobo-releases-through-hobo-cd)).
+- **HoBo releases** ([release-channels.md](../../packages/hobo/CD.md#hobo-releases-through-hobo-cd)).
   [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
   declares npm, OCI and GitHub Pages Camps, candidate and stable. The release
   workflow builds the `hobo` CLI once and promotes candidate to stable with
