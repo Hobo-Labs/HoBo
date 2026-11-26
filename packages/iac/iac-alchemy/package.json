@@ -131,6 +131,10 @@
 			"types": "./dist/aws-http-server.d.ts",
 			"default": "./dist/aws-http-server.js"
 		},
+		"./aws/notification": {
+			"types": "./dist/aws-notification.d.ts",
+			"default": "./dist/aws-notification.js"
+		},
 		"./aws/queue-store": {
 			"types": "./dist/aws-queue-atomic-store.d.ts",
 			"default": "./dist/aws-queue-atomic-store.js"
@@ -142,6 +146,7 @@
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
 		"@hobo/runtime": "workspace:*"
 	},
 	"peerDependencies": {

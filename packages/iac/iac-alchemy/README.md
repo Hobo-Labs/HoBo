@@ -1073,8 +1073,16 @@ identity policy and clients before use. The auth mapping does not implement toke
 verification or session operations and rejects declarations that require them.
 Official AWS Emulator tests cover priced, denied-unpriced and explicitly
 authorized-unpriced admission before creating the mapped user pool.
-The notification declaration maps to its own SNS topic; sending, recipients and
-subscriptions are not implemented, so `notify().allow("send")` is rejected.
+The notification declaration maps to its own SNS topic; the base mapper does not
+bind sends or subscriptions, so `notify().allow("send")` is rejected. Separately,
+`@hobo/iac-alchemy/aws/notification` provides a scoped SNS publisher for an
+existing topic. Its host supplies the exact topic grant, a synchronous verifier
+and AWS transport; it must connect the publisher to application logic. A valid
+submission returns `accepted` only after SNS returns a receipt and the grant is
+still valid. Authorization or capacity rejection means no dispatch for that
+attempt; `unknown` can mean SNS accepted the message, and retry can duplicate
+it. Automatic AWS retries are disabled. SNS acceptance does not guarantee
+subscriber delivery; subscribers and their permissions are host-managed.
 The official AWS Emulator also checks priced, denied-unpriced and authorized
 unpriced admission before creating the notification topic.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
