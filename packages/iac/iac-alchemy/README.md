@@ -1080,6 +1080,8 @@ unpriced admission before creating the notification topic.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
 protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
+Official AWS Emulator tests exercise priced, denied-unpriced and authorized
+unpriced admission before creating that API.
 The base mapper provides
 infrastructure only: runtime operations and application bindings are not yet
 supported, and unsupported operations are reported explicitly. Budget-based
