@@ -182,7 +182,14 @@ export interface JournalFactRecord extends JournalFact {
 	readonly seq: number;
 }
 
-export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
+export function createActorLocalJournal(
+	path = ":memory:",
+	scope?: Readonly<{
+		tenantId: string;
+		campId: string;
+		adoptUnscoped?: boolean;
+	}>,
+): ActorLocalJournal {
 	const db = new DatabaseSync(path);
 	db.exec("PRAGMA journal_mode = WAL;");
 	db.exec("PRAGMA synchronous = FULL;");
@@ -191,6 +198,50 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 	db.prepare(
 		`INSERT OR IGNORE INTO hobo_schema_meta(key, value) VALUES ('version', '1')`,
 	).run();
+	if (scope) {
+		try {
+			if (!scope.tenantId.trim() || !scope.campId.trim())
+				throw new RivetJournalError("PARSE", "invalid Rivet journal scope");
+			const expected = JSON.stringify([scope.tenantId, scope.campId]);
+			db.exec("BEGIN IMMEDIATE");
+			const existing = db
+				.prepare(
+					"SELECT value FROM hobo_schema_meta WHERE key = 'runtime_scope'",
+				)
+				.get();
+			if (existing) {
+				if (existing.value !== expected)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						"Rivet journal scope does not match the configured tenant and Camp",
+					);
+			} else {
+				const data = db
+					.prepare(`SELECT
+					EXISTS(SELECT 1 FROM hobo_actor_head) OR
+					EXISTS(SELECT 1 FROM hobo_actor_lease) OR
+					EXISTS(SELECT 1 FROM hobo_events) OR
+					EXISTS(SELECT 1 FROM hobo_inbox) OR
+					EXISTS(SELECT 1 FROM hobo_outbox) AS present`)
+					.get();
+				if (asNumber(data?.present) !== 0 && scope.adoptUnscoped !== true)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						"Rivet journal scope is unknown; explicitly adopt the unscoped journal after verifying its owner",
+					);
+				db.prepare(
+					"INSERT INTO hobo_schema_meta(key, value) VALUES ('runtime_scope', ?)",
+				).run(expected);
+			}
+			db.exec("COMMIT");
+		} catch (error) {
+			try {
+				db.exec("ROLLBACK");
+			} catch {}
+			db.close();
+			throw error;
+		}
+	}
 
 	const getHead = db.prepare(
 		`SELECT revision, owner_epoch FROM hobo_actor_head WHERE stream_id = ?`,

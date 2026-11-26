@@ -88,7 +88,11 @@ const accepted = bundle.actors.accept({
 
 Choose a persistent journal path to retain state and accepted commands across
 restarts. `journalPath: ":memory:"` is available for intentionally volatile
-sessions and tests.
+sessions and tests. A runtime journal is bound to its tenant and Camp; opening
+it for another scope is rejected. An existing nonempty journal without a scope
+must be adopted explicitly with `adoptUnscopedJournal: true` after its owner has
+been verified. Adoption preserves its contents and cannot override an existing
+scope binding.
 
 ## Actor state and leases
 

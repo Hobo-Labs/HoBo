@@ -14,6 +14,7 @@ export interface RivetRuntimeHostOptions {
 	readonly campId: string;
 	readonly mode?: RivetRuntimeMode;
 	readonly journalPath: string;
+	readonly adoptUnscopedJournal?: boolean;
 	readonly legacyEventPayloads?: "command" | "event";
 }
 
@@ -58,13 +59,23 @@ export function createRivetRuntimeHost(
 			"Rivet runtime requires an explicit journalPath; use :memory: only for volatile state",
 		);
 	}
-	const journal = createActorLocalJournal(journalPath);
-	const actors = createRivetActorHost({
-		journal,
-		fidelity: "local-sqlite",
-		tenantId: options.tenantId,
-		legacyEventPayloads: options.legacyEventPayloads,
+	const journal = createActorLocalJournal(journalPath, {
+		tenantId: config.tenantId,
+		campId: config.campId,
+		adoptUnscoped: options.adoptUnscopedJournal === true,
 	});
+	let actors: RivetActorHost;
+	try {
+		actors = createRivetActorHost({
+			journal,
+			fidelity: "local-sqlite",
+			tenantId: config.tenantId,
+			legacyEventPayloads: options.legacyEventPayloads,
+		});
+	} catch (error) {
+		journal.close();
+		throw error;
+	}
 	const doctor: RivetDoctorReport = {
 		mode: config.mode,
 		rivetkitAvailable: false,

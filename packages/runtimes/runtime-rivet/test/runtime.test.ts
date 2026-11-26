@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -86,6 +87,118 @@ describe("@hobo/runtime-rivet", () => {
 			expect(() =>
 				createRivetRuntimeHost({ tenantId: "t1", campId: "c1", journalPath }),
 			).toThrow(/journalPath/);
+		}
+	});
+
+	it("refuses to open one persistent journal for a different Camp", () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-camp-scope-"));
+		const journalPath = join(directory, "journal.sqlite");
+		const first = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "production",
+			journalPath,
+		});
+		let other: ReturnType<typeof createRivetRuntimeHost> | undefined;
+		try {
+			expect(() => {
+				other = createRivetRuntimeHost({
+					tenantId: "acme",
+					campId: "staging",
+					journalPath,
+				});
+			}).toThrow(/journal.*scope/i);
+		} finally {
+			other?.journal.close();
+			first.journal.close();
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("reopens a journal in the same scope and refuses a different tenant", () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-same-scope-"));
+		const journalPath = join(directory, "journal.sqlite");
+		const first = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "prod",
+			journalPath,
+		});
+		try {
+			first.actors.accept({
+				identity,
+				commandId: "cmd-1",
+				commandType: "addItem",
+				payload: { sku: "hat" },
+				expectedRevision: 0,
+			});
+		} finally {
+			first.journal.close();
+		}
+		const reopened = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "prod",
+			journalPath,
+		});
+		try {
+			expect(
+				reopened.actors.accept({
+					identity,
+					commandId: "cmd-1",
+					commandType: "addItem",
+					payload: { sku: "hat" },
+					expectedRevision: 0,
+				}).duplicate,
+			).toBe(true);
+			expect(() =>
+				createRivetRuntimeHost({
+					tenantId: "other",
+					campId: "prod",
+					journalPath,
+					adoptUnscopedJournal: true,
+				}),
+			).toThrow(/journal.*scope/i);
+		} finally {
+			reopened.journal.close();
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("requires explicit adoption of a nonempty unscoped journal without deleting its commands", () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-adopt-scope-"));
+		const journalPath = join(directory, "journal.sqlite");
+		const legacy = createActorLocalJournal(journalPath);
+		legacy.acceptCommand({
+			streamId: rivetStreamId(identity),
+			commandId: "legacy",
+			digest: "digest",
+			commandType: "addItem",
+			payloadJson: "{}",
+			expectedRevision: 0,
+		});
+		legacy.close();
+		try {
+			expect(() =>
+				createRivetRuntimeHost({
+					tenantId: "acme",
+					campId: "prod",
+					journalPath,
+				}),
+			).toThrow(/scope is unknown/i);
+			const adopted = createRivetRuntimeHost({
+				tenantId: "acme",
+				campId: "prod",
+				journalPath,
+				adoptUnscopedJournal: true,
+			});
+			try {
+				expect(
+					adopted.journal.loadCommand(rivetStreamId(identity), "legacy")
+						?.status,
+				).toBe("persisted");
+			} finally {
+				adopted.journal.close();
+			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
