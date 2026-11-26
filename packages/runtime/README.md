@@ -605,29 +605,29 @@ by the deadline. The bounded queue model describes a single-dispatch abstraction
 it does not prove this host or the provider's replay and durability assumptions.
 The host does not itself implement or map a cloud queue.
 
-The internal atomic queue transition function records bounded operation receipts,
-message idempotency using canonical request fingerprints, lease generations,
-and explicit capacity, identifier exhaustion, and delivery exhaustion outcomes. Completed and exhausted messages remain retained; there is
-no compaction or dead-letter operation yet, so a finite queue eventually requires
-operator reconciliation. The transition requires validated inputs, a monotonic
-trusted clock, and an atomic durable state owner. The provider below supplies
-the storage connection.
+The atomic queue transition function records bounded operation receipts, message
+idempotency, lease generations, and explicit capacity, identifier exhaustion and
+delivery exhaustion outcomes. Completed and exhausted messages remain retained;
+there is no dead-letter or message-reclamation operation yet, so a finite queue
+can eventually require operator reconciliation.
 
 `createAtomicDurableQueue` from `@hobo/runtime/atomic-durable-queue` connects the
 transition function to an injected atomic store. The store must provide durable,
 linearizable reads and compare-and-swap over one exclusively owned, epoch-fenced
 record. The provider reconstructs state from a versioned log, checks its revision
 and declared limits, and returns unknown on an ambiguous write. All writers must
-use the same monotonic clock. The log retains at most 512 state-changing operations
-and 256 KiB for the lifetime of the record; it has no compaction, and returns
-unknown when full. Completed or exhausted messages remain retained. The storage
-owner and trusted deployment must fence old writers and preserve the record
-across restarts; deleting it destroys receipts and idempotency history. The log
-version must change when replay semantics change.
+use the same monotonic clock. The log allows at most 512 state-changing operations
+between checkpoints and 256 KiB for the entire record, including its checkpoint.
+New operations return unknown when either bound is reached.
 
-The internal queue checkpoint codec preserves messages, sequence counters and
-unexpired operation receipts, and checks limits, identities, lease references
-and delivery content when it reads a checkpoint. It assumes that the storage
-record is controlled by an authorized writer; structural checks cannot prove the
-history in an externally forged checkpoint. The codec is not yet connected to a
-compaction operation.
+A trusted owner may call `compact()` to atomically checkpoint messages, lease
+counters and unexpired receipts and prune expired receipts. It returns
+`compacted`, `empty` or `unknown`; an unknown compaction may have committed and
+may be retried. Compaction consumes storage reads and writes and is not exposed
+through the component queue interface. It does not reclaim retained messages, and
+may itself return unknown if the checkpoint does not fit. The owner must authorize
+compaction, fence old writers and preserve the record across restarts; deleting it
+destroys receipts and idempotency history. The checkpoint codec checks structure,
+limits, identities, lease references and delivery content, but cannot prove the
+history of an externally forged record. The log version must change when replay
+semantics change.

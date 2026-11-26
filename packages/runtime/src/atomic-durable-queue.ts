@@ -5,16 +5,24 @@ import {
 	parseDurableQueueLimits,
 } from "@hobo/core";
 import {
+	decodeAtomicQueueCheckpoint,
+	encodeAtomicQueueCheckpoint,
+	resultVector,
+} from "./atomic-queue-checkpoint.js";
+import {
 	ATOMIC_QUEUE_MAX_EVENTS,
 	decodeAtomicQueueLog,
 	encodeAtomicQueueLog,
+	serializeVector,
 	type AtomicQueueEvent,
+	type AtomicQueueCheckpointRef,
 } from "./atomic-queue-log.js";
 import {
 	emptyAtomicQueueState,
 	transitionAtomicQueue,
 	type AtomicQueueRequest,
 	type AtomicQueueTransition,
+	type AtomicQueueState,
 } from "./atomic-queue-transition.js";
 import {
 	parseQueueDequeue,
@@ -37,6 +45,13 @@ export interface AtomicQueueStore {
 		bytes: Uint8Array,
 	): Promise<{ readonly status: "committed" | "unknown" }>;
 }
+export type AtomicQueueCompactionOutcome =
+	| { readonly status: "compacted"; readonly prunedReceipts: number }
+	| { readonly status: "empty" }
+	| { readonly status: "unknown" };
+export interface AtomicDurableQueue extends DurableQueue {
+	compact(): Promise<AtomicQueueCompactionOutcome>;
+}
 export interface AtomicDurableQueueOptions {
 	readonly store: AtomicQueueStore;
 	readonly limits: DurableQueueLimits;
@@ -58,56 +73,185 @@ function uncertain(
 
 export function createAtomicDurableQueue(
 	options: AtomicDurableQueueOptions,
-): DurableQueue {
+): AtomicDurableQueue {
 	const limits = parseDurableQueueLimits(options.limits);
 	if (limits.nameBytes < 16)
 		throw new TypeError("atomic_queue.invalid_options");
 	const now = options.now;
 	const load = options.store.load.bind(options.store);
 	const compareAndSwap = options.store.compareAndSwap.bind(options.store);
-	const run = async (
-		request: AtomicQueueRequest,
-	): Promise<AtomicQueueTransition["outcome"]> => {
-		const op = request.input.operation;
+	type Loaded = {
+		readonly revision: number;
+		readonly events: AtomicQueueEvent[];
+		readonly checkpoint?: AtomicQueueCheckpointRef;
+		readonly state: AtomicQueueState;
+		readonly last: number;
+	};
+	const readState = async (): Promise<Loaded | undefined> => {
 		try {
 			const loaded = await load();
-			if (loaded.status === "unavailable") return uncertain(op);
-			let revision = 0;
-			let events: AtomicQueueEvent[] = [];
-			if (loaded.status === "available") {
-				if (!isSafe(loaded.revision) || loaded.revision < 1)
-					return uncertain(op);
-				revision = loaded.revision;
-				events = decodeAtomicQueueLog(loaded.bytes, limits);
-				if (events.length !== revision) return uncertain(op);
-			} else if (loaded.status !== "missing") return uncertain(op);
+			if (loaded.status === "unavailable") return undefined;
+			if (loaded.status === "missing")
+				return outcome({
+					revision: 0,
+					events: [],
+					state: emptyAtomicQueueState(),
+					last: 0,
+				});
+			if (
+				loaded.status !== "available" ||
+				!isSafe(loaded.revision) ||
+				loaded.revision < 1
+			)
+				return undefined;
+			const log = decodeAtomicQueueLog(loaded.bytes, limits);
+			const base = log.checkpoint?.revision ?? 0;
+			if (
+				!isSafe(base + log.events.length) ||
+				loaded.revision !== base + log.events.length
+			)
+				return undefined;
 			let state = emptyAtomicQueueState();
 			let last = 0;
-			for (let index = 0; index < events.length; index++) {
-				const event = events[index];
-				if (event === undefined || event.atMs < last) return uncertain(op);
+			if (log.checkpoint !== undefined) {
+				const checkpoint = decodeAtomicQueueCheckpoint(
+					log.checkpoint.bytes,
+					limits,
+				);
+				state = checkpoint.state;
+				last = checkpoint.atMs;
+			}
+			for (let index = 0; index < log.events.length; index++) {
+				const event = log.events[index];
+				if (event === undefined || event.atMs < last) return undefined;
 				const step = transitionAtomicQueue(
 					state,
 					event.request,
 					event.atMs,
 					limits,
 				);
-				if (!step.changed) return uncertain(op);
+				if (!step.changed) return undefined;
 				state = step.state;
 				last = event.atMs;
 			}
+			const common = {
+				revision: loaded.revision,
+				events: log.events,
+				state,
+				last,
+			};
+			return log.checkpoint === undefined
+				? outcome(common)
+				: outcome({ ...common, checkpoint: log.checkpoint });
+		} catch {
+			return undefined;
+		}
+	};
+	const run = async (
+		request: AtomicQueueRequest,
+	): Promise<AtomicQueueTransition["outcome"]> => {
+		const op = request.input.operation;
+		try {
+			const loaded = await readState();
+			if (loaded === undefined) return uncertain(op);
 			const current = now();
-			if (!isSafe(current) || current < last) return uncertain(op);
-			const next = transitionAtomicQueue(state, request, current, limits);
+			if (!isSafe(current) || current < loaded.last) return uncertain(op);
+			const next = transitionAtomicQueue(
+				loaded.state,
+				request,
+				current,
+				limits,
+			);
 			if (!next.changed) return outcome(next.outcome);
-			if (events.length >= ATOMIC_QUEUE_MAX_EVENTS) return uncertain(op);
-			events[events.length] = { atMs: current, request };
-			const encoded = encodeAtomicQueueLog(events, limits);
-			const written = await compareAndSwap(revision, encoded);
+			if (loaded.events.length >= ATOMIC_QUEUE_MAX_EVENTS) return uncertain(op);
+			loaded.events[loaded.events.length] = { atMs: current, request };
+			const encoded = encodeAtomicQueueLog(
+				loaded.events,
+				limits,
+				loaded.checkpoint,
+			);
+			const written = await compareAndSwap(loaded.revision, encoded);
 			if (written.status !== "committed") return uncertain(op);
 			return outcome(next.outcome);
 		} catch {
 			return uncertain(op);
+		}
+	};
+	const compact = async (): Promise<AtomicQueueCompactionOutcome> => {
+		try {
+			const loaded = await readState();
+			if (loaded === undefined) return outcome({ status: "unknown" });
+			if (loaded.revision === 0) return outcome({ status: "empty" });
+			const current = now();
+			if (
+				!isSafe(current) ||
+				current < loaded.last ||
+				!isSafe(loaded.revision + 1)
+			)
+				return outcome({ status: "unknown" });
+			const bytes = encodeAtomicQueueCheckpoint(loaded.state, current, limits);
+			const checked = decodeAtomicQueueCheckpoint(bytes, limits);
+			if (
+				checked.atMs !== current ||
+				checked.state.nextMessage !== loaded.state.nextMessage ||
+				checked.state.nextLease !== loaded.state.nextLease ||
+				checked.state.messages.length !== loaded.state.messages.length
+			)
+				return outcome({ status: "unknown" });
+			for (let index = 0; index < loaded.state.messages.length; index++) {
+				const before = loaded.state.messages[index];
+				const after = checked.state.messages[index];
+				if (
+					before === undefined ||
+					after === undefined ||
+					before.messageId !== after.messageId ||
+					before.signature !== after.signature ||
+					before.idempotencyKey !== after.idempotencyKey ||
+					before.availableAtMs !== after.availableAtMs ||
+					before.requestedAvailableAtMs !== after.requestedAvailableAtMs ||
+					before.deliveryAttempt !== after.deliveryAttempt ||
+					before.leaseId !== after.leaseId ||
+					before.leaseExpiresAtMs !== after.leaseExpiresAtMs ||
+					before.completed !== after.completed
+				)
+					return outcome({ status: "unknown" });
+			}
+			let live = 0;
+			for (let index = 0; index < loaded.state.receipts.length; index++) {
+				const receipt = loaded.state.receipts[index];
+				if (receipt === undefined) return outcome({ status: "unknown" });
+				if (receipt.expiresAtMs > current) {
+					const restored = checked.state.receipts[live++];
+					if (
+						restored === undefined ||
+						restored.id !== receipt.id ||
+						restored.expiresAtMs !== receipt.expiresAtMs ||
+						restored.fingerprint !== receipt.fingerprint
+					)
+						return outcome({ status: "unknown" });
+					const before = serializeVector(resultVector(receipt));
+					const after = serializeVector(resultVector(restored));
+					if (before.length !== after.length)
+						return outcome({ status: "unknown" });
+					for (let position = 0; position < before.length; position++)
+						if (before[position] !== after[position])
+							return outcome({ status: "unknown" });
+				}
+			}
+			if (checked.state.receipts.length !== live)
+				return outcome({ status: "unknown" });
+			const encoded = encodeAtomicQueueLog([], limits, {
+				revision: loaded.revision + 1,
+				bytes,
+			});
+			const written = await compareAndSwap(loaded.revision, encoded);
+			if (written.status !== "committed") return outcome({ status: "unknown" });
+			return outcome({
+				status: "compacted",
+				prunedReceipts: loaded.state.receipts.length - live,
+			});
+		} catch {
+			return outcome({ status: "unknown" });
 		}
 	};
 	const begin = <T>(start: () => Promise<T>): Promise<T> => {
@@ -117,7 +261,8 @@ export function createAtomicDurableQueue(
 			return new NativePromise((_resolve, reject) => reject(error));
 		}
 	};
-	const port: DurableQueue = {
+	const port: AtomicDurableQueue = {
+		compact,
 		async limits() {
 			return outcome({ status: "available" as const, value: limits });
 		},

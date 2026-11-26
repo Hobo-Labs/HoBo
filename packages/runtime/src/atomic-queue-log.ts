@@ -9,6 +9,14 @@ import type { AtomicQueueRequest } from "./atomic-queue-transition.js";
 
 export const ATOMIC_QUEUE_MAX_EVENTS = 512;
 export const ATOMIC_QUEUE_MAX_BYTES = 256 * 1024;
+export interface AtomicQueueCheckpointRef {
+	readonly revision: number;
+	readonly bytes: Uint8Array;
+}
+export interface AtomicQueueLog {
+	readonly events: AtomicQueueEvent[];
+	readonly checkpoint?: AtomicQueueCheckpointRef;
+}
 export interface AtomicQueueEvent {
 	readonly atMs: number;
 	readonly request: AtomicQueueRequest;
@@ -239,6 +247,7 @@ export function decodeEvent(
 export function encodeAtomicQueueLog(
 	events: readonly AtomicQueueEvent[],
 	limits: DurableQueueLimits,
+	checkpoint?: AtomicQueueCheckpointRef,
 ): Uint8Array {
 	if (events.length > ATOMIC_QUEUE_MAX_EVENTS) return invalid();
 	const encoded: unknown[] = [];
@@ -247,7 +256,20 @@ export function encodeAtomicQueueLog(
 		if (event === undefined) return invalid();
 		encoded[index] = encodeEvent(event);
 	}
-	return serializeVector(vector([1, encodedLimits(limits), vector(encoded)]));
+	if (
+		checkpoint !== undefined &&
+		(!isSafe(checkpoint.revision) || checkpoint.revision < 1)
+	)
+		return invalid();
+	return serializeVector(
+		vector([
+			2,
+			encodedLimits(limits),
+			checkpoint?.revision ?? 0,
+			checkpoint === undefined ? null : base64(checkpoint.bytes),
+			vector(encoded),
+		]),
+	);
 }
 export function serializeVector(value: unknown[]): Uint8Array {
 	const data: Uint8Array = apply(encodeText, new NativeTextEncoder(), [
@@ -287,16 +309,25 @@ export function parseVector(data: Uint8Array): unknown[] {
 export function decodeAtomicQueueLog(
 	data: Uint8Array,
 	limits: DurableQueueLimits,
-): AtomicQueueEvent[] {
-	const root = tuple(parseVector(data), 3);
-	if (root[0] !== 1) return invalid();
+): AtomicQueueLog {
+	const root = tuple(parseVector(data), 5);
+	if (root[0] !== 2) return invalid();
 	const storedLimits = tuple(root[1], limitNames.length);
 	for (let index = 0; index < limitNames.length; index++) {
 		const key = limitNames[index];
 		if (key === undefined || storedLimits[index] !== limits[key])
 			return invalid();
 	}
-	const raw = tuple(root[2], 0, ATOMIC_QUEUE_MAX_EVENTS);
+	const baseRevision = number(root[2]);
+	if ((baseRevision === 0) !== (root[3] === null)) return invalid();
+	const checkpoint =
+		root[3] === null
+			? undefined
+			: {
+					revision: baseRevision,
+					bytes: bytes(root[3], ATOMIC_QUEUE_MAX_BYTES),
+				};
+	const raw = tuple(root[4], 0, ATOMIC_QUEUE_MAX_EVENTS);
 	const events: AtomicQueueEvent[] = [];
 	let last = 0;
 	for (let index = 0; index < raw.length; index++) {
@@ -305,6 +336,6 @@ export function decodeAtomicQueueLog(
 		last = event.atMs;
 		events[index] = event;
 	}
-	return events;
+	return checkpoint === undefined ? { events } : { events, checkpoint };
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply */
