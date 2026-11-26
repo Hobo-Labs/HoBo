@@ -176,6 +176,52 @@ describe("forward/reverse surface parity", () => {
 		expect(types).toContain("tag: 'gap'");
 	});
 
+	it("generates asynchronous queue operations with explicit durable outcomes", async () => {
+		const { readFile } = await import("node:fs/promises");
+		for (const world of ["sdk", "queue-guest", "queue-provider"]) {
+			const types = await readFile(
+				join(
+					PACKAGE_ROOT,
+					"src/generated",
+					world,
+					"interfaces/hobo-queue-queue.d.ts",
+				),
+				"utf8",
+			);
+			for (const method of [
+				"limits",
+				"enqueue",
+				"dequeue",
+				"complete",
+				"extendLease",
+				"release",
+			]) {
+				expect(types).toMatch(
+					new RegExp(`export function ${method}\\([^\\n]*\\): Promise<`, "u"),
+				);
+			}
+			for (const outcome of ["Enqueue", "Dequeue", "Settlement", "Extension"]) {
+				for (const state of ["Committed", "Rejected", "Unknown", "Expired"]) {
+					expect(types).toContain(`interface ${outcome}Outcome${state}`);
+				}
+			}
+			expect(types).toContain("interface LimitsOutcomeUnavailable");
+			expect(types).toContain("operationWindowMs: bigint");
+			expect(types).toMatch(
+				/interface EnqueueRequest \{\s+operation: Operation,/u,
+			);
+			expect(types).toMatch(
+				/interface DequeueRequest \{\s+operation: Operation,/u,
+			);
+			expect(types).toMatch(
+				/interface SettlementRequest \{\s+operation: Operation,/u,
+			);
+			expect(types).toMatch(
+				/interface ExtendLeaseRequest \{\s+operation: Operation,/u,
+			);
+		}
+	});
+
 	it("matches golden component imports against hobo:sdk world", async () => {
 		const { readFile } = await import("node:fs/promises");
 		const wit = await readFile(WIT_PATH, "utf8");

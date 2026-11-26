@@ -10,6 +10,31 @@ The provider's advertised `name-bytes` limit also
 bounds lease identifiers, which must be nonempty control-free Unicode scalar
 strings. Operation IDs use their separately bounded format.
 
+`hobo:queue/queue@0.1.0` is asynchronous and scoped to a host-authorized queue.
+Its limits report bounds on message size, attributes, delay, leases, batches,
+operation windows and retained messages and receipts. The host must advertise
+only semantics it actually implements, including replay and lease fencing.
+Operation IDs use `v1.<expires-at-ms>.<nonce>`, where the nonce contains 16 to
+64 ASCII letters, digits, underscores or hyphens. The expiry is a nonnegative
+safe integer matching the encoded timestamp and must be within the host's
+advertised operation window. The host authenticates the queue binding and uses
+a trusted clock. The caller persists each operation identity and its exact
+request before dispatch. Once accepted, the host durably binds the identity to
+that request. An authorized reuse with different input is an operation conflict;
+reusing an enqueue idempotency key with different message content is a message
+conflict. A committed result is durable. A rejected result confirms that this exact request
+had no effect, including on earlier attempts with the same identity. A conflict
+may still mean that a different request using that identity committed. If the
+host cannot establish the exact request's outcome, it reports unknown or expired;
+either may have committed and must be reconciled. In particular, an unknown
+dequeue may have leased messages even when none reached
+the caller. A replay returns the original receipt; it does not refresh a lease
+or extend the operation window. Retry the same operation only within its window;
+after expiry, reconciliation must not assume the operation had no effect. The host
+retains capacity for dispatched work until it actually settles, including after a
+timeout. Queue limits can report unavailable without inventing a capability profile. This interface
+does not itself implement a queue or bind an Alchemy resource.
+
 Native async components can be built with `componentize-qjs@0.5.0` and
 transpiled with `@bytecodealliance/jco-transpile@0.24.0`. JSPI supplies the
 suspension mechanism for the JavaScript host; the component ABI remains native
@@ -29,8 +54,8 @@ those imports through their host.
   local test services. These are the vendored interfaces, not the full WASI APIs.
 - `data-models/` — protobuf + CUE records for lock, pins, surfaces, and parity reports.
 
-The SDK world includes the native asynchronous durable messaging interface.
-Hosts that do not implement its semantics must reject components requiring it.
+The SDK world includes native asynchronous queue and durable messaging interfaces.
+Hosts that do not implement their semantics must reject components requiring them.
 
 ## Commands
 
