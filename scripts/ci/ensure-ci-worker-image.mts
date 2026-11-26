@@ -393,8 +393,12 @@ export type WorkerMaterializeFailure =
 			budgetSec: number;
 	  }>
 	| Readonly<{
-			kind: "manifest_absent";
+			kind: "manifest_unavailable";
 			remote: string;
+			budgetSec: number;
+	  }>
+	| Readonly<{
+			kind: "login_failed";
 	  }>;
 
 export type WorkerMaterializeResult =
@@ -457,28 +461,33 @@ export function materializeCiWorkerImageResult(): WorkerMaterializeResult {
 			process.env.HOBO_CI_WORKER_IMAGE_REF === undefined
 		)
 			sources.push(pullRequestWorkerTag(repo, pullRequest, version));
-		dockerLoginGhcr(actor, token);
+		if (!dockerLoginGhcr(actor, token))
+			return { ok: false, failure: { kind: "login_failed" } };
 		let failure: WorkerMaterializeFailure | null = null;
 		for (const remote of sources) {
-			if (!workerManifestReachable(remote, token)) {
-				console.log(`GHCR manifest absent for ${remote}`);
-				failure = preferWorkerMaterializeFailure(failure, {
-					kind: "manifest_absent",
+			const manifestReachable = workerManifestReachable(remote, token);
+			console.log(
+				`GHCR manifest ${manifestReachable ? "present" : "absent or unreadable"} for ${remote}`,
+			);
+			const budgetSec =
+				!manifestReachable && sources.length > 1
+					? Math.min(workerPullBudgetSec(), 45)
+					: workerPullBudgetSec();
+			if (
+				pullWorkerFromGhcr(
 					remote,
-				});
-				continue;
-			}
-			console.log(`GHCR manifest present for ${remote}`);
-			if (pullWorkerFromGhcr(remote)) {
+					manifestReachable ? undefined : { attempts: 1, budgetSec },
+				)
+			) {
 				tagWorkerImage(remote, candidate);
 				console.log(`pulled worker ${remote}`);
 				return { ok: true, image: candidate };
 			}
 			console.error(`GHCR pull failed for ${remote}`);
 			failure = preferWorkerMaterializeFailure(failure, {
-				kind: "pull_failed",
+				kind: manifestReachable ? "pull_failed" : "manifest_unavailable",
 				remote,
-				budgetSec: workerPullBudgetSec(),
+				budgetSec,
 			});
 		}
 		return { ok: false, failure };
@@ -506,14 +515,17 @@ export function ensureCiWorkerImage(): string {
 		const reason = releaseWorkerEnsurePath()
 			? `release path requires published ghcr.io worker ${version}`
 			: "supplied worker digest requires a matching published image";
+		if (failure?.kind === "login_failed") {
+			throw new Error(`GHCR login failed; ${reason}; refusing build.sh`);
+		}
 		if (failure?.kind === "pull_failed") {
 			throw new Error(
 				`GHCR manifest present for ${failure.remote} but pull failed (budgetSec=${failure.budgetSec}); ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
 			);
 		}
-		if (failure?.kind === "manifest_absent") {
+		if (failure?.kind === "manifest_unavailable") {
 			throw new Error(
-				`GHCR manifest absent for ${failure.remote}; ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
+				`GHCR manifest absent or unreadable for ${failure.remote} and pull failed (budgetSec=${failure.budgetSec}); ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
 			);
 		}
 		throw new Error(

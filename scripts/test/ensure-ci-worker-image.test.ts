@@ -554,6 +554,7 @@ describe("ensure-ci-worker-image", () => {
 				'if [ "$1 $2" = "image inspect" ]; then exit 1; fi',
 				'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
 				'if [ "$1 $2" = "manifest inspect" ]; then case "$3" in *:pr-2953-v*) exit 0 ;; *) exit 1 ;; esac; fi',
+				'if [ "$1" = pull ]; then case "$2" in *:pr-2953-v*) exit 0 ;; *) exit 1 ;; esac; fi',
 				"exit 0",
 				"",
 			].join("\n"),
@@ -779,7 +780,13 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	function withReleaseProbe(
-		mode: "pull_failed" | "manifest_absent" | "local_digest" | "remote_digest",
+		mode:
+			| "pull_failed"
+			| "manifest_absent"
+			| "manifest_unreadable"
+			| "login_failed"
+			| "local_digest"
+			| "remote_digest",
 		digestRef: string | undefined,
 		run: (calls: string) => void,
 		candidatePresent = false,
@@ -802,14 +809,16 @@ describe("ensure-ci-worker-image", () => {
 		writeFileSync(join(bin, "sleep"), ["#!/bin/sh", "exit 0", ""].join("\n"), {
 			mode: 0o755,
 		});
-		const manifestStatus = mode === "manifest_absent" ? 1 : 0;
-		const pullStatus = mode === "pull_failed" ? 1 : 0;
+		const manifestStatus =
+			mode === "manifest_absent" || mode === "manifest_unreadable" ? 1 : 0;
+		const pullStatus =
+			mode === "pull_failed" || mode === "manifest_absent" ? 1 : 0;
 		writeFileSync(
 			join(bin, "docker"),
 			[
 				"#!/bin/sh",
 				`echo "docker $*" >> "${calls}"`,
-				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
+				`if [ "$1" = login ]; then cat >/dev/null; exit ${mode === "login_failed" ? 1 : 0}; fi`,
 				'if [ "$1 $2" = "image inspect" ]; then',
 				candidatePresent
 					? '  case "$3" in hobo-ci-worker:v*) exit 0 ;; esac'
@@ -864,7 +873,7 @@ describe("ensure-ci-worker-image", () => {
 		}
 	}
 
-	it("names a release pull failure and a missing manifest differently", () => {
+	it("distinguishes a failed pull after a readable or unreadable manifest", () => {
 		withReleaseProbe("pull_failed", undefined, (calls) => {
 			const materialized = materializeCiWorkerImageResult();
 			assert.equal(materialized.ok, false);
@@ -897,12 +906,15 @@ describe("ensure-ci-worker-image", () => {
 		withReleaseProbe("manifest_absent", undefined, (calls) => {
 			const materialized = materializeCiWorkerImageResult();
 			assert.equal(materialized.ok, false);
-			if (materialized.ok || materialized.failure?.kind !== "manifest_absent") {
+			if (
+				materialized.ok ||
+				materialized.failure?.kind !== "manifest_unavailable"
+			) {
 				assert.fail(
-					`expected manifest_absent, got ${JSON.stringify(materialized)}`,
+					`expected manifest_unavailable, got ${JSON.stringify(materialized)}`,
 				);
 			}
-			assert.equal("budgetSec" in materialized.failure, false);
+			assert.equal(materialized.failure.budgetSec, 7);
 			let thrown: Error | undefined;
 			try {
 				ensureCiWorkerImage();
@@ -911,11 +923,11 @@ describe("ensure-ci-worker-image", () => {
 				thrown = error;
 			}
 			assert.ok(thrown, "release manifest_absent must throw");
-			assert.match(thrown.message, /GHCR manifest absent/u);
+			assert.match(thrown.message, /GHCR manifest absent or unreadable/u);
 			assert.doesNotMatch(thrown.message, /manifest present/u);
-			assert.doesNotMatch(thrown.message, /budgetSec=/u);
+			assert.match(thrown.message, /budgetSec=7/u);
 			const recorded = readFileSync(calls, "utf8");
-			assert.doesNotMatch(recorded, /docker pull /u);
+			assert.match(recorded, /docker pull /u);
 			assert.doesNotMatch(recorded, /build\.sh/u);
 		});
 	});
@@ -994,5 +1006,26 @@ describe("ensure-ci-worker-image", () => {
 			},
 			true,
 		);
+	});
+
+	it("attempts the pull when the manifest probe is unreadable", () => {
+		withReleaseProbe("manifest_unreadable", undefined, (calls) => {
+			const result = materializeCiWorkerImageResult();
+			assert.equal(result.ok, true);
+			assert.match(readFileSync(calls, "utf8"), /docker pull /u);
+		});
+	});
+
+	it("reports a login failure without claiming the manifest is absent", () => {
+		withReleaseProbe("login_failed", undefined, (calls) => {
+			const result = materializeCiWorkerImageResult();
+			assert.equal(result.ok, false);
+			if (result.ok) return;
+			assert.equal(result.failure?.kind, "login_failed");
+			assert.doesNotMatch(
+				readFileSync(calls, "utf8"),
+				/docker (?:manifest inspect|pull) /u,
+			);
+		});
 	});
 });
