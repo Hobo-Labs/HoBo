@@ -1100,7 +1100,8 @@ unsupported. The host controls key policy and deletion and must reconcile an
 unknown creation before retrying. The simulator suite exercises Alchemy key
 reconciliation and the application binding against a pinned Moto image because
 the official AWS Emulator does not currently implement KMS. It also checks
-priced, denied-unpriced and authorized-unpriced admission before key creation.
+priced, denied-unpriced and authorized-unpriced admission before key creation;
+the priced case uses the admitted key from a request-scoped HTTP handler.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
 protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
