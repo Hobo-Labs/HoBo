@@ -7,6 +7,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { bindle } from "../../bindles/src/bindle.js";
 import {
+	createBindleTopicPreparation,
 	createDurableMessagingLifecycle,
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingPortMetadataGrant,
@@ -2196,6 +2197,101 @@ describe("provider-neutral Bindle topic provisioning", () => {
 		if (result.status !== "ready") throw new Error("host unavailable");
 		expect(result.application.topic("orders").publishEnabled).toBe(true);
 		expect(() => result.application.topic("other")).toThrow();
+	});
+	it("coalesces a synchronously reentrant preparation callback", async () => {
+		const { port } = fixture();
+		let prepare: ReturnType<typeof createBindleTopicPreparation>;
+		let reentrant: ReturnType<typeof prepare> | undefined;
+		let armed = false;
+		const metadata = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: () => {
+				if (armed) {
+					armed = false;
+					reentrant = prepare();
+				}
+				return true;
+			},
+		});
+		prepare = createBindleTopicPreparation(
+			port,
+			{ ...binding, bindleName: "shop" },
+			operations,
+			{
+				provisioning: options(),
+				application: {
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					portMetadataGrant: metadata,
+					verify: () => true,
+				},
+			},
+		);
+		armed = true;
+		const first = prepare();
+		await Promise.resolve();
+		expect(reentrant).toBe(first);
+		expect((await first).status).toBe("ready");
+		expect(port.ensureTopic).toHaveBeenCalledTimes(operations.length);
+	});
+	it("captures the topic graph and durable operations and coalesces concurrent attempts", async () => {
+		let first = true;
+		const ensureTopic = vi.fn<DurableMessaging["ensureTopic"]>(
+			async (input) => {
+				if (first) {
+					first = false;
+					return { status: "unknown", operation: input.operation };
+				}
+				return { status: "committed", value: { topic: input.topic } };
+			},
+		);
+		const { port } = fixture({ ensureTopic });
+		const mutableBindings = structuredClone(binding.bindings);
+		const mutableOperations = structuredClone(operations);
+		const provisioning = options();
+		const prepare = createBindleTopicPreparation(
+			port,
+			{ ...binding, bindleName: "shop", bindings: mutableBindings },
+			mutableOperations,
+			{
+				provisioning,
+				application: {
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					verify: () => true,
+				},
+			},
+		);
+		const firstOperation = operations.find((entry) => entry.topic === "orders")
+			?.operation.id;
+		const mutableBinding = mutableBindings[0];
+		const mutableOperation = mutableOperations[1];
+		if (!mutableBinding || !mutableOperation)
+			throw new Error("fixture missing");
+		mutableBinding.topic = "redirected";
+		Object.defineProperty(mutableOperation.operation, "id", {
+			value: "changed",
+		});
+		provisioning.authorize = () => false;
+		const one = prepare();
+		const two = prepare();
+		expect(one).toBe(two);
+		expect(await one).toMatchObject({
+			status: "unavailable",
+			provisioning: { outcome: { tag: "unknown" } },
+		});
+		const result = await prepare();
+		expect(result.status).toBe("ready");
+		expect(ensureTopic.mock.calls[0]?.[0]).toMatchObject({
+			topic: "orders",
+			operation: { id: firstOperation },
+		});
+		expect(ensureTopic.mock.calls[1]?.[0]).toMatchObject({
+			topic: "orders",
+			operation: { id: firstOperation },
+		});
+		expect(await prepare()).toBe(result);
 	});
 	it.each([
 		"rejected",
