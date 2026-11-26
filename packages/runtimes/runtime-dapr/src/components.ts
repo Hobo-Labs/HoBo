@@ -47,9 +47,6 @@ export function parseDaprComponentSpec<T>(input: T): DaprComponentSpec {
 	});
 }
 
-/**
- * Build Dapr Component CR YAML. Happy path: no hand-written parallel config.
- */
 export function generateDaprComponentYaml(
 	spec: DaprComponentSpec,
 ): DaprComponentYaml {
@@ -105,7 +102,6 @@ export function kafkaPubsubComponent(input: {
 	});
 }
 
-/** Map HoBo .allow() verbs to Dapr component scopes (app-ids). */
 export function scopesFromAllow(
 	appId: string,
 	allows: readonly string[],

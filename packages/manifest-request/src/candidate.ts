@@ -144,7 +144,7 @@ export type ParsedSelectionCandidate = SelectionCandidate & {
 	readonly [selectionCandidateBrand]: typeof SELECTION_CANDIDATE_SCHEMA_VERSION;
 };
 
-// parallel-type-allowed: hand-declared wire form of ProfileImplementationRecord in data-models/selection_candidate.proto; this package has no data-models/buf.yaml, so codegen produces no src/_generated/*_pb.ts to import — replace with the generated type when manifest packages opt into codegen.
+// parallel-type-allowed:
 export type ProfileImplementationRecord = {
 	readonly profile_id: string;
 	readonly version_range: string;
@@ -160,7 +160,7 @@ export type CandidateContinuityRecord = {
 	readonly credentials: CredentialContinuity;
 };
 
-// parallel-type-allowed: hand-declared wire form of SelectionCandidateRecord; the declaration order of its fields IS the canonical JSON key order a digest is taken over, which is a property this package must state rather than inherit from a generator it does not yet run.
+// parallel-type-allowed:
 export type SelectionCandidateRecord = {
 	readonly schema_version: typeof SELECTION_CANDIDATE_SCHEMA_VERSION;
 	readonly definition_id: string;

@@ -39,7 +39,7 @@ export const REGENERABLE = [
 	".cache",
 ] as const;
 
-// domain-view: wire form is hobo.rift.v1.WorkspaceRecord; src/wire.ts converts.
+// domain-view:
 export interface WorkspaceRecord {
 	readonly name: string;
 	readonly path: string;
@@ -50,7 +50,7 @@ export interface WorkspaceRecord {
 	readonly createdAt: string;
 }
 
-// domain-view: wire form is hobo.rift.v1.Registry; src/wire.ts converts.
+// domain-view:
 export interface Registry {
 	readonly root: string;
 	readonly workspaces: readonly WorkspaceRecord[];

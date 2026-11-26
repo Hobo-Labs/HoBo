@@ -23,7 +23,6 @@ export type Call = Readonly<{
 	body?: string;
 }>;
 
-/** Send a call; transport failures become `gitops-host-unavailable`. */
 export async function send(
 	http: HttpTransport,
 	call: Call,
@@ -45,7 +44,6 @@ export async function send(
 	}
 }
 
-/** Map a non-2xx Git host status to its typed failure. */
 export function hostFailure(
 	response: TransportResponse,
 	what: string,
@@ -93,7 +91,6 @@ export function parseJson(
 ): JsonObject {
 	let value: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this response boundary.
 		value = JSON.parse(response.body) as JsonValue;
 	} catch {
 		throw new GitopsError(
@@ -110,7 +107,6 @@ export function parseJson(
 	return value;
 }
 
-/** Read a string at a dotted path of a parsed JSON object. */
 export function pick(
 	value: JsonValue | undefined,
 	path: string,
