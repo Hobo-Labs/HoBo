@@ -5,9 +5,9 @@ import {
 	encodeAtomicQueueCheckpoint,
 } from "../src/atomic-queue-checkpoint.js";
 import {
+	type AtomicQueueRequest,
 	emptyAtomicQueueState,
 	transitionAtomicQueue,
-	type AtomicQueueRequest,
 } from "../src/atomic-queue-transition.js";
 
 const limits = {
@@ -99,6 +99,63 @@ describe("atomic queue checkpoint codec", () => {
 			).toEqual(transitionAtomicQueue(state, request, 1007, limits).outcome);
 		}
 	});
+	it("restores sparse monotonic message IDs without allowing live receipts to lose their message", () => {
+		const { state } = fixture();
+		const first = state.messages[0];
+		if (!first) throw Error("missing message");
+		const sparse = {
+			...state,
+			nextMessage: 4,
+			messages: [{ ...first, messageId: "m3" }],
+			receipts: [],
+		};
+		const restored = decodeAtomicQueueCheckpoint(
+			encodeAtomicQueueCheckpoint(sparse, 10000, limits),
+			limits,
+		);
+		expect(restored.state.messages[0]?.messageId).toBe("m3");
+		const next = transitionAtomicQueue(
+			restored.state,
+			{
+				kind: "enqueue",
+				input: {
+					operation: op(8, 20000),
+					message: {
+						idempotencyKey: "another",
+						body: new Uint8Array([2]),
+						attributes: [],
+					},
+				},
+			},
+			10000,
+			limits,
+		);
+		expect(next.outcome).toMatchObject({
+			status: "committed",
+			value: { messageId: "m4" },
+		});
+		const missing = { ...state, messages: [] };
+		expect(() =>
+			decodeAtomicQueueCheckpoint(
+				encodeAtomicQueueCheckpoint(missing, 1007, limits),
+				limits,
+			),
+		).toThrow();
+		const reversed = {
+			...sparse,
+			messages: [
+				{ ...first, messageId: "m3" },
+				{ ...first, messageId: "m2", idempotencyKey: "second" },
+			],
+		};
+		expect(() =>
+			decodeAtomicQueueCheckpoint(
+				encodeAtomicQueueCheckpoint(reversed, 10000, limits),
+				limits,
+			),
+		).toThrow();
+	});
+
 	it("copies original request data before it can change a receipt", () => {
 		const request: AtomicQueueRequest = {
 			kind: "enqueue",
@@ -150,7 +207,7 @@ describe("atomic queue checkpoint codec", () => {
 		expect(() =>
 			decodeAtomicQueueCheckpoint(
 				mutate((value) => {
-					value[3] = 99;
+					value[3] = 1;
 				}),
 				limits,
 			),

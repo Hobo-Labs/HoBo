@@ -3,8 +3,8 @@ import {
 	base64,
 	bytes,
 	decodeEvent,
-	encodeEvent,
 	encodedLimits,
+	encodeEvent,
 	parseVector,
 	serializeVector,
 	tuple,
@@ -16,9 +16,9 @@ import {
 	type AtomicQueueReceipt,
 	type AtomicQueueRequest,
 	type AtomicQueueState,
-	type QueueResult,
 	fingerprint,
 	messageSignature,
+	type QueueResult,
 } from "./atomic-queue-transition.js";
 import {
 	parseQueueEnqueue,
@@ -32,6 +32,7 @@ const apply = Reflect.apply;
 const regexExec = RegExp.prototype.exec;
 const slice = String.prototype.slice;
 const leasePattern = /^l[1-9][0-9]{0,14}$/u;
+const messagePattern = /^m[1-9][0-9]{0,14}$/u;
 const SetType = Set;
 const setHas = Set.prototype.has;
 const setAdd = Set.prototype.add;
@@ -207,13 +208,12 @@ function matchMessage(
 	messageId: string,
 	messages: readonly AtomicQueueMessage[],
 ): AtomicQueueMessage {
-	if (messageId.length < 2 || messageId[0] !== "m") return invalid();
-	const index = number(apply(slice, messageId, [1])) - 1;
-	if (!isSafe(index) || index < 0 || index >= messages.length) return invalid();
-	const message = messages[index];
-	if (message === undefined || message.messageId !== messageId)
-		return invalid();
-	return message;
+	if (apply(regexExec, messagePattern, [messageId]) === null) return invalid();
+	for (let index = 0; index < messages.length; index++) {
+		const message = messages[index];
+		if (message?.messageId === messageId) return message;
+	}
+	return invalid();
 }
 function validateDelivery(
 	value: DurableQueueDelivery,
@@ -258,7 +258,7 @@ function validateReceipt(
 			!("idempotencyKey" in value) ||
 			"body" in value
 		)
-			return invalid();
+			invalid();
 		const message = matchMessage(value.messageId, messages);
 		if (
 			value.idempotencyKey !== message.idempotencyKey ||
@@ -268,17 +268,17 @@ function validateReceipt(
 		return;
 	}
 	if (request.kind === "dequeue") {
-		if (!isArray(value)) return invalid();
+		if (!isArray(value)) invalid();
 		for (let index = 0; index < value.length; index++)
 			validateDelivery(value[index], messages, nextLease);
 		return;
 	}
 	if (request.kind === "extendLease") {
-		if (!("body" in value)) return invalid();
+		if (!("body" in value)) invalid();
 		validateDelivery(value, messages, nextLease);
 		return;
 	}
-	if (!("messageId" in value) || !("leaseId" in value)) return invalid();
+	if (!("messageId" in value) || !("leaseId" in value)) invalid();
 	matchMessage(value.messageId, messages);
 	validateLease(value.leaseId, nextLease);
 }
@@ -330,14 +330,23 @@ export function decodeAtomicQueueCheckpoint(
 	const nextMessage = integer(root[3], 1, ATOMIC_QUEUE_MAX_SEQUENCE);
 	const nextLease = integer(root[4], 1, ATOMIC_QUEUE_MAX_SEQUENCE);
 	const rawMessages = tuple(root[5], 0, limits.retainedMessages);
-	if (nextMessage !== rawMessages.length + 1) return invalid();
 	const messages: AtomicQueueMessage[] = [];
 	const keys = new SetType<string>();
 	const leases = new SetType<string>();
+	let previousMessage = 0;
 	for (let index = 0; index < rawMessages.length; index++) {
 		const item = tuple(rawMessages[index], 11);
 		const messageId = text(item[0], limits.nameBytes);
-		if (messageId !== `m${index + 1}`) return invalid();
+		if (apply(regexExec, messagePattern, [messageId]) === null)
+			return invalid();
+		const sequence = number(apply(slice, messageId, [1]));
+		if (
+			!isSafe(sequence) ||
+			sequence <= previousMessage ||
+			sequence >= nextMessage
+		)
+			return invalid();
+		previousMessage = sequence;
 		const requested = item[6] === null ? undefined : integer(item[6]);
 		const rawContent = {
 			idempotencyKey: item[2],
