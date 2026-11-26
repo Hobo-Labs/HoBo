@@ -17,6 +17,7 @@ export {
 	initRoot,
 	REGENERABLE,
 	RIFT_DIR,
+	RiftRegistryError,
 	readRegistry,
 	removeWorkspace,
 	runInWorkspace,
