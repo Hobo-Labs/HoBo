@@ -8,7 +8,6 @@ import { createAwsRuntimeBoundary } from "./aws-runtime-boundary.js";
 import { acceptSynchronousTrue } from "./synchronous-result.js";
 
 export const AWS_KV_MAX_KEY_BYTES = 2048;
-// Leaves ample space for the partition key, attribute names, and DynamoDB's 400 KiB item limit.
 export const AWS_KV_MAX_VALUE_BYTES = 256 * 1024;
 export const AWS_KV_MAX_IN_FLIGHT = 32;
 export const AWS_KV_DEADLINE_MS = 10_000;
@@ -92,7 +91,6 @@ function matches(pattern: RegExp, value: string): boolean {
 	return apply(regexExec, pattern, [value]) !== null;
 }
 
-/** The host must authenticate the table incarnation and authorization on every call. */
 export function createAwsDynamoKvStore(options: {
 	readonly grant: AwsKvGrant;
 	readonly verify: (
