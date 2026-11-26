@@ -455,7 +455,6 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				const first = randomUUID();
 				const second = randomUUID();
 				expect(await store.put(new Uint8Array([1, 2]), first)).toBe(first);
-				// A provider may report timestamps at whole-second precision.
 				await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_100));
 				expect(await store.put(new Uint8Array([3, 4]), second)).toBe(second);
 				expect(await store.access()).toEqual({

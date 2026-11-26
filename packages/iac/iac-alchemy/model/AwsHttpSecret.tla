@@ -1,8 +1,6 @@
 ------------------------- MODULE AwsHttpSecret -------------------------
 EXTENDS Naturals, TLC
 
-\* One request and one write. The host verifier, the captured token, the
-\* provider's idempotency and transport completion are trusted assumptions.
 CONSTANTS Tokens
 VARIABLES request, grant, operation, token, result, reported, verified
 vars == <<request, grant, operation, token, result, reported, verified>>
