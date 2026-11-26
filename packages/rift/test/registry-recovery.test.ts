@@ -384,6 +384,20 @@ describe("repair", () => {
 		expect(readSnapshotFile(abs)).toEqual(body);
 	});
 
+	it("removes a workspace when the snapshot has no event count", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const body = { root: abs, workspaces: [ws] };
+		writeSnapshot(abs, body);
+		expect(removeWorkspace(abs, ws.name)).toBe(true);
+		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(readSnapshotFile(abs)).toEqual({
+			root: abs,
+			workspaces: [],
+			eventCount: expect.any(Number),
+		});
+		expect(existsSync(ws.path)).toBe(false);
+	});
+
 	it("preserves conflicting snapshots at the same event count", () => {
 		const { abs, ws } = rootWithWorkspace();
 		const body = { root: abs, workspaces: [], eventCount: 2 };

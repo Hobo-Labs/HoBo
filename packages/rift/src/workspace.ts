@@ -468,13 +468,17 @@ function recordCreated(root: string, workspace: WorkspaceRecord): void {
 
 /** Append the event, then refresh the snapshot it projects to. */
 function record(root: string, event: WorkspaceEvent): void {
-	appendEvent(riftDir(root), event);
-	const events = readEvents(riftDir(root));
-	writeRegistry({
+	const dir = riftDir(root);
+	const events = readEvents(dir);
+	const projected = [...events, event];
+	const registry: Registry = {
 		root,
-		workspaces: projectWorkspaces(events),
-		eventCount: events.length,
-	});
+		workspaces: projectWorkspaces(projected),
+		eventCount: projected.length,
+	};
+	refuseRegistryWorkspaceDrop(registry, projected);
+	appendEvent(dir, event);
+	writeRegistry(registry);
 }
 
 function snapshotSources(root: string): Registry[] {
@@ -534,8 +538,8 @@ function suffixRemovesWorkspace(
 function journalAuthorizesWorkspaceDrops(
 	registry: Registry,
 	dropped: readonly string[],
+	events: readonly WorkspaceEvent[],
 ): boolean {
-	const events = readEvents(riftDir(registry.root));
 	if (registry.eventCount !== events.length) return false;
 	if (!sameWorkspaces(registry.workspaces, projectWorkspaces(events)))
 		return false;
@@ -545,20 +549,25 @@ function journalAuthorizesWorkspaceDrops(
 		);
 		return (
 			sources.length > 0 &&
-			sources.every(
-				(source) =>
-					isJsonNumber(source.eventCount) &&
-					suffixRemovesWorkspace(events, source.eventCount, name),
+			sources.every((source) =>
+				suffixRemovesWorkspace(
+					events,
+					isJsonNumber(source.eventCount) ? source.eventCount : 0,
+					name,
+				),
 			)
 		);
 	});
 }
 
-function refuseRegistryWorkspaceDrop(registry: Registry): void {
+function refuseRegistryWorkspaceDrop(
+	registry: Registry,
+	events: readonly WorkspaceEvent[] = readEvents(riftDir(registry.root)),
+): void {
 	const dropped = droppedWorkspaceNames(registry);
 	if (dropped.length === 0) return;
 	if (completingVerifiedTruncatedRepair(registry)) return;
-	if (journalAuthorizesWorkspaceDrops(registry, dropped)) return;
+	if (journalAuthorizesWorkspaceDrops(registry, dropped, events)) return;
 	throw new RiftRegistryError(
 		`refusing to write ${registryPath(registry.root)}; it would drop workspace(s) ${dropped.join(", ")}`,
 	);
