@@ -3,6 +3,8 @@
 These rules apply to every agent, plugin, skill, and harness and take precedence
 over conflicting repository workflow guidance.
 
+- Do not create GitHub blobs directly, including through the Git Data API or
+  blob-creation tools. Use local Git commits and `git push` for repository changes.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
