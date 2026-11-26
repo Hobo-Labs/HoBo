@@ -23,6 +23,10 @@
 			"types": "./dist/aws.d.ts",
 			"default": "./dist/aws.js"
 		},
+		"./aws/schedule": {
+			"types": "./dist/aws-schedule.d.ts",
+			"default": "./dist/aws-schedule.js"
+		},
 		"./aws/vite": {
 			"types": "./dist/aws-vite.d.ts",
 			"default": "./dist/aws-vite.js"
