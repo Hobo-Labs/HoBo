@@ -1,5 +1,8 @@
 # @hobo/alchemy-rivet
 
+This extension and `@hobo/runtime-rivet` are private workspace packages; the
+imports below do not describe packages published in the public SDK release.
+
 This package composes the Alchemy IaC adapter with the Rivet runtime. It
 contains no independent actor implementation or persistent service.
 
