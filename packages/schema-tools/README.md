@@ -6,7 +6,7 @@ opts in by giving its `data-models/` a `buf.yaml` module marker; generated
 TypeScript lands in each package's checked-in `src/_generated/`, and
 `hobo-codegen --check` is the drift gate CI runs. That directory belongs only
 to protobuf codegen; other generators use a suffixed sibling such as
-`src/_generated-assets/` or `src/_generated-art/`. See [`ADR.md`](./ADR.md).
+`src/_generated-assets/` or `src/_generated-art/`. See [Architecture record](https://linear.app/quickdeploy-ai/document/schema-tools-architecture-record-archived-e4f32f59466a).
 
 A package may declare `data-models/buf.gen.yaml` when its generated module format
 requires package-specific options, such as `import_extension=js` for cross-file
