@@ -214,6 +214,7 @@ jobs:
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-aws-vite.mts
           node --experimental-strip-types scripts/check-durable-topic-model.ts
           node --experimental-strip-types packages/runtime/model/check-topic-policy.mts
+          node --experimental-strip-types packages/runtime/model/check-topic-provisioning.mts
           node --experimental-strip-types packages/core/model/check-messaging-settlement.mts
           node --experimental-strip-types packages/core/model/check-messaging-exhaustion.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts
