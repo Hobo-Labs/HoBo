@@ -22,6 +22,10 @@ import {
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
 import {
+	awsSnsNotificationMappers,
+	withAwsSnsNotification,
+} from "../src/aws-notification-mapper.js";
+import {
 	awsDynamoDurableQueue,
 	awsDynamoDurableQueueMappers,
 	withAwsDynamoDurableQueue,
@@ -42,6 +46,46 @@ const requirements = {
 };
 
 describe("AWS Alchemy infrastructure mappings", () => {
+	it("requires an explicit bounded SNS choice to map notification sends", async () => {
+		const definition = bindle("shop", (b) => ({
+			alerts: b.notify().allow("send"),
+		}));
+		const selected = withAwsSnsNotification(definition, { alerts: true });
+		const mappers = awsSnsNotificationMappers();
+		expect(() => mapBindleToAlchemy(definition, mappers, requirements)).toThrow(
+			"PRIMITIVE_UNSUPPORTED",
+		);
+		// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.alerts?.Type).toBe(Topic.Type);
+		expect(mapped.primary.alerts?.FQN).toBe("alerts");
+		const report = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappers);
+		expect(report.find((entry) => entry.kind === "notify")).toMatchObject({
+			supportedOperations: ["send"],
+			status: "partial",
+		});
+		const dependent = bindle("shop", (b) => {
+			const objects = b.bucket();
+			return { objects, alerts: b.notify().allow("send").dependsOn(objects) };
+		});
+		expect(() =>
+			mapBindleToAlchemy(
+				withAwsSnsNotification(dependent, { alerts: true }),
+				mappers,
+				requirements,
+			),
+		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+	});
 	it("maps declared primitives to the actual Alchemy AWS resource types", async () => {
 		const definition = bindle("shop", (b) => ({
 			sessions: b.kv(),

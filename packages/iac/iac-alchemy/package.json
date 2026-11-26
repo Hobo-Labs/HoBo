@@ -131,6 +131,10 @@
 			"types": "./dist/aws-http-server.d.ts",
 			"default": "./dist/aws-http-server.js"
 		},
+		"./aws/notification-mapper": {
+			"types": "./dist/aws-notification-mapper.d.ts",
+			"default": "./dist/aws-notification-mapper.js"
+		},
 		"./aws/notification": {
 			"types": "./dist/aws-notification.d.ts",
 			"default": "./dist/aws-notification.js"

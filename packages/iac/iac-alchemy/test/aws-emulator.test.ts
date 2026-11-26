@@ -45,6 +45,10 @@ import {
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
 import { createAwsNotificationPublisher } from "../src/aws-notification.js";
+import {
+	awsSnsNotificationMappers,
+	withAwsSnsNotification,
+} from "../src/aws-notification-mapper.js";
 import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
 	awsDynamoDurableQueueMappers,
@@ -71,6 +75,7 @@ async function mappedResources(
 	nativeKv = false,
 	nativeS3 = false,
 	readOnly = false,
+	nativeNotify = false,
 ) {
 	const definition = bindle("shop", (b) => ({
 		objects: nativeS3
@@ -85,18 +90,26 @@ async function mappedResources(
 			: b.kv(),
 		jobs: b.queue(),
 		events: b.topic(),
-		alerts: b.notify(),
+		alerts: nativeNotify ? b.notify().allow("send") : b.notify(),
 	}));
 	const kvSelected = nativeKv
 		? withAwsDynamoKv(definition, { sessions: true })
 		: definition;
-	const selected = nativeS3
+	const storageSelected = nativeS3
 		? withAwsS3(kvSelected, { objects: true })
 		: kvSelected;
+	const selected = nativeNotify
+		? withAwsSnsNotification(storageSelected, { alerts: true })
+		: storageSelected;
 	const baseMappers = nativeKv
 		? awsDynamoKvBindleMappers()
 		: awsBindleMappers();
-	const mappers = nativeS3 ? awsS3BindleMappers(baseMappers) : baseMappers;
+	const storageMappers = nativeS3
+		? awsS3BindleMappers(baseMappers)
+		: baseMappers;
+	const mappers = nativeNotify
+		? awsSnsNotificationMappers(storageMappers)
+		: storageMappers;
 	// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 	const mapped = await Effect.runPromise(
 		mapBindleToAlchemy(selected, mappers, {
@@ -785,7 +798,12 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					connect: { ca, servername: "localhost" },
 				}),
 			);
-			const { topic, alerts } = await mappedResources();
+			const { topic, alerts } = await mappedResources(
+				false,
+				false,
+				false,
+				true,
+			);
 			const first = await reconcileTopic(topic, layer);
 			const second = await reconcileTopic(topic, layer);
 			const notification = await reconcileTopic(alerts, layer);
