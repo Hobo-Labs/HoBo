@@ -27,9 +27,15 @@ function replaceOnce(text: string, before: string, after: string): string {
 	return text.replace(before, after);
 }
 
-function check(label: string, model: string, cfg: string, violation?: string) {
+function check(
+	label: string,
+	model: string,
+	cfg: string,
+	violation?: string,
+	moduleName = "TopicPolicy",
+) {
 	const base = join(scratch, label);
-	writeFileSync(`${base}.tla`, model.replaceAll("TopicPolicy", label));
+	writeFileSync(`${base}.tla`, model.replaceAll(moduleName, label));
 	writeFileSync(`${base}.cfg`, cfg);
 	const result = runBoundedTlc(
 		jar,
@@ -106,6 +112,58 @@ try {
 			`${config}\nINVARIANT ${invariant}\n`,
 			invariant,
 		);
+	const bindle = readFileSync(join(root, "BindleTopicGrants.tla"), "utf8");
+	const bindleConfig = readFileSync(
+		join(root, "BindleTopicGrants.cfg"),
+		"utf8",
+	);
+	check(
+		"BindleTopicGrants",
+		bindle,
+		bindleConfig,
+		undefined,
+		"BindleTopicGrants",
+	);
+	check(
+		"MissingEdges",
+		replaceOnce(
+			bindle,
+			"Valid == edges = bindings /\\ DistinctNames",
+			"Valid == DistinctNames",
+		),
+		bindleConfig,
+		"NoUndeclaredGrant",
+		"BindleTopicGrants",
+	);
+	check(
+		"MissingAliasCheck",
+		replaceOnce(
+			bindle,
+			"Valid == edges = bindings /\\ DistinctNames",
+			"Valid == edges = bindings",
+		),
+		bindleConfig,
+		"NoAliasedTopics",
+		"BindleTopicGrants",
+	);
+	check(
+		"ExtraVerbs",
+		replaceOnce(
+			bindle,
+			"THEN permissions[r] ELSE {}",
+			'THEN {"publish", "subscribe"} ELSE {}',
+		),
+		bindleConfig,
+		"NoUndeclaredVerbs",
+		"BindleTopicGrants",
+	);
+	check(
+		"WitnessBindleGranted",
+		bindle,
+		`${bindleConfig}\nINVARIANT NeverGranted\n`,
+		"NeverGranted",
+		"BindleTopicGrants",
+	);
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

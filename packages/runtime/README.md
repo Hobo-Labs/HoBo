@@ -81,19 +81,40 @@ Use its `authorize` function as the host authorizer; revoke the limits grant and
 fence in-flight work separately. A denied mutation returns `unknown` for its
 operation ID because an earlier attempt could have committed.
 
+`compileBindleTopicGrants` derives those grants from a Bindle application's
+topic dependency edges and each topic's declared `publish` and `subscribe`
+permissions. Supply one explicit runtime topic binding for every topic edge,
+including the consumer groups and dead-letter destinations for subscriptions.
+It rejects missing or extra bindings, duplicate runtime topic names and
+unconfigured subscriptions. It returns each source resource name alongside its
+grant so the host can attest the exact source-to-provider mapping. It does not
+provision topics, authenticate the Bindle or verify the provider's state.
+
 ```ts
+import { bindle } from "@hobo/bindles";
 import {
+  compileBindleTopicGrants,
   createDurableMessagingWitImports,
   createDurableTopicPolicy,
 } from "@hobo/runtime/durable-messaging-host";
 
-const topicPolicy = createDurableTopicPolicy({
-  grants: [{
+const shop = bindle("shop", (b) => {
+  const orders = b.topic().allow("publish", "subscribe");
+  return { orders, web: b.web().dependsOn(orders) };
+});
+const bindings = compileBindleTopicGrants({
+  applicationName: "web",
+  resources: shop.resources,
+  edges: shop.edges,
+  bindings: [{
+    resourceName: "orders",
     topic: "orders",
-    publish: true,
     subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
   }],
-  verify: (claim) => host.verifyTopicGrantAndCurrentSubscription(claim),
+});
+const topicPolicy = createDurableTopicPolicy({
+  grants: bindings.map((binding) => binding.grant),
+  verify: (claim) => host.verifyTopicBindingAndCurrentSubscription(bindings, claim),
 });
 
 const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
