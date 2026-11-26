@@ -71,6 +71,11 @@ export {
 export type { RivetkitModule } from "./load-rivetkit.js";
 export { loadRivetkit, loadRivetkitClient } from "./load-rivetkit.js";
 export {
+	dispatchRivetOutbox,
+	type RivetOutboxEffect,
+	type RivetOutboxEffectInput,
+} from "./outbox.js";
+export {
 	parseRivetRuntimeConfig,
 	parseRivetRuntimeMode,
 } from "./parse.js";
