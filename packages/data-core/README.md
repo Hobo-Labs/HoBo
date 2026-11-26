@@ -670,3 +670,10 @@ and CUE invariants in `data-models/`, and the two Pact contracts in
 `test/second-review.test.ts` holds the late authority move, the rollback
 exceptions, fence ownership, the erasure window, the paused transfer and a
 journal recorded from an earlier release (`test/fixtures/journal-65a46a72.json`).
+
+The optional cross-engine live suite runs with `pnpm run test:data-live`. The
+local fixtures in `deploy/compose.live-engines.yml` bind to loopback, allow
+unauthenticated PostgreSQL and MongoDB connections, and are for disposable
+test data. The suite creates and removes databases and tables. Existing
+`HOBO_TEST_POSTGRES_URL` and `HOBO_TEST_MONGODB_URL` values override the local
+defaults, so point them only at dedicated test servers.
