@@ -461,6 +461,7 @@ export function createTestHarness(
 								entry.closeFailure = { cause: cleanupCause };
 								throw cleanupCause;
 							}
+							delete entry.closeFailure;
 							if (states.get(bindle) === entry) states.delete(bindle);
 							return;
 						}
@@ -477,6 +478,7 @@ export function createTestHarness(
 					const activeDeployments = deployments.get(bindle);
 					activeDeployments?.delete(state.deployment);
 					if (activeDeployments?.size === 0) deployments.delete(bindle);
+					delete entry.closeFailure;
 					if (states.get(bindle) === entry) states.delete(bindle);
 				})();
 				entry.closing = closing;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestHarness } from "../src/harness.js";
+import { InProcessStartupCleanupError } from "../src/lanes/in-process.js";
 
 const lane = { deploy: vi.fn(), destroy: vi.fn() };
 const harnessForTest = () =>
@@ -113,6 +114,56 @@ describe("harness deployment lifecycle", () => {
 		await harness.destroy(bindle)();
 		await harness.deploy(bindle)();
 		expect(lane.destroy).toHaveBeenCalledTimes(2);
+		expect(lane.deploy).toHaveBeenCalledTimes(2);
+	});
+
+	it("releases a redeploy queued behind a successful teardown retry", async () => {
+		const retry = deferred<readonly string[]>();
+		const failure = new Error("teardown did not complete");
+		lane.deploy.mockResolvedValue(deployment(1));
+		lane.destroy
+			.mockRejectedValueOnce(failure)
+			.mockReturnValueOnce(retry.promise);
+		const harness = harnessForTest();
+		const bindle = {};
+		await harness.deploy(bindle)();
+		await expect(harness.destroy(bindle)()).rejects.toBe(failure);
+		const stopping = harness.destroy(bindle)();
+		const redeploy = harness.deploy(bindle)();
+		retry.resolve([]);
+		await stopping;
+		await expect(redeploy).resolves.toBeDefined();
+		expect(lane.deploy).toHaveBeenCalledTimes(2);
+	});
+
+	it("releases a redeploy queued behind successful startup cleanup", async () => {
+		const resources = {
+			servers: new Map(),
+			queues: new Map(),
+			topics: new Map(),
+			secrets: new Map(),
+			data: new Map(),
+			schedules: new Map(),
+			kv: new Map(),
+			buckets: new Map(),
+			flags: new Map(),
+			rollouts: new Map(),
+			experiments: new Map(),
+		};
+		const failure = new InProcessStartupCleanupError(
+			new Error("start failed"),
+			new Error("cleanup failed"),
+			[],
+			resources,
+		);
+		lane.deploy.mockRejectedValueOnce(failure).mockResolvedValue(deployment(1));
+		const harness = harnessForTest();
+		const bindle = {};
+		await expect(harness.deploy(bindle)()).rejects.toBe(failure);
+		const stopping = harness.destroy(bindle)();
+		const redeploy = harness.deploy(bindle)();
+		await stopping;
+		await expect(redeploy).resolves.toBeDefined();
 		expect(lane.deploy).toHaveBeenCalledTimes(2);
 	});
 
