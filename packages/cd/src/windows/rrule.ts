@@ -54,9 +54,6 @@ export const RRULE_LIMITS = Object.freeze({
 } as const);
 
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
-const WEEKDAY_INDEX: ReadonlyMap<string, number> = new Map(
-	WEEKDAYS.map((day, index) => [day, index]),
-);
 const FREQUENCIES: readonly Frequency[] = [
 	"DAILY",
 	"WEEKLY",
@@ -109,8 +106,11 @@ function weekdayList(value: string): readonly WeekdaySpec[] | undefined {
 		const ordinal = match[1] === undefined ? 0 : Number(match[1]);
 		if (match[1] !== undefined && (ordinal === 0 || Math.abs(ordinal) > 53))
 			return undefined;
-		const weekday = WEEKDAY_INDEX.get(match[2] ?? "");
-		if (weekday === undefined) return undefined;
+		const code = match[2];
+		if (code === undefined) return undefined;
+		// SAFETY: the BYDAY capture only allows MO|TU|WE|TH|FR|SA|SU from WEEKDAYS.
+		const weekday = WEEKDAYS.indexOf(code as (typeof WEEKDAYS)[number]);
+		if (weekday < 0) return undefined;
 		out.push({ weekday, ordinal });
 	}
 	return out;
