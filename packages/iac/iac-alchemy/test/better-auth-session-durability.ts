@@ -11,11 +11,11 @@ import { parseBetterAuthHostDotEnv } from "./better-auth-host-harness.js";
 
 const isNonEmptyString = Schema.is(Schema.NonEmptyString);
 
-const SQLITE_AFFINITY: Readonly<Record<string, string>> = {
+const SQLITE_AFFINITY = {
 	boolean: "INTEGER",
 	text: "TEXT",
 	"timestamp with time zone": "TEXT",
-};
+} as const satisfies Record<string, string>;
 
 export interface SyntheticBetterAuthSession {
 	readonly sessionId: string;

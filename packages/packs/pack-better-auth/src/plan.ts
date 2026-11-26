@@ -33,7 +33,7 @@ function refuse(
 
 export function planBetterAuthBundle(
 	configInput: JsonValue,
-	portsInput: BetterAuthBundlePortRefs,
+	portsInput: JsonValue,
 	options?: {
 		readonly runtimePresent?: boolean;
 		readonly forExecution?: boolean;

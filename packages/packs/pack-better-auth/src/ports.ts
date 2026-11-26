@@ -3,6 +3,7 @@ import {
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
+	type JsonValue,
 } from "@hobo/auth-adapter-contract/json";
 
 import { BetterAuthBundlePlanError } from "./errors.js";
@@ -43,7 +44,7 @@ function readPortString(record: JsonObject, field: string): string {
 }
 
 export function parseBetterAuthBundlePortRefs(
-	input: unknown,
+	input: JsonValue,
 ): BetterAuthBundlePortRefs {
 	if (!isJsonObject(input)) {
 		refuse(
