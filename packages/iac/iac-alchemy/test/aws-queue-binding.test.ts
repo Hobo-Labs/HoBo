@@ -14,6 +14,8 @@ import { withAwsDynamoKv } from "../src/aws-kv-mapper.js";
 import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import { withAwsDynamoDurableQueue } from "../src/aws-queue-mapper.js";
 
+const jobsArn = "arn:aws:dynamodb:us-east-1:000000000000:table/jobs";
+
 it("binds only the selected branded queue and its exact provisioned table", async () => {
 	const definition = bindle("jobs-app", (b) => {
 		const jobs = b.queue().allow("enqueue");
@@ -80,15 +82,21 @@ it("binds only the selected branded queue and its exact provisioned table", asyn
 			resolveStores: () => ({ jobs: value }),
 			verifyBinding,
 		});
-	expect((await make("jobs", queue).fetch(request())).status).toBe(200);
+	expect((await make(jobsArn, queue).fetch(request())).status).toBe(200);
 	expect((await make("other", queue).fetch(request())).status).toBe(503);
-	expect((await make("jobs", { ...queue }).fetch(request())).status).toBe(503);
+	for (const arn of [
+		"arn:aws:dynamodb:us-east-1:111111111111:table/jobs",
+		"arn:aws:dynamodb:us-west-2:000000000000:table/jobs",
+		"arn:aws-us-gov:dynamodb:us-east-1:000000000000:table/jobs",
+	])
+		expect((await make(arn, queue).fetch(request())).status).toBe(503);
+	expect((await make(jobsArn, { ...queue }).fetch(request())).status).toBe(503);
 	expect(
-		(await make("jobs", new Proxy(queue, {})).fetch(request())).status,
+		(await make(jobsArn, new Proxy(queue, {})).fetch(request())).status,
 	).toBe(503);
-	expect((await make("jobs", queue, () => false).fetch(request())).status).toBe(
-		503,
-	);
+	expect(
+		(await make(jobsArn, queue, () => false).fetch(request())).status,
+	).toBe(503);
 });
 
 it("rejects a queue and a key-value dependency that share one physical table", () => {
