@@ -918,3 +918,10 @@ operations with explicit grants. A timed-out request retains capacity until
 its transport settles; uncertain mutations require reconciliation. The host
 must authenticate the table incarnation, enforce AWS permissions and fence
 in-flight work. This slice does not yet map the runtime into applications.
+
+The optional Node.js S3 runtime supports bounded object reads, writes and
+deletes with per-key grants and a one MiB object limit. The host authenticates
+the bucket incarnation and IAM scope on each operation. Responses with invalid
+metadata or ranges consume at most one chunk so the stream scope closes;
+uncertain mutations require reconciliation. This runtime is not yet bound to
+applications.
