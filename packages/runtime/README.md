@@ -607,9 +607,9 @@ The host does not itself implement or map a cloud queue.
 
 The atomic queue transition function records bounded operation receipts, message
 idempotency, lease generations, and explicit capacity, identifier exhaustion and
-delivery exhaustion outcomes. Exhausted messages remain retained; there is no
-dead-letter or redrive operation yet, so a finite queue can eventually require
-operator reconciliation.
+delivery exhaustion outcomes. Exhausted messages remain retained until a trusted
+owner redrives them. There is no dead-letter operation, so a finite queue can
+require operator reconciliation.
 
 `createAtomicDurableQueue` from `@hobo/runtime/atomic-durable-queue` connects the
 transition function to an injected atomic store. The store must provide durable,
@@ -650,4 +650,12 @@ committed and can be retried. Reclamation ends message-key deduplication for eac
 removed message, so a later enqueue with the same key creates a new message and
 the owner must choose its retention window accordingly. Active and exhausted
 messages are never reclaimed by this operation. This does not provide a
-dead-letter or redrive operation.
+dead-letter operation.
+
+A trusted owner can call `redriveExhausted({ operation, messageId })` after the
+last lease and all live committed receipts for the message expire. It requeues
+the same message and key, resets its delivery attempt count, and keeps the lease
+sequence monotonic. The operation ID must be persisted and reused after an
+unknown response; a replay returns its recorded result without redriving again.
+A rejected operation is final for that ID: use a new ID after resolving the
+reason for rejection. The operation does not move data to a dead-letter queue.

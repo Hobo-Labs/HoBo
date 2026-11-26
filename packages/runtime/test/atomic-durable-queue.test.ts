@@ -424,6 +424,178 @@ describe("atomic durable queue provider", () => {
 		).toEqual({ status: "rejected", code: "delivery-exhausted" });
 	});
 
+	it("redrives an exhausted message once and safely replays a lost response", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const bounds = { ...limits, deliveryAttempts: 1 };
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		clock = 1010;
+		const early = { operation: op(3), messageId: "m1" };
+		expect(await queue.redriveExhausted(early)).toEqual({
+			status: "rejected",
+			code: "unavailable",
+		});
+		clock = 10000;
+		const request = {
+			operation: durableQueueOperation(20000, "abcdefghijklmn04"),
+			messageId: "m1",
+		};
+		backing.loseNext();
+		expect(await queue.redriveExhausted(request)).toMatchObject({
+			status: "unknown",
+			operation: request.operation,
+		});
+		const reopened = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		expect(await reopened.redriveExhausted(request)).toEqual({
+			status: "committed",
+			value: { messageId: "m1", idempotencyKey: "job" },
+		});
+		const read = {
+			operation: durableQueueOperation(20000, "abcdefghijklmn05"),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		};
+		expect(await reopened.dequeue(read)).toMatchObject({
+			status: "committed",
+			value: [{ messageId: "m1", leaseId: "l2", deliveryAttempt: 1 }],
+		});
+		expect(await reopened.redriveExhausted(request)).toMatchObject({
+			status: "committed",
+		});
+		expect(
+			await reopened.redriveExhausted({ ...request, messageId: "m2" }),
+		).toEqual({ status: "rejected", code: "operation-conflict" });
+		expect(await reopened.compact()).toMatchObject({ status: "compacted" });
+		const recovered = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		expect(await recovered.redriveExhausted(request)).toMatchObject({
+			status: "committed",
+		});
+		clock = 10010;
+		expect(
+			await recovered.dequeue({
+				...read,
+				operation: durableQueueOperation(20000, "abcdefghijklmn06"),
+			}),
+		).toEqual({ status: "rejected", code: "delivery-exhausted" });
+	});
+	it("commits at most one of two concurrent redrives using the same operation", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		clock = 10000;
+		const request = {
+			operation: durableQueueOperation(20000, "abcdefghijklmn03"),
+			messageId: "m1",
+		};
+		const results = await Promise.all([
+			queue.redriveExhausted(request),
+			queue.redriveExhausted(request),
+		]);
+		expect(results.map((result) => result.status).sort()).toEqual([
+			"committed",
+			"unknown",
+		]);
+		expect(await queue.redriveExhausted(request)).toMatchObject({
+			status: "committed",
+		});
+		expect(
+			await queue.dequeue({
+				operation: durableQueueOperation(20000, "abcdefghijklmn04"),
+				maxMessages: 1,
+				visibilityTimeoutMs: 10,
+			}),
+		).toMatchObject({
+			status: "committed",
+			value: [{ leaseId: "l2", deliveryAttempt: 1 }],
+		});
+	});
+
+	it("does not redrive an active lease even after all receipts expire", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		const short = (nonce: string) => durableQueueOperation(1001, nonce);
+		await queue.enqueue({
+			...message(1),
+			operation: short("abcdefghijklmn01"),
+		});
+		await queue.dequeue({
+			operation: short("abcdefghijklmn02"),
+			maxMessages: 1,
+			visibilityTimeoutMs: 100,
+		});
+		clock = 1001;
+		expect(
+			await queue.redriveExhausted({
+				operation: durableQueueOperation(2000, "abcdefghijklmn03"),
+				messageId: "m1",
+			}),
+		).toEqual({ status: "rejected", code: "unavailable" });
+		clock = 1100;
+		expect(
+			await queue.redriveExhausted({
+				operation: durableQueueOperation(2000, "abcdefghijklmn04"),
+				messageId: "m1",
+			}),
+		).toMatchObject({ status: "committed" });
+	});
+
+	it("redrives a released final delivery after its receipts expire", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		await queue.release({ operation: op(3), messageId: "m1", leaseId: "l1" });
+		clock = 10000;
+		expect(
+			await queue.redriveExhausted({
+				operation: durableQueueOperation(20000, "abcdefghijklmn04"),
+				messageId: "m1",
+			}),
+		).toMatchObject({ status: "committed" });
+	});
+
 	it("fences reclamation against a concurrent new receipt", async () => {
 		const backing = memoryStore();
 		let clock = 1000;

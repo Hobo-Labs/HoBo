@@ -250,6 +250,7 @@ jobs:
           node --experimental-strip-types packages/core/model/check-atomic-queue-cas.mts
           node --experimental-strip-types packages/core/model/check-queue-compaction.mts
           node --experimental-strip-types packages/core/model/check-queue-reclamation.mts
+          node --experimental-strip-types packages/core/model/check-queue-redrive.mts
           node --experimental-strip-types packages/core/model/check-messaging-exhaustion.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-kv.mts

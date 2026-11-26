@@ -28,6 +28,7 @@ import {
 import {
 	parseQueueDequeue,
 	parseQueueEnqueue,
+	parseQueueRedrive,
 	parseQueueSettlement,
 } from "./durable-queue-boundary.js";
 
@@ -94,6 +95,14 @@ export type AtomicQueueReclamationOutcome =
 export interface AtomicDurableQueue extends DurableQueue {
 	compact(): Promise<AtomicQueueCompactionOutcome>;
 	reclaimCompleted(): Promise<AtomicQueueReclamationOutcome>;
+	redriveExhausted(input: {
+		readonly operation: DurableQueueOperation;
+		readonly messageId: string;
+	}): Promise<
+		import("@hobo/core").DurableQueueOutcome<
+			import("@hobo/core").DurableQueueEnqueueReceipt
+		>
+	>;
 }
 export interface AtomicDurableQueueOptions {
 	readonly store: AtomicQueueStore;
@@ -394,6 +403,15 @@ export function createAtomicDurableQueue(
 				: result;
 		},
 		reclaimCompleted: () => checkpoint(true),
+		redriveExhausted(input) {
+			return begin(() => {
+				const request = parseQueueRedrive(input, limits);
+				// SAFETY: redrive transitions return message receipts or noncommitted outcomes.
+				return run({ kind: "redrive", input: request }) as ReturnType<
+					AtomicDurableQueue["redriveExhausted"]
+				>;
+			});
+		},
 		async limits() {
 			return outcome({ status: "available" as const, value: limits });
 		},
