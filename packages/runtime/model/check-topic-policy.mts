@@ -164,6 +164,65 @@ try {
 		"NeverGranted",
 		"BindleTopicGrants",
 	);
+	const client = readFileSync(join(root, "BindleTopicClient.tla"), "utf8");
+	const clientConfig = readFileSync(
+		join(root, "BindleTopicClient.cfg"),
+		"utf8",
+	);
+	check(
+		"BindleTopicClient",
+		client,
+		clientConfig,
+		undefined,
+		"BindleTopicClient",
+	);
+	check(
+		"CallerChoosesTopic",
+		replaceOnce(
+			client,
+			"topic' = IF requested \\in Resources THEN Physical[requested] ELSE suppliedTopic",
+			"topic' = suppliedTopic",
+		),
+		clientConfig,
+		"CorrectTopic",
+		"BindleTopicClient",
+	);
+	check(
+		"CallerChoosesDestination",
+		replaceOnce(
+			client,
+			"IF requested \\in Resources THEN Destination[requested] ELSE suppliedDead",
+			"suppliedDead",
+		),
+		clientConfig,
+		"CorrectDestination",
+		"BindleTopicClient",
+	);
+	check(
+		"CallerChoosesGroup",
+		replaceOnce(client, '(method = "publish" \\/ group = "workers")', "TRUE"),
+		clientConfig,
+		"CorrectGroup",
+		"BindleTopicClient",
+	);
+	check(
+		"MissingResourceBinding",
+		replaceOnce(
+			client,
+			"~dispatched /\\ requested \\in Resources",
+			"~dispatched",
+		),
+		clientConfig,
+		"NoUnknownResource",
+		"BindleTopicClient",
+	);
+	check(
+		"WitnessClientDispatch",
+		client,
+		`${clientConfig}\nINVARIANT NeverDispatched\n`,
+		"NeverDispatched",
+		"BindleTopicClient",
+	);
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

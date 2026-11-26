@@ -78,6 +78,154 @@ function fixture() {
 }
 
 describe("provider-neutral Bindle topic grants", () => {
+	it("binds a named application topic to the host's configured runtime topic and subscription", async () => {
+		const port = portFixture();
+		const ensure = vi.fn(port.ensureSubscription);
+		const bound = createBindleTopicWitHost(
+			{ ...port, ensureSubscription: ensure },
+			{ ...fixture(), bindleName: "shop" },
+			{
+				limitsGrant: createDurableMessagingLimitsGrant(),
+				lifecycle: createDurableMessagingLifecycle(),
+				verify: () => true,
+			},
+		);
+		const topic = bound.topic("orders");
+		expect(topic.publishEnabled).toBe(true);
+		expect(topic.subscriptions).toEqual([
+			{ consumerGroup: "fulfillment", deadLetterTopic: "tenant.orders-dlq" },
+		]);
+		expect(() => bound.topic("audit")).toThrow();
+		const operation = {
+			id: "v1.2000000000000.abcdefghijklmnop",
+			expiresAtMs: 2000000000000n,
+		};
+		const subscriptionOperation = {
+			id: "v1.2000000000000.subscription1234",
+			expiresAtMs: 2000000000000n,
+		};
+		const otherOperation = {
+			id: "v1.2000000000000.unknownnonce1234",
+			expiresAtMs: 2000000000000n,
+		};
+		const message = {
+			id: "m",
+			subject: "created",
+			payload: new Uint8Array([1]),
+			attributes: [],
+		};
+		expect((await topic.publish({ operation, message })).tag).toBe("committed");
+		expect(port.publish).toHaveBeenCalledWith(
+			expect.objectContaining({ topic: "tenant.orders" }),
+		);
+		const injectedTopic = {
+			operation: {
+				id: "v1.2000000000000.topicnonce123456",
+				expiresAtMs: 2000000000000n,
+			},
+			message,
+			topic: "tenant.audit",
+		};
+		expect((await topic.publish(injectedTopic)).tag).toBe("unknown");
+		expect(port.publish).toHaveBeenCalledTimes(1);
+		expect(
+			(
+				await topic.ensureSubscription({
+					operation: subscriptionOperation,
+					consumerGroup: "fulfillment",
+					maxDeliveryAttempts: 3,
+					startAt: "earliest",
+				})
+			).tag,
+		).toBe("committed");
+		expect(ensure).toHaveBeenCalledWith(
+			expect.objectContaining({
+				subscription: expect.objectContaining({
+					topic: "tenant.orders",
+					deadLetterTopic: "tenant.orders-dlq",
+				}),
+			}),
+		);
+		expect(
+			(
+				await topic.ensureSubscription({
+					operation: otherOperation,
+					consumerGroup: "other",
+					maxDeliveryAttempts: 3,
+					startAt: "earliest",
+				})
+			).tag,
+		).toBe("unknown");
+		expect(ensure).toHaveBeenCalledTimes(1);
+		const injectedDestination = {
+			operation: {
+				id: "v1.2000000000000.injectnonce12345",
+				expiresAtMs: 2000000000000n,
+			},
+			consumerGroup: "fulfillment",
+			maxDeliveryAttempts: 3,
+			startAt: "earliest" as const,
+			deadLetterTopic: "other-dlq",
+		};
+		expect((await topic.ensureSubscription(injectedDestination)).tag).toBe(
+			"unknown",
+		);
+		expect(ensure).toHaveBeenCalledTimes(1);
+		expect(
+			(
+				await topic.consume({
+					operation: {
+						id: "v1.2000000000000.consumenonce1234",
+						expiresAtMs: 2000000000000n,
+					},
+					consumerGroup: "fulfillment",
+					maxMessages: 1,
+					visibilityTimeoutMs: 10n,
+				})
+			).tag,
+		).toBe("committed");
+		const delivery = {
+			consumerGroup: "fulfillment",
+			messageId: "m",
+			sequence: 1n,
+			leaseId: "lease",
+		};
+		expect(
+			(
+				await topic.ack({
+					...delivery,
+					operation: {
+						id: "v1.2000000000000.acknowledgenonce",
+						expiresAtMs: 2000000000000n,
+					},
+				})
+			).tag,
+		).toBe("committed");
+		expect(
+			(
+				await topic.nack({
+					...delivery,
+					reason: "retry",
+					operation: {
+						id: "v1.2000000000000.rejectionnonce12",
+						expiresAtMs: 2000000000000n,
+					},
+				})
+			).tag,
+		).toBe("committed");
+		let reads = 0;
+		const malicious = {
+			operation,
+			get message(): typeof message {
+				reads++;
+				throw new Error("getter executed");
+			},
+		};
+		expect((await topic.publish(malicious)).tag).toBe("unknown");
+		expect(reads).toBe(0);
+		bound.revoke();
+		expect((await topic.publish({ operation, message })).tag).toBe("unknown");
+	});
 	it("connects a Bindle topic to independently verified messaging ports", async () => {
 		const first = portFixture();
 		const second = portFixture();
