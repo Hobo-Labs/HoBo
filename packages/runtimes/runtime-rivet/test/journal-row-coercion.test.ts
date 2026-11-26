@@ -1,38 +1,3 @@
-/**
- * What the journal does with rows SQLite let through.
- *
- * `node:sqlite` is dynamically typed: a column declared `INTEGER` will happily
- * store the string `"5"`, and a `BLOB` column will store text. Every value
- * this journal reads back therefore arrives as `SqliteValue | undefined`, and
- * the coercion helpers — `asNumber`, `asBigInt`, `asBytes`,
- * `parseInboxStatus` — are the boundary that turns a row bag into a typed
- * record.
- *
- * They are not decoration. An actor's revision drives compare-and-swap, and
- * its owner epoch drives fencing (ADR-0135, one partition one writer). A
- * revision read back as `NaN` or a string would make the CAS comparison
- * `current !== expectedRevision` fire on every append, or — worse — pass when
- * it should not.
- *
- * The helpers split into two deliberate halves, and the split is the contract:
- *
- * **Numbers and epochs coerce, defaulting to zero.** A revision is a count;
- * zero is the value for a stream nothing has been written to, so an
- * unreadable revision degrades to "empty stream" rather than throwing. That is
- * the safe direction: an append against a wrongly-zero revision fails its CAS
- * and refuses, while an append against a wrongly-*high* revision would
- * silently write past real events.
- *
- * **Payloads and statuses refuse.** A payload that is not a blob and an inbox
- * status outside the known set have no safe default — guessing either would
- * hand a caller a fabricated event body or run a command in a state the state
- * machine does not have. Both raise `PARSE`.
- *
- * These write the hostile rows directly through a second connection to the
- * same database file, because that is the only way to produce shapes the
- * journal's own writers never emit — and those are exactly the shapes a
- * corrupted file, an older schema, or a different writer would present.
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,15 +14,12 @@ afterEach(() => {
 	for (const handle of open.splice(0)) {
 		try {
 			handle.close();
-		} catch {
-			// already closed by the test
-		}
+		} catch {}
 	}
 	for (const dir of dirs.splice(0))
 		rmSync(dir, { recursive: true, force: true });
 });
 
-/** A file-backed journal, plus a raw handle on the same database. */
 function journalOnDisk() {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-rivet-journal-"));
 	dirs.push(dir);
@@ -80,8 +42,6 @@ const fact = (overrides: Record<string, unknown> = {}) => ({
 
 describe("optional fact fields", () => {
 	it("omits causation, correlation, project and lane when unset", () => {
-		// Absent, not null: a consumer spreading a record into a message would
-		// otherwise send explicit nulls for fields the producer never set.
 		const { journal } = journalOnDisk();
 		journal.append("stream-1", 0, [fact()]);
 		const [record] = journal.readFacts("stream-1");
@@ -114,8 +74,6 @@ describe("optional fact fields", () => {
 	});
 
 	it("carries them back independently", () => {
-		// Four separate spreads. One test setting all four could not tell a
-		// correctly-omitted field from one dropped by a shared code path.
 		const { journal } = journalOnDisk();
 		journal.append("stream-1", 0, [fact({ correlationId: "trace-1" })]);
 		const [record] = journal.readFacts("stream-1");
@@ -139,7 +97,6 @@ describe("optional fact fields", () => {
 });
 
 describe("a revision the driver did not return as a number", () => {
-	/** Force the head row to hold `revision` exactly as given. */
 	function headWith(revision: unknown) {
 		const { journal, raw } = journalOnDisk();
 		journal.head("stream-1");
@@ -150,36 +107,23 @@ describe("a revision the driver did not return as a number", () => {
 	}
 
 	it("reads a numeric string as its number", () => {
-		// SQLite's dynamic typing permits this in an INTEGER column, and an
-		// older writer or a different driver may well have produced it.
 		expect(headWith("5").head("stream-1").revision).toBe(5);
 	});
 
 	it("falls back to zero for text that is not a number", () => {
-		// Zero means "empty stream", so the next append CAS-fails and refuses.
-		// The alternative — a NaN revision — makes every comparison false and
-		// the failure mode much harder to read.
 		expect(headWith("garbage").head("stream-1").revision).toBe(0);
 	});
 
 	it("falls back to zero for an empty string", () => {
-		// `Number("")` is 0, which would be right by accident. The guard checks
-		// for the empty string explicitly so the zero is deliberate.
 		expect(headWith("").head("stream-1").revision).toBe(0);
 	});
 
 	it("falls back to zero when there is no head row at all", () => {
-		// The column is NOT NULL, so an absent *value* is impossible — but an
-		// absent *row* is not, and `row?.revision` then yields undefined. A
-		// stream nobody has written to is revision zero.
 		const { journal } = journalOnDisk();
 		expect(journal.head("never-written").revision).toBe(0);
 	});
 
 	it("degrades downward, never upward", () => {
-		// The direction is the whole safety argument: an append against a
-		// wrongly-zero revision fails its CAS and refuses, while one against a
-		// wrongly-high revision would silently write past real events.
 		const journal = headWith("garbage");
 		expect(() => journal.append("stream-1", 9, [fact()])).toThrow(
 			/expected revision 9, found 0/,
@@ -198,8 +142,6 @@ describe("an owner epoch the driver did not return as a bigint", () => {
 	}
 
 	it("reads an integer as a bigint", () => {
-		// Fencing compares epochs; a number and a bigint do not compare with
-		// `===`, so the type has to be normalised here rather than at each use.
 		expect(epochWith(7).head("stream-1").ownerEpoch).toBe(7n);
 	});
 
@@ -212,15 +154,10 @@ describe("an owner epoch the driver did not return as a bigint", () => {
 	});
 
 	it("falls back to zero for text that is not an integer", () => {
-		// Zero is the epoch of a stream no writer has fenced, so an unreadable
-		// epoch loses the fence rather than inventing one.
 		expect(epochWith("7.5").head("stream-1").ownerEpoch).toBe(0n);
 	});
 
 	it("falls back to zero for a float stored in the column", () => {
-		// `Number.isSafeInteger` refuses it, and an epoch is a counter — a
-		// fractional fence is meaningless, so it loses the fence rather than
-		// rounding to a neighbouring writer's epoch.
 		expect(epochWith(7.5).head("stream-1").ownerEpoch).toBe(0n);
 	});
 
@@ -232,8 +169,6 @@ describe("an owner epoch the driver did not return as a bigint", () => {
 
 describe("a payload that is not a blob", () => {
 	it("refuses rather than guessing an encoding", () => {
-		// There is no safe default for an event body. Coercing text to bytes
-		// would hand a consumer a fabricated payload that looks legitimate.
 		const { journal, raw } = journalOnDisk();
 		journal.append("stream-1", 0, [fact()]);
 		raw
@@ -252,8 +187,6 @@ describe("a payload that is not a blob", () => {
 	});
 
 	it("classifies it as a parse failure, not a storage one", () => {
-		// The row was read fine; it is the *shape* that is wrong. A caller
-		// retrying a PARSE would retry forever.
 		const { journal, raw } = journalOnDisk();
 		journal.append("stream-1", 0, [fact()]);
 		raw
@@ -296,9 +229,6 @@ describe("inbox statuses", () => {
 		"failed-terminal",
 	] as const) {
 		it(`accepts \`${status}\``, () => {
-			// Every state the machine can be in has to survive a round trip —
-			// a status the reader refuses would strand a command that the
-			// writer legitimately put there.
 			const { journal, raw } = journalOnDisk();
 			accepted(journal);
 			raw
@@ -309,8 +239,6 @@ describe("inbox statuses", () => {
 	}
 
 	it("refuses a status outside the set", () => {
-		// No safe default: running a command in a state the machine does not
-		// have is worse than refusing to load it.
 		const { journal, raw } = journalOnDisk();
 		accepted(journal);
 		raw
@@ -322,8 +250,6 @@ describe("inbox statuses", () => {
 	});
 
 	it("refuses a null status", () => {
-		// The column is NOT NULL, so this can only arrive from a schema that
-		// predates the constraint — which is exactly when a reader must refuse.
 		const { journal, raw } = journalOnDisk();
 		accepted(journal);
 		raw.exec(`PRAGMA writable_schema = ON`);
@@ -336,7 +262,6 @@ describe("inbox statuses", () => {
 	});
 
 	it("omits resultJson until the command completes", () => {
-		// Absent rather than null, for the same reason the fact fields are.
 		const { journal } = journalOnDisk();
 		expect(
 			accepted(journal).loadCommand("stream-1", "cmd-1"),
