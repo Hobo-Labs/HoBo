@@ -26,8 +26,9 @@ files or use `@google/design.md`.
 fail-closed behavior, and `DESIGN.md`/contract routing to `design:lint`.
 Rendered-surface requirements live beside their owning packages and are enforced
 by `packages/mcp/test/secret-capture-design-lint.test.ts`,
-`packages/connect-ui/test/connect-ui-design-lint.test.ts`, and
-`packages/status-page/test/status-page-design-lint.test.ts`.
+`packages/connect-ui/test/connect-ui-design-lint.test.ts`,
+`packages/status-page/test/status-page-design-lint.test.ts`, and
+`packages/control-yard/test/design-lint.test.ts`.
 
 ## Required checks
 

@@ -57,6 +57,7 @@ lowest-common-denominator abstraction that hides the provider.
   dependency** for gates or publish (`pnpm run site:deploy`). Checkin gates
   run only through agent hooks / githooks (`pnpm agent:check`); agents must
   not wait on, cancel, or re-request Action runners.
+- A control-plane UI (`@hobo/control-yard`).
 - Design suite, ADRs and traceability under `docs/design/`; proofs under
   `src/draft/`; gates run through `pnpm agent:check`.
 

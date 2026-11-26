@@ -21,6 +21,11 @@
 			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
 		},
 		{
+			"from": "packages/control-yard/test/evidence-launch.test.ts",
+			"stubOnly": true,
+			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"
+		},
+		{
 			"from": "packages/cli/test/generated-runtime-execution.test.ts",
 			"needs": [
 				"@hobo/core#build",

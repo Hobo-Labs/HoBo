@@ -17,6 +17,7 @@
 	"packages/data-core": 10,
 	"packages/provider-manifest": 10,
 	"packages/runtimes/runtime-local": 9,
+	"packages/control-yard": 7,
 	"packages/data-postgres": 7,
 	"packages/core": 45,
 	"packages/bindles": 26,

@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package hobo.exp.control_yard.v1;
+
+message ControlYardAcceptanceRecord {
+  string proof = 1;
+  string adr = 2;
+  repeated string zones = 3;
+  repeated string packages = 4;
+  bool no_second_lifecycle = 5;
+  bool bo_west_is_not_mirror = 6;
+}

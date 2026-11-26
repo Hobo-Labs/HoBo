@@ -1,0 +1,6 @@
+control-yard ok
+adr=ADR-0135
+zones=7
+packages=@hobo/management,@hobo/control-api,@hobo/control-yard
+boWestIsNotMirror=true
+noSecondLifecycle=true

@@ -286,6 +286,7 @@ export function selectRelevantChecks(
 			/^test\/visual-tokens\.test\.ts$/u,
 			/^turbo\.json$/u,
 			/^packages\/connect-ui\/(?:src\/client\/styles\.css|test\/connect-ui-design-lint\.test\.ts)$/u,
+			/^packages\/control-yard\/(?:public\/yard\.css|test\/design-lint\.test\.ts)$/u,
 			/^packages\/mcp\/(?:src\/secret-capture\/html\.ts|test\/secret-capture-design-lint\.test\.ts)$/u,
 			/^packages\/status-page\/(?:src\/tokens\.ts|test\/status-page-design-lint\.test\.ts)$/u,
 			/(?:^|\/)(?:palette|visual-tokens?|themes?)(?:\.[^/]+)?$/u,
