@@ -3,7 +3,6 @@
 	"version": "0.0.1",
 	"license": "MIT",
 	"type": "module",
-	"private": true,
 	"files": [
 		"dist",
 		"LICENSE",
@@ -42,5 +41,8 @@
 		"@hobo/runtime": "workspace:*",
 		"@hobo/yards": "workspace:*",
 		"hono": "^4.12.27"
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }

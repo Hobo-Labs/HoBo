@@ -44,6 +44,26 @@ export const SDK_PACKAGES = [
 	"@hobo/runtime-rivet",
 	"@hobo/iac-alchemy",
 	"@hobo/alchemy-rivet",
+	"@hobo/bindings",
+	"@hobo/manifest-capability",
+	"@hobo/manifest-request",
+	"@hobo/capability-profiles",
+	"@hobo/provider-redaction",
+	"@hobo/claims",
+	"@hobo/data",
+	"@hobo/events",
+	"@hobo/identity",
+	"@hobo/manifest-declaration",
+	"@hobo/manifest-plan",
+	"@hobo/cloud",
+	"@hobo/registry",
+	"@hobo/ci",
+	"@hobo/connectivity",
+	"@hobo/stations",
+	"@hobo/trust",
+	"@hobo/cd",
+	"@hobo/componentize",
+	"@hobo/patterns",
 	"@hobo/cli",
 ] as const;
 
@@ -241,7 +261,7 @@ export function bundleExternalSdkWorkspaces(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-function findPackageDir(name: string): string {
+export function findPackageDir(name: string): string {
 	const nested = Object.entries(SDK_PACKAGE_DIRS).find(
 		([packageName]) => packageName === name,
 	)?.[1];

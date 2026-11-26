@@ -67,3 +67,5 @@ the catalog.
   type. A string, number or boolean is coerced with `String()`, as
   `parseApplicationRequest` does; anything else is refused with
   `param <name> must be a scalar`.
+
+The published SDK package is `@hobo-labs/patterns`.

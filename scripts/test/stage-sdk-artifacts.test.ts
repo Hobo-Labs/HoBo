@@ -22,6 +22,7 @@ import {
 } from "../ci/rewrite-sdk-specifiers.mts";
 import {
 	bundleExternalSdkWorkspaces,
+	findPackageDir,
 	orderedSdkTarballPaths,
 	readExternalSdkWorkspaceVersions,
 	releaseSdkTurboBuildArgv,
@@ -33,6 +34,62 @@ import {
 } from "../lib/release-hobo-path-filters.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("includes each starter's gitignore template in the npm package", {
+		timeout: 60_000,
+	}, () => {
+		const cache = mkdtempSync(join(tmpdir(), "hobo-patterns-pack-cache-"));
+		try {
+			const result = spawnSync(
+				"npm",
+				["pack", "--dry-run", "--json", "--ignore-scripts", "--cache", cache],
+				{ cwd: findPackageDir("@hobo/patterns"), encoding: "utf8" },
+			);
+			expect(result.status, result.stderr).toBe(0);
+			// SAFETY: npm pack --json emits an array of package file records.
+			const packed = JSON.parse(result.stdout) as {
+				files: { path: string }[];
+			}[];
+			const files = packed[0]?.files.map((file) => file.path) ?? [];
+			for (const starter of ["agent", "api", "fullstack", "todo"]) {
+				expect(files).toContain(
+					`patterns/starter/cli/${starter}/project/.gitignore.tpl`,
+				);
+			}
+		} finally {
+			rmSync(cache, { recursive: true, force: true });
+		}
+	});
+	it("stages every SDK runtime workspace dependency before its consumer", () => {
+		const map = loadNpmScopeMap();
+		const names: readonly string[] = SDK_PACKAGES;
+		const externalWorkspaceVersions = readExternalSdkWorkspaceVersions(
+			join(import.meta.dirname, "..", ".."),
+		);
+		for (const [index, name] of names.entries()) {
+			const manifest = JSON.parse(
+				readFileSync(join(findPackageDir(name), "package.json"), "utf8"),
+			);
+			expect(manifest.name).toBe(name);
+			expect(manifest.private).not.toBe(true);
+			expect(map.packages[name]).toBeDefined();
+			const staged = applyScopeToManifest(manifest, map, {
+				version: "1.0.0",
+				externalWorkspaceVersions,
+			});
+			for (const field of ["dependencies", "optionalDependencies"] as const) {
+				for (const [dependency, range] of Object.entries(
+					manifest[field] ?? {},
+				)) {
+					if (!dependency.startsWith("@hobo/")) continue;
+					expect(range).toBe("workspace:*");
+					expect(names.indexOf(dependency)).toBeGreaterThanOrEqual(0);
+					expect(names.indexOf(dependency)).toBeLessThan(index);
+					expect(map.packages[dependency]).toBeDefined();
+					expect(staged[field]?.[map.packages[dependency] ?? ""]).toBe("1.0.0");
+				}
+			}
+		}
+	});
 	it("stages the complete provider-neutral financial dependency graph in order", () => {
 		const root = join(import.meta.dirname, "..", "..");
 		const map = loadNpmScopeMap();
