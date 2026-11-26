@@ -2208,12 +2208,15 @@ export function createBindleTopicPreparation(
 		if (ready !== undefined) return Promise.resolve(ready);
 		if (pending !== undefined) return pending;
 		// SAFETY: preparation validates both captured option records before use.
-		pending = prepareBindleTopicWitHost(port, snapshot, captured, {
-			provisioning: provisioning as DurableMessagingWitHostOptions,
-			application: application as Parameters<
-				typeof createBindleTopicWitHost
-			>[2],
-		})
+		pending = Promise.resolve()
+			.then(() =>
+				prepareBindleTopicWitHost(port, snapshot, captured, {
+					provisioning: provisioning as DurableMessagingWitHostOptions,
+					application: application as Parameters<
+						typeof createBindleTopicWitHost
+					>[2],
+				}),
+			)
 			.then((result) => {
 				if (result.status === "ready") ready = result;
 				return result;

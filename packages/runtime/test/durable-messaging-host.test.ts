@@ -2198,6 +2198,43 @@ describe("provider-neutral Bindle topic provisioning", () => {
 		expect(result.application.topic("orders").publishEnabled).toBe(true);
 		expect(() => result.application.topic("other")).toThrow();
 	});
+	it("coalesces a synchronously reentrant preparation callback", async () => {
+		const { port } = fixture();
+		let prepare: ReturnType<typeof createBindleTopicPreparation>;
+		let reentrant: ReturnType<typeof prepare> | undefined;
+		let armed = false;
+		const metadata = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: () => {
+				if (armed) {
+					armed = false;
+					reentrant = prepare();
+				}
+				return true;
+			},
+		});
+		prepare = createBindleTopicPreparation(
+			port,
+			{ ...binding, bindleName: "shop" },
+			operations,
+			{
+				provisioning: options(),
+				application: {
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					portMetadataGrant: metadata,
+					verify: () => true,
+				},
+			},
+		);
+		armed = true;
+		const first = prepare();
+		await Promise.resolve();
+		expect(reentrant).toBe(first);
+		expect((await first).status).toBe("ready");
+		expect(port.ensureTopic).toHaveBeenCalledTimes(operations.length);
+	});
 	it("captures the topic graph and durable operations and coalesces concurrent attempts", async () => {
 		let first = true;
 		const ensureTopic = vi.fn<DurableMessaging["ensureTopic"]>(
