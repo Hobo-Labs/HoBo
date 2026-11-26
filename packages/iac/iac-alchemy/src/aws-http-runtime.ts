@@ -355,7 +355,6 @@ function samePermissions(
 	return true;
 }
 
-/** Host verification authenticates every exact store grant; IAM remains independently enforced. */
 export function createAwsBindleApplication<Requirements>(options: {
 	readonly bindle: BindleForAlchemy<AwsHttpEntrypoint, Requirements>;
 	readonly applicationName: string;
@@ -714,7 +713,6 @@ export function createAwsBindleApplication<Requirements>(options: {
 				() => deadline.reject(new Error("deadline")),
 				AWS_HTTP_DEADLINE_MS,
 			);
-			// Observe both branches even when the other wins so rejections cannot escape.
 			observeBoundary(
 				work.promise,
 				() => {},
