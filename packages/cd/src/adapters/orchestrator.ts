@@ -64,13 +64,11 @@ export type OrchestratorRealizerDeps = Pick<
 	OrchestratorDeps,
 	"actorHost" | "executor" | "broker"
 > & {
-	/** The realizer's journal: deployment streams and its fenced ledger. */
 	readonly store: EventStore;
 	readonly tenant: string;
 	readonly attestor: HostAttestor;
 	readonly hostId: string;
 	readonly isolationTier?: string;
-	/** Drift detection: refresh each realized resource during observe. */
 	readonly refresh?: Pick<IacProvider, "refresh">;
 	readonly now: () => number;
 	/** Lifetime of one apply attestation; default 5 minutes. */
@@ -81,7 +79,6 @@ type LedgerEntry = Readonly<{
 	hash: string;
 	deploymentId: string;
 	kind: string;
-	/** The ResourcePlan as realized (manifest-plan wire form). */
 	plan: ResourcePlan;
 }>;
 
@@ -99,7 +96,6 @@ const EMPTY_LEDGER: Ledger = Object.freeze({
 	seq: 0,
 });
 
-/** Content hash of one resource node as Matching resolved it. */
 export function resourceNodeHash(
 	resolved: ResolvedDeploymentSet,
 	resource: ResourcePlan,
@@ -118,7 +114,6 @@ export function resourceNodeHash(
 	return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
-/** Changed, unchanged and removed nodes between a ledger and a resolved set. */
 export function diffGraph(
 	ledger: Pick<Ledger, "resources">,
 	resolved: ResolvedDeploymentSet,
@@ -159,7 +154,6 @@ function blocked(
 	});
 }
 
-/** Raised by the fail-fast executor so a failed apply blocks the pass. */
 export class RealizeExecFailed extends Error {
 	readonly resourceId: string;
 	readonly classification: string;
@@ -171,15 +165,6 @@ export class RealizeExecFailed extends Error {
 	}
 }
 
-/**
- * A failed exec aborts the orchestrator pass instead of being recorded as
- * resource.Failed. The orchestrator would otherwise retry a retryable failure
- * in-process without bound, or run choreographed compensation that destroys
- * live resources on a fatal one. For delivery, a failure blocks the Camp with
- * a reason; the reconciler retries with backoff (the deployment stream still
- * shows Provisioning, so the resumed apply is idempotent), and undoing a
- * change is a rollback Delta through the gate (D12, I7).
- */
 export function failFastExecutor(
 	executor: OrchestratorDeps["executor"],
 ): OrchestratorDeps["executor"] {
@@ -209,7 +194,6 @@ export function createOrchestratorRealizer(
 			ORCHESTRATOR_LEDGER.stream(campId),
 		)) {
 			if (event.type !== ORCHESTRATOR_LEDGER.realized) continue;
-			// SAFETY: ledger events are written only by this adapter (writeLedger).
 			const data = event.data as {
 				setId: string;
 				resources: Record<string, LedgerEntry>;
@@ -373,8 +357,6 @@ export function createOrchestratorRealizer(
 						input.desired.setId,
 					),
 				]);
-			// A newer lease holder already recorded realized state: stop before
-			// any mutation (I4); the journal would refuse the ledger write anyway.
 			const head = d.store.getStreamHead?.(
 				ORCHESTRATOR_LEDGER.stream(input.campId),
 			);
@@ -403,13 +385,10 @@ export function createOrchestratorRealizer(
 				if (diff.changed.length > 0) {
 					const changedNames = new Set(diff.changed.map((r) => r.name));
 					const fullResources = new Map(diff.changed.map((r) => [r.name, r]));
-					// Unchanged dependencies are already provisioned by an earlier Set.
 					const subset = diff.changed.map((r) => ({
 						...r,
 						deps: r.deps.filter((dep) => changedNames.has(dep)),
 					}));
-					// Filtering controls scheduling only. Providers still need the full
-					// desired specification, including already-converged dependencies.
 					const fullSpecExecutor: typeof executor = {
 						run(program, credential, options) {
 							const resource = fullResources.get(program.resourceId);

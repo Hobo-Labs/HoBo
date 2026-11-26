@@ -1,9 +1,7 @@
 import type { ProviderPort } from "@hobo/core";
 import { createPortDescriptor } from "@hobo/core";
 
-// public-contract: contract-engine port interface id.
 export const CONTRACT_ENGINE_INTERFACE = "hobo:contract-engine/can-deploy";
-// public-contract: gatekeeper port interface id.
 export const GATEKEEPER_INTERFACE = "hobo:gatekeeper/verify";
 
 const contractEngineDescriptor = createPortDescriptor({

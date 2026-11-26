@@ -42,11 +42,9 @@ const MAX_RESPONSE_BYTES = 262_144;
 export type AnalysisWebhookDeps = Readonly<{
 	http: HttpTransport;
 	credentials: CredentialResolver;
-	/** The source this wrapper delegates every non-analysis query to. */
 	base?: HealthSource;
 }>;
 
-/** RFC 6901 JSON pointer lookup. */
 export function pointer(
 	document: JsonValue,
 	path: string,

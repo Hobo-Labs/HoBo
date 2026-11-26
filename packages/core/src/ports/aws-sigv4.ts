@@ -79,11 +79,6 @@ export interface AwsCredentials {
 export interface SignAwsRequestInput {
 	readonly method: string;
 	readonly url: string;
-	/**
-	 * Request headers. A value given as an array models the same header sent
-	 * more than once; the canonical form joins those values with `,` in the
-	 * order supplied, as SigV4 requires.
-	 */
 	readonly headers?: Readonly<Record<string, string | readonly string[]>>;
 	readonly body?: string;
 	readonly region: string;
@@ -109,7 +104,6 @@ export interface SignedAwsRequest {
 	readonly authorization: string;
 	readonly amzDate: string;
 	readonly credentialScope: string;
-	/** The canonical request that was hashed — exposed so a test can pin it. */
 	readonly canonicalRequest: string;
 	readonly stringToSign: string;
 	readonly signature: string;
@@ -129,12 +123,6 @@ function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/**
- * RFC 3986 percent-encoding as SigV4 defines `UriEncode`: every byte except
- * `A-Z a-z 0-9 - . _ ~` is escaped, with upper-case hex digits.
- * `encodeURIComponent` already produces upper-case hex and leaves exactly the
- * unreserved set alone *plus* `!'()*`, so those five are escaped here.
- */
 function rfc3986Encode(value: string): string {
 	return encodeURIComponent(value).replace(
 		/[!'()*]/gu,
@@ -158,13 +146,11 @@ function decodeOrPassThrough(value: string): string {
 }
 
 function amzTimestamps(now: Date) {
-	// 2015-08-30T12:36:00.000Z -> 20150830T123600Z
 	const iso = now.toISOString().replace(/[:-]|\.\d{3}/gu, "");
 	const amzDate = iso.endsWith("Z") ? iso : `${iso}Z`;
 	return { amzDate, dateStamp: amzDate.slice(0, 8) };
 }
 
-/** Encode each path segment once, preserving the separators between them. */
 function canonicalUri(pathname: string): string {
 	if (pathname === "") return "/";
 	return pathname
@@ -173,11 +159,6 @@ function canonicalUri(pathname: string): string {
 		.join("/");
 }
 
-/**
- * Re-encode every parameter, then sort by encoded name and encoded value. The
- * sort happens *after* encoding, which is what the spec says and what makes
- * `%20` order beside `+` predictably.
- */
 function canonicalQuery(search: string): string {
 	const query = search.startsWith("?") ? search.slice(1) : search;
 	if (query === "") return "";
@@ -198,16 +179,10 @@ function canonicalQuery(search: string): string {
 		.join("&");
 }
 
-/** Trim, then collapse runs of whitespace to a single space, per SigV4. */
 function normalizeHeaderValue(value: string): string {
 	return value.trim().replace(/\s+/gu, " ");
 }
 
-/**
- * Collect headers into lower-cased names with their values in supply order.
- * Folding the name *before* collection is what stops a caller who passed both
- * `Host` and `host` from producing two canonical `host:` lines.
- */
 function collectHeaders(
 	supplied: Readonly<Record<string, string | readonly string[]>> | undefined,
 ): Map<string, string[]> {
@@ -215,7 +190,6 @@ function collectHeaders(
 	for (const [name, value] of Object.entries(supplied ?? {})) {
 		const key = name.toLowerCase();
 		const existing = collected.get(key) ?? [];
-		// SAFETY: assertion required at this I/O or test boundary.
 		for (const entry of Array.isArray(value) ? value : [value as string]) {
 			existing.push(normalizeHeaderValue(entry));
 		}

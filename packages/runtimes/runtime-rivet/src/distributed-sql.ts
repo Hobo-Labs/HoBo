@@ -324,7 +324,6 @@ async function read(
 				row.eventJson.length > 32_768
 			)
 				throw new Error("corrupt journal event");
-			// SAFETY: the row is parsed and compared with the canonical bounded event encoding.
 			const event = JSON.parse(row.eventJson) as FoldEvent;
 			if (encodeDistributedEvent(event) !== row.eventJson)
 				throw new Error("corrupt journal event");

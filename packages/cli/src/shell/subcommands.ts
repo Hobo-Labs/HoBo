@@ -2,7 +2,6 @@ export type SubcommandOptionKind = "value" | "switch";
 
 export type SubcommandOptionValue = string | true;
 
-// public-contract: the parsed subcommand options on CliFlags.
 export type SubcommandOptions = Readonly<Record<string, SubcommandOptionValue>>;
 
 export type VerbSubcommandTable = Readonly<{
@@ -181,7 +180,6 @@ export const SERVE_SUBCOMMANDS: VerbSubcommandTable = table({
 	defaultSubcommand: "control",
 });
 
-// public-contract: the verbs whose subcommands declare their own options.
 export const VERB_SUBCOMMANDS: ReadonlyMap<string, VerbSubcommandTable> =
 	new Map([
 		["deploy", DEPLOY_SUBCOMMANDS],

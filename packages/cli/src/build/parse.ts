@@ -3,7 +3,6 @@ import type { CliFlags } from "../shell/parse.js";
 import type { CliContext } from "../types/envelope.js";
 import { BuildError } from "./errors.js";
 
-// public-contract: the manifest's `schema` version discriminator — the constant is the contract.
 export const BUILD_MANIFEST_SCHEMA = "hobo.build-manifest/v1" as const;
 const DEFAULT_SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 

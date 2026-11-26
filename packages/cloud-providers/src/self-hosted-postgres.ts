@@ -45,10 +45,8 @@ export interface SelfHostSource {
 	readonly catalog: () => readonly RegisteredCatalogRow[];
 }
 
-// public-contract: the port name whose equivalence classes are compute hosts.
 export const COMPUTE_PORT = "compute";
 
-// public-contract: providers assessed as self-host targets, in report order.
 export const SELF_HOST_PROVIDERS = Object.freeze([
 	...PARITY_PROVIDERS,
 	"netlify",

@@ -57,7 +57,6 @@ export {
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(gcp, …).
 export const PROVIDER_ID = "gcp";
 
-// public-contract: the name every default GCP Yard is registered under; changing it renames them all.
 export const DEFAULT_GCP_YARD_NAME = "gcp";
 
 export interface GcpYardOptions

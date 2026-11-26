@@ -109,23 +109,19 @@ import {
 	parseJsonObject,
 } from "./json.js";
 
-// public-contract: the relay's delivery-as-code file, relative to its project.
 export const RELAY_DELIVERY_FILE = "deploy/delivery.ts";
 
-// public-contract: the artifact names of the relay's Freight.
 export const RELAY_FREIGHT_ARTIFACTS = Object.freeze({
 	declaration: "declaration",
 	source: "relay/source",
 } as const);
 
-// public-contract: media type of the relay's source pin artifact.
 export const RELAY_SOURCE_MEDIA_TYPE =
 	"application/vnd.hobo.relay-source+json" as const;
 
 const DECLARATION_MEDIA_TYPE = "application/vnd.hobo.bindle+json";
 const FREIGHT_MANIFEST_SCHEMA = "hobo.freight-manifest/v1";
 
-// public-contract: typed refusals of the relay's delivery, beside CD's own
 // reason codes (which travel in `reasons`).
 export const RELAY_DELIVERY_REFUSAL = Object.freeze({
 	unavailable: "HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE",

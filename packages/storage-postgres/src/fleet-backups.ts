@@ -50,19 +50,15 @@ export type PostgresFleetBackupOutcome =
 	| Readonly<{ kind: "failed"; message: string }>;
 
 export interface PostgresFleetBackups {
-	/** Take a backup of `source` when one is due. */
 	run(input: {
 		readonly source: string;
 		readonly executor: SqlExecutor;
 		readonly nowMs: number;
 	}): Promise<PostgresFleetBackupOutcome>;
-	/** Backups held, newest first. */
 	list(): Promise<readonly PostgresFleetBackup[]>;
-	/** Copy a backup (the newest by default) into `target`'s journal. */
 	restore(input: {
 		readonly target: SqlExecutor;
 		readonly name?: string;
-		/** Fence and admit the target inside the copy's transaction. */
 		readonly admit: (target: SqlSession) => Promise<void>;
 	}): Promise<PostgresFleetBackup>;
 }
@@ -72,9 +68,7 @@ export type PostgresFleetBackupsOptions = Readonly<{
 	everyMs: number;
 	kept: number;
 	layout: PostgresFleetLayout;
-	/** A pool on the backup member whose search path is `schema`. */
 	pool: (schema: string) => PgPoolLike;
-	/** The SQL port over a pool (the fleet's own). */
 	executor: (pool: PgPoolLike) => SqlExecutor;
 }>;
 
@@ -112,7 +106,6 @@ export function createFleetBackups(
 				)`,
 			);
 		})();
-		// A failed preparation is retried on the next call.
 		prepared.catch(() => {
 			prepared = undefined;
 		});
@@ -128,7 +121,6 @@ export function createFleetBackups(
 		return result.rows.map(backupFromRow);
 	};
 
-	/** A schema of the backup member with the journal's tables, migrated. */
 	const migrated = async (schema: SchemaName) => {
 		const pool = options.pool(schema);
 		const store = createPostgresEventStore({
@@ -179,7 +171,6 @@ export function createFleetBackups(
 						},
 					});
 				} catch (error) {
-					// Nothing was catalogued: the schema is an orphan of this run.
 					await homeSql
 						.query(`DROP SCHEMA IF EXISTS ${quoteSchema(name)} CASCADE`)
 						.catch(() => {});

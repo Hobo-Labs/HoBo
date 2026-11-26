@@ -529,7 +529,6 @@ function prebuiltRequests(
 	];
 }
 
-// public-contract: the refusal of a relay production deploy Vercel would build from git.
 export const RELAY_PRODUCTION_NEEDS_PREBUILT =
 	"HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT";
 

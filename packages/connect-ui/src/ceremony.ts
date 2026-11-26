@@ -15,12 +15,9 @@ import { missingRequiredFields } from "./view.js";
 // settings are saved for the next run; secrets are passed only to the active
 // flow and may be used for that run or written to the owner's secret store.
 
-/** One setting a lifecycle needs, and how a submitted value is checked. */
 export interface CeremonySetting {
 	readonly field: ConfigField;
-	/** A message when the value is not acceptable. */
 	readonly validate?: (value: string) => string | undefined;
-	/** A value used when nothing else provides one; never asked for. */
 	readonly fallback?: string;
 }
 
@@ -48,7 +45,6 @@ function parseSaved(
 	}
 }
 
-/** Settings saved as JSON at `file` (created on first write). */
 export function fileSettingsStore(file: string): SettingsStore {
 	return {
 		async read() {
@@ -93,13 +89,10 @@ export interface SecretHolder {
 }
 
 export interface ResolvedSettings {
-	/** Every setting that has a value. */
 	readonly values: Readonly<Record<string, string>>;
-	/** The settings still missing, as the fields to ask for. */
 	readonly missing: readonly ConfigField[];
 }
 
-/** Resolve settings from env, then saved values, then fallbacks. */
 export function resolveSettings(
 	settings: readonly CeremonySetting[],
 	env: Readonly<Record<string, string | undefined>>,
@@ -126,7 +119,6 @@ export interface ConfigureOptions {
 	readonly provider: ConnectProvider;
 	readonly title: string;
 	readonly reason: string;
-	/** Explain a consequential submit before an agent may trigger it. */
 	readonly submitConfirm?: string;
 	readonly settings: readonly CeremonySetting[];
 	readonly missing: readonly ConfigField[];
@@ -145,11 +137,6 @@ export interface ConfigureOptions {
 	>;
 }
 
-/**
- * A flow that starts by asking for what is missing (`configure`), validates
- * and saves it, then hands over to the flow `proceed` builds. With nothing
- * missing it is `proceed`'s flow from the start.
- */
 export async function configureThen(
 	options: ConfigureOptions,
 ): Promise<ConnectFlow> {

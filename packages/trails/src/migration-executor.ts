@@ -11,7 +11,6 @@ import type {
 	SchemaSnapshotRef,
 } from "./schema-apply-port.js";
 
-// public-contract: migration executor schema id.
 export const MIGRATION_EXECUTOR_SCHEMA = "hobo.migration-executor/v1";
 
 export const MIGRATION_EVENTS = Object.freeze({

@@ -1,7 +1,5 @@
-// public-contract: schema tag on every status-page snapshot/model record.
 export const STATUS_PAGE_SCHEMA = "hobo.status-page/v1" as const;
 
-// public-contract: closed component status vocabulary (worst-of ordering below).
 export const COMPONENT_STATUSES = [
 	"operational",
 	"maintenance",
@@ -33,7 +31,6 @@ export function worstComponentStatus(
 	return worst;
 }
 
-// public-contract: customer-safe incident lifecycle (HOBO-497 vocabulary).
 export const INCIDENT_STATES = [
 	"investigating",
 	"identified",
@@ -49,11 +46,9 @@ export const INCIDENT_STATE_RANK = {
 	resolved: 3,
 };
 
-// public-contract: incident impact vocabulary (statuspage-v2 compatible).
 export const INCIDENT_IMPACTS = ["minor", "major", "critical"] as const;
 export type IncidentImpact = (typeof INCIDENT_IMPACTS)[number];
 
-// public-contract: maintenance lifecycle (HOBO-497 vocabulary).
 export const MAINTENANCE_STATES = [
 	"scheduled",
 	"in-progress",
@@ -69,7 +64,6 @@ const MAINTENANCE_STATE_RANK = {
 	canceled: 2,
 };
 
-// public-contract: the availability slices a page can project.
 export const STATUS_SCOPE_KINDS = [
 	"station",
 	"primitives",
@@ -78,7 +72,6 @@ export const STATUS_SCOPE_KINDS = [
 ] as const;
 export type StatusScopeKind = (typeof STATUS_SCOPE_KINDS)[number];
 
-// public-contract: overall page indicator (statuspage-v2 + `unknown`).
 export const OVERALL_INDICATORS = [
 	"none",
 	"minor",

@@ -26,7 +26,6 @@ export const VERCEL_DEVICE_TOKEN_URL =
 // public-contract: the public client Vercel's CLI uses for its device sign-in; overridable per owner.
 export const VERCEL_CLI_DEVICE_CLIENT_ID =
 	"cl_HYyOPBNtFMfHhaUn9L4QPfTZz6TP47bp";
-// public-contract: the installation marker stored for a connection made by the device grant (no Integration).
 export const VERCEL_DEVICE_INSTALLATION = "device-grant";
 // public-contract: the prefix of the one progress line naming the owner's device sign-in.
 export const OWNER_DEVICE_LINE_PREFIX = "HOBO_OWNER_DEVICE";
@@ -70,7 +69,6 @@ export interface VercelDeviceOptions {
 	readonly clientId?: string;
 	/** One progress line; the token never goes through it. */
 	readonly emit: (line: string) => void;
-	/** The link and code, as soon as Vercel issues them (an owner channel shows them). */
 	readonly onLink?: (link: string, code: string) => void;
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
@@ -86,18 +84,15 @@ function form(fields: Readonly<Record<string, string>>): URLSearchParams {
 }
 
 /** Ask the owner to approve on vercel.com, then wait for the token. */
-/** A device grant Vercel issued: what the owner opens, and what the run polls with. */
 export interface VercelDeviceGrant {
 	readonly link: string;
 	readonly code: string;
 	readonly deviceCode: string;
 	readonly clientId: string;
-	/** Seconds between polls, as Vercel asked (RFC 8628 §3.2). */
 	readonly intervalSeconds: number;
 	readonly expiresInSeconds: number;
 }
 
-/** Ask Vercel for a device grant: one request, no waiting. */
 export async function startVercelDeviceGrant(options: {
 	readonly fetch?: typeof fetch;
 	readonly clientId?: string;
@@ -129,7 +124,6 @@ export async function startVercelDeviceGrant(options: {
 	};
 }
 
-/** Time as a port: the system's, or a virtual one a spec drives. */
 export interface DeviceClock {
 	readonly now: () => number;
 	/** Wait `ms`, or until `signal` aborts. */

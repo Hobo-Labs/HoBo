@@ -29,5 +29,4 @@ export {
 	TOPOLOGY_CONTRACT_VERSION,
 } from "./types.js";
 
-// public-contract: package identity for boundary contracts.
 export const HOBO_CAMPS_PACKAGE = "@hobo/camps";

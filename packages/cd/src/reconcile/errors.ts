@@ -1,6 +1,3 @@
-// Typed failure modes of the reconcile module (WP7). Every refusal
-// and every blocked observation carries a stable code plus a remediation an
-// operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
 import { RESOLVER_ERROR_CODES } from "@hobo/core";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
@@ -234,7 +231,6 @@ export function refuse(
 	});
 }
 
-/** Error carrying a typed reason, thrown only where a port returns a value. */
 export class ReconcileError extends Error {
 	readonly code: ReconcileFailureCode;
 	readonly subject: string;

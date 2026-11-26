@@ -35,7 +35,6 @@ export const OCI_REGISTRY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct
 		}),
 	]);
 
-/** The I14 coverage document for the OCI registry realizer. */
 export const OCI_REGISTRY_HOSTING_COVERAGE: HostingCoverage =
 	defineHostingCoverage({
 		providerId: OCI_REGISTRY_PROVIDER_ID,

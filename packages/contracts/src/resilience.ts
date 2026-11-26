@@ -8,7 +8,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: schema version for ResilienceProfile declarations (ADR-0136).
 export const RESILIENCE_PROFILE_SCHEMA_VERSION = "hobo.resilience-profile/v1";
 
 export const RESILIENCE_STRATEGY_KINDS = Object.freeze([

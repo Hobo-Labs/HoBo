@@ -38,7 +38,6 @@ import {
 } from "./progressive-flags.js";
 import { composeTrailWithRecipes } from "./recipes.js";
 
-// public-contract: trail runner schema.
 export const TRAIL_RUNNER_SCHEMA = "hobo.trail-runner/v1" as const;
 
 export type TrailPlanEvidence = Readonly<{
