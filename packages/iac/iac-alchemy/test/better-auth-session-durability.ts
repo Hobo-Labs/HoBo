@@ -17,6 +17,21 @@ const SQLITE_AFFINITY = {
 	"timestamp with time zone": "TEXT",
 } as const satisfies Record<string, string>;
 
+function sqliteAffinityForPostgresType(
+	columnType: string,
+): string | undefined {
+	switch (columnType) {
+		case "boolean":
+			return SQLITE_AFFINITY.boolean;
+		case "text":
+			return SQLITE_AFFINITY.text;
+		case "timestamp with time zone":
+			return SQLITE_AFFINITY["timestamp with time zone"];
+		default:
+			return undefined;
+	}
+}
+
 export interface SyntheticBetterAuthSession {
 	readonly sessionId: string;
 	readonly sessionToken: string;
@@ -35,7 +50,7 @@ function sqliteColumnSql(column: {
 	readonly primaryKey: boolean;
 	readonly unique: boolean;
 }): string {
-	const affinity = SQLITE_AFFINITY[column.type];
+	const affinity = sqliteAffinityForPostgresType(column.type);
 	if (affinity === undefined) {
 		throw new Error(
 			`no sqlite affinity for Better Auth column type ${column.type}`,
