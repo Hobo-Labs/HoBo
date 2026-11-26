@@ -19,5 +19,5 @@ export function anyCase(pattern: string): string {
 
 /** The secret names the shared secret-key shape and its differential read. */
 export const SECRET_KEY_NAMES = anyCase(
-	"token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id|credential|cookie|passphrase|signing[_-]?key|sid|jwt|dsn|set[_-]?cookie",
+	"token|secret|auth(?:orization)?|session|password|passwd|pwd|requirepass|api[_-]?key|secret[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id|api[_-]?credential|client[_-]?credential|cookie|passphrase|signing[_-]?key|jwt|sid|json[_-]?web[_-]?token|dsn|set[_-]?cookie",
 );
