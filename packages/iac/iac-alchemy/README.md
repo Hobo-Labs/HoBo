@@ -105,11 +105,14 @@ timed-out request until the transport settles. This subset does not bind a
 HoBo application or WASI guest to the table, implement transactions, or prevent
 out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
 verifier and transport behave as specified; it does not prove those components.
+It models one bounded store and allows transport to remain in flight after a
+caller times out.
 
 For bounded Node.js S3 objects, use `withAwsS3(bindle, { assets: true })` and
 `awsS3BindleMappers()` from `@hobo/iac-alchemy/aws/s3-mapper`. To combine S3
 and DynamoDB on the same target, apply both target choices and pass
-`awsDynamoKvBindleMappers()` to `awsS3BindleMappers`. The separate
+`awsDynamoKvBindleMappers()` to `awsS3BindleMappers`. These target views retain
+the original neutral Bindle unchanged. The separate
 `createAwsS3Store` runtime requires a host-authenticated bucket, owner account
 and grant, per-key authorization, IAM and the AWS credentials and HTTP Effect
 layer. Each operation sends S3's expected-owner condition. It
@@ -120,6 +123,15 @@ bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
 The runtime reports a successful write only after transport completion, even if
 application code replaces `Promise.race`.
+The bounded `AwsS3Objects` model uses one key and a collision-free abstract
+digest. It includes out-of-band objects with foreign metadata, oversized bodies
+and corrupted digests; it does not prove the hash implementation or provider.
+
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+The store captures its allowed operations at construction, so later changes to
+application array prototypes do not change the captured grant.
 
 A Node.js HTTP host can bind those two AWS stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
@@ -129,6 +141,10 @@ verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
 headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host captures one bounded, deterministic graph for runtime binding and
+source registration; accessors, duplicate dependencies and missing edges fail
+before application logic runs. The source resolver must synchronously create
+branded stores for the exact provisioned names.
 For an Alchemy AWS Web Function, create a source in the application's entry
 module. The `host` below is your own authority: it creates the branded stores
 for the provided physical names, verifies each grant, and supplies AWS clients.
@@ -179,25 +195,32 @@ financial model must cover the Web Function and all provider-managed effects,
 including its execution role, logs, code assets, requests and storage. The host
 must verify the inventory and model; unknown or unbounded liability remains
 subject to the policy plane's explicit unpriced decision.
+The financial preview checks the mapped Web Function, DynamoDB table and S3
+bucket together. Missing or incomplete pricing is rejected for budget-based
+routing; a fully covered quote can be ranked before any budget reservation or
+provider effect. The preview test uses stub providers.
 
-The listener maps to `AWS.Lambda.WebFunction`; it resolves the exact mapped
-resource names from the function environment and fails closed if names or grants
-change. `ApplicationManaged` is also available when the application itself
+The mapper creates `AWS.Lambda.WebFunction`; the listener starts the attested
+source on its supplied endpoint. The source resolves the exact mapped resource
+names from the function environment and fails closed if names or grants change.
+`ApplicationManaged` is also available when the application itself
 authenticates every request. The host must independently enforce IAM and fence
-in-flight AWS operations across grant or resource ownership changes. The listener buffers request bodies up to 1 MiB in at most 1,024 chunks before
+in-flight AWS operations across grant or resource ownership changes. The
+listener buffers request bodies up to 1 MiB in at most 1,024 chunks before
 dispatch, accepts at most 32 concurrent ingress operations, and returns 408 on
 a 10-second deadline. A timed-out ingress read retains its slot until
 cancellation settles; the application runtime independently retains its slot
 until a timed-out handler settles. These limits do not bound the HTTP parser,
 network connections or upstream services; the host must set its own ingress
 and network limits. The bounded `AwsHttpIngress` model covers dispatch,
-timeout and ingress slot retention with abstract body units; it treats the
-application call as complete when its response promise settles, and assumes the
-parser, timer, cancellation and application behave as modeled. Streaming responses,
-connectors and session replay are not supported.
+timeout and ingress slot retention with abstract body units. It treats the
+application call as complete when its response promise settles and assumes the
+parser, transport, timer, cancellation and application behave as modeled.
+Streaming responses, connectors and session replay are not supported.
 The bounded `AwsHttpBindings` model checks request retirement, grant
 revalidation and timed-out capacity. It assumes host verification and transport
 behavior; it does not prove AWS, HTTP parsing, byte limits or liveness.
+The model explores one application with two request slots.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
@@ -299,6 +322,10 @@ Requirements, declarations, annotations and edges must be bounded, acyclic data;
 the mapper copies and freezes them before invoking provider callbacks. Invalid,
 accessor-backed or oversized data is rejected. The host remains responsible for
 attesting callback code and captured state.
+An optional `validateGraph` callback receives the complete immutable declaration
+graph and dependency names before any mapper registers resources. It must return
+synchronously; rejection or an asynchronous result stops the mapping. Graph
+validators do not receive application entrypoints.
 Only explicit registry entries count as mappings. Connector declarations are
 rejected until their authorization and runtime bindings can be mapped.
 `describeAlchemyPrimitiveSupport` reports supported, partial and
@@ -443,9 +470,14 @@ It refuses missing mappings and unbound dependencies.
 When two declarations share one Alchemy resource, a mapper can set
 `sharedDependency` to a declared dependency's name and return that dependency's
 exact primary resource. It must return no additional resources, actions or
-bindings. The shared resource appears once
+bindings. A mapper that validates the complete graph can instead use
+`sharedPrimitive` to reuse an already mapped primitive without claiming a
+dependency edge; it must return that primitive's exact primary resource and no
+additional resources, actions or bindings. The shared resource appears once
 in the mapped inventory; the mapper and host remain responsible for proving the
 application binding and for accounting for all usage of that resource.
+The bounded `SharedMapping` model treats graph validation as a trusted,
+synchronous decision; it does not prove a provider's validator or code.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
 coverage; it does not authenticate them, price their resources, or authorize
 routing. Hosts must attest the mapping and its execution environment.
@@ -871,6 +903,8 @@ container, and removes it afterward. An existing copy of the same package may
 be supplied with `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The runner includes the secret runtime and HTTP ingress, mapper, and financial
 preview specifications alongside the storage and emulator tests.
+The pricing workflow uses HoBo's routed CI runner for the simulator job, with
+the same hosted fallback as the other pricing checks.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
@@ -1037,5 +1071,17 @@ it does not deploy the complete site.
 The optional Node.js DynamoDB runtime supports bounded get, set and delete
 operations with explicit grants. A timed-out request retains capacity until
 its transport settles; uncertain mutations require reconciliation. The host
-must authenticate the table incarnation, enforce AWS permissions and fence
-in-flight work. This slice does not yet map the runtime into applications.
+must authenticate the table incarnation and each operation, enforce AWS permissions
+and fence in-flight work. Values are limited to 256 KiB to leave room for keys and
+attributes within DynamoDB's item limit. If completion observation cannot be
+established after an effect may have started, its capacity remains occupied.
+This slice does not yet map the runtime into applications.
+The shared transport boundary permits at most 32 concurrent operations per
+store and uses a ten-second deadline. A deadline does not stop the provider.
+
+The optional Node.js S3 runtime supports bounded object reads, writes and
+deletes with per-key grants and a one MiB object limit. The host authenticates
+the bucket incarnation and IAM scope on each operation. Responses with invalid
+metadata or ranges consume at most one chunk so the stream scope closes;
+uncertain mutations require reconciliation. This runtime is not yet bound to
+applications.
