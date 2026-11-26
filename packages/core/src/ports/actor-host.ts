@@ -1,7 +1,7 @@
 import type { JsonValue } from "../json.js";
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
 
-// public-contract: extension-point id for actor-host runtime adapters (extension-points.md).
+// public-contract: extension-point id for actor-host runtime adapters.
 export const ACTOR_HOST_EXTENSION_POINT = "hobo.actor-host/v1";
 
 // public-contract: WIT-style interface id of the actor-host port

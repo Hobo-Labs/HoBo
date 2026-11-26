@@ -1,7 +1,7 @@
 import type { JsonObject } from "../json.js";
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
 
-// public-contract: extension-point id for provider plugins (extension-points.md).
+// public-contract: extension-point id for provider plugins.
 export const CLOUD_PROVIDER_EXTENSION_POINT = "hobo.cloud-provider/v1";
 
 // public-contract: WIT-style interface id of the provider port.
