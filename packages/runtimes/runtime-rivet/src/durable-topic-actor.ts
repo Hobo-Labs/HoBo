@@ -106,7 +106,6 @@ function readPrivate<K extends object, V>(
 	table: WeakMap<K, V>,
 	key: K,
 ): V | undefined {
-	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
 function writePrivate<K extends object, V>(

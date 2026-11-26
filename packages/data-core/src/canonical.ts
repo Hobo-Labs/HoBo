@@ -1,18 +1,3 @@
-/**
- * The canonical record model — the hub every engine captures into and applies
- * out of (ADR-0177 decision 4).
- *
- * A dataset is a named set of keyed records. Its schema names each field's
- * canonical type; a record is a plain JSON object whose values are in the one
- * normal form that type allows. Normal form is the whole point: two engines
- * that store the same logical value differently (`1.50` and `1.5`, `+02:00`
- * and `Z`, a `bigint` and a decimal string) must produce byte-identical
- * canonical records, or a cross-engine digest comparison would report a
- * difference that is not there.
- *
- * Parse, don't validate: `parseDatasetSchema` and `parseCanonicalRecord` are
- * the only constructors, and everything downstream accepts the parsed types.
- */
 import { DataCoreError } from "./errors.js";
 import {
 	canonicalEncode,
@@ -45,40 +30,31 @@ export const CANONICAL_TYPES = [
 
 export type CanonicalType = (typeof CANONICAL_TYPES)[number];
 
-/** Types a key field may use: totally ordered and exact in every engine. */
 export const CANONICAL_KEY_TYPES: readonly CanonicalType[] = Object.freeze([
 	"string",
 	"int64",
 	"uuid",
 ]);
 
-// domain-view: parsed field; wire form is DatasetField in data-models/data_core.proto.
+// domain-view:
 export interface DatasetField {
 	readonly name: string;
 	readonly type: CanonicalType;
 	readonly nullable: boolean;
 }
 
-// domain-view: parsed schema, constructible only through parseDatasetSchema; wire form is DatasetSchema in data-models/data_core.proto.
+// domain-view:
 export interface DatasetSchema {
 	readonly contract: typeof DATASET_SCHEMA_CONTRACT;
 	readonly name: string;
-	/** Bumped on every change to fields; carried in each change envelope. */
 	readonly version: number;
 	readonly keyFields: readonly string[];
 	readonly fields: readonly DatasetField[];
-	/** Open schemas keep undeclared fields as `json`; closed schemas refuse them. */
 	readonly open: boolean;
 }
 
-/** A record in canonical normal form. Keys are field names. */
 export type CanonicalRecord = JsonObject;
 
-/**
- * Portable identifier: lowercase snake case, at most 63 bytes. Every engine
- * this contract targets accepts it unquoted, which is what lets a dataset
- * name be a table name, a collection name, and a publication member.
- */
 const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]{0,62}$/u;
 const INT64_PATTERN = /^-?(0|[1-9][0-9]*)$/u;
 const DECIMAL_PATTERN = /^-?[0-9]+(\.[0-9]+)?$/u;
@@ -87,12 +63,6 @@ const BASE64_PATTERN =
 const DATE_PATTERN = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/u;
 const UUID_PATTERN =
 	/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/u;
-/**
- * RFC 3339, strictly: the offset is mandatory and is bounded to ±23:59 with
- * minutes at most 59, as the grammar's `time-hour` and `time-minute` are. A
- * looser offset is not a notation — `+99:99` would shift the instant by four
- * days and normalise to a value nobody wrote.
- */
 const TIMESTAMP_PATTERN =
 	/^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|z|[+-](?:[01][0-9]|2[0-3]):?[0-5][0-9])$/u;
 /** The only members an `encrypted` value has. */
@@ -119,7 +89,6 @@ export function isPortableIdentifier(value: string): boolean {
 }
 
 function isCanonicalType(value: string): value is CanonicalType {
-	// SAFETY: membership test against the closed tuple of canonical type names.
 	return (CANONICAL_TYPES as readonly string[]).includes(value);
 }
 
@@ -146,7 +115,6 @@ function parseField(value: JsonValue | undefined, path: string): DatasetField {
 	return Object.freeze({ name, type, nullable });
 }
 
-/** The one constructor for a `DatasetSchema`. Invalid input throws. */
 export function parseDatasetSchema(
 	value: JsonValue | undefined,
 ): DatasetSchema {
@@ -227,7 +195,6 @@ export function schemaToJson(schema: DatasetSchema): JsonObject {
 	};
 }
 
-/** Stable digest of a schema — what a plan pins and a drift check compares. */
 export function schemaDigest(schema: DatasetSchema): `sha256:${string}` {
 	return `sha256:${sha256Hex(canonicalEncode(schemaToJson(schema)))}`;
 }
@@ -282,12 +249,6 @@ function pad(value: number, width: number): string {
 	return String(value).padStart(width, "0");
 }
 
-/**
- * Milliseconds since the epoch for a UTC civil time. `Date.UTC` cannot be used
- * directly: it maps years 0–99 onto 1900–1999, which would silently move a
- * first-century date nineteen centuries — exactly the alteration this model
- * exists to prevent.
- */
 function utcMillis(
 	year: number,
 	month: number,
@@ -319,27 +280,17 @@ function normalizeDate(value: JsonValue, field: string): string {
 	return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
 }
 
-/** A strict RFC 3339 instant, read: whole UTC seconds and the sub-second digits. */
 interface InstantReading {
 	readonly ok: true;
-	/** Milliseconds since the epoch of the whole second, in UTC. */
 	readonly utcMs: number;
-	/** Exactly six digits. */
 	readonly micros: string;
 }
 
-/** Why a text is not a strict RFC 3339 instant. */
 interface InstantRefusal {
 	readonly ok: false;
 	readonly message: string;
 }
 
-/**
- * Read one RFC 3339 instant. This is the only place in the package that turns
- * instant text into a number, and it never asks the host: `Date.parse` reads a
- * text with no offset as local time, so the same record would mean a different
- * instant in Tokyo than in UTC. A text with no offset is refused instead.
- */
 function readInstant(value: string): InstantReading | InstantRefusal {
 	const match = TIMESTAMP_PATTERN.exec(value);
 	if (match === null) {
@@ -360,7 +311,6 @@ function readInstant(value: string): InstantReading | InstantRefusal {
 	const offsetText = match[8] ?? "Z";
 	let offsetMinutes = 0;
 	if (offsetText !== "Z" && offsetText !== "z") {
-		// The pattern has already bounded these digits to 23 and 59.
 		const sign = offsetText.startsWith("-") ? -1 : 1;
 		const digits = offsetText.slice(1).replace(":", "");
 		offsetMinutes =
@@ -372,8 +322,6 @@ function readInstant(value: string): InstantReading | InstantRefusal {
 	const hour = Number(match[4]);
 	const minute = Number(match[5]);
 	const second = Number(match[6]);
-	// The civil fields must name a real instant before any offset is applied:
-	// `Date` would otherwise roll 25:61 or February 30th into the next day.
 	const local = new Date(utcMillis(year, month, day, hour, minute, second));
 	if (
 		local.getUTCFullYear() !== year ||
@@ -396,14 +344,6 @@ function readInstant(value: string): InstantReading | InstantRefusal {
 	return { ok: true, utcMs, micros };
 }
 
-/**
- * RFC 3339 → UTC with exactly six fractional digits.
- *
- * Microseconds is the canonical precision because it is the finest every
- * relational engine here stores exactly. Nanosecond digits are accepted only
- * when they are zero: silently truncating them would be data loss wearing a
- * normalisation label.
- */
 function normalizeTimestamp(value: JsonValue, field: string): string {
 	if (!isJsonString(value)) {
 		return invalidRecord(
@@ -420,15 +360,6 @@ function normalizeTimestamp(value: JsonValue, field: string): string {
 	);
 }
 
-/**
- * Microseconds since the epoch for a strict RFC 3339 instant, or `undefined`
- * when the text is not one. Every gate that compares instants — a retention
- * deadline, the age of conformance evidence — reads them through this, so a
- * malformed instant is one answer (`undefined`) the gate must refuse, and the
- * answer never depends on the process time zone.
- *
- * A `bigint`, because microseconds since the epoch pass 2^53 in the year 2255.
- */
 export function instantMicros(value: string): bigint | undefined {
 	const reading = readInstant(value);
 	return reading.ok
@@ -458,7 +389,6 @@ function normalizeEncrypted(value: JsonValue, field: string): JsonObject {
 		(member) => !ENCRYPTED_MEMBERS.includes(member),
 	);
 	if (unknown.length > 0) {
-		// Member names only: an unknown member may be carrying key material.
 		invalidRecord(
 			`encrypted value has ${unknown.length} member(s) other than ${ENCRYPTED_MEMBERS.join(", ")}; pack a nonce or tag into the ciphertext`,
 			field,
@@ -478,17 +408,11 @@ function normalizeEncrypted(value: JsonValue, field: string): JsonObject {
 	};
 }
 
-/**
- * A lone surrogate has no UTF-8 encoding. Every engine and every digest would
- * replace it with U+FFFD, so two different strings would store and hash the
- * same. The canonical model refuses it once, here, for every engine.
- */
 function wellFormed(value: string, field: string): string {
 	for (let index = 0; index < value.length; index += 1) {
 		const unit = value.charCodeAt(index);
 		if (unit < 0xd800 || unit > 0xdfff) continue;
 		const next = value.charCodeAt(index + 1);
-		// A high surrogate must be followed by a low one; a low one alone is lone.
 		if (unit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
 			index += 1;
 			continue;
@@ -513,15 +437,9 @@ function finiteNumber(value: number, what: string, field: string): number {
 			field,
 		);
 	}
-	// `-0 === 0`, so this is the whole normalisation.
 	return value === 0 ? 0 : value;
 }
 
-/**
- * A `json` value in normal form: every string well formed, every number
- * finite and never negative zero. Rebuilt rather than checked in place, so
- * what is returned is the normal form and not the caller's value.
- */
 function normalizeJson(value: JsonValue, field: string): JsonValue {
 	if (isJsonString(value)) return wellFormed(value, field);
 	if (isJsonNumber(value))
@@ -541,7 +459,6 @@ function normalizeJson(value: JsonValue, field: string): JsonValue {
 	return value;
 }
 
-/** Normalise one value to the single canonical form its type allows. */
 export function normalizeCanonicalValue(
 	type: CanonicalType,
 	value: JsonValue,
@@ -581,11 +498,6 @@ export function normalizeCanonicalValue(
 	}
 }
 
-/**
- * The one constructor for a canonical record. Every field is present in the
- * result (absent nullable fields become `null`) so two records that differ
- * only in whether a null was written compare equal.
- */
 export function parseCanonicalRecord(
 	schema: DatasetSchema,
 	value: JsonValue | undefined,
@@ -621,11 +533,6 @@ export function parseCanonicalRecord(
 	return freezeDeep(Object.fromEntries(entries));
 }
 
-/**
- * The canonical key of a record: the canonical encoding of its key-field
- * values in declared order. A string, so it orders and hashes the same way in
- * every engine and crosses every port unchanged.
- */
 export function encodeRecordKey(
 	schema: DatasetSchema,
 	record: CanonicalRecord,
@@ -633,14 +540,12 @@ export function encodeRecordKey(
 	return canonicalEncode(schema.keyFields.map((name) => record[name] ?? null));
 }
 
-/** Inverse of `encodeRecordKey`: the key-field values, by field name. */
 export function decodeRecordKey(
 	schema: DatasetSchema,
 	key: string,
 ): CanonicalRecord {
 	let parsed: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		parsed = JSON.parse(key) as JsonValue;
 	} catch (cause) {
 		throw new DataCoreError("INVALID_RECORD", "key is not canonical JSON", {
@@ -663,10 +568,6 @@ export function decodeRecordKey(
 	return freezeDeep(result);
 }
 
-/**
- * Digest of one record in a scope. The tenant and key participate so a record
- * that moved between keys or tenants never digests equal to the original.
- */
 export function recordDigest(
 	tenant: string,
 	key: string,

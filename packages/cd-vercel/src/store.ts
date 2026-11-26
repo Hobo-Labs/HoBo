@@ -49,7 +49,6 @@ export function isPermanentComposeError(error: unknown): boolean {
 
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
-// public-contract: the store coordinates bundled into HoBo.CD's deployment from the owner's store session; never committed.
 export const CD_STORE_BINDING_URL = new URL(
 	"../deploy/secret-store.binding.json",
 	import.meta.url,

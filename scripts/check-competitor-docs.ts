@@ -210,7 +210,7 @@ export function parseBlock(source: string): Raw {
 	let key: string | undefined;
 	for (const line of lines.slice(start + 1)) {
 		if (line.trim() === "") continue;
-		if (!/^\s/.test(line)) break; // dedent: end of the competitor mapping
+		if (!/^\s/.test(line)) break;
 		const item = /^\s+-\s+(.*)$/.exec(line);
 		if (item && key) {
 			const current = getRaw(raw, key);

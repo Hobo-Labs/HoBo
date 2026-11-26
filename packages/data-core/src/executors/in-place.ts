@@ -58,7 +58,7 @@ export const IN_PLACE_EVOLVE_STATUSES = [
 ] as const;
 export type InPlaceEvolveStatus = (typeof IN_PLACE_EVOLVE_STATUSES)[number];
 
-// domain-view: executor result; wire form is InPlaceEvolveResult in data-models/data_core.proto.
+// domain-view:
 export interface InPlaceEvolveResult {
 	readonly contract: typeof IN_PLACE_EVOLVE_CONTRACT;
 	readonly migrationId: string;

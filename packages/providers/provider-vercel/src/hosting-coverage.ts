@@ -23,7 +23,6 @@ export const VERCEL_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
-/** The I14 coverage document for Vercel. */
 export const VERCEL_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "vercel",
 	resolvedProductIds: [...VERCEL_RESOLVED_PRODUCT_IDS],

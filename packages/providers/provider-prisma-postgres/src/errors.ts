@@ -44,7 +44,6 @@ export type ProviderErrorOptions = {
 
 export { containsControlChar } from "@hobo/provider-redaction";
 
-/** The provider's own patterns, on top of the shared ones. */
 export const PRISMA_POSTGRES_REDACTION_PROFILE: ProviderRedactionProfile = {
 	patterns: [
 		/https?:\/\/create-db\.prisma\.io\/claim\S*/gi,

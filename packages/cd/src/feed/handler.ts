@@ -97,11 +97,8 @@ export type DeliveryFeedDeps = CdBase & {
 	readonly inventory: CampInventory;
 	readonly topology: TopologyReader;
 	readonly telemetry?: TelemetrySink;
-	/** SSE heartbeat interval; default CD_DEFAULTS.feedHeartbeatMs. */
 	readonly heartbeatMs?: number;
-	/** Long-poll bound of one feed response; default CD_DEFAULTS.feedLongPollMs. */
 	readonly longPollMs?: number;
-	/** Back-pressure: frames per response; default 64. */
 	readonly maxFramesPerResponse?: number;
 };
 
@@ -209,7 +206,6 @@ export function createDeliveryFeedHandler(
 				"camp-not-accepted",
 				"The reconciler is not accepted for the requested Camp.",
 			);
-		// SAFETY: membership in the accepted Camps was checked above.
 		return { ok: true, value: campId as CampId };
 	}
 
@@ -226,7 +222,6 @@ export function createDeliveryFeedHandler(
 		return camp.ok ? { ok: true, value: true } : camp;
 	}
 
-	// ── Routes ───────────────────────────────────────────────────────────
 	async function enroll(
 		request: FeedRequest,
 		body: WireObject,
@@ -593,7 +588,6 @@ export function createDeliveryFeedHandler(
 		try {
 			if (input.signal.aborted) return;
 			iterator = d.desired.changes(query)[Symbol.asyncIterator]();
-			// Nothing newer than the checkpoint exists: re-deliver the current change once per lease.
 			const nothingNewer =
 				input.head === undefined ||
 				(input.after !== undefined && input.head <= input.after);
@@ -670,7 +664,6 @@ export function createDeliveryFeedHandler(
 		if (!input.signal.aborted) yield encoder.encode(encodeEnd(end));
 	}
 
-	// ── Dispatch ─────────────────────────────────────────────────────────
 	async function route(
 		request: FeedRequest,
 		signal: AbortSignal,
