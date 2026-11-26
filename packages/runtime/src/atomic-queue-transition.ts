@@ -71,6 +71,7 @@ const nativeArray = Array.isArray;
 const nativeNumber = Number.isSafeInteger;
 const nativeString = String;
 const maxSafe = Number.MAX_SAFE_INTEGER;
+const maxSequence = 1_000_000_000_000_000;
 const NativeBytes = Uint8Array;
 export function emptyAtomicQueueState(): AtomicQueueState {
 	return { nextMessage: 1, nextLease: 1, messages: [], receipts: [] };
@@ -257,7 +258,7 @@ export function transitionAtomicQueue(
 			result = rejected("invalid-argument");
 		else if (
 			messages.length >= limits.retainedMessages ||
-			nextMessage >= maxSafe
+			nextMessage >= maxSequence
 		)
 			result = rejected("capacity-exceeded");
 		else {
@@ -306,7 +307,7 @@ export function transitionAtomicQueue(
 					blocked = "delivery-exhausted";
 					continue;
 				}
-				if (nextLease >= maxSafe) {
+				if (nextLease >= maxSequence) {
 					blocked = "capacity-exceeded";
 					break;
 				}
