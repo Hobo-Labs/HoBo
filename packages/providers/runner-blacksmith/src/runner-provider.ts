@@ -14,7 +14,6 @@ import {
 	executionHostManifest,
 } from "./manifest.js";
 
-// public-contract: the default workflow file `run(job)` dispatches.
 export const BLACKSMITH_RUNNER_WORKFLOW_DEFAULT = "hobo-runner-blacksmith.yml";
 
 export interface BlacksmithRunnerProviderOptions {

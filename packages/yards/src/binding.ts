@@ -29,7 +29,7 @@ import {
 } from "./canonical.js";
 import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
 
-export const YARD_BINDING_CONTRACT = "hobo.yard-binding/v1"; // public-contract: contract id on every yard binding record
+export const YARD_BINDING_CONTRACT = "hobo.yard-binding/v1";
 
 /** Capability profile id grammar (ADR-0151): <primitive-family>.<path>/v<major> */
 export const YARD_BINDING_PROFILE_PATTERN =

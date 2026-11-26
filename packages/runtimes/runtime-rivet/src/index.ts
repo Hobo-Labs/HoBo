@@ -92,7 +92,6 @@ export {
 	rivetEngineImageRef,
 } from "./upstream-pin.js";
 
-// public-contract: package id compose and Matching pin.
 export const HOBO_RUNTIME_RIVET_PACKAGE = "@hobo/runtime-rivet";
 
 export const RIVET_RESOLVER_PROFILES = [

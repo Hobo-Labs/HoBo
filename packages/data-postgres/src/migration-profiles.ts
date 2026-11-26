@@ -28,9 +28,7 @@ export const POSTGRES_MIGRATION_PROFILES = [
 export type PostgresMigrationProfileId =
 	(typeof POSTGRES_MIGRATION_PROFILES)[number];
 
-// public-contract: stable pg_dump migration profile identifier.
 export const PG_DUMP_PROFILE = "migration.postgres.pg-dump/v1" as const;
-// public-contract: stable logical-copy migration profile identifier.
 export const LOGICAL_COPY_PROFILE =
 	"migration.postgres.logical-copy/v1" as const;
 

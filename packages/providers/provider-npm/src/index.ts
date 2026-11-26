@@ -45,5 +45,4 @@ export {
 	NPM_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-// public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_NPM_PACKAGE = "@hobo/provider-npm";

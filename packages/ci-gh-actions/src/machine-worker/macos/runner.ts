@@ -8,10 +8,8 @@ import {
 } from "../../bootstrap.js";
 import type { HostProcess, RunnerProgram } from "../executor.js";
 
-// public-contract: the macOS x64 runner archive's SHA-256 (actions/runner v2.338.2, read 2026-11-17).
 export const MACOS_RUNNER_SHA256 =
 	"109fff505a34014a7e8d1acb850c33d404811102f572b8fb9788e2fff013cc49";
-// public-contract: the macOS arm64 runner archive's SHA-256 (actions/runner v2.338.2, read 2026-11-17).
 export const MACOS_RUNNER_SHA256_ARM64 =
 	"25a065af409ffa317ab4d5a3b614dd15fc9c40f2172bc1b35a1b1258e919a388";
 

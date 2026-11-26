@@ -7,10 +7,8 @@ import type {
 import { CrossplaneProgramError } from "./crossplane-adapter.js";
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
 
-// public-contract: error code for a missing/broken kubectl binary or cluster.
 export const KUBECTL_UNAVAILABLE = "kubectl-unavailable";
 
-// public-contract: the annotation carrying the apply-time outputs snapshot.
 export const APPLIED_OUTPUTS_ANNOTATION = "hobo.dev/applied-outputs";
 
 export class CrossplaneClusterUnavailableError extends Error {

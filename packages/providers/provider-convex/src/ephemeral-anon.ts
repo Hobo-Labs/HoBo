@@ -38,7 +38,6 @@ import {
 	type ConvexHostingFormId,
 } from "./hosting-forms.js";
 
-// public-contract: digest-pinned backend image disclosed in deployment plans.
 export const CONVEX_BACKEND_OCI_IMAGE =
 	`${CONVEX_BACKEND_IMAGE_REPOSITORY}:${CONVEX_BACKEND_IMAGE_TAG}` as const;
 

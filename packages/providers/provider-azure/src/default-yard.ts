@@ -61,12 +61,6 @@ export const AZURE_DEFAULT_BINDINGS: AzureSlotCatalog = Object.freeze({
 	secretRef: Object.freeze([keyVault()]),
 });
 
-/**
- * The default Azure Yard as raw rows. `regions` defaults to the provider's
- * published regions; the catalog is not narrowed by region, because a Yard
- * declares what the provider can allocate, not what a particular region
- * happens to offer.
- */
 export function azureYardSpec(options?: AzureYardSpecOptions): AzureYardSpec {
 	return Object.freeze({
 		provider: "azure",

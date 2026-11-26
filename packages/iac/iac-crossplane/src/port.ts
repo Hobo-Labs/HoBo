@@ -2,7 +2,6 @@ import type { ProviderPort } from "@hobo/core";
 import { createPortDescriptor } from "@hobo/core";
 import type { JsonValue } from "./json.js";
 
-// public-contract: the IaC provider port interface id this boundary serves.
 export const IAC_CROSSPLANE_INTERFACE = "hobo:iac/provider";
 
 // domain-view: the IaC provider port shape adapters satisfy — the same

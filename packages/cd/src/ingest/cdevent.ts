@@ -15,9 +15,7 @@ import type { Outcome } from "../ports.js";
 import { type Purl, parsePurl } from "./purl.js";
 import { INGEST_REASON } from "./reasons.js";
 
-// public-contract: customData key that carries an attestation on a CDEvent.
 export const CDEVENT_ATTESTATION_KEY = "hobo.cd/attestation" as const;
-// public-contract: largest inbound CDEvent body, in bytes.
 export const CDEVENT_MAX_BYTES = 1_048_576 as const;
 
 const ARTIFACT_EVENT =
@@ -67,7 +65,6 @@ function base64(text: string | undefined): Uint8Array | undefined {
 	return bytes.length > 0 ? new Uint8Array(bytes) : undefined;
 }
 
-/** The CDEvent itself: the body, or the `data` of a CloudEvents 1.0 envelope. */
 function unwrap(raw: JsonObject): JsonObject {
 	return stringAt(raw, "specversion") === "1.0"
 		? (objectAt(raw, "data") ?? raw)

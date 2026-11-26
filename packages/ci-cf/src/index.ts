@@ -1,12 +1,9 @@
 import { create, fromJsonString } from "@bufbuild/protobuf";
 import { type Readiness, ReadinessSchema } from "./_generated/readiness_pb.js";
 
-// public-contract: readiness consumers distinguish implemented adapters from unimplemented scaffolds.
 export const INTEGRATION_STATUS = "implemented";
 export const EXECUTION_AVAILABLE = true;
-// public-contract: identifies the upstream SDK this planned adapter targets.
 export const TARGET_SDK = "@cloudflare/ci";
-// public-contract: canonical upstream documentation for the planned integration.
 export const TARGET_DOCUMENTATION = "https://github.com/cloudflare/ci";
 
 export const PENDING_GATES = Object.freeze([

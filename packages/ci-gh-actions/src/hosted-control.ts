@@ -192,7 +192,6 @@ function policyState(state: ConfigurationState, accountId: string): string {
 	return toJsonString(AccountStateSchema, result);
 }
 
-// public-contract: the relay route that lists the members of the fleet it reads.
 export const RELAY_FLEET_MEMBERS_PATH = "/v1/fleet/members";
 
 export type RelayFleetReads = Pick<
@@ -213,7 +212,6 @@ export function relayFleetReads(client: FleetClient): RelayFleetReads {
 	};
 }
 
-// public-contract: the refusal of a relay composed without a fleet.
 export const RELAY_READS_NO_FLEET = "this relay reads no fleet";
 
 function authorityRefusal(error: FleetFailure): ControlError {

@@ -4,15 +4,10 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
-// public-contract: the pinned OpenTofu toolchain the default engine declares.
 export const PINNED_TOFU_VERSION = "1.8.3";
-// public-contract: the pinned Terraform toolchain the terraform lane declares.
 export const PINNED_TERRAFORM_VERSION = "1.9.8";
-// public-contract: the IacProgram schema version validateIacProgram accepts.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
-// public-contract: the adapter id stamped on every report this package emits.
 export const ADAPTER_ID = "@hobo/iac-terraform";
-// public-contract: the provider tokens this adapter accepts on a program.
 export const HCL_PROVIDERS = Object.freeze(["terraform", "opentofu"] as const);
 
 const OUTPUT_REF =

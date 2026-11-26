@@ -11,7 +11,6 @@ import { CD_DEFAULTS } from "../events.js";
 import { effectiveAvailability, isPlaced, subjectOf } from "./graph.js";
 import { ORIGIN_SOURCES } from "./reasons.js";
 
-// public-contract: the `via` entry naming an approval (FreightAvailabilityRecord).
 export const VIA_APPROVAL = "approval" as const;
 
 export type PlacedView = Readonly<{

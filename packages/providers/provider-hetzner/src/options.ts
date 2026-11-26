@@ -1,6 +1,5 @@
 import type { JsonObject } from "./json.js";
 
-// public-contract: the provider target id `.with(...)` option blocks carry.
 export const HETZNER_PROVIDER_TARGET = "hetzner";
 
 export type TypedOptionBlock = {

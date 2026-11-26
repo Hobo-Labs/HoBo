@@ -12,7 +12,6 @@ import {
 	type WorkloadPlacement,
 } from "./placement.js";
 
-// public-contract: versions persisted Kubernetes receipts.
 export const RECEIPT_SCHEMA_VERSION = "hobo.provider-kubernetes.receipt/v1";
 
 export type ProvisionReceipt = {

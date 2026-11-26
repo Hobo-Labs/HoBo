@@ -16,7 +16,6 @@ import {
 import { FREIGHT_MANIFEST_SCHEMA } from "../events.js";
 import { canonical, sha256Digest } from "./json.js";
 
-// public-contract: the label every discovered Freight carries naming its source.
 export const SOURCE_LABEL = "hobo.cd/source" as const;
 
 export type Assembled = Readonly<{

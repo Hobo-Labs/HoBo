@@ -8,7 +8,6 @@ import { isJsonArray, type JsonObject } from "./json.js";
 // Lightweight structural types so provider does not hard-depend on broker at runtime
 // for descriptor shape (broker imports provider defaults; provider exports pure fold).
 
-// public-contract: the event-store fold this provider is addressed by. Stored
 // events name the resolver that produced them, so a rename orphans every fact
 // already written under the old id.
 export const AZURE_EVENT_STORE_RESOLVER_ID =

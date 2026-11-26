@@ -8,7 +8,6 @@ import type { Refusal } from "../ports.js";
 
 export type FailureSpec = Readonly<{ status: number; remediation: string }>;
 
-// public-contract: refusal codes of `@hobo/cd/agent` with HTTP status and remediation.
 export const AGENT_FAILURES = Object.freeze({
 	"token-invalid": {
 		status: 401,

@@ -31,7 +31,6 @@ import type { GithubTransport } from "./github.js";
 import { hostDockerAllowed } from "./isolated-worker/container-flags.js";
 import type { HostHealthState } from "./isolated-worker/host-health.js";
 
-/** public-contract: the work kind of L16 (`createGithubActionsWorkSource`). */
 export const GITHUB_ACTIONS_JOB = "github-actions-job";
 
 export const BOX_ROLES: readonly Role[] = [Role.DISPATCHER, Role.EXECUTOR];

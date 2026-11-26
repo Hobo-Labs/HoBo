@@ -1,6 +1,5 @@
 import type { OtelAttributes, OtelMetricPoint, TelemetrySink } from "@hobo/cd";
 
-// public-contract: metric names this package emits.
 export const KUBE_FLEET_METRICS = Object.freeze({
 	apiCalls: "hobo.cd.kube_fleet.api.calls",
 	passes: "hobo.cd.kube_fleet.realize.passes",

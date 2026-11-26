@@ -1,4 +1,3 @@
-// Frozen contract. Types only.
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import type { GatekeeperEffect, PolicyPack } from "@hobo/contracts";
 import type {
@@ -91,7 +90,6 @@ import type {
 	WindowOverrideRecord,
 } from "./_generated/cd_pb.js";
 
-// ── Brands ─────────────────────────────────────────────────────────────────
 export type Digest = `sha256:${string}`;
 export type FreightId = string & { readonly __brand: "cd.FreightId" };
 export type SetId = string & { readonly __brand: "cd.SetId" };
@@ -102,14 +100,12 @@ export type ReconcilerId = string & { readonly __brand: "cd.ReconcilerId" };
 export type RolloutId = string & { readonly __brand: "cd.RolloutId" };
 export type VerificationId = string & { readonly __brand: "cd.VerificationId" };
 
-// ── Results and context ────────────────────────────────────────────────────
 export type Refusal = Readonly<{ ok: false; reasons: readonly ReasonRecord[] }>;
 export type Outcome<T> = Readonly<{ ok: true; value: T }> | Refusal;
 
 export interface CdContext {
 	readonly tenant: string;
 	readonly principal: PrincipalRef;
-	/** Injected clock, epoch ms. Decision code never reads a wall clock. */
 	readonly now: () => number;
 	readonly signal?: AbortSignal;
 }
@@ -141,7 +137,6 @@ export type FeedResponse = Readonly<{
 	body: Uint8Array | AsyncIterable<Uint8Array>;
 }>;
 
-// ── Freight and ingestion ──────────────────────────────────────────────────
 export interface FreightLedger {
 	record(
 		input: Readonly<{
@@ -165,7 +160,6 @@ export interface FreightLedger {
 		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FreightApprovedRecord>>;
-	/** Accepts only a PASS verification for that Freight and Camp. */
 	qualify(
 		input: Readonly<{
 			freightId: FreightId;
@@ -188,7 +182,6 @@ export interface FreightLedger {
 			limit?: number;
 		}>,
 	): Promise<readonly FreightRecord[]>;
-	/** Retention sweep (D18). Returns the Freight retired. */
 	retire(
 		policy: RetentionPolicyRecord,
 		ctx: CdContext,
@@ -250,7 +243,6 @@ export interface FreightIngest {
 	>;
 }
 
-// ── Freight sources (pull discovery) ───────────────────────────────────────
 export type CiEventReader = (
 	after: string | undefined,
 	signal: AbortSignal,
@@ -297,7 +289,6 @@ export interface FreightSources {
 	tick(ctx: CdContext): Promise<void>;
 }
 
-// ── Artifacts ──────────────────────────────────────────────────────────────
 export type ArtifactStoreConfig =
 	| Readonly<{ backend: "filesystem"; root: string }>
 	| Readonly<{
@@ -325,18 +316,15 @@ export interface ArtifactStore {
 }
 
 export interface ArtifactVerifier {
-	/** Digest at its coordinate for every artifact in the manifest. */
 	verify(
 		manifest: FreightManifestRecord,
 		ctx: CdContext,
 	): Promise<Outcome<FreightManifestRecord>>;
 }
 
-// ── Desired state ──────────────────────────────────────────────────────────
 export type DesiredStateChange = Readonly<{
 	position: EventPosition;
 	set: SetRecord;
-	/** Posture attribute paths to report (D25); empty when none are bound. */
 	observeFields: readonly string[];
 	management: CampManagement;
 	policy?: PolicyBindingRecord;
@@ -346,7 +334,6 @@ export interface DesiredStateReader {
 	current(campId: CampId): Promise<SetRecord | undefined>;
 	get(setId: SetId): Promise<SetRecord | undefined>;
 	history(campId: CampId, limit?: number): Promise<readonly SetRecord[]>;
-	/** Fetch and verify the resolved-set blob a Set references. */
 	resolved(set: SetRecord): Promise<ResolvedDeploymentSet>;
 	status(campId: CampId): Promise<ReconcileObservationRecord | undefined>;
 	changes(
@@ -378,7 +365,6 @@ export interface DeltaLedger {
 	get(deltaId: DeltaId): Promise<DeltaRecord | undefined>;
 }
 
-// ── Pipelines and windows ──────────────────────────────────────────────────
 export interface PipelineController {
 	apply(
 		pipeline: PipelineRecord,
@@ -386,11 +372,9 @@ export interface PipelineController {
 	): Promise<Outcome<PipelineRecord>>;
 	get(name: string): Promise<PipelineRecord | undefined>;
 	list(): Promise<readonly PipelineRecord[]>;
-	/** Freight available to a node, newest first, each with the reasons it is available. */
 	available(
 		input: Readonly<{ pipeline: string; node: string }>,
 	): Promise<readonly FreightAvailabilityRecord[]>;
-	/** Evaluate availability and auto-promotion; request promotions. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
 
@@ -437,7 +421,6 @@ export interface ChangeWindows {
 	): Promise<WindowEvaluation>;
 }
 
-// ── Promotion ──────────────────────────────────────────────────────────────
 export interface SetResolver {
 	resolve(
 		input: Readonly<{
@@ -460,7 +443,6 @@ export type GateVerdict = Readonly<{
 	obligations: readonly ObligationRef[];
 	reasons: readonly ReasonRecord[];
 	window?: WindowEvaluation;
-	/** Present while a candidate Rail is bound in INFORM (D24). Never decides. */
 	shadow?: ShadowVerdict;
 }>;
 
@@ -502,10 +484,8 @@ export type PromoteRequest = Readonly<{
 	sourceCampId?: CampId;
 	strategy?: RolloutStrategy;
 	proposal?: boolean;
-	/** Set by FanoutController; the gate then checks the fan-out aggregate. */
 	fanoutId?: FanoutId;
 	intent?: DeltaIntent;
-	/** How an up promotion handles resources absent from its declaration. */
 	deploymentMode?: "incremental" | "complete";
 }>;
 
@@ -531,7 +511,6 @@ export interface PromotionService {
 	list(
 		query?: Readonly<{ campId?: CampId; limit?: number }>,
 	): Promise<readonly PromotionRecord[]>;
-	/** Advance in-flight sagas from journal state. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
 
@@ -572,7 +551,6 @@ export interface NotificationPort {
 	): Promise<void>;
 }
 
-// ── Reconciliation ─────────────────────────────────────────────────────────
 export type RealizeInput = Readonly<{
 	campId: CampId;
 	desired: SetRecord;
@@ -584,7 +562,6 @@ export type RealizeInput = Readonly<{
 }>;
 
 export interface Realizer {
-	/** Drive toward `desired`. Idempotent. Never reports convergence without observation. */
 	converge(
 		input: RealizeInput,
 		ctx: CdContext,
@@ -604,7 +581,6 @@ export type ReconcilerLease = Readonly<{
 }>;
 
 export interface ReconcilerTransport {
-	/** One lease per Camp (subscription CD_SUBSCRIPTIONS.camp). */
 	claim(
 		input: Readonly<{
 			reconcilerId: ReconcilerId;
@@ -615,7 +591,6 @@ export interface ReconcilerTransport {
 	): Promise<Outcome<ReconcilerLease>>;
 	renew(lease: ReconcilerLease): Promise<Outcome<ReconcilerLease>>;
 	release(lease: ReconcilerLease): Promise<void>;
-	/** Desired-state changes for the lease's Camp after its committed checkpoint. */
 	feed(
 		input: Readonly<{ lease: ReconcilerLease; signal: AbortSignal }>,
 	): AsyncIterable<DesiredStateChange>;
@@ -645,9 +620,7 @@ export interface DriftPolicy {
 export interface CampReconciler {
 	readonly reconcilerId: ReconcilerId;
 	readonly mode: ReconcilerMode;
-	/** Claim each Camp, read the feed, converge, report, checkpoint, renew; until aborted. */
 	run(signal: AbortSignal): Promise<void>;
-	/** One bounded pass (tests, `hobo up`). */
 	reconcileOnce(
 		campId: CampId,
 		ctx: CdContext,
@@ -670,7 +643,6 @@ export interface PublisherPort {
 	): Promise<ReconcileObservationRecord>;
 }
 
-// ── Verification ───────────────────────────────────────────────────────────
 export type HealthSamples = Readonly<{
 	values: readonly number[];
 	fromMs: number;
@@ -703,11 +675,9 @@ export interface VerificationEngine {
 		ctx: CdContext,
 	): Promise<VerificationId>;
 	get(id: VerificationId): Promise<VerificationResultRecord | undefined>;
-	/** Advance running verifications; completes them at window end or deadline. */
 	tick(ctx: CdContext): Promise<readonly VerificationResultRecord[]>;
 }
 
-// ── Progressive rollout ────────────────────────────────────────────────────
 export interface TrafficShifter {
 	offerings(campId: CampId): Promise<readonly TrafficRoutingOfferingId[]>;
 	shift(
@@ -774,7 +744,6 @@ export interface RolloutOrchestrator {
 	tick(ctx: CdContext): Promise<void>;
 }
 
-// ── Feed, agents, service ──────────────────────────────────────────────────
 export interface DeliveryFeedHandler {
 	readonly pathPrefix: "/v1/cd/";
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
@@ -809,12 +778,10 @@ export interface AgentEnrollment {
 	): Promise<
 		Outcome<Readonly<{ reconciler: ReconcilerRecord; state: EnrollmentState }>>
 	>;
-	/** Grant 1: the key belongs to a legitimate agent. */
 	approveKey(
 		reconcilerId: ReconcilerId,
 		ctx: CdContext,
 	): Promise<Outcome<ReconcilerRecord>>;
-	/** Grant 2: the agent may serve these Camps. */
 	accept(
 		input: Readonly<{ reconcilerId: ReconcilerId; campIds: readonly CampId[] }>,
 		ctx: CdContext,
@@ -935,18 +902,15 @@ export interface CdTelemetry {
 	health(): HealthReport;
 }
 
-// ── Inventory and Placement (D19, D20) ─────────────────────────────────────
 export type FanoutId = string & { readonly __brand: "cd.FanoutId" };
 export type FailoverId = string & { readonly __brand: "cd.FailoverId" };
 
-/** public-contract: declared topology of one Camp composed by WP18. */
 export type CampTopology = Readonly<{
 	campId: CampId;
 	physicalCampId?: CampId;
 	yardId: string;
 	stationId: string;
 	provider: string;
-	/** Declared Yard regions. Residency is evaluated only against these. */
 	regions: readonly string[];
 	envType: string;
 	labels: Readonly<Record<string, string>>;
@@ -964,9 +928,7 @@ export interface TopologyReader {
 }
 
 export interface RailDeliveryReader {
-	/** The Station's active Rail `delivery` object, parsed. */
 	forStation(stationId: string): Promise<RailDeliveryRecord | undefined>;
-	/** The Rail governing a Camp: its enforced binding, else its Station's active Rail. */
 	forCamp(campId: CampId): Promise<RailDeliveryRecord | undefined>;
 }
 
@@ -988,7 +950,6 @@ export interface CampInventory {
 			selector?: SelectorRecord;
 		}>,
 	): Promise<readonly CampView[]>;
-	/** Merge conditions and claims from one source. Agent sources can never add NO_RUN. */
 	observe(
 		input: Readonly<{
 			campId: CampId;
@@ -1015,7 +976,6 @@ export interface CampInventory {
 		ctx: CdContext,
 	): Promise<Outcome<CampSetRecord>>;
 	sets(): Promise<readonly CampSetRecord[]>;
-	/** Canonical view whose digest a placement decision records. */
 	snapshot(campSets: readonly string[]): Promise<InventorySnapshot>;
 	/** Derive lease/credential/claims conditions and automatic NO_PLACE taints. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
@@ -1036,7 +996,6 @@ export interface PlacementEngine {
 		snapshot: ScoreSnapshotRecord,
 		ctx: CdContext,
 	): Promise<Outcome<ScoreSnapshotRecord>>;
-	/** Pure over recorded inputs (I18); records `placement.Decided`. */
 	decide(
 		input: Readonly<{
 			placement: string;
@@ -1052,7 +1011,6 @@ export interface PlacementEngine {
 	decision(decisionId: string): Promise<PlacementDecisionRecord | undefined>;
 }
 
-// ── Fan-out and failover (D21, D23) ────────────────────────────────────────
 export interface FanoutController {
 	start(
 		input: Readonly<{
@@ -1070,7 +1028,6 @@ export interface FanoutController {
 	list(
 		query?: Readonly<{ pipeline?: string; node?: string; limit?: number }>,
 	): Promise<readonly FanoutStatusRecord[]>;
-	/** Camps of the node's latest completed decision with their qualified Freight. */
 	qualified(input: Readonly<{ pipeline: string; node: string }>): Promise<
 		Readonly<{
 			decision?: PlacementDecisionRecord;
@@ -1092,7 +1049,6 @@ export interface FanoutController {
 		reason: string,
 		ctx: CdContext,
 	): Promise<Outcome<FanoutStatusRecord>>;
-	/** Advance in-flight fan-outs from journal state under lease `cd:fanout:<id>`. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
 
@@ -1141,7 +1097,6 @@ export type RailEventReader = (
 
 export interface CampPolicy {
 	binding(campId: CampId): Promise<PolicyBindingRecord | undefined>;
-	/** Called by promotion only (subject RAIL). */
 	bind(
 		input: Readonly<{
 			campId: CampId;
@@ -1151,7 +1106,6 @@ export interface CampPolicy {
 		}>,
 		ctx: CdContext,
 	): Promise<Outcome<PolicyBindingRecord>>;
-	/** Rollback: restore the previous enforced digest and clear the candidate. */
 	restore(
 		input: Readonly<{ campId: CampId; promotionId: PromotionId }>,
 		ctx: CdContext,
@@ -1186,17 +1140,13 @@ export interface PostureSeriesReader {
 
 export interface PostureService {
 	compliance(campId: CampId): Promise<readonly ComplianceRecord[]>;
-	/** Attribute paths the Camp's bound packs need; reconcilers report only these. */
 	observeFields(campId: CampId): Promise<readonly string[]>;
-	/** Open ownership conflicts the gate must honour (I22). */
 	conflicts(campId: CampId): Promise<readonly PostureFindingRecord[]>;
 	remediations(campId: CampId): Promise<readonly PostureRemediationRecord[]>;
-	/** Evaluate due Camps, append compliance, propose remediation. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
 
 export interface ShadowRecorder {
-	/** The Camp's candidate Rail and its resolved pack, while bound in INFORM. */
 	candidate(
 		campId: CampId,
 	): Promise<
@@ -1205,7 +1155,6 @@ export interface ShadowRecorder {
 	record(decision: ShadowDecisionRecord, ctx: CdContext): Promise<void>;
 }
 
-// ── Facade ─────────────────────────────────────────────────────────────────
 export interface ContinuousDelivery {
 	readonly freight: FreightLedger;
 	readonly ingest: FreightIngest;
@@ -1242,18 +1191,15 @@ export interface ContinuousDelivery {
 
 // ── Module factory signatures (implemented in the named subpath) ───────────
 export interface CdFactories {
-	/** "./freight" (WP1) */
 	createFreightLedger(
 		d: CdBase & {
 			readonly artifacts: ArtifactVerifier;
 			readonly telemetry: TelemetrySink;
 		},
 	): FreightLedger;
-	/** "./ingest" (WP1) */
 	createTrustedPublisherVerifier(
 		d: CdBase & { readonly http: HttpTransport },
 	): TrustedPublisherVerifier;
-	/** "./ingest" (WP1) */
 	createFreightIngest(
 		d: CdBase & {
 			readonly ledger: FreightLedger;
@@ -1263,7 +1209,6 @@ export interface CdFactories {
 			readonly authorizer: CdAuthorizer;
 		},
 	): FreightIngest;
-	/** "./sources" (WP2) */
 	createFreightSources(
 		d: CdBase & {
 			readonly ledger: FreightLedger;
@@ -1273,7 +1218,6 @@ export interface CdFactories {
 			readonly webhookSecrets: CredentialResolver;
 		},
 	): FreightSources;
-	/** "./sources" (WP2) */
 	createSubscriptionDrivers(
 		d: Readonly<{
 			http: HttpTransport;
@@ -1283,27 +1227,22 @@ export interface CdFactories {
 			readRailEvents?: RailEventReader;
 		}>,
 	): readonly SubscriptionDriver[];
-	/** "./artifacts" (WP3) */
 	createArtifactStore(config: ArtifactStoreConfig, d: CdBase): ArtifactStore;
-	/** "./artifacts" (WP3) */
 	createArtifactVerifier(
 		d: CdBase & {
 			readonly artifacts: ArtifactStore;
 			readonly http: HttpTransport;
 		},
 	): ArtifactVerifier;
-	/** "./provenance" (WP3) */
 	createProvenanceVerifier(
 		d: CdBase & {
 			readonly http: HttpTransport;
 			readonly trustPolicy: JsonObject;
 		},
 	): ProvenanceVerifier;
-	/** "./sets" (WP4) */
 	createDesiredState(
 		d: CdBase & { readonly artifacts: ArtifactStore },
 	): DesiredStateReader & DeltaLedger;
-	/** "./pipelines" (WP5) */
 	createPipelineController(
 		d: CdBase & {
 			readonly freight: FreightLedger;
@@ -1314,11 +1253,9 @@ export interface CdFactories {
 			readonly authorizer: CdAuthorizer;
 		},
 	): PipelineController;
-	/** "./windows" (WP5) */
 	createChangeWindows(
 		d: CdBase & { readonly authorizer: CdAuthorizer },
 	): ChangeWindows;
-	/** "./promotion" (WP6) */
 	createPromotionService(
 		d: CdBase & {
 			readonly freight: FreightLedger;
@@ -1337,7 +1274,6 @@ export interface CdFactories {
 			readonly telemetry: TelemetrySink;
 		},
 	): PromotionService & PreviewEnvironments;
-	/** "./reconcile" (WP7) */
 	createCampReconciler(
 		d: CdBase & {
 			readonly reconcilerId: ReconcilerId;
@@ -1350,7 +1286,6 @@ export interface CdFactories {
 			readonly telemetry: TelemetrySink;
 		},
 	): CampReconciler;
-	/** "./reconcile" (WP7) */
 	createInProcessTransport(
 		d: CdBase & {
 			readonly desired: DesiredStateReader;
@@ -1358,7 +1293,6 @@ export interface CdFactories {
 			readonly topology?: TopologyReader;
 		},
 	): ReconcilerTransport;
-	/** "./verification" (WP9) */
 	createVerificationEngine(
 		d: CdBase & {
 			readonly sources: readonly HealthSource[];
@@ -1366,7 +1300,6 @@ export interface CdFactories {
 			readonly http: HttpTransport;
 		},
 	): VerificationEngine;
-	/** "./verification" (WP9) */
 	createHealthSources(
 		d: Readonly<{
 			http: HttpTransport;
@@ -1374,7 +1307,6 @@ export interface CdFactories {
 			posture?: PostureSeriesReader;
 		}>,
 	): readonly HealthSource[];
-	/** "./rollout" (WP10) */
 	createRolloutOrchestrator(
 		d: CdBase & {
 			readonly engine: RolloutEngine;
@@ -1394,7 +1326,6 @@ export interface CdFactories {
 			readonly fleet?: DeliveryFleet | undefined;
 		},
 	): AgentEnrollment;
-	/** "./agent" (WP11) */
 	createHttpTransport(
 		d: Readonly<{
 			baseUrl: string;
@@ -1406,7 +1337,6 @@ export interface CdFactories {
 			now: () => number;
 		}>,
 	): ReconcilerTransport;
-	/** "./feed" (WP11) */
 	createDeliveryFeedHandler(
 		d: CdBase & {
 			readonly desired: DesiredStateReader;
@@ -1417,7 +1347,6 @@ export interface CdFactories {
 			readonly topology: TopologyReader;
 		},
 	): DeliveryFeedHandler;
-	/** "./service" (WP12) */
 	createCdService(
 		d: CdBase & {
 			readonly cd: ContinuousDelivery;
@@ -1431,9 +1360,7 @@ export interface CdFactories {
 	createCdAuthorizer(
 		d: CdBase & { readonly policyPack: PolicyPack },
 	): CdAuthorizer;
-	/** "./telemetry" (WP19) */
 	createCdTelemetry(d: CdBase): CdTelemetry;
-	/** "./telemetry" (WP19) */
 	createTelemetrySink(
 		d: Readonly<{
 			endpoint?: string;
@@ -1441,7 +1368,6 @@ export interface CdFactories {
 			headers?: Readonly<Record<string, string>>;
 		}>,
 	): TelemetrySink;
-	/** "./inventory" (WP22) */
 	createCampInventory(
 		d: CdBase & {
 			readonly topology: TopologyReader;
@@ -1452,7 +1378,6 @@ export interface CdFactories {
 			readonly members?: CampMembers | undefined;
 		},
 	): CampInventory;
-	/** "./placement" (WP22) */
 	createPlacementEngine(
 		d: CdBase & {
 			readonly inventory: CampInventory;
@@ -1460,7 +1385,6 @@ export interface CdFactories {
 			readonly authorizer: CdAuthorizer;
 		},
 	): PlacementEngine;
-	/** "./fanout" (WP23) */
 	createFanoutController(
 		d: CdBase & {
 			readonly freight: FreightLedger;
@@ -1472,7 +1396,6 @@ export interface CdFactories {
 			readonly telemetry: TelemetrySink;
 		},
 	): FanoutController;
-	/** "./failover" (WP23) */
 	createFailoverController(
 		d: CdBase & {
 			readonly pipelines: PipelineController;
@@ -1488,18 +1411,15 @@ export interface CdFactories {
 			readonly telemetry: TelemetrySink;
 		},
 	): FailoverController;
-	/** "./posture" (WP24) */
 	createCampPolicy(
 		d: CdBase & { readonly authorizer: CdAuthorizer },
 	): CampPolicy;
-	/** "./posture" (WP24) */
 	createShadowRecorder(
 		d: CdBase & {
 			readonly campPolicy: CampPolicy;
 			readonly resolvePack: (railDigest: Digest) => Promise<PolicyPack>;
 		},
 	): ShadowRecorder;
-	/** "./posture" (WP24) */
 	createPostureService(
 		d: CdBase & {
 			readonly desired: DesiredStateReader & DeltaLedger;

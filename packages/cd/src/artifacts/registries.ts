@@ -38,7 +38,6 @@ export type LookupResult =
 	| Readonly<{ ok: true; digests: readonly RegistryDigest[] }>
 	| Readonly<{ ok: false; reason: ReasonRecord }>;
 
-// public-contract: default registry endpoints per ecosystem; a purl
 // `repository_url` qualifier overrides them (https only).
 export const DEFAULT_REGISTRIES = Object.freeze({
 	npm: "https://registry.npmjs.org",
@@ -49,7 +48,6 @@ export const DEFAULT_REGISTRIES = Object.freeze({
 	rubygems: "https://rubygems.org",
 } as const);
 
-// public-contract: ecosystems whose registry digest the verifier can read.
 export const REGISTRY_ECOSYSTEMS = Object.freeze([
 	"oci",
 	"npm",

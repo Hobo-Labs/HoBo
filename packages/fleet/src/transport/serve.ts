@@ -30,7 +30,6 @@ import {
 } from "./wire.js";
 
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
-// public-contract: the event kind of a session-close fact on FLEET_EVENTS (§7.3 EventChannel).
 const SESSION_CLOSE_KIND = "session-close";
 const encoder = new TextEncoder();
 

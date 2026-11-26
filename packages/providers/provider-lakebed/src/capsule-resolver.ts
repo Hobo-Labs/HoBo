@@ -45,7 +45,6 @@ import {
 import { LAKEBED_PROVIDER_TARGET } from "./options.js";
 import { isRealizablePort, realizeResourcePlans } from "./realize.js";
 
-// public-contract: Lakebed's hosting product id (a Capsule deployment).
 export const LAKEBED_CAPSULE_PRODUCT_ID = "lakebed.capsule/v1";
 
 const PROVIDER_ID = "lakebed";

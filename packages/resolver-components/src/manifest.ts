@@ -20,7 +20,6 @@ import {
 import { ResolverComponentError } from "./errors.js";
 import { RESOLVER_WIT_WORLD } from "./wit.js";
 
-// public-contract: schema id of a component manifest document.
 export const COMPONENT_MANIFEST_SCHEMA =
 	"hobo.resolver-components.manifest/v1" as const;
 

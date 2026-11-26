@@ -30,9 +30,7 @@ export { PulumiEngineUnavailableError } from "./pulumi-engine-errors.js";
 // CLI is missing — the composed default lane stays the in-memory engine
 // unless HOBO_PULUMI_LIVE opts in (see @hobo/hobo compose.ts).
 
-// public-contract: error code for a missing/broken pulumi CLI.
 export const PULUMI_CLI_MISSING = "pulumi-cli-missing";
-// public-contract: error code for a resource class with no real translation.
 export const PULUMI_UNSUPPORTED_RESOURCE = "pulumi-unsupported-resource-type";
 
 // The hobo resource classes provider realize() emits, mapped to real Pulumi
@@ -50,7 +48,6 @@ export const PULUMI_YAML_TYPE_TOKENS: PulumiYamlTypeTokens = {
 	"cloudflare:workers-script": "cloudflare:WorkersScript",
 	"cloudflare:kv-namespace": "cloudflare:WorkersKvNamespace",
 	"cloudflare:r2-bucket": "cloudflare:R2Bucket",
-	// Pulumi Cloudflare v6 (registry api-docs/queue, api-docs/workerscrontrigger).
 	"cloudflare:queue": "cloudflare:Queue",
 	"cloudflare:cron-trigger": "cloudflare:WorkersCronTrigger",
 };
@@ -102,7 +99,6 @@ export function renderPulumiYamlProgram(
 	}
 
 	const inputs = resource.inputs ?? {};
-	// SAFETY: `const cfOptions = (inputs.options ?? {}) as JsonObject;` is required at this I/O or test boundary.
 	const cfOptions = (inputs.options ?? {}) as JsonObject;
 	const properties: JsonBag = { accountId: options.accountId };
 	if (token === "cloudflare:WorkersScript") {
@@ -141,7 +137,6 @@ ${outputLines}
 `;
 }
 
-/** The Worker a cron trigger runs and its five-field expression. */
 interface CronTrigger {
 	readonly scriptName: string;
 	readonly cron: string;
@@ -149,12 +144,6 @@ interface CronTrigger {
 
 const CRON = /^\S+(\s+\S+){4}$/u;
 
-/**
- * A cron trigger's Worker and expression: the Worker is its one dependency
- * (the Workers script it runs), the expression the Cloudflare option block's
- * `cron`. Either missing fails closed: a trigger with a guessed cadence or a
- * guessed Worker is not one this program may create.
- */
 function cronTrigger(
 	resource: IacResourceLike,
 	cfOptions: JsonObject,
@@ -169,8 +158,6 @@ function cronTrigger(
 	const dependencies = isJsonArray(bindings)
 		? bindings.filter(isJsonObject)
 		: [];
-	// Only a dependency the realizer typed as a Workers script is a Worker to
-	// run: a sole dependency on a queue or a store is not one.
 	const workers = dependencies.flatMap((binding) => {
 		const name = binding.resource ?? binding.providerResourceId;
 		return binding.resourceType === "cloudflare:workers-script" &&
@@ -202,8 +189,6 @@ function outputExpression(
 	resourceName: string,
 	output: string,
 ): string {
-	// Real provider outputs where they exist; the stable resource name for the
-	// hobo-level `binding` alias.
 	if (output === "binding") {
 		return JSON.stringify(resourceName);
 	}
@@ -211,8 +196,6 @@ function outputExpression(
 		return `\${${resourceName}.name}`;
 	}
 	if (token === "cloudflare:WorkersScript" && output === "url") {
-		// The workers.dev URL requires the account subdomain, which is not a
-		// resource output; derived at the deploy-provider layer instead.
 		return JSON.stringify(`https://${resourceName}.workers.dev`);
 	}
 	if (token === "cloudflare:WorkersKvNamespace" && output === "namespaceId") {
@@ -234,20 +217,15 @@ function outputExpression(
 }
 
 export interface PulumiCliEngineOptions {
-	// Working directory for generated programs + the file:// state backend.
 	readonly workDir: string;
 	readonly pulumiBin?: string;
 	// Environment for pulumi invocations. Must carry CLOUDFLARE_API_TOKEN for
 	// live cloudflare programs; CLOUDFLARE_ACCOUNT_ID feeds program config.
 	readonly env?: Record<string, string | undefined>;
-	/** Recoverable key supplied by the caller for retained state. */
 	readonly statePassphrase?: string;
-	/** The caller guarantees this workspace will be discarded at process exit. */
 	readonly ephemeralState?: boolean;
 }
 
-// Create the real CLI-backed engine. Same return shape as
-// createInMemoryAutomationEngine — the adapter cannot tell them apart.
 export function createPulumiCliAutomationEngine(
 	options: PulumiCliEngineOptions,
 ) {
@@ -284,7 +262,6 @@ export function createPulumiCliAutomationEngine(
 		} catch (error) {
 			throw new PulumiEngineUnavailableError(
 				PULUMI_CLI_MISSING,
-				// SAFETY: ``pulumi CLI (${bin}) is not available: ${(error as Error).message}`,` is required at this I/O or test boundary.
 				`pulumi CLI (${bin}) is not available: ${(error as Error).message}`,
 			);
 		}
@@ -353,10 +330,6 @@ export function createPulumiCliAutomationEngine(
 
 	return {
 		pulumiVersion: PINNED_PULUMI_AUTOMATION_VERSION,
-		// Estate enumeration: the state each per-resource stack actually holds,
-		// in the same `{ [stackKey]: { resources } }` shape the in-memory engine's
-		// snapshot() returns. Binary-gated like every other operation — a missing
-		// pulumi CLI fails closed with the typed PulumiEngineUnavailableError.
 		snapshot() {
 			ensureAvailable();
 			const stacks: JsonBag = {};
@@ -370,19 +343,15 @@ export function createPulumiCliAutomationEngine(
 				const dir = join(programsDir, entry.name);
 				let outputs: JsonObject;
 				try {
-					// SAFETY: `outputs = JSON.parse(` is required at this I/O or test boundary.
 					outputs = JSON.parse(
 						run(["stack", "output", "--json", "--stack", "hobo"], dir),
 					) as JsonObject;
 				} catch {
-					// A stack with unreadable outputs holds no adoptable state.
 					continue;
 				}
 				if (Object.keys(outputs).length === 0) {
 					continue;
 				}
-				// Stack dirs are stack keys with non-portable chars mapped to `__`
-				// (see stackDir); a stack key is `${deploymentId}/${resourceName}`.
 				const parts = entry.name.split("__");
 				const resourceName = parts.at(-1) ?? entry.name;
 				const stackKey = parts.join("/");
@@ -437,8 +406,6 @@ export function createPulumiCliAutomationEngine(
 				stackOutputs: {},
 			};
 			return {
-				// `pulumi up` applies exactly the previewed plan or fails; a
-				// successful exit means the expected changes are the applied ones.
 				appliedChanges: structuredClone([...expectedChanges]),
 				outputs: Object.freeze({
 					...outputs,
@@ -514,7 +481,6 @@ interface PreviewChange {
 
 function parsePreviewSummary(raw: string): ChangeSummary {
 	try {
-		// SAFETY: CLI stdout is parsed at this I/O boundary and narrowed below.
 		const parsed = JSON.parse(raw) as JsonObject;
 		const summary = isJsonObject(parsed.changeSummary)
 			? parsed.changeSummary
@@ -528,8 +494,6 @@ function parsePreviewSummary(raw: string): ChangeSummary {
 			delete: isJsonNumber(del) ? del : 0,
 		};
 	} catch {
-		// Fail dirty, never silently clean: an unparseable preview must surface
-		// as a change so apply re-checks rather than skipping.
 		return { create: 1, update: 0, delete: 0 };
 	}
 }

@@ -31,9 +31,7 @@ import {
 // gated: creation is cheap, and every operation fails closed with a typed
 // TerraformEngineUnavailableError when the binary is missing.
 
-// public-contract: error code for a missing/broken tofu/terraform binary.
 export const TERRAFORM_CLI_MISSING = "terraform-cli-missing";
-// public-contract: error code for a resource class with no real translation.
 export const TERRAFORM_UNSUPPORTED_RESOURCE =
 	"terraform-unsupported-resource-type";
 

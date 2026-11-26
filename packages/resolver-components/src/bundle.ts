@@ -22,11 +22,8 @@ import {
 	parseComponentManifest,
 } from "./manifest.js";
 
-// public-contract: capability port a resolver-component registry bundle declares.
 export const RESOLVER_BUNDLE_PORT = "hobo:resolver/resolver@0.1.0" as const;
-// public-contract: feature prefix binding the signed component manifest digest.
 export const MANIFEST_FEATURE_PREFIX = "component-manifest:" as const;
-// public-contract: feature prefix binding the component's wasm bytes digest.
 export const WASM_FEATURE_PREFIX = "wasm:" as const;
 
 /** What a publisher ships; untrusted until verified. */

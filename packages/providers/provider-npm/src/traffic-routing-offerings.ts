@@ -13,7 +13,6 @@ export const NPM_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 const NOT_TRAFFIC =
 	"an npm registry serves package tarballs to installers and routes no request traffic; version selection is the dist-tag on the package-version resource";
 
-// public-contract: every TrafficRouting offering, each declared absent for npm.
 export const NPM_TRAFFIC_ROUTING_ABSENT: readonly {
 	readonly offeringId: TrafficRoutingOfferingId;
 	readonly reason: string;

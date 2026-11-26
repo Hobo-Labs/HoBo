@@ -18,7 +18,6 @@ import { CD_EVENTS } from "../events.js";
 import type { DeltaIntent } from "../ports.js";
 import { decode, isJsonObject, isText, msOf } from "./journal.js";
 
-// public-contract: saga fact types the promotion saga appends to
 export const SAGA_FACT = Object.freeze({
 	started: "saga.Started",
 	stepEmitted: "saga.StepEmitted",
@@ -26,10 +25,8 @@ export const SAGA_FACT = Object.freeze({
 	completed: "saga.Completed",
 } as const);
 
-// public-contract: the saga name stamped on every promotion saga fact.
 export const PROMOTION_SAGA = "cd.promotion" as const;
 
-// public-contract: per-Camp saga steps in forward order. `step` in a
 export const STEP = Object.freeze({
 	resolved: "resolved",
 	gated: "gated",

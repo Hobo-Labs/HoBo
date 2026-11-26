@@ -22,7 +22,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const DIGITALOCEAN_PROVIDER_ID = "@hobo/provider-digitalocean";
 
 // DigitalOcean's datacenter slugs. Transcribed from the public regions list,

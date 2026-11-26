@@ -8,7 +8,6 @@ import {
 	InvocationOutcome,
 } from "./_generated/resolver_components_pb.js";
 
-// public-contract: metric names this package emits.
 export const RESOLVER_COMPONENT_METRICS = Object.freeze({
 	invocations: "hobo.resolver_component.invocations",
 	duration: "hobo.resolver_component.duration",

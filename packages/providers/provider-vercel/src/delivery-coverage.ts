@@ -33,12 +33,9 @@ import {
 	type TrafficRoutingProviderProfile,
 } from "@hobo/core";
 
-// public-contract: versioned identity of a provider's I14 coverage document.
 export const HOSTING_COVERAGE_CONTRACT = "hobo.provider-hosting-coverage/v1";
 
-// public-contract: counter name emitted for every resolver call.
 export const RESOLVER_OPERATIONS_METRIC = "hobo.cd.resolver.operations";
-// public-contract: histogram name for every resolver call's duration.
 export const RESOLVER_DURATION_METRIC = "hobo.cd.resolver.duration";
 
 export const PORTABLE_TRAFFIC_OFFERING_IDS: readonly TrafficRoutingOfferingId[] =
@@ -115,12 +112,6 @@ function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/**
- * Build a provider's frozen coverage document. Refuses (typed) a declaration
- * that would make I14 unverifiable: a product both resolved and refused, a
- * refusal with no remediation, a profile that does not parse at the core
- * boundary, or an offering that is neither present nor declared absent.
- */
 export function defineHostingCoverage(input: {
 	readonly providerId: string;
 	readonly resolvedProductIds: readonly string[];

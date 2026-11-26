@@ -43,9 +43,7 @@ import {
 } from "./urls.js";
 import type { DomainView } from "./wire.js";
 
-// public-contract: stable Resource Definition identifier.
 export const PRISMA_DEFINITION_ID = "prisma.claimable-postgres/v1";
-// public-contract: provider identifier used in offers and receipts.
 export const PRISMA_PROVIDER_ID = "prisma";
 
 /** Documented default lifetime for an unclaimed database, in hours. */

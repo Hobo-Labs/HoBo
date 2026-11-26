@@ -13,10 +13,8 @@ import {
 } from "./hook.js";
 import { GITHUB_ACTIONS_JOB } from "./kind.js";
 
-// public-contract: the image every github-actions-job order names in parameters.image.
 export const GITHUB_RUNNER_IMAGE = `ghcr.io/actions/actions-runner:${RUNNER_VERSION}`;
 
-// public-contract: exact egress hosts every github-actions-job order allows.
 export const GITHUB_EGRESS: readonly string[] = [
 	"github.com",
 	"api.github.com",

@@ -107,7 +107,6 @@ function refused(
 	return { kind: "refused", result };
 }
 
-// public-contract: the prefix of the one progress line naming a page the owner must open, for an agent running with --hand-off to pass on.
 export const OWNER_PAGE_LINE_PREFIX = "HOBO_OWNER_PAGE";
 
 /** Whether this run may show the owner a page: a terminal, or an agent's hand-off. */
@@ -210,7 +209,6 @@ export async function runPage(
  * run's vault for its deploy (never an environment variable). Absent, the
  * deploy refuses and points at `hobo cd up`.
  */
-// public-contract: the store entries hobo cd up keeps the Vercel connection in.
 export const VERCEL_DEPLOY_ENTRIES = Object.freeze({
 	token: "HOBO_CD_VERCEL_TOKEN",
 	team: "HOBO_CD_VERCEL_TEAM_ID",

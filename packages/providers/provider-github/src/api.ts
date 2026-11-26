@@ -10,13 +10,10 @@
 import type { TransportGuardPolicy } from "@hobo/core";
 import { unsupported } from "./errors.js";
 
-// public-contract: the closed set of GitHub API kinds this realizer binds.
 export const GITHUB_API_KINDS = Object.freeze(["github.com", "ghes"] as const);
 export type GithubApiKind = (typeof GITHUB_API_KINDS)[number];
 
-// public-contract: the github.com REST API origin.
 export const GITHUB_COM_API_ORIGIN = "https://api.github.com";
-// public-contract: the REST API version every request pins.
 export const GITHUB_API_VERSION = "2022-11-28";
 
 /** Recursive tree listings of large sites run to megabytes; bounded here. */

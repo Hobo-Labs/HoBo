@@ -24,7 +24,6 @@
 import { TtlShProviderError } from "./errors.js";
 
 /** The one origin this package speaks to. Not a namespace: no subdomains. */
-// public-contract: registry host accepted by reference parsers.
 export const TTL_SH_REGISTRY_HOST = "ttl.sh" as const;
 
 /** The documented ceiling, in minutes. */

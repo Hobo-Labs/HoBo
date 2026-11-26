@@ -20,7 +20,6 @@ import {
 	serviceReason,
 } from "./errors.js";
 
-// public-contract: the tick steps, in the order the service runs them.
 export const CD_SERVICE_STEPS = Object.freeze([
 	"sources",
 	"inventory",
@@ -37,7 +36,6 @@ export const CD_SERVICE_STEPS = Object.freeze([
 
 export type CdServiceStep = (typeof CD_SERVICE_STEPS)[number];
 
-// public-contract: metric names the service emits through TelemetrySink.
 export const CD_SERVICE_METRICS = Object.freeze({
 	stepMs: "hobo.cd.service.step_ms",
 	stepFailures: "hobo.cd.service.step_failures",

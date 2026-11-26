@@ -45,10 +45,8 @@ import {
 	sanitizeObservation,
 } from "./observation.js";
 
-// public-contract: interval between re-observations of a converged Camp.
 export const RECONCILE_OBSERVE_INTERVAL_MS = 60_000 as const;
 
-// public-contract: metric names the reconciler emits through TelemetrySink.
 export const RECONCILE_METRICS = Object.freeze({
 	passes: "hobo.cd.reconcile.passes",
 	duration: "hobo.cd.reconcile.duration",

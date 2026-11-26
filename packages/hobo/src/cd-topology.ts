@@ -1,5 +1,4 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: topology files are untrusted module exports; each record is parsed once with its generated cd_topology schema before it is used. */
-/** public-contract: declared Camp topology composed from @hobo/yards and cd_topology records. */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -26,7 +25,6 @@ import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 
 const TOPOLOGY_CONTRACT_VERSION: Yard["contract"] = "hobo.topology-objects/v1";
 
-// public-contract: the Camp label that declares a Camp OBSERVE_ONLY (D5).
 export const CD_MANAGEMENT_LABEL = "hobo.cd/management";
 
 export function campIdOf(yardName: string, campId: string): CampId {
@@ -134,7 +132,6 @@ export function mergeTopologyReaders(
 	});
 }
 
-// public-contract: the environment variable naming topology files for every CD command.
 export const CD_TOPOLOGY_ENV = "HOBO_CD_TOPOLOGY";
 
 export type TopologyRefusal = Readonly<{

@@ -708,7 +708,6 @@ export async function runLogPivot(
  * originals travel in `meta.handoff`. This is a real limit, reported on every
  * handoff rather than discovered later.
  */
-// public-contract: impedance code reported by every stream handoff.
 export const HANDOFF_IDENTITY_IMPEDANCE = "HANDOFF_EVENT_IDENTITY_REMINTED";
 
 type HandoffTarget = Pick<DurableEventStore, "append" | "readAll" | "read"> & {

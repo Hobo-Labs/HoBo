@@ -16,10 +16,8 @@ import {
 } from "./json.js";
 import { parseApiServerEndpoint } from "./resolver-transport.js";
 
-// public-contract: the API group and version of the Actions Runner Controller AutoscalingRunnerSet this client reads and patches.
 export const ARC_RUNNER_SETS_PATH =
 	"/apis/actions.github.com/v1alpha1/namespaces";
-// public-contract: the batch API path the store prewarm Job is created under.
 export const BATCH_JOBS_PATH = "/apis/batch/v1/namespaces";
 
 const NAME = "[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?";

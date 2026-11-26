@@ -31,18 +31,12 @@ export function cdJson(status: number, value: unknown): FeedResponse {
 
 export type CdReadiness = "service" | "composed";
 
-// public-contract: shared subscription lease id every Vercel CD instance claims; deployed holders coordinate on this exact value.
 export const HOST_PASS_SUBSCRIPTION = "cd:vercel:fleet-pass";
 export const DEFAULT_PASS_DEADLINE_MS = 240_000;
-// public-contract: the fleet pass lease must outlive the pass deadline with a margin over a Vercel function's 300 s maxDuration, so the lease never expires mid-pass.
 export const DEFAULT_FLEET_PASS_LEASE_TTL_MS = 360_000;
-// public-contract: durable readiness record every holder appends after a fully successful pass; /readyz reads it back instead of any process-local latch. The durable stream is tenant-scoped: `${tenant}:${HOST_PASS_STREAM}`.
 export const HOST_PASS_STREAM = "cd-host-pass";
-// public-contract: event type every holder appends to HOST_PASS_STREAM after a successful pass.
 export const HOST_PASS_SUCCEEDED = "host.PassSucceeded";
-// public-contract: refusal code recorded when the topology declares Camps but none are MANAGED.
 export const CD_NO_MANAGED_CAMPS = "cd-no-managed-camps";
-// public-contract: how many tail events of the readiness stream /readyz folds; the latest host.PassSucceeded among them wins.
 const HOST_PASS_LOOKBACK = 8;
 const HOST_PASS_FUTURE_SKEW_MS = 5_000;
 

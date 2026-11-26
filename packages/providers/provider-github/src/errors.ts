@@ -13,12 +13,9 @@
  */
 import { ResolverError, type ResolverErrorCode } from "@hobo/core";
 
-// public-contract: the GitHub Pages site product id, keyed by the resolver registry.
 export const GITHUB_PAGES_SITE_PRODUCT_ID = "github.pages-site/v1";
-// public-contract: provider id stamped on the resolver.
 export const GITHUB_PROVIDER_ID = "github";
 
-// public-contract: closed reasons a GitHub Pages reconcile refuses with.
 export const GITHUB_PAGES_REFUSAL_REASONS = Object.freeze([
 	"github-credential-rejected",
 	"github-permission-missing",

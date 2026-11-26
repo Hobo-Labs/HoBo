@@ -67,9 +67,7 @@ function createHandle<K extends ResourceKind>(
 		throw new Error(`unknown catalog factory: ${kind}`);
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const stableId = `${kind}:${name}` as `${K}:${string}`;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const portRef = [...entry.portRef] as readonly string[];
 
 	const handle = {
@@ -81,12 +79,10 @@ function createHandle<K extends ResourceKind>(
 		declaredAllow: Object.freeze([...declaredAllow]),
 		allow<V extends AllowVerbsFor<K>>(...verbs: V[]): ResourceHandle<K, V> {
 			for (const verb of verbs) {
-				// SAFETY: assertion required at this I/O or test boundary.
 				if (!(entry.allowVerbs as readonly string[]).includes(verb as string)) {
 					throw new TypeError(`${kind} does not allow verb "${String(verb)}"`);
 				}
 			}
-			// SAFETY: assertion required at this I/O or test boundary.
 			return createHandle(kind, name, verbs) as ResourceHandle<K, V>;
 		},
 		toDescriptor(): ResourceDescriptor<K> {
@@ -109,7 +105,6 @@ function createHandle<K extends ResourceKind>(
 		});
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	return Object.freeze(handle) as ResourceHandle<K>;
 }
 

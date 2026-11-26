@@ -30,5 +30,4 @@ export {
 	TerraformEngineUnavailableError,
 } from "./terraform-cli-engine.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_IAC_TERRAFORM_PACKAGE = "@hobo/iac-terraform";

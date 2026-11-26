@@ -42,7 +42,6 @@ export interface HookRunner {
 	): Promise<Outcome<number>>;
 }
 
-// public-contract: refusal codes of the hook runner.
 export const HOOK_REASON = Object.freeze({
 	runbookFailed: "hook-runbook-failed",
 	suiteFailed: "hook-suite-failed",
@@ -184,7 +183,6 @@ export function createHookRunner(
 	};
 }
 
-// public-contract: CloudEvents type of a NOTIFY hook delivery.
 export const NOTIFY_EVENT_TYPE =
 	"dev.cdeventsx.hobo.promotion.hook.notified" as const;
 

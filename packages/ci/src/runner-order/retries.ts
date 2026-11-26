@@ -10,9 +10,7 @@ export const RUNNER_RETRY_KINDS = [
 ] as const;
 export type RunnerRetryKind = (typeof RUNNER_RETRY_KINDS)[number];
 
-// public-contract: slack after a job's end in which a machine disconnect still explains its failure.
 export const MACHINE_DISCONNECT_SLACK_MS = 2 * 60_000;
-// public-contract: automatic retries one account may spend in a day.
 export const RUNNER_RETRY_DAILY_CAP = 100;
 
 export const RUNNER_LOST_PATTERNS: readonly RegExp[] = [

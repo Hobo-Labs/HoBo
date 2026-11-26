@@ -19,7 +19,6 @@ export type CalloutDeps = Readonly<{
 	log: FleetLog;
 }>;
 
-// public-contract: the `status` of the `hobo_fleet_bus_status` event logged for each allowed callout decision.
 export const CALLOUT_AUTHORISED = "authorised";
 
 const encoder = new TextEncoder();

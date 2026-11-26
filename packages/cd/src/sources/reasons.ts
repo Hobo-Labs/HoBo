@@ -3,7 +3,6 @@ import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { UNVERIFIED_TRIGGER } from "../events.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: reason codes a source refusal or skip carries.
 export const SOURCE_REASON = Object.freeze({
 	invalid: "source-invalid",
 	unknown: "source-unknown",

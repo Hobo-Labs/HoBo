@@ -1,6 +1,5 @@
 import type { JsonObject } from "./json.js";
 
-// public-contract: the provider target id `.with(...)` option blocks carry.
 export const AWS_PROVIDER_TARGET = "aws";
 
 export type TypedOptionBlock = {

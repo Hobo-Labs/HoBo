@@ -1,6 +1,5 @@
 import type { JsonObject } from "./json.js";
 
-// public-contract: the provider target id `.with(...)` option blocks carry.
 export const GCP_PROVIDER_TARGET = "gcp";
 
 export type TypedOptionBlock = {

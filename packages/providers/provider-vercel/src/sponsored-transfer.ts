@@ -51,12 +51,9 @@ export type VerifiedSourceRef = {
 	readonly note: string;
 };
 
-// public-contract: the definition id Matching and receipts pin.
 export const VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID =
 	"vercel.sponsored-project-transfer/v1";
-// public-contract: provider identifier used in offers and receipts.
 export const VERCEL_PROVIDER_ID = "vercel";
-// public-contract: stable conformance evidence reference for selection.
 export const SPONSORED_PROJECT_TRANSFER_CONFORMANCE_REF =
 	"conformance.vercel.sponsored-project-transfer/v1";
 

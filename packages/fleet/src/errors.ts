@@ -1,4 +1,3 @@
-// public-contract: the wire `FleetError.code` values of §7.6; clients match on them.
 export const FLEET_ERROR_CODES = [
 	"invalid-request",
 	"unauthenticated",

@@ -37,7 +37,6 @@ import {
 	type TransportGuardPolicy,
 } from "@hobo/core";
 
-// public-contract: the single host every Hostinger API call reaches.
 export const HOSTINGER_API_HOST = "developers.hostinger.com";
 
 /**
@@ -50,7 +49,6 @@ export const HOSTINGER_API_HOST = "developers.hostinger.com";
  * reaching it can fill a plan but cannot buy one. That distinction is the whole
  * reason this list names namespaces rather than a host.
  */
-// public-contract: the path allowlist for the Hostinger transport guard; adding /api/billing/v1 here would let this package place an order.
 export const HOSTINGER_ALLOWED_PATH_PREFIXES = Object.freeze([
 	"/api/vps/v1/",
 	"/api/dns/v1/",
@@ -62,7 +60,6 @@ export const HOSTINGER_ALLOWED_PATH_PREFIXES = Object.freeze([
  * travels with the code: a contributor adding a "just provision it" resolver
  * should have to read this before widening the policy.
  */
-// public-contract: the Hostinger namespace deliberately excluded from the guard; widening to it would let a resolver spend money.
 export const HOSTINGER_EXCLUDED_PATH_PREFIXES = Object.freeze({
 	billing: Object.freeze({
 		prefix: "/api/billing/v1/",

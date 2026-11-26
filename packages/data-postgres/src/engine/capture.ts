@@ -69,14 +69,11 @@ export function isUndecodableSlotError(cause: unknown): boolean {
 	);
 }
 
-// public-contract: the horizon query of the slot proof; a scripted executor answers it by this text.
 export const SLOT_HORIZON = "SELECT pg_current_xact_id()::text AS horizon";
 
-// public-contract: the settled query of the slot proof; a scripted executor answers it by this text.
 export const SLOT_SETTLED =
 	"SELECT (pg_snapshot_xmin(pg_current_snapshot()) > $1::xid8)::text AS settled";
 
-// public-contract: the decoding probe of the slot proof; a scripted executor answers it by this text.
 export const SLOT_PROBE =
 	"SELECT count(*)::text AS decoded FROM pg_logical_slot_peek_binary_changes($1::name, NULL, NULL, 'proto_version', '1', 'publication_names', $2::text)";
 

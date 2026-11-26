@@ -29,7 +29,6 @@ import {
 	type TransportGuardPolicy,
 } from "@hobo/core";
 
-// public-contract: the only origin the Cloudflare resolvers ever address.
 export const CLOUDFLARE_API_ORIGIN = "https://api.cloudflare.com";
 
 /** The documented official REST host. Nothing else is reachable. */
@@ -47,7 +46,6 @@ export const CLOUDFLARE_API_ALLOWED_PATH_PREFIXES = Object.freeze([
 ] as const);
 
 /** Base every resolver path is appended to. */
-// public-contract: the base every resolver path is appended to, and half of the transport path allowlist.
 export const CLOUDFLARE_API_BASE_PATH = "/client/v4";
 
 /**

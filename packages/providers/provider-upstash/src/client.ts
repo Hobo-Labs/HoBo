@@ -16,7 +16,6 @@ import {
 	type UpstashTransport,
 } from "./transport.js";
 
-// public-contract: the provider endpoint this client is written against.
 export const UPSTASH_START_REDIS_URL =
 	"https://upstash.com/start-redis" as const;
 

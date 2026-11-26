@@ -1,6 +1,5 @@
 import type { ComponentLimits } from "./manifest.js";
 
-// public-contract: deterministic fuel prices charged by the host meter.
 export const FUEL_COSTS = Object.freeze({
 	invoke: 1_000_000,
 	importCall: 5_000_000,

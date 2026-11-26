@@ -54,7 +54,6 @@ export type TransportPolicy = {
 export const NETLIFY_API_ALLOWED_HOSTS = ["api.netlify.com"] as const;
 
 /** The dashboard host that serves the human claim ceremony. Never called. */
-// public-contract: only host accepted for ownership-claim actions.
 export const NETLIFY_CLAIM_HOST = "app.netlify.com" as const;
 
 /**

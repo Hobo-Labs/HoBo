@@ -41,7 +41,6 @@ function enumName(
 	return (table[value] ?? "UNSPECIFIED").toLowerCase();
 }
 
-// public-contract: fan-out slot states reported by hobo.cd.fanout.camps.
 export const FANOUT_SLOT_STATES = Object.freeze([
 	"pending",
 	"in_flight",
@@ -79,7 +78,6 @@ export function fanoutCampsPoints(
 	});
 }
 
-// public-contract: failover states reported by hobo.cd.failover.count.
 export const FAILOVER_STATES: readonly FailoverState[] = Object.freeze([
 	FailoverState.PROPOSED,
 	FailoverState.REPLACING,

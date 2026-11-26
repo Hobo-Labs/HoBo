@@ -27,5 +27,4 @@ export {
 	WASM_COMPONENT_MEDIA_TYPE,
 } from "./oci-pack.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_RUNTIME_OCI_PACKAGE = "@hobo/runtime-oci";

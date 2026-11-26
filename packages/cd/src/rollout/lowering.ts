@@ -11,7 +11,6 @@ import { CD_RAMP_DEFAULTS, PROGRESSIVE_UNSUPPORTED } from "../events.js";
 import type { CampId, Outcome } from "../ports.js";
 import { reason, refuse } from "./reasons.js";
 
-// public-contract: the D7 traffic rung ladder, best first.
 export const TRAFFIC_LADDER: readonly TrafficRoutingOfferingId[] =
 	Object.freeze([
 		"edge.canary",
@@ -20,7 +19,6 @@ export const TRAFFIC_LADDER: readonly TrafficRoutingOfferingId[] =
 		"inprocess.weighted",
 	]);
 
-// public-contract: obligation kinds the orchestrator honours (set by the gate).
 export const ROLLOUT_OBLIGATIONS = Object.freeze({
 	noFallback: "rollout.no-fallback",
 	stageApproval: "rollout.stage-approval",

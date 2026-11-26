@@ -37,10 +37,8 @@ declare module "pg" {
 	}
 }
 
-// public-contract: stable product identity shared by SDK declarations and provider bindings.
 export const NEON_MANAGED_POSTGRES_PRODUCT_ID = "neon.managed-postgres/v1";
 
-// public-contract: host assertion that logical identity records and claims use the new namespace.
 export const NEON_MANAGED_LOGICAL_NAMESPACE = "neon-managed-logical/v1";
 
 export function createNeonManagedPostgresCandidate(

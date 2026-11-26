@@ -9,13 +9,9 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: the tree-index document contract a Pages Freight carries.
 export const STATIC_SITE_TREE_CONTRACT = "hobo.static-site-tree/v1";
-// public-contract: Pages refuses sites over 1 GB; the tree is bounded below it.
 export const STATIC_SITE_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
-// public-contract: the Git Data API blob endpoint accepts at most 100 MB.
 export const STATIC_SITE_MAX_FILE_BYTES = 100 * 1024 * 1024;
-// public-contract: more files than this is not a static site a reconcile should push.
 export const STATIC_SITE_MAX_FILES = 20_000;
 const MAX_INDEX_BYTES = 8 * 1024 * 1024;
 

@@ -10,7 +10,7 @@
  * __HOBO_TEMP_API_TOKEN__, __HOBO_CLAIM_URL__
  * Never echo the api token in JSON responses.
  */
-export const CORS_RELAY_SCRIPT_NAME = "hobo-cors-relay"; // public-contract: Temporary Accounts CORS relay Worker script name
+export const CORS_RELAY_SCRIPT_NAME = "hobo-cors-relay";
 
 const STATION_MODULE_FOR_RELAY = `export default {
   async fetch(request) {

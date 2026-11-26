@@ -10,7 +10,6 @@ import type {
 import { PROVIDER_TARGET } from "./options.js";
 import type { GuestPlacement } from "./placement.js";
 
-// public-contract: versions persisted browser-WASM receipts.
 export const RECEIPT_SCHEMA_VERSION = "hobo.provider-browser-wasm.receipt/v1";
 
 export const GUEST_PHASES = [

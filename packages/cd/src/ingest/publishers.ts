@@ -52,7 +52,6 @@ export type TrustedPublisherVerifierDeps = CdBase & {
 	/** Governs `trust`; without it trusting a publisher fails closed. */
 	readonly authorizer?: CdAuthorizer;
 	readonly telemetry?: TelemetrySink;
-	/** Allowed clock skew for `exp`/`nbf`. Defaults to CD_DEFAULTS.dpopSkewMs (60 s). */
 	readonly clockSkewMs?: number;
 };
 
@@ -130,7 +129,6 @@ export function parseTrustedPublisher(
 
 type CacheEntry = Readonly<{ expiresAtMs: number; json: JsonObject }>;
 
-/** Seconds of `max-age`, or undefined when the response must not be cached. */
 export function cacheLifetimeMs(
 	cacheControl: string | undefined,
 ): number | undefined {
@@ -192,7 +190,6 @@ function audiences(claims: JsonObject): readonly string[] {
 	return [];
 }
 
-// public-contract: minimum interval between unknown-kid JWKS refetches per issuer.
 export const JWKS_FORCED_REFRESH_INTERVAL_MS = 60_000 as const;
 
 export function createTrustedPublisherVerifier(
@@ -202,7 +199,6 @@ export function createTrustedPublisherVerifier(
 	const publishers = new Map<string, TrustedPublisherRecord>();
 	let indexedTo: EventPosition | undefined;
 	const cache = new Map<string, CacheEntry>();
-	/** Issuer -> when an unknown `kid` last forced a JWKS refetch. */
 	const forcedRefreshAt = new Map<string, number>();
 
 	function emit(
@@ -486,8 +482,6 @@ export function createTrustedPublisherVerifier(
 					!fresh &&
 					!jwks.value.keys.some((key) => key.kid === decoded.header.kid)
 				) {
-					// Negative cache: an unknown kid forces at most one refetch per
-					// issuer per window, so random kids cannot drive issuer load.
 					const nowMs = deps.now();
 					const last = forcedRefreshAt.get(issuer);
 					if (

@@ -3,13 +3,11 @@ import type { JsonObject, JsonValue } from "@hobo/core";
 import { BoundaryError } from "./errors.js";
 import { isJsonObject, isJsonString } from "./json.js";
 
-// public-contract: the pinned CDEvents release (Part I §I.8 R8).
 export const CDEVENTS_SPEC = Object.freeze({
 	tag: "v0.5.1",
 	specversion: "0.5.1",
 } as const);
 
-// public-contract: pinned CDEvents type ids (spec v0.5.1).
 export const CDEVENT_TYPES = Object.freeze({
 	artifactPublished: "dev.cdevents.artifact.published.0.3.0",
 	serviceDeployed: "dev.cdevents.service.deployed.0.3.0",
@@ -24,9 +22,7 @@ export const CDEVENT_TYPES = Object.freeze({
 export type StandardCdEventType =
 	(typeof CDEVENT_TYPES)[keyof typeof CDEVENT_TYPES];
 
-// public-contract: version of every HoBo custom event body.
 export const HOBO_CUSTOM_EVENT_VERSION = "0.1.0" as const;
-// public-contract: custom event namespace prefix (tool `hobo`).
 export const HOBO_CUSTOM_EVENT_PREFIX = "dev.cdeventsx.hobo-" as const;
 
 export function hoboEventType(subject: string, predicate: string): string {

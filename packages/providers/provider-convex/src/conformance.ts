@@ -1,18 +1,3 @@
-/**
- * The Convex hosting conformance profile: the list of things that must be
- * demonstrated before any Convex hosting form is allowed to carry a
- * `data.convex/v1` claim.
- *
- * It is a reusable data profile, not a runner. `evaluateConvexConformance`
- * folds submitted outcomes into a report and is deliberately fail-closed:
- * a check with no outcome, or an outcome of `unknown`, is not a pass.
- *
- * The checks encode facts verified against the official documentation on
- * 2026-08-08 — most importantly that a Convex backup contains table
- * documents and (optionally) file storage, and does NOT contain code,
- * configuration, environment variables, or pending scheduled functions.
- */
-
 import {
 	CONVEX_CONFORMANCE_SUITE_REF,
 	type VerifiedSourceRef,
@@ -22,10 +7,8 @@ import {
 	type ConvexHostingFormId,
 } from "./hosting-forms.js";
 
-// public-contract: conformance profile record schema id.
 export const CONFORMANCE_PROFILE_SCHEMA =
 	"hobo.provider-conformance-profile/v1";
-// public-contract: conformance report record schema id.
 export const CONFORMANCE_REPORT_SCHEMA = "hobo.provider-conformance-report/v1";
 
 export type ConformanceCheckResult = "pass" | "fail" | "unknown";
@@ -43,9 +26,7 @@ export interface ConvexConformanceCheck {
 	readonly id: string;
 	readonly title: string;
 	readonly category: ConformanceCategory;
-	/** Hosting forms this check is required for. */
 	readonly appliesTo: readonly ConvexHostingFormId[];
-	/** A blocking check failing means the claim cannot be made at all. */
 	readonly blocking: boolean;
 	readonly rationale: string;
 }
@@ -255,7 +236,6 @@ export const CONVEX_CONFORMANCE_PROFILE: ConvexConformanceProfile =
 export interface ConformanceCheckOutcome {
 	readonly checkId: string;
 	readonly result: ConformanceCheckResult;
-	/** Where the evidence lives (run folder, receipt, PR link). */
 	readonly evidenceRef?: string;
 	readonly note?: string;
 }
@@ -273,7 +253,6 @@ export interface ConvexConformanceReport {
 	readonly unrecognizedCheckIds: readonly string[];
 }
 
-/** Checks required for a given hosting form. Pure. */
 export function requiredChecksForHostingForm(
 	hostingFormId: ConvexHostingFormId,
 ): readonly ConvexConformanceCheck[] {
@@ -282,10 +261,6 @@ export function requiredChecksForHostingForm(
 	);
 }
 
-/**
- * Fold outcomes into a report. Fail-closed: `ok` is true only when every
- * required check has an explicit `pass`. Missing and `unknown` both block.
- */
 export function evaluateConvexConformance(input: {
 	readonly hostingFormId: ConvexHostingFormId;
 	readonly outcomes: readonly ConformanceCheckOutcome[];
@@ -301,7 +276,6 @@ export function evaluateConvexConformance(input: {
 			continue;
 		}
 		const previous = byId.get(outcome.checkId);
-		// Worst result wins: a single fail is never averaged away.
 		byId.set(outcome.checkId, worstResult(previous, outcome.result));
 	}
 

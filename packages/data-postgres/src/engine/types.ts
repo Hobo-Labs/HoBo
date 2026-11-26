@@ -16,7 +16,6 @@ import {
 	TENANT_COLUMN,
 } from "./identifiers.js";
 
-// public-contract: engine id reported in the PostgreSQL engine declaration.
 export const POSTGRES_ENGINE_ID = "postgres";
 
 export const POSTGRES_NATIVE_TYPES = Object.freeze({

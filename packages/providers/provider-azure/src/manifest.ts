@@ -22,7 +22,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const AZURE_PROVIDER_ID = "@hobo/provider-azure";
 
 export const DEFAULT_REGIONS = ["eastus", "westus2", "westeurope"];

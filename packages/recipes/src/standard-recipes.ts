@@ -414,8 +414,6 @@ const netlifyGeneratedReport: SolutionRecipeInput = {
 			capabilityRef: "site",
 			satisfiesProfileId: "web.static/v1",
 			productDefinitionId: "netlify.anonymous-static-site/v1",
-			// The anonymous Netlify surface publishes static assets; it is not a
-			// function runtime, and the product declares `paas` accordingly.
 			runtimeModel: "paas",
 			claim: {
 				mode: "site-claim",
@@ -894,7 +892,6 @@ const SEEDS: readonly SolutionRecipeInput[] = [
 export const STANDARD_SOLUTION_RECIPE_INPUTS: readonly SolutionRecipeInput[] =
 	SEEDS;
 
-/** The parsed first-party recipes, ordered by id. */
 export const STANDARD_SOLUTION_RECIPES: readonly SolutionRecipe[] = SEEDS.map(
 	parseSolutionRecipe,
 ).sort((a, b) => a.id.localeCompare(b.id));

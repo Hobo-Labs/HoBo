@@ -36,7 +36,6 @@ import { isJsonString, type JsonValue } from "./json.js";
 import type { GuestManifest, HostCapabilities } from "./manifest.js";
 import type { HostAssetTransport } from "./transport.js";
 
-// public-contract: the browser guest hosting product id.
 export const BROWSER_WASM_GUEST_PRODUCT_ID = "browser-wasm.guest/v1";
 
 const PROVIDER_ID = "browser-wasm";

@@ -17,11 +17,9 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: wire schema of a persisted local-substrate discovery report.
 export const LOCAL_SUBSTRATE_REPORT_CONTRACT =
 	"hobo.local-substrates/v1" as const;
 
-// public-contract: wire schema of the Yard set derived from a substrate report.
 export const LOCAL_SUBSTRATE_YARDS_CONTRACT =
 	"hobo.local-substrate-yards/v1" as const;
 

@@ -7,7 +7,6 @@ import {
 } from "./server.js";
 
 const containerPort = 4180;
-// public-contract: the digest-pinned image the containerized Agent37 fake runs in; tests assert the pin.
 export const PINNED_FAKE_AGENT37_IMAGE =
 	"node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5";
 const containerEntry = `const modulePath = "./server.mts";

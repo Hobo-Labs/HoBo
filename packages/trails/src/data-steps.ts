@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import type { TrailStep } from "./definition.js";
 import type { JsonObject } from "./json.js";
 
-// public-contract: data dual schema.
 export const DATA_DUAL_SCHEMA = "hobo.trail-data-dual/v1" as const;
 
 export type SchemaApplyResult = Readonly<{

@@ -1,6 +1,5 @@
-export const ENVIRONMENT_STATION_WORKER_NAME_PREFIX = "hobo-env-station"; // public-contract: Temporary Accounts Environment Station script name prefix
+export const ENVIRONMENT_STATION_WORKER_NAME_PREFIX = "hobo-env-station";
 
-// public-contract: Environment Station Worker module source for Temporary Accounts
 export const ENVIRONMENT_STATION_WORKER_MODULE = `export default {
   async fetch(request) {
     const url = new URL(request.url);

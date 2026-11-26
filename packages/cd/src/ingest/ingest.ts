@@ -59,7 +59,6 @@ export type FreightIngestDeps = CdBase & {
 	readonly telemetry?: TelemetrySink;
 };
 
-// public-contract: SLSA externalParameters key that carries the Bindle
 // declaration hash on an attestation-only push.
 export const DECLARATION_HASH_PARAMETER = "hobo.cd/declaration-hash" as const;
 

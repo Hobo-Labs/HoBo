@@ -24,9 +24,7 @@ import {
 	type TransportResponse,
 } from "./transport.js";
 
-// public-contract: Kubernetes namespace API path used by the adapter.
 export const NAMESPACES_PATH = "/api/v1/namespaces";
-// public-contract: Kubernetes apps API path used by the adapter.
 export const APPS_PATH = "/apis/apps/v1/namespaces";
 
 export type KubernetesApiClientOptions = {

@@ -12,7 +12,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: default Management API base consumers may override.
 export const CONVEX_MANAGEMENT_API_BASE = "https://api.convex.dev/v1";
 
 export interface ConvexManagementClientOptions {

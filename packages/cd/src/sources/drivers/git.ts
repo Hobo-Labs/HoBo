@@ -1,14 +1,3 @@
-// GIT_REPOSITORY subscriptions over smart HTTP protocol v2 against any host:
-// capability advertisement, `ls-refs` with branch/tag prefixes, and a
-// `deepen 1` fetch of the candidate commits (trees only, `filter blob:none`,
-// or the commit alone, `filter tree:0`, when no path filter is set).
-//
-// The artifact digest is the declaration's identity:
-// - no path filters: sha256 over `hobo.cd.git-tree/v1\nroot <tree oid>\n`;
-// - with include/exclude paths: sha256 over `hobo.cd.git-paths/v1\n` plus one
-//   `<mode> <oid> <path>\n` line per file the filters keep, sorted by path.
-// A branch head whose filtered digest equals the last discovered one is not a
-// new declaration and is not discovered.
 import { create } from "@bufbuild/protobuf";
 import type { HttpTransport } from "@hobo/core";
 import {
@@ -52,7 +41,6 @@ import {
 } from "./git-pack.js";
 import { safeHttpsUrl } from "./http-index.js";
 
-// public-contract: the agent string sent with every Git v2 command.
 export const GIT_AGENT = "hobo-cd/1";
 export const GIT_MAX_PACK_BYTES = 64 * 1024 * 1024;
 const BRANCH = /^(?!\/|.*\/\/|.*\.\.|.*@\{|.*\.lock$)[A-Za-z0-9._/-]{1,200}$/;
@@ -84,7 +72,6 @@ function under(path: string, prefix: string): boolean {
 	return clean === "" || path === clean || path.startsWith(`${clean}/`);
 }
 
-/** The declaration digest of one commit (see the module comment). */
 export function treeDigest(
 	objects: ReadonlyMap<string, GitObject>,
 	commit: Readonly<{ tree: string }>,
@@ -111,7 +98,6 @@ export function treeDigest(
 	return `sha256:${sha256Hex(`hobo.cd.git-paths/v1\n${lines.join("")}`)}`;
 }
 
-/** The v2 request body for `ls-refs` restricted to `prefix`. */
 export function lsRefsRequest(prefix: string, format: ObjectFormat): string {
 	return [
 		pktLine("command=ls-refs\n"),
@@ -124,7 +110,6 @@ export function lsRefsRequest(prefix: string, format: ObjectFormat): string {
 	].join("");
 }
 
-/** The v2 request body for a shallow, filtered fetch of `wants`. */
 export function fetchRequest(
 	wants: readonly string[],
 	filter: string,
@@ -346,7 +331,6 @@ export function createGitDriver(
 					previous,
 					withTrees,
 				);
-			// Tags: SemVer or lexical selection over tag names, newest N above the mark.
 			const tags = refs
 				.filter((ref) => ref.name.startsWith("refs/tags/"))
 				.map((ref) => ({
@@ -458,7 +442,6 @@ export function createGitDriver(
 			return upstreamInvalid(where, `branch head ${head.oid} was not fetched`);
 		try {
 			const commit = parseCommit(object.data);
-			// Forward-only: a head older than the mark (a force-push backwards) is not discovered.
 			const rank = `${String(commit.committedAtMs).padStart(15, "0")}\u0000${head.oid}`;
 			if (previous.hw !== undefined && rank <= previous.hw) {
 				return {
@@ -496,7 +479,6 @@ export function createGitDriver(
 	}
 }
 
-/** Selections a Git subscription accepts: tags by SemVer/lexical, a branch by newest commit. */
 export function gitSelectionAllowed(
 	subscription: Pick<SubscriptionRecord, "branch" | "selection">,
 ): boolean {

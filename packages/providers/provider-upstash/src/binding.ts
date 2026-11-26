@@ -17,7 +17,6 @@ import {
 import { UPSTASH_PROVIDER_ID } from "./definition.js";
 import { UpstashProviderError } from "./errors.js";
 
-// public-contract: binding profile id a consuming workload matches on.
 export const UPSTASH_BINDING_PROFILE = "binding.redis-rest/v1" as const;
 
 export type BuildBindingInput = {

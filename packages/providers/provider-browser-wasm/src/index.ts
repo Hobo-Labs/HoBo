@@ -142,5 +142,4 @@ export type {
 	ResourcePlan,
 } from "./types.js";
 
-// public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_BROWSER_WASM_PACKAGE = "@hobo/provider-browser-wasm";

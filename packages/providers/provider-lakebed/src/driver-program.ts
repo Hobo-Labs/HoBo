@@ -1,10 +1,7 @@
 import { isJsonString, type JsonObject } from "./json.js";
 
-// public-contract: the driver-program schema version this provider emits.
 export const DRIVER_PROGRAM_API_VERSION = "hobo.driver-program/v1";
-// public-contract: the driver-program kind discriminator.
 export const DRIVER_PROGRAM_KIND = "driver-program";
-// public-contract: the deploy driver realized programs target.
 export const LAKEBED_DRIVER = "lakebed-deploy";
 
 export interface DriverResource {

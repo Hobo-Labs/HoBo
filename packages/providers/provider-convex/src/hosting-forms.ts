@@ -23,7 +23,6 @@
 
 import type { VerifiedSourceRef } from "./capability-profile.js";
 
-// public-contract: hosting-form record schema id consumers pin.
 export const HOSTING_FORM_SCHEMA = "hobo.provider-hosting-form/v1";
 
 export const CONVEX_HOSTING_FORM_IDS = [
@@ -116,31 +115,23 @@ export const CONVEX_DASHBOARD_PORT = 6791;
 // invented here.
 // ---------------------------------------------------------------------------
 
-// public-contract: canonical OCI repository for the backend image.
 export const CONVEX_BACKEND_IMAGE_REPOSITORY =
 	"ghcr.io/get-convex/convex-backend";
-// public-contract: documented tag from which pinned digests were resolved.
 export const CONVEX_BACKEND_IMAGE_TAG = "latest";
-// public-contract: canonical OCI repository for the dashboard image.
 export const CONVEX_DASHBOARD_IMAGE_REPOSITORY =
 	"ghcr.io/get-convex/convex-dashboard";
 
 /** UTC date the digests below were resolved from the registry. */
-// public-contract: dates the OCI digest evidence snapshot.
 export const CONVEX_IMAGE_DIGESTS_VERIFIED_ON = "2026-08-08";
 
 /** OCI image index (multi-arch) digest for convex-backend:latest. */
-// public-contract: pinned multi-platform backend image digest.
 export const CONVEX_BACKEND_IMAGE_INDEX_DIGEST =
 	"sha256:240a2e9115dab3c13145b96532d1cc8bc63c5e2d112d95f80e592a75242bfa75";
-// public-contract: pinned amd64 backend image digest.
 export const CONVEX_BACKEND_IMAGE_DIGEST_LINUX_AMD64 =
 	"sha256:86e2a6d0156159cf3432b9376de1793f0b3d323437544aebfeebba760b51d2c1";
-// public-contract: pinned arm64 backend image digest.
 export const CONVEX_BACKEND_IMAGE_DIGEST_LINUX_ARM64 =
 	"sha256:21ead6e5cf245aa99f8a1ca8d4f0a8025aa9e844284410239cfe8d8d3e33bf7b";
 /** Dashboard image index digest (optional component). */
-// public-contract: pinned dashboard image digest.
 export const CONVEX_DASHBOARD_IMAGE_INDEX_DIGEST =
 	"sha256:cd9a57079de2e49dfc786510b70ebf7cc254dda71807176edc4955ccc13915ca";
 

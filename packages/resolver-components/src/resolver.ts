@@ -52,7 +52,6 @@ import {
 } from "./manifest.js";
 import type { LoadedResolverComponent } from "./runtime.js";
 
-// public-contract: per-resource attribute budget (D25: ≤ 16 KiB).
 export const MAX_ATTRIBUTE_BYTES = 16 * 1024;
 
 export interface ComponentInstanceRef {

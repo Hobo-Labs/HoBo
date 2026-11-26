@@ -84,14 +84,12 @@ import {
 import { lateBound } from "./late.js";
 import { createRailDeliveryReader, type RailCatalog } from "./rails.js";
 
-// public-contract: metric names the composition root emits.
 export const COMPOSE_METRICS = Object.freeze({
 	modules: "hobo.cd.compose.modules",
 	reconcilers: "hobo.cd.compose.reconcilers",
 	failures: "hobo.cd.compose.failures",
 });
 
-/** Modules adapter builders may read. Reading one not yet built throws `compose-scope-unbuilt`. */
 export type CdComposeScope = Readonly<{
 	base: CdBase;
 	telemetry: TelemetrySink;
@@ -127,14 +125,12 @@ export type FanoutCostAuthority = Pick<
 	"quote" | "budget" | "entitlement"
 >;
 
-/** Host-owned adapters. Optional ones fall back to fail-closed adapters (fail-closed.ts). */
 export type CdComposeAdapters = Readonly<{
 	gate: Builder<DeployGate>;
 	resolver: Builder<SetResolver>;
 	approvals: Builder<ApprovalPort>;
 	rolloutEngine: Builder<RolloutEngine>;
 	drift: Builder<DriftPolicy>;
-	/** Realizer per reconciler mode; undefined refuses that mode (`compose-realizer-missing`). */
 	realizer: (
 		mode: ReconcilerMode,
 		scope: CdComposeScope,
@@ -147,11 +143,6 @@ export type CdComposeAdapters = Readonly<{
 	runbooks?: Builder<RunbookExecutor>;
 	suites?: Builder<VerifyPort>;
 	notify?: Builder<NotificationPort>;
-	/**
-	 * Pricing and Station budget for the fan-out aggregate gate (D20). Without
-	 * it every fan-out promotion is refused before any Camp starts
-	 * (`fanout-aggregate-quote-missing`): the aggregate never assumes zero cost.
-	 */
 	fanoutCost?: Builder<FanoutCostAuthority>;
 }>;
 
@@ -170,11 +161,9 @@ export type CdComposeInput = Readonly<{
 	policyPack: PolicyPack;
 	topology: TopologyReader;
 	railCatalog: RailCatalog;
-	/** CI bridge: HOBO_CI subscriptions read these (C15). */
 	readCiEvents?: CiEventReader;
 	readCiArtifact?: CiArtifactReader;
 	readRailEvents?: RailEventReader;
-	/** Telemetry sink; defaults to the factory sink over `telemetryEndpoint`. */
 	telemetry?: TelemetrySink;
 	telemetryEndpoint?: string;
 	telemetryHeaders?: Readonly<Record<string, string>>;
@@ -254,7 +243,6 @@ export function wireContinuousDelivery(
 		f.createCdAuthorizer({ ...base, policyPack: input.policyPack }),
 	);
 
-	// Freight, ingestion, sources, artifacts (WP1–WP3).
 	const artifacts = put(
 		"artifacts",
 		f.createArtifactStore(input.artifactStore, base),
@@ -363,7 +351,6 @@ export function wireContinuousDelivery(
 		f.createShadowRecorder({ ...base, campPolicy, resolvePack: a.resolvePack }),
 	);
 
-	// Verification (WP9). Posture series feed INFORM-node verification (D24).
 	const suites = a.suites?.(scope) ?? unconfiguredSuites({ telemetry: sink });
 	const healthSources = f.createHealthSources({
 		http: input.http,
@@ -380,7 +367,6 @@ export function wireContinuousDelivery(
 		}),
 	);
 
-	// The cycle: pipelines ⇄ promotions, fan-out → promotions.
 	const lateFanout = lateBound<FanoutController>("fanout");
 	const latePromotions = lateBound<PromotionService & PreviewEnvironments>(
 		"promotions",
@@ -428,10 +414,6 @@ export function wireContinuousDelivery(
 		}),
 	);
 	lateFanout.bind(fanout);
-	// Fan-out drives convergence through ordinary promotions (D21): a
-	// promotion reads a placed node's governed Camps from the recorded
-	// placement decision, and checks the fan-out aggregate (Rail
-	// max_fanout_camps, entitlement, Station budget) before any Camp starts.
 	const cost: FanoutCostAuthority =
 		a.fanoutCost?.(scope) ??
 		unconfiguredFanoutCost({ telemetry: sink, now: base.now });
@@ -484,7 +466,6 @@ export function wireContinuousDelivery(
 		telemetry: sink,
 	});
 
-	// Agents and the feed (WP11), telemetry read side (WP19).
 	const enrollment = f.createAgentEnrollment({
 		...base,
 		authorizer,
@@ -593,7 +574,6 @@ export function wireContinuousDelivery(
 	});
 }
 
-/** One conductor reconciler per Camp list: the in-process path `hobo up` and `hobo serve cd` use. */
 export function conductorFor(
 	cd: ContinuousDelivery,
 	input: Readonly<{
@@ -605,7 +585,6 @@ export function conductorFor(
 ): CampReconciler {
 	const options = {
 		mode: ReconcilerMode.CONDUCTOR,
-		// SAFETY: a conductor's id is derived from its holder; it is never enrolled.
 		reconcilerId:
 			input.reconcilerId ?? (`conductor:${input.holderId}` as ReconcilerId),
 		campIds: input.campIds,

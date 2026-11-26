@@ -50,7 +50,6 @@ export {
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(hetzner, …).
 export const PROVIDER_ID = "hetzner";
 
-// public-contract: the name every default Hetzner Yard is registered under; changing it renames them all.
 export const DEFAULT_HETZNER_YARD_NAME = "hetzner";
 
 export interface HetznerYardOptions

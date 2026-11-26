@@ -34,9 +34,7 @@ import { depositSecret, type SecretCustodyPort } from "./custody.js";
 import { NeonProviderError } from "./errors.js";
 import type { DomainView } from "./wire.js";
 
-// public-contract: stable Resource Definition identifier.
 export const NEON_DEFINITION_ID = "neon.claimable-postgres/v1";
-// public-contract: provider identifier used in offers and receipts.
 export const NEON_PROVIDER_ID = "neon";
 
 /** Documented unclaimed-tier limits. https://neon.com/docs/reference/claimable-postgres */

@@ -10,10 +10,8 @@ import {
 } from "./cd-kit.js";
 import { CD_REFUSAL, type Outcome } from "./cd-shapes.js";
 
-// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const PLACEMENT_ENGINE_SUITE = "hobo.cd.placement-engine/v1";
 
-// public-contract: assertion names of the PlacementEngine suite.
 export const PLACEMENT_ENGINE_ASSERTIONS = Object.freeze([
 	"permutationDeterminism",
 	"repeatDeterminism",

@@ -29,7 +29,6 @@ import {
 } from "./ephemeral-state.js";
 import type { LibsqlStatementClient } from "./meter.js";
 
-// public-contract: env names the Turso Marketplace integration injects and the relay reads.
 export const TURSO_ENV_NAMES = Object.freeze({
 	url: "TURSO_DATABASE_URL",
 	token: "TURSO_AUTH_TOKEN",
@@ -46,7 +45,6 @@ export type TursoEnvNames = {
 };
 
 export type TursoEnv = {
-	/** The variable names that supplied the binding — safe to log. */
 	readonly source: TursoEnvNames;
 	readonly url: string;
 	readonly authToken: string;
@@ -68,7 +66,6 @@ function namesFor(prefix: string | undefined): TursoEnvNames {
 	};
 }
 
-/** Schemes the HTTP client accepts. `http:` only for a local `sqld`. */
 function remoteUrl(raw: string): boolean {
 	let url: URL;
 	try {
@@ -84,11 +81,6 @@ function remoteUrl(raw: string): boolean {
 	);
 }
 
-/**
- * The Turso pair in `env`, or `undefined` when neither variable is set. Half a
- * pair, or a URL that is not a remote libSQL URL, is an error naming the
- * variable and never quoting its value.
- */
 export function resolveTursoEnv(
 	env: Env,
 	options: { readonly prefix?: string } = {},
@@ -118,18 +110,15 @@ export type TursoEphemeralStateOptions = Omit<
 	readonly prefix?: string;
 	/** The host's `fetch`. Default: the global one, as `@libsql/client/http` does. */
 	readonly fetch?: typeof globalThis.fetch;
-	/** Wrap the client, e.g. with `meterLibsqlClient`. */
 	readonly wrap?: (client: LibsqlStatementClient) => LibsqlStatementClient;
 };
 
 export type TursoEphemeralState = {
 	readonly port: EphemeralStatePort;
 	readonly source: TursoEnvNames;
-	/** Close the HTTP client when the host shuts down. */
 	close(): void;
 };
 
-/** `undefined` when the environment names no Turso database. Opens no connection. */
 export function createTursoEphemeralState(
 	options: TursoEphemeralStateOptions,
 ): TursoEphemeralState | undefined {

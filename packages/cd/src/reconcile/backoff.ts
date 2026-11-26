@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { CD_DEFAULTS } from "../events.js";
 
-// public-contract: reconcile backoff bounds. Base 1 s (the shared backoff
 export const RECONCILE_BACKOFF = Object.freeze({
 	baseMs: CD_DEFAULTS.sourceBackoffBaseMs,
 	maxMs: CD_DEFAULTS.leaseTtlMs,

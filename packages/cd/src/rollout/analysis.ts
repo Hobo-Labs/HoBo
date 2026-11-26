@@ -31,7 +31,6 @@ import {
 } from "./json.js";
 import { refuse } from "./reasons.js";
 
-// public-contract: endpoint_ref prefixes the analysis webhook source serves.
 export const ANALYSIS_ENDPOINTS = Object.freeze({
 	statusGate: "analysis+status:",
 	jsonMetric: "analysis+metric:",
@@ -43,11 +42,9 @@ const MAX_RESPONSE_BYTES = 262_144;
 export type AnalysisWebhookDeps = Readonly<{
 	http: HttpTransport;
 	credentials: CredentialResolver;
-	/** The source this wrapper delegates every non-analysis query to. */
 	base?: HealthSource;
 }>;
 
-/** RFC 6901 JSON pointer lookup. */
 export function pointer(
 	document: JsonValue,
 	path: string,

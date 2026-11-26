@@ -89,7 +89,6 @@ import {
 	sharedNativeProfile,
 } from "./spi.js";
 
-// public-contract: reference id of the engine conformance suite; recorded with every report.
 export const ENGINE_CONFORMANCE_SUITE = "hobo.data-engine-conformance/v1";
 
 export const CONFORMANCE_STATUSES = [
@@ -103,7 +102,7 @@ export const CONFORMANCE_STATUSES = [
 ] as const;
 export type ConformanceStatus = (typeof CONFORMANCE_STATUSES)[number];
 
-// domain-view: recorded result; wire form is EngineConformanceResult in data-models/data_core.proto.
+// domain-view:
 export interface EngineConformanceResult {
 	readonly caseId: string;
 	readonly status: ConformanceStatus;
@@ -111,7 +110,7 @@ export interface EngineConformanceResult {
 	readonly detail: string;
 }
 
-// domain-view: recorded report; wire form is EngineConformanceReport in data-models/data_core.proto.
+// domain-view:
 export interface EngineConformanceReport {
 	readonly suite: typeof ENGINE_CONFORMANCE_SUITE;
 	readonly engine: string;
@@ -328,7 +327,6 @@ function expect(condition: boolean, message: string): asserts condition {
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-// public-contract: dataset name every conformance case provisions; engines isolate by store, not by name.
 export const CONFORMANCE_DATASET = "hobo_conformance_orders";
 
 /**
@@ -594,7 +592,6 @@ const LARGE_KEY = Array.from({ length: 40 }, (_, index) =>
 /** Not a position any engine mints. */
 const GARBAGE_POSITION = "hobo-conformance-not-a-position";
 
-// public-contract: dataset name of the open-schema conformance probe.
 export const CONFORMANCE_OPEN_DATASET = "hobo_conformance_open";
 
 const NATIVE_SOURCE: readonly SpiPortName[] = ["verify", "fence", "retire"];
@@ -663,10 +660,8 @@ async function keepWriting(
 /** Well-formed text that is no fence's token. */
 const FOREIGN_TOKEN = "hobo-conformance-not-a-fence-token";
 
-// public-contract: dataset name of the uuid-keyed conformance probe.
 export const CONFORMANCE_REFS_DATASET = "hobo_conformance_refs";
 
-// public-contract: dataset name of the second dataset a capture probe binds a subscription name against.
 export const CONFORMANCE_SECOND_DATASET = "hobo_conformance_second";
 
 /** The largest declared record bound the kit will build a record past. */

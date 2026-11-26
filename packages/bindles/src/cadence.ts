@@ -1,7 +1,6 @@
 import { isJsonObject, isJsonString } from "./json.js";
 import type { BindleDefinition, ProviderAnnotation } from "./types.js";
 
-// public-contract: platform annotation option for the cadence trait.
 export const CADENCE_OPTION = "cadence" as const;
 
 const CRON = /^\S+(\s+\S+){4}$/u;

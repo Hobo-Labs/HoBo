@@ -27,11 +27,9 @@ import {
 } from "./provider-errors.js";
 import type { TransportRequest, VercelTransport } from "./transport.js";
 
-// public-contract: documented Vercel management API endpoint.
 export const VERCEL_API_BASE = "https://api.vercel.com" as const;
 
 /** The dashboard ceremony URL. Bearer authority, never called by this driver. */
-// public-contract: ownership-claim URL surfaced to human owners.
 export const VERCEL_CLAIM_DEPLOYMENT_URL =
 	"https://vercel.com/claim-deployment" as const;
 

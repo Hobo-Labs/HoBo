@@ -22,12 +22,10 @@ import {
 } from "./driver.js";
 
 /** Date a human read the official sources listed in the README. */
-// public-contract: dates the provider documentation evidence snapshot.
 export const NEON_EVIDENCE_CHECKED_AT = "2026-08-08";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
-// public-contract: stable conformance evidence reference for selection.
 export const NEON_CONFORMANCE_REF =
 	"hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08";
 

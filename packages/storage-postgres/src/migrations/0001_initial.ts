@@ -1,4 +1,3 @@
-// public-contract: recorded in the migrations table and hashed into the
 export const name = "initial";
 
 export function sql(s: string): string {

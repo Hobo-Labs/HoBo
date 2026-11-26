@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-// public-contract: published `$id` editors and the project schema resolve.
 export const CI_PROJECT_PROVIDERS_SCHEMA_ID =
 	"https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project-providers.schema.json";
-// public-contract: the `$ref` shipped inside `ci-project.schema.json`.
 export const CI_PROJECT_PROVIDERS_SCHEMA_REF =
 	"ci-project-providers.schema.json";
 

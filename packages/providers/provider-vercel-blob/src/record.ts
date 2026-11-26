@@ -11,7 +11,6 @@ import {
 	VercelBlobEphemeralRecordSchema,
 } from "./_generated/vercel_blob_ephemeral_state_pb.js";
 
-// public-contract: format tag every record body carries.
 export const VERCEL_BLOB_RECORD_FORMAT = "hobo.vercel-blob.ephemeral/v1";
 
 const INCARNATION = /^[\x21-\x39\x3b-\x7e]{1,64}$/u;

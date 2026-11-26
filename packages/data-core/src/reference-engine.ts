@@ -44,10 +44,8 @@ import {
 } from "./spi.js";
 import { type TypeMappingAnnex, typeMappingToJson } from "./type-mapping.js";
 
-// public-contract: capability profile id of the in-memory reference engine.
 export const REFERENCE_ENGINE_PROFILE = "data.reference/v1";
 
-/** Every canonical type, stored as-is: the reference engine is exact. */
 export const REFERENCE_TYPE_MAPPING: TypeMappingAnnex = Object.freeze({
 	engine: "reference",
 	edges: Object.freeze(
@@ -77,10 +75,8 @@ export const REFERENCE_TYPE_MAPPING: TypeMappingAnnex = Object.freeze({
 	),
 });
 
-// public-contract: the reference engine's native migration profile; realizes both copy patterns.
 export const REFERENCE_NATIVE_PROFILE = "migration.reference.direct/v1";
 
-/** The patterns the reference engine's native profile realizes. */
 const REFERENCE_NATIVE_PATTERNS = [
 	"snapshot-and-tail",
 	"offline-copy",
@@ -93,23 +89,16 @@ const REFERENCE_NATIVE_PATTERNS = [
  * ticket that crosses the port only names the origin, it never carries it.
  */
 export interface ReferenceNativeLink {
-	/**
-	 * While stalled nothing moves: a copy that has not finished, a tail that
-	 * lags. For proving what an executor does when the engine is slow.
-	 */
 	stall(stalled: boolean): void;
-	/** Names of transfers either side still holds; empty once all were stopped. */
 	open(): readonly string[];
 }
 
 interface LinkedSubscriber {
-	/** Copy the scope once, then apply everything published since. */
 	pull(): void;
 }
 
 interface LinkedPublication {
 	readonly scope: DatasetScope;
-	/** Head of the source's journal the target has applied through. */
 	confirmed: number;
 	subscriber: LinkedSubscriber | undefined;
 }
@@ -153,15 +142,8 @@ export function createReferenceNativeLink(): ReferenceNativeLink {
 }
 
 export interface ReferenceEngineOptions {
-	/** Engine id reported in the declaration. Defaults to `reference`. */
 	readonly engine?: string;
-	/** Ports to leave out, to model an engine that cannot provide them. */
 	readonly omit?: readonly SpiPortName[];
-	/**
-	 * Opt in to the native profile. The engine then declares
-	 * `REFERENCE_NATIVE_PROFILE` and provides the `nativeTransfer` port, and
-	 * can transfer natively with any engine given the same link.
-	 */
 	readonly native?: ReferenceNativeLink;
 }
 
@@ -171,7 +153,6 @@ interface StoredDataset {
 		string,
 		{ tenant: string; key: string; record: CanonicalRecord }
 	>;
-	/** `write` numbers the write a change landed in: a read never splits one. */
 	readonly journal: { seq: number; write: number; envelope: ChangeEnvelope }[];
 	readonly watermarks: Map<string, Position>;
 	readonly fences: Map<string, string>;
@@ -183,11 +164,6 @@ function slot(tenant: string, key: string): string {
 	return `${tenant}${SEPARATOR}${key}`;
 }
 
-/**
- * A reference position is a journal sequence number. Anything else was minted
- * by another engine, or by nobody: answering it with "nothing after that"
- * would look exactly like being caught up.
- */
 function positionOf(position: Position, subscription = ""): number {
 	if (!/^(?:0|[1-9][0-9]{0,15})$/u.test(position)) {
 		throw new CapturePositionError(
@@ -198,18 +174,12 @@ function positionOf(position: Position, subscription = ""): number {
 	return Number(position);
 }
 
-/** A capture subscription: the scope its name is bound to, and how far it acknowledged. */
 interface ReferenceSubscription {
 	readonly scope: DatasetScope;
 	readonly start: Position;
-	/** Everything at or before this was acknowledged; a read from before it is refused. */
 	floor: number;
 }
 
-/**
- * A well-formed reference position past `head`: the journal is a sequence, so
- * any larger number is one this engine could mint later and has not yet.
- */
 export function referencePositionPastHead(head: Position): Position {
 	return String(positionOf(head) + 1_000_000);
 }
@@ -257,7 +227,6 @@ export function createReferenceEngine(
 ): EngineBinding {
 	const engine = options.engine ?? "reference";
 	const omit = options.omit ?? [];
-	// The reference engine has no SQL surface, so it never offers `schema`.
 	const ports = SPI_PORTS.filter(
 		(port) => port !== "schema" && !omit.includes(port),
 	);
@@ -294,7 +263,6 @@ export function createReferenceEngine(
 		}
 	};
 
-	/** The one write path: every mutation is journaled as it lands. */
 	const commit = (
 		stored: StoredDataset,
 		mutations: readonly RecordMutation[],
@@ -310,19 +278,12 @@ export function createReferenceEngine(
 			if (mutation.op === "upsert") {
 				if (mutation.record === undefined) {
 					refuse("an upsert carries the record it writes");
-				}
-				// A record is stored where its own key says. A mutation that
-				// names one key and carries the record of another would otherwise
-				// sit under a key no other engine could find it by.
-				else if (
+				} else if (
 					encodeRecordKey(stored.schema, mutation.record) !== mutation.key
 				) {
 					refuse("a mutation's key must be the key of its record");
 				}
 			} else if (
-				// A delete names a key and nothing else, so the key has to be in
-				// its one canonical spelling: any other names no record here, and
-				// would silently delete nothing while another engine deleted one.
 				encodeRecordKey(
 					stored.schema,
 					decodeRecordKey(stored.schema, mutation.key),
@@ -374,7 +335,6 @@ export function createReferenceEngine(
 	const originId = `reference-origin-${originCounter}`;
 	const nativePublications = new Map<string, LinkedPublication>();
 	const nativeSubscriptions = new Map<string, { readonly origin: string }>();
-	/** Transfers this engine subscribes to and has been told to stop applying. */
 	const nativePaused = new Set<string>();
 	if (link !== undefined) {
 		link.origins.set(originId, {
@@ -425,11 +385,6 @@ export function createReferenceEngine(
 		}
 	};
 
-	/**
-	 * The native transfer: a direct copy from one reference engine's rows and
-	 * journal into another's, reached through the link both were given. It
-	 * moves when asked how far it has got, so an executor's waiting is real.
-	 */
 	const nativeTransfer = (state: LinkState): NativeTransferPort => ({
 		profiles: Object.freeze([REFERENCE_NATIVE_PROFILE]),
 		publish(ref): JsonObject {
@@ -442,7 +397,6 @@ export function createReferenceEngine(
 					subscriber: undefined,
 				});
 			}
-			// The ticket names the origin; it does not carry a way to reach it.
 			return {
 				profile: REFERENCE_NATIVE_PROFILE,
 				origin: originId,
@@ -534,14 +488,12 @@ export function createReferenceEngine(
 			);
 		},
 		pause(ref): void {
-			// Only a transfer this engine subscribes to has anything to pause.
 			if (nativeSubscriptions.has(ref.transfer)) nativePaused.add(ref.transfer);
 		},
 		resume(ref): void {
 			nativePaused.delete(ref.transfer);
 		},
 		stop(ref): void {
-			// Both halves: whichever this engine holds for the transfer.
 			nativePaused.delete(ref.transfer);
 			const subscription = nativeSubscriptions.get(ref.transfer);
 			if (subscription !== undefined) {
@@ -604,9 +556,6 @@ export function createReferenceEngine(
 					snapshot: {
 						openSnapshot(request) {
 							const stored = dataset(request.scope.dataset);
-							// Keys are fixed at open; values are read per chunk. That
-							// is a deliberately fuzzy scan — the executors must
-							// converge anyway, and this keeps them honest about it.
 							const keys = [...stored.rows.values()]
 								.filter((row) => inScope(request.scope, row.tenant))
 								.map((row) => slot(row.tenant, row.key))
@@ -645,9 +594,6 @@ export function createReferenceEngine(
 						start(request) {
 							const existing = subscriptions.get(request.subscription);
 							if (existing !== undefined) {
-								// A name is one reader of one scope. Answering its
-								// position to a reader of another scope would start
-								// that reader somewhere it never asked to be.
 								if (
 									existing.scope.dataset !== request.scope.dataset ||
 									existing.scope.tenant !== request.scope.tenant
@@ -686,8 +632,6 @@ export function createReferenceEngine(
 									entry.seq > after &&
 									inScope(request.scope, entry.envelope.tenant),
 							);
-							// Whole writes only: the first is always taken, however
-							// large, and a later one only while it fits the limit.
 							const page: typeof pending = [];
 							let taken = 0;
 							while (taken < pending.length) {
@@ -702,8 +646,6 @@ export function createReferenceEngine(
 							const last = page[page.length - 1];
 							return {
 								changes: page.map((entry) => entry.envelope),
-								// Caught up means everything to the head was considered,
-								// including changes outside this scope.
 								position: caughtUp
 									? String(sequence)
 									: String(last?.seq ?? after),
@@ -737,8 +679,6 @@ export function createReferenceEngine(
 					apply: {
 						apply(request) {
 							const stored = dataset(request.dataset);
-							// Compared and written with no await in between: this
-							// is the reference engine's one transaction.
 							if (
 								request.expectedWatermark !== undefined &&
 								(stored.watermarks.get(request.source) ?? null) !==
@@ -816,9 +756,6 @@ export function createReferenceEngine(
 								request.scope,
 								request.expected.buckets.length,
 							);
-							// Redelivery: the scope is already empty behind the
-							// caller's own fence. There is nothing left to compare
-							// and nothing to remove.
 							if (current.count === 0) return { removed: 0 };
 							if (
 								current.count !== request.expected.count ||
@@ -850,11 +787,6 @@ export function createReferenceEngine(
 	return Object.freeze(binding);
 }
 
-/**
- * A view of a binding with some ports hidden, and a declaration that says so.
- * Used to prove what a pattern does when an engine lacks a port — a missing
- * reverse tail, for instance — without needing a second implementation.
- */
 export function withoutPorts(
 	binding: EngineBinding,
 	hidden: readonly SpiPortName[],

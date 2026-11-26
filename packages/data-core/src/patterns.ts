@@ -1,7 +1,6 @@
 import { digestOf, type JsonObject } from "./json.js";
 import type { SpiPortName } from "./spi.js";
 
-// public-contract: the schema id the pattern catalog is published under.
 export const PATTERN_CATALOG_CONTRACT = "hobo.migration-pattern-catalog/v1";
 
 export const AUTHORITIES = ["projected", "authoritative", "journal"] as const;
@@ -56,7 +55,7 @@ export type RollbackPosture = (typeof ROLLBACK_POSTURES)[number];
 export const WRITE_FREEZES = ["none", "bounded", "window"] as const;
 export type WriteFreeze = (typeof WRITE_FREEZES)[number];
 
-// domain-view: catalog entry; wire form is MigrationPattern in data-models/data_core.proto.
+// domain-view:
 export interface MigrationPattern {
 	readonly id: MigrationPatternId;
 	readonly summary: string;

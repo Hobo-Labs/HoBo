@@ -17,7 +17,6 @@ import {
 	signMachineAdvert,
 } from "@hobo/ci";
 
-// public-contract: a connected machine renews its advert this often.
 export const MACHINE_ADVERT_EVERY_MS = 30_000;
 
 export function machineRunsOnLabel(machineId: string): string {

@@ -86,7 +86,6 @@ import {
 // of which a unit test supplies.
 // ---------------------------------------------------------------------------
 
-// public-contract: every refusal this deploy driver can report, so a caller can branch on the reason rather than matching on a message.
 export const RESOLVER_IAC_ERROR_CODES = Object.freeze([
 	"RESOLVER_IAC_PLAN_MISSING",
 	"RESOLVER_IAC_RESOURCE_UNPLANNED",

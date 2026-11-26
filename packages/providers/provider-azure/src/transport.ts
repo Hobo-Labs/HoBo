@@ -39,7 +39,6 @@ import {
 	type TransportGuardPolicy,
 } from "@hobo/core";
 
-// public-contract: the only origin the Azure resolvers ever address.
 export const AZURE_ARM_ORIGIN = "https://management.azure.com";
 
 /** The documented public ARM host. Nothing else is reachable — in particular
@@ -68,7 +67,6 @@ export const AZURE_ARM_ALLOWED_PATH_PREFIXES = Object.freeze([
 	"/subscriptions/",
 ] as const);
 
-// public-contract: the prefix every resolver path is appended to, and half of the transport path allowlist.
 export const AZURE_ARM_BASE_PATH = "/subscriptions";
 
 /**

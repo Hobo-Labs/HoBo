@@ -5,11 +5,8 @@ import {
 	type JsonValue,
 } from "./json.js";
 import type { IacProgramLike } from "./pulumi-automation-api-engine.js";
-// public-contract: the pinned Pulumi toolchain version every engine (in-memory and CLI) declares.
 export const PINNED_PULUMI_AUTOMATION_VERSION = "3.130.0";
-// public-contract: the IacProgram schema version validateIacProgram accepts.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
-// public-contract: the adapter id stamped on every report this package emits.
 export const ADAPTER_ID = "@hobo/iac-pulumi";
 
 const OUTPUT_REF =

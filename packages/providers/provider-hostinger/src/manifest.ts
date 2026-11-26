@@ -22,7 +22,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const HOSTINGER_PROVIDER_ID = "@hobo/provider-hostinger";
 
 // Hostinger's data-centre slugs (Phoenix, Boston, Amsterdam, London, São

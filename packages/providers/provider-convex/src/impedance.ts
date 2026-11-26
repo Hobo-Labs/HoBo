@@ -1,4 +1,3 @@
-// public-contract: the impedance record schema id consumers pin.
 export const CONVEX_IMPEDANCE_SCHEMA = "hobo.provider-impedance/v1";
 
 export const CONVEX_LIMITS = Object.freeze({
@@ -8,7 +7,6 @@ export const CONVEX_LIMITS = Object.freeze({
 	transactionWriteCap: 8_192,
 } as const);
 
-// public-contract: the paradigm fact PortabilityReport consumers pin (Plan 25 vocabulary).
 export const CONVEX_PARADIGM = "document";
 
 export const CONVEX_PARADIGM_MISMATCHES = Object.freeze([

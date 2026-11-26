@@ -52,7 +52,6 @@ import {
  * The AWS services this package's resolvers address. Each one contributes
  * exactly one regional host to the allowlist.
  */
-// public-contract: the closed set of AWS service endpoints the resolvers may address, and the host allowlist is derived from it.
 export const AWS_RESOLVER_SERVICES = Object.freeze([
 	"dynamodb",
 	"lambda",
@@ -69,7 +68,6 @@ export type AwsResolverService = (typeof AWS_RESOLVER_SERVICES)[number];
  * The commercial-partition endpoint suffix. GovCloud regions (`us-gov-*`) also
  * terminate here; China regions do not, which is why they are refused above.
  */
-// public-contract: the endpoint suffix every allowlisted AWS host ends with.
 export const AWS_ENDPOINT_SUFFIX = "amazonaws.com";
 
 /**
@@ -83,7 +81,6 @@ const REGION_PATTERN = /^[a-z]{2}(?:-[a-z]+){1,2}-\d$/u;
  * The only path prefix. See the module note: this admits every path on these
  * hosts, and the host list is what constrains reach.
  */
-// public-contract: the path allowlist for the AWS transport guard; see the module note on why it is the root.
 export const AWS_ALLOWED_PATH_PREFIXES = Object.freeze(["/"] as const);
 
 /**

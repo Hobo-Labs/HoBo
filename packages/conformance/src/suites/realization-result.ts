@@ -20,7 +20,6 @@ import type { JsonValue } from "../json.js";
 
 import type { AssertionStatus } from "./eventstore.js";
 
-// public-contract: version pin for the realization-result conformance contract.
 export const REALIZATION_RESULT_CONFORMANCE_CONTRACT =
 	"hobo.realization-result-conformance/v1";
 

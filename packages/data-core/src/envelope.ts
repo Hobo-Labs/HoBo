@@ -10,7 +10,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: the schema id a change envelope is published under.
 export const CHANGE_ENVELOPE_CONTRACT = "hobo.change-envelope/v1";
 
 export const CHANGE_OPS = ["upsert", "delete"] as const;

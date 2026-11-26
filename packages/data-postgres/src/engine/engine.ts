@@ -105,7 +105,7 @@ const ALL_PORTS: readonly SpiPortName[] = [
 	"schema",
 ];
 
-// domain-view: parsed options; wire form is PostgresEngineOptions in data-models/postgres_engine.proto.
+// domain-view:
 export interface PostgresEngineOptions {
 	/** How the server is reached. The binding never closes it. */
 	readonly executor: PostgresExecutor;
@@ -396,7 +396,6 @@ export function createPostgresEngine(
 
 // ── conformance fixture ─────────────────────────────────────────────────────
 
-// public-contract: table the conformance schema fixture evolves; pass it as schemaTables.
 export const POSTGRES_SCHEMA_FIXTURE_TABLE = "hobo_evolve_accounts";
 
 const FIXTURE_PLAN: InPlaceEvolvePlan = Object.freeze({

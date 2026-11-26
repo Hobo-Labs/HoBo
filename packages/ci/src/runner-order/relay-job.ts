@@ -34,21 +34,17 @@ import { relayInputLabels } from "./inputs.js";
 import { MACHINE_SHARING, type MachineCandidate } from "./machines.js";
 import { RUNNER_STEP_KEYS, runnerStepKey } from "./providers.js";
 
-// public-contract: the label a relay job asks for in relay mode.
 export const RELAY_LABEL = "hobo-relay";
 
 export type RelayJobsConfig = Readonly<{ answer: boolean; label: string }>;
-// public-contract: the `relayJobs` a repository gets when it writes none.
 export const DEFAULT_RELAY_JOBS: RelayJobsConfig = Object.freeze({
 	answer: false,
 	label: RELAY_LABEL,
 });
 
-// public-contract: every input a relay job may take; one per runner type, then `size` and `first`.
 export const RELAY_JOB_INPUTS = [...RUNNER_STEP_KEYS, "size", "first"] as const;
 export type RelayJobInputName = (typeof RELAY_JOB_INPUTS)[number];
 
-// public-contract: every output a relay job sets.
 export const RELAY_JOB_OUTPUTS = [
 	"runner",
 	"step",
@@ -57,20 +53,17 @@ export const RELAY_JOB_OUTPUTS = [
 ] as const;
 export type RelayJobOutputName = (typeof RELAY_JOB_OUTPUTS)[number];
 
-// public-contract: a `uses:` ending in one of these is a HoBo check step.
 export const RELAY_CHECK_STEP_SUFFIXES = [
 	"/checks/pr-title",
 	"/checks/lint",
 ] as const;
 
-// public-contract: the two route journal event types.
 export const RUNNER_ROUTE_EVENT_TYPES = [
 	"runner.route.Requested",
 	"runner.route.Decided",
 ] as const;
 export type RunnerRouteEventType = (typeof RUNNER_ROUTE_EVENT_TYPES)[number];
 
-// public-contract: every event the relay, machines, retries and checks emit.
 export const RELAY_EVENT_TYPES = [
 	...RUNNER_ROUTE_EVENT_TYPES,
 	"machine.connected",
@@ -85,26 +78,19 @@ export const RELAY_EVENT_TYPES = [
 ] as const;
 export type RelayEventType = (typeof RELAY_EVENT_TYPES)[number];
 
-// public-contract: how a relay job is answered.
 export const RELAY_MODES = ["relay"] as const;
 export type RelayMode = (typeof RELAY_MODES)[number];
 
-// public-contract: how a relay job ends.
 export const RELAY_JOB_CONCLUSIONS = ["succeeded", "failed"] as const;
 export type RelayJobConclusion = (typeof RELAY_JOB_CONCLUSIONS)[number];
 
-// public-contract: the levels a relay job annotation can carry.
 export const RELAY_ANNOTATION_LEVELS = ["error", "warning", "notice"] as const;
 
-// public-contract: how a machine runs a job.
 export const MACHINE_ISOLATIONS = ["container", "host"] as const;
 export type MachineIsolation = (typeof MACHINE_ISOLATIONS)[number];
-// public-contract: the operating systems a machine advert names.
 export const MACHINE_OSES = ["linux", "macos", "windows"] as const;
-// public-contract: the architectures a machine advert names.
 export const MACHINE_ARCHES = ["x64", "arm64", "arm"] as const;
 
-// public-contract: the `hobo ci` commands the relay build adds.
 export const RELAY_CI_COMMANDS = [
 	"machine",
 	"runners",
@@ -115,7 +101,6 @@ export const RELAY_CI_COMMANDS = [
 	"relay",
 ] as const;
 
-// public-contract: the read API paths, under `/v1/accounts/self/`.
 export const RELAY_READ_API_PATHS = [
 	"/v1/accounts/self/runner-order",
 	"/v1/accounts/self/routes",
@@ -127,7 +112,6 @@ export const RELAY_READ_API_PATHS = [
 	"/v1/accounts/self/runs/{id}/{attempt}/jobs",
 ] as const;
 
-// public-contract: the read-only MCP tools the relay build adds.
 export const RELAY_MCP_TOOLS = [
 	"get_runner_order",
 	"explain_route",
@@ -139,7 +123,6 @@ export const RELAY_MCP_TOOLS = [
 	"get_usage",
 ] as const;
 
-// public-contract: where the generated parity scorecard lives.
 export const PARITY_SCORECARD_PATH = "docs/ci/parity-scorecard.md";
 
 export function parityTags(
