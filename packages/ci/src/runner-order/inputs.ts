@@ -5,12 +5,9 @@ import {
 	runnerStepKey,
 } from "./providers.js";
 
-// public-contract: the relay input value that means "the order's size".
 export const RUNNER_INPUT_AUTO = "auto";
 
-// public-contract: the label `machine: auto` stands for.
 export const ANY_MACHINE_LABEL = "self-hosted";
-// public-contract: the label `fleet: auto` stands for.
 export const HOBO_FLEET_LABEL = "hobo";
 
 export type RelayInputs = ReadonlyMap<RunnerStepKey, readonly string[]>;

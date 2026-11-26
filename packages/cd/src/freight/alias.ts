@@ -1,4 +1,3 @@
-// public-contract: alias adjectives (order is load-bearing).
 export const ALIAS_ADJECTIVES: readonly string[] = Object.freeze(
 	(
 		"able acid aged airy alert amber ample apt arid ashen avid awake azure balmy bare bold brave breezy brief bright " +
@@ -19,7 +18,6 @@ export const ALIAS_ADJECTIVES: readonly string[] = Object.freeze(
 	).split(" "),
 );
 
-// public-contract: alias nouns (order is load-bearing).
 export const ALIAS_NOUNS: readonly string[] = Object.freeze(
 	(
 		"acorn adder agate albatross alder anchor antelope apple arbor arch arrow aspen aster atlas aurora badger bagel " +

@@ -15,9 +15,7 @@ import type { Outcome } from "../ports.js";
 import { type Purl, parsePurl } from "./purl.js";
 import { INGEST_REASON } from "./reasons.js";
 
-// public-contract: customData key that carries an attestation on a CDEvent.
 export const CDEVENT_ATTESTATION_KEY = "hobo.cd/attestation" as const;
-// public-contract: largest inbound CDEvent body, in bytes.
 export const CDEVENT_MAX_BYTES = 1_048_576 as const;
 
 const ARTIFACT_EVENT =

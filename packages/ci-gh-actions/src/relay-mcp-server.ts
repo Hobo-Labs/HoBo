@@ -69,13 +69,9 @@ import {
 	quarantinedDeliveryView,
 } from "./relay-mcp-views.js";
 
-// public-contract: the MCP resource URI of an account's leases.
 export const RELAY_MCP_LEASES_URI = "hobo-ci://leases";
-// public-contract: the MCP resource URI of an account's recent events.
 export const RELAY_MCP_EVENTS_URI = "hobo-ci://events";
-// public-contract: the MCP resource URI template of one lease.
 export const RELAY_MCP_LEASE_URI_TEMPLATE = "hobo-ci://leases/{leaseId}";
-// public-contract: the MCP resource URI of the members of the fleet the relay reads.
 export const RELAY_MCP_FLEET_MEMBERS_URI = "hobo-ci://fleet/members";
 
 const LEASE_ID =

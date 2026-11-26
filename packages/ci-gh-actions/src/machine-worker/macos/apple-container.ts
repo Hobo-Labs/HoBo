@@ -6,7 +6,6 @@ import type {
 import { containerExecutor, type JobExecutor } from "../executor.js";
 import type { AppleContainerStatus } from "./platform.js";
 
-// public-contract: the command Apple's container tool installs.
 export const APPLE_CONTAINER_TOOL = "container";
 
 export type ToolResult = Readonly<{

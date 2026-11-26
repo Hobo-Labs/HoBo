@@ -192,7 +192,6 @@ function audiences(claims: JsonObject): readonly string[] {
 	return [];
 }
 
-// public-contract: minimum interval between unknown-kid JWKS refetches per issuer.
 export const JWKS_FORCED_REFRESH_INTERVAL_MS = 60_000 as const;
 
 export function createTrustedPublisherVerifier(

@@ -14,13 +14,11 @@ import {
 } from "./rrule.js";
 import { isTimeZone } from "./zoned.js";
 
-// public-contract: Camp label keys a window selector's jurisdiction and Bindle
 export const WINDOW_LABELS = Object.freeze({
 	jurisdiction: "hobo.cd/jurisdiction",
 	bindle: "hobo.cd/bindle",
 } as const);
 
-// public-contract: evaluation bounds.
 export const WINDOW_LIMITS = Object.freeze({
 	maxDurationMs: 366 * 86_400_000,
 	nextOpenHorizonMs: 366 * 86_400_000,

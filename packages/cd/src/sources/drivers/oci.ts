@@ -41,23 +41,19 @@ import { refuse, SOURCE_REASON } from "../reasons.js";
 import type { AttestationMaterial, AttestingDriver } from "../types.js";
 import { type Candidate, discovered, selectCandidates } from "./common.js";
 
-// public-contract: manifest media types the driver asks for.
 export const OCI_MANIFEST_ACCEPT = [
 	"application/vnd.oci.image.index.v1+json",
 	"application/vnd.oci.image.manifest.v1+json",
 	"application/vnd.docker.distribution.manifest.list.v2+json",
 	"application/vnd.docker.distribution.manifest.v2+json",
 ].join(", ");
-// public-contract: referrer artifact types read as attestations.
 export const OCI_ATTESTATION_TYPES = Object.freeze([
 	"application/vnd.dev.sigstore.bundle.v0.3+json",
 	"application/vnd.dev.sigstore.bundle+json;version=0.3",
 	"application/vnd.dev.sigstore.bundle.v0.2+json",
 	"application/vnd.in-toto+json",
 ] as const);
-// public-contract: OCI image-spec pre-defined annotation key for the source revision.
 export const OCI_REVISION_ANNOTATION = "org.opencontainers.image.revision";
-// public-contract: OCI image-spec pre-defined annotation key for the build time.
 export const OCI_CREATED_ANNOTATION = "org.opencontainers.image.created";
 /** Bounds per discovery: tag pages, manifest reads for NEWEST_BUILD, referrers. */
 export const OCI_MAX_TAG_PAGES = 50;

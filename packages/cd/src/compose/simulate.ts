@@ -13,7 +13,6 @@ import {
 } from "../_generated/cd_pb.js";
 import type { RealizeInput, Realizer } from "../ports.js";
 
-// public-contract: the label every simulated observation carries.
 export const SIMULATED_REASON = Object.freeze({
 	code: "simulated",
 	message:

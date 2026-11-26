@@ -70,7 +70,6 @@ import {
 	unreachableData,
 } from "./policy.js";
 
-// public-contract: saga name recorded in saga facts for every failover.
 export const FAILOVER_SAGA = "cd.failover" as const;
 
 export const FAILOVER_METRIC = Object.freeze({

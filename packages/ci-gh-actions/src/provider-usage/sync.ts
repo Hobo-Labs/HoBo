@@ -7,9 +7,7 @@ import type {
 	UsageSyncProvider,
 } from "./subscription.js";
 
-// public-contract: how often provider usage is synced.
 export const PROVIDER_USAGE_SYNC_INTERVAL_MS = 60 * 60_000;
-// public-contract: how old a synced reading may be before the ledger answers instead.
 export const PROVIDER_USAGE_MAX_AGE_MS = 3 * PROVIDER_USAGE_SYNC_INTERVAL_MS;
 
 export type ProviderUsageReading = Readonly<{

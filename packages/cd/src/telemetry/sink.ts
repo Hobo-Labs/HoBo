@@ -20,7 +20,6 @@ import type {
 import { TelemetryError } from "./errors.js";
 import { encodeMetrics, encodeTraces } from "./otlp.js";
 
-// public-contract: OTLP/HTTP defaults (opentelemetry-specification, exporter).
 export const OTLP_DEFAULTS = Object.freeze({
 	endpoint: "http://localhost:4318",
 	tracesPath: "/v1/traces",

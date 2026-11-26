@@ -16,20 +16,13 @@ import { createHash } from "node:crypto";
 import type { PipelineArtifact } from "./_generated/ci_pb.js";
 import { createArtifact } from "./execution.js";
 
-// public-contract: the Freight manifest schema (@hobo/cd FREIGHT_MANIFEST_SCHEMA).
 export const CI_FREIGHT_MANIFEST_SCHEMA = "hobo.freight-manifest/v1" as const;
-// public-contract: the in-toto Statement v1 _type URI.
 export const IN_TOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1";
-// public-contract: the SLSA provenance v1 predicateType URI.
 export const SLSA_PROVENANCE_PREDICATE = "https://slsa.dev/provenance/v1";
-// public-contract: the SLSA buildType of a HoBo CI build.
 export const HOBO_CI_BUILD_TYPE = "https://hobo.dev/ci/build/v1";
-// public-contract: CI output path of the run's provenance statement (README output layout).
 export const CI_PROVENANCE_OUTPUT = "freight/provenance.intoto.json";
-// public-contract: suffix of a deliverable's Freight manifest output, next to its bytes (README output layout).
 export const CI_FREIGHT_MANIFEST_SUFFIX = ".freight.json";
 
-// public-contract: refusal codes, the same strings @hobo/cd's FREIGHT_REASON uses.
 export const CI_FREIGHT_REASON = Object.freeze({
 	manifestInvalid: "freight-manifest-invalid",
 	secretInRecord: "freight-secret-in-record",
@@ -83,7 +76,6 @@ export type HoboDeliverable = Readonly<{
  * to (HOBO_CI_COMPONENTS). The runner image's output is its OCI image
  * manifest, whose sha256 is the image digest.
  */
-// public-contract: HoBo's own deliverables, their Bindles and CI output paths.
 export const HOBO_DELIVERABLES = Object.freeze({
 	relay: Object.freeze({
 		id: "relay",

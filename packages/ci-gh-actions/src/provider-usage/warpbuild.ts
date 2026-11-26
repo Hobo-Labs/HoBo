@@ -7,14 +7,10 @@ import {
 	usableUsd,
 } from "./reader.js";
 
-// public-contract: the WarpBuild page the usage call was read from.
 export const WARPBUILD_USAGE_SOURCE =
 	"https://warpbuild.com/docs/api/reports/GetCIBilling";
-// public-contract: the day that page and the API overview were read.
 export const WARPBUILD_USAGE_OBSERVED_AT = "2026-11-17";
-// public-contract: WarpBuild's API base URL.
 export const WARPBUILD_API_BASE = "https://api.warpbuild.com/api/v1";
-// public-contract: the read-only path the WarpBuild reader calls.
 export const WARPBUILD_USAGE_PATH = "/reports/billing/ci";
 
 const billingReport = z.object({

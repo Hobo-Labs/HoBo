@@ -42,7 +42,6 @@ import { keepOf } from "../reconcile/departure.js";
 import { reason } from "../reconcile/errors.js";
 import { stableJson } from "../reconcile/json.js";
 
-// public-contract: private ledger stream and event of the orchestrator realizer.
 export const ORCHESTRATOR_LEDGER = Object.freeze({
 	stream: (campId: string) => `cd-realizer-graph-${campId}`,
 	realized: "cd.realizer.GraphRealized",

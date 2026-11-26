@@ -4,7 +4,6 @@ export type MinutesUsage = Readonly<{
 	burnPerHour?: number;
 }>;
 
-// public-contract: hours of burn the minutes limit keeps in reserve.
 export const MINUTES_RUNWAY_HOURS = 2;
 
 export type MinutesVerdict =

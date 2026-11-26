@@ -50,12 +50,10 @@ function hex(seed: string, length: number): string {
 	return createHash("sha256").update(seed).digest("hex").slice(0, length);
 }
 
-// public-contract: deterministic trace id of a promotion.
 export function promotionTraceId(promotionId: string): string {
 	return hex(`hobo.cd.trace:${promotionId}`, 32);
 }
 
-// public-contract: deterministic span id of a promotion (root) or a Camp task.
 export function promotionSpanId(promotionId: string, campId?: string): string {
 	return hex(
 		campId === undefined

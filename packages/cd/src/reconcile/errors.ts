@@ -9,7 +9,6 @@ import { FEED_FAILURES } from "../feed/errors.js";
 import type { Refusal } from "../ports.js";
 import { validateReasonStructuredDetail } from "./release-freight-detail.js";
 
-// public-contract: reason codes the reconcile module writes.
 export const RECONCILE_FAILURES = Object.freeze({
 	"lease-held":
 		"Another reconciler holds the Camp lease (I4). Wait for it to expire or revoke that reconciler; never run two writers for one Camp.",

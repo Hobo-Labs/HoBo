@@ -1,6 +1,5 @@
 import type { RelayJobAnnotation } from "@hobo/ci";
 
-// public-contract: the tools the lint check runs, in the order it runs them.
 export const LINT_TOOLS = [
 	"actionlint",
 	"shellcheck",
@@ -175,9 +174,7 @@ export function lintSpan(ms: number): string {
 	return `${ms} ms`;
 }
 
-// public-contract: the result line a lint tool shows when the check's time ran out.
 export const LINT_STOPPED_BY_BUDGET = "stopped when the check's time ran out";
-// public-contract: the result line a lint tool not started for lack of time shows.
 export const LINT_NOT_RUN_BY_BUDGET = "not run: the check's time ran out";
 
 export function lintSummary(

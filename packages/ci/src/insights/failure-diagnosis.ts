@@ -36,22 +36,16 @@ export type DiagnosisPattern = Readonly<{
 	alongside?: RegExp;
 }>;
 
-// public-contract: the most log lines a diagnosis quotes.
 export const MAX_EXCERPT_LINES = 50;
 
-// public-contract: the most UTF-8 bytes of log a diagnosis quotes.
 export const MAX_EXCERPT_BYTES = 8192;
 
-// public-contract: the longest a single piece of evidence is quoted.
 export const MAX_EVIDENCE_LENGTH = 200;
 
-// public-contract: evidence recorded when the job failed before running a step.
 export const RUNNER_FAILED_EVIDENCE = "the job failed before any step ran";
 
-// public-contract: evidence recorded when a job ran out of time and nothing else explains it.
 export const TIMED_OUT_EVIDENCE = "the job ran out of time";
 
-// public-contract: log text that means the runner or the network failed, not the code.
 export const INFRA_PATTERNS: readonly DiagnosisPattern[] = [
 	{
 		label: "lost communication with the server",
@@ -83,7 +77,6 @@ export const INFRA_PATTERNS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: log text that counts as a runner failure only when the job ran no step.
 export const INFRA_PATTERNS_AFTER_RUNNER_FAILURE: readonly DiagnosisPattern[] =
 	[
 		{
@@ -92,7 +85,6 @@ export const INFRA_PATTERNS_AFTER_RUNNER_FAILURE: readonly DiagnosisPattern[] =
 		},
 	];
 
-// public-contract: log text that means the workflow itself is set up wrongly.
 export const CONFIG_PATTERNS: readonly DiagnosisPattern[] = [
 	{ label: "Invalid workflow file", pattern: /invalid workflow file/i },
 	{ label: "Unrecognized named-value", pattern: /unrecognized named-value/i },
@@ -110,7 +102,6 @@ export const CONFIG_PATTERNS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: log text that means a set-up error when the failed step is "Set up job" or runs an action.
 export const CONFIG_PATTERNS_IN_SETUP_STEPS: readonly DiagnosisPattern[] = [
 	{
 		label: "No such file or directory",
@@ -118,10 +109,8 @@ export const CONFIG_PATTERNS_IN_SETUP_STEPS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: the start of the name GitHub gives a step that runs an action.
 export const ACTION_STEP_PREFIX = "Run actions/";
 
-// public-contract: linter and formatter names; found in the log or the failed step's name.
 export const LINT_PATTERNS: readonly DiagnosisPattern[] = [
 	{
 		label: "a linter or formatter by name",
@@ -130,7 +119,6 @@ export const LINT_PATTERNS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: failed-step names that mean a lint or format check.
 export const LINT_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 	{ label: 'step name contains "lint"', pattern: /lint/i },
 	{
@@ -139,7 +127,6 @@ export const LINT_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: log text that means the code did not compile or type-check.
 export const BUILD_PATTERNS: readonly DiagnosisPattern[] = [
 	{ label: "error TS<number>", pattern: /error TS\d+/ },
 	{ label: "Type error", pattern: /\bType error\b/ },
@@ -151,14 +138,12 @@ export const BUILD_PATTERNS: readonly DiagnosisPattern[] = [
 	{ label: "SyntaxError", pattern: /SyntaxError/ },
 ];
 
-// public-contract: failed-step names that mean a build or type-check.
 export const BUILD_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 	{ label: 'step name contains "build"', pattern: /build/i },
 	{ label: 'step name contains "compile"', pattern: /compile/i },
 	{ label: 'step name contains "typecheck"', pattern: /type[- ]?check/i },
 ];
 
-// public-contract: log text that means a test failed.
 export const TEST_PATTERNS: readonly DiagnosisPattern[] = [
 	{
 		label: "<count> failed / <count> tests failed, count above zero",
@@ -174,7 +159,6 @@ export const TEST_PATTERNS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: failed-step names that mean a test run.
 export const TEST_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 	{
 		label: 'step name has a word starting with "test", or names a test runner',
@@ -182,7 +166,6 @@ export const TEST_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 	},
 ];
 
-// public-contract: log text that makes a failed test look timing-dependent rather than wrong.
 export const FLAKE_HINT_PATTERNS: readonly DiagnosisPattern[] = [
 	{
 		label: "Timeout of <duration>",

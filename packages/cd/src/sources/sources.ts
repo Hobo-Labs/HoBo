@@ -76,7 +76,6 @@ import { isAttestingDriver } from "./types.js";
 import { subscriptionKeys } from "./webhooks/keys.js";
 import { receiveWebhook } from "./webhooks/receivers.js";
 
-// public-contract: metric names the source service emits through TelemetrySink.
 export const SOURCE_METRIC = Object.freeze({
 	polls: "hobo.cd.source.polls",
 	pollDuration: "hobo.cd.source.poll.duration",
@@ -89,7 +88,6 @@ export const SOURCE_METRIC = Object.freeze({
 	defined: "hobo.cd.source.defined",
 } as const);
 
-// public-contract: outcome recorded in `source.ArtifactDiscovered` meta.
 export type DiscoveryOutcome = "recorded" | "skipped" | "deferred" | "refused";
 
 export type FreightSourcesDeps = CdBase & {

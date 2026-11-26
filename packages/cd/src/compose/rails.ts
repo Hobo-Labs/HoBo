@@ -32,7 +32,6 @@ import type {
 import { emitMetrics } from "../telemetry/advisory.js";
 import { composeRefusal } from "./errors.js";
 
-// public-contract: the Station Rail event types the readers fold (mirrors
 // STATION_EVENTS in @hobo/stations; strings, so the journal is the contract).
 export const RAIL_EVENT_TYPES = Object.freeze({
 	published: "rail.Published",
@@ -42,7 +41,6 @@ export const RAIL_EVENT_TYPES = Object.freeze({
 	retired: "rail.Retired",
 } as const);
 
-// public-contract: metric names the rail readers emit.
 export const RAIL_READER_METRICS = Object.freeze({
 	deliveryInvalid: "hobo.cd.compose.rail_delivery_invalid",
 });

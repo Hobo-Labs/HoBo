@@ -13,17 +13,11 @@ import type {
 	RunnerHostRegistration,
 } from "./runner-host-realizer.js";
 
-// public-contract: the marker file that closes a worker's admission while it exists.
 export const WORKER_ADMISSION_PAUSED_FILE = "admission-paused";
-// public-contract: the file the host's fleet agent rewrites with its own Observation after every beat.
 export const WORKER_OBSERVATION_FILE = "fleet-observation.json";
-// public-contract: the file a local runner's controller rewrites with its runner's GitHub presence.
 export const WORKER_RUNNER_PRESENCE_FILE = "runner-presence.json";
-// public-contract: the file the host's CD agent writes to ask the supervisor for a controller release.
 export const CONTROLLER_DESIRED_FILE = "controller-desired.json";
-// public-contract: the file the supervisor rewrites with the controller process it runs.
 export const CONTROLLER_STATUS_FILE = "controller-status.json";
-// public-contract: the directory of controller releases staged by digest (`<hex>.mjs`).
 export const CONTROLLER_RELEASES_DIR = "controller-releases";
 
 /** How long a runner presence report is believed: two missed refreshes. */

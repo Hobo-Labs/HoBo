@@ -5,13 +5,11 @@ import {
 	ResourceObservationSchema,
 } from "../_generated/cd_pb.js";
 
-// public-contract: Camp mapping-rule property naming retained fields.
 export const RETAIN_PROPERTY = "hobo.cd/retain" as const;
 
 const AUTOSCALED = Object.freeze(["replicas", "instances", "desiredCount"]);
 const MANAGED_RUNTIME = Object.freeze(["runtimeVersion", "platformVersion"]);
 
-// public-contract: the in-tree retained-field table, keyed by resource kind
 export const RETAINED_FIELDS: Readonly<Record<string, readonly string[]>> =
 	Object.freeze({
 		compute: AUTOSCALED,
@@ -85,7 +83,6 @@ export function mergeRetained(
 	);
 }
 
-// public-contract: drift classes a realizer may report in drift_kind.
 export const DRIFT_CLASSES = Object.freeze([
 	"modified",
 	"deleted",

@@ -19,7 +19,6 @@ import type { PublisherConfig } from "./config.js";
 import { GitopsError } from "./errors.js";
 import { cloneAsJson, isJsonObject } from "./json.js";
 
-// public-contract: largest resolved set a ConfigMap may carry (bytes).
 export const MAX_SET_DOCUMENT_BYTES = 921_600;
 
 /** The resolved deployment set a publish carries (from the frozen PublisherPort). */

@@ -2,7 +2,6 @@
 // code carries its remediation so an operator-facing caller (health, CLI,
 // runbook) can say exactly what to do.
 
-// public-contract: boundary failure codes with remediation.
 export const BOUNDARY_FAILURES = Object.freeze({
 	"webhook-endpoint-invalid": {
 		remediation:

@@ -16,13 +16,11 @@ export type RunnerTierSelection = Readonly<{
 }>;
 
 /** Concrete GitHub-hosted default. Never ubuntu-latest. */
-// public-contract: the GitHub-hosted machine type overflow uses instead of ubuntu-latest.
 export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
 
 const HOBO_JIT_LABELS = new Set(["hobo", "hobo-trunk"]);
 
 /** The label a local box registers with (the `local` provider kind's `runsOn`). */
-// public-contract: the `runs-on` label a routed job asks a local box for.
 export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
 
 /**

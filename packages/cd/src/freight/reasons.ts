@@ -2,7 +2,6 @@ import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: refusal codes the Freight ledger returns. Every refusal
 // carries a remediation an operator can act on.
 export const FREIGHT_REASON = Object.freeze({
 	manifestInvalid: "freight-manifest-invalid",

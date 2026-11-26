@@ -12,7 +12,6 @@ import {
 	parseRunnerRouteEvent,
 } from "./relay-job.js";
 
-// public-contract: how long the route journal keeps an entry (90 days).
 export const ROUTE_JOURNAL_RETENTION_MS = 90 * 24 * 60 * 60_000;
 
 export type SqliteRouteJournalOptions = Readonly<{

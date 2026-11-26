@@ -1,6 +1,5 @@
 import { UNVERIFIED_TRIGGER } from "../events.js";
 
-// public-contract: refusal codes of the ingest boundary (manifest, attestation,
 // CDEvent, trusted-publisher token). Every refusal carries a remediation.
 export const INGEST_REASON = Object.freeze({
 	publisherRecordInvalid: "publisher-record-invalid",
@@ -26,7 +25,6 @@ export const INGEST_REASON = Object.freeze({
 export type IngestReasonCode =
 	(typeof INGEST_REASON)[keyof typeof INGEST_REASON];
 
-// public-contract: metric names the ingest boundary emits through TelemetrySink.
 export const INGEST_METRIC = Object.freeze({
 	accepted: "hobo.cd.ingest.accepted",
 	refused: "hobo.cd.ingest.refused",

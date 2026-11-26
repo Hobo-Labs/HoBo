@@ -32,7 +32,6 @@ export type CdSlo = Readonly<{
 const RUNBOOK = "packages/cd/src/telemetry/README.md#runbook";
 const AUTHZ_RUNBOOK = "packages/cd/src/authz/README.md#runbook";
 
-// public-contract: CD plane alert rules (names are stable identifiers).
 export const CD_ALERT_RULES: readonly CdAlertRule[] = Object.freeze([
 	{
 		name: "CdReconcileLagHigh",
@@ -166,7 +165,6 @@ export const CD_ALERT_RULES: readonly CdAlertRule[] = Object.freeze([
 	},
 ]);
 
-// public-contract: CD plane SLOs.
 export const CD_SLOS: readonly CdSlo[] = Object.freeze([
 	{
 		name: "reconcile-convergence",

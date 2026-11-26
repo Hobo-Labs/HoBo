@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FleetId, MemberId, WorkDigest } from "@hobo/fleet";
 
-// public-contract: bucket and stream names, read by operators and the probe suite.
 export const BUCKETS = {
 	registry: "fleet-registry",
 	views: "fleet-views",
@@ -9,7 +8,6 @@ export const BUCKETS = {
 	replay: "fleet-replay",
 } as const;
 
-// public-contract: stream names
 export const STREAMS = {
 	submissions: "FLEET_SUBMISSIONS",
 	offers: "FLEET_OFFERS",
@@ -32,7 +30,6 @@ export function bucketSubject(bucket: BucketName, key: string): string {
 	return `$KV.${bucket}.${key}`;
 }
 
-// public-contract: audit subjects
 export const AUDIT_SUBJECTS = {
 	entry: "fleet.audit.entry",
 	checkpoint: "fleet.audit.checkpoint",

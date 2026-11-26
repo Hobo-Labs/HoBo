@@ -15,7 +15,6 @@ export type OtlpAnyValue =
 
 export type OtlpKeyValue = Readonly<{ key: string; value: OtlpAnyValue }>;
 
-// public-contract: OTLP span kind numbers (opentelemetry-proto SpanKind).
 export const OTLP_SPAN_KIND = Object.freeze({
 	internal: 1,
 	server: 2,
@@ -24,14 +23,12 @@ export const OTLP_SPAN_KIND = Object.freeze({
 	consumer: 5,
 } as const);
 
-// public-contract: OTLP status codes (opentelemetry-proto Status.StatusCode).
 export const OTLP_STATUS_CODE = Object.freeze({
 	unset: 0,
 	ok: 1,
 	error: 2,
 } as const);
 
-// public-contract: OTLP aggregation temporality used for counters/histograms.
 export const OTLP_DELTA_TEMPORALITY = 1 as const;
 
 function value(v: string | number | boolean): OtlpAnyValue {

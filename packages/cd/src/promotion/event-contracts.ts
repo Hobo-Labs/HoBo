@@ -107,7 +107,6 @@ function v1(
 	});
 }
 
-// public-contract: evolution contracts for the env.* promotion events (golden corpus).
 export const PROMOTION_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 	Object.freeze([
 		v1(CD_EVENTS.EnvPromoteRequested, PROMOTION_FIELDS, [

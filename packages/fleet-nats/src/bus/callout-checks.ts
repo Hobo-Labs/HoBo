@@ -30,7 +30,6 @@ export type CalloutCheck =
 	| "not-active"
 	| "tenant";
 
-// public-contract: the check names are the `check` field of hobo_fleet_callout_refused.
 export const CALLOUT_CHECKS: readonly CalloutCheck[] = [
 	"request-signature",
 	"ticket",
@@ -41,7 +40,6 @@ export const CALLOUT_CHECKS: readonly CalloutCheck[] = [
 	"tenant",
 ];
 
-// public-contract: the key scope in the fleet-replay bucket, shared by every responder replica.
 export const TICKET_REPLAY_SCOPE = "nats-ticket";
 
 export type CalloutVerdict = Readonly<

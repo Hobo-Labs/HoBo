@@ -22,11 +22,8 @@ export type ParsedRunnerOrder = RunnerOrder & {
 	readonly [parsedRunnerOrder]: true;
 };
 
-// public-contract: the most steps one runner order may hold.
 export const MAX_RUNNER_ORDER_STEPS = 16;
-// public-contract: the share of included minutes a new `github` limit starts at.
 export const DEFAULT_MINUTES_LIMIT_PERCENT = 80;
-// public-contract: the monthly spend, in US dollars, a new provider limit starts at.
 export const DEFAULT_SPEND_LIMIT_USD = 100;
 
 export const RUNNER_RETRY_TARGETS = ["any", "same", "other"] as const;

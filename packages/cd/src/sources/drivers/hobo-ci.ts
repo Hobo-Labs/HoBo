@@ -28,9 +28,7 @@ import {
 	writeCursor,
 } from "./common.js";
 
-// public-contract: the CI event type the HOBO_CI driver reads.
 export const CI_RESULT_EVENT = "ci.PipelineResultObserved" as const;
-// public-contract: the CI result status that qualifies a run.
 export const CI_PASSED = "passed" as const;
 export const CI_SCAN_LIMIT = 10_000;
 

@@ -33,7 +33,6 @@ export interface ProviderHealthFeedStore extends ProviderHealthStore {
 	): Promise<ProviderHealth | undefined>;
 }
 
-// public-contract: how long a counted provider outcome is remembered against a redelivery.
 export const PROVIDER_OUTCOME_MEMORY_MS = 7 * 24 * 60 * 60_000;
 
 export class SqliteProviderHealthStore implements ProviderHealthFeedStore {

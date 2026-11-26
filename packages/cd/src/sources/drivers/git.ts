@@ -52,7 +52,6 @@ import {
 } from "./git-pack.js";
 import { safeHttpsUrl } from "./http-index.js";
 
-// public-contract: the agent string sent with every Git v2 command.
 export const GIT_AGENT = "hobo-cd/1";
 export const GIT_MAX_PACK_BYTES = 64 * 1024 * 1024;
 const BRANCH = /^(?!\/|.*\/\/|.*\.\.|.*@\{|.*\.lock$)[A-Za-z0-9._/-]{1,200}$/;

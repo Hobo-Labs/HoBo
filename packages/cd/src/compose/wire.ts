@@ -84,7 +84,6 @@ import {
 import { lateBound } from "./late.js";
 import { createRailDeliveryReader, type RailCatalog } from "./rails.js";
 
-// public-contract: metric names the composition root emits.
 export const COMPOSE_METRICS = Object.freeze({
 	modules: "hobo.cd.compose.modules",
 	reconcilers: "hobo.cd.compose.reconcilers",

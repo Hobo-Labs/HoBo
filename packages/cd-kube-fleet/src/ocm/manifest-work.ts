@@ -21,7 +21,6 @@ import {
 	type KubeObject,
 } from "../kube/objects.js";
 
-// public-contract: the OCM work API path the hub serves and PACT pins.
 export const OCM_WORK_API = "/apis/work.open-cluster-management.io/v1" as const;
 
 /** Collection of ManifestWorks in one cluster namespace. */

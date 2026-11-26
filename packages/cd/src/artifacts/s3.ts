@@ -30,12 +30,9 @@ import {
 import { errorCodeOf } from "./json.js";
 import { ARTIFACT_REASON, ArtifactStoreError } from "./reasons.js";
 
-// public-contract: raw size above which an S3 upload is multipart (64 MiB).
 export const ARTIFACT_MULTIPART_THRESHOLD_BYTES = 67_108_864;
-// public-contract: largest blob the S3 backend stores (256 MiB raw); base64 text
 // of anything larger would exceed what a text transport can carry.
 export const ARTIFACT_S3_MAX_BLOB_BYTES = 268_435_456;
-// public-contract: object key prefix of content-addressed blobs.
 export const ARTIFACT_S3_KEY_PREFIX = "blobs/sha256/";
 
 const CONTROL_TIMEOUT_MS = 30_000;

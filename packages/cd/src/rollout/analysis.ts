@@ -31,7 +31,6 @@ import {
 } from "./json.js";
 import { refuse } from "./reasons.js";
 
-// public-contract: endpoint_ref prefixes the analysis webhook source serves.
 export const ANALYSIS_ENDPOINTS = Object.freeze({
 	statusGate: "analysis+status:",
 	jsonMetric: "analysis+metric:",

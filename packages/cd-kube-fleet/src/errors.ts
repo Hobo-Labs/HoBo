@@ -5,7 +5,6 @@
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "@hobo/cd";
 
-// public-contract: cd-kube-fleet failure codes with remediation.
 export const KUBE_FLEET_FAILURES = Object.freeze({
 	"kube-fleet-config-invalid": {
 		remediation:

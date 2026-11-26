@@ -12,7 +12,6 @@ import {
 import { BoundaryError } from "./errors.js";
 import type { CdEventSink, WebhookDelivery } from "./webhook.js";
 
-// public-contract: the custom CDEvent type every notification uses.
 export const NOTIFICATION_EVENT_TYPE = hoboEventType("notification", "sent");
 
 export type NotificationPortOptions = Readonly<{

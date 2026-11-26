@@ -50,7 +50,6 @@ import {
 	type RetentionPin,
 } from "./retention.js";
 
-// public-contract: metric names the ledger emits through TelemetrySink.
 export const FREIGHT_METRIC = Object.freeze({
 	recorded: "hobo.cd.freight.recorded",
 	refused: "hobo.cd.freight.refused",

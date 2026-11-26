@@ -39,23 +39,14 @@ import { type MinuteRate, usageReport } from "@hobo/ci/insights/usage";
 import { z } from "zod";
 import type { ControlAuthenticator } from "./control-auth.js";
 
-// public-contract: the account scope every read API path needs.
 export const READ_API_SCOPE = "policy:read";
-// public-contract: where the read API's paths start.
 export const READ_API_PREFIX = "/v1/accounts/self";
-// public-contract: rows per page when a request names no limit.
 export const READ_API_DEFAULT_LIMIT = 50;
-// public-contract: the most rows one page holds.
 export const READ_API_MAX_LIMIT = 200;
-// public-contract: how far into a list a cursor may reach.
 export const READ_API_MAX_OFFSET = 1000;
-// public-contract: how far back a list reads when a request names no `since`: the journal's retention.
 export const READ_API_LIST_WINDOW_MS = 90 * 86_400_000;
-// public-contract: how far back a report reads when a request names no `since`.
 export const READ_API_REPORT_WINDOW_MS = 30 * 86_400_000;
-// public-contract: the most stored runs of one repository a report reads.
 export const READ_API_REPORT_RUN_CAP = 1000;
-// public-contract: the most connected repositories one account-wide read covers.
 export const READ_API_MAX_REPOSITORIES = 50;
 
 export type AccountRepository = Readonly<{
@@ -272,7 +263,6 @@ const pageParameters: readonly ReadApiParameter[] = [
 	},
 ];
 
-// public-contract: the read API's paths (ADR-0183 frozen names).
 export const READ_API_ROUTES: readonly ReadApiRoute[] = [
 	{
 		path: "/runner-order",

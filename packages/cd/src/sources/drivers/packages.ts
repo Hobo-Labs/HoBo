@@ -43,7 +43,6 @@ import { refuse, SOURCE_REASON } from "../reasons.js";
 import { type Candidate, discovered, selectCandidates } from "./common.js";
 import { safeHttpsUrl } from "./http-index.js";
 
-// public-contract: package ecosystems a PACKAGE_REGISTRY subscription may name.
 export const PACKAGE_ECOSYSTEMS = Object.freeze([
 	"npm",
 	"pypi",
@@ -54,7 +53,6 @@ export const PACKAGE_ECOSYSTEMS = Object.freeze([
 ] as const);
 export type PackageEcosystem = (typeof PACKAGE_ECOSYSTEMS)[number];
 
-// public-contract: default public registry per ecosystem.
 export const PACKAGE_REGISTRY_DEFAULTS: Readonly<
 	Record<PackageEcosystem, string>
 > = Object.freeze({

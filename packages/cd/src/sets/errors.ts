@@ -4,7 +4,6 @@ import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: refusal codes of the desired-state module.
 export const SETS_FAILURES = Object.freeze({
 	"delta-invalid":
 		"Fix the Delta record (delta_id, camp_id, intent and schema_version are required) and open it again.",

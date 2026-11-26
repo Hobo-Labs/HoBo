@@ -30,7 +30,6 @@ import { ARTIFACT_REASON, ArtifactStoreError, corrupt } from "./reasons.js";
 import { createS3Backend } from "./s3.js";
 import { emit } from "./telemetry.js";
 
-// public-contract: coordinate scheme of a blob held by the artifact store.
 export const ARTIFACT_STORE_COORDINATE_PREFIX = "store://";
 
 export type ArtifactStoreDeps = CdBase & { readonly telemetry?: TelemetrySink };

@@ -24,7 +24,6 @@ import type {
 import { feedRefusal } from "./errors.js";
 import { isNumber, isWireObject, text, type WireObject } from "./json.js";
 
-// public-contract: delivery-feed routes under `/v1/cd/`.
 export const FEED_ROUTES = Object.freeze({
 	enrollments: "/v1/cd/enrollments",
 	svidRefresh: "/v1/cd/svid/refresh",
@@ -37,13 +36,11 @@ export const FEED_ROUTES = Object.freeze({
 	checkpoints: "/v1/cd/checkpoints",
 } as const);
 
-// public-contract: media types of the delivery feed.
 export const FEED_MEDIA_TYPES = Object.freeze({
 	json: "application/json",
 	sse: "text/event-stream",
 } as const);
 
-// public-contract: request body limit of the delivery feed.
 export const FEED_MAX_REQUEST_BYTES = 1_048_576 as const;
 
 export { isWireObject, text, type WireObject } from "./json.js";

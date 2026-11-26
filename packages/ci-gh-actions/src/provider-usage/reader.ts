@@ -20,7 +20,6 @@ export type UsageHttpDeps = Readonly<{
 	timeoutMs: number;
 }>;
 
-// public-contract: how long one vendor usage call may take.
 export const PROVIDER_USAGE_TIMEOUT_MS = 10_000;
 
 export async function readJson<T>(

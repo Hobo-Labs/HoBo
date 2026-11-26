@@ -75,7 +75,6 @@ export type CdComposeConfig = Readonly<{
 
 export type CdComposeEnv = Readonly<Record<string, string | undefined>>;
 
-// public-contract: environment variables the composition root reads.
 export const CD_COMPOSE_ENV = Object.freeze({
 	tenant: "HOBO_TENANT",
 	station: "HOBO_STATION",

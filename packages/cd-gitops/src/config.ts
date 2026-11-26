@@ -13,7 +13,6 @@ import {
 } from "./_generated/gitops_pb.js";
 import { GitopsError } from "./errors.js";
 
-// public-contract: publisher configuration schema id.
 export const PUBLISHER_SCHEMA = "hobo.cd-gitops.publisher/v1" as const;
 
 /** A publisher configuration that passed every gitops.cue constraint. */

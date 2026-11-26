@@ -1,6 +1,5 @@
 import { FreightOrigin } from "../_generated/cd_pb.js";
 
-// public-contract: refusal codes the pipeline controller returns. Every
 // refusal carries a remediation; `SHADOW_REQUIRED` (events.ts) is reused for
 // an ENFORCE node without INFORM upstream (I23).
 export const PIPELINE_REASON = Object.freeze({
@@ -27,7 +26,6 @@ export const PIPELINE_REASON = Object.freeze({
 	conflict: "pipeline-journal-conflict",
 } as const);
 
-// public-contract: metric names the pipeline controller emits (counters).
 export const PIPELINE_METRIC = Object.freeze({
 	applied: "hobo.cd.pipeline.applied",
 	refused: "hobo.cd.pipeline.refused",
@@ -39,7 +37,6 @@ export const PIPELINE_METRIC = Object.freeze({
 	unreadable: "hobo.cd.pipeline.unreadable",
 } as const);
 
-// public-contract: Freight-source names that admit pushed Freight by origin
 // (FreightIngest / `hobo up` record Freight without a source name).
 export const ORIGIN_SOURCES: ReadonlyMap<string, FreightOrigin> = new Map([
 	["origin:manifest", FreightOrigin.MANIFEST],
@@ -49,6 +46,5 @@ export const ORIGIN_SOURCES: ReadonlyMap<string, FreightOrigin> = new Map([
 	["origin:local-build", FreightOrigin.LOCAL_BUILD],
 ]);
 
-// public-contract: Camp label naming the project a Camp belongs to; a Bindle's
 // project is the segment of its id before the first "/".
 export const PROJECT_LABEL = "hobo.cd/project" as const;

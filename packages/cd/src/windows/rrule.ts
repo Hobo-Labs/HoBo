@@ -38,7 +38,6 @@ export type Series = Readonly<{
 	timeZone: string;
 }>;
 
-// public-contract: bounds of the accepted subset.
 export const RRULE_LIMITS = Object.freeze({
 	maxCount: 10_000,
 	maxInterval: 1_000,

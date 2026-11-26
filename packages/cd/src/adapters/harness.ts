@@ -32,7 +32,6 @@ import { ledgerType, ROLLOUT_LEDGER } from "../rollout/journal.js";
 import { jsonOf, objectOf, text } from "../rollout/json.js";
 import { reason } from "../rollout/reasons.js";
 
-// public-contract: the engine command ledger (private to this adapter). Its
 export const HARNESS_LEDGER = Object.freeze({
 	stream: (rolloutId: string) => `cd-rollout-engine-${rolloutId}`,
 	commanded: ROLLOUT_LEDGER.engineCommanded,
