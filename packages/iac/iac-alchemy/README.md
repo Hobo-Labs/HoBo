@@ -898,5 +898,8 @@ it does not deploy the complete site.
 The optional Node.js DynamoDB runtime supports bounded get, set and delete
 operations with explicit grants. A timed-out request retains capacity until
 its transport settles; uncertain mutations require reconciliation. The host
-must authenticate the table incarnation, enforce AWS permissions and fence
-in-flight work. This slice does not yet map the runtime into applications.
+must authenticate the table incarnation and each operation, enforce AWS permissions
+and fence in-flight work. Values are limited to 256 KiB to leave room for keys and
+attributes within DynamoDB's item limit. If completion observation cannot be
+established after an effect may have started, its capacity remains occupied.
+This slice does not yet map the runtime into applications.
