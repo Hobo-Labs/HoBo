@@ -1169,6 +1169,9 @@ with `@hobo/runtime/atomic-durable-queue` and its asynchronous component host.
 The official AWS Emulator test runs a host through this store, including a lost
 write response, provider reopening, redelivery and stale-lease rejection. The
 store requires a dedicated table with a string `pk` partition key and exclusive,
-epoch-fenced ownership. This composition does not yet map a HoBo queue to an
-Alchemy resource, integrate SQS, provide compaction or dead-lettering, or bind a
-queue into an application automatically.
+epoch-fenced ownership. `withAwsDynamoDurableQueue` and
+`awsDynamoDurableQueueMappers` from `@hobo/iac-alchemy/aws/queue-mapper` select
+an Alchemy `AWS.DynamoDB.Table` for a HoBo queue. The mapper reports its 512-event
+and 256-KiB lifetime bounds, and the financial preview must cover that table or
+use an explicitly authorized unpriced path. This is a DynamoDB queue, with no
+SQS integration, compaction, dead-lettering or automatic application binding.

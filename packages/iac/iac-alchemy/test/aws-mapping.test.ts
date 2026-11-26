@@ -8,12 +8,21 @@ import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { CATALOG_ROWS } from "../../../bindles/src/types.js";
+import {
+	ATOMIC_QUEUE_MAX_BYTES,
+	ATOMIC_QUEUE_MAX_EVENTS,
+} from "../../../runtime/src/atomic-queue-log.js";
 import { awsBindleMappers, describeAwsPrimitiveSupport } from "../src/aws.js";
 import {
 	awsDynamoKv,
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
+import {
+	awsDynamoDurableQueue,
+	awsDynamoDurableQueueMappers,
+	withAwsDynamoDurableQueue,
+} from "../src/aws-queue-mapper.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import {
 	awsVersionedSecret,
@@ -215,5 +224,101 @@ describe("explicit versioned AWS secret choice", () => {
 		expect(() => mapBindleToAlchemy(original, mappers, requirements)).toThrow(
 			"Secrets Manager requires",
 		);
+	});
+});
+
+describe("explicit DynamoDB durable queue choice", () => {
+	it("maps a HoBo queue to an Alchemy table and reports its limits", async () => {
+		const original = bindle("jobs-app", (b) => ({
+			jobs: b.queue().allow("enqueue", "dequeue"),
+		}));
+		const selected = withAwsDynamoDurableQueue(original, { jobs: true });
+		expect(original.resources.jobs?.annotations).toEqual([]);
+		expect(selected.resources.jobs?.annotations).toEqual([
+			awsDynamoDurableQueue(),
+		]);
+		expect(awsDynamoDurableQueue().config).toMatchObject({
+			maxLogEvents: ATOMIC_QUEUE_MAX_EVENTS,
+			maxLogBytes: ATOMIC_QUEUE_MAX_BYTES,
+		});
+		const mappers = awsDynamoDurableQueueMappers();
+		const support = describeAlchemyPrimitiveSupport(
+			[{ factory: "queue", allowVerbs: ["enqueue", "dequeue"] }],
+			mappers,
+		);
+		expect(support[0]).toMatchObject({
+			status: "partial",
+			resourceTypes: [Table.Type],
+			supportedOperations: ["enqueue", "dequeue"],
+			bindsEntrypoint: false,
+		});
+		// SAFETY: mapping registers resource constructors without running a provider.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Jobs",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.jobs?.Type).toBe(Table.Type);
+		expect(mapped.primary.jobs?.Props).toMatchObject({
+			partitionKey: "pk",
+			billingMode: "PAY_PER_REQUEST",
+		});
+		expect(() => mapBindleToAlchemy(original, mappers, requirements)).toThrow(
+			"DynamoDB queue requires",
+		);
+		expect(() =>
+			withAwsDynamoDurableQueue(original, { missing: true }),
+		).toThrow("unknown resource");
+	});
+	it("composes the queue choice with independent KV and S3 choices", async () => {
+		const original = bindle("app", (b) => ({
+			jobs: b.queue().allow("enqueue", "dequeue"),
+			sessions: b.kv().allow("get", "set"),
+			objects: b.bucket().allow("read", "write"),
+		}));
+		const selected = withAwsDynamoDurableQueue(
+			withAwsS3(withAwsDynamoKv(original, { sessions: true }), {
+				objects: true,
+			}),
+			{ jobs: true },
+		);
+		const mappers = awsDynamoDurableQueueMappers(
+			awsS3BindleMappers(awsDynamoKvBindleMappers()),
+		);
+		// SAFETY: mapping only registers constructors and does not call a cloud provider.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "App",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.jobs?.Type).toBe(Table.Type);
+		expect(mapped.primary.sessions?.Type).toBe(Table.Type);
+		expect(mapped.primary.objects?.Type).toBe(Bucket.Type);
+	});
+	it("refuses dependencies that have not been bound", () => {
+		const original = bindle("jobs-app", (b) => {
+			const objects = b.bucket();
+			return { objects, jobs: b.queue().dependsOn(objects) };
+		});
+		const selected = withAwsDynamoDurableQueue(original, { jobs: true });
+		expect(() =>
+			mapBindleToAlchemy(
+				selected,
+				awsDynamoDurableQueueMappers(),
+				requirements,
+			),
+		).toThrow("dependencies are not bound");
 	});
 });
