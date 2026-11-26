@@ -35,7 +35,7 @@ the caller. A replay returns the original receipt; it does not refresh a lease
 or extend the operation window. Retry the same operation only within its window;
 after expiry, reconciliation must not assume the operation had no effect. The host
 retains capacity for dispatched work until it actually settles, including after a
-timeout. Queue limits can report unavailable without inventing a capability profile. This interface
+timeout. A `delivery-exhausted` rejection means at least one message reached its delivery-attempt limit and requires reconciliation; it must not be reported as an empty queue. Queue limits can report unavailable without inventing a capability profile. This interface
 does not itself implement a queue or bind an Alchemy resource.
 
 Native async components can be built with `componentize-qjs@0.5.0` and

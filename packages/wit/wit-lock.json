@@ -239,7 +239,7 @@
       "version": "0.1.0",
       "stability": "experimental",
       "path": "wit/deps/hobo-queue/hobo-queue.wit",
-      "sha256": "sha256:d7b24371959dffe3292f5a0b50920661de4677d98bd5f6a10fcde1063748a7c0"
+      "sha256": "sha256:550b8a82e96d866c4e00d00c785f68f9a04b722650ba9d26f0cf40c367f3f795"
     },
     {
       "id": "hobo:durable-messaging/messaging@0.1.0@experimental",

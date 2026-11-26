@@ -153,17 +153,27 @@ function bytes(value: unknown, max: number): Uint8Array {
 	return copy;
 }
 
-function operation(value: unknown) {
+type QueueTimeEncoding = "component" | "port";
+function time(
+	value: unknown,
+	max: number,
+	min: number,
+	encoding: QueueTimeEncoding,
+): number {
+	return encoding === "port" ? integer(value, max, min) : u64(value, max, min);
+}
+function operation(value: unknown, encoding: QueueTimeEncoding) {
 	const input = record(value, ["id", "expiresAtMs"]);
 	return parseDurableQueueOperation({
 		id: input.id,
-		expiresAtMs: u64(input.expiresAtMs, Number.MAX_SAFE_INTEGER),
+		expiresAtMs: time(input.expiresAtMs, Number.MAX_SAFE_INTEGER, 0, encoding),
 	});
 }
 
 export function parseQueueEnqueue(
 	value: unknown,
 	limits: DurableQueueLimits,
+	encoding: QueueTimeEncoding = "component",
 ): Parameters<DurableQueue["enqueue"]>[0] {
 	const input = record(value, ["operation", "message"]);
 	const message = record(
@@ -185,14 +195,14 @@ export function parseQueueEnqueue(
 	const availableAtMs =
 		message.availableAtMs === undefined
 			? undefined
-			: u64(message.availableAtMs, Number.MAX_SAFE_INTEGER);
+			: time(message.availableAtMs, Number.MAX_SAFE_INTEGER, 0, encoding);
 	const content = {
 		idempotencyKey: text(message.idempotencyKey, limits.nameBytes),
 		body: bytes(message.body, limits.payloadBytes),
 		attributes,
 	};
 	return {
-		operation: operation(input.operation),
+		operation: operation(input.operation, encoding),
 		message:
 			availableAtMs === undefined ? content : { ...content, availableAtMs },
 	};
@@ -201,6 +211,7 @@ export function parseQueueEnqueue(
 export function parseQueueDequeue(
 	value: unknown,
 	limits: DurableQueueLimits,
+	encoding: QueueTimeEncoding = "component",
 ): Parameters<DurableQueue["dequeue"]>[0] {
 	const input = record(value, [
 		"operation",
@@ -208,9 +219,14 @@ export function parseQueueDequeue(
 		"visibilityTimeoutMs",
 	]);
 	return {
-		operation: operation(input.operation),
+		operation: operation(input.operation, encoding),
 		maxMessages: integer(input.maxMessages, limits.batchSize, 1),
-		visibilityTimeoutMs: u64(input.visibilityTimeoutMs, limits.leaseMs, 1),
+		visibilityTimeoutMs: time(
+			input.visibilityTimeoutMs,
+			limits.leaseMs,
+			1,
+			encoding,
+		),
 	};
 }
 
@@ -218,16 +234,19 @@ export function parseQueueSettlement(
 	value: unknown,
 	limits: DurableQueueLimits,
 	extended: false,
+	encoding?: QueueTimeEncoding,
 ): Parameters<DurableQueue["complete"]>[0];
 export function parseQueueSettlement(
 	value: unknown,
 	limits: DurableQueueLimits,
 	extended: true,
+	encoding?: QueueTimeEncoding,
 ): Parameters<DurableQueue["extendLease"]>[0];
 export function parseQueueSettlement(
 	value: unknown,
 	limits: DurableQueueLimits,
 	extended: boolean,
+	encoding: QueueTimeEncoding = "component",
 ):
 	| Parameters<DurableQueue["complete"]>[0]
 	| Parameters<DurableQueue["extendLease"]>[0] {
@@ -238,14 +257,19 @@ export function parseQueueSettlement(
 			: ["operation", "messageId", "leaseId"],
 	);
 	const base = {
-		operation: operation(input.operation),
+		operation: operation(input.operation, encoding),
 		messageId: text(input.messageId, limits.nameBytes),
 		leaseId: text(input.leaseId, limits.nameBytes),
 	};
 	return extended
 		? {
 				...base,
-				visibilityTimeoutMs: u64(input.visibilityTimeoutMs, limits.leaseMs, 1),
+				visibilityTimeoutMs: time(
+					input.visibilityTimeoutMs,
+					limits.leaseMs,
+					1,
+					encoding,
+				),
 			}
 		: base;
 }
@@ -264,6 +288,7 @@ const rejectionCodes: readonly DurableQueueRejectionCode[] = [
 	"operation-conflict",
 	"message-conflict",
 	"lease-lost",
+	"delivery-exhausted",
 	"capacity-exceeded",
 	"unavailable",
 ];
