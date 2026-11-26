@@ -1,10 +1,3 @@
-/**
- * Capability requirements as declared by a Bindle primitive.
- *
- * A requirement never names a provider or a product. That distinction is what
- * keeps Bindles portable: `postgres.database({ version: ">=16" })` is a
- * semantic ask, not a Neon pin.
- */
 import {
 	type BindleRuntime,
 	isBindleRuntime,
@@ -24,12 +17,10 @@ export class CapabilityRequirementError extends Error {
 
 export type ProfileConstraintInput = {
 	readonly profileId: string;
-	/** Semver-style range over the profile major version, e.g. ">=1". */
 	readonly versionRange?: string;
 };
 
 export type WeightedPreferenceInput = ProfileConstraintInput & {
-	/** Integer weight; higher means stronger preference. Ranking only. */
 	readonly weight: number;
 };
 
@@ -193,7 +184,6 @@ export function parseCapabilityRequirement(
 		}
 		return { ...parseConstraint(entry), weight: entry.weight };
 	});
-	// Deterministic: strongest preference first, then stable by profile id.
 	preferred.sort(
 		(a, b) => b.weight - a.weight || a.profileId.localeCompare(b.profileId),
 	);

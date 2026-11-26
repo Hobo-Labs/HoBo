@@ -69,7 +69,6 @@ function hostLabel(host: GitHost): string {
 	}
 }
 
-/** `<engine>:<host>:<owner/repo>@<branch>/<prefix>` — what this port publishes to. */
 export function publisherTarget(config: PublisherConfig): string {
 	const r = config.repository;
 	return `${engineLabel(config.engine)}:${hostLabel(r.host)}:${r.repository}@${r.branch}/${r.pathPrefix}`;
@@ -127,9 +126,7 @@ export function createGitopsPublisher(
 					attributes: point.attributes,
 				},
 			]);
-		} catch {
-			// Telemetry is advisory.
-		}
+		} catch {}
 	};
 
 	const publishOnce = async (
@@ -177,7 +174,6 @@ export function createGitopsPublisher(
 						error.code !== "gitops-host-conflict"
 					)
 						throw error;
-					// The branch moved under us: re-read and try once more.
 					result = await publishOnce(rendered.files, message);
 				}
 				await metric({

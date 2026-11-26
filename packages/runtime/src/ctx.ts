@@ -27,14 +27,12 @@ export function tokenCapability(provider: string): Capability {
 	return `token:${provider}`;
 }
 
-/** A durable step's options (lowers onto `hobo:runtime` `step-opts`). */
 export interface StepOptions {
 	retries?: number;
 	timeoutMs?: number;
 	idempotencyKey?: string;
 }
 
-/** A stub over another actor, reached through `ctx.actor(...)` (capability `actor`). */
 export interface ActorStub {
 	readonly key: string;
 	signal(message: { type: string; [key: string]: JsonValue }): Promise<number>;
@@ -44,7 +42,6 @@ export interface ActorStub {
 /** Broker token seam (`ctx.token`, capability `token:<provider>`). */
 export type TokenBroker = (request: WitTokenRequest) => WitTokenHandle;
 
-/** The effect implementations the engine wires into a context. */
 export interface CtxEffects {
 	step<T>(
 		name: string,
@@ -60,11 +57,6 @@ export interface CtxEffects {
 	tool?(name: string, input: JsonValue): Promise<JsonValue>;
 }
 
-/**
- * The context surface seen by workflow/agent handlers. `capabilities` is the
- * declared grant; `requireCapability` is the membrane check the effectful
- * methods run before delegating.
- */
 export interface RuntimeContext {
 	readonly capabilities: ReadonlySet<Capability>;
 	requireCapability(capability: Capability): void;
@@ -101,7 +93,6 @@ export function createRuntimeContext(input: {
 	};
 
 	return Object.freeze({
-		// SAFETY: assertion to `ReadonlySet<Capability>, requireCapab` is required at this boundary.
 		capabilities: capabilities as ReadonlySet<Capability>,
 		requireCapability,
 		step: effects.step,
