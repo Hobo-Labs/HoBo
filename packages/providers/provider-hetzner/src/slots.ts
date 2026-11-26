@@ -33,13 +33,11 @@
  */
 import { capability, type SlotBinding, slotBinding } from "@hobo/core";
 
-/** Cloud Server CPU families Hetzner offers, as the API's own vocabulary. */
 export const SERVER_ARCHITECTURES = Object.freeze(["x86", "arm"] as const);
 
 export type ServerArchitecture = (typeof SERVER_ARCHITECTURES)[number];
 
 export interface CloudServerOptions {
-	/** A server-type name such as `cx22` (x86) or `cax11` (arm). */
 	readonly serverType?: string;
 	readonly image?: string;
 	readonly architecture?: ServerArchitecture;
@@ -48,11 +46,6 @@ export interface CloudServerOptions {
 	readonly network?: string;
 }
 
-/**
- * Hetzner Cloud Server — slot `web`, profile `web.hosted/v1`. A virtual machine
- * with a public address is how Hetzner hosts a web capability; there is no
- * PaaS lane above it, and this row does not pretend there is.
- */
 export function cloudServer(options?: CloudServerOptions): SlotBinding {
 	return slotBinding({
 		slot: "web",
@@ -62,12 +55,6 @@ export function cloudServer(options?: CloudServerOptions): SlotBinding {
 	});
 }
 
-/**
- * The same Cloud Server product reached through the `service` slot as a
- * long-running worker — slot `service`, profile `service.worker/v1`. Rows key
- * on `(profile, productId)`, so both coexist without colliding, and a workload
- * that needs a worker rather than a public origin matches only this one.
- */
 export function cloudServerWorker(options?: CloudServerOptions): SlotBinding {
 	return slotBinding({
 		slot: "service",
@@ -77,7 +64,6 @@ export function cloudServerWorker(options?: CloudServerOptions): SlotBinding {
 	});
 }
 
-/** Load-balancer algorithms this factory can request. */
 export const LOAD_BALANCER_ALGORITHMS = Object.freeze([
 	"round_robin",
 	"least_connections",
@@ -86,14 +72,12 @@ export const LOAD_BALANCER_ALGORITHMS = Object.freeze([
 export type LoadBalancerAlgorithm = (typeof LOAD_BALANCER_ALGORITHMS)[number];
 
 export interface LoadBalancerOptions {
-	/** A load-balancer type name such as `lb11`. */
 	readonly loadBalancerType?: string;
 	readonly algorithm?: LoadBalancerAlgorithm;
 	readonly network?: string;
 	readonly publicInterface?: boolean;
 }
 
-/** Hetzner Load Balancer — slot `api`, profile `api.http/v1`. */
 export function loadBalancer(options?: LoadBalancerOptions): SlotBinding {
 	return slotBinding({
 		slot: "api",
@@ -103,7 +87,6 @@ export function loadBalancer(options?: LoadBalancerOptions): SlotBinding {
 	});
 }
 
-/** Object Storage canned ACLs this factory can request. */
 export const OBJECT_STORAGE_ACLS = Object.freeze([
 	"private",
 	"public-read",
@@ -117,10 +100,6 @@ export interface ObjectStorageOptions {
 	readonly objectLock?: boolean;
 }
 
-/**
- * Hetzner Object Storage bucket — slot `bucket`, profile
- * `bucket.s3-compatible/v1`.
- */
 export function objectStorage(options?: ObjectStorageOptions): SlotBinding {
 	return slotBinding({
 		slot: "bucket",
@@ -131,18 +110,11 @@ export function objectStorage(options?: ObjectStorageOptions): SlotBinding {
 }
 
 export interface StorageBoxOptions {
-	/** A Storage Box plan name such as `bx11`. */
 	readonly plan?: string;
 	readonly subaccounts?: number;
 	readonly snapshots?: boolean;
 }
 
-/**
- * Hetzner Storage Box — slot `bucket`, profile `bucket.file-storage/v1`. A
- * Storage Box speaks SFTP/SMB and has directory semantics, which is a different
- * capability profile from the S3 surface above, so it is its own row rather
- * than an option on that one.
- */
 export function storageBox(options?: StorageBoxOptions): SlotBinding {
 	return slotBinding({
 		slot: "bucket",
@@ -165,16 +137,6 @@ type AnySlotOptions =
 	| StorageBoxOptions
 	| VolumeOptions;
 
-/**
- * Forwards the caller's option bag to the parse boundary, dropping only keys
- * whose value is `undefined` (an omitted option must be absent, not an
- * explicit `undefined`, under `exactOptionalPropertyTypes` and JSON-safety).
- *
- * Every remaining key is passed through — including one the option types do
- * not declare — so a key smuggled past the types reaches `slotBinding()` and
- * is screened there. Cherry-picking the known keys instead would silently
- * swallow it, which is exactly the kind of quiet drop this repo refuses.
- */
 function present(options: AnySlotOptions) {
 	const out = {};
 	for (const [key, value] of Object.entries(options)) {
@@ -183,16 +145,6 @@ function present(options: AnySlotOptions) {
 	return out;
 }
 
-/**
- * Hetzner Volume — slot `bucket`, profile `bucket.filesystem/v1`.
- *
- * A block device formatted ext4 or xfs and attached to one server has
- * hierarchical path semantics, which is `bucket.filesystem/v1` — not
- * `bucket.file-storage/v1`, which is the metadata-carrying user-facing share a
- * Storage Box provides. Both refine `bucket.object/v1`, so a workload asking
- * for the general profile matches either; a workload that actually needs a
- * mounted filesystem now matches only this one.
- */
 export function volume(options?: VolumeOptions): SlotBinding {
 	return slotBinding({
 		slot: "bucket",
