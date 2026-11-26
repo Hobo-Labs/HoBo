@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "LocalRuntimeHarness" },
+  "interactions": [
+    {
+      "description": "run deterministic local replay against mocked resources",
+      "providerStates": [{ "name": "local equivalents registered for sample resources" }],
+      "request": { "method": "POST", "path": "/runtime-local/replay", "body": { "run": "support-sync" } },
+      "response": { "status": 200, "body": { "replayEqualsLive": true, "liveNetworkCalls": [] } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

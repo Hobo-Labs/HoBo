@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_USER = 1;
+  PRINCIPAL_KIND_AGENT = 2;
+  PRINCIPAL_KIND_SERVICE = 3;
+  PRINCIPAL_KIND_SYSTEM = 4;
+}
+
+message PrincipalRef {
+  PrincipalKind kind = 1;
+  string id = 2;
+  PrincipalRef delegated_by = 3;
+}
+
+message EventEnvelope {
+  string id = 1;
+  string type = 2;
+  int32 v = 3;
+  string stream_id = 4;
+  int64 seq = 5;
+  string ts = 6;
+  PrincipalRef actor = 7;
+  string tenant = 8;
+  optional string project = 9;
+  optional string causation_id = 10;
+  optional string correlation_id = 11;
+  optional string lane = 12;
+  bytes data = 13;
+}

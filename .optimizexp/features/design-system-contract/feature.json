@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "design-system-contract",
+  "title": "Source-based visual token checks",
+  "experiences": [
+    "ux",
+    "dx"
+  ],
+  "personas": [
+    "product-designer"
+  ],
+  "interfaces": [
+    "cli"
+  ],
+  "driver": "cli",
+  "surfaces": [
+    "pnpm run design:lint"
+  ],
+  "tags": [
+    "@optimizexp",
+    "@ux",
+    "@dx"
+  ],
+  "bindings": {
+    "steps": "steps/bindings.steps.ts",
+    "implementations": "steps/implementations.ts",
+    "tests": "test/design-system-contract.bindings.test.ts"
+  },
+  "implementationStatus": "wired",
+  "primaryCommand": "pnpm run design:lint"
+}

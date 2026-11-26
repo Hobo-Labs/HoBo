@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "kind": "persona-survey",
+  "runId": "20260731-survey-smoke",
+  "persona": "product-app-developer",
+  "experiences": [
+    "dx"
+  ],
+  "surfaces": [
+    "pnpm run doctor"
+  ],
+  "featureIds": [
+    "cli-help-and-doctor"
+  ],
+  "polledAt": "2026-07-31T15:17:24.272Z",
+  "primaryPhaseStop": "metrics-zero",
+  "answers": [
+    {
+      "id": "q_excitement",
+      "prompt": "…",
+      "score": 3,
+      "text": "Fine, not thrilling."
+    },
+    {
+      "id": "q_ease",
+      "prompt": "…",
+      "score": 4,
+      "text": "One command."
+    },
+    {
+      "id": "q_optimal",
+      "prompt": "…",
+      "score": 3,
+      "text": "Want clearer next step on warn."
+    },
+    {
+      "id": "q_delight",
+      "prompt": "…",
+      "text": "Honest AUTH wording."
+    },
+    {
+      "id": "q_friction_feel",
+      "prompt": "…",
+      "text": "Warn without next command."
+    },
+    {
+      "id": "q_one_change",
+      "prompt": "…",
+      "text": "Print zero-key next command under gbrain warn."
+    },
+    {
+      "id": "q_never",
+      "prompt": "…",
+      "text": "Never auto-install gbrain."
+    },
+    {
+      "id": "q_recommend",
+      "prompt": "…",
+      "recommend": "mixed",
+      "text": "Solid offline path."
+    }
+  ],
+  "positive": {
+    "excitement": 3,
+    "easeOfUse": 4,
+    "perceivedOptimality": 3,
+    "total": 10,
+    "min": 3,
+    "gapTotal": 5,
+    "gapMax": 2
+  },
+  "featureRequests": [
+    {
+      "id": "fr-doctor-gbrain-next-step",
+      "title": "Doctor gbrain warn prints zero-key next command",
+      "problem": "Warn leaves next step ambiguous.",
+      "desiredOutcome": "Transcript includes copy-pasteable remediation line.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-app-developer",
+      "featureIds": [
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "pnpm run doctor"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 1,
+        "perceivedOptimality": 2
+      },
+      "effortHint": "S",
+      "antiGoals": [
+        "never auto-install gbrain"
+      ],
+      "smallestExperiment": "Add remediation line under gbrain PATH warn in doctor output."
+    }
+  ],
+  "evidenceRefs": [
+    ".optimizexp/features/cli-help-and-doctor/evidence/"
+  ]
+}

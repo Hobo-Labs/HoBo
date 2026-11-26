@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "security-verification-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Security Verification Scope Acceptance",
+  "linear": "HOBO-441",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/hobo-441-security-verification/README.md",
+      "docs/design/security-verification.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

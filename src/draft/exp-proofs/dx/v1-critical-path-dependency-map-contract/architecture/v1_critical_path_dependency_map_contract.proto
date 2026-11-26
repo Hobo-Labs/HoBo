@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the V1 Critical Path Dependency Map
+// Contract draft package reasons about. This is a design-time contract artifact.
+
+enum ReleaseDependencyDomain {
+  RELEASE_DEPENDENCY_DOMAIN_UNSPECIFIED = 0;
+  RELEASE_DEPENDENCY_DOMAIN_PRODUCT_UX = 1;
+  RELEASE_DEPENDENCY_DOMAIN_TENANT_MODEL = 2;
+  RELEASE_DEPENDENCY_DOMAIN_BILLING = 3;
+  RELEASE_DEPENDENCY_DOMAIN_INSTALL = 4;
+  RELEASE_DEPENDENCY_DOMAIN_DOCS = 5;
+  RELEASE_DEPENDENCY_DOMAIN_TESTING = 6;
+  RELEASE_DEPENDENCY_DOMAIN_SUPPORT = 7;
+  RELEASE_DEPENDENCY_DOMAIN_SECURITY = 8;
+  RELEASE_DEPENDENCY_DOMAIN_COMPLIANCE = 9;
+  RELEASE_DEPENDENCY_DOMAIN_OPERATIONS = 10;
+}
+
+enum ReleaseBlockerType {
+  RELEASE_BLOCKER_TYPE_UNSPECIFIED = 0;
+  RELEASE_BLOCKER_TYPE_BETA_BLOCKER = 1;
+  RELEASE_BLOCKER_TYPE_RC_BLOCKER = 2;
+  RELEASE_BLOCKER_TYPE_GA_BLOCKER = 3;
+  RELEASE_BLOCKER_TYPE_KNOWN_LIMITATION = 4;
+}
+
+message CriticalPathDependency {
+  string id = 1;
+  ReleaseDependencyDomain domain = 2;
+  ReleaseBlockerType blocker_type = 3;
+  string upstream_project = 4;
+  string downstream_gate = 5;
+  string owner = 6;
+}
+
+message KnownLimitation {
+  string id = 1;
+  ReleaseBlockerType blocker_type = 2;
+  string upstream_project = 3;
+  string customer_disposition = 4;
+  string owner = 5;
+}
+
+message CriticalPathDependencyMapRecord {
+  string issue = 1;
+  string phase = 2;
+  repeated CriticalPathDependency dependencies = 3;
+  repeated KnownLimitation known_limitations = 4;
+}

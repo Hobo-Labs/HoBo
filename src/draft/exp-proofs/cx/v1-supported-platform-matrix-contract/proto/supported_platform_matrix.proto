@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+// Wire/data-shape definitions for the HOBO-511 v1 supported browser, device, and
+// platform matrix. These are M0 schema records only; no device lab, browser
+// grid, live e2e execution, or runtime implementation is provided here.
+package hobo.compatibility.matrix.v1;
+
+// Customer-facing support level for a browser, platform, or responsive posture.
+enum SupportLevel {
+  SUPPORT_LEVEL_UNSPECIFIED = 0;
+  SUPPORT_LEVEL_SUPPORTED = 1;
+  SUPPORT_LEVEL_LIMITED = 2;
+  SUPPORT_LEVEL_UNSUPPORTED = 3;
+}
+
+// A supported desktop browser row and its beta/GA support levels.
+message DesktopBrowserSupport {
+  string name = 1;
+  string version_policy = 2;
+  SupportLevel beta = 3;
+  SupportLevel ga = 4;
+  repeated string evidence_sources = 5;
+}
+
+// A supported CLI/local-bootstrap platform row.
+message PlatformSupport {
+  string os = 1;
+  repeated string architectures = 2;
+  SupportLevel beta = 3;
+  SupportLevel ga = 4;
+  repeated string evidence_sources = 5;
+}
+
+// A user-facing support claim mapped to evidence sources.
+message SupportClaim {
+  string id = 1;
+  string claim = 2;
+  string owner = 3;
+  repeated string evidence_sources = 4;
+}
+
+// A route for an unsupported browser/device/platform report.
+message UnsupportedReportRoute {
+  string destination = 1;
+  string owner = 2;
+  string handles = 3;
+}
+
+// Event: a v1 compatibility matrix revision has been accepted/published.
+message CompatibilityMatrixPublished {
+  string issue = 1;
+  repeated DesktopBrowserSupport browsers = 2;
+  repeated PlatformSupport platforms = 3;
+}
+
+// Event: an unsupported environment report has been classified and routed.
+message UnsupportedEnvironmentClassified {
+  string browser = 1;
+  string os = 2;
+  uint32 viewport_width = 3;
+  SupportLevel support_level = 4;
+  string route = 5;
+}

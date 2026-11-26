@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hobo.runtime_wasm.v1;
+
+// Isolation boundary metadata for a wasm Camp host placement.
+message WasmIsolationInfo {
+  string isolate_boundary = 1; // "wasmtime_process"
+  uint32 private_sandboxes = 2;
+  string wasmtime_version = 3;
+  repeated string wasm_paths = 4;
+}
+
+message WasmToolchainReady {
+  string hobo_home = 1;
+  string wasmtime_version = 2;
+  string jco_version = 3;
+}

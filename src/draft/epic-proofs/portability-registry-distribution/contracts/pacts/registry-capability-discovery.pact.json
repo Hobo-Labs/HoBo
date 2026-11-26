@@ -1,0 +1,26 @@
+{
+  "consumer": { "name": "PortabilityRegistryReferenceApp" },
+  "provider": { "name": "CapabilityDiscoveryIndex" },
+  "interactions": [
+    {
+      "description": "finds certified listings by WIT interface and region",
+      "providerState": "certified provider listing is indexed",
+      "request": {
+        "method": "POST",
+        "path": "/capability-discovery/find",
+        "body": {
+          "port": { "interface": "wasi:blobstore/blobstore", "semver": "1.0.0" },
+          "criteria": { "region": "us-east-1", "classification": "public" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "results": [{ "listingId": "listing-aws-resource-pack", "rank": 1 }]
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

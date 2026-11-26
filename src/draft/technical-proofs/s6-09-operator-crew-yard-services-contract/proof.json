@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "s6-09-operator-crew-yard-services-contract",
+  "title": "S6-09 Operator Crew as production Yard services",
+  "linear": "HOBO-664",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [
+      "src/draft/epic-proofs/operators-sre-crew"
+    ],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/operators-sre.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

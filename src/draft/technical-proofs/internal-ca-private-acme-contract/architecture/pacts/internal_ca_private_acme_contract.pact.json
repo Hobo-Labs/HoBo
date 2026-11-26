@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "InternalCaPrivateAcmeContractConsumer"
+  },
+  "provider": {
+    "name": "InternalCaPrivateAcmeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Internal Ca Private Acme Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/internal-ca-private-acme-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.internal_ca_private_acme_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

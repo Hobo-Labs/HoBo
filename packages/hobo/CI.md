@@ -1,0 +1,907 @@
+# CI from the HoBo CLI
+
+The composed `hobo` binary exposes the CI relay and existing GitHub Actions
+workflows. Run `hobo ci` or `hobo ci --help` for help. No Bindle, Station setup,
+SDK script, or workspace package invocation is needed.
+CI commands work before local Yard provisioning and do not initialize its journal.
+
+For a relay Git deployment, `hobo ci up` plans and checks the declaration,
+Yard and `vercel.json` from the selected commit, then delivers that same tree.
+It refuses if that tree cannot be inspected, contains symlinks or submodules,
+exceeds 5,000 files or 32 MiB, or cannot load its installed dependencies. These
+limits apply to the relay project's committed files, not the working tree.
+HoBo manages this deployment; the Vercel project is intentionally not linked
+to Git for automatic deployment.
+
+## Connect once
+
+Your relay operator supplies an HTTPS origin and a CI account credential. The
+owner keeps the credential in their own secret store as `HOBO_CI_ACCOUNT_TOKEN`
+and connects that store with HoBo MCP's `choose_secret_store`; `hobo ci` resolves
+`owner://HOBO_CI_ACCOUNT_TOKEN` through the owner store session. It reads no token
+file or environment variable, and without the session it refuses with
+`HOBO_CI_ACCOUNT_CREDENTIAL_UNAVAILABLE` (`status` reports offline instead).
+Tokens are never accepted as CI command-line values or stored in the link.
+Human `hobo login` credentials do not authorize the CI account API.
+
+```sh
+hobo ci connect --relay https://ci.example.com
+```
+
+To create or install the GitHub App as part of setup, use an interactive terminal:
+
+```sh
+hobo ci connect github --relay https://ci.example.com
+```
+
+The relay must support its hosted App bootstrap and account-onboarding endpoints;
+the operator must provision the relay, its vault, and the account credential first.
+If the App is not ready, the CLI opens the relay's registration page. Its manifest
+prefills the name, webhook, events and CI permissions. The App owner approves
+registration in GitHub; the relay exchanges the one-use code and stores the App
+private key, webhook secret and OAuth client secret encrypted in its vault. Those
+secrets do not pass through the CLI or its output. Operator bootstrap credentials
+are entered in the relay page when required.
+
+GitHub's [manifest parameters](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest#github-app-manifest-parameters)
+do not include Device Flow. If it is disabled, the CLI opens GitHub's App settings;
+the App owner must enable **Device Flow** and save. The CLI verifies the setting
+using GitHub's device authorization, observes the prescribed polling interval,
+and discards the resulting short-lived user credentials. It then opens the relay's
+GitHub authorization and installation page and waits for an installation bound to
+the CI account. For an existing installation, select its repository access in that
+page and press Enter when finished. Repository setup still verifies the selected
+installation and asks for isolated-runner consent. Registration and installation
+timeouts are not proof of failure: inspect the relay and GitHub before retrying an
+uncertain App creation.
+
+The CLI does not create or distribute a fleet membership. Joined devices or
+clusters must have a configured runner provider and relay access. Installing the
+App and connecting a repository does not prove that any runner is available or
+that a GitHub Actions job has executed.
+
+### Reconnect after a restart: `hobo login --relay`
+
+Once the relay is configured (its GitHub App installed and its account bound),
+a restarted container or machine reconnects with one GitHub confirmation and no
+setup form:
+
+```sh
+hobo login --relay https://ci.example.com          # checks the sign-in; the session ends with the process
+hobo ci status --relay https://ci.example.com      # signs in when the first credential is needed
+```
+
+The relay starts GitHub's device flow with HoBo's GitHub App
+(`POST /v1/owner-login/device`); the owner opens `https://github.com/login/device`
+and enters the code HoBo prints. HoBo polls `POST /v1/owner-login/token`; the
+relay redeems GitHub's code itself, checks that the GitHub account owns the App
+installation the relay's account binds (the installation's user, or an active
+administrator of its organization), drops the GitHub user token and returns an
+eight-hour session sealed with its session key. HoBo keeps that session only in
+the memory of the process that signed in: the `hobo` process for one command, the
+`hobo-mcp` server for an MCP session (its `relay_login` tool). Nothing is written:
+no token, relay origin, account or identifier on disk, in a keychain or in the
+environment, so the next process signs in again with one confirmation. Pass the
+origin each time (`--relay`); `hobo login --relay` never writes `profile.json`.
+
+With a session, `owner://HOBO_CI_ACCOUNT_TOKEN` resolves to a 15-minute account
+credential the relay seals and its account API accepts, and
+`github-app://<owner>/<repo>` to an installation token of HoBo's GitHub App for a
+repository the account binds (`POST /v1/owner-login/credentials`). Every other
+`owner://` entry is refused (`relay-not-resolvable`): the relay hands out
+short-lived values only, never its App private key or a stored entry, so verbs
+that need the owner's long-lived provider entries (a Hostinger or Vercel token)
+still need `choose_secret_store`. Refusals: `HOBO_RELAY_LOGIN_UNREACHABLE`,
+`HOBO_RELAY_LOGIN_NOT_CONFIGURED` (no account with an installation),
+`HOBO_RELAY_LOGIN_DEVICE_FLOW` (Device Flow is off in the App's settings),
+`HOBO_RELAY_LOGIN_DENIED`, `HOBO_RELAY_LOGIN_EXPIRED`, `HOBO_RELAY_LOGIN_NOT_OWNER`,
+`HOBO_RELAY_LOGIN_ORIGIN` (not an https origin) and, through `hobo-mcp`'s CLI
+`login` tool, `HOBO_RELAY_LOGIN_USE_MCP_TOOL`.
+
+In HoBo MCP, `relay_login` asks the owner for the relay address in a host form,
+or on HoBo's sealed owner page when the host shows no forms (`relay_login` again
+with the page's `sealed` text), then shows the GitHub code in a second host form
+or on a confirmation page the agent publishes. Its results carry a status only,
+never the address, the code or the session. `hobo ci` and `hobo cd` verbs in that
+server resolve through the relay session while no store session is established
+for the project (`withRelaySession` in `src/owner-store-session.ts`); `doctor`
+reports `relaySession.expiresInSeconds`.
+
+Prefer the committed **`.hobo/ci.json`** profile when present. It names each
+environment's `relayOrigin`, optional `jobAdmission` (`push` for hosted relays,
+`pull` for loopback laptops), and `selection` rules for branch/CD routing. Local
+overrides belong in gitignored **`.hobo/ci.local.json`** or `HOBO_CI_ENVIRONMENT`.
+`hobo ci enable` reads that file before `--relay` / `HOBO_CI_RELAY_URL`.
+
+## Host a local relay
+
+`hobo ci serve` runs the same relay as the hosted one: the same core, account
+API and HTTP routes, over a local SQLite file. It adds the listener, a
+5-second worker tick and, with pull admission, the same GitHub job poller the
+box worker runs. It does not have the OAuth onboarding or the delivery
+repair, which only the hosted relay runs (on its cache). See [one relay, thin
+hosts](../ci-gh-actions/README.md#one-relay-thin-hosts).
+
+When the `local` environment (or any profile with loopback `relayOrigin` and
+`jobAdmission: "pull"`) should admit jobs without a public webhook URL, run the
+relay on your machine:
+
+```sh
+HOBO_CI_ENVIRONMENT=local hobo ci serve --installation-id <app-installation-id>
+```
+
+Defaults come from the resolved **`.hobo/ci.json`** environment: `relayOrigin`,
+`jobAdmission`, and `allowInsecureLoopback`. Flags override config. The command
+binds **127.0.0.1** by default; non-loopback binds require an explicit public
+**`--origin`** (HTTPS, matching `relayOrigin`) or **`--allow-insecure`**. Use
+**`--host 0.0.0.0`** and **`--port`** for containers; keep **`--origin`** on the
+public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
+`X-Forwarded-Proto`). GitHub App credentials load from mounted files or the
+owner's secret store. An optional **`HOBO_CI_INGRESS_FORWARD_SECRET_FILE`**
+names the file used to verify ingress-forwarded webhooks. **`--print-config`**
+shows the resolved plan with secrets redacted. **`--with-worker`** starts the
+isolated-container sidecar with its own lease journal (local SQLite at
+`<HOBO_HOME>/ci/serve/worker.sqlite`, override `HOBO_CI_WORKER_DB`) and hands it
+the App key and webhook secret on an inherited pipe (`HOBO_CI_WORKER_SECRETS_FD`,
+written once and closed), never its environment or a file. `ci serve` reports
+serving only after the worker logs `hobo_ci_isolated_worker_started`; a worker
+that exits first, or does not start within `HOBO_CI_WORKER_START_TIMEOUT_MS`
+(10 minutes, as it may build first), stops the relay and fails the command.
+The relay shuts down gracefully on SIGINT/SIGTERM.
+
+When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
+[CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
+and resolves merge conflicts with the configured model, in the mode the block
+sets (`observe` writes nothing to GitHub). The agent keeps its journal and
+clones under `<HOBO_HOME>/ci/serve/agent`, and reads each model credential
+from this process's environment by the name the block references; a name that
+is not set stops the serve. **`--no-agent`** serves without it. The agent is a
+separate package, `@hobo/ci-agent`, loaded only when a block is present; a
+`hobo` install without it refuses to serve such a project unless `--no-agent`
+is passed.
+
+Three relay pieces of [ADR-0183](../../docs/design/adr/runner-order.md) are
+off until turned on. **Relay mode** claims runner-less check jobs (it never
+routes; routing happens in HoBo CI, never in a workflow) only when the
+project's `.hobo/ci.json` says `"relayJobs": { "answer": true }`; a value in
+the shell does not count. Its rescue and leftover-runner sweep then run after
+each pull-admission poll, never holding the poll up. **Automatic retry**
+needs `HOBO_CI_AUTO_RETRY=1`. **The dashboard** needs `HOBO_CI_DASHBOARD=1`:
+the page is served at `/dashboard` and the read API it reads under
+`/v1/accounts/self/`, checked with the relay's account tokens. Their records
+live in `<HOBO_HOME>/ci/serve/relay-wiring.sqlite`, opened only when one is on.
+With the agent block on, the relay starts through the agent's entry and the
+dashboard page is not served. See
+[the relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
+
+Alternatively, import a self-hosted App's key and webhook secret from files:
+
+```sh
+hobo ci github import-key --app-id 12345 \
+  --key-file /private/path/app.pem \
+  --webhook-secret-file /private/path/webhook-secret
+hobo ci github key-status
+```
+
+The CLI verifies the RSA key against GitHub's App identity before changing the
+active version. It stores files with owner-only permissions under
+`HOBO_HOME/ci/github-credentials/`, refuses a HoBo home inside a Git
+checkout, and never prints the key or secret. File import currently requires
+POSIX permissions; on Windows use the relay's mounted secret files instead.
+`hobo ci serve` takes the App's credentials, in this order: mounted files the
+environment names (`HOBO_CI_GITHUB_APP_KEY_FILE` and the related `_FILE`
+variables, as a unit); else the connection `hobo ci up` deposited in your secret
+store (found through the locator in the owner's HoBo settings), read into the run's trusted
+vault and handed to the relay in memory, so no key or webhook secret is written
+to disk or put in the relay's environment;
+else this imported version. It never reads a secret value from its
+environment: `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
+`HOBO_CI_ACCOUNT_TOKEN` or `HOBO_CI_INGRESS_FORWARD_SECRET` set there stops
+startup, naming the variable and not its value.
+Incomplete or unreadable App credentials fail startup rather than falling back
+to the local fixture App (whose throwaway key is held in memory only).
+With real App credentials, `ci serve` also requires a CI account token
+(`HOBO_CI_ACCOUNT_TOKEN` in your secret store, or a file named by
+`HOBO_CI_ACCOUNT_TOKEN_FILE`) or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
+the local control-token configuration, it grants the explicitly selected
+`--installation-id` to the local account and stores only the token's hash. A
+supplied control-token file remains authoritative.
+The source files must already exist in a private location. A `--home` outside the
+checkout is still accessible to processes with that user's filesystem access;
+choose the host and access controls accordingly.
+
+To rotate a self-hosted private key, generate another key in GitHub App settings,
+repeat the import with the new file and the existing webhook secret, restart all
+relay and worker processes, and only then revoke the old key in GitHub. Older
+local versions remain under `HOBO_HOME/ci/github-credentials/versions/` until an
+operator removes them after the restart. Keep the webhook secret in the same
+secret manager as the relay; if it is reset in GitHub, update the relay together
+with GitHub's setting. This file import does not replace credentials in the hosted
+encrypted vault; hosted vault rotation and automatic distribution to joined devices
+or clusters are not implemented.
+
+Remote relay deployment: [`../ci-gh-actions/REMOTE-RELAY-SERVE.md`](../ci-gh-actions/REMOTE-RELAY-SERVE.md).
+
+```sh
+hobo ci serve --environment production --host 0.0.0.0 --port 8787 \
+  --origin https://ci.example.com --trust-proxy
+hobo ci serve --environment local --port 8787 --admission pull --installation-id 12345
+hobo ci serve --print-config --environment local
+```
+
+See [`../ci/RUNNER-QUEUE.md`](../ci/RUNNER-QUEUE.md) for NAT/pull admission setup.
+
+`enable` and `connect` run the same setup. The CLI detects the sole Git remote,
+prompts when several exist, and asks before enabling isolated runners. Subsequent
+commands reuse a unique remote matching the saved repository. Use
+`--remote origin` to choose explicitly, or `--repo owner/name` outside a checkout.
+If the App is not installed, the command prints the relay's GitHub installation
+page; install it and repeat the command. Multiple bound installations require
+`--installation-id`. The relay verifies repository ownership and permissions.
+An existing connection is verified against GitHub again and reported as unchanged
+without rewriting its settings or policy revision. If you explicitly select a
+different installation for an existing connection, setup refuses the mismatch;
+the relay operator must drain and migrate that connection. `status --json`
+includes the connection's installation ID.
+
+The confirmation permits **every matching repository job**, including jobs from
+fork pull requests, to use isolated runners within the account policy. For an
+unattended setup, provide both confirmations explicitly:
+
+```sh
+hobo ci enable --relay https://ci.example.com --remote origin \
+  --yes --accept-all-matching-jobs --non-interactive --json
+```
+
+The relay must support isolated repository connections and have eligible provider
+capacity and an account policy. The CLI does not create provider accounts, grant
+budgets, or refresh allocation/pricing evidence. See the
+[relay onboarding guide](../ci-gh-actions/ONBOARDING.md).
+
+After connecting, change the runner label on the desired GitHub Actions jobs:
+
+```yaml
+jobs:
+  test:
+    runs-on: hobo
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm test
+```
+
+Commit and push the workflow through your usual review process. Connecting does
+not rewrite or commit workflow files. Setup does not prove a live job executed;
+verify the first run and its runner attribution.
+
+The credential-free link lives under `HOBO_HOME/ci/links/`, keyed by the checkout
+root. The default home is outside the repository; an explicit `--home` or
+`HOBO_HOME` inside the checkout stores the link there. It records only the origin,
+account ID, and repository. Future setup/status calls reuse that origin for the same repository
+and check account continuity. `--relay` and `--repo` explicitly reconnect a target.
+`HOBO_CI_RELAY_URL` can select the relay instead. Each invocation resolves and pins
+its credential once so a store rotation cannot switch accounts halfway through
+setup. The HTTP client rejects redirects and uses revision checks on writes.
+If saving the local link fails after connecting, the CLI reports that separately;
+repeating setup with the same explicit relay/repository reuses the connection.
+
+## Inspect and retry runs
+
+Run commands call the GitHub REST API at `api.github.com` with a short-lived
+installation token of HoBo's GitHub App on the selected repository, which the
+owner store session mints (`github-app://owner/name`); no personal GitHub
+sign-in or token is read. Connect the owner's store with HoBo MCP's
+`choose_secret_store` and install the App (`hobo ci app create`) with Actions
+read permission, and Actions write permission for `rerun`; without them the
+commands answer `HOBO_CI_GITHUB_APP_NEEDED`. A job log is read from the
+short-lived download GitHub redirects to, which is fetched without the token;
+logs are bounded at 2 MiB per command. They can inspect existing Actions
+runs before connecting a relay. They report GitHub run IDs, separate from relay
+lease IDs; use `hobo ci status` to check the HoBo connection.
+
+```sh
+hobo ci list
+hobo ci ls --all-branches --limit 20 --json
+hobo ci inspect
+hobo ci logs 123456789 --failed
+hobo ci logs 123456789 --task test --grep error
+hobo ci grep error --runs 10
+hobo ci rerun 123456789
+hobo ci status
+```
+
+`hobo ci status` reports the relay connection and, under it, `hobo fleet
+status`: per fleet, its members with state, availability, health, free/total
+slots, free memory and disk, reliability and sandbox tier, read from the fleet
+authority (`HOBO_FLEET_AUTHORITY_URL`) as the signed-in person (`hobo fleet
+login`). `--json` carries a summary per fleet as `data.fleet`. With no fleet
+authority configured, the connection status is the whole answer. With no relay
+to ask (none selected, no credential, or no network), `status` shows the fleet
+status alone, when an authority is configured.
+
+List defaults to the current branch. Inspect/logs default to the current commit.
+Rerun without an ID selects a failed run for that commit; retrying a successful
+run requires an explicit ID. `--wait` follows one pinned attempt for up to ten
+minutes, tolerating short GitHub read outages without repeating the rerun.
+If a concurrent rerun intervenes or the next attempt finishes before it can be
+observed running, `rerun --wait` reports `HOBO_CI_RERUN_AMBIGUOUS` rather than
+attributing that result to this request. Inspect the run history before retrying.
+Ending the CLI or reaching that deadline does not cancel remote work. Inspect
+the run before repeating a rerun if a request times out. Log reads share a 2 MiB
+output budget; partial results identify unavailable logs and truncation. Human
+output strips terminal controls from workflow titles and logs.
+JSON output uses HoBo's envelope;
+`--format json` and `-F json` are aliases of `--json`. Unsupported filters report
+a usage error rather than silently changing their meaning.
+
+## Inspect and repair the fleet's Hostinger hosts
+
+```sh
+hobo ci fleet status
+hobo ci fleet restart hobo-arc.example.com
+hobo ci fleet start 1201
+```
+
+The self-hosted fleet's machines are Hostinger VPS the owner already bought.
+`hobo ci fleet status` lists the account's machines (id, hostname, state, plan,
+first IPv4, and whether an action is in progress); `--json` carries them as
+`data.fleet`. `restart` and `start` take a machine id or hostname, refuse a
+machine the account does not own or one with an action already in progress,
+and return Hostinger's action id and state as `data.fleetAction`; run
+`status` again to watch the machine settle. Nothing else is reachable: the
+fleet's transport allows only the machine list and those two power actions,
+so purchase, setup, recreate, stop and every `/api/billing/v1/` route are
+refused before a request leaves the process (`HOSTINGER_FLEET_ROUTE_REFUSED`).
+
+The Hostinger API token comes from the owner's store session, as
+`owner://HOSTINGER_API_TOKEN`, resolved through the session's credential
+resolver; the CLI reads
+no token from its environment, and no output, error included, carries the
+token or a store reference. Without an established session, or with no such
+entry in the store, the command refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`: call HoBo MCP's `choose_secret_store`
+for the project, then ask again. An agent runs it through HoBo MCP as the `ci`
+tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
+the project directory as `cwd`. The verb manages machines only; it does not
+register runners or the `hobo-arc` scale set on them.
+
+### Hostinger through Infisical Agent Vault
+
+When the owner's store is Infisical and holds no `HOSTINGER_API_TOKEN` entry,
+the fleet verbs use Infisical Agent Vault instead, so neither HoBo nor the
+agent ever holds the Hostinger token. The owner needs:
+
+- exactly one Agent Vault project that the identity they signed in with
+  reaches;
+- in it, an `http` service whose host pattern covers
+  `developers.hostinger.com` (exactly, or as a one-label `*.hostinger.com`
+  wildcard), with the Hostinger token as the credential the proxy adds, or as
+  a value the proxy fills into a header placeholder;
+- that identity as an Agent Vault admin of the project, or holding an access
+  bundle with the service.
+
+HoBo runs the proxy itself. On the first fleet call of an MCP server it
+starts a one-hour session for the service, registers a proxy named `hobo`
+(traffic policy `service-hosts`) or rotates the token of the existing one,
+and starts `infisical agent-vault proxy` on a free `127.0.0.1` port with
+that token only in the child's environment and a fresh temporary data
+directory. It installs `@infisical/cli` 0.45.14 into HoBo's tools directory
+when the CLI on `PATH` is older. Hostinger requests then go through the proxy
+with the session token as proxy credentials, trusting only the proxy's CA,
+and carry the service's header placeholder, or no `Authorization` header when
+the proxy adds the credential. The route is renewed five minutes before the
+session expires. When the MCP server or the owner's store session closes,
+HoBo revokes the session, stops the proxy and deletes its data directory.
+
+Results name the route only as service and hosts: `data.credentialSource` is
+`{kind: "agent-vault", service, hosts}` (or `{kind: "owner-store"}`), and
+`doctor`'s `ownerStoreSession.agentVault` reports the project name, its
+services with their hosts, and the proxy's name and whether HoBo's proxy is
+running, once a fleet call has reached Agent Vault. No project, proxy or
+session id and no token appears in any result or error. Refusals:
+
+| Code | When |
+|---|---|
+| `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` | No store entry, and Agent Vault is unreachable (no project, or Infisical refused the identity) or has no `http` service for the host; the message says which. |
+| `HOBO_AGENT_VAULT_PROJECT_AMBIGUOUS` | The identity reaches more than one Agent Vault project; the message names them. |
+| `HOBO_AGENT_VAULT_NO_CREDENTIAL` | The service neither adds a credential nor offers a header placeholder. |
+| `HOBO_AGENT_VAULT_PROXY_FAILED` | The Infisical CLI could not be installed or the proxy did not become healthy. |
+| `HOBO_AGENT_VAULT_FAILED` | Infisical's answer could not be used. |
+
+## Give the fleet's ARC pods node caches
+
+```sh
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm 4da35cfd92854b07ea368680fcc19a621faa928f
+hobo ci fleet caches --status --scale-set hobo-trunk
+```
+
+ARC runner pods start with an empty pnpm store and image cache. `hobo ci fleet
+caches` patches each `AutoscalingRunnerSet` so its pods mount the node's
+`/var/lib/hobo-ci/pnpm-store` and `/var/lib/hobo-ci/images` and name them in
+`HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR`, and with
+`--prewarm <sha>` creates a Job that fills the node store from that commit's
+lockfile. `--plan` (the default) shows the JSON patch and the Job without
+sending them; `--apply` sends them and is idempotent; `--status` reports
+whether each scale set has the caches mounted and whether its newest prewarm
+Job succeeded. `--json` carries the `CiFleetCaches` record as
+`data.fleetCaches`.
+
+The cluster is the kubernetes pool with a scale set in `.hobo/ci.json`'s
+default environment (`hostinger-arc`, namespace `arc-runners`); `--cluster
+<pool>` picks one when several exist, `--namespace` overrides the namespace,
+and `--scale-set <name>` (repeatable) narrows the default of every scale set
+in it. The verb reaches the API server directly over HTTPS with the pool's
+kubeconfig, which the owner keeps in their store under the pool's
+`connectionRef` upper-cased with `_KUBECONFIG` appended:
+`owner://HOSTINGER_ARC_KUBECONFIG`, and from nowhere else. It verifies the server against the kubeconfig's
+`certificate-authority-data` and authenticates with its `token` or inline
+client certificate; it reads no kubeconfig file and refuses exec plugins,
+file paths and skipped TLS verification
+(`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`). Without an established owner store
+session or that entry it refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`
+before any network call. The client can only list, read and JSON-patch
+`autoscalingrunnersets.actions.github.com` and create and list `jobs.batch`;
+anything else is refused before a request leaves the process. No output,
+error included, carries the kubeconfig, its token or its key. An agent runs it
+through HoBo MCP as the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`.
+
+## Move workflow jobs to the fleet
+
+```sh
+hobo ci init                       # show the plan; changes nothing
+hobo ci init --apply all
+hobo ci init --apply test,ci.yml:build --fleet-label hobo-trunk
+```
+
+`hobo ci init` reads `.github/workflows/*.yml` and says, per job, whether its
+`runs-on` can become the fleet label (`ready`), already is, or is left alone
+and why. `--apply` rewrites the jobs named (`job`, `file:job`, or `all`) and
+nothing else: only the `runs-on` value changes, every other byte of the file
+is kept, and the old label stays as a trailing `# was ...` comment so the
+change can be undone by hand. A workflow that changes or becomes unreadable
+after planning is left alone. Any refused selection, including an unreadable
+workflow, makes the apply exit non-zero; a partial apply reports both the jobs
+rewritten and those refused. Nothing is committed.
+
+A job is left alone when it calls another workflow, takes `runs-on` from an
+expression, names a runner group or several labels, asks for Windows, macOS
+or ARM, already runs on a hosted provider's or a self-hosted label, or decides
+where other jobs run (another job's `runs-on`, a matrix, or reusable-workflow
+inputs read its outputs, including through YAML merge keys: a routing job has
+to start even when the fleet cannot). A YAML value shared by an anchor is
+left alone when changing it would affect another part of the workflow. A job
+that uses an environment, any write permission, or a secret other than `GITHUB_TOKEN`
+is left alone unless `--include-secret-jobs` is passed. A ready job can carry
+warnings: it needs Docker, installs system packages, follows `ubuntu-latest`,
+or has a matrix.
+
+This writes the opt-in that works today, `runs-on: <fleet label>`. A job moved
+this way waits when the fleet is down; the fallback to another runner type is
+what a [runner order](../ci/RUNNER-ORDER.md) describes and no host walks yet.
+
+## Signals and diagnosis
+
+```sh
+hobo ci signals                # the last 50 runs
+hobo ci signals --runs 100 --json
+hobo ci diagnose               # the latest failed run
+hobo ci diagnose 123456789
+```
+
+Both read GitHub's run history through HoBo's GitHub App installation on the
+repository and store nothing. `signals` reads up to `--runs` completed runs
+(1-100) with their jobs, and the attempt before the latest when a run was re-run. It prints signals
+that cover at least 30 minutes and 1% of job time, grouped as cost,
+speed and complexity, with the worst offenders under each, and one line per
+runner: jobs, share started, median wait, median and p90 run time, share
+passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
+or a larger attempt is reported as an error instead of a partial result.
+`diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
+each log and every annotation page of the check run identified by
+`check_run_url`, and prints the first failed step, what kind of failure it
+looks like, whether a re-run is likely to help, and the log lines leading up to
+the last error. A log, annotation, or check-run identity read failure fails the
+command rather than producing a partial diagnosis. If a log exceeds 16 MiB,
+the diagnosis says it may be incomplete and sets `logTruncated` on that
+job's JSON result. Human-readable reports remove terminal escape sequences,
+control characters, and bidirectional overrides from GitHub metadata, logs, and
+annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log
+text leaves the machine.
+
+## Route a job against the runner order
+
+```sh
+hobo ci route --machine self-hosted --github ubuntu-24.04
+hobo ci route --github ubuntu-24.04 --depot auto --facts facts.json --json
+```
+
+`hobo ci route` answers one relay job against the repository's
+[runner order](../ci/RUNNER-ORDER.md) and shows the walk: the committed
+`runnerOrder` in `.hobo/ci.json` (the default order, fleet then machines then
+GitHub-hosted, when there is none), the label the job would ask each runner
+type for, and every step passed over with its reason. It contacts nothing.
+`--facts` names a JSON file, relative to the checkout or absolute, saying what
+is true now (fleet room, machines, minutes used, money spent, tripped runner
+types); without it the fleet and machines are absent and no limit is measured.
+When nothing can take the job the command exits non-zero with
+`HOBO_CI_NO_RUNNER` and the reason. A
+committed order that breaks a rule is refused with
+`HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default. An
+existing configuration that cannot be read, including a dangling file link,
+or is not a JSON object is also refused; only an absent configuration or a
+valid object without a runner order selects the default.
+
+No relay endpoint or route job walks a runner order yet: this command is how
+an order is checked before it is committed.
+
+## Vercel reference
+
+Reference checked **2026-10-29** against the official
+[CLI CI documentation](https://vercel.com/docs/cli/ci),
+[CI setup guide](https://vercel.com/docs/ci), and upstream
+[command definitions](https://github.com/vercel/vercel/blob/main/packages/cli/src/commands/ci/command.ts).
+
+| Vercel CLI | HoBo CLI |
+| --- | --- |
+| `ci enable` | `ci enable`; `ci connect` is a HoBo convenience alias |
+| `ci list` / `ls` | Same names; current-branch default, branch/commit/status/limit filters |
+| `ci inspect [run]` | Same name and current-commit default; GitHub run IDs |
+| `ci logs [run]` | Same name; failed/task/attempt/grep filters over Actions logs |
+| `ci grep <text>` | Searches a bounded set of recent run logs |
+| `ci rerun [run]` | Retries Actions runs; defaults to a failed run at the current commit |
+| Sole remote detection / `--remote` | Initial selection matches; later calls reuse a uniquely matching saved remote |
+| `--json` / `--format json` / `-F json` | HoBo JSON envelope |
+
+Vercel does not currently ship `ci connect`. Vercel CI enables tagged Turbo tasks
+on a repository linked to a Vercel project; HoBo uses existing Actions workflows
+and `runs-on: hobo`. HoBo does not require Turbo or Vercel project linking.
+Bare HoBo `ci` displays help successfully (Vercel returns usage exit 2).
+GitHub's log records do not expose Vercel's structured log levels, invocation
+pagination cursor, or single-task follow protocol; `--level`, `--next`, and
+`--follow` are explicitly unsupported. Backend differences are kept visible.
+
+## Contracts and checks
+
+`test/ci-command.test.ts`, `test/ci-github-connect.test.ts`,
+`test/ci-github-keys.test.ts`, `test/ci-serve.test.ts`, and `test/ci-runs.test.ts` cover setup, target selection,
+unattended consent, account continuity for equivalent saved relay origins, run
+selection and failure behavior. The CLI-to-relay consumer
+contract pins method, account authentication, protobuf body and revision header;
+the existing relay provider contracts protect isolated onboarding. The durable
+link is generated from `data-models/composition.proto` with CUE constraints in
+`composition.cue`. Run scoped TypeScript, schema/codegen drift, CLI consumer
+contracts and documentation gates. These offline checks do not contact GitHub or
+prove deployed relay/runner readiness.
+`test/ci-init.test.ts` runs `hobo ci init` through the real CLI against
+temporary workflow files and compares the rewritten bytes.
+`test/ci-route.test.ts` runs `hobo ci route` through the real CLI against a
+temporary repository; `test/ci-insights.test.ts` runs `signals` and `diagnose`
+over a process seam and executes every read in
+`contracts/ci-insights-github.pact.json`.
+The product unit harness isolates module state between files, gives claim tests
+private credential homes, and uses version-probe stand-ins for Yard argument
+tests so those checks neither touch a developer's credentials nor download tools.
+
+`e2e/ci.test.ts` launches the built product binary against the production HTTPS
+control plane and the relay's SQLite store (`SqliteCiStore`, the store `hobo ci
+serve` uses). It covers consent and authentication refusal, credential-free link
+persistence, restart recovery, idempotency and a response lost after the
+connection commits. Only GitHub App identity calls are emulated; this lane does
+not launch a provider runner. With Node 24, Git and OpenSSL:
+
+```sh
+pnpm exec turbo run build --filter=@hobo/hobo
+pnpm --filter @hobo/hobo test:ci-e2e
+```
+
+The store is a file in the test's temporary directory, removed afterward. The
+repository's existing manual, budgeted runner acceptance workflow remains the
+live-provider check; general hosted Actions stay disabled by repository policy.
+
+On **2026-10-29**, the built product binary submitted and waited for
+[acceptance attempt 4](https://github.com/Tyler-R-Kendrick/HoBo/actions/runs/40569580252/attempts/4)
+successfully. The workflow verified its HoBo self-hosted runner, checked-out SHA,
+Node setup and artifact upload. `ci list`, `logs` and `grep` read that run through
+the same binary. Its runner matched Vercel lease
+`b1c3b545-ee2b-4bfd-be2c-1a47cb4d1257`; the native journal confirmed both sandbox
+VMs stopped, runner deletion and measured cost settlement. Expired pricing
+evidence was refreshed through `PostgresCiStore.reattestRate` after checking the
+published rates, preserving the rate card, budgets, allowances and usage watermark.
+This verifies the reviewed acceptance workflow and configured Vercel path;
+other providers and arbitrary workflow dependencies require their own acceptance.
+
+## Runner provider integrations (`hobo ci connect <provider>`)
+
+`hobo ci connect` with no provider still sets up the HoBo relay (alias of `enable`); `hobo ci serve` still hosts the relay. With a provider, it records a third-party GitHub Actions runner integration in `.hobo/ci.json` under `integrations` and prints the provider's own sign-in step:
+
+```sh
+hobo ci connect blacksmith --org Hobo-Labs
+hobo ci connect depot                                   # GitHub App runners
+hobo ci connect depot --id depot-builds --auth oidc --project-id <project>
+hobo ci connect jog                                     # alias: usejog
+hobo ci connect boat --org Hobo-Labs --launch           # runs `boat ci connect`
+```
+
+| Provider | Auth (default first) | What the owner does | Labels |
+|---|---|---|---|
+| Blacksmith | `github-app` only. GitHub SSO; no API tokens or OIDC for runners | Install the Blacksmith GitHub App at app.blacksmith.sh (org owner; orgs only) | `blacksmith-<n>vcpu-ubuntu-<ver>` |
+| Depot | `github-app` (runners), `oidc` (builds), `secret-ref` fallback (`DEPOT_TOKEN`) | Connect GitHub Actions in the Depot dashboard (org owner); for OIDC add a trust relationship and grant `id-token: write` | `depot-ubuntu-24.04` … |
+| Jog (usejog) | `github-app` only; no tokens | Install the Jog GitHub App; private repos only; prepaid credits | `jog` |
+| Boat | `device` (`boat ci connect` browser ceremony), `secret-ref` fallback (`BOAT_API_KEY`) | Complete `boat ci connect [--org]`; paid plan | `boat`, `boat-small`, `boat-large`, `boat-xlarge` |
+
+Secrets never pass through HoBo:
+
+- The config holds **references only**. `auth.secretRef` must be `owner://NAME`, an entry in the owner's secret store that HoBo resolves through the owner store session (`choose_secret_store`). The JSON schema, the CUE model (`#RunnerIntegration`) and the loader reject anything else, including credential-shaped or high-entropy strings in any field, and their errors never echo the value.
+- The CLI never prompts for, reads or prints a credential. A `secret-ref` only names the owner's store entry; HoBo creates no such entry, and agents never store one ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)).
+- `--launch` runs the provider CLI with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*API_KEY*` …) removed, and output is redacted.
+- `packages/hobo/test/ci-connect-leak.test.ts` generates synthetic, real-looking tokens at runtime (never written to disk) and asserts that none appear in CLI output, progress or the written config.
+
+## Deploying the hosted relay with HoBo
+
+`hobo ci deploy` deploys the hosted relay (`packages/ci-vercel`, declared as a
+HoBo app in its `src/bindle.ts`) to Vercel from a git ref. Where it goes comes
+from the relay's Yard, `packages/ci-vercel/deploy/yard.ts` (ADR-0179 phase 6):
+the Yard names the provider, the project and repository, and the binding rows;
+the target names a Camp (`production` or `preview`), and the rows that Camp
+requires project the non-secret settings. Run it in the relay's project
+directory or pass `--cwd packages/ci-vercel`:
+
+```sh
+hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
+```
+
+`--dry-run` prints the placement, the chosen bindings and every request it
+would send, and sends none. A real run reads the Vercel deploy token through
+the owner's store session (`owner://HOBO_CD_VERCEL_TOKEN`, the entry `hobo cd
+up` keeps; `HOBO_CI_DEPLOY_AUTH_REQUIRED` when the store holds none) and
+deploys to **preview** unless `--target production` is given. Neither the
+environment nor a CI job's GitHub OIDC token is ever a source of the token. Production
+chooses the config-service binding. Its coordinates and the team live only in
+the owner's own secret store (`HOBO_CI_SECRET_STORE_BINDING`); `hobo ci deploy`
+reads them through the owner store session (HoBo MCP's `choose_secret_store`)
+and fails closed with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one.
+They never become Vercel variables: `--build prebuilt` bundles the relay's
+coordinates into the build only (a `--dry-run` plans without a session). A
+production deploy with `--build git` carries no coordinates and could never
+qualify, so it is refused, in a dry run too, with
+`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`:
+
+```sh
+hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
+  --target production --build prebuilt --provision --wait --dry-run
+```
+
+| Option | Means |
+|---|---|
+| `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
+| `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or a store coordinate (any `INFISICAL_*` name, `*_PROJECT_ID`, `*_TEAM_ID`, `*_ORG_ID`, `*_IDENTITY_ID`, OIDC, subject or binding name) |
+| `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
+| `--wait` | Drive the deployment to READY and verification with a 20-minute budget checked between passes; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
+| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration; preview only, since production needs the bundled store binding (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+
+An in-flight provider operation can outlast the budget. This relay path does
+not durably fence it across lease expiry, processes or restarts; inspect the
+provider and CD journal to establish its outcome before another deploy.
+
+Production deploys only through HoBo with the owner's store session (the
+[relay bootstrap](../ci-vercel/BOOTSTRAP.md) gives the two commands):
+`hobo ci deploy` run where HoBo MCP's `choose_secret_store` established the
+session, or `hobo ci up`, which hands the same session to the deploy. Without
+a session the deploy refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED`
+before anything is sent. No GitHub Actions workflow deploys the relay: the
+[relay deploy workflow](../../.github/workflows/relay-deploy.yml) keeps only
+the `app-credentials` job `app-credentials.yml` calls. A relay left behind its
+sources does not go unnoticed: the [CI health monitor](../../docs/ci/health-monitor.md)
+raises H11 when the commit the relay's `/healthz` serves lags a later commit
+on the default branch that touched the relay's sources. See
+[`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
+and [the README](README.md) for the plan record and its gates. It has been
+exercised against fakes only; a live deploy from an owner session is the
+evidence still owed.
+
+## Choose the relay's secret store (`hobo ci secret-store`)
+
+The relay's config/secret store is not set up by hand and lives in no Vercel
+or GitHub secret or variable (ADR-0179 amendment
+[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
+HoBo routes `secrets.config-service/v1` when the deployment runs, provisions
+the store, and hands it to the owner through a HoBo claim:
+
+```sh
+cd packages/ci-vercel
+hobo ci secret-store plan --json --fleet-host https://<fresh Infisical on the fleet>
+hobo ci secret-store provision --team team_… --vercel-team-slug <slug> \
+  --vercel-project-id prj_… --fleet-host https://… --owner-email <owner>
+# the owner, in their own terminal:
+hobo claim open secret-store
+hobo claim finalize secret-store
+```
+
+| Option | Means |
+|---|---|
+| `--auth-md <origin>` | A store that may publish auth.md; probed for anonymous agent registration (repeatable) |
+| `--fleet-host <origin>` | A fresh Infisical the Yard placed on a compute fleet host; HoBo bootstraps it |
+| `--owner-email <address>` | The admin user a self-hosted store's claim hands over |
+| `--team`, `--vercel-team-slug`, `--vercel-project-id` | The Vercel team and project the relay's identity trusts (OIDC issuer, subject and pinned `owner_id`/`project_id`) |
+| `--allow-designed` | Route to a store whose relay binding is designed only (the Cloudflare Worker, an auth.md store; for the hosted relay the Worker is an experiment, not its store) |
+
+`plan` contacts nothing but the `--auth-md` candidates. `provision` writes the
+binding (coordinates only) to the owner's own secret store as
+`HOBO_CI_SECRET_STORE_BINDING` through the owner store session when the relay
+can read the store, never to the repository, and never shows it, attaches the claim bundle to the deployment's claim journal, and
+prints the owner's next steps; it never prints a claim link, a password or a
+token. `INFISICAL_TOKEN` (from the owner's own `infisical login`) selects the
+attach-only offer for an Infisical Cloud organization the owner already has.
+`hobo claim finalize secret-store` for a self-hosted store deletes HoBo's
+bootstrap identity and passes only when Infisical refuses its token.
+Agents drive this through the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md) skill.
+
+### Secretless first: connect, verify, deposit, capture
+
+For the hosted relay the requirement is a secrets manager the relay reads
+with workload identity
+([amendment](../../docs/design/adr/hosted-relay-stateless.md#amendment-secretless-first));
+today that is Infisical (OIDC Auth). 1Password and Bitwarden offers are
+listed with `runtimeAuth: "stored-token"` and never chosen for the relay's
+runtime store. The `hobo-deploy` skill walks the owner through the
+dashboard's OIDC trust one step at a time, then records the ids. The
+command reads the repository's GitHub OIDC subject with an installation token
+of HoBo's GitHub App (`github-app://<owner>/<name>`, minted through the owner
+store session from the App `hobo ci app create` made); without that session or
+App it refuses with `HOBO_CI_SECRET_STORE_GITHUB_APP_REQUIRED`:
+
+```sh
+hobo ci secret-store connect --cwd packages/ci-vercel \
+  --repo <owner/name> --project-id <hobo-ci> --deploy-project-id <hobo-ci-deploy> \
+  --relay-identity-id <hobo-ci-relay> \
+  --deploy-identity-id <hobo-ci-writer> \
+  --deploy-credential-identity-id <hobo-ci-deploy-reader> --team team_… \
+  [--site-url https://<self-hosted Infisical>] [--yes]
+hobo ci secret-store verify --cwd packages/ci-vercel --identity reader --json
+hobo ci secret-store verify --cwd packages/ci-vercel --identity writer --json
+```
+
+Before installation or OIDC sign-in,
+`scripts/ci/relay-deploy-environment.mts` reads the selected GitHub environment
+and its branch policies. It requires exactly one custom deployment branch
+policy naming `main`. A missing environment, API error, or different settings
+fail the job. The deploy job selects only `reader` in
+`hobo-ci-deploy`; the app-credentials job selects only `writer` in
+`hobo-ci-app-credentials`. Without `--identity`, local verification retains all
+applicable checks.
+
+Each selected verify command must finish before the summary step runs
+(`|| status=$?` under bash `-e`); otherwise a non-zero exit hides the JSON. The
+report script fails closed when stdout has no JSON envelope. The workflow calls
+`scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines,
+emit `::error::`, and never echo JWTs (details and messages pass JWT-shaped
+redaction). On Infisical OIDC failure, verify appends `oidc_sub` and
+`oidc_aud` from the same memoized workload JWT used for sign-in (GitHub OIDC
+audience `https://github.com/Hobo-Labs` for the writer,
+`https://github.com/Hobo-Labs/hobo-ci-deploy-reader` for the reader) so the
+dashboard trust can be matched.
+
+`connect` writes the same `SecretStoreBinding` as `provision` (kind
+`infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
+project is required: Infisical project roles cover the whole project, so the
+deploy credential always lives in a project of its own) and refuses to replace
+one for other ids without `--yes`. The deploy project and the read-only
+`hobo-ci-deploy-reader` in it are required, the reader distinct from the
+writer in `--deploy-identity-id`.
+`connect` resolves GitHub OIDC trust for `hobo-ci-writer` and
+`hobo-ci-deploy-reader` from GitHub (with HoBo's GitHub App installation token for the repository, from the owner store session): the
+repository's `sub_claim_prefix` (or the immutable
+`repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids when the template
+says `use_immutable_subject`), then the writer's
+`:environment:hobo-ci-app-credentials` or reader's
+`:environment:hobo-ci-deploy`, with `repository_id`, `repository_owner_id`, the
+environment, and the exact relay workflow pinned. When GitHub does not say,
+they fail closed with `HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED` and the
+`gh api` command to check. The binding records the writer subject
+(`deployOidcSubject`). Re-running `connect` (ids optional once the complete
+binding exists; adding the deploy project and reader to an older binding needs
+`--yes`) repairs the trust: with the owner's own `INFISICAL_TOKEN` for that run
+it replaces both identities' OIDC trust in place, reader first (no new
+identity); otherwise it prints the subjects and claims to set in the dashboard.
+A binding recorded before the reader id existed remains valid without a deploy
+credential. A re-run preserves that mode and its existing claim state; supplying
+one of `--deploy-project-id` and `--deploy-credential-identity-id` requires the
+other. A denied `verify` whose token `sub` differs from the recorded subject (or
+is immutable when none was recorded) says so and names that repair. Trust repair
+is idempotent but not atomic across Infisical identities: if writer repair fails
+after reader repair succeeds, the error names both outcomes and the binding is
+unchanged; re-running completes the repair.
+
+`verify` reports `pass`, `fail` or `not-run` by identity name and id. Without
+`--identity`, every applicable identity must pass: an unavailable GitHub or
+Vercel environment therefore fails the unfiltered result. With `--identity`, only
+the selected identity must pass. A binding with no deploy project skips the
+reader and cross-project credential probes, but an explicitly selected reader
+still must pass and therefore fails closed. Required branch-protection checks
+must select reader, writer and relay verification independently; no scoped run
+is a substitute for the others. Each GitHub check requires the workload token's
+subject to match its selected protected environment before contacting Infisical.
+The reader must read the `VERCEL_TOKEN` value from the deploy project root
+without logging it, have exactly one `viewer` membership role and no other role,
+receive HTTP 403 for the relay-folder listing and direct `VERCEL_TOKEN` read,
+and receive HTTP 404 for its own relay-project membership. The writer must sign
+in at its own audience in the app-credentials environment, receive HTTP 403 for
+the deploy-project listing and direct credential read, and receive HTTP 404 for
+its own deploy-project membership. The relay check runs where
+`VERCEL_OIDC_TOKEN` is present and applies the same read and membership isolation
+requirements. Verification is read-only: it never creates or updates a probe
+secret. Every 401, unexpected 404, 5xx, timeout, network error, or inconclusive
+scope response fails closed, and every issued session is revoked. The
+deploy-token read itself never signs in as the writer.
+
+The GitHub App's converted credentials never touch a person or this CLI.
+`app-credentials.yml` reads GitHub's one-time manifest code from the
+`HOBO_APP_MANIFEST_CODE` Actions secret and takes only the relay origin and
+owner id as dispatch inputs; agents never provision that secret
+([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)), and
+`hobo ci app create` below converts the code without one. The workflow's call to the `app-credentials` job in `relay-deploy.yml`
+passes the code as a required reusable-workflow secret, refuses a missing or
+empty value, masks it, and runs `hobo ci app deposit`, which converts, verifies
+the App and writes the credentials as `hobo-ci-writer` over GitHub OIDC. The
+code is never accepted as a dispatch or reusable-workflow input.
+
+For an optional third-party cache credential, `hobo-mcp` serves the
+secret-capture MCP App: `capture_secret` opens a form the owner types into
+(an MCP App in hosts that support MCP Apps, a `127.0.0.1` page otherwise, by
+URL-mode elicitation where the client supports it); the value is sealed in
+the form, opened in the `hobo-mcp` process and written with a one-use
+`hobo-secret-writer` session (`src/mcp-secret-capture.ts`). Tools:
+`capture_secret`, `secret_capture_status`, `end_secret_capture`, and the
+form's own `submit_secret_value` (listed only to MCP Apps hosts, with
+`visibility: ["app"]`). `HOBO_SECRET_STORE_PROJECT` names the relay project
+when `hobo-mcp` does not start in the HoBo checkout; `HOBO_MCP_TOOLS` can
+leave the capture tools out of scope. Details:
+[`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
+
+## Create the hosted relay's GitHub App
+
+`hobo ci app create` creates the hosted relay's GitHub App with GitHub's
+[manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+and stores its credentials straight in the relay's config service, Infisical
+(ADR-0179, phase 3). Nothing is written to disk or printed.
+
+```sh
+hobo ci app create --relay https://<relay-host> --owner-id "$(gh api user --jq .id)"
+```
+
+1. It signs in to Infisical first. The command reads the folder's coordinates
+   (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`) and
+   a sign-in (`INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` and `_SECRET`, or
+   `INFISICAL_TOKEN`) from its process environment, the names the Infisical CLI
+   reads. Agents never set or store these
+   ([AGENTS.md](../../AGENTS.md#repository-rules-for-every-agent)); the owner
+   runs the command from their own Infisical session. It then lists the
+   folder's names. If App credentials are already there it stops unless `--yes`.
+2. It serves a page on `127.0.0.1` and opens it (the URL is also printed). The
+   page posts the manifest (`createGithubAppManifest`, the reviewed permissions
+   and events, webhook `<relay>/github/webhooks`) to GitHub; GitHub sends the
+   browser back to `http://127.0.0.1:<port>/callback` with a one-time code and
+   the random `state`, which must match.
+3. It converts the code (`POST /app-manifests/{code}/conversions`) and checks
+   the App against the reviewed configuration and `--owner-id`
+   (`verifyConvertedGithubApp`, which also proves the key with `GET /app`).
+4. It writes `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
+   `HOBO_CI_GITHUB_APP_CLIENT_SECRET`, `HOBO_CI_GITHUB_APP_CLIENT_ID` and, last,
+   `HOBO_CI_GITHUB_APP_ID` to the folder, and prints their `infisical://`
+   references and the App's install link.
+
+GitHub returns the credentials once: the conversion cannot be repeated. If a
+write fails, the credentials stay in this process's memory only and the write
+is retried: at a terminal, after you fix Infisical access and press Enter (or
+type `discard`); without one, up to five times with backoff. If it cannot
+succeed, the command says which entries were stored, discards the rest, and
+tells you to delete the App (`https://github.com/settings/apps/<slug>/advanced`)
+and run it again. The same applies when the converted App fails verification.
+
+Owner setup (projects, identities, roles) is in
+[the relay's config service](../ci-vercel/CONFIG-SERVICE.md). Tested with
+local fakes of GitHub and Infisical only (`test/ci-app-create.test.ts`).

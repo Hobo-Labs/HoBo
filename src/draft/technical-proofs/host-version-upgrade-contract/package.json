@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/host-version-upgrade-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-36 host-version pinning and gated upcaster upgrades.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

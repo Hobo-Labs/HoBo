@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package hobo.draft.vibe_workspace_project_states.v1;
+
+message VibeWorkspaceProjectStateModel {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated string scope_out = 6;
+  repeated WorkspaceProjectModeNote mode_notes = 7;
+  repeated WorkspaceProjectStateFixture fixtures = 8;
+}
+
+message WorkspaceProjectModeNote {
+  string proof_mode = 1;
+  string label = 2;
+  string meaning = 3;
+}
+
+message WorkspaceProjectStateFixture {
+  string id = 1;
+  string state = 2;
+  NamedSummary workspace = 3;
+  NamedSummary project = 4;
+  ProviderReadiness provider_readiness = 5;
+  string blocker_owner = 6;
+  SafeNextAction safe_next_action = 7;
+  EvidenceLink evidence_link = 8;
+  string proof_mode = 9;
+  repeated string path_coverage = 10;
+  MissingPrerequisiteBehavior missing_prerequisite_behavior = 11;
+  SupportHandoff support_handoff = 12;
+  repeated string accessibility_notes = 13;
+  Wireframe wireframe = 14;
+  ClaimPolicy claim_policy = 15;
+}
+
+message NamedSummary {
+  string id = 1;
+  string name = 2;
+  string summary = 3;
+}
+
+message ProviderReadiness {
+  string status = 1;
+  string owner = 2;
+  string detail = 3;
+}
+
+message SafeNextAction {
+  string label = 1;
+  string owner = 2;
+  string evidence_required = 3;
+  bool destructive = 4;
+  bool opens_live_provider = 5;
+}
+
+message EvidenceLink {
+  string label = 1;
+  string href = 2;
+  string fixture_id = 3;
+  string freshness = 4;
+  string proof_mode = 5;
+}
+
+message MissingPrerequisiteBehavior {
+  string if_missing = 1;
+  string user_sees = 2;
+  string system_does_not = 3;
+}
+
+message SupportHandoff {
+  bool required = 1;
+  string route = 2;
+  string redaction = 3;
+  string note = 4;
+}
+
+message Wireframe {
+  string surface = 1;
+  string caption = 2;
+  repeated string regions = 3;
+  string primary_status = 4;
+  string secondary_detail = 5;
+}
+
+message ClaimPolicy {
+  repeated string safe_claims = 1;
+  repeated string forbidden_claims = 2;
+}

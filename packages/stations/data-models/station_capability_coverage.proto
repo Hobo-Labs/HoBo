@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package hobo.stations.v1;
+
+// Station capability coverage (ADR-0155 capabilities x ADR-0157 Yard binding
+// rows): the aggregate of what the Station's Yards declare they are ABLE TO
+// allocate, plus the expected profiles nothing can satisfy.
+//
+// Three invariants are load-bearing and are enforced by the matching CUE:
+//  1. A Yard is a catalog, not an inventory. Several offerings per capability
+//     profile is the normal case, so the record reports breadth (offering
+//     count, yards, providers) and never collapses to a single "the" offering.
+//  2. Ordering is a canonical lexicographic sort on identifiers, never a
+//     preference. Selection is ADR-0151's job at resolution time — hard gates
+//     then lexicographic ordering — and a second ranking point here would be
+//     an unversioned selection surface the design forbids.
+//  3. The record carries identity only, never realization parameters, so it
+//     can never carry a credential-shaped value.
+//
+// The record has no generated_at: coverage is a pure function of the catalogs
+// and the expected set, and a timestamp would make two equal inputs compare
+// unequal.
+
+// One place a capability profile can be allocated.
+message StationCapabilityOfferingRecord {
+  string yard_name = 1;
+  string provider_id = 2;
+  string product_id = 3;
+  string connectivity_id = 4;
+}
+
+// Every offering that can satisfy one capability profile. Breadth, not choice.
+message ServedStationCapabilityRecord {
+  string profile = 1;
+  repeated StationCapabilityOfferingRecord offerings = 2;
+  uint32 offering_count = 3;
+  repeated string yard_names = 4;
+  repeated string provider_ids = 5;
+  bool expected = 6;
+}
+
+// An expected profile no Yard on the Station can satisfy. Remediation is
+// mandatory: a fail-closed refusal that does not name what to change is a
+// dead end.
+message StationCapabilityGapRecord {
+  string profile = 1;
+  string remediation = 2;
+}
+
+// Which providers the coverage depends on. Counts and sole-source facts only —
+// no score, because whether a concentration is acceptable is a policy question
+// this record deliberately does not answer.
+message StationProviderConcentrationRecord {
+  string provider_id = 1;
+  uint32 offering_count = 2;
+  repeated string profiles = 3;
+  repeated string yard_names = 4;
+  repeated string sole_source_profiles = 5;
+}
+
+message StationCapabilityCoverageRecord {
+  string schema = 1;
+  string station_id = 2;
+  bool ok = 3;
+  repeated ServedStationCapabilityRecord served = 4;
+  repeated StationCapabilityGapRecord gaps = 5;
+  // Profiles served by exactly one offering: a resilience signal, not an
+  // error — one catalog edit away from a gap.
+  repeated string singly_sourced = 6;
+  repeated StationProviderConcentrationRecord provider_concentration = 7;
+  repeated string yard_names = 8;
+  repeated string expected = 9;
+}

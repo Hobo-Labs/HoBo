@@ -1,0 +1,844 @@
+{
+  "consumer": {
+    "name": "docs-design-proofs"
+  },
+  "provider": {
+    "name": "vibe-representative-a11y-usability-checks"
+  },
+  "interactions": [
+    {
+      "description": "accept HOBO-565 representative accessibility and usability check fixture",
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-565",
+          "phase": "M2",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-representative-a11y-usability-checks",
+          "proofPath": "docs/design/proofs/vibe-representative-a11y-usability-checks/README.md",
+          "designRefs": [
+            "docs/design/accessibility-usability-launch-baseline.md",
+            "docs/design/workspace-onboarding-ux.md",
+            "docs/design/plan-diff-viewer.md",
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/design/marketplace-ux.md",
+            "docs/design/docs-portal.md",
+            "docs/design/support-workflow.md",
+            "docs/design/publisher-portal.md",
+            "docs/design/launch-demo-golden-path.md",
+            "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "sourceIssues": [
+            "HOBO-554",
+            "HOBO-577"
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-define-object-graph-v1",
+              "proofMode": "reference-fixture",
+              "consumingArtifact": "onboarding",
+              "representativeUse": "onboarding evidence reuses accepted object-graph labels and first-run step order"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "consumingArtifact": "plan-diff",
+              "representativeUse": "plan review evidence reuses accepted plan preview proof-mode and refusal wording"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-inspect-event-projection-v1",
+              "proofMode": "reference-fixture",
+              "consumingArtifact": "deployment-dashboard",
+              "representativeUse": "dashboard evidence reuses projection fixture ids for topology and stale-state checks"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "live",
+              "consumingArtifact": "marketplace",
+              "representativeUse": "marketplace install intent can cite accepted deploy evidence without building install runtime"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingArtifact": "docs",
+              "representativeUse": "docs and troubleshooting evidence reuse stale-evidence copy and owner routing"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "live",
+              "consumingArtifact": "support",
+              "representativeUse": "support handoff evidence can cite recovery fixture without promising production restore"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "proofMode": "simulated",
+              "consumingArtifact": "publisher",
+              "representativeUse": "publisher review evidence reuses manifest collection fixture names for uploaded proof records"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "consumingArtifact": "launch-demo",
+              "representativeUse": "launch demo evidence keeps scope-out labels visible before launch claims are allowed"
+            }
+          ],
+          "checkDefinitions": [
+            {
+              "id": "keyboard-path",
+              "label": "Keyboard path",
+              "evidenceKind": "manual representative check",
+              "proves": "Primary artifact steps are reachable, ordered, and operable without pointer input."
+            },
+            {
+              "id": "screen-reader-smoke",
+              "label": "Screen-reader smoke",
+              "evidenceKind": "manual assistive-tech smoke check",
+              "proves": "Representative labels, landmarks, state, owner, and next action are announced."
+            },
+            {
+              "id": "responsive-layout",
+              "label": "Responsive layout",
+              "evidenceKind": "deterministic viewport fixture",
+              "proves": "Required text, controls, and status fields remain visible without overlap."
+            },
+            {
+              "id": "contrast-threshold",
+              "label": "Contrast threshold",
+              "evidenceKind": "deterministic color-token fixture",
+              "proves": "Text, state, focus, and severity affordances meet launch baseline or carry limitation evidence."
+            },
+            {
+              "id": "reduced-motion",
+              "label": "Reduced motion",
+              "evidenceKind": "preference-state fixture",
+              "proves": "Motion-heavy transitions expose a reduced-motion posture and preserve status meaning."
+            },
+            {
+              "id": "state-clarity",
+              "label": "State clarity",
+              "evidenceKind": "reference fixture",
+              "proves": "Happy, blocked, stale, unknown, and scope-out states explain owner and next action."
+            },
+            {
+              "id": "copy-clarity",
+              "label": "Copy clarity",
+              "evidenceKind": "beta-facing copy review",
+              "proves": "Artifact copy is customer-safe, support-routable, and does not overstate readiness."
+            }
+          ],
+          "artifactChecks": [
+            {
+              "artifact": "onboarding",
+              "title": "First-run onboarding and workspace activation artifact",
+              "ownerRoute": "Workspace & Onboarding UX",
+              "acceptedRiskPath": "launch-cutline-review",
+              "quickstartFixtureId": "rlq-define-object-graph-v1",
+              "accessibilityNote": "Exercise invite, anonymous try-it, workspace, project, blocker, and value-proof entry states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "onboarding keyboard path evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "onboarding screen-reader smoke evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "onboarding responsive layout evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until responsive-layout has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "onboarding contrast threshold evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until contrast-threshold has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "onboarding reduced motion evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until reduced-motion has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "onboarding state clarity evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until state-clarity has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "onboarding copy clarity evidence over rlq-define-object-graph-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Workspace & Onboarding UX",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "onboarding cannot be treated as launch-ready evidence until copy-clarity has named proof; release cutline must block or route accepted risk"
+                }
+              ]
+            },
+            {
+              "artifact": "plan-diff",
+              "title": "Plan/diff review artifact over golden fixtures",
+              "ownerRoute": "Plan/Diff Viewer",
+              "acceptedRiskPath": "release-owner-review",
+              "quickstartFixtureId": "rlq-plan-safe-preview-v1",
+              "accessibilityNote": "Exercise safe, destructive, blocked, stale, unknown-evidence, policy, cost, and approval states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "plan-diff keyboard path evidence over rlq-plan-safe-preview-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "plan-diff screen-reader smoke evidence over rlq-plan-safe-preview-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "plan-diff responsive layout evidence over rlq-plan-safe-preview-v1",
+                  "severity": "major",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until responsive-layout has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "plan-diff contrast threshold evidence over rlq-plan-safe-preview-v1",
+                  "severity": "major",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until contrast-threshold has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "plan-diff reduced motion evidence over rlq-plan-safe-preview-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until reduced-motion has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "plan-diff state clarity evidence over rlq-plan-safe-preview-v1",
+                  "severity": "major",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until state-clarity has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "plan-diff copy clarity evidence over rlq-plan-safe-preview-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Plan/Diff Viewer",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "plan-diff cannot be treated as launch-ready evidence until copy-clarity has named proof; owner must remediate or document limitation"
+                }
+              ]
+            },
+            {
+              "artifact": "deployment-dashboard",
+              "title": "Deployment dashboard and topology/status artifact",
+              "ownerRoute": "Deployment Dashboard & Topology Explorer",
+              "acceptedRiskPath": "product-owner-remediation",
+              "quickstartFixtureId": "rlq-inspect-event-projection-v1",
+              "accessibilityNote": "Exercise topology, timeline, health, stale projection, RBAC, and support handoff states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "deployment-dashboard keyboard path evidence over rlq-inspect-event-projection-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "deployment-dashboard screen-reader smoke evidence over rlq-inspect-event-projection-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "deployment-dashboard responsive layout evidence over rlq-inspect-event-projection-v1",
+                  "severity": "major",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until responsive-layout has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "deployment-dashboard contrast threshold evidence over rlq-inspect-event-projection-v1",
+                  "severity": "major",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until contrast-threshold has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "deployment-dashboard reduced motion evidence over rlq-inspect-event-projection-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until reduced-motion has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "deployment-dashboard state clarity evidence over rlq-inspect-event-projection-v1",
+                  "severity": "major",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until state-clarity has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "deployment-dashboard copy clarity evidence over rlq-inspect-event-projection-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Deployment Dashboard & Topology Explorer",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "deployment-dashboard cannot be treated as launch-ready evidence until copy-clarity has named proof; owner must remediate or document limitation"
+                }
+              ]
+            },
+            {
+              "artifact": "marketplace",
+              "title": "Marketplace discovery and install-intent artifact",
+              "ownerRoute": "Marketplace UX",
+              "acceptedRiskPath": "product-owner-remediation",
+              "quickstartFixtureId": "rlq-deploy-run-accepted-v1",
+              "accessibilityNote": "Exercise approved, preview, limited beta, policy-blocked, deprecated, and yanked listing states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "marketplace keyboard path evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "marketplace screen-reader smoke evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "marketplace responsive layout evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "major",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until responsive-layout has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "marketplace contrast threshold evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "major",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until contrast-threshold has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "marketplace reduced motion evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until reduced-motion has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "marketplace state clarity evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "major",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until state-clarity has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "marketplace copy clarity evidence over rlq-deploy-run-accepted-v1",
+                  "severity": "major",
+                  "ownerRoute": "Marketplace UX",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "marketplace cannot be treated as launch-ready evidence until copy-clarity has named proof; owner must remediate or document limitation"
+                }
+              ]
+            },
+            {
+              "artifact": "docs",
+              "title": "Docs portal, tutorials, troubleshooting, and search artifact",
+              "ownerRoute": "Docs Portal",
+              "acceptedRiskPath": "release-owner-review",
+              "quickstartFixtureId": "rlq-manage-stale-evidence-v1",
+              "accessibilityNote": "Exercise audience path, search metadata, stale-content, tutorial, and troubleshooting states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "docs keyboard path evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "docs screen-reader smoke evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "docs responsive layout evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "major",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until responsive-layout has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "docs contrast threshold evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "major",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until contrast-threshold has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "docs reduced motion evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until reduced-motion has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "docs state clarity evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "major",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until state-clarity has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "docs copy clarity evidence over rlq-manage-stale-evidence-v1",
+                  "severity": "major",
+                  "ownerRoute": "Docs Portal",
+                  "acceptedRiskPath": "release-owner-review",
+                  "launchReadinessImpact": "docs cannot be treated as launch-ready evidence until copy-clarity has named proof; owner must remediate or document limitation"
+                }
+              ]
+            },
+            {
+              "artifact": "support",
+              "title": "Support case and redacted evidence handoff artifact",
+              "ownerRoute": "V1 Launch Support Desk & Escalation",
+              "acceptedRiskPath": "support-owner-route",
+              "quickstartFixtureId": "rlq-recover-snapshot-restore-v1",
+              "accessibilityNote": "Exercise intake, severity, evidence-linked, owner-routed, customer-updated, and closed states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "support keyboard path evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "support screen-reader smoke evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "support responsive layout evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until responsive-layout has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "support contrast threshold evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until contrast-threshold has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "support reduced motion evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until reduced-motion has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "support state clarity evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until state-clarity has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "support copy clarity evidence over rlq-recover-snapshot-restore-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Launch Support Desk & Escalation",
+                  "acceptedRiskPath": "support-owner-route",
+                  "launchReadinessImpact": "support cannot be treated as launch-ready evidence until copy-clarity has named proof; release cutline must block or route accepted risk"
+                }
+              ]
+            },
+            {
+              "artifact": "publisher",
+              "title": "Publisher profile, submission, review, rejection, and yank remediation artifact",
+              "ownerRoute": "Publisher Portal",
+              "acceptedRiskPath": "product-owner-remediation",
+              "quickstartFixtureId": "rlq-collect-manifest-ir-v1",
+              "accessibilityNote": "Exercise maintainer roles, evidence upload, review queue, rejection, and remediation states.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "publisher keyboard path evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "publisher screen-reader smoke evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "publisher responsive layout evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "major",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until responsive-layout has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "publisher contrast threshold evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "major",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until contrast-threshold has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "publisher reduced motion evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until reduced-motion has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "publisher state clarity evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "major",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until state-clarity has named proof; owner must remediate or document limitation"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "publisher copy clarity evidence over rlq-collect-manifest-ir-v1",
+                  "severity": "minor",
+                  "ownerRoute": "Publisher Portal",
+                  "acceptedRiskPath": "product-owner-remediation",
+                  "launchReadinessImpact": "publisher cannot be treated as launch-ready evidence until copy-clarity has named proof; owner must remediate or document limitation"
+                }
+              ]
+            },
+            {
+              "artifact": "launch-demo",
+              "title": "Launch demo storyboard, screenshot manifest, and proof-mode asset artifact",
+              "ownerRoute": "V1 Release Program & Cutline",
+              "acceptedRiskPath": "launch-cutline-review",
+              "quickstartFixtureId": "rlq-recover-scope-out-v1",
+              "accessibilityNote": "Exercise recording manifest, screenshot, transcript, fixture refresh, limitation, and scope-out labels.",
+              "checklistSourceIssue": "HOBO-554",
+              "proofModeLabels": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "checks": [
+                {
+                  "checkId": "keyboard-path",
+                  "expectedEvidence": "launch-demo keyboard path evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until keyboard-path has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "screen-reader-smoke",
+                  "expectedEvidence": "launch-demo screen-reader smoke evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until screen-reader-smoke has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "responsive-layout",
+                  "expectedEvidence": "launch-demo responsive layout evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until responsive-layout has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "contrast-threshold",
+                  "expectedEvidence": "launch-demo contrast threshold evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until contrast-threshold has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "reduced-motion",
+                  "expectedEvidence": "launch-demo reduced motion evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until reduced-motion has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "state-clarity",
+                  "expectedEvidence": "launch-demo state clarity evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until state-clarity has named proof; release cutline must block or route accepted risk"
+                },
+                {
+                  "checkId": "copy-clarity",
+                  "expectedEvidence": "launch-demo copy clarity evidence over rlq-recover-scope-out-v1",
+                  "severity": "launch-blocker",
+                  "ownerRoute": "V1 Release Program & Cutline",
+                  "acceptedRiskPath": "launch-cutline-review",
+                  "launchReadinessImpact": "launch-demo cannot be treated as launch-ready evidence until copy-clarity has named proof; release cutline must block or route accepted risk"
+                }
+              ]
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "happy-path",
+              "artifactRefs": [
+                "onboarding",
+                "plan-diff",
+                "deployment-dashboard",
+                "marketplace"
+              ],
+              "requiredEvidence": [
+                "all required representative checks pass",
+                "owner route recorded",
+                "proof mode visible"
+              ],
+              "safeOutcome": "artifact can be treated as branch evidence for the named fixture only"
+            },
+            {
+              "id": "blocked-path",
+              "artifactRefs": [
+                "plan-diff",
+                "marketplace",
+                "publisher",
+                "support"
+              ],
+              "requiredEvidence": [
+                "blocking check id",
+                "severity",
+                "accepted-risk path",
+                "launch readiness impact"
+              ],
+              "safeOutcome": "route blocker to owner without waiving launch gates or inventing runtime behavior"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "artifactRefs": [
+                "deployment-dashboard",
+                "docs",
+                "launch-demo"
+              ],
+              "requiredEvidence": [
+                "freshness label",
+                "unknown evidence copy",
+                "safe downgrade path"
+              ],
+              "safeOutcome": "mark evidence stale or unknown instead of using it as launch-ready proof"
+            },
+            {
+              "id": "support-handoff",
+              "artifactRefs": [
+                "support",
+                "publisher",
+                "marketplace",
+                "docs"
+              ],
+              "requiredEvidence": [
+                "customer-safe summary",
+                "owner route",
+                "next update condition"
+              ],
+              "safeOutcome": "handoff redacted evidence to the named owner without customer-data exposure"
+            },
+            {
+              "id": "accessibility-notes",
+              "artifactRefs": [
+                "onboarding",
+                "publisher",
+                "docs",
+                "launch-demo"
+              ],
+              "requiredEvidence": [
+                "keyboard path",
+                "screen-reader smoke",
+                "responsive layout",
+                "reduced-motion note"
+              ],
+              "safeOutcome": "make accessibility disposition explicit before customer-ready claims"
+            },
+            {
+              "id": "proof-mode-labels",
+              "artifactRefs": [
+                "launch-demo",
+                "plan-diff",
+                "deployment-dashboard",
+                "marketplace"
+              ],
+              "requiredEvidence": [
+                "live label",
+                "simulated label",
+                "reference fixture label",
+                "scope-out label"
+              ],
+              "safeOutcome": "keep live, simulated, reference fixture, and scope-out evidence separate"
+            }
+          ],
+          "proofModeLabels": [
+            "live",
+            "simulated",
+            "reference fixture",
+            "scope-out"
+          ],
+          "scopeOut": [
+            "No full accessibility audit or certification.",
+            "No product UI remediation.",
+            "No automated accessibility test suite buildout.",
+            "No launch waiver approval.",
+            "No customer data or customer screenshots.",
+            "No launch claims without named evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

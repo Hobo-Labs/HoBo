@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "beta-pilot-ga-handoff-evidence-contract",
+  "experienceType": "cx",
+  "title": "Beta Pilot GA Handoff Evidence Contract",
+  "linear": "HOBO-477",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

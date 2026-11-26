@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package hobo.draft.vibe_marketplace_trust_copy_states.v1;
+
+message MarketplaceTrustCopyStates {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated string scope_out = 6;
+  repeated MarketplaceTrustQuickstartFixtureReference quickstart_fixture_refs = 7;
+  repeated MarketplaceTrustCopyScenario scenarios = 8;
+  repeated MarketplaceTrustHandoff handoffs = 9;
+}
+
+message MarketplaceTrustCopyScenario {
+  string kind = 1;
+  string fixture_id = 2;
+  string listing_state = 3;
+  string path = 4;
+  string proof_mode = 5;
+  string audience = 6;
+  string owner_route = 7;
+  string evidence_source = 8;
+  string safe_claim = 9;
+  MarketplaceTrustCopy copy = 10;
+  repeated MarketplaceAccessibilityNote accessibility_notes = 11;
+}
+
+message MarketplaceTrustCopy {
+  string headline = 1;
+  string body = 2;
+  string next_action = 3;
+}
+
+message MarketplaceAccessibilityNote {
+  string check = 1;
+  string note = 2;
+}
+
+message MarketplaceTrustHandoff {
+  string owner = 1;
+  string consumes = 2;
+  repeated string must_not_own = 3;
+}
+
+message MarketplaceTrustQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  repeated string copy_states = 4;
+  string trust_copy_use = 5;
+}

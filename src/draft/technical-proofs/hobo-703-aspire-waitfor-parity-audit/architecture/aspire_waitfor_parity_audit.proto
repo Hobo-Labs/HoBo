@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package hobo.competitors.aspire_waitfor_parity_audit.v1;
+
+message AspireWaitForTrackerRow {
+  string aspire_feature = 1;
+  string hobo_equivalent = 2;
+  string status = 3;
+  string hobo_doc = 4;
+}
+
+message AspireWaitForParityAuditRequest {
+  string aspire_markdown = 1;
+  string control_plane_markdown = 2;
+}
+
+message AspireWaitForParityAuditResult {
+  AspireWaitForTrackerRow tracker_row = 1;
+  repeated string failures = 2;
+  bool pass = 3;
+}

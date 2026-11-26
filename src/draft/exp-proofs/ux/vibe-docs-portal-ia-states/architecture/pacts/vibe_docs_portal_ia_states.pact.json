@@ -1,0 +1,48 @@
+{
+  "consumer": {
+    "name": "VibeDocsPortalIaStatesConsumer"
+  },
+  "provider": {
+    "name": "VibeDocsPortalIaStatesBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe Docs Portal IA States boundary returns accepted HOBO-551 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-docs-portal-ia-states/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.vibe_docs_portal_ia_states/v1",
+          "issue": "HOBO-551",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-docs-portal-ia-states",
+          "contentAreas": [
+            "getting-started",
+            "api-reference",
+            "architecture",
+            "operations",
+            "troubleshooting",
+            "release-notes",
+            "known-limitations",
+            "security",
+            "support"
+          ],
+          "proofModes": [
+            "live",
+            "simulated",
+            "reference fixture",
+            "scope-out"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "docs-portal-scope-contract",
+  "experienceType": "dx",
+  "title": "Docs Portal Scope Contract",
+  "linear": "HOBO-434",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/docs-portal.md",
+      "docs/design/proofs/hobo-434-docs-portal/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

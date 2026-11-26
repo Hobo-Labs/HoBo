@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "beta-pilot-dogfood-alpha-evidence-contract",
+  "experienceType": "cx",
+  "title": "Beta Pilot Dogfood/Alpha Evidence Contract",
+  "linear": "HOBO-456",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/cx/beta-pilot-feedback-contract"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

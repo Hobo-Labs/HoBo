@@ -1,0 +1,8 @@
+{
+  "name": "launch-demo-golden-path-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,91 @@
+{
+	"recipeId": "recipe.netlify.claimable-generated-report/v1",
+	"topologyDigest": "sha256:7388540bc67d2d122fb5f8820bfe8a12d8e148564d163aa71b0b496b30212fd2",
+	"resolutionDigest": "sha256:90f28092716bc226760d36b445d5a7028e5f9fe6a6c67db7f4bcc35a6a226ef8",
+	"topology": {
+		"schemaVersion": "hobo.resolved-topology/v1",
+		"recipeId": "recipe.netlify.claimable-generated-report/v1",
+		"junctionRef": "junction/recipe-netlify-claimable-generated-report-v1",
+		"yards": [
+			{
+				"yardId": "site",
+				"yardRef": "junction/recipe-netlify-claimable-generated-report-v1/site",
+				"providerId": "netlify",
+				"resourceOnly": false,
+				"sponsored": false,
+				"regions": [],
+				"camps": [
+					{
+						"campId": "web",
+						"campRef": "junction/recipe-netlify-claimable-generated-report-v1/site/web",
+						"resources": [
+							{
+								"resourceRef": "junction/recipe-netlify-claimable-generated-report-v1/site/report",
+								"placementId": "report",
+								"capabilityRef": "site",
+								"primitive": "web",
+								"satisfiesProfileId": "web.static/v1",
+								"productDefinitionId": "netlify.anonymous-static-site/v1",
+								"realization": "native",
+								"runtimeModel": "paas",
+								"producesBindingProfiles": [
+									"binding.http/v1"
+								]
+							}
+						]
+					}
+				],
+				"resources": []
+			}
+		],
+		"bindings": []
+	},
+	"claims": {
+		"actionCount": 1,
+		"providerCount": 1,
+		"atomicity": "single-resource",
+		"earliestDeadlineMs": 1700003600000,
+		"items": [
+			{
+				"claimId": "claim/report",
+				"subjectRef": "junction/recipe-netlify-claimable-generated-report-v1/site/report",
+				"subjectKind": "resource",
+				"providerId": "netlify",
+				"mode": "site-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700003600000,
+				"creatorAuthorityAfterClaim": "rotatable",
+				"postClaimActions": [
+					"revoke-bootstrap-authority"
+				]
+			}
+		]
+	},
+	"guestLeases": [
+		{
+			"leaseId": "lease/site",
+			"yardId": "site",
+			"subjectRef": "junction/recipe-netlify-claimable-generated-report-v1/site",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "delete",
+			"renewable": false,
+			"claimByMs": 1700003600000
+		}
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [
+			"report"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": []
+	},
+	"widenings": [],
+	"trustEvidenceRefs": [
+		"netlify.anonymous-static-site/v1#sha256:136603eead40dee6e39b0452a734163dffe4f795d3b365183ab2f2816b54c74d"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/netlify.anonymous-static-site/v1/web.hosted/v1"
+	],
+	"sponsoredCostMinorUnits": 0
+}

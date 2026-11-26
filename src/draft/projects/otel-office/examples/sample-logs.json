@@ -1,0 +1,61 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "api-gateway" } },
+          { "key": "hobo.station", "value": { "stringValue": "station-local" } },
+          { "key": "hobo.yard", "value": { "stringValue": "yard-edge" } },
+          { "key": "hobo.camp", "value": { "stringValue": "camp-gateway" } },
+          { "key": "hobo.primitive", "value": { "stringValue": "bindle" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "example" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1700000010000000000",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": { "stringValue": "orders call dispatched" },
+              "traceId": "7c9bb2a1d4f04e6a9b3c5d7e8f001122"
+            },
+            {
+              "timeUnixNano": "1700000012000000000",
+              "severityNumber": 13,
+              "severityText": "WARN",
+              "body": { "stringValue": "retry budget low" },
+              "traceId": "7c9bb2a1d4f04e6a9b3c5d7e8f001122"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "orders-api" } },
+          { "key": "hobo.station", "value": { "stringValue": "station-local" } },
+          { "key": "hobo.yard", "value": { "stringValue": "yard-platform" } },
+          { "key": "hobo.camp", "value": { "stringValue": "camp-orders" } },
+          { "key": "hobo.primitive", "value": { "stringValue": "bindle" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "example" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1700000015000000000",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": { "stringValue": "payment reconcile failed" },
+              "traceId": "7c9bb2a1d4f04e6a9b3c5d7e8f001122"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

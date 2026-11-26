@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package hobo.config.v1;
+
+// Config manifest entry (hobo.config/v1) — refs only, never values.
+
+enum ConfigSensitivity {
+  CONFIG_SENSITIVITY_UNSPECIFIED = 0;
+  SECRETLESS = 1;
+  SECRET = 2;
+  CONFIG = 3;
+}
+
+enum ConfigSourceKind {
+  CONFIG_SOURCE_KIND_UNSPECIFIED = 0;
+  BINDING = 1;
+  SECRET_REF = 2;
+  CAMP_ENV = 3;
+}
+
+message ConfigSource {
+  ConfigSourceKind kind = 1;
+  string ref = 2;
+  bool dev_only = 3;
+}
+
+message ConfigManifestEntry {
+  string key = 1;
+  string type = 2;
+  bool required = 3;
+  ConfigSensitivity sensitivity = 4;
+  ConfigSource source = 5;
+  string default_type = 6;
+  bool production_deployable = 7;
+}
+
+message ConfigManifest {
+  string schema = 1;
+  map<string, ConfigManifestEntry> entries = 2;
+}
+
+// Event records — closed structs, no value field.
+
+enum ConfigResolvedSource {
+  CONFIG_RESOLVED_SOURCE_UNSPECIFIED = 0;
+  BOUND_RESOURCE = 1;
+  SECRET_STORE = 2;
+  CAMP_ENV = 3;
+  DEV_SECRET = 4;
+  STATIC_SECRET_HATCH = 5;
+}
+
+message ConfigResolved {
+  string key = 1;
+  string ref = 2;
+  ConfigResolvedSource source = 3;
+  string camp = 4;
+  string event_id = 5;
+  string correlation_id = 6;
+}
+
+message SecretAccessed {
+  string ref = 1;
+  string camp = 2;
+  string source = 3;
+  string accessor_id = 4;
+  string event_id = 5;
+}
+
+message SecretUnavailable {
+  string ref = 1;
+  string camp = 2;
+  string reason = 3;
+  string event_id = 4;
+}

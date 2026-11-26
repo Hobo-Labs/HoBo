@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "DogfoodYardGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "DogfoodYardGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Dogfood Yard GA handoff boundary returns M4 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/dogfood-yard-ga-handoff-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.dogfood_yard_ga_handoff_evidence/v1",
+          "issue": "HOBO-476",
+          "phase": "M4",
+          "milestone": "M4 GA handoff"
+        }
+      }
+    },
+    {
+      "description": "Dogfood Yard GA handoff boundary rejects unsupported public GA claims",
+      "request": {
+        "method": "POST",
+        "path": "/dogfood-yard-ga-handoff-evidence/claims"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "unsupported Dogfood Yard GA claim"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

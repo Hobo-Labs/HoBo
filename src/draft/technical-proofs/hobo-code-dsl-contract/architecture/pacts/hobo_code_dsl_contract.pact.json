@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboCodeDslContractConsumer"
+  },
+  "provider": {
+    "name": "HoboCodeDslContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Code Dsl Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-code-dsl-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_code_dsl_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

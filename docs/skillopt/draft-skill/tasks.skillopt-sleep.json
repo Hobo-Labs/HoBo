@@ -1,0 +1,54 @@
+{
+  "format": "skillopt_sleep.tasks.v1",
+  "project": "hobo",
+  "transcript_source": "manual-fixture",
+  "n_sessions": 0,
+  "target_skill_path": ".agents/skills/draft/SKILL.md",
+  "reviewed": true,
+  "tasks": [
+    {
+      "id": "draft-tp-1",
+      "project": "hobo",
+      "intent": "Classify and specify a new provider capability cache invalidation contract proof.",
+      "context_excerpt": "The proof must isolate one atomic technical concept and must not call live providers.",
+      "outcome": "unknown",
+      "reference_kind": "rubric",
+      "reference": "High score requires path src/draft/technical-proofs/provider-capability-cache-invalidation-contract, mocked providers, ADR, protobuf CUE Pact where boundaries exist, parse-don't-validate notes, isolated capability tests, and deterministic performance envelope or ADR non-applicability.",
+      "tags": ["draft", "technical-proof"],
+      "split": "train"
+    },
+    {
+      "id": "draft-xp-1",
+      "project": "hobo",
+      "intent": "Classify and specify a first-run workspace onboarding experience proof for platform admins.",
+      "context_excerpt": "The proof is about user friction, not backend implementation.",
+      "outcome": "unknown",
+      "reference_kind": "rubric",
+      "reference": "High score requires path src/draft/exp-proofs/workspace-onboarding-flow, ADR, audience model, friction inventory, measurable standards/specs, UX wireframes or image mockups, and mocked service boundaries.",
+      "tags": ["draft", "experience-proof"],
+      "split": "train"
+    },
+    {
+      "id": "draft-ep-1",
+      "project": "hobo",
+      "intent": "Classify and specify an isolated developer-experience epic proof that rolls up CLI login, token broker, and workspace onboarding proofs.",
+      "context_excerpt": "The epic should reuse lower-layer artifacts and mock every service boundary outside the epic.",
+      "outcome": "unknown",
+      "reference_kind": "rubric",
+      "reference": "High score requires path src/draft/epic-proofs/<slug>, reuse of technical and experience proof artifacts, compatibility ADRs, Gherkin/Cucumber features, mocked service boundaries, Pact fixture inventory, simulation docs, and a rollup ledger.",
+      "tags": ["draft", "epic-proof"],
+      "split": "val"
+    },
+    {
+      "id": "draft-pm-1",
+      "project": "hobo",
+      "intent": "Classify and specify a project MVP that integrates launch readiness epic proofs without inventing a fake product implementation.",
+      "context_excerpt": "The first project layer should create standards and registry/templates only until a real MVP is scoped.",
+      "outcome": "unknown",
+      "reference_kind": "rubric",
+      "reference": "High score requires src/draft/projects/<slug> only for a scoped MVP, project ADR, rollup ledger, epic proof integration evidence, and downward propagation of design changes with ADRs. Do not invent a fake MVP.",
+      "tags": ["draft", "project-mvp"],
+      "split": "val"
+    }
+  ]
+}

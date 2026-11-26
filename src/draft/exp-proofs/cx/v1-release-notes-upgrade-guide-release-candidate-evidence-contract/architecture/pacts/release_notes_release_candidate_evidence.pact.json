@@ -1,0 +1,32 @@
+{
+  "consumer": {
+    "name": "ReleaseNotesReleaseCandidateEvidenceConsumer"
+  },
+  "provider": {
+    "name": "ReleaseNotesReleaseCandidateEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Release Notes Release Candidate Evidence boundary returns its recorded M3 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/release-notes-release-candidate-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.release_notes_release_candidate_evidence/v1",
+          "issue": "HOBO-473",
+          "phase": "M3",
+          "milestone": "M3 Release candidate"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

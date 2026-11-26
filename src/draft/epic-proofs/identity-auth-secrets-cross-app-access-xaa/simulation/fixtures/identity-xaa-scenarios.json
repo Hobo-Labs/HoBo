@@ -1,0 +1,86 @@
+{
+  "personas": [
+    "Platform engineer deploying an attested workload",
+    "App developer using hobo:auth and ctx.config",
+    "SecOps reviewer governing an agent acting for a user",
+    "Yard operator maintaining identity availability"
+  ],
+  "bddScenarios": [
+    "Exchange an attested workload SVID for a provider token",
+    "Verify ctx.user and read a secret reference without storing plaintext",
+    "Mint outbound and verify inbound XAA credentials",
+    "Keep identity available without widening trust"
+  ],
+  "workload": {
+    "attestation": {
+      "runId": "run-2026-06-29-orders",
+      "tenant": "tenant-a",
+      "bindle": "orders-api",
+      "resource": "orders-api",
+      "agent": "deployer",
+      "codeVersion": "sha256:orders-api-v7",
+      "imageDigest": "sha256:component-orders-api"
+    },
+    "callerClaims": {
+      "tenant": "tenant-b",
+      "role": "org-admin"
+    },
+    "requestedScope": {
+      "port": "bucket",
+      "resource": "orders-archive",
+      "action": "write"
+    },
+    "allowedScopes": [
+      {
+        "port": "bucket",
+        "resource": "orders-archive",
+        "action": "write"
+      },
+      {
+        "port": "secret",
+        "resource": "orders/database-url",
+        "action": "read"
+      }
+    ]
+  },
+  "broker": {
+    "provider": "aws",
+    "authFlow": "oidc-federation",
+    "maxTtlSeconds": 600
+  },
+  "auth": {
+    "consumerContract": "hobo:auth/orders-api/v1",
+    "user": {
+      "id": "user_alice",
+      "tenant": "tenant-a",
+      "roles": [
+        "deployer"
+      ],
+      "scopes": [
+        "orders:read",
+        "orders:write"
+      ]
+    }
+  },
+  "secretless": {
+    "databaseUrlRef": "secretref://tenant-a/orders/database-url"
+  },
+  "xaa": {
+    "target": "asana",
+    "operation": "tasks.create",
+    "operationScopeMap": {
+      "tasks.create": "tasks:write"
+    },
+    "delegatedBy": {
+      "kind": "user",
+      "id": "user_alice"
+    },
+    "agent": {
+      "kind": "agent",
+      "id": "agent_scheduler"
+    }
+  },
+  "governance": {
+    "genesisAdmin": "user_bootstrap_admin"
+  }
+}

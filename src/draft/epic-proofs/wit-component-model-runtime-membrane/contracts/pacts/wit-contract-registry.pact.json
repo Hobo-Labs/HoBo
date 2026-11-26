@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "WITContractRegistryMock" },
+  "interactions": [
+    {
+      "description": "verify a pinned WIT package digest and preview upcaster shape",
+      "request": {
+        "method": "POST",
+        "path": "/wit/verify-pin",
+        "body": {
+          "package": "hobo:sdk@0.1.0",
+          "digest": "sha256:hobo-sdk",
+          "previewUpcasterRequired": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "verified": true,
+          "stability": "preview",
+          "upcasterShape": "declared"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "wit-contract-registry",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

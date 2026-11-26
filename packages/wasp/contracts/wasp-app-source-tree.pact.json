@@ -1,0 +1,206 @@
+{
+	"consumer": {
+		"name": "@hobo/wasp"
+	},
+	"provider": {
+		"name": "WaspAppSourceTree"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"boundary": {
+			"kind": "filesystem",
+			"note": "The provider here is an application directory, reached through the WaspSourceReader seam. Each interaction is one read: a path in, file text or absence back. test/source-tree.contract.test.ts fakes exactly that reader and drives the real discoverWaspEnv() against the recorded replies.",
+			"sourceRefs": [
+				{
+					"url": "https://docs.opensaas.sh/guides/deploying/",
+					"checkedAt": "2026-08-08",
+					"confirms": "the four general deploy vars DATABASE_URL, JWT_SECRET, WASP_WEB_CLIENT_URL, WASP_SERVER_URL"
+				},
+				{
+					"url": "https://wasp.sh/docs/project/env-vars",
+					"checkedAt": "2026-08-08",
+					"confirms": "client env vars must be prefixed REACT_APP_ to reach the browser bundle"
+				}
+			],
+			"fixtureNote": "The recorded file bodies are shortened stand-ins for examples/wasp-opensaas/app/.env.*.example, keeping the key names verbatim and replacing every right-hand side with an obviously fake placeholder. The parser never reads a value, which is the property the FAKE- placeholders make visible."
+		}
+	},
+	"interactions": [
+		{
+			"description": "read .env.server.example from an Open SaaS app",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "readFile",
+					"relativePath": ".env.server.example"
+				}
+			},
+			"response": {
+				"body": {
+					"present": true,
+					"text": "# NOTE: you can let Wasp set up your Postgres DB by running `wasp start db`.\n# DATABASE_URL=\n\nSTRIPE_API_KEY=FAKE-DO-NOT-USE\nSTRIPE_WEBHOOK_SECRET=FAKE-DO-NOT-USE\nLEMONSQUEEZY_API_KEY=FAKE-DO-NOT-USE\nPAYMENTS_HOBBY_SUBSCRIPTION_PLAN_ID=012345\nADMIN_EMAILS=me@example.com\nGOOGLE_CLIENT_ID=FAKE-DO-NOT-USE\nSENDGRID_API_KEY=FAKE-DO-NOT-USE\nOPENAI_API_KEY=FAKE-DO-NOT-USE\nAWS_S3_IAM_ACCESS_KEY=FAKE-DO-NOT-USE\nAWS_S3_FILES_BUCKET=your-bucket-name\nAWS_S3_REGION=your-region\n"
+				}
+			}
+		},
+		{
+			"description": "read .env.client.example from an Open SaaS app",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "readFile",
+					"relativePath": ".env.client.example"
+				}
+			},
+			"response": {
+				"body": {
+					"present": true,
+					"text": "# All client-side env vars must start with REACT_APP_ https://wasp.sh/docs/project/env-vars\nREACT_APP_GOOGLE_ANALYTICS_ID=G-FAKE\n"
+				}
+			}
+		},
+		{
+			"description": "read a client file that declares a key without the REACT_APP_ prefix",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "readFile",
+					"relativePath": ".env.client.example"
+				}
+			},
+			"response": {
+				"body": {
+					"present": true,
+					"text": "REACT_APP_GOOGLE_ANALYTICS_ID=G-FAKE\nSTRIPE_API_KEY=FAKE-DO-NOT-USE\n"
+				}
+			},
+			"providerStates": [
+				{
+					"name": "the app declares a server-shaped key in the client file, which Wasp would never expose"
+				}
+			]
+		},
+		{
+			"description": "read an example file that is not there yet",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "readFile",
+					"relativePath": ".env.server.example"
+				}
+			},
+			"response": {
+				"body": {
+					"present": false
+				}
+			},
+			"providerStates": [
+				{
+					"name": "the app has been checked out without its example env files"
+				}
+			]
+		},
+		{
+			"description": "derive the Bindle dependency suggestions an Open SaaS app implies",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "discoverWaspEnv",
+					"root": "examples/wasp-opensaas/app"
+				}
+			},
+			"response": {
+				"body": {
+					"generalEnv": [
+						"DATABASE_URL",
+						"JWT_SECRET",
+						"WASP_WEB_CLIENT_URL",
+						"WASP_SERVER_URL"
+					],
+					"suggestedDeps": [
+						{
+							"kind": "container",
+							"via": "b.container({ image }) OCI Postgres, or b.external() BYO",
+							"keys": ["DATABASE_URL"]
+						},
+						{
+							"kind": "external",
+							"via": "b.external() connector / camp env",
+							"keys": [
+								"JWT_SECRET",
+								"WASP_WEB_CLIENT_URL",
+								"WASP_SERVER_URL",
+								"STRIPE_API_KEY",
+								"STRIPE_WEBHOOK_SECRET",
+								"LEMONSQUEEZY_API_KEY",
+								"PAYMENTS_HOBBY_SUBSCRIPTION_PLAN_ID",
+								"ADMIN_EMAILS",
+								"GOOGLE_CLIENT_ID",
+								"SENDGRID_API_KEY",
+								"OPENAI_API_KEY"
+							]
+						},
+						{
+							"kind": "bucket",
+							"via": "b.bucket() / external S3 connector",
+							"keys": [
+								"AWS_S3_IAM_ACCESS_KEY",
+								"AWS_S3_FILES_BUCKET",
+								"AWS_S3_REGION"
+							]
+						},
+						{
+							"kind": "env",
+							"via": "client env (Wasp REACT_APP_*)",
+							"keys": ["REACT_APP_GOOGLE_ANALYTICS_ID"]
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "annotate a Bindle web Kit with the app root and nothing else",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "waspAnnotation",
+					"root": "examples/wasp-opensaas/app"
+				}
+			},
+			"response": {
+				"body": {
+					"provider": "hobo",
+					"option": "webapp",
+					"config": {
+						"framework": "wasp",
+						"root": "examples/wasp-opensaas/app"
+					}
+				}
+			}
+		},
+		{
+			"description": "refuse an app root that escapes the repository",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "discoverWaspEnv",
+					"root": "../../etc"
+				}
+			},
+			"response": {
+				"body": {
+					"error": {
+						"code": "HOBO_WASP_INPUT_REJECTED",
+						"field": "root"
+					}
+				}
+			},
+			"providerStates": [
+				{
+					"name": "an app definition points outside the repository"
+				}
+			]
+		}
+	]
+}

@@ -1,0 +1,5 @@
+{
+	"recallAt1": 0.7,
+	"recallAt3": 0.85,
+	"abstainPrecision": 1
+}

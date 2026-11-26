@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "S2StageGateDrillConsumer"
+  },
+  "provider": {
+    "name": "S2StageGateDrillBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Stage-2 gate drill returns governed deploy evidence for hello-bindle",
+      "request": {
+        "method": "POST",
+        "path": "/s2-stage-gate/drill",
+        "body": {
+          "fixture": "examples/hello-bindle",
+          "provider": "cloudflare"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.s2StageGate/v1",
+          "arms": {
+            "governedDeploy": { "status": "passed" },
+            "yardRestartResume": { "status": "passed" },
+            "compensationRollback": { "status": "compensated" },
+            "gatekeeperBlock": { "status": "blocked" },
+            "timelineProjection": { "status": "reconstructed" }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

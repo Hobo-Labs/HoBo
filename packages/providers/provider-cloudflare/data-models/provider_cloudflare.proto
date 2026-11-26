@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package hobo.provider.cloudflare.v1;
+
+message EquivalenceMapping {
+  string class = 1;
+  string port = 2;
+  string resource_class = 3;
+  string provider_service = 4;
+  repeated string features = 5;
+}
+
+message CapabilityManifestIndex {
+  string schema = 1;
+  string provider_id = 2;
+  string manifest_schema = 3;
+}
+
+message HelloBindleResource {
+  string id = 1;
+  string type = 2;
+  string class_name = 3;
+  repeated string require = 4;
+}
+
+message HelloBindlePlan {
+  string id = 1;
+  string app = 2;
+  string env = 3;
+  string provider = 4;
+  repeated HelloBindleResource resources = 5;
+}

@@ -1,0 +1,23 @@
+{
+  "consumer": { "name": "@hobo/ci-vercel local CI" },
+  "provider": { "name": "Turborepo CLI 2.11.10" },
+  "interactions": [
+    {
+      "description": "resolved task tags exclude package tags",
+      "request": {
+        "argv": ["query", "query { packages { items { name tags tasks { items { fullName tags } } } } }"]
+      },
+      "response": {
+        "data": {
+          "packages": {
+            "items": [
+              { "name": "//", "tags": [], "tasks": { "items": [] } },
+              { "name": "web", "tags": ["package-label"], "tasks": { "items": [{ "fullName": "web#test", "tags": ["ci"] }] } }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

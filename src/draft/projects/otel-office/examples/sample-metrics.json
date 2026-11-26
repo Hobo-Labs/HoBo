@@ -1,0 +1,46 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "orders-api" } },
+          { "key": "hobo.station", "value": { "stringValue": "station-local" } },
+          { "key": "hobo.yard", "value": { "stringValue": "yard-platform" } },
+          { "key": "hobo.camp", "value": { "stringValue": "camp-orders" } },
+          { "key": "hobo.primitive", "value": { "stringValue": "bindle" } }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "example" },
+          "metrics": [
+            {
+              "name": "hobo.health",
+              "gauge": {
+                "dataPoints": [
+                  { "timeUnixNano": "1700000020000000000", "asDouble": 0.42 }
+                ]
+              }
+            },
+            {
+              "name": "hobo.error.rate",
+              "sum": {
+                "dataPoints": [
+                  { "timeUnixNano": "1700000021000000000", "asDouble": 0.1 }
+                ]
+              }
+            },
+            {
+              "name": "queue.depth",
+              "gauge": {
+                "dataPoints": [
+                  { "timeUnixNano": "1700000022000000000", "asInt": 12 }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "ProviderSTS" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "exchanges SVID-bound OIDC assertion for narrowed provider token reference",
+      "providerStates": [{ "name": "provider trust accepts Yard issuer" }],
+      "request": {
+        "method": "POST",
+        "path": "/sts/aws/assume-role-with-web-identity",
+        "headers": { "content-type": "application/json" },
+        "body": { "audience": "aws", "subject": "spiffe://yard/tenant-a/bindle/orders-api/agent/deployer", "scope": { "port": "bucket", "resource": "orders-archive", "action": "write" } }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "tokenRef": "tokenref://provider/aws/orders-archive/write/0", "expiresInSeconds": 600, "narrowed": true }
+      }
+    }
+  ]
+}

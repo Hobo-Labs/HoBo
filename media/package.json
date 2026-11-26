@@ -1,0 +1,23 @@
+{
+  "name": "hobo-media",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bo's art department: every reference sheet, sprite sheet and plate, shown moving.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "sync": "node sync-assets.mjs",
+    "prebuild": "node sync-assets.mjs",
+    "predev": "node sync-assets.mjs"
+  },
+  "dependencies": {
+    "astro": "^5.16.2",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4"
+  }
+}

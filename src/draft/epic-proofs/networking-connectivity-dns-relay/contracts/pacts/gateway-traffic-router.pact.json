@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "GatewayTrafficRouter" },
+  "interactions": [
+    {
+      "description": "terminates TLS and routes weighted traffic only to healthy targets",
+      "request": { "method": "GET", "path": "/api/orders", "headers": { "Host": "api.hobo.example" } },
+      "response": { "status": 200, "body": { "served": true, "target": "orders-v1" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

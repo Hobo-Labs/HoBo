@@ -1,0 +1,8 @@
+order flow outcome=projected-and-pushed seq=1 replayLiveEquivalent=true
+graphql read totalCents=4200
+sinks relational=consumer_tested document=consumer_tested changeFeed=data.Changed
+search fullText hit=order:1001 embed egress=local-only
+raw escape hatch flagged=true writeBlocked=true
+adversarial lag=projection.Lagged divergence=full-replay poison=quarantined-and-skipped
+crypto-shred tombstoneVisible=true logUnchanged=true
+EPIC HELD: append-only events, equivalent replay, portable reads, and history-preserving erasure

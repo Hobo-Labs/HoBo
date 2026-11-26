@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/platform-engineer-flow-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-critical-path-dependency-map-contract",
+  "experienceType": "dx",
+  "title": "V1 Critical Path Dependency Map Contract",
+  "linear": "HOBO-484",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

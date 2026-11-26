@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "signed-artifact-publish-install-contract",
+  "title": "Signed Artifact Publish/Install Contract",
+  "linear": "HOBO-7",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/componentize-artifact-trust-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

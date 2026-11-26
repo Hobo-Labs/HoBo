@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "XaaAuthRegistry" },
+  "interactions": [
+    {
+      "description": "return target auth metadata for XAA scope inference",
+      "providerStates": [{ "name": "asana auth manifest advertises tasks scopes" }],
+      "request": { "method": "GET", "path": "/targets/asana/auth.json" },
+      "response": { "status": 200, "body": { "target": "asana", "scopes": ["tasks:read", "tasks:write"], "audience": "urn:asana:app" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

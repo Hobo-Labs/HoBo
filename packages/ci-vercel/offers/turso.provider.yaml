@@ -1,0 +1,54 @@
+# The hosted relay's Turso (libSQL) cache offer (ADR-0179 amendment, phase 5).
+# Lowered into the @hobo/pricing catalog by scripts/generate-offers.mts.
+#
+# The free plan as Turso stated it on 2026-11-11: 500 million rows read and
+# 10 million rows written a month, blocked when exhausted (recorded in the
+# generator's binding table). Paid plans are not modelled.
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: turso
+  displayName: Turso
+  homepage: https://turso.tech
+  description: libSQL over HTTPS, attached through the Vercel Marketplace.
+
+capabilities:
+  regions: [aws-us-east-1]
+  mappings:
+    - id: kv/libsql-free
+      port: kv
+      resourceClass: libsql
+      providerService: turso.libsql
+      features: [ttl, atomicIncrement, atomicCompareAndSet]
+      profiles: [kv.ephemeral-state/v1]
+      stability: stable
+      products: [libsql-free]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://turso.tech/pricing
+    checkedAt: 2026-11-11
+    note: Free plan as recorded in the ADR-0179 amendment; rows per operation are upper bounds (@hobo/provider-turso).
+  billables:
+    - id: rows-read
+      category: service
+      unit: row
+    - id: rows-written
+      category: service
+      unit: row
+  products:
+    - id: libsql-free
+      kind: service
+      plans:
+        - id: free
+          included:
+            - { billable: rows-read, quantity: 500000000, reset: monthly }
+            - { billable: rows-written, quantity: 10000000, reset: monthly }
+          charges:
+            - id: rows-read
+              metered: { billable: rows-read, unitPrice: "0" }
+            - id: rows-written
+              metered: { billable: rows-written, unitPrice: "0" }

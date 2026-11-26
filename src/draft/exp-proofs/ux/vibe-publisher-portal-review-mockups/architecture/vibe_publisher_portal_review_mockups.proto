@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-548 publisher portal mockup fixture.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibePublisherPortalProofMode {
+  VIBE_PUBLISHER_PORTAL_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_PUBLISHER_PORTAL_PROOF_MODE_LIVE = 1;
+  VIBE_PUBLISHER_PORTAL_PROOF_MODE_SIMULATED = 2;
+  VIBE_PUBLISHER_PORTAL_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_PUBLISHER_PORTAL_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+enum VibePublisherPortalQuickstartProofMode {
+  VIBE_PUBLISHER_PORTAL_QUICKSTART_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_PUBLISHER_PORTAL_QUICKSTART_PROOF_MODE_REFERENCE_FIXTURE = 1;
+  VIBE_PUBLISHER_PORTAL_QUICKSTART_PROOF_MODE_SIMULATED = 2;
+  VIBE_PUBLISHER_PORTAL_QUICKSTART_PROOF_MODE_LIVE = 3;
+  VIBE_PUBLISHER_PORTAL_QUICKSTART_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibePublisherPortalMockup {
+  string id = 1;
+  string state = 2;
+  string title = 3;
+  repeated string personas = 4;
+  repeated string questions_answered = 5;
+  repeated string fixture_ids = 6;
+}
+
+message VibePublisherPortalFixture {
+  string id = 1;
+  string artifact_metadata = 2;
+  string evidence_state = 3;
+  string review_outcome = 4;
+  string payout_readiness_handoff = 5;
+  string support_wording = 6;
+  string customer_visible_limitation = 7;
+  VibePublisherPortalProofMode proof_mode = 8;
+}
+
+message VibePublisherPortalScenarioPath {
+  string id = 1;
+  string narrative = 2;
+  repeated string fixture_ids = 3;
+  string safe_outcome = 4;
+}
+
+message VibePublisherPortalQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  VibePublisherPortalQuickstartProofMode proof_mode = 3;
+  string publisher_use = 4;
+}
+
+message VibePublisherPortalReviewMockupsRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated VibePublisherPortalQuickstartFixtureReference quickstart_fixture_refs = 6;
+  repeated string personas = 7;
+  repeated VibePublisherPortalMockup mockups = 8;
+  repeated VibePublisherPortalFixture fixtures = 9;
+  repeated VibePublisherPortalScenarioPath scenario_paths = 10;
+  repeated string accessibility_notes = 11;
+  repeated string scope_out = 12;
+}

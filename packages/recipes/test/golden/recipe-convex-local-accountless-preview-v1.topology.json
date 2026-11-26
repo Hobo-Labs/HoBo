@@ -1,0 +1,76 @@
+{
+	"recipeId": "recipe.convex.local-accountless-preview/v1",
+	"topologyDigest": "sha256:00f3790ebe62e724c87d095a7d2cdf961eb1751e2d854f3961911ad45e24fb95",
+	"resolutionDigest": "sha256:536925e936d4a1a9942decae37a77083f88447f595d6686d3242a0bac88a1a5c",
+	"topology": {
+		"schemaVersion": "hobo.resolved-topology/v1",
+		"recipeId": "recipe.convex.local-accountless-preview/v1",
+		"junctionRef": "junction/recipe-convex-local-accountless-preview-v1",
+		"yards": [
+			{
+				"yardId": "local",
+				"yardRef": "junction/recipe-convex-local-accountless-preview-v1/local",
+				"providerId": "convex",
+				"resourceOnly": false,
+				"sponsored": false,
+				"regions": [],
+				"camps": [
+					{
+						"campId": "app",
+						"campRef": "junction/recipe-convex-local-accountless-preview-v1/local/app",
+						"resources": [
+							{
+								"resourceRef": "junction/recipe-convex-local-accountless-preview-v1/local/backend",
+								"placementId": "backend",
+								"capabilityRef": "backend",
+								"primitive": "data",
+								"satisfiesProfileId": "data.convex/v1",
+								"productDefinitionId": "convex.local-accountless/v1",
+								"realization": "native",
+								"runtimeModel": "oci",
+								"producesBindingProfiles": [
+									"binding.convex/v1"
+								]
+							}
+						]
+					}
+				],
+				"resources": []
+			}
+		],
+		"bindings": []
+	},
+	"claims": {
+		"actionCount": 0,
+		"providerCount": 0,
+		"atomicity": "single-resource",
+		"items": []
+	},
+	"guestLeases": [
+		{
+			"leaseId": "lease/local",
+			"yardId": "local",
+			"subjectRef": "junction/recipe-convex-local-accountless-preview-v1/local",
+			"bootstrapClass": "local",
+			"cleanupPolicy": "delete",
+			"renewable": true,
+			"claimByMs": 1700086400000
+		}
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [],
+		"exportMissingPlacements": [
+			"backend"
+		],
+		"migrationProfiles": []
+	},
+	"widenings": [],
+	"trustEvidenceRefs": [
+		"convex.local-accountless/v1#sha256:9f74c539fa0737ef77db5ca47ae9bd2e764a6911637f30c8bbe757627c7b313c"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/convex.local-accountless/v1/data.convex/v1"
+	],
+	"sponsoredCostMinorUnits": 0
+}

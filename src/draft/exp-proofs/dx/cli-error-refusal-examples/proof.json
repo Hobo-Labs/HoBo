@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "cli-error-refusal-examples",
+  "experienceType": "dx",
+  "title": "CLI Error Refusal Examples",
+  "linear": "HOBO-558",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/dx/dx-resource-lifecycle-fixture-corpus"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

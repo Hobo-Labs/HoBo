@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "workspace-onboarding-scope-acceptance",
+  "experienceType": "ux",
+  "title": "Workspace & Onboarding UX Scope Acceptance",
+  "linear": "HOBO-409",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

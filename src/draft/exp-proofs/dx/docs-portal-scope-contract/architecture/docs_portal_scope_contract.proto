@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Docs Portal Scope
+// Contract draft package reasons about. Documents the records/objects this
+// package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+enum DocsPortalScopeEvidenceKind {
+  DOCS_PORTAL_EVIDENCE_KIND_UNSPECIFIED = 0;
+  DOCS_PORTAL_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  DOCS_PORTAL_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  DOCS_PORTAL_EVIDENCE_KIND_REFERENCE_FIXTURE = 3;
+  DOCS_PORTAL_EVIDENCE_KIND_SECURITY_REVIEW = 4;
+  DOCS_PORTAL_EVIDENCE_KIND_SUPPORT_HANDOFF = 5;
+  DOCS_PORTAL_EVIDENCE_KIND_RELEASE_GATE = 6;
+}
+
+message DocsPortalScopeRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string summary = 4;
+  repeated string personas = 5;
+  repeated string portal_content_areas = 6;
+  repeated string m1_evidence = 7;
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/epic-reference-generation-pipeline-training-ai-safety",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node simulation/run-simulation.ts"
+  }
+}

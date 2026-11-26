@@ -1,0 +1,11 @@
+{
+	"success": false,
+	"error": "RATE_LIMIT_EXCEEDED",
+	"message": "We're experiencing a high volume of requests. Please try again later.",
+	"status": 429,
+	"rateLimitInfo": {
+		"retryAfterMs": 60000,
+		"currentCount": 11,
+		"maxRequests": 10
+	}
+}

@@ -1,0 +1,41 @@
+# OptimizeXP CLI evidence
+command: pnpm run doctor
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 875
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T13:53:21.052Z
+
+## stdout
+
+> hobo-design@ doctor /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --experimental-strip-types scripts/dx-preflight.mts doctor
+
+ok  Node 26.5.0
+ok  pnpm 10.33.4
+ok  Corepack available
+ok  pnpm-lock.yaml present
+ok  pnpm-workspace.yaml present
+ok  turbo.json present
+ok  no central data-model catalog present
+ok  root AGENTS.md present
+ok  node_modules present
+ok  tsx resolvable
+ok  AUTH.md present (keys/egress)
+ok  setup-agent-tools.sh --help (zero-key flags)
+ok  .mcp.json present (Claude Code MCP)
+ok  .cursor/mcp.json present (Cursor MCP)
+ok  .codex/config.toml present (Codex MCP template)
+ok  scripts/agent-mcp-serena.sh present
+ok  scripts/agent-mcp-headroom.sh present
+ok  scripts/agent-mcp-gbrain.sh present
+ok  serena on PATH
+ok  headroom on PATH
+ok  rtk on PATH
+ok  tgrep on PATH
+
+
+## stderr
+warn gbrain not on PATH (ok for zero-key; decline gbrain MCP or install later)
+

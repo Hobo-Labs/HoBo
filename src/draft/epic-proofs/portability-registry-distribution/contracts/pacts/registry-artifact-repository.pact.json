@@ -1,0 +1,24 @@
+{
+  "consumer": { "name": "PortabilityRegistryReferenceApp" },
+  "provider": { "name": "ArtifactRepositoryMirror" },
+  "interactions": [
+    {
+      "description": "pulls a digest-pinned artifact only after verification",
+      "providerState": "artifact mirror has a verified digest-identical listing",
+      "request": {
+        "method": "GET",
+        "path": "/artifacts/@hobo/aws-defaults/1.0.0",
+        "query": "digest=sha256:fixture"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "digest": "sha256:fixture",
+          "availableToMatching": true,
+          "selectedByMatching": false
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboCliShellContractConsumer"
+  },
+  "provider": {
+    "name": "HoboCliShellContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Cli Shell Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-cli-shell-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_cli_shell_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

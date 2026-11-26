@@ -1,0 +1,252 @@
+syntax = "proto3";
+
+package hobo.recipes.v1;
+
+// A SolutionRecipe selects provider topology for a provider-neutral Bindle.
+// The Bindle never names a provider; the recipe does, and only here.
+message SolutionRecipe {
+  string schema_version = 1;
+  string id = 2;
+  string display_name = 3;
+  string description = 4;
+  repeated RecipeYard yards = 5;
+  repeated RecipePlacement placements = 6;
+  repeated RecipeConnectivityEdge edges = 7;
+  RecipeSemantics delivers = 8;
+  RecipeBootstrapExpectation bootstrap = 9;
+}
+
+// Yard is the provider and ownership boundary. resource_only means the Yard
+// hosts managed resources with zero Camps; an empty Camp is never fabricated.
+message RecipeYard {
+  string yard_id = 1;
+  string provider_id = 2;
+  bool resource_only = 3;
+  bool sponsored = 4;
+  repeated string regions = 5;
+  RecipeLease lease = 6;
+}
+
+message RecipeLease {
+  string bootstrap_class = 1;
+  string cleanup_policy = 2;
+  bool renewable = 3;
+  // Relative to the compile instant: the compiler never reads a clock.
+  int64 claim_by_ms_from_start = 4;
+}
+
+message RecipePlacement {
+  string placement_id = 1;
+  string yard_id = 2;
+  string camp_id = 3;
+  string primitive = 4;
+  string capability_ref = 5;
+  string satisfies_profile_id = 6;
+  string product_definition_id = 7;
+  string runtime_model = 8;
+  RecipeClaimExpectation claim = 9;
+}
+
+message RecipeClaimExpectation {
+  string mode = 1;
+  string atomicity = 2;
+  uint32 action_count = 3;
+  int64 deadline_ms_from_start = 4;
+  string creator_authority_after_claim = 5;
+  repeated string post_claim_actions = 6;
+}
+
+message RecipeConnectivityChoice {
+  string connectivity_implementation_id = 1;
+  string binding_profile_ref = 2;
+}
+
+message RecipeConnectivityEdge {
+  string edge_id = 1;
+  string from_placement_id = 2;
+  string to_placement_id = 3;
+  RecipeConnectivityChoice primary = 4;
+  repeated RecipeConnectivityChoice fallbacks = 5;
+}
+
+// The semantics a recipe actually delivers. Compared against what the caller
+// requested to detect silent widening.
+message RecipeSemantics {
+  uint32 claim_count = 1;
+  string claim_kind = 2;
+  string persistence = 3;
+  string realtime = 4;
+  string credential_custody = 5;
+  string bootstrap = 6;
+}
+
+message RecipeBootstrapExpectation {
+  int64 sponsored_cost_cap_minor_units = 1;
+  string source_disclosure = 2;
+  repeated string required_consents = 3;
+  int64 offer_ttl_ms = 4;
+}
+
+// What a recipe compiles to: the Junction ⊃ Yard ⊃ Camp ⊃ resource hierarchy
+// with every placement resolved to a concrete product definition. This is the
+// persisted shape behind the topology digest, and the golden fixtures under
+// test/golden/ are instances of it.
+message ResolvedResource {
+  string resource_ref = 1;
+  string placement_id = 2;
+  string capability_ref = 3;
+  string primitive = 4;
+  string satisfies_profile_id = 5;
+  string product_definition_id = 6;
+  string realization = 7;
+  string runtime_model = 8;
+  repeated string produces_binding_profiles = 9;
+}
+
+message ResolvedCamp {
+  string camp_id = 1;
+  string camp_ref = 2;
+  repeated ResolvedResource resources = 3;
+}
+
+// A resource-only Yard carries resources and no Camps. That is a legal shape;
+// an empty Camp is never fabricated to host a managed resource.
+message ResolvedYard {
+  string yard_id = 1;
+  string yard_ref = 2;
+  string provider_id = 3;
+  bool resource_only = 4;
+  bool sponsored = 5;
+  repeated string regions = 6;
+  repeated ResolvedCamp camps = 7;
+  repeated ResolvedResource resources = 8;
+}
+
+message ResolvedBinding {
+  string edge_id = 1;
+  string from_resource_ref = 2;
+  string to_resource_ref = 3;
+  string binding_profile_ref = 4;
+  string connectivity_implementation_id = 5;
+  bool cross_yard = 6;
+  // True when the primary connectivity choice was not resolvable.
+  bool used_fallback = 7;
+}
+
+message ResolvedTopology {
+  string schema_version = 1;
+  string recipe_id = 2;
+  string junction_ref = 3;
+  repeated ResolvedYard yards = 4;
+  repeated ResolvedBinding bindings = 5;
+}
+
+// The signable pre-provision offer. Compiled before any effectful provider
+// call and carrying refs only — never a secret, claim URL, token, or
+// connection string.
+message DeploymentOffer {
+  string schema_version = 1;
+  string offer_id = 2;
+  string recipe_id = 3;
+  string deployment_ref = 4;
+  string topology_digest = 5;
+  string resolution_digest = 6;
+  string catalog_digest = 7;
+  string profile_registry_digest = 8;
+  repeated OfferPlacement placements = 9;
+  repeated OfferProvider providers = 10;
+  OfferClaimSummary claim_summary = 11;
+  string source_disclosure = 12;
+  string credential_custody = 13;
+  repeated string required_consents = 14;
+  int64 sponsored_cost_cap_minor_units = 15;
+  repeated OfferGuestLease guest_leases = 16;
+  repeated string trust_evidence_refs = 17;
+  repeated string conformance_evidence_refs = 18;
+  OfferPortability portability = 19;
+  repeated OfferDegradationNotice degradation_notices = 20;
+  int64 issued_at_ms = 21;
+  int64 expires_at_ms = 22;
+  OfferSignature signature = 23;
+}
+
+message OfferPlacement {
+  string placement_id = 1;
+  string yard_id = 2;
+  string camp_id = 3;
+  string provider_id = 4;
+  string primitive = 5;
+  string capability_ref = 6;
+  string satisfies_profile_id = 7;
+  string product_definition_id = 8;
+  string realization = 9;
+}
+
+message OfferProvider {
+  string provider_id = 1;
+  bool sponsored = 2;
+  bool resource_only = 3;
+}
+
+message OfferClaimSummary {
+  uint32 action_count = 1;
+  uint32 provider_count = 2;
+  int64 earliest_deadline_ms = 3;
+  string atomicity = 4;
+  repeated OfferClaimItem items = 5;
+}
+
+message OfferClaimItem {
+  string claim_id = 1;
+  string subject_ref = 2;
+  string provider_id = 3;
+  string mode = 4;
+  int64 deadline_ms = 5;
+  string creator_authority_after_claim = 6;
+  // Human actions this one claim costs. Summed into OfferClaimSummary.
+  uint32 action_count = 7;
+}
+
+message OfferGuestLease {
+  string lease_id = 1;
+  string yard_id = 2;
+  string bootstrap_class = 3;
+  string cleanup_policy = 4;
+  bool renewable = 5;
+  int64 claim_by_ms = 6;
+}
+
+message OfferPortability {
+  uint32 provider_count = 1;
+  repeated string export_supported_placements = 2;
+  repeated string export_missing_placements = 3;
+  repeated string migration_profiles = 4;
+}
+
+message OfferDegradationNotice {
+  string kind = 1;
+  string detail = 2;
+  string placement_id = 3;
+}
+
+message OfferSignature {
+  string algorithm = 1;
+  string key_id = 2;
+  string payload_digest = 3;
+  string signature = 4;
+}
+
+// Acceptance binds to the offer, topology, resolution, and catalog digests, so
+// substituting a provider or a recipe requires a new consent.
+message DeploymentOfferAcceptance {
+  string schema_version = 1;
+  string offer_id = 2;
+  string offer_digest = 3;
+  string topology_digest = 4;
+  string resolution_digest = 5;
+  string catalog_digest = 6;
+  int64 accepted_at_ms = 7;
+  string subject_ref = 8;
+  repeated string consents = 9;
+  string acceptance_digest = 10;
+}

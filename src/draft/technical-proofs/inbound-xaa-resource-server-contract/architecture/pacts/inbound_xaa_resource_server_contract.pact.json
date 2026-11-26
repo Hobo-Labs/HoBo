@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "InboundXaaResourceServerContractConsumer"
+  },
+  "provider": {
+    "name": "InboundXaaResourceServerContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Inbound Xaa Resource Server Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/inbound-xaa-resource-server-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.inbound_xaa_resource_server_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,257 @@
+{
+  "id": "schema-fixture",
+  "intent": {
+    "schemaVersion": "hobo.finops.resource-intent/v1",
+    "owner": {
+      "tenant": "tenant-a",
+      "workspace": "payments",
+      "environment": "production"
+    },
+    "capability": {
+      "category": "compute",
+      "requirements": {
+        "availability": "high",
+        "latencyP95Ms": 120,
+        "durability": "standard",
+        "compliance": "pci",
+        "minAvailability": 0.95
+      }
+    },
+    "budget": {
+      "amount": -1,
+      "currency": "USD",
+      "period": "monthly",
+      "softLimitBehavior": "requireApproval",
+      "hardLimitBehavior": "deny"
+    },
+    "constraints": {
+      "allowedJurisdictions": [
+        "US"
+      ],
+      "disallowedJurisdictions": [],
+      "maxCost": 4500,
+      "minSecurityLevel": 4
+    },
+    "routing": {
+      "objective": "balanced"
+    }
+  },
+  "candidates": [
+    {
+      "id": "candidate-economy",
+      "capabilityClass": "compute",
+      "monthlyCost": 2200,
+      "reliability": 0.96,
+      "latencyP95Ms": 110,
+      "risk": 0.2,
+      "compliance": [
+        "pci"
+      ],
+      "jurisdiction": "US",
+      "securityLevel": 4,
+      "eligible": true,
+      "abstractTraits": [
+        "capability-match",
+        "adapter-hidden",
+        "budget-visible"
+      ],
+      "transitionCost": 0,
+      "commitmentBound": 2200,
+      "period": "monthly"
+    },
+    {
+      "id": "candidate-balanced",
+      "capabilityClass": "compute",
+      "monthlyCost": 3000,
+      "reliability": 0.97,
+      "latencyP95Ms": 95,
+      "risk": 0.1,
+      "compliance": [
+        "pci"
+      ],
+      "jurisdiction": "US",
+      "securityLevel": 5,
+      "eligible": true,
+      "abstractTraits": [
+        "capability-match",
+        "adapter-hidden",
+        "budget-visible"
+      ],
+      "transitionCost": 0,
+      "commitmentBound": 3000,
+      "period": "monthly"
+    },
+    {
+      "id": "candidate-premium",
+      "capabilityClass": "compute",
+      "monthlyCost": 4200,
+      "reliability": 0.985,
+      "latencyP95Ms": 80,
+      "risk": 0.16,
+      "compliance": [
+        "pci"
+      ],
+      "jurisdiction": "US",
+      "securityLevel": 5,
+      "eligible": true,
+      "abstractTraits": [
+        "capability-match",
+        "adapter-hidden",
+        "budget-visible"
+      ],
+      "transitionCost": 0,
+      "commitmentBound": 4200,
+      "period": "monthly"
+    },
+    {
+      "id": "candidate-wasteful",
+      "capabilityClass": "compute",
+      "monthlyCost": 3600,
+      "reliability": 0.96,
+      "latencyP95Ms": 110,
+      "risk": 0.25,
+      "compliance": [
+        "pci"
+      ],
+      "jurisdiction": "US",
+      "securityLevel": 4,
+      "eligible": true,
+      "abstractTraits": [
+        "capability-match",
+        "adapter-hidden",
+        "budget-visible"
+      ],
+      "transitionCost": 0,
+      "commitmentBound": 3600,
+      "period": "monthly"
+    }
+  ],
+  "metricContracts": [
+    {
+      "name": "cost.monthly",
+      "tier": "system",
+      "unit": "USD",
+      "source": "focus-ledger",
+      "version": "v1.0.0",
+      "normalization": "fixed-usd-10000/v1",
+      "mutable": false,
+      "dependsOn": [],
+      "transforms": [],
+      "compositionSources": [],
+      "weights": {},
+      "requiresApproval": false,
+      "approvalState": "",
+      "approvalRef": ""
+    },
+    {
+      "name": "reliability.uptime",
+      "tier": "system",
+      "unit": "ratio",
+      "source": "opentelemetry-slo",
+      "version": "v1.0.0",
+      "normalization": "fixed-0-1/v1",
+      "mutable": false,
+      "dependsOn": [],
+      "transforms": [],
+      "compositionSources": [],
+      "weights": {},
+      "requiresApproval": false,
+      "approvalState": "",
+      "approvalRef": ""
+    },
+    {
+      "name": "latency.p95",
+      "tier": "system",
+      "unit": "ms",
+      "source": "opentelemetry-metrics",
+      "version": "v1.0.0",
+      "normalization": "fixed-ms-200/v1",
+      "mutable": false,
+      "dependsOn": [],
+      "transforms": [],
+      "compositionSources": [],
+      "weights": {},
+      "requiresApproval": false,
+      "approvalState": "",
+      "approvalRef": ""
+    },
+    {
+      "name": "risk.incident",
+      "tier": "system",
+      "unit": "ratio",
+      "source": "incident-system",
+      "version": "v1.0.0",
+      "normalization": "fixed-0-1/v1",
+      "mutable": false,
+      "dependsOn": [],
+      "transforms": [],
+      "compositionSources": [],
+      "weights": {},
+      "requiresApproval": false,
+      "approvalState": "",
+      "approvalRef": ""
+    },
+    {
+      "name": "experienced.reliability",
+      "tier": "derived",
+      "unit": "",
+      "source": "",
+      "version": "v1.0.0",
+      "normalization": "",
+      "mutable": false,
+      "dependsOn": [
+        "reliability.uptime",
+        "latency.p95"
+      ],
+      "transforms": [
+        "weighted_sum"
+      ],
+      "compositionSources": [],
+      "weights": {
+        "reliability.uptime": 0.7,
+        "latency.p95": 0.3
+      },
+      "requiresApproval": false,
+      "approvalState": "",
+      "approvalRef": ""
+    },
+    {
+      "name": "business.quality",
+      "tier": "user",
+      "unit": "",
+      "source": "",
+      "version": "v1.0.0",
+      "normalization": "",
+      "mutable": false,
+      "dependsOn": [],
+      "transforms": [],
+      "compositionSources": [
+        "experienced.reliability",
+        "cost.monthly"
+      ],
+      "weights": {
+        "experienced.reliability": 0.7,
+        "cost.monthly": 0.3
+      },
+      "requiresApproval": true,
+      "approvalState": "approved",
+      "approvalRef": "metric-approval:business-quality:v1"
+    }
+  ],
+  "history": [],
+  "budgetState": {
+    "spendToDate": 700,
+    "committedCost": 0,
+    "uncertainCost": 0,
+    "recoveryReserve": 0
+  },
+  "snapshot": {
+    "catalogHash": "sha256:1893de9d95186ab677d68e6fdf2d2d521e19fb90d54c08fcf9723801059a9fc6",
+    "metricRegistryHash": "sha256:4c91e59845946274e2e1ab153f02c8601d5999cc66a283e2996b12ef21618594",
+    "budgetId": "budget:tenant-a:production",
+    "periodId": "2026-07",
+    "policyRevision": "routing-policy:v1",
+    "ledgerSeq": 42,
+    "observedAt": "2026-07-01T16:00:00.000Z"
+  }
+}

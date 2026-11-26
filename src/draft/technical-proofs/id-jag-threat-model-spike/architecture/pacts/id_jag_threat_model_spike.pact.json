@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IdJagThreatModelSpikeConsumer"
+  },
+  "provider": {
+    "name": "IdJagThreatModelSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Id Jag Threat Model Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/id-jag-threat-model-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.id_jag_threat_model_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

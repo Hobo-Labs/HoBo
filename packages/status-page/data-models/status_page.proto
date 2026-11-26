@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+// Wire/data-shape definitions for HoBo status pages (ADR-0077 / Plan 49).
+// Extends the HOBO-497 public status-page contract with scopes, component
+// statuses, bounded uptime history, and the statuspage.* audit events.
+package hobo.statuspage.v1;
+
+// The availability slice a page projects.
+enum StatusScopeKind {
+  STATUS_SCOPE_KIND_UNSPECIFIED = 0;
+  STATUS_SCOPE_KIND_STATION = 1;
+  STATUS_SCOPE_KIND_PRIMITIVES = 2;
+  STATUS_SCOPE_KIND_PROJECT = 3;
+  STATUS_SCOPE_KIND_BINDLE = 4;
+}
+
+// Component status. UNKNOWN is the fail-safe rendering of a component whose
+// last signal is older than the freshness budget — never a stale operational.
+enum ComponentStatus {
+  COMPONENT_STATUS_UNSPECIFIED = 0;
+  COMPONENT_STATUS_OPERATIONAL = 1;
+  COMPONENT_STATUS_MAINTENANCE = 2;
+  COMPONENT_STATUS_UNKNOWN = 3;
+  COMPONENT_STATUS_DEGRADED = 4;
+  COMPONENT_STATUS_PARTIAL_OUTAGE = 5;
+  COMPONENT_STATUS_MAJOR_OUTAGE = 6;
+}
+
+// Customer-safe incident lifecycle (HOBO-497 vocabulary).
+enum IncidentState {
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  INCIDENT_STATE_INVESTIGATING = 1;
+  INCIDENT_STATE_IDENTIFIED = 2;
+  INCIDENT_STATE_MONITORING = 3;
+  INCIDENT_STATE_RESOLVED = 4;
+}
+
+enum IncidentImpact {
+  INCIDENT_IMPACT_UNSPECIFIED = 0;
+  INCIDENT_IMPACT_MINOR = 1;
+  INCIDENT_IMPACT_MAJOR = 2;
+  INCIDENT_IMPACT_CRITICAL = 3;
+}
+
+enum MaintenanceState {
+  MAINTENANCE_STATE_UNSPECIFIED = 0;
+  MAINTENANCE_STATE_SCHEDULED = 1;
+  MAINTENANCE_STATE_IN_PROGRESS = 2;
+  MAINTENANCE_STATE_COMPLETED = 3;
+  MAINTENANCE_STATE_CANCELED = 4;
+}
+
+message StatusScope {
+  StatusScopeKind kind = 1;
+  string id = 2;
+  string label = 3;
+}
+
+message ComponentSpec {
+  string id = 1;
+  string label = 2;
+  // capability | primitive | app-kit | dependency | bindle | sidecar
+  string kind = 3;
+  string description = 4;
+}
+
+// One UTC day of observed history (uptime bar cell), bounded to 90 days.
+message DailyStatusRecord {
+  string date = 1;
+  ComponentStatus worst = 2;
+  uint32 samples = 3;
+}
+
+message ComponentStatusRecord {
+  ComponentSpec spec = 1;
+  ComponentStatus status = 2;
+  string last_signal_at = 3;
+  double attainment = 4;
+  double target = 5;
+  repeated DailyStatusRecord history = 6;
+  // True when the freshness budget forced this component to UNKNOWN.
+  bool delayed = 7;
+}
+
+message IncidentUpdateRecord {
+  IncidentState state = 1;
+  string body = 2;
+  string at = 3;
+  bool public = 4;
+}
+
+message IncidentRecord {
+  string id = 1;
+  string title = 2;
+  IncidentState state = 3;
+  IncidentImpact impact = 4;
+  repeated string affected_components = 5;
+  string opened_at = 6;
+  string updated_at = 7;
+  string resolved_at = 8;
+  repeated IncidentUpdateRecord updates = 9;
+}
+
+message MaintenanceRecord {
+  string id = 1;
+  string title = 2;
+  MaintenanceState state = 3;
+  string window_start = 4;
+  string window_end = 5;
+  repeated string affected_components = 6;
+  string expected_impact = 7;
+}
+
+// The evaluated, renderable page snapshot.
+message StatusPageSnapshot {
+  string schema = 1;
+  StatusScope scope = 2;
+  string generated_at = 3;
+  string overall_indicator = 4;
+  string overall_description = 5;
+  repeated ComponentStatusRecord components = 6;
+  repeated IncidentRecord active_incidents = 7;
+  repeated IncidentRecord recent_incidents = 8;
+  repeated MaintenanceRecord maintenances = 9;
+  uint64 freshness_budget_ms = 10;
+  repeated string stale_component_ids = 11;
+  string content_hash = 12;
+}
+
+// Event: a public snapshot passed the redaction gate and went live.
+message StatusPagePublished {
+  string scope_kind = 1;
+  string scope_id = 2;
+  string content_hash = 3;
+  // Declared-public component allowlist the render was filtered to.
+  repeated string components = 4;
+}
+
+// Event: a public page was taken down.
+message StatusPageUnpublished {
+  string scope_kind = 1;
+  string scope_id = 2;
+  string reason = 3;
+}
+
+// Event: a customer-safe incident update was posted to a page.
+message StatusPageIncidentPosted {
+  string incident_id = 1;
+  IncidentState current_status = 2;
+  string body = 3;
+}

@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Governance Planes S6-08
+// draft package reasons about. Design-time contract artifact only.
+
+enum GovernancePlanesS6EvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_CONSENT_NOTIFY = 1;
+  EVIDENCE_KIND_RESIDENCY_ERASURE = 2;
+  EVIDENCE_KIND_GUARDRAIL_BLOCK = 3;
+  EVIDENCE_KIND_CERTIFIED_INSTALL = 4;
+}
+
+message GovernancePlanesS6Record {
+  string issue = 1;
+  string summary = 2;
+  repeated GovernancePlanesS6EvidenceKind evidence = 3;
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/draft-monorepo-skeleton-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "build": "tsx scripts/verify-monorepo-skeleton.ts build",
+    "typecheck": "tsx scripts/verify-monorepo-skeleton.ts typecheck",
+    "lint": "tsx scripts/verify-monorepo-skeleton.ts lint"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@hobo-draft/provider-aws-full-capability-catalog-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Draft POC for HOBO-638 @hobo/provider-aws full capability port catalog + Capability Manifest.",
+  "main": "./src/provider-aws-full-catalog.ts",
+  "types": "./src/provider-aws-full-catalog.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/provider-aws-full-catalog.d.mts",
+      "import": "./src/provider-aws-full-catalog.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root . && tsc --noEmit -p tsconfig.types.json"
+  }
+}

@@ -1,0 +1,78 @@
+{
+	"consumer": { "name": "HoboCompositionRoot" },
+	"provider": { "name": "BrokerYardPlacement" },
+	"interactions": [
+		{
+			"description": "resolve bindle deployment against existing ready yard",
+			"request": {
+				"method": "POST",
+				"path": "/v1/yard-placement/resolve",
+				"body": {
+					"schemaVersion": "hobo.bindle-deployment-request/v1",
+					"selectionMode": "compatible",
+					"bindleName": "shop"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "resolved",
+					"schemaVersion": "hobo.yard-placement-receipt/v1"
+				}
+			}
+		},
+		{
+			"description": "reject bindle provider selection on deployment request",
+			"request": {
+				"method": "POST",
+				"path": "/v1/yard-placement/resolve",
+				"body": {
+					"schemaVersion": "hobo.bindle-deployment-request/v1",
+					"provider": "azure"
+				}
+			},
+			"response": {
+				"status": 400,
+				"body": {
+					"code": "bindle-provider-selection-forbidden"
+				}
+			}
+		},
+		{
+			"description": "generation denied by default policy",
+			"request": {
+				"method": "POST",
+				"path": "/v1/yard-placement/generate",
+				"body": {
+					"allowGenerationRequested": true,
+					"providerId": "azure"
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"code": "yard-generation-denied"
+				}
+			}
+		},
+		{
+			"description": "fold inventory snapshot from yard events",
+			"request": {
+				"method": "POST",
+				"path": "/v1/yard-placement/fold",
+				"body": {
+					"events": [{ "type": "yard.Registered" }, { "type": "yard.Ready" }]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schemaVersion": "hobo.yard-inventory/v1"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

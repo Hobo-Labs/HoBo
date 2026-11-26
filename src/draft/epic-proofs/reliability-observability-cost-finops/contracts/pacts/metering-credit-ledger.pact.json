@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "MeteringCreditLedger"
+  },
+  "interactions": [
+    {
+      "description": "quote effective marginal cost from metering and credit headroom",
+      "providerStates": [
+        {
+          "name": "tenant has free runner-minute headroom and metered usage"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/finops/quote",
+        "body": {
+          "providerId": "aws",
+          "dimension": "runner-minutes",
+          "units": 45
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "totalCost": 0.25,
+          "currency": "USD",
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

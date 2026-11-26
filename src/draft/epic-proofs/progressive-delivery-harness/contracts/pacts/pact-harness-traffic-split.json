@@ -1,0 +1,29 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-gateway-traffic-split-provider" },
+  "interactions": [
+    {
+      "description": "apply and observe a 10 percent canary split",
+      "providerStates": [{ "name": "gateway can shift checkout-v2 canary traffic" }],
+      "request": {
+        "method": "PUT",
+        "path": "/traffic-splits/checkout-v2",
+        "body": {
+          "percent": 10
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "requestedPercent": 10,
+          "observedPercent": 10,
+          "converged": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "traffic-split",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

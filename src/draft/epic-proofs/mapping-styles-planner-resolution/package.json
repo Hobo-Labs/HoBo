@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/epic-reference-mapping-styles-planner-resolution",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package hobo.cli.v1;
+
+message CollectEnvelope {
+  bool ok = 1;
+  string command = 2;
+  string contract = 3;
+  string status = 4;
+  string manifest_hash = 5;
+  string camp = 6;
+  string out = 7;
+}
+
+message CodegenDriftEntry {
+  string path = 1;
+  string status = 2;
+  string expected_digest = 3;
+  string actual_digest = 4;
+}
+
+message CodegenResult {
+  string mode = 1;
+  bool drift = 2;
+  repeated string checked = 3;
+  repeated string written = 4;
+  repeated CodegenDriftEntry drift_entries = 5;
+}

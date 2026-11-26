@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "@hobo/gateway"
+  },
+  "provider": {
+    "name": "IdentityServiceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Gateway verifies attested-workload JWT-SVID via OIDC JWKS",
+      "request": {
+        "method": "GET",
+        "path": "/identity/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s3_02_hobo_identity/v1",
+          "events": ["identity.Issued", "identity.Rotated"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

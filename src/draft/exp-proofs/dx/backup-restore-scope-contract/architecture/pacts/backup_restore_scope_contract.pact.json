@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BackupRestoreScopeContractConsumer"
+  },
+  "provider": {
+    "name": "BackupRestoreScopeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Backup Restore Scope Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/backup-restore-scope-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.backup_restore_scope_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

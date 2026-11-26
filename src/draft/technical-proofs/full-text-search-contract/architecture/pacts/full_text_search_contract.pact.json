@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FullTextSearchContractConsumer"
+  },
+  "provider": {
+    "name": "FullTextSearchContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Full Text Search Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/full-text-search-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.full_text_search_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

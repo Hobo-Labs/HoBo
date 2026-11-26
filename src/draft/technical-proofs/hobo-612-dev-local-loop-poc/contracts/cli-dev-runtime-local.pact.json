@@ -1,0 +1,65 @@
+{
+  "consumer": {
+    "name": "@hobo/cli-dev"
+  },
+  "provider": {
+    "name": "@hobo/runtime-local"
+  },
+  "interactions": [
+    {
+      "description": "start host and bind link table for collected imports",
+      "request": {
+        "method": "POST",
+        "path": "/runtime-local/start",
+        "body": {
+          "manifestSchema": "hobo.manifest/v1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "runtime": "runtime-local",
+          "engine": "wasmtime"
+        }
+      }
+    },
+    {
+      "description": "serve HTTP request through linked handler",
+      "request": {
+        "method": "POST",
+        "path": "/runtime-local/serve",
+        "body": {
+          "path": "/health",
+          "method": "GET"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": 200,
+          "body": "hello-bindle:ok"
+        }
+      }
+    },
+    {
+      "description": "teardown releases leases",
+      "request": {
+        "method": "POST",
+        "path": "/runtime-local/teardown"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "leasesReleased": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

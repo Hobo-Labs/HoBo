@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package hobo.draft.go_no_go;
+
+// Architecture-guard evidence: protobuf data shapes the Go/No-Go Decision Record
+// Contract draft package reasons about. Not compiled at runtime; this is a
+// design-time contract artifact.
+
+enum GoNoGoDecisionRecordEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_DESIGN_RECORD = 1;
+  EVIDENCE_KIND_CONTRACT_TEST = 2;
+  EVIDENCE_KIND_RISK_EXCEPTION_POLICY = 3;
+}
+
+message GoNoGoDecisionRecordContractRecord {
+  string issue = 1;
+  string gate = 2;
+  string decision = 3;
+  string approver_role = 4;
+  repeated string evidence_links = 5;
+  repeated string blocker_deltas = 6;
+  repeated string accepted_risks = 7;
+  string expiry_or_revisit_date = 8;
+}

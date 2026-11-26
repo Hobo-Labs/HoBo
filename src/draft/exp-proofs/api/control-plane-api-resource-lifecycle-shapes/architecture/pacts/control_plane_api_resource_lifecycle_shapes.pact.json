@@ -1,0 +1,411 @@
+{
+  "consumer": {
+    "name": "ControlPlaneApiResourceLifecycleShapeConsumer"
+  },
+  "provider": {
+    "name": "ControlPlaneApiResourceLifecycleBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Control-plane API shape boundary returns the shared parsed API and MCP operation contract",
+      "providerStates": [
+        {
+          "name": "HOBO-569 control-plane shape fixture is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/control-plane-api-resource-lifecycle-shapes/contract"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-569",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/api/control-plane-api-resource-lifecycle-shapes",
+          "proofNote": "docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md",
+          "designRefs": [
+            "docs/design/control-plane.md#plan-04",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/cli-spec.md",
+            "docs/design/platform-engineering.md#plan-25",
+            "docs/design/authoring-resources-wiring.md#plan-21",
+            "docs/design/contracts-policy-flags.md#plan-29",
+            "docs/design/data-plane.md#plan-11",
+            "docs/design/upgrade-migration-engine.md",
+            "docs/design/adr/03-data-plane.md#adr-0014",
+            "docs/design/adr/02-identity-security.md#adr-0015"
+          ],
+          "operations": [
+            {
+              "id": "plan",
+              "humanName": "Build a DeploymentPlan without mutation",
+              "cliCommand": "hobo plan --camp preview --json",
+              "apiEndpoint": "/control-plane/plan",
+              "mcpTool": "hobo_plan",
+              "requestShape": [
+                "manifestRef",
+                "campRef",
+                "objective",
+                "requestedBy",
+                "proofMode"
+              ],
+              "responseShape": [
+                "DeploymentPlan",
+                "GatekeeperDecision",
+                "PlanWarning[]",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "DeploymentPlan",
+                "ResourcePlan",
+                "Gatekeeper",
+                "match.Decided"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.plan.preview.success"
+            },
+            {
+              "id": "apply-up",
+              "humanName": "Apply an accepted plan into a Deployment Set Delta",
+              "cliCommand": "hobo up --camp preview --json",
+              "apiEndpoint": "/control-plane/apply",
+              "mcpTool": "hobo_up",
+              "requestShape": [
+                "deploymentPlanId",
+                "approvalRef",
+                "campRef",
+                "expectedSetId",
+                "dryRun"
+              ],
+              "responseShape": [
+                "DeploymentSet",
+                "Delta",
+                "ResourceActorEvent[]",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "Deployment Set",
+                "Delta",
+                "ResourceActor",
+                "deployment.Planned"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.apply.preview.accepted"
+            },
+            {
+              "id": "inspect-run",
+              "humanName": "Read run, deploy, and topology projections",
+              "cliCommand": "hobo inspect run --last --json",
+              "apiEndpoint": "/control-plane/inspect/run",
+              "mcpTool": "hobo_inspect_run",
+              "requestShape": [
+                "runId",
+                "campRef",
+                "projectionSeq",
+                "freshnessBound",
+                "redactionClass"
+              ],
+              "responseShape": [
+                "RunProjection",
+                "ResourceActorState",
+                "ResourceActorTimeline",
+                "DriftReport",
+                "freshness",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "ResourceActor",
+                "projection.Lagged",
+                "drift",
+                "materialized view",
+                "snapshot"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.inspect.run.fresh"
+            },
+            {
+              "id": "tail-logs",
+              "humanName": "Read support-safe log slices by cursor",
+              "cliCommand": "hobo logs --follow api --json",
+              "apiEndpoint": "/control-plane/logs/tail",
+              "mcpTool": "hobo_tail_logs",
+              "requestShape": [
+                "resourceId",
+                "LogCursor",
+                "since",
+                "redactionClass",
+                "limit"
+              ],
+              "responseShape": [
+                "LogSlice",
+                "LogCursor",
+                "nextCursor",
+                "redactionSummary",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "support-safe evidence",
+                "read store",
+                "projection",
+                "ResourceActor"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.logs.api.support-safe"
+            },
+            {
+              "id": "import-adopt",
+              "humanName": "Preview brownfield import and adopted-resource posture",
+              "cliCommand": "hobo import terraform ./infra --dry-run --json",
+              "apiEndpoint": "/control-plane/import/adopt",
+              "mcpTool": "hobo_import_terraform",
+              "requestShape": [
+                "sourceKind",
+                "stateDigest",
+                "adoptionPolicy",
+                "campRef",
+                "dryRun"
+              ],
+              "responseShape": [
+                "AdoptionPlan",
+                "ExternalResource[]",
+                "migrationPreview",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "resource.Adopted",
+                "authoritative-external",
+                "echo driver",
+                "migration.*"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.import.terraform.adopted"
+            },
+            {
+              "id": "migrate",
+              "humanName": "Plan expand, backfill, contract, and cutover phases",
+              "cliCommand": "hobo migrate --dry-run --json",
+              "apiEndpoint": "/control-plane/migrate/dry-run",
+              "mcpTool": "hobo_migrate_dry_run",
+              "requestShape": [
+                "currentVersion",
+                "targetVersion",
+                "schemaDigest",
+                "snapshotRef",
+                "campRef"
+              ],
+              "responseShape": [
+                "MigrationPlan",
+                "MigrationPhase",
+                "blockedReason",
+                "rollbackEvidence",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "migration.Planned",
+                "migration.PhaseApplied",
+                "expand",
+                "backfill",
+                "contract"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.migrate.expand-backfill-contract"
+            },
+            {
+              "id": "rollback",
+              "humanName": "Return to a prior immutable Deployment Set",
+              "cliCommand": "hobo up --camp prod --rollback deployment-set:previous --json",
+              "apiEndpoint": "/control-plane/rollback",
+              "mcpTool": "hobo_rollback",
+              "requestShape": [
+                "currentSetId",
+                "targetSetId",
+                "rollbackReason",
+                "snapshotRef",
+                "approvalRef"
+              ],
+              "responseShape": [
+                "RollbackPlan",
+                "Delta",
+                "restoreRequirement",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "Deployment Set",
+                "Delta",
+                "migration.RolledBack",
+                "snapshot"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.rollback.previous-set"
+            },
+            {
+              "id": "support-evidence-pack",
+              "humanName": "Assemble redacted support evidence for a run or resource",
+              "cliCommand": "hobo doctor --support-bundle run:latest --json",
+              "apiEndpoint": "/control-plane/support/evidence-pack",
+              "mcpTool": "hobo_support_evidence_pack",
+              "requestShape": [
+                "subjectRef",
+                "evidenceKinds",
+                "redactionClass",
+                "supportRoute",
+                "correlationId"
+              ],
+              "responseShape": [
+                "EvidencePack",
+                "ownerRoute",
+                "redactionSummary",
+                "status",
+                "proofMode",
+                "fixtureId",
+                "correlationId",
+                "redactionClass",
+                "warnings",
+                "refusal"
+              ],
+              "domainTerms": [
+                "support handoff",
+                "CredentialAudit",
+                "event-store",
+                "read store"
+              ],
+              "sharedResultEnvelope": true,
+              "fixtureId": "fixture.support.evidence.redacted"
+            }
+          ],
+          "refusalEnvelopes": [
+            {
+              "code": "policy-denied",
+              "trigger": "Gatekeeper policy plane returns deny for a requested apply.",
+              "remediation": "Change the plan, request approval, or select a permitted Camp.",
+              "proofMode": "contract-fixture",
+              "fixtureId": "fixture.refusal.policy-denied",
+              "redactionClass": "tenant-safe"
+            },
+            {
+              "code": "contract-incompatible",
+              "trigger": "Contract plane finds a running consumer incompatible with the proposed Delta.",
+              "remediation": "Dual-publish or upgrade the consumer before applying the contract phase.",
+              "proofMode": "contract-fixture",
+              "fixtureId": "fixture.refusal.contract-incompatible",
+              "redactionClass": "public"
+            },
+            {
+              "code": "provider-capability-partial",
+              "trigger": "Provider capability satisfies prefer but loses a requested soft objective.",
+              "remediation": "Accept the degraded plan warning or choose a provider with full support.",
+              "proofMode": "reference-fixture",
+              "fixtureId": "fixture.refusal.provider-partial",
+              "redactionClass": "public"
+            },
+            {
+              "code": "provider-capability-none",
+              "trigger": "No registered provider satisfies a required capability.",
+              "remediation": "Register a provider or remove the hard require.",
+              "proofMode": "reference-fixture",
+              "fixtureId": "fixture.refusal.provider-none",
+              "redactionClass": "public"
+            },
+            {
+              "code": "stale-projection",
+              "trigger": "Inspect reads a projection beyond the freshness bound.",
+              "remediation": "Refresh/replay the projection or re-run plan before apply.",
+              "proofMode": "projection-snapshot",
+              "fixtureId": "fixture.refusal.stale-projection",
+              "redactionClass": "tenant-safe"
+            },
+            {
+              "code": "unknown-evidence",
+              "trigger": "A plan references an evidence digest not present in the read store.",
+              "remediation": "Attach accepted evidence or downgrade the claim to unknown.",
+              "proofMode": "support-safe-evidence",
+              "fixtureId": "fixture.refusal.unknown-evidence",
+              "redactionClass": "support-redacted"
+            },
+            {
+              "code": "non-reactive-sink",
+              "trigger": "A projection sink cannot satisfy live inspect/log subscription semantics.",
+              "remediation": "Expose a snapshot-only result or bind a reactive sink provider.",
+              "proofMode": "projection-snapshot",
+              "fixtureId": "fixture.refusal.non-reactive-sink",
+              "redactionClass": "public"
+            },
+            {
+              "code": "destructive-migration-blocked",
+              "trigger": "A contract/drop phase would break a still-running app version.",
+              "remediation": "Complete expand/backfill, deploy compatible app version, then retry contract.",
+              "proofMode": "contract-fixture",
+              "fixtureId": "fixture.refusal.destructive-migration-blocked",
+              "redactionClass": "tenant-safe"
+            }
+          ],
+          "contractFixtures": {
+            "protobuf": "architecture/control_plane_api_resource_lifecycle_shapes.proto",
+            "cue": "architecture/control_plane_api_resource_lifecycle_shapes.cue",
+            "pact": "architecture/pacts/control_plane_api_resource_lifecycle_shapes.pact.json"
+          },
+          "scopeOut": [
+            "No production REST server, CLI parser, SDK package, MCP server, persistence layer, or dashboard is implemented.",
+            "No live provider calls, cloud accounts, customer data, real credentials, or live support systems are used.",
+            "No endpoint may bypass Planner, Gatekeeper, ResourceActor, event-store, materialized-view, snapshot, or read-store boundaries."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-569",
+      "proof": "docs/design/proofs/control-plane-api-resource-lifecycle-shapes/README.md"
+    }
+  }
+}

@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package hobo.collector.v1;
+
+// Usage-permission manifest records for S1-17 (HOBO-607 draft POC).
+
+enum AllowProvenance {
+  ALLOW_PROVENANCE_UNSPECIFIED = 0;
+  INFERRED_FROM_USAGE = 1;
+  DECLARED_NARROW_OR_EQUAL = 2;
+  DECLARED_DYNAMIC = 3;
+}
+
+message ObservedCall {
+  string verb = 1;
+  string source = 2;
+}
+
+message ResourcePermissionInput {
+  string kind = 1;
+  string name = 2;
+  string port = 3;
+  repeated string catalog_verbs = 4;
+  repeated ObservedCall observed_calls = 5;
+  repeated string declared_allow = 6;
+  repeated string dynamic_allow = 7;
+  string dynamic_reason = 8;
+}
+
+message UsagePermissionInput {
+  string bindle = 1;
+  repeated ResourcePermissionInput resources = 2;
+}
+
+message AllowEntry {
+  string verb = 1;
+  AllowProvenance provenance = 2;
+}
+
+message CapabilityFailure {
+  string code = 1;
+  repeated string missing = 2;
+  string message = 3;
+}
+
+message CapabilityContract {
+  repeated string required = 1;
+  repeated string granted = 2;
+  string status = 3;
+  repeated CapabilityFailure failures = 4;
+}
+
+message ResourceLink {
+  string import = 1;
+  string to = 2;
+  repeated string allow = 3;
+  string contract_status = 4;
+}
+
+message LoweredResourcePermission {
+  string kind = 1;
+  string name = 2;
+  string port = 3;
+  repeated AllowEntry allow = 4;
+  ResourceLink link = 5;
+  CapabilityContract capability_contract = 6;
+}
+
+message UsagePermissionManifest {
+  string schema = 1;
+  string bindle = 2;
+  repeated LoweredResourcePermission resources = 3;
+  repeated ResourceLink links = 4;
+}
+
+message PermissionTripleIam {
+  repeated string verbs = 1;
+  repeated AllowEntry provenance = 2;
+}
+
+message PermissionTripleLink {
+  string import = 1;
+  string to = 2;
+  repeated string allow = 3;
+  string contract_status = 4;
+}
+
+message TokenScope {
+  string resource = 1;
+  repeated string verbs = 2;
+}
+
+message PermissionTriple {
+  string resource = 1;
+  PermissionTripleIam iam = 2;
+  PermissionTripleLink link = 3;
+  TokenScope token_scope = 4;
+}

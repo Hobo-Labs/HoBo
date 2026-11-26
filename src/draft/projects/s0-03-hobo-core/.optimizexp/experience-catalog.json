@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "s0-03-hobo-core",
+  "builtAt": "2026-11-17T18:35:43.877Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/s0-03-hobo-core/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "196ecb4a3872b6cdcc350ebf1bb24b74a529ae5e769d22104ec1512e53519214",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

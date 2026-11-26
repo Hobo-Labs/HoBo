@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// M0 data-shape definitions for the HOBO-521 Meta-cloud Broker scope contract.
+// These records define artifact vocabulary only; no hosted broker runtime,
+// Yard planner, provider adapter, admin UI, or Gatekeeper implementation lives here.
+package hobo.meta_cloud_broker.v1;
+
+enum BrokerDecisionState {
+  BROKER_DECISION_STATE_UNSPECIFIED = 0;
+  BROKER_DECISION_STATE_ACCEPTED = 1;
+  BROKER_DECISION_STATE_REJECTED = 2;
+}
+
+message ContractManifest {
+  string manifest_digest = 1;
+  repeated string requested_capabilities = 2;
+  string proof_mode = 3;
+  string source = 4;
+}
+
+message BrokerEnvironment {
+  string environment_digest = 1;
+  string approved_by = 2;
+  string catalog_snapshot = 3;
+  string version_pin = 4;
+}
+
+message MappingContract {
+  string mapping_digest = 1;
+  string environment_digest = 2;
+  repeated string provider_constraints = 3;
+  string owner = 4;
+}
+
+message BrokerCatalogSnapshot {
+  string snapshot_digest = 1;
+  string catalog_version = 2;
+  string issued_at = 3;
+  string stale_after = 4;
+}
+
+message ResolutionReceipt {
+  string receipt_id = 1;
+  string manifest_digest = 2;
+  string environment_digest = 3;
+  BrokerDecisionState decision = 4;
+  string source = 5;
+}
+
+message ResolutionRejection {
+  string rejection_id = 1;
+  string manifest_digest = 2;
+  string environment_digest = 3;
+  BrokerDecisionState decision = 4;
+  string reason = 5;
+  string source = 6;
+}

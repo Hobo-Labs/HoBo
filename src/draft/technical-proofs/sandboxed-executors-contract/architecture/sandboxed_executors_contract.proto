@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the Sandboxed Executors Contract draft package.
+
+enum SandboxedExecutorBackendKind {
+  SANDBOX_BACKEND_UNSPECIFIED = 0;
+  SANDBOX_BACKEND_FIRECRACKER = 1;
+  SANDBOX_BACKEND_CONTAINER = 2;
+}
+
+enum SandboxedExecutorJobKind {
+  EXECUTOR_JOB_UNSPECIFIED = 0;
+  EXECUTOR_JOB_IAC_PULUMI = 1;
+  EXECUTOR_JOB_COMPONENTIZE = 2;
+}
+
+message SandboxedExecutorCredentialStub {
+  string id = 1;
+  string scope = 2;
+  uint32 ttl_seconds = 3;
+  bool dev_mode = 4;
+}
+
+message SandboxedExecutorEgressAttempt {
+  string target = 1;
+  string channel = 2;
+  string outcome = 3;
+}
+
+message SandboxedExecutorRunRecord {
+  string exec_id = 1;
+  SandboxedExecutorBackendKind backend = 2;
+  SandboxedExecutorJobKind job_kind = 3;
+  string action = 4;
+  bool ambient_credentials = 5;
+  repeated string event_types = 6;
+  repeated SandboxedExecutorEgressAttempt egress_audit = 7;
+}

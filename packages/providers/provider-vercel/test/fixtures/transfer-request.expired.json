@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "gone",
+    "message": "The project transfer request code is no longer valid."
+  }
+}

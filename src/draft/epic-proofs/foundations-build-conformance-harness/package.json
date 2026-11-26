@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/epic-reference-foundations-build-conformance-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node simulation/run-simulation.ts"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "UsageToInvoiceReconciliationContractConsumer"
+  },
+  "provider": {
+    "name": "UsageToInvoiceReconciliationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Usage-to-invoice reconciliation boundary returns accepted M1 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/usage-to-invoice-reconciliation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.usage-to-invoice-reconciliation/v1",
+          "issue": "HOBO-490"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

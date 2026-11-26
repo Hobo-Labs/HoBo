@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/threat-model-security-review-scope-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

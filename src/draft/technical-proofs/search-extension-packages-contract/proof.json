@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "search-extension-packages-contract",
+  "title": "Search Extension Packages Contract",
+  "linear": "HOBO-252",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

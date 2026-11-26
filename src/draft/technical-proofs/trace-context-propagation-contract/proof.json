@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "trace-context-propagation-contract",
+  "title": "Trace Context Propagation Contract",
+  "linear": "HOBO-241",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

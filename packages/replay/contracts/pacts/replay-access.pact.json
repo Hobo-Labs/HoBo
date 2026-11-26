@@ -1,0 +1,36 @@
+{
+  "consumer": { "name": "ReplayPlayer" },
+  "provider": { "name": "ReplayAccess" },
+  "interactions": [
+    {
+      "description": "same-station local view allowed",
+      "request": {
+        "method": "POST",
+        "path": "/replay/access/evaluate",
+        "body": {
+          "viewerStationId": "station:local",
+          "session": {
+            "id": "sess-1",
+            "status": "ended",
+            "startedAt": "2026-01-01T00:00:00.000Z",
+            "correlation": {
+              "stationId": "station:local",
+              "tenant": "local",
+              "env": "local-dev",
+              "isolationClass": "local-dev",
+              "harnessFlagKeys": []
+            },
+            "privacy": { "maskInputs": true },
+            "chunkCount": 0,
+            "totalBytes": 0
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": { "allowed": true, "reason": "same-station" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,58 @@
+{
+	"consumer": {
+		"name": "AgentGuardrailGatewayConsumer"
+	},
+	"provider": {
+		"name": "AgentGuardrailPolicyBoundary"
+	},
+	"interactions": [
+		{
+			"description": "Gateway enforcement returns require-approval for high-risk deploy without approval",
+			"request": {
+				"method": "POST",
+				"path": "/policy/agent-guardrails/evaluate",
+				"body": {
+					"action": "hobo:deployment:apply",
+					"enforcementPoint": "gateway"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"effect": "require-approval",
+					"actionClass": "deploy",
+					"events": [
+						{ "type": "policy.Decided" },
+						{ "type": "agent.GuardrailBlocked" }
+					]
+				}
+			}
+		},
+		{
+			"description": "Destroy without explicit grant is denied",
+			"request": {
+				"method": "POST",
+				"path": "/policy/agent-guardrails/evaluate",
+				"body": {
+					"action": "hobo:deployment:destroy",
+					"destroyGrant": { "granted": false }
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"effect": "deny",
+					"events": [
+						{ "type": "agent.DestroyDenied" },
+						{ "type": "policy.Decided" }
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

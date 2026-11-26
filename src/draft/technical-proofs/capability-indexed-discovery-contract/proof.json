@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "capability-indexed-discovery-contract",
+  "title": "Capability-Indexed Discovery Contract POC",
+  "linear": "HOBO-362",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/capability-spec-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

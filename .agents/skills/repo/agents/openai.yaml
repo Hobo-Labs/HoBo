@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo"
+  short_description: "Repo lifecycle and validation skill"
+  default_prompt: "Use the repo skill to make a scoped repo change, search efficiently, validate narrowly, and finish with clean PR handoff."

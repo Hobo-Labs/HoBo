@@ -1,0 +1,40 @@
+# OptimizeXP CLI evidence
+command: bash -lc 'test -f site/package.json && head -30 site/package.json'
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 25
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T20:13:12.951Z
+
+## stdout
+{
+  "name": "hobo-site",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Pages site for HoBo: landing page, developer docs, and agent docs.",
+  "hobo": {
+    "webUi": true
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "design:lint": "designmd lint DESIGN.md",
+    "design:export:css": "designmd export --format css-tailwind DESIGN.md",
+    "design:export:dtcg": "designmd export --format dtcg DESIGN.md",
+    "design:spec": "designmd spec"
+  },
+  "dependencies": {
+    "astro": "^5.17.0"
+  },
+  "devDependencies": {
+    "@google/design.md": "^0.4.0"
+  }
+}
+
+
+## stderr
+(empty)

@@ -1,0 +1,32 @@
+{
+  "consumer": {
+    "name": "LaunchSupportReleaseCandidateEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSupportReleaseCandidateEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Support Release Candidate Evidence boundary returns its recorded M3 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/launch-support-release-candidate-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.launch_support_release_candidate_evidence/v1",
+          "issue": "HOBO-474",
+          "phase": "M3",
+          "milestone": "M3 Release candidate"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

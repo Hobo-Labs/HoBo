@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/epic-reference-data-plane-event-sourcing-cqrs-reactivity",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node --import tsx simulation/run-simulation.ts"
+  }
+}

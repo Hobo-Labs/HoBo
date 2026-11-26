@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "threat-model-security-review-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Threat Model & Security Review Scope Acceptance",
+  "linear": "HOBO-451",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/hobo-451-threat-model-security-review/README.md",
+      "docs/design/threat-model-security-review.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

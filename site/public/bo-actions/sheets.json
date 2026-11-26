@@ -1,0 +1,80 @@
+{
+	"note": "Bo action sheets for site use. Not game assets \u2014 see README.md.",
+	"sheets": {
+		"bo-bindle-adjust-w": {
+			"src": "/bo-actions/bo-bindle-adjust-w.png",
+			"frameWidth": 256,
+			"frameHeight": 256,
+			"columns": 5,
+			"rows": 2,
+			"frames": 10,
+			"fps": 8,
+			"frameMs": 125,
+			"origin": {
+				"x": 0.5,
+				"y": 1
+			},
+			"anchor": "feet-baseline"
+		},
+		"bo-hurt-w": {
+			"src": "/bo-actions/bo-hurt-w.png",
+			"frameWidth": 256,
+			"frameHeight": 256,
+			"columns": 5,
+			"rows": 2,
+			"frames": 10,
+			"fps": 8,
+			"frameMs": 125,
+			"origin": {
+				"x": 0.5,
+				"y": 1
+			},
+			"anchor": "feet-baseline"
+		},
+		"bo-jump-w": {
+			"src": "/bo-actions/bo-jump-w.png",
+			"frameWidth": 256,
+			"frameHeight": 256,
+			"columns": 5,
+			"rows": 2,
+			"frames": 10,
+			"fps": 8,
+			"frameMs": 125,
+			"origin": {
+				"x": 0.5,
+				"y": 1
+			},
+			"anchor": "feet-baseline"
+		},
+		"bo-sleep-wake-w": {
+			"src": "/bo-actions/bo-sleep-wake-w.png",
+			"frameWidth": 256,
+			"frameHeight": 256,
+			"columns": 5,
+			"rows": 2,
+			"frames": 10,
+			"fps": 8,
+			"frameMs": 125,
+			"origin": {
+				"x": 0.5,
+				"y": 1
+			},
+			"anchor": "feet-baseline"
+		},
+		"bo-wave-w": {
+			"src": "/bo-actions/bo-wave-w.png",
+			"frameWidth": 256,
+			"frameHeight": 256,
+			"columns": 5,
+			"rows": 2,
+			"frames": 10,
+			"fps": 8,
+			"frameMs": 125,
+			"origin": {
+				"x": 0.5,
+				"y": 1
+			},
+			"anchor": "feet-baseline"
+		}
+	}
+}

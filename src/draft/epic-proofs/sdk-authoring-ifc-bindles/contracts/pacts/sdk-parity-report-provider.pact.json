@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "SdkParityReportProvider" },
+  "interactions": [
+    {
+      "description": "return SDK idiom-layer parity lanes for non-TypeScript adoption",
+      "providerStates": [{ "name": "extracted component surface is available" }],
+      "request": { "method": "POST", "path": "/sdk/parity-report", "body": { "digest": "sha256:extracted-hobo-sdk-001" } },
+      "response": { "status": 200, "body": { "loweringLane": "green", "semanticsAnnex": "required", "status": "requires-semantics-annex" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

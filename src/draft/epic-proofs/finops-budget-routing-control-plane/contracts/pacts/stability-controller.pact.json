@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "StabilityController"
+  },
+  "interactions": [
+    {
+      "description": "apply cooldown and hysteresis before action compilation",
+      "request": {
+        "method": "POST",
+        "path": "/stability/decide"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "selectedCandidateId": "candidate-economy",
+          "overridden": true,
+          "reason": "stability-cooldown-or-threshold"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

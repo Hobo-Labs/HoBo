@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "drift-reconciliation-scope-contract",
+  "experienceType": "dx",
+  "title": "Drift Reconciliation Scope Contract",
+  "linear": "HOBO-442",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

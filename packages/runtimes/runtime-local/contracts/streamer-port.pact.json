@@ -1,0 +1,75 @@
+{
+  "consumer": {
+    "name": "hobo-logs-cli"
+  },
+  "provider": {
+    "name": "@hobo/runtime-local"
+  },
+  "interactions": [
+    {
+      "description": "mid-run attach receives replay-then-live frames",
+      "request": {
+        "method": "POST",
+        "path": "/streamer/runs/run:logs-follow/attach",
+        "body": {
+          "fromSeq": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "frames": [
+            {
+              "runId": "run:logs-follow",
+              "seq": 1,
+              "stream": "logs",
+              "chunk": { "line": "boot" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "bounded backpressure error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/streamer/runs/run:backpressure/write",
+        "body": {
+          "stream": "stdout",
+          "chunk": "overflow"
+        }
+      },
+      "response": {
+        "status": 429,
+        "body": {
+          "code": "STREAMER_BACKPRESSURE",
+          "runId": "run:backpressure",
+          "bufferLimit": 2
+        }
+      }
+    },
+    {
+      "description": "closed run rejects writes",
+      "request": {
+        "method": "POST",
+        "path": "/streamer/runs/run:closed/write",
+        "body": {
+          "stream": "stdout",
+          "chunk": "late"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "STREAMER_CLOSED",
+          "runId": "run:closed"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

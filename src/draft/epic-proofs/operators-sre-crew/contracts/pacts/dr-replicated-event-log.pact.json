@@ -1,0 +1,29 @@
+{
+  "consumer": { "name": "DR runbook executor" },
+  "provider": { "name": "replicated event log" },
+  "interactions": [
+    {
+      "description": "verify-fenced-replay",
+      "providerStates": [{ "name": "primary region is fenced" }],
+      "request": {
+        "method": "POST",
+        "path": "/event-log/replay/verify",
+        "body": {
+          "incidentId": "inc-crew-004",
+          "failedRegion": "prod-us-central",
+          "survivorRegion": "prod-us-east"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "fenced": true,
+          "rpoSeconds": 42,
+          "replayedEvents": 1283,
+          "replayHash": "sha256-regional-dr-failover-replay"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "cloud",
+  "builtAt": "2026-11-17T18:35:43.783Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "packages/cloud/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "d3e22cc1a9de98dc2c30749770b52461f7d6428ae68c8b7c4cfad1ff61e579b6",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

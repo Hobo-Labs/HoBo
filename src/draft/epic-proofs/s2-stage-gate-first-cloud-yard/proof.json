@@ -1,0 +1,19 @@
+{
+  "layer": "epic",
+  "slug": "s2-stage-gate-first-cloud-yard",
+  "title": "S2 Stage Gate — First Cloud + Yard (HOBO-626)",
+  "linear": "HOBO-626",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

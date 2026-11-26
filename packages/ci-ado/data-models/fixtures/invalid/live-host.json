@@ -1,0 +1,10 @@
+{
+  "organizationUrl": "https://dev.azure.com.attacker.test/org",
+  "project": "HoBo",
+  "pipelineId": 7,
+  "refName": "refs/heads/main",
+  "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tokenEnv": "ADO_PAT",
+  "authentication": "pat",
+  "timeoutSeconds": 600
+}

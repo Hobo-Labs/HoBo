@@ -1,0 +1,97 @@
+{
+  "consumer": {
+    "name": "V1CutlineContractConsumer"
+  },
+  "provider": {
+    "name": "V1CutlineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "V1 Cutline Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-cutline-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_cutline_contract/v1"
+        }
+      }
+    },
+    {
+      "description": "V1 Cutline Contract boundary returns M1 dogfood alpha evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-cutline-contract/dogfood-alpha"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_cutline_contract.m1_dogfood_alpha/v1",
+          "issue": "HOBO-454",
+          "phase": "M1",
+          "milestoneGate": "M1 Dogfood/alpha proof"
+        }
+      }
+    },
+    {
+      "description": "V1 Cutline Contract boundary returns M2 private beta evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-cutline-contract/private-beta"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_cutline_contract.m2_private_beta/v1",
+          "issue": "HOBO-461",
+          "phase": "M2",
+          "milestoneGate": "M2 Private beta proof"
+        }
+      }
+    },
+    {
+      "description": "V1 Cutline Contract boundary returns M3 release candidate evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-cutline-contract/release-candidate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_cutline_contract.m3_release_candidate/v1",
+          "issue": "HOBO-468",
+          "phase": "M3",
+          "milestoneGate": "M3 Release candidate"
+        }
+      }
+    },
+    {
+      "description": "V1 Cutline Contract boundary returns M4 GA handoff evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-cutline-contract/ga-handoff"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_cutline_contract.m4_ga_handoff/v1",
+          "issue": "HOBO-475",
+          "phase": "M4",
+          "milestoneGate": "M4 GA handoff"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

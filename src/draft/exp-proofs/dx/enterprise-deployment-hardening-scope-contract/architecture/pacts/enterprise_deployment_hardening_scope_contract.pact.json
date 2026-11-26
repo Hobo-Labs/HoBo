@@ -1,0 +1,74 @@
+{
+  "consumer": {
+    "name": "EnterpriseHardeningFollowUpGate"
+  },
+  "provider": {
+    "name": "EnterpriseDeploymentHardeningScopeRecord"
+  },
+  "interactions": [
+    {
+      "description": "blocks M1 enterprise follow-up before M0 acceptance",
+      "request": {
+        "method": "POST",
+        "path": "/enterprise-deployment-hardening/follow-up-gate",
+        "body": {
+          "phase": "M1",
+          "m0Accepted": false
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "allowed": false,
+          "reason": "M1-M4 enterprise deployment hardening work is blocked until HOBO-453 M0 scope acceptance."
+        }
+      }
+    },
+    {
+      "description": "allows M1 enterprise follow-up after M0 acceptance",
+      "request": {
+        "method": "POST",
+        "path": "/enterprise-deployment-hardening/follow-up-gate",
+        "body": {
+          "phase": "M1",
+          "m0Accepted": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "allowed": true,
+          "reason": "HOBO-453 M0 scope acceptance is recorded."
+        }
+      }
+    },
+    {
+      "description": "rejects customer-facing enterprise readiness claims without proof",
+      "request": {
+        "method": "POST",
+        "path": "/enterprise-deployment-hardening/readiness-claims",
+        "body": {
+          "audience": "customer-assurance",
+          "claim": "HoBo is enterprise deployment ready."
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "allowed": false,
+          "reason": "Customer-facing enterprise readiness claims require proof source and owner route."
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-453",
+      "phase": "M0",
+      "boundary": "enterprise-deployment-hardening-scope"
+    }
+  }
+}

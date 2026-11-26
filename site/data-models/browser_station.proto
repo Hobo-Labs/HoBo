@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hobo.site.browser_station.v1;
+
+// Canonical request/response view for hobo:try/browser-station@0.1.0.
+message BrowserStationRequest {
+  string example_id = 1;
+  string station_id = 2;
+  string method = 3;
+  string path = 4;
+  string body_json = 5;
+}
+
+message BrowserStationResponse {
+  uint32 status = 1;
+  string body_json = 2;
+}

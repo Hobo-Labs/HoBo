@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for HOBO-640 mapping styles + planner resolution POC.
+
+enum MappingStyleKind {
+  MAPPING_STYLE_UNSPECIFIED = 0;
+  MAPPING_STYLE_WHOLE_APP = 1;
+  MAPPING_STYLE_PER_TIER = 2;
+  MAPPING_STYLE_PER_BINDING = 3;
+}
+
+message PlannerResolutionRecord {
+  string issue = 1;
+  MappingStyleKind mapping_style = 2;
+  string resolved_provider = 3;
+  repeated string rationale = 4;
+}

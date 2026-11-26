@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-publisher-portal-review-mockups",
+  "experienceType": "ux",
+  "title": "Vibe Publisher Portal Review Mockups",
+  "linear": "HOBO-548",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

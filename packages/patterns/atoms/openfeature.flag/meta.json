@@ -1,0 +1,46 @@
+{
+	"id": "openfeature.flag",
+	"tier": 2,
+	"kind": "openfeature",
+	"description": "OpenFeature flag plus Gherkin scenario for a visual primary surface.",
+	"tags": [
+		"openFeature",
+		"OpenFeature",
+		"gherkin",
+		"flag"
+	],
+	"queries": [
+		"openfeature flag",
+		"feature flag gherkin",
+		"open feature"
+	],
+	"requires": [],
+	"provides": [
+		"openfeature.flag"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			},
+			"flagKey": {
+				"type": "string",
+				"default": "app.feature.primary"
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/flags.ts",
+			"from": "body/flags.ts.tpl"
+		},
+		{
+			"path": "features/flag.feature",
+			"from": "body/flag.feature.tpl"
+		}
+	]
+}

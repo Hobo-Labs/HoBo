@@ -1,0 +1,14 @@
+package wasi:sql@0.2.0;
+
+interface query {
+  record statement {
+    sql: string,
+    params: list<string>,
+  }
+
+  record row {
+    values: list<string>,
+  }
+
+  execute: func(statement: statement) -> list<row>;
+}

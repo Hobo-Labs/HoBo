@@ -1,0 +1,15 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"src/bindle.ts"
+	],
+	"expectContains": {
+		"src/bindle.ts": [
+			"bindle(\"greeter\"",
+			"dependsOn",
+			"honoEntrypoint"
+		]
+	}
+}

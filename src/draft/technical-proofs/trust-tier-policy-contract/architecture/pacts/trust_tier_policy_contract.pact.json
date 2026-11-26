@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TrustTierPolicyContractConsumer"
+  },
+  "provider": {
+    "name": "TrustTierPolicyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Trust Tier Policy Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/trust-tier-policy-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.trust_tier_policy_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

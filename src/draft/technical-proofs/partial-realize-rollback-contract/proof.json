@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "partial-realize-rollback-contract",
+  "title": "HOBO-376 Partial Realize Rollback Contract",
+  "linear": "HOBO-376",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/control-plane.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

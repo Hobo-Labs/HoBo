@@ -1,0 +1,1246 @@
+import assert from "node:assert/strict";
+import { afterAll, beforeAll, test, vi } from "vitest";
+
+beforeAll(() => {
+	vi.stubEnv("HOBO_TURBO_CONCURRENCY", "");
+});
+
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
+
+import { findCaseCollisions } from "../scripts/check-case-collisions.js";
+import {
+	type Check,
+	namesTsAutocode,
+	selectRelevantChecks,
+} from "../scripts/relevant-check-policy.js";
+
+function plan(files: string[], overrides = {}) {
+	return selectRelevantChecks({
+		files,
+		base: "origin/main",
+		...overrides,
+	});
+}
+
+function isAllPackageTurbo(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") ===
+			"exec turbo run build typecheck lint test --filter=[HEAD^...HEAD] --concurrency=100%"
+	);
+}
+
+function isGlobalUnit(check: Check) {
+	return check.command === "pnpm" && check.args.join(" ") === "run test:unit";
+}
+
+function isGlobalContract(check: Check) {
+	return (
+		check.command === "pnpm" && check.args.join(" ") === "run test:contract"
+	);
+}
+
+function isGlobalContractConsumer(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") === "run test:contract:consumer"
+	);
+}
+
+function isGlobalContractProvider(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") === "run test:contract:provider"
+	);
+}
+
+function isWorkspaceTurboTest(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "exec" &&
+		check.args[1] === "turbo" &&
+		check.args[2] === "run" &&
+		check.args[3] === "test" &&
+		check.args.some((arg) => arg.startsWith("--filter=./"))
+	);
+}
+
+function turboTestSelects(checks: Check[], workspace: string) {
+	return checks.some(
+		(check) =>
+			isWorkspaceTurboTest(check) &&
+			check.args.includes(`--filter=./${workspace}`),
+	);
+}
+
+function isScriptsLane(check: Check) {
+	return (
+		check.command === "pnpm" && check.args.join(" ") === "run test:scripts"
+	);
+}
+
+test("pr_gate_validation leaves workspace and scripts lanes to dedicated jobs; pr_gate_plan runs none", () => {
+	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
+	const normal = plan(files);
+	const external = plan(files, { workspaceTestsCoveredExternally: true });
+	assert.ok(normal.checks.some(isWorkspaceTurboTest));
+	assert.ok(normal.checks.some(isScriptsLane));
+	assert.ok(!external.checks.some(isWorkspaceTurboTest));
+	assert.ok(!external.checks.some(isScriptsLane));
+	assert.deepEqual(external.workspaces, normal.workspaces);
+	assert.deepEqual(
+		external.checks,
+		normal.checks.filter(
+			(check) => !isWorkspaceTurboTest(check) && !isScriptsLane(check),
+		),
+	);
+});
+
+test("a change to scripts, root tests or .github selects the scripts lane once", () => {
+	for (const file of [
+		"scripts/ci/route-runner.mts",
+		"scripts/test/route-runner.test.ts",
+		"test/actions-policy.test.ts",
+		".github/workflows/hobo-ci.yml",
+		".github/actions/route-runner/action.yml",
+	]) {
+		const { checks } = plan([file]);
+		assert.equal(checks.filter(isScriptsLane).length, 1, file);
+	}
+});
+
+test("the scripts lane is not selected for other paths, a staged commit, or CI", () => {
+	for (const file of [
+		"packages/ci/src/index.ts",
+		"docs/ci/performance.md",
+		"src/draft/technical-proofs/hobo-auth-authoring-surface/src/index.ts",
+		"scriptsx/example.ts",
+		"testing/example.ts",
+	])
+		assert.ok(!plan([file]).checks.some(isScriptsLane), file);
+	assert.ok(
+		!plan(["scripts/example.ts"], { staged: true }).checks.some(isScriptsLane),
+	);
+	assert.ok(
+		!plan(["scripts/example.ts"], {
+			workspaceTestsCoveredExternally: true,
+		}).checks.some(isScriptsLane),
+	);
+});
+
+function narrowVitestCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "--filter" &&
+		check.args[2] === "exec" &&
+		check.args[3] === "vitest" &&
+		check.args[4] === "run"
+	);
+}
+
+function narrowVitestPaths(checks: Check[]) {
+	const check = checks.find(narrowVitestCheck);
+	return check ? check.args.slice(5) : [];
+}
+
+function standardsCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "run" &&
+		check.args[1] === "standards:check"
+	);
+}
+
+function lintCodeCheck(check: Check) {
+	return check.command === "pnpm" && check.args.join(" ") === "run lint:code";
+}
+
+function slopLintCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "run" &&
+		check.args[1] === "lint:slop:changed"
+	);
+}
+
+function konsistentCheck(check: Check) {
+	return check.command === "pnpm" && check.args.join(" ") === "run konsistent";
+}
+
+test("root script-only package changes do not select all-package Turbo", () => {
+	const { checks } = plan(["package.json"], {
+		rootPackageJsonScriptsOnlyChanged: true,
+	});
+
+	assert.equal(checks.some(isAllPackageTurbo), false);
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:root"),
+		true,
+	);
+});
+
+test("lockfile importer-only changes do not select all-package Turbo", () => {
+	const { checks } = plan(["pnpm-lock.yaml"]);
+
+	assert.equal(checks.some(isAllPackageTurbo), false);
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run install:check"),
+		true,
+	);
+});
+
+test("Open SaaS vitest lane tracks implementation inputs only", () => {
+	const npmLane = (checks: ReturnType<typeof plan>["checks"]) =>
+		checks.some(
+			(check) =>
+				check.command === "npm" &&
+				check.args.join(" ") ===
+					"--prefix examples/wasp-opensaas/app run ci:test:unit",
+		);
+
+	const triggers = [
+		"examples/wasp-opensaas/app/src/analytics/stats.ts",
+		"examples/wasp-opensaas/app/test/color-mode.test.tsx",
+		"examples/wasp-opensaas/app/scripts/ensure-vitest-install.mts",
+		"examples/wasp-opensaas/app/package.json",
+		"examples/wasp-opensaas/app/vitest.config.ts",
+	];
+	for (const file of triggers) {
+		assert.equal(npmLane(plan([file]).checks), true, file);
+	}
+
+	const negatives = [
+		"examples/wasp-opensaas/app/README.md",
+		"examples/wasp-opensaas/app/docs/note.md",
+	];
+	for (const file of negatives) {
+		assert.equal(npmLane(plan([file]).checks), false, file);
+	}
+});
+
+test("--build still selects all-package Turbo", () => {
+	const { checks } = plan(["docs/agent-tooling.md"], { includeBuild: true });
+
+	assert.equal(checks.some(isAllPackageTurbo), true);
+});
+
+test("root dependency and task-graph config changes do not select all-package Turbo by default", () => {
+	const dependencyPlan = plan(["package.json"], {
+		rootPackageJsonScriptsOnlyChanged: false,
+	});
+	const configPlan = plan(["turbo.json"], {
+		rootPackageJsonScriptsOnlyChanged: true,
+	});
+
+	assert.equal(dependencyPlan.checks.some(isAllPackageTurbo), false);
+	assert.equal(configPlan.checks.some(isAllPackageTurbo), false);
+	assert.equal(
+		dependencyPlan.checks.some(
+			(check) => check.args.join(" ") === "run install:check",
+		),
+		true,
+	);
+	assert.equal(
+		configPlan.checks.some(
+			(check) => check.args.join(" ") === "run install:check",
+		),
+		true,
+	);
+});
+
+test("worktree relevant checks pass standards base without staged mode", () => {
+	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
+	const check = checks.find(standardsCheck);
+
+	assert.ok(check);
+	assert.equal(check.args.includes("--staged"), false);
+	assert.equal(check.args.includes("--base=origin/main"), true);
+});
+
+test("staged relevant checks pass staged mode to standards", () => {
+	const { checks } = plan(["scripts/run-relevant-checks.ts"], { staged: true });
+	const check = checks.find(standardsCheck);
+
+	assert.ok(check);
+	assert.equal(check.args.includes("--staged"), true);
+	assert.equal(check.args.includes("--base=origin/main"), true);
+});
+
+test("all changed scopes select the shared source policy with the correct snapshot", () => {
+	for (const files of [["packages/cli/src/index.ts"], ["docs/usage.md"]]) {
+		const committed = plan(files).checks.find(
+			(check) => check.args[1] === "source:guard",
+		);
+		const staged = plan(files, { staged: true }).checks.find(
+			(check) => check.args[1] === "source:guard",
+		);
+		assert.deepEqual(committed?.args, [
+			"run",
+			"source:guard",
+			"--",
+			"--base=origin/main",
+		]);
+		assert.deepEqual(staged?.args, ["run", "source:guard", "--", "--staged"]);
+	}
+});
+
+test("source changes select the Biome formatting lane", () => {
+	const { checks } = plan(["packages/core/src/index.ts"]);
+
+	assert.equal(checks.some(lintCodeCheck), true);
+});
+
+test("automation changes select the Biome formatting lane", () => {
+	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
+
+	assert.equal(checks.some(lintCodeCheck), true);
+});
+
+test("docs-only changes do not select the Biome formatting lane", () => {
+	const { checks } = plan(["docs/agent-tooling.md"]);
+
+	assert.equal(checks.some(lintCodeCheck), false);
+});
+
+test("source changes select the anti-slop changed-file lane", () => {
+	const { checks } = plan(["packages/core/src/index.ts"]);
+	const check = checks.find(slopLintCheck);
+
+	assert.ok(check);
+	assert.equal(check.args.includes("--base=origin/main"), true);
+	assert.equal(check.args.includes("--staged"), false);
+});
+
+test("automation changes select the anti-slop changed-file lane", () => {
+	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
+
+	assert.equal(checks.some(slopLintCheck), true);
+});
+
+test("oxlint config changes select the anti-slop changed-file lane", () => {
+	const { checks } = plan(["oxlint.config.ts"]);
+
+	assert.equal(checks.some(slopLintCheck), true);
+});
+
+test("vendored anti-slop plugin changes select the anti-slop changed-file lane", () => {
+	const { checks } = plan(["tools/oxlint/anti-slop/index.ts"]);
+
+	assert.equal(checks.some(slopLintCheck), true);
+});
+
+test("staged source changes pass --staged to the anti-slop changed-file lane", () => {
+	const { checks } = plan(["packages/core/src/index.ts"], { staged: true });
+	const check = checks.find(slopLintCheck);
+
+	assert.ok(check);
+	assert.equal(check.args.includes("--staged"), true);
+	assert.equal(check.args.includes("--base=origin/main"), false);
+});
+
+test("docs-only changes do not select the anti-slop changed-file lane", () => {
+	const { checks } = plan(["docs/agent-tooling.md"]);
+
+	assert.equal(checks.some(slopLintCheck), false);
+});
+
+test("source changes select the konsistent structural lane", () => {
+	const { checks } = plan(["packages/core/src/index.ts"]);
+
+	assert.equal(checks.some(konsistentCheck), true);
+});
+
+test("konsistent.json changes select the konsistent structural lane", () => {
+	const { checks } = plan(["konsistent.json"]);
+
+	assert.equal(checks.some(konsistentCheck), true);
+});
+
+test("docs-only changes do not select the konsistent structural lane", () => {
+	const { checks } = plan(["docs/agent-tooling.md"]);
+
+	assert.equal(checks.some(konsistentCheck), false);
+});
+
+test("draft aggregate folders without package metadata do not select workspace tests", () => {
+	const { checks, workspaces } = plan(["src/draft/epic-proofs/_registry.md"], {
+		workspacePackageExists: () => false,
+	});
+
+	assert.deepEqual(workspaces, []);
+	assert.equal(
+		checks.some((check) => check.args.includes("./src/draft/epic-proofs")),
+		false,
+	);
+});
+
+test("draft package files select workspace tests when package metadata exists", () => {
+	const { checks, workspaces } = plan(
+		["src/draft/technical-proofs/example-proof/src/index.ts"],
+		{
+			workspacePackageExists: (workspace: string) =>
+				workspace === "src/draft/technical-proofs/example-proof",
+		},
+	);
+
+	assert.deepEqual(workspaces, ["src/draft/technical-proofs/example-proof"]);
+	assert.equal(
+		turboTestSelects(checks, "src/draft/technical-proofs/example-proof"),
+		true,
+	);
+});
+
+test("draft package README-only changes do not select workspace tests", () => {
+	const { checks, workspaces } = plan(
+		["src/draft/technical-proofs/example-proof/README.md"],
+		{
+			workspacePackageExists: (workspace: string) =>
+				workspace === "src/draft/technical-proofs/example-proof",
+		},
+	);
+
+	assert.deepEqual(workspaces, []);
+	assert.equal(
+		checks.some((check) =>
+			check.args.includes("./src/draft/technical-proofs/example-proof"),
+		),
+		false,
+	);
+});
+
+test("proof.json-only changes select draft artifact and cascade gates without workspace tests", () => {
+	const workspace = "src/draft/technical-proofs/example-proof";
+	const { checks, workspaces } = plan([`${workspace}/proof.json`], {
+		workspacePackageExists: (candidate: string) => candidate === workspace,
+	});
+
+	assert.deepEqual(workspaces, []);
+	assert.equal(checks.some(isWorkspaceTurboTest), false);
+	assert.equal(
+		checks.some(
+			(check) =>
+				check.args.join(" ") === "run draft:artifacts -- --base=origin/main",
+		),
+		true,
+	);
+	assert.equal(
+		checks.some(
+			(check) =>
+				check.args.join(" ") === "run draft:cascade -- --base=origin/main",
+		),
+		true,
+	);
+});
+
+test("move-only draft package files can be excluded from workspace tests", () => {
+	const { checks, workspaces } = plan(
+		["src/draft/technical-proofs/example-proof/src/index.ts"],
+		{
+			workspacePackageExists: (workspace: string) =>
+				workspace === "src/draft/technical-proofs/example-proof",
+			workspaceTestFiles: [],
+		},
+	);
+
+	assert.deepEqual(workspaces, []);
+	assert.equal(
+		checks.some((check) =>
+			check.args.includes("./src/draft/technical-proofs/example-proof"),
+		),
+		false,
+	);
+});
+
+test("draft Pact changes stay on workspace tests instead of selecting global contract sweep", () => {
+	const { checks } = plan([
+		"src/draft/technical-proofs/broker-receipt-integrity-contract/architecture/pacts/broker_receipt_integrity.pact.json",
+	]);
+
+	assert.equal(checks.some(isGlobalContract), false);
+	assert.equal(checks.some(isWorkspaceTurboTest), true);
+});
+
+test("shared Pact changes do not select global contract sweeps by default", () => {
+	const { checks } = plan(["tests/pacts/runtime-provider.pact.json"]);
+
+	assert.equal(checks.some(isGlobalContract), false);
+	assert.equal(checks.some(isGlobalContractConsumer), false);
+	assert.equal(checks.some(isGlobalContractProvider), false);
+});
+
+test("shared Pact final validation can opt into broad contract sweeps", () => {
+	const { checks } = plan(["tests/pacts/runtime-provider.pact.json"], {
+		includeBroadSweeps: true,
+	});
+
+	assert.equal(checks.some(isGlobalContract), false);
+	assert.equal(checks.some(isGlobalContractConsumer), true);
+	assert.equal(checks.some(isGlobalContractProvider), true);
+});
+
+test("root schema changes do not select broad contract sweeps by default", () => {
+	const { checks } = plan(["contracts/runtime/runtime.proto"]);
+
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:schema"),
+		true,
+	);
+	assert.equal(checks.some(isGlobalContractConsumer), false);
+	assert.equal(checks.some(isGlobalContractProvider), false);
+});
+
+test("root schema final validation can opt into broad contract sweeps", () => {
+	const { checks } = plan(["contracts/runtime/runtime.proto"], {
+		includeBroadSweeps: true,
+	});
+
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:schema"),
+		true,
+	);
+	assert.equal(checks.some(isGlobalContractConsumer), true);
+	assert.equal(checks.some(isGlobalContractProvider), true);
+});
+
+test("oversized draft workspace selections batch into one Turbo run instead of a global unit sweep", () => {
+	const files = Array.from({ length: 520 }, (_, index) => {
+		const slug = `very-long-draft-proof-package-name-${index.toString().padStart(4, "0")}-with-contract-fixtures-and-tests`;
+		return `src/draft/technical-proofs/${slug}/test/proof.test.ts`;
+	});
+	const { checks, workspaces } = plan(files, {
+		workspacePackageExists: () => true,
+	});
+	const workspaceTestChecks = checks.filter(isWorkspaceTurboTest);
+
+	assert.equal(workspaces.length, 520);
+	assert.equal(checks.some(isGlobalUnit), false);
+	assert.equal(workspaceTestChecks.length, 1);
+	const filters =
+		workspaceTestChecks[0]?.args.filter((arg) =>
+			arg.startsWith("--filter=./"),
+		) ?? [];
+	assert.equal(filters.length, 520);
+});
+
+test("draft package tests are delegated to Turbo with a path filter", () => {
+	const { checks } = plan([
+		"src/draft/technical-proofs/provider-authoring-contract/src/provider-authoring-contract.ts",
+	]);
+
+	assert.equal(
+		turboTestSelects(
+			checks,
+			"src/draft/technical-proofs/provider-authoring-contract",
+		),
+		true,
+	);
+});
+
+test("experience-proof packages resolve through their type subfolder", () => {
+	const workspace = "src/draft/exp-proofs/dx/app-dev-journey-contract";
+	const { checks, workspaces } = plan([`${workspace}/src/app-dev-journey.ts`], {
+		workspacePackageExists: (candidate: string) => candidate === workspace,
+	});
+
+	assert.deepEqual(workspaces, [workspace]);
+	assert.equal(turboTestSelects(checks, workspace), true);
+});
+
+test("legacy two-level exp-proof paths no longer resolve to a workspace", () => {
+	const { checks, workspaces } = plan(
+		["src/draft/exp-proofs/app-dev-journey-contract/src/app-dev-journey.ts"],
+		{ workspacePackageExists: () => true },
+	);
+
+	assert.deepEqual(workspaces, []);
+	assert.equal(checks.some(isWorkspaceTurboTest), false);
+});
+
+test("exp-proof schema changes under type subfolders stay on workspace tests", () => {
+	const workspace = "src/draft/exp-proofs/ux/vibe-workspace-project-states";
+	const { checks } = plan(
+		[`${workspace}/architecture/vibe_workspace_project_states.cue`],
+		{ workspacePackageExists: (candidate: string) => candidate === workspace },
+	);
+
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:schema"),
+		false,
+	);
+	assert.equal(checks.some(isWorkspaceTurboTest), true);
+});
+
+test("case-collision helper reports tracked paths that differ only by case", () => {
+	assert.deepEqual(
+		findCaseCollisions([
+			"docs/ARCHITECTURE.md",
+			"docs/architecture.md",
+			"src/ok.ts",
+		]),
+		[["docs/architecture.md", "docs/ARCHITECTURE.md"]],
+	);
+	assert.deepEqual(
+		findCaseCollisions(["docs/architecture.md", "src/ok.ts"]),
+		[],
+	);
+});
+
+function architectureGuardCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args[0] === "run" &&
+		check.args[1] === "architecture:guard"
+	);
+}
+
+test("bindle manifest changes select bounded property oracles", () => {
+	const { checks, workspaces } = plan(
+		["packages/bindles/src/manifest/manifest.ts"],
+		{ workspacePackageExists: () => true },
+	);
+
+	assert.deepEqual(workspaces, ["packages/bindles"]);
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:property"),
+		true,
+	);
+});
+
+test("fuzz package changes rely on workspace tests instead of a second property lane", () => {
+	const { checks, workspaces } = plan(["packages/fuzz/src/model.ts"], {
+		workspacePackageExists: () => true,
+	});
+
+	assert.deepEqual(workspaces, ["packages/fuzz"]);
+	assert.equal(turboTestSelects(checks, "packages/fuzz"), true);
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:property"),
+		false,
+	);
+});
+
+test("production package source changes select architecture guard and workspace tests", () => {
+	const { checks, workspaces } = plan(["packages/core/src/index.ts"], {
+		workspacePackageExists: () => true,
+	});
+
+	assert.deepEqual(workspaces, ["packages/core"]);
+	assert.equal(checks.some(architectureGuardCheck), true);
+	assert.equal(turboTestSelects(checks, "packages/core"), true);
+});
+
+test("staged test-only package changes run vitest on package-relative paths", () => {
+	const { checks } = plan(["packages/rift/test/rift.test.ts"], {
+		staged: true,
+		workspacePackageExists: () => true,
+	});
+
+	assert.ok(checks.some(narrowVitestCheck));
+	assert.deepEqual(narrowVitestPaths(checks), ["test/rift.test.ts"]);
+	assert.equal(turboTestSelects(checks, "packages/rift"), false);
+});
+
+test("narrow staged workspace tests build their package and dependencies first", () => {
+	const { checks } = plan(["packages/rift/test/rift.test.ts"], {
+		staged: true,
+	});
+	const build = checks.findIndex(
+		(check) =>
+			check.args.slice(0, 4).join(" ") === "exec turbo run build" &&
+			check.args.includes("--filter=./packages/rift"),
+	);
+	const testRun = checks.findIndex(narrowVitestCheck);
+	assert.ok(build >= 0);
+	assert.equal(checks[build]?.serial, true);
+	assert.ok(testRun > build);
+});
+
+test("staged tests preserve package-specific test and pretest commands", () => {
+	for (const workspace of ["packages/cli", "packages/broker"]) {
+		const { checks } = plan([`${workspace}/test/example.test.ts`], {
+			staged: true,
+		});
+		assert.equal(turboTestSelects(checks, workspace), true, workspace);
+		assert.equal(checks.some(narrowVitestCheck), false, workspace);
+	}
+});
+
+test("examples package source changes select architecture guard and workspace tests", () => {
+	const { checks, workspaces } = plan(["examples/hello-bindle/src/main.ts"], {
+		workspacePackageExists: () => true,
+	});
+
+	assert.deepEqual(workspaces, ["examples/hello-bindle"]);
+	assert.equal(checks.some(architectureGuardCheck), true);
+	assert.equal(turboTestSelects(checks, "examples/hello-bindle"), true);
+});
+
+test("try-site app definitions select their workspace tests", () => {
+	const { workspaces, checks } = plan(
+		["examples/try-site/apps/hello-world/app.ts"],
+		{
+			workspacePackageExists: () => true,
+		},
+	);
+
+	assert.deepEqual(workspaces, ["examples/try-site"]);
+	assert.equal(turboTestSelects(checks, "examples/try-site"), true);
+});
+
+test("site source changes select its workspace tests and typecheck", () => {
+	const { checks, workspaces } = plan(["site/src/lib/examples/controller.ts"], {
+		workspacePackageExists: () => true,
+	});
+
+	assert.deepEqual(workspaces, ["site"]);
+	assert.equal(checks.some(architectureGuardCheck), true);
+	assert.equal(turboTestSelects(checks, "site"), true);
+	assert.equal(
+		checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") ===
+					"exec turbo run typecheck --filter=./site --output-logs=new-only --concurrency=100%",
+		),
+		true,
+	);
+});
+
+test("production package schema changes select workspace tests instead of root schema lane", () => {
+	const { checks, workspaces } = plan(
+		["packages/core/data-models/core.proto"],
+		{ workspacePackageExists: () => true },
+	);
+
+	assert.deepEqual(workspaces, ["packages/core"]);
+	assert.equal(
+		checks.some((check) => check.args.join(" ") === "run test:schema"),
+		false,
+	);
+	assert.equal(turboTestSelects(checks, "packages/core"), true);
+});
+
+test("root script and test changes select the root typecheck lane", () => {
+	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
+
+	assert.equal(
+		checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") ===
+					"exec turbo run typecheck:root --output-logs=new-only --concurrency=100%",
+		),
+		true,
+	);
+});
+
+test("nested production category packages resolve to their own workspace", () => {
+	const workspace = "packages/runtimes/runtime-local";
+	const { checks, workspaces } = plan([`${workspace}/src/host.ts`], {
+		workspacePackageExists: (candidate: string) => candidate === workspace,
+	});
+
+	assert.deepEqual(workspaces, [workspace]);
+	assert.equal(turboTestSelects(checks, workspace), true);
+});
+
+function isBehaviorLane(check: Check) {
+	return (
+		check.command === "pnpm" && check.args.join(" ") === "run test:behavior"
+	);
+}
+
+test("editing an epic-proof feature file trips the behavior lane", () => {
+	const { checks } = plan([
+		"src/draft/epic-proofs/finops-budget-routing-control-plane/features/finops-budget-routing-control-plane.feature",
+	]);
+	assert.ok(checks.some(isBehaviorLane));
+});
+
+test("editing a step definition trips the behavior lane", () => {
+	const { checks } = plan([
+		"src/draft/epic-proofs/finops-budget-routing-control-plane/features/steps/steps.ts",
+	]);
+	assert.ok(checks.some(isBehaviorLane));
+});
+
+test("the behavior lane builds the proofs' dependencies first, serially", () => {
+	const { checks } = plan(["cucumber.yaml"]);
+	assert.ok(checks.some(isBehaviorLane));
+	const build = checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+	assert.equal(build?.serial, true);
+});
+
+test("the behavior lane also builds what the root step definitions import", () => {
+	// cucumber.yaml loads every features/steps/**/*.ts file on every run, and
+	// those steps import @hobo/conformance and the CD conformance kit from source,
+	// whose own dependencies resolve through dist/.
+	const { checks } = plan(["cucumber.yaml"]);
+	const build = checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+	assert.ok(build?.args.includes("--filter=@hobo/conformance^..."));
+	assert.ok(
+		build?.args.includes("--filter=@hobo/example-cd-conformance-kit^..."),
+	);
+	assert.ok(build?.args.includes("--filter=@hobo/fleet-authority..."));
+});
+
+test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
+	const { checks } = plan([
+		"packages/patterns/patterns/starter/cli/todo/project/features/visual.feature",
+	]);
+	assert.equal(checks.some(isBehaviorLane), false);
+});
+
+test("OptimizeXP evidence features use their own gate, not the root behavior lane", () => {
+	const { checks } = plan([
+		"packages/cli/.optimizexp/features/new-project/new-project.feature",
+	]);
+	assert.equal(checks.some(isBehaviorLane), false);
+	assert.ok(
+		checks.some((check) => check.args.join(" ") === "run optimizexp:check"),
+	);
+});
+
+test("editing cucumber.yaml trips the behavior lane", () => {
+	const { checks } = plan(["cucumber.yaml"]);
+	assert.ok(checks.some(isBehaviorLane));
+});
+
+test("unrelated docs edits do not trip the behavior lane", () => {
+	const { checks } = plan(["docs/design/vision.md"]);
+	assert.ok(!checks.some(isBehaviorLane));
+});
+
+function isParityScorecardCheck(check: Check) {
+	return (
+		check.command === "pnpm" &&
+		check.args.join(" ") === "run ci:parity-scorecard:check"
+	);
+}
+
+function behaviorBuild(checks: readonly Check[]) {
+	return checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+}
+
+test("the behavior lane builds what the parity gauntlet's steps import", () => {
+	const build = behaviorBuild(plan(["cucumber.yaml"]).checks);
+	for (const filter of [
+		"--filter=@hobo/hobo^...",
+		"--filter=@hobo/ci-gh-actions^...",
+		"--filter=@hobo/ci-dashboard^...",
+	])
+		assert.ok(build?.args.includes(filter), filter);
+});
+
+test("a stale parity scorecard fails a gate", () => {
+	for (const file of [
+		"docs/ci/parity-scorecard.md",
+		"features/hobo-ci-parity/cases.json",
+		"features/hobo-ci-parity/routing.feature",
+		"scripts/ci/parity-scorecard.mts",
+		"packages/ci/src/runner-order/answer.ts",
+		"packages/ci-gh-actions/src/relay-answer/answerer.ts",
+		"packages/ci-gh-actions/test/support/github-simulator/index.ts",
+		"packages/ci-dashboard/src/views.ts",
+		"packages/hobo/src/ci-route.ts",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(checks.some(isParityScorecardCheck), file);
+		assert.equal(behaviorBuild(checks)?.serial, true, file);
+	}
+});
+
+test("edits away from the CI packages leave the parity scorecard alone", () => {
+	for (const file of [
+		"docs/design/vision.md",
+		"packages/hobo/src/deploy.ts",
+		"packages/ci/README.md",
+	])
+		assert.equal(plan([file]).checks.some(isParityScorecardCheck), false, file);
+});
+
+function isOptimizexpLane(check: Check) {
+	return (
+		check.command === "pnpm" && check.args.join(" ") === "run optimizexp:check"
+	);
+}
+
+test("global .optimizexp changes select the optimizexp drift lane", () => {
+	const { checks, scopes } = plan([".optimizexp/personas/developer.md"]);
+	assert.ok(checks.some(isOptimizexpLane));
+	assert.ok(scopes.includes("optimizexp"));
+});
+
+test("project-local persona/feature changes select the optimizexp drift lane", () => {
+	const { checks } = plan([
+		"packages/cli/.optimizexp/features/new-project/README.md",
+	]);
+	assert.ok(checks.some(isOptimizexpLane));
+});
+
+test("skill harness changes select the optimizexp drift lane", () => {
+	for (const file of [
+		".agents/skills/optimizexp/harness/generate-persona.mts",
+		".claude/skills/optimizexp/harness/generate-persona.mts",
+	]) {
+		assert.ok(plan([file]).checks.some(isOptimizexpLane), file);
+	}
+});
+
+test("consensus state and SDLC integration select the optimizexp gate", () => {
+	for (const file of [
+		".optimizexp/runs/run-1/consensus/review-1/state.json",
+		".agents/skills/sdlc/references/finish.md",
+		".claude/skills/sdlc/SKILL.md",
+	]) {
+		assert.ok(plan([file]).checks.some(isOptimizexpLane), file);
+	}
+});
+
+test("OptimizeXP skill edits select the byte-identical mirror gate", () => {
+	for (const file of [
+		".agents/skills/optimizexp/references/design-council.md",
+		".claude/skills/optimizexp/workflows/cross-agent/consensus-loop.mts",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(
+			checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run skills:mirror-check",
+			),
+			file,
+		);
+	}
+});
+
+test("any skill-tree edit selects the byte-identical mirror gate", () => {
+	const { checks } = plan([".agents/skills/install-anti-slop/SKILL.md"]);
+
+	assert.ok(
+		checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") === "run skills:mirror-check",
+		),
+	);
+});
+
+const isAntiSlopDriftTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/anti-slop-vendor.test.ts";
+
+test("an edit to any vendored anti-slop copy selects its manifest drift test", () => {
+	for (const file of [
+		"tools/oxlint/anti-slop/rules/no-runtime-typeof.ts",
+		"tools/oxlint/anti-slop/MANIFEST.sha256",
+		".claude/skills/install-anti-slop/assets/anti-slop/index.ts",
+		".agents/skills/install-anti-slop/assets/anti-slop/LICENSE",
+		"scripts/test/anti-slop-vendor.test.ts",
+	]) {
+		assert.ok(plan([file]).checks.some(isAntiSlopDriftTest), file);
+	}
+});
+
+test("unrelated changes do not select the anti-slop drift test", () => {
+	for (const file of [
+		"packages/core/src/index.ts",
+		".agents/skills/install-anti-slop/SKILL.md",
+	]) {
+		assert.ok(!plan([file]).checks.some(isAntiSlopDriftTest), file);
+	}
+});
+
+const isBetterleaksMainScanTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/betterleaks-main-scan.test.ts";
+
+test("a main-gate betterleaks hang-contract edit selects its regression test", () => {
+	for (const file of [
+		"scripts/ci/betterleaks-main-scan.mts",
+		"scripts/test/betterleaks-main-scan.test.ts",
+		".github/workflows/hobo-ci.yml",
+	]) {
+		assert.ok(plan([file]).checks.some(isBetterleaksMainScanTest), file);
+	}
+});
+
+test("unrelated changes do not select the betterleaks hang-contract test", () => {
+	assert.ok(
+		!plan(["packages/core/src/index.ts"]).checks.some(
+			isBetterleaksMainScanTest,
+		),
+	);
+});
+
+const isReadStdinTest = (check: { command: string; args: readonly string[] }) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/read-stdin.test.ts scripts/test/job-scope.test.ts";
+
+test("a changed-path stdin reader edit selects its regression tests", () => {
+	for (const file of [
+		"scripts/lib/read-stdin.mts",
+		"scripts/test/read-stdin.test.ts",
+		"scripts/test/job-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/state-machine-scope.mts",
+		"scripts/ci/dependent-tests.mts",
+		"scripts/ci/impact-classifier.mts",
+	]) {
+		assert.ok(plan([file]).checks.some(isReadStdinTest), file);
+	}
+});
+
+const isStateMachineScopeTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/state-machine-scope.test.ts";
+
+test("a state-machine relevance input selects the scope tests", () => {
+	for (const file of [
+		"scripts/ci/state-machine-scope.mts",
+		"scripts/test/state-machine-scope.test.ts",
+		"scripts/ci/job-scope.mts",
+		"scripts/ci/affected-lanes.mts",
+		"scripts/verify-state-machine.sh",
+		".agents/skills/verify-cd-fanout/SKILL.md",
+	])
+		assert.ok(plan([file]).checks.some(isStateMachineScopeTest), file);
+	assert.ok(
+		!plan(["docs/ci/performance.md"]).checks.some(isStateMachineScopeTest),
+	);
+});
+
+test("unrelated changes do not select the stdin reader tests", () => {
+	assert.ok(!plan(["packages/core/src/index.ts"]).checks.some(isReadStdinTest));
+});
+
+const isTsAutocodeSurfaceTest = (check: {
+	command: string;
+	args: readonly string[];
+}) =>
+	check.command === "node" &&
+	check.args.join(" ") ===
+		"--import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts scripts/test/ts-autocode-grounding-drift.test.ts";
+
+test("a ts-autocode pin bump or a workspace edit selects the consumer-surface test", () => {
+	for (const file of [
+		"external/ts-autocode",
+		"pnpm-workspace.yaml",
+		"tools/pins/siblings.json",
+		"scripts/test/ts-autocode-consumer-surface.test.ts",
+		"scripts/test/ts-autocode-grounding-drift.test.ts",
+	]) {
+		assert.ok(plan([file]).checks.some(isTsAutocodeSurfaceTest), file);
+	}
+});
+
+test("a change to what the grounding drift test compiles granular.ts with selects it", () => {
+	for (const file of [
+		"packages/runtime/src/json.ts",
+		"packages/runtime/src/training/types.ts",
+		"packages/runtime/tsconfig.json",
+		"tsconfig.base.json",
+	]) {
+		assert.ok(
+			plan([file], { importsTsAutocode: () => false }).checks.some(
+				isTsAutocodeSurfaceTest,
+			),
+			file,
+		);
+	}
+});
+
+test("unrelated changes do not select the ts-autocode consumer-surface test", () => {
+	for (const file of ["packages/core/src/index.ts", "tools/pins/README.md"]) {
+		assert.ok(!plan([file]).checks.some(isTsAutocodeSurfaceTest), file);
+	}
+});
+
+test("a package source or test file that imports ts-autocode selects the consumer-surface test", () => {
+	const importing = new Set([
+		"packages/cli/src/codegen/text.ts",
+		"packages/runtime/test/define-grounding.test.ts",
+	]);
+	const importsTsAutocode = (file: string) => importing.has(file);
+	for (const file of importing) {
+		assert.ok(
+			plan([file], { importsTsAutocode }).checks.some(isTsAutocodeSurfaceTest),
+			file,
+		);
+	}
+	assert.ok(
+		!plan(["packages/cli/src/codegen/tree.ts"], {
+			importsTsAutocode,
+		}).checks.some(isTsAutocodeSurfaceTest),
+	);
+	// Only TypeScript under packages/ is read: the surface test scans nothing else.
+	for (const file of ["site/src/lib/x.ts", "packages/cli/README.md"]) {
+		assert.ok(
+			!plan([file], { importsTsAutocode: () => true }).checks.some(
+				isTsAutocodeSurfaceTest,
+			),
+			file,
+		);
+	}
+});
+
+test("a ts-autocode specifier in any quote, a template literal's included, names ts-autocode", () => {
+	for (const text of [
+		'import { discoverInSource } from "ts-autocode-training";',
+		"const m = await import('ts-autocode-grounding');",
+		"const m = await import(`ts-autocode-training`);",
+		'export * from "ts-autocode-grounding/sub";',
+	]) {
+		assert.ok(namesTsAutocode(text), text);
+	}
+	for (const text of [
+		'import x from "not-ts-autocode";',
+		'import x from "ts-autocode-trainingX";',
+		"// ts-autocode is a submodule",
+	]) {
+		assert.ok(!namesTsAutocode(text), text);
+	}
+});
+
+test("by default the policy reads a changed package file for a ts-autocode import", () => {
+	assert.ok(
+		plan(["packages/cli/src/codegen/trainables.ts"]).checks.some(
+			isTsAutocodeSurfaceTest,
+		),
+	);
+	for (const file of [
+		"packages/core/src/index.ts",
+		"packages/cli/src/codegen/no-such-file.ts",
+	]) {
+		assert.ok(!plan([file]).checks.some(isTsAutocodeSurfaceTest), file);
+	}
+});
+
+test("gate script changes select the optimizexp drift lane", () => {
+	const { checks } = plan(["scripts/check-optimizexp.mts"]);
+	assert.ok(checks.some(isOptimizexpLane));
+});
+
+test("unrelated changes do not select the optimizexp drift lane", () => {
+	const { checks } = plan(["packages/core/src/index.ts"]);
+	assert.ok(!checks.some(isOptimizexpLane));
+});
+
+test("a change to anything that guards signed local runs runs those guards", () => {
+	const guardTests = [
+		"scripts/test/attestation.test.ts",
+		"scripts/test/verify-attestation.test.ts",
+		"scripts/test/attested-jobs.test.ts",
+		"scripts/test/merge-group-gate.test.ts",
+		"scripts/test/lint-actions-runner.test.ts",
+		"scripts/test/github-pr-target.test.ts",
+		"scripts/test/github-status-permission.test.ts",
+		"scripts/test/github-merge-group.test.ts",
+		"scripts/test/local-merge-group.test.ts",
+	];
+	const runsGuards = (checks: Check[]) => {
+		const tests = checks.find(
+			(check) =>
+				check.command === "node" &&
+				check.args.includes("scripts/test/attestation.test.ts"),
+		);
+		return {
+			tests: guardTests.every((file) => tests?.args.includes(file) === true),
+			nodeTest: tests?.args.slice(0, 3).join(" ") === "--import tsx --test",
+			actionsLint: checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run actions:lint",
+			),
+		};
+	};
+	// Each of these alone, with nothing else changed: a key-only change, a
+	// workflow-only change, the verifier, the description, the lint.
+	for (const file of [
+		".github/workflows/hobo-ci.yml",
+		".github/workflows/release-hobo.yml",
+		".github/actions/route-runner/action.yml",
+		".github/actions/route-runner/anything-new.sh",
+		"scripts/ci/attested-jobs.json",
+		"scripts/ci/attestation.mts",
+		"scripts/ci/verify-attestation.mts",
+		"scripts/lint-actions.ts",
+		".hobo/ci-attestors.json",
+		"scripts/ci/local-attest.mts",
+		"scripts/ci/github-target.mts",
+		"scripts/ci/github-pr-target.mts",
+		"scripts/ci/github-status-permission.mts",
+		"scripts/ci/github-merge-group.mts",
+		"scripts/test/github-status-permission.test.ts",
+		"scripts/test/github-merge-group.test.ts",
+		"scripts/test/local-merge-group.test.ts",
+		"scripts/test/merge-group-gate.test.ts",
+	]) {
+		for (const overrides of [
+			{},
+			{ staged: true },
+			{ workspaceTestsCoveredExternally: true },
+		])
+			assert.deepEqual(
+				runsGuards(plan([file], overrides).checks),
+				{ tests: true, nodeTest: true, actionsLint: true },
+				`${file} ${JSON.stringify(overrides)}`,
+			);
+	}
+	// And not for a change that touches none of it.
+	for (const file of [
+		"docs/design/index.md",
+		"packages/core/src/index.ts",
+		".github/workflows/pricing-ci.yml",
+		".hobo/ci.json",
+		"scripts/ci/affected-lanes.mts",
+	])
+		assert.deepEqual(
+			runsGuards(plan([file]).checks),
+			{ tests: false, nodeTest: false, actionsLint: false },
+			file,
+		);
+});
+
+test("UI discovery manifest changes select the visual-token gate", () => {
+	for (const file of [
+		"packages/connect-ui/package.json",
+		"packages/mcp/package.json",
+		"packages/runtimes/runtime-local/package.json",
+		"examples/custom-ui/package.json",
+		"apps/web/package.json",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(
+			checks.some((check) => check.args.join(" ") === "run design:lint"),
+			file,
+		);
+	}
+});

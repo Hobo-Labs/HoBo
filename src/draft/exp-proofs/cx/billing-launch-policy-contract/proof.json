@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "billing-launch-policy-contract",
+  "experienceType": "cx",
+  "title": "Billing Launch Policy Contract POC",
+  "linear": "HOBO-489",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

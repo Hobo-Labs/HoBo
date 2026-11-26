@@ -1,0 +1,31 @@
+{
+  "featureId": "agent-check-staged",
+  "scenarioSlug": "staged-agent-check-is-narrow-and-actionable-after-a-skill-edit-works-for-junior-typescript-developer",
+  "personaIds": [
+    "developer",
+    "coding-agent",
+    "junior-typescript-developer"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T12:55:22.227Z",
+  "runId": "20260731-dx-plateau",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 7868,
+    "sha256": "656f4e292c3cd39ad77e81abd853576de15d366d7c670022d666f024108bdcb4"
+  },
+  "frames": [],
+  "repro": {
+    "command": "pnpm run agent:check -- --staged",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

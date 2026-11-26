@@ -1,0 +1,65 @@
+{
+	"consumer": { "name": "hobo-connectivity-resolver" },
+	"provider": { "name": "hobo-binding-producer" },
+	"interactions": [
+		{
+			"description": "a provisioned Postgres resource emits a portable binding carrying refs only",
+			"request": {
+				"method": "GET",
+				"path": "/bindings/resource:neon/db-1"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schemaVersion": "hobo.capability-binding/v1",
+					"bindingProfileRef": "binding.postgresql/v1",
+					"type": "postgresql",
+					"endpoints": [
+						{
+							"protocol": "postgresql",
+							"addressRef": { "host": "ep-1.eu-central-1.aws.neon.tech", "port": 5432 },
+							"role": "primary"
+						}
+					],
+					"credentialRef": "hobo-secret://tenant-1/neon/db-1/connection",
+					"renewable": true,
+					"rotationSupported": true,
+					"revocationSupported": true,
+					"producerEvidenceRef": "evidence:neon/provision/db-1"
+				}
+			}
+		},
+		{
+			"description": "rotation replaces the credential without changing logical resource identity",
+			"request": {
+				"method": "POST",
+				"path": "/bindings/resource:neon/db-1/rotate",
+				"body": { "reason": "post-claim" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"resourceRef": "resource:neon/db-1",
+					"credentialRef": "hobo-secret://tenant-1/neon/db-1/connection#2",
+					"endpointsChanged": false
+				}
+			}
+		},
+		{
+			"description": "a workload with no compatible connectivity implementation is rejected, not downgraded",
+			"request": {
+				"method": "POST",
+				"path": "/connectivity/resolve",
+				"body": {
+					"bindingProfileRef": "binding.postgresql/v1",
+					"runtimeModel": "wasm",
+					"providerId": "unsupported-runtime"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": { "code": "BINDING_UNAVAILABLE" }
+			}
+		}
+	]
+}

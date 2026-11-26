@@ -1,0 +1,319 @@
+export { VercelProjectViewSchema } from "./_generated/provider_vercel_pb.js";
+export {
+	type BuildClaimActionInput,
+	buildClaimAction,
+	CLAIM_ACTION_AUDIENCE,
+	type ClaimActionAudience,
+	type StoreClaimActionInput,
+	type StoredClaimAction,
+	storeClaimAction,
+} from "./claim-action.js";
+export {
+	VERCEL_DEFAULT_BINDINGS,
+	VERCEL_DEFAULT_REGIONS,
+	type VercelSlotCatalog,
+	type VercelYardBindingRow,
+	type VercelYardSpec,
+	VercelYardSpecError,
+	type VercelYardSpecOptions,
+	vercelSlotCatalog,
+	vercelYardRows,
+	vercelYardSpec,
+} from "./default-yard.js";
+export {
+	createVercelBlobDefinition,
+	createVercelClaimDeploymentDefinition,
+	createVercelDeploymentComponentDefinition,
+	createVercelGitFunctionDefinition,
+	createVercelProjectDefinition,
+	createVercelSandboxHostDefinition,
+	createVercelSponsoredApiDefinition,
+	createVercelSponsoredWebDefinition,
+	createVercelStaticDeployDefinition,
+	VERCEL_BOOTSTRAP_STRATEGY_REF,
+	VERCEL_CLAIM_DEPLOYMENT_DEFINITION_ID,
+	VERCEL_CLAIM_STRATEGY_REF,
+	VERCEL_DEFINITIONS,
+	VERCEL_EVIDENCE_CHECKED_AT,
+	VERCEL_SOURCE_REFS,
+	VERCEL_SPONSOR_EXPOSURE_MINOR_UNITS,
+	VERCEL_SPONSORED_API_DEFINITION_ID,
+	VERCEL_SPONSORED_CANDIDATES,
+	VERCEL_SPONSORED_DEFINITIONS,
+	VERCEL_SPONSORED_WEB_DEFINITION_ID,
+	type VercelDefinitionOverrides,
+} from "./definitions.js";
+export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
+export {
+	createVercelDeploymentComponentResolver,
+	VERCEL_CRON_PRODUCT_ID,
+	VERCEL_QUEUE_PRODUCT_ID,
+	VERCEL_SCHEDULE_PRODUCT_ID,
+} from "./deployment-component-resolver.js";
+export {
+	type VercelBillingPlan,
+	type VercelDeploymentComponent,
+	vercelCronMinimumInterval,
+	verifyVercelDeploymentComponent,
+} from "./deployment-components.js";
+export {
+	preflightVercelGitDeployment,
+	VercelDeploymentPreflightError,
+	type VercelDeploymentPreflightEvidence,
+	type VercelDeploymentPreflightInput,
+} from "./deployment-preflight.js";
+export {
+	createVercelStaticDeploymentResolver,
+	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
+} from "./deployment-resolver.js";
+export {
+	type DropClassification,
+	VERCEL_DROP_CLASSIFICATION,
+	VERCEL_DROP_DEFINITION_ID,
+} from "./drop-classification.js";
+export {
+	EQUIVALENCE_CLASSES,
+	equivalenceForPort,
+	INITIAL_CAPABILITY_PORTS,
+	type InitialCapabilityPort,
+	vercelNativePorts,
+} from "./equivalence.js";
+export { vercelPreviewBranch } from "./git-branch.js";
+export {
+	parseVercelGitEnvironment,
+	type VercelGitEnvironmentParseOptions,
+	type VercelGitEnvironmentScope,
+	type VercelGitEnvironmentVariable,
+} from "./git-deployment-environment.js";
+export {
+	createVercelGitFunctionResolver,
+	VERCEL_GIT_FUNCTION_PRODUCT_ID,
+} from "./git-function-resolver.js";
+export {
+	isVercelGitEnvironment,
+	VERCEL_GIT_BLOCKED_STATES,
+	type VercelAdoptedDeployment,
+	type VercelAdoptionVerdict,
+	type VercelGitDeploymentRecord,
+	type VercelGitDeploymentState,
+	type VercelGitDeploymentStatus,
+	vercelAdoptionVerdict,
+	vercelGitDeploymentRecords,
+	vercelGitDeploymentStatus,
+} from "./git-integration-adoption.js";
+export {
+	VERCEL_HOSTING_COVERAGE,
+	VERCEL_UNRESOLVED_PRODUCTS,
+	vercelProductRefusal,
+} from "./hosting-coverage.js";
+export {
+	type ImpedanceFinding,
+	VERCEL_IMPEDANCE_SCHEMA,
+	VERCEL_LIMITS,
+	vercelImpedanceFindings,
+} from "./impedance.js";
+export {
+	type ApiCallOptions,
+	type CreateTransferRequestInput,
+	createProjectTransferRequest,
+	getProject,
+	observeOrAdoptProject,
+	type ProjectObservation,
+	type ProjectTransferRequest,
+	revokeSponsoringToken,
+	type SponsoredDeploymentPort,
+	type SponsoringCredential,
+	VERCEL_API_BASE,
+	VERCEL_CLAIM_DEPLOYMENT_URL,
+	type VercelProjectView,
+} from "./management-api.js";
+export { PROVIDER_TARGET, type TypedOptionBlock, vercel } from "./options.js";
+export {
+	type AssociatedResourceOwnershipProbe,
+	type AssociatedResourceOwnershipProbeResult,
+	type AssociatedResourceVerification,
+	type PostClaimVerificationSummary,
+	type ProjectOwnershipVerification,
+	type RotatedDatabaseBinding,
+	revokeSponsorAuthority,
+	rotateAssociatedResourceBinding,
+	type SponsorAuthorityRevocation,
+	summarizePostClaimVerification,
+	TRANSFER_CALLBACK_SIGNATURE_HEADER,
+	type TransferAcceptanceCallback,
+	type TransferAcceptanceClaim,
+	verifyAssociatedResourceOwnership,
+	verifyProjectOwnership,
+	verifyTransferAcceptanceCallback,
+} from "./post-claim.js";
+export { createVercelProvider } from "./provider.js";
+export {
+	isVercelProviderError,
+	PROVIDER_ERROR_CODES,
+	type ProviderErrorCode,
+	type ProviderErrorDetail,
+	type ProviderErrorOptions,
+	type ProviderStatusContext,
+	providerErrorForStatus,
+	REDACTION_WINDOW,
+	redactProviderText,
+	VercelProviderError,
+} from "./provider-errors.js";
+export {
+	VERCEL_RESOLVED_PRODUCT_IDS,
+	VERCEL_RESOLVER_PATH_PREFIXES,
+	VERCEL_RESOLVER_TRANSPORT_POLICY,
+	VERCEL_UNRESOLVED_PRODUCT_IDS,
+	type VercelPreviewSchedulePreparationProof,
+	type VercelPreviewSchedulePreparationScope,
+	type VercelResolverOptions,
+	type VercelScheduleCapacityProof,
+	type VercelScheduleCapacityScope,
+	type VercelSchedulePlan,
+	vercelResolverRegistry,
+	vercelResolvers,
+} from "./resolvers.js";
+export {
+	type PlacementConstraint,
+	type ProviderResourceDefinitionData,
+	type ProviderSourceRef,
+	RESOURCE_DEFINITION_VNEXT_SCHEMA,
+	type RemediationHint,
+	type ResourceDefinitionSemanticsData,
+	semanticsToSelectionCandidate,
+} from "./resource-definition.js";
+export {
+	createVercelSandboxHostResolver,
+	preflightVercelSandboxHost,
+	VERCEL_SANDBOX_HOST_PRODUCT_ID,
+	type VercelSandboxHostEvidence,
+	type VercelSandboxHostProof,
+	type VercelSandboxHostScope,
+	type VercelSandboxWorkload,
+} from "./sandbox-host-resolver.js";
+export {
+	blob,
+	cron,
+	delayedQueue,
+	edgeConfig,
+	edgeFunction,
+	gitFunction,
+	project,
+	queue,
+	sandboxHost,
+	schedule,
+	staticDeployment,
+	VERCEL_BLOB_PRODUCT_ID,
+	VERCEL_BLOB_PROFILE,
+	VERCEL_EDGE_CONFIG_PRODUCT_ID,
+	VERCEL_EDGE_CONFIG_PROFILE,
+	VERCEL_EDGE_FUNCTION_PRODUCT_ID,
+	VERCEL_EDGE_FUNCTION_PROFILE,
+	VERCEL_PROJECT_PRODUCT_ID,
+	VERCEL_PROJECT_PROFILE,
+	VERCEL_STATIC_DEPLOY_PROFILE,
+	type VercelBlobSlotOptions,
+	type VercelCronSlotOptions,
+	type VercelEdgeConfigSlotOptions,
+	type VercelEdgeFunctionSlotOptions,
+	type VercelGitFunctionSlotOptions,
+	type VercelProjectSlotOptions,
+	type VercelQueueSlotOptions,
+	type VercelSandboxHostSlotOptions,
+	type VercelScheduleSlotOptions,
+	type VercelStaticDeploySlotOptions,
+	vercelSlots,
+} from "./slots.js";
+export {
+	assertSponsorBudget,
+	type BootstrapDisclosure,
+	createSponsoredProjectTransferBundle,
+	createSponsoredProjectTransferLease,
+	createVercelSponsoredProjectTransferCandidate,
+	DEFAULT_SPONSOR_EXPOSURE_MINOR_UNITS,
+	MODELLED_ASSOCIATED_RESOURCE,
+	PROJECT_TRANSFER_CODE_TTL_MS,
+	RESOURCE_TRANSFER_CAPABLE_MARKETPLACE_PROVIDERS,
+	type ResourceTransferCapableProvider,
+	runSponsoredProjectTransferClaim,
+	SPONSORED_CLAIM_ITEM_IDS,
+	SPONSORED_CLAIM_STRATEGY_REFS,
+	SPONSORED_PROJECT_TRANSFER_BOOTSTRAP,
+	SPONSORED_PROJECT_TRANSFER_CONFORMANCE_REF,
+	SPONSORED_PROJECT_TRANSFER_EVIDENCE_EXPIRES_AT_MS,
+	SPONSORED_PROJECT_TRANSFER_SOURCES,
+	type SponsoredBootstrapInput,
+	type SponsoredBundleInput,
+	type SponsoredCandidateOptions,
+	type SponsoredClaimOutcome,
+	type SponsoredClaimReport,
+	type SponsoredClaimResult,
+	type SponsoredLeaseInput,
+	type SubjectClaimOutcome,
+	sponsoredProjectTransferBootstrapCommands,
+	sponsoredProjectTransferClaimCommands,
+	VERCEL_PROVIDER_ID,
+	VERCEL_SPONSORED_PROJECT_TRANSFER_CANDIDATE,
+	VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID,
+	type VerifiedSourceRef,
+} from "./sponsored-transfer.js";
+export {
+	createVercelDropCliTransport,
+	materializeVercelDropStation,
+	parseVercelDropDeployOutput,
+	provisionTemporaryEnvironmentStation,
+	sanitizeVercelDropProjectName,
+	supportsAnonymousTemporaryDeploy,
+	VERCEL_DROP_URL,
+	VERCEL_TEMPORARY_PROVIDER_ID,
+	type VercelDropDeployResult,
+	type VercelDropFile,
+	type VercelDropTransport,
+	type VercelTemporaryStationInput,
+} from "./temporary-station.js";
+export {
+	VERCEL_TRAFFIC_ROUTING_ABSENT,
+	VERCEL_TRAFFIC_ROUTING_OFFERING_IDS,
+	VERCEL_TRAFFIC_ROUTING_PROFILE,
+} from "./traffic-routing-offerings.js";
+export {
+	assertAllowedEndpoint,
+	createFetchTransport,
+	createGuardedTransport,
+	DEFAULT_TRANSPORT_POLICY,
+	type TransportMethod,
+	type TransportPolicy,
+	type TransportRequest,
+	type TransportResponse,
+	VERCEL_ALLOWED_PATH_PREFIXES,
+	VERCEL_API_ALLOWED_HOSTS,
+	VERCEL_CLAIM_HOST,
+	type VercelTransport,
+} from "./transport.js";
+export type {
+	Capability,
+	CapabilityManifest,
+	CloudProvider,
+	ResourcePlan,
+} from "./types.js";
+
+// public-contract: package identity used by generated catalogs.
+export const HOBO_PROVIDER_VERCEL_PACKAGE = "@hobo/provider-vercel";
+export {
+	type VercelPlannedResource,
+	vercelPlatformDrift,
+} from "./platform-config.js";

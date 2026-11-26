@@ -1,0 +1,8 @@
+service=web strategy=canary sagaSteps=3
+service=jobs-worker strategy=progressive sagaSteps=4
+service=session-cache strategy=blue-green sagaSteps=3
+service=orders-db-migrator strategy=recreate sagaSteps=3
+green rollout app=multi-cloud-shop allPromoted=true deployments=4
+canary regression service=web atWeight=50 decision=rollback gateway=web@sha256:blue
+health gate healthy=promoted providerUnhealthy=rolled-back
+EPIC HELD: strategies compile to sagas, promotion is health-gated, regressions roll back

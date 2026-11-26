@@ -1,0 +1,29 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-policy-plane" },
+  "interactions": [
+    {
+      "description": "allow a governed checkout-v2 flag flip",
+      "providerStates": [{ "name": "policy pack allows checkout-v2 canary" }],
+      "request": {
+        "method": "POST",
+        "path": "/policy/decisions",
+        "body": {
+          "action": "flag.flip",
+          "flagKey": "checkout-v2"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "allow",
+          "obligations": []
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "policy-gate",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

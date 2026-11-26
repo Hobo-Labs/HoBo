@@ -1,0 +1,100 @@
+name: S2 Stage Gate
+
+# S2-09: First Cloud + Yard gate. Two lanes (repo policy: no live-cloud E2E in the
+# blocking PR lane).
+#
+# - rehearsal (CI, mocked, no cloud): the in-memory Yard rehearsal encoded by the
+#   production @hobo/cloud + @hobo/contracts suites — runtime-local EventStore +
+#   createInMemoryActorHost + createInProcessExecutor over a mock IacProvider,
+#   with createRegistryFromProviders([createCloudflareProvider()]). Asserts:
+#     (a) SIGKILL/crash mid-Provisioning -> replay resumes to deployment.Deployed;
+#     (b) reverse-dependency saga compensation on a provisioning failure;
+#     (c) the Gatekeeper denies a seeded unsafe change with an explainable,
+#         machine-readable reason (FR-050/051/052);
+#     (d) an unsatisfiable plan -> deployment.PlanRejected with remediation.
+#
+# - live (workflow_dispatch only, environment-protected, keyless): the same
+#   rehearsal against a real Cloudflare Yard with a guaranteed teardown. HELD until
+#   broker-issued credentials + runners exist (no live cloud wiring is built yet).
+on:
+  pull_request:
+    paths:
+      - "packages/cloud/**"
+      - "packages/contracts/**"
+      - "packages/policy/**"
+      - "packages/iac/**"
+      - "packages/providers/**"
+      - ".github/workflows/s2-stage-gate.yml"
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: s2-stage-gate-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rehearsal:
+    # Hosted Actions runners are disabled until explicitly re-enabled.
+    if: ${{ false }}
+    name: rehearsal
+    runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable pnpm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build Yard control plane + governance and dependencies
+        run: pnpm exec turbo run build --filter @hobo/cloud... --filter @hobo/contracts... --concurrency=100%
+      - name: Yard crash-resume + compensation rehearsal (mocked, no cloud)
+        run: pnpm --filter @hobo/cloud test
+      - name: Gatekeeper denies a seeded unsafe change with an explainable reason
+        run: pnpm --filter @hobo/contracts test
+
+  live:
+    name: live-cloud (held)
+    # Live cloud lane is manual-only and gated by an environment so a human must
+    # approve before any real provider call. It never runs on PRs or pushes.
+    # Hosted Actions runners are disabled until explicitly re-enabled.
+    if: ${{ false }}
+    runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    environment: s2-live-cloud
+    permissions:
+      contents: read
+      # Keyless: the live deploy would federate an OIDC token to the broker; no
+      # static cloud secret is ever stored (NFR-005).
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable pnpm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build Yard control plane and dependencies
+        run: pnpm exec turbo run build --filter @hobo/cloud... --concurrency=100%
+      - name: Deploy hello-bindle to the real cloud through the Yard (HELD)
+        run: |
+          echo "S2 live-cloud lane is HELD: no live Cloudflare Yard wiring exists yet."
+          echo "When broker-issued credentials + runners are restored, this step runs the"
+          echo "same crash-resume + Gatekeeper rehearsal against a real cloud, e.g.:"
+          echo "  pnpm --filter @hobo/cloud run gate:s2:live -- --camp cloudflare-sandbox"
+          echo "and asserts hello-bindle serves traffic before teardown."
+      - name: Tear down the live deployment (guaranteed)
+        if: always()
+        run: |
+          echo "Guaranteed teardown: destroys any provisioned live resources for this run."
+          echo "  pnpm --filter @hobo/cloud run gate:s2:live:teardown -- --run-id ${{ github.run_id }}"

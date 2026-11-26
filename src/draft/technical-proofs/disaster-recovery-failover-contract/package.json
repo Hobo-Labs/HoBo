@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/disaster-recovery-failover-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/disaster-recovery-failover.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

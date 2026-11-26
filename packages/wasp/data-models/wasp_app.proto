@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package hobo.wasp.v1;
+
+// Design-time wire view of what @hobo/wasp exchanges across its one boundary:
+// a Wasp / Open SaaS application source tree.
+//
+// This package does not run the app, call Wasp, or read a database. It reads
+// two declaration files out of the app directory and turns what it finds into
+// a Bindle annotation plus a set of dependency suggestions the author can wire
+// with `b.container()`, `b.bucket()`, or `b.external()`. Everything below is
+// therefore either something read off disk or something handed to Bindle.
+//
+// No buf codegen is wired for this package; the parsers in src/parse.ts are
+// the executable view and must stay reconciled with these shapes.
+
+// Which declaration file a key came from. Wasp splits them for a reason: the
+// client scope is public by construction (`REACT_APP_*` is compiled into the
+// browser bundle), so a key's scope decides whether "secret" is even possible.
+enum WaspEnvScope {
+  WASP_ENV_SCOPE_UNSPECIFIED = 0;
+  WASP_ENV_SCOPE_SERVER = 1;   // .env.server.example
+  WASP_ENV_SCOPE_CLIENT = 2;   // .env.client.example — public, never secret
+  WASP_ENV_SCOPE_GENERAL = 3;  // required for any Open SaaS deploy, per the docs
+}
+
+// The Bindle resource kind a group of env keys suggests. `EXTERNAL` is the
+// honest default: an API key for a third-party SaaS is a connector plus camp
+// secrets, not a resource HoBo provisions.
+enum WaspBindleKind {
+  WASP_BINDLE_KIND_UNSPECIFIED = 0;
+  WASP_BINDLE_KIND_CONTAINER = 1;
+  WASP_BINDLE_KIND_BUCKET = 2;
+  WASP_BINDLE_KIND_EXTERNAL = 3;
+  WASP_BINDLE_KIND_ENV = 4;
+}
+
+// A repo-relative app directory, resolved once against the repo root. Both
+// halves are kept because callers need the relative form for the annotation
+// (it travels into a manifest) and the absolute form to read files.
+message WaspAppRoot {
+  string relative = 1;
+  string absolute = 2;
+}
+
+// The Bindle annotation `b.web(waspApp(root))` produces. Only `framework` and
+// `root` ever leave this package: no source URL, no template id, nothing that
+// would pin the manifest to where the app was downloaded from.
+message WaspWebAppAnnotation {
+  string provider = 1;  // always "hobo"
+  string option = 2;    // always "webapp"
+  string framework = 3; // always "wasp"
+  string root = 4;      // repo-relative
+}
+
+// One `.env.*.example` file reduced to its declared keys.
+//
+// `keys` is the whole content: the parser reads the left-hand side of each
+// assignment and discards the right-hand side unread. A `.env.example` is a
+// documentation file, but it sits next to the real `.env`, and a parser that
+// retained values would be one typo away from carrying a live credential into
+// a manifest.
+message WaspEnvExampleFile {
+  string relative_path = 1; // ".env.server.example" | ".env.client.example"
+  WaspEnvScope scope = 2;
+  repeated string keys = 3;
+}
+
+// A group of keys that map onto one Bindle resource kind, plus the authoring
+// call that would satisfy them.
+message WaspBindleDependencySuggestion {
+  WaspBindleKind kind = 1;
+  string via = 2; // human-facing authoring hint, e.g. "b.bucket() / external S3 connector"
+  repeated string keys = 3;
+}
+
+// Everything discovered about one Wasp app.
+message WaspAppDiscovery {
+  WaspAppRoot root = 1;
+  repeated string general_env = 2; // Open SaaS deploy vars from the docs
+  WaspEnvExampleFile server = 3;
+  WaspEnvExampleFile client = 4;
+  repeated WaspBindleDependencySuggestion suggested_deps = 5;
+}

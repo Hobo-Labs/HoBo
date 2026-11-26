@@ -1,0 +1,452 @@
+{
+  "consumer": {
+    "name": "docs-design-proofs"
+  },
+  "provider": {
+    "name": "vibe-accessibility-usability-checklist"
+  },
+  "interactions": [
+    {
+      "description": "accept HOBO-554 accessibility and usability checklist fixture",
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/ux/vibe-accessibility-usability-checklist"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-554",
+          "phase": "M1",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-accessibility-usability-checklist",
+          "proofPath": "docs/design/proofs/vibe-accessibility-usability-checklist/README.md",
+          "designRefs": [
+            "docs/design/accessibility-usability-launch-baseline.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-define-object-graph-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "workspace-onboarding",
+              "accessibilityUse": "first-run workspace copy can test labels and keyboard order against the accepted object-graph quickstart"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "publisher-portal",
+              "accessibilityUse": "publisher evidence-upload states reuse manifest collection fixture wording without claiming live uploads"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "plan-diff",
+              "accessibilityUse": "plan and approval checklist states reuse the accepted preview fixture for focus and state clarity evidence"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "live",
+              "consumingSurface": "marketplace-install",
+              "accessibilityUse": "marketplace installability labels cite deploy evidence while keeping live install runtime out of scope"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-inspect-event-projection-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "deployment-dashboard",
+              "accessibilityUse": "dashboard topology and status cards use accepted projection evidence for screen-reader and stale-state copy"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "docs",
+              "accessibilityUse": "docs stale-evidence language supplies state clarity and copy clarity checks for unknown proof states"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "live",
+              "consumingSurface": "admin-support",
+              "accessibilityUse": "support handoff copy can cite recovery preview evidence while avoiding production restore claims"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "consumingSurface": "release-support-artifacts",
+              "accessibilityUse": "release go/no-go artifacts keep scope-out claims visible before launch evidence can be accepted"
+            }
+          ],
+          "checks": [
+            {
+              "id": "keyboard-only-path",
+              "label": "Keyboard-only path",
+              "evidenceMode": "manual assistive-tech check",
+              "proves": "Primary workflows can be completed without pointer input."
+            },
+            {
+              "id": "focus-order",
+              "label": "Focus order",
+              "evidenceMode": "manual assistive-tech check",
+              "proves": "Keyboard focus follows task order and does not strand users."
+            },
+            {
+              "id": "visible-focus",
+              "label": "Visible focus",
+              "evidenceMode": "automated check",
+              "proves": "Interactive controls expose visible focus indicators."
+            },
+            {
+              "id": "semantic-labels",
+              "label": "Semantic labels",
+              "evidenceMode": "automated check",
+              "proves": "Controls, landmarks, and form fields expose usable names and roles."
+            },
+            {
+              "id": "contrast",
+              "label": "Contrast",
+              "evidenceMode": "automated check",
+              "proves": "Text, controls, focus, and state indicators meet launch thresholds or carry a limitation."
+            },
+            {
+              "id": "responsive-layout",
+              "label": "Responsive layout",
+              "evidenceMode": "automated check",
+              "proves": "Supported viewports avoid overlapping content and hidden required controls."
+            },
+            {
+              "id": "reduced-motion",
+              "label": "Reduced motion",
+              "evidenceMode": "automated check",
+              "proves": "Motion-sensitive states have a reduced-motion posture."
+            },
+            {
+              "id": "screen-reader-smoke",
+              "label": "Screen-reader smoke",
+              "evidenceMode": "manual assistive-tech check",
+              "proves": "Representative first-run and support paths have screen-reader smoke evidence."
+            },
+            {
+              "id": "empty-error-loading-states",
+              "label": "Empty/error/loading states",
+              "evidenceMode": "reference fixture",
+              "proves": "Non-happy states explain state and next action without visual-only cues."
+            },
+            {
+              "id": "copy-clarity",
+              "label": "Copy clarity",
+              "evidenceMode": "beta feedback",
+              "proves": "Critical launch copy is understandable and support can triage unclear copy."
+            }
+          ],
+          "surfaceChecklist": [
+            {
+              "surface": "workspace-onboarding",
+              "owner": "Workspace & Onboarding UX",
+              "evidenceMode": "first-run reference fixture plus manual keyboard and screen-reader smoke",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "launch-blocker",
+              "acceptedRiskRoute": "launch-cutline-review",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "plan-diff",
+              "owner": "Plan/Diff Viewer",
+              "evidenceMode": "risk and approval fixture plus automated contrast/responsive checks",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "launch-blocker",
+              "acceptedRiskRoute": "release-owner-review",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "deployment-dashboard",
+              "owner": "Deployment Dashboard & Topology Explorer",
+              "evidenceMode": "projection-backed reference fixture and reduced-motion checklist",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "major",
+              "acceptedRiskRoute": "product-owner-remediation",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "marketplace-install",
+              "owner": "Marketplace UX",
+              "evidenceMode": "installability copy fixture and policy-blocked state check",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "major",
+              "acceptedRiskRoute": "product-owner-remediation",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "publisher-portal",
+              "owner": "Publisher Portal",
+              "evidenceMode": "publisher review fixture and evidence-upload state check",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "major",
+              "acceptedRiskRoute": "product-owner-remediation",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "docs",
+              "owner": "Docs Portal",
+              "evidenceMode": "docs IA fixture, search metadata, and stale-content copy clarity check",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "minor",
+              "acceptedRiskRoute": "release-owner-review",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "admin-support",
+              "owner": "V1 Launch Support Desk & Escalation",
+              "evidenceMode": "support triage fixture and customer-safe evidence handoff check",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "launch-blocker",
+              "acceptedRiskRoute": "support-owner-route",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            },
+            {
+              "surface": "release-support-artifacts",
+              "owner": "V1 Release Program & Cutline",
+              "evidenceMode": "go/no-go and accepted-risk record fixture",
+              "requiredChecks": [
+                "keyboard-only-path",
+                "focus-order",
+                "visible-focus",
+                "semantic-labels",
+                "contrast",
+                "responsive-layout",
+                "reduced-motion",
+                "screen-reader-smoke",
+                "empty-error-loading-states",
+                "copy-clarity"
+              ],
+              "launchSeverity": "launch-blocker",
+              "acceptedRiskRoute": "launch-cutline-review",
+              "proofModes": [
+                "live",
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ]
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "happy-path",
+              "surfaceRefs": [
+                "workspace-onboarding",
+                "plan-diff",
+                "deployment-dashboard"
+              ],
+              "requiredEvidence": [
+                "all required checks pass",
+                "owner route recorded",
+                "proof mode visible"
+              ],
+              "safeOutcome": "surface can be treated as launch evidence for the named fixture only"
+            },
+            {
+              "id": "blocked-path",
+              "surfaceRefs": [
+                "plan-diff",
+                "marketplace-install",
+                "admin-support"
+              ],
+              "requiredEvidence": [
+                "blocking check id",
+                "launch severity",
+                "accepted-risk route"
+              ],
+              "safeOutcome": "route blocker to owner without waiving required launch gates"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "surfaceRefs": [
+                "deployment-dashboard",
+                "docs",
+                "release-support-artifacts"
+              ],
+              "requiredEvidence": [
+                "freshness label",
+                "unknown evidence copy",
+                "safe downgrade path"
+              ],
+              "safeOutcome": "mark evidence stale or unknown instead of using it as green launch proof"
+            },
+            {
+              "id": "support-handoff",
+              "surfaceRefs": [
+                "admin-support",
+                "publisher-portal",
+                "marketplace-install"
+              ],
+              "requiredEvidence": [
+                "support-safe summary",
+                "owner route",
+                "next update condition"
+              ],
+              "safeOutcome": "handoff to support owner with redacted evidence and no customer-data leak"
+            },
+            {
+              "id": "accessibility-notes",
+              "surfaceRefs": [
+                "workspace-onboarding",
+                "publisher-portal",
+                "docs"
+              ],
+              "requiredEvidence": [
+                "keyboard path",
+                "screen-reader smoke",
+                "reduced-motion note"
+              ],
+              "safeOutcome": "make accessibility disposition explicit before customer-ready claims"
+            },
+            {
+              "id": "proof-mode-labels",
+              "surfaceRefs": [
+                "release-support-artifacts",
+                "plan-diff",
+                "deployment-dashboard"
+              ],
+              "requiredEvidence": [
+                "live label",
+                "simulated label",
+                "reference fixture label",
+                "scope-out label"
+              ],
+              "safeOutcome": "keep live, simulated, reference fixture, and scope-out evidence separate"
+            }
+          ],
+          "scopeOut": [
+            "No product UI implementation.",
+            "No full accessibility audit execution or certification.",
+            "No automated accessibility test suite buildout.",
+            "No launch exception or waiver approval.",
+            "No customer data or customer screenshots.",
+            "No launch claims without named evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mock Postgres Provider API",
+    "version": "0.1.0",
+    "description": "Reference OpenAPI for forge ingestion fixture. Describes provision, connect, and destroy operations."
+  },
+  "paths": {
+    "/databases": {
+      "post": {
+        "operationId": "provisionDatabase",
+        "summary": "Provision a managed postgres database",
+        "responses": {
+          "201": {
+            "description": "Database provisioned"
+          }
+        }
+      }
+    },
+    "/databases/{id}/connect": {
+      "post": {
+        "operationId": "connectDatabase",
+        "summary": "Open a connection to the database",
+        "responses": {
+          "200": {
+            "description": "Connection established"
+          }
+        }
+      }
+    }
+  }
+}

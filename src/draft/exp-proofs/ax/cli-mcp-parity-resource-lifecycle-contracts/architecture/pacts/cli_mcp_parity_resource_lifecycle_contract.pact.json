@@ -1,0 +1,45 @@
+{
+  "consumer": {
+    "name": "hobo-cli-transcript-consumer"
+  },
+  "provider": {
+    "name": "hobo-mcp-tool-result-provider"
+  },
+  "interactions": [
+    {
+      "description": "CLI transcript and MCP tool return equivalent result envelope",
+      "request": {
+        "method": "POST",
+        "path": "/mcp/tools/hobo.plan",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "camp": "prod",
+          "json": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "status": "warning",
+          "code": "plan.non-portable-edge",
+          "humanMessage": "Plan includes a raw/adopted resource edge that breaks same-Bindle portability.",
+          "remediation": "Keep as explicit debt or replace it with a portable resource definition.",
+          "proofMode": "reference-fixture",
+          "fixtureId": "hobo-570-non-portable-edge",
+          "correlationId": "corr-hobo-570-non-portable-edge",
+          "redactionClass": "tenant-safe"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

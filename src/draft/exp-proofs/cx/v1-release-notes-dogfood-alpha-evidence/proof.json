@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-release-notes-dogfood-alpha-evidence",
+  "experienceType": "cx",
+  "title": "V1 Release Notes Dogfood Alpha Evidence",
+  "linear": "HOBO-459",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

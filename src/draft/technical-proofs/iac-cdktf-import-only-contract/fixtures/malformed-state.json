@@ -1,0 +1,17 @@
+{
+  "version": 4,
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "broken",
+      "instances": [
+        {
+          "attributes": {
+            "bucket": "missing-id"
+          }
+        }
+      ]
+    }
+  ]
+}

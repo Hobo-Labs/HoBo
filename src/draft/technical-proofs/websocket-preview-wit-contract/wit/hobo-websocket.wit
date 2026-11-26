@@ -1,0 +1,19 @@
+package hobo:websocket@0.1.0;
+
+/// stability: stable
+interface extension {
+  use wasi:websocket/types@0.0.1-draft.{message};
+  use hobo:auth/types@0.1.0.{principal-ref};
+
+  type conn-id = string;
+
+  principal: func(conn: conn-id) -> option<principal-ref>;
+  send-to: func(conn: conn-id, msg: message) -> result<_, string>;
+  join: func(conn: conn-id, channel: string) -> result<_, string>;
+  leave: func(conn: conn-id, channel: string) -> result<_, string>;
+  broadcast: func(channel: string, msg: message) -> result<_, string>;
+}
+
+world websocket-extension {
+  import extension;
+}

@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package hobo.draft.release_notes_ga_handoff;
+
+// Architecture-guard evidence: protobuf data shapes the Release Notes GA
+// Handoff Evidence draft package owns. This is a design-time contract artifact.
+
+message ReleaseNotesGaHandoffEvidence {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated EvidenceItem evidence = 5;
+  repeated Blocker blockers = 6;
+  repeated AcceptedRisk accepted_risks = 7;
+  repeated ReleaseCutlineDependency release_cutline_dependencies = 8;
+  repeated MissingEvidence missing_evidence = 9;
+  repeated FollowUpIssue follow_ups = 10;
+  InitiativeStatus initiative_status = 11;
+  repeated string scope_out = 12;
+  repeated PublicClaimGuard public_claim_guards = 13;
+}
+
+message EvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  string status = 5;
+  string acceptance_bullet = 6;
+}
+
+message Blocker {
+  string id = 1;
+  string owner_project = 2;
+  string state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message AcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message ReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message MissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+}
+
+message FollowUpIssue {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message InitiativeStatus {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message PublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}

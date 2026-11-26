@@ -1,0 +1,32 @@
+{
+	"schema": "hobo.deployment-plan/v1",
+	"objective": "min-cost",
+	"dependencyOrder": ["assets", "sessions", "service"],
+	"resources": [
+		{
+			"name": "assets",
+			"port": "objectStore",
+			"provider": "@hobo/provider-cloudflare",
+			"deps": [],
+			"strategy": "rolling-update",
+			"region": "ENAM"
+		},
+		{
+			"name": "service",
+			"port": "compute",
+			"provider": "@hobo/provider-cloudflare",
+			"productId": "cloudflare.workers/v1",
+			"deps": ["assets", "sessions"],
+			"strategy": "rolling-update",
+			"region": "ENAM"
+		},
+		{
+			"name": "sessions",
+			"port": "kv",
+			"provider": "@hobo/provider-cloudflare",
+			"deps": [],
+			"strategy": "rolling-update",
+			"region": "ENAM"
+		}
+	]
+}

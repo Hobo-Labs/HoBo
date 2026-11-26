@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package hobo.draft.beta_pilot_dogfood_alpha;
+
+// Architecture-guard evidence: protobuf data shapes the Beta Pilot Dogfood/Alpha
+// Evidence Contract draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum BetaPilotDogfoodAlphaEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_PHASE_EVIDENCE = 1;
+  EVIDENCE_KIND_BLOCKER_RISK = 2;
+  EVIDENCE_KIND_FOLLOW_UP_POLICY = 3;
+  EVIDENCE_KIND_INITIATIVE_STATUS = 4;
+}
+
+message BetaPilotDogfoodAlphaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string status = 3;
+  repeated string accepted_evidence = 4;
+}
+
+message BetaPilotDogfoodAlphaBlockerRisk {
+  string id = 1;
+  string route = 2;
+  string owner_project = 3;
+  string status = 4;
+  string launch_risk = 5;
+}
+
+message BetaPilotDogfoodAlphaEvidenceRecord {
+  string issue = 1;
+  string phase = 2;
+  string source_contract_issue = 3;
+  repeated string required_intake_fields = 4;
+  repeated BetaPilotDogfoodAlphaEvidenceItem required_evidence = 5;
+  repeated BetaPilotDogfoodAlphaBlockerRisk blocker_risks = 6;
+  string launch_risk_delta = 7;
+  bool parent_initiative_status_update_required = 8;
+}

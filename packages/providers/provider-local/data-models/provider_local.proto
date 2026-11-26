@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package hobo.provider.local.v1;
+
+// Design-time contract artifacts for @hobo/provider-local: the records this
+// definitions-only package publishes beside the vNext semantics blocks it
+// reuses verbatim from @hobo/cloud's registry. Not compiled at runtime; the
+// TypeScript declarations in src/definition.ts are the executable view and
+// must stay reconciled with these shapes.
+//
+// There is deliberately no message here for resource state, credentials, or
+// lifecycle effects. This package owns no engine: @hobo/runtime-local does,
+// and a record that could carry local resource state would let a projection
+// describe apply work this layer never performed.
+
+// One claimed localhost seed product, projected for denominator accounting.
+message LocalDefinitionClaimRecord {
+  string definition_id = 1;        // e.g. "local.in-memory-queue/v1"
+  string provider_id = 2;          // always "local" (the seed's provider id)
+  string seed_product_id = 3;      // e.g. "local:in-memory-queue"
+  string port = 4;                 // legacy catalog port, e.g. "queue"
+  repeated string profile_ids = 5; // exactly the seed rows for the product
+  string executor_ref = 6;         // names a @hobo/runtime-local engine
+  string trust_evidence_ref = 7;   // station-local evidence locator
+  // Fail-closed defaults: a composition supplies attestation, never the
+  // shipped constant.
+  bool evidence_signature_valid = 8;
+  string conformance = 9;          // "pass" | "fail" | "unknown"
+}
+
+// One seed product with no @hobo/runtime-local engine. The full seed claim
+// is claimed records plus gap records, never one side alone.
+message LocalEngineGapRecord {
+  string seed_product_id = 1;
+  string missing_engine = 2;  // the engine that would have to exist
+  string reason = 3;          // why the product is refused today
+}
+
+// The deterministic physical name a local resource is created under.
+message LocalPhysicalNameRecord {
+  string seed_product_id = 1;
+  string logical_id = 2;     // bounded slug; path-shaped ids are refused
+  string physical_name = 3;  // "hobo-local--<product>--<logical>"
+}

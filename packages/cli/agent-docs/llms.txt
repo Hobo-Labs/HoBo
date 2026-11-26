@@ -1,0 +1,56 @@
+# HoBo
+
+> HoBo is a cloud-agnostic, AI-native hosting platform. Every canonical CLI verb has a 1:1, capability-scoped MCP tool, so an agent drives HoBo natively — the same operations a human runs. This file is generated from the canonical verb surface (single source of truth); do not edit by hand.
+
+## Commands
+- up (lifecycle): Realize the current object graph — CLI `hobo up`; MCP tool `up`
+- down (lifecycle): Tear down what up realized — CLI `hobo down`; MCP tool `down`
+- dev (local loop): Run against runtime-local — CLI `hobo dev`; MCP tool `dev`
+- new (local loop): Scaffold a runnable SDK program — CLI `hobo new`; MCP tool `new`
+- login (identity): Obtain a dev SVID through OIDC — CLI `hobo login`; MCP tool `login`
+- connection (identity): Manage durable Connections (create/authorize/list/get/revoke/rotate) — CLI `hobo connection`; MCP tool `connection`
+- identity (identity): Inspect migration identity (status/inspect) or manage auth.md agents (agent discover/register/status/claim/poll/token/rotate/revoke) — CLI `hobo identity`; MCP tool `identity`
+- trails (migration): Observe Trails status/plan/inspect (continuous migration; identity hands-off) — CLI `hobo trails`; MCP tool `trails`
+- access (identity): Request elevated/cross-env access or break-glass (short-lived capability; audited) — CLI `hobo access`; MCP tool `access`
+- feature (delivery): OpenFeature flags / canary / experiment status (list|eval|set|kill) — CLI `hobo feature`; MCP tool `feature`
+- deploy (delivery): Attested continuous delivery status/logs/rollback (secret-free) — CLI `hobo deploy`; MCP tool `deploy`
+- ci (delivery): Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project — CLI `hobo ci`; MCP tool `ci`
+- cd (delivery): Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy — CLI `hobo cd`; MCP tool `cd`
+- fleet (control plane): Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops) — CLI `hobo fleet`; MCP tool `fleet`
+- incident (delivery): CD failure disposition: A2H handoff or sandboxed self-heal — CLI `hobo incident`; MCP tool `incident`
+- claim (identity): Bind an anonymous deployment to an account — CLI `hobo claim`; MCP tool `claim`
+- recipes (read-only): List and inspect deployment recipes and their claim terms — CLI `hobo recipes`; MCP tool `recipes`
+- offer (read-only): Compile a deployment offer and its consent requirements — CLI `hobo offer`; MCP tool `offer`
+- plan (read-only): Dry-run the up decision — CLI `hobo plan`; MCP tool `plan`
+- verify (read-only): Run the unified Gatekeeper preflight — CLI `hobo verify`; MCP tool `verify`
+- can-deploy (read-only): Diagnose producer/consumer compatibility — CLI `hobo can-deploy`; MCP tool `can-deploy`
+- inspect (read-only): Render projections and time-travel views — CLI `hobo inspect`; MCP tool `inspect`
+- logs (read-only): Live-tail Camp runtime streams — CLI `hobo logs`; MCP tool `logs`
+- doctor (diagnostics): Report environment and portability hazards — CLI `hobo doctor`; MCP tool `doctor`
+- messaging (diagnostics): Inspect messaging capability and delivery-guarantee readiness — CLI `hobo messaging`; MCP tool `messaging`
+- codegen (authoring): Regenerate checked-in generated clients — CLI `hobo codegen`; MCP tool `codegen`
+- build (authoring): Compile services to wasm components — CLI `hobo build`; MCP tool `build`
+- collect (authoring): Run resource collection and print manifest IR — CLI `hobo collect`; MCP tool `collect`
+- stub (authoring): Run with a contract-backed stub — CLI `hobo stub`; MCP tool `stub`
+- drift (diagnostics): Report drift and governed remediation paths — CLI `hobo drift`; MCP tool `drift`
+- add (distribution): Install a provider or listing — CLI `hobo add`; MCP tool `add`
+- registry (distribution): Administer registry artifacts — CLI `hobo registry`; MCP tool `registry`
+- import (migration): Adopt existing estate in place — CLI `hobo import`; MCP tool `import`
+- generate (generation): Request provider generation — CLI `hobo generate`; MCP tool `generate`
+- sandbox (test loop): Run a contract-backed isolated lane — CLI `hobo sandbox`; MCP tool `sandbox`
+- test (test loop): Alias for the sandbox test lane — CLI `hobo test`; MCP tool `test`
+- attest (governance): Produce signed external evidence exports — CLI `hobo attest`; MCP tool `attest`
+- erase (governance): Request crypto-shred erasure — CLI `hobo erase`; MCP tool `erase`
+- broker (governance): Resolve placements through the broker (the Conductor) — CLI `hobo broker`; MCP tool `broker`
+- yard (control plane): Install and inspect the default bare-metal Yard — CLI `hobo yard`; MCP tool `yard`
+- station (control plane): Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb — CLI `hobo station`; MCP tool `station`
+- serve (control plane): Local control-plane HTTP+SSE for the Yard game UI — CLI `hobo serve`; MCP tool `serve`
+- replay (observability): Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay) — CLI `hobo replay`; MCP tool `replay`
+- derivative (extensibility): Manage derived HoBo implementations — CLI `hobo derivative`; MCP tool `derivative`
+- runbook (SRE): Execute or replay incident runbooks — CLI `hobo runbook`; MCP tool `runbook`
+
+## Notes
+- Auth: every MCP tool is capability-scoped to { port: hobo:mcp, resource: tool:<name>, verb: call }; deny-by-default.
+- Tool outputs are inert data (ADR-0023): a result never widens the agent's authority or schedules a follow-up call.
+- Onboarding: `npx hobo new <name>` scaffolds an offline project; `npx hobo up` deploys anonymously and returns a live URL (NFR-015).
+- Machine-readable surface: docs.json.

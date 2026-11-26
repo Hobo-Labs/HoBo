@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "internal-ca-private-acme-contract",
+  "title": "Internal CA / Private ACME Contract",
+  "linear": "HOBO-171",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/acme-dns01-cert-issuance-contract",
+      "src/draft/technical-proofs/hobo-dns-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

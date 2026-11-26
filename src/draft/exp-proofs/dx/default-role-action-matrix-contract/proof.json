@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "default-role-action-matrix-contract",
+  "experienceType": "dx",
+  "title": "Default Role Action Matrix Contract",
+  "linear": "HOBO-162",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-action-taxonomy-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

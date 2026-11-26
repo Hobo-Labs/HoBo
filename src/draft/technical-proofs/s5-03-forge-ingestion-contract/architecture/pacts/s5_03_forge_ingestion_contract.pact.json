@@ -1,0 +1,32 @@
+{
+  "consumer": {
+    "name": "S503ForgeIngestionContractConsumer"
+  },
+  "provider": {
+    "name": "S503ForgeIngestionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Forge ingestion boundary returns compiled candidate package evidence",
+      "request": {
+        "method": "POST",
+        "path": "/forge-ingestion/ingest",
+        "body": {
+          "fixtureUrl": "fixture://mock-postgres-backend"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "compiled",
+          "schema": "hobo.draft.s5_03_forge_ingestion_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

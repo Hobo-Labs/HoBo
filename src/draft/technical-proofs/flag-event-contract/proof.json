@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "flag-event-contract",
+  "title": "HoBo flag event contract POC",
+  "linear": "HOBO-310",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

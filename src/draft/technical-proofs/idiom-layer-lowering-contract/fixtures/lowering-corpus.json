@@ -1,0 +1,86 @@
+[
+  {
+    "name": "orders-api",
+    "fluent": {
+      "bindle": "orders",
+      "resources": [
+        {
+          "kind": "kv",
+          "name": "orders",
+          "methodsUsed": ["get", "set"],
+          "allow": ["get", "set"]
+        },
+        {
+          "kind": "topic",
+          "name": "order-events",
+          "methodsUsed": ["publish"],
+          "allow": ["publish"]
+        },
+        {
+          "kind": "service",
+          "name": "api",
+          "handler": "./src/api.ts",
+          "bind": ["orders", "order-events"],
+          "options": [
+            {
+              "provider": "aws",
+              "option": "fargate",
+              "value": { "cpu": 512, "memory": 1024 }
+            }
+          ]
+        }
+      ],
+      "handlers": [
+        { "resource": "api", "event": "http.request", "exportName": "handleRequest" }
+      ],
+      "runtime": {
+        "steps": [{ "name": "reserveInventory", "signature": "step(order-id) -> reservation" }]
+      }
+    },
+    "expectedWitCalls": [
+      { "interface": "hobo:sdk/resource-catalog", "function": "declare-resource", "args": { "kind": "kv", "name": "orders" } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "allow-resource", "args": { "name": "orders", "verbs": ["get", "set"], "provenance": "declared-narrow-or-equal" } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "declare-resource", "args": { "kind": "service", "name": "api" } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "bind-resource", "args": { "from": "api", "to": "order-events" } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "bind-resource", "args": { "from": "api", "to": "orders" } },
+      { "interface": "hobo:sdk/provider-options", "function": "annotate-provider-option", "args": { "name": "api", "option": "fargate", "provider": "aws", "value": { "cpu": 512, "memory": 1024 } } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "declare-resource", "args": { "kind": "topic", "name": "order-events" } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "allow-resource", "args": { "name": "order-events", "verbs": ["publish"], "provenance": "declared-narrow-or-equal" } },
+      { "interface": "hobo:sdk/handlers", "function": "attach-handler", "args": { "event": "http.request", "exportName": "handleRequest", "resource": "api" } },
+      { "interface": "hobo:sdk/runtime", "function": "declare-step", "args": { "name": "reserveInventory", "signature": "step(order-id) -> reservation" } }
+    ],
+    "expectedManifest": {
+      "schema": "hobo.manifest/v1",
+      "bindle": "orders",
+      "resources": [
+        {
+          "kind": "kv",
+          "name": "orders",
+          "allow": [
+            { "provenance": "declared-narrow-or-equal", "verb": "get" },
+            { "provenance": "declared-narrow-or-equal", "verb": "set" }
+          ]
+        },
+        {
+          "kind": "service",
+          "name": "api",
+          "bind": ["order-events", "orders"],
+          "providerOptions": [
+            { "option": "fargate", "provider": "aws", "value": { "cpu": 512, "memory": 1024 } }
+          ]
+        },
+        {
+          "kind": "topic",
+          "name": "order-events",
+          "allow": [{ "provenance": "declared-narrow-or-equal", "verb": "publish" }]
+        }
+      ],
+      "handlers": [
+        { "event": "http.request", "exportName": "handleRequest", "resource": "api" }
+      ],
+      "runtime": {
+        "steps": [{ "name": "reserveInventory", "signature": "step(order-id) -> reservation" }]
+      }
+    }
+  }
+]

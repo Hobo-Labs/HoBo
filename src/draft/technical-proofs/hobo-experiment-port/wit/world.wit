@@ -1,0 +1,108 @@
+package hobo:experiment@0.1.0;
+
+interface types {
+  enum metric-kind {
+    counter,
+    gauge,
+    histogram,
+    duration,
+    ratio,
+  }
+
+  enum analysis-verdict {
+    inconclusive,
+    promote,
+    rollback,
+    needs-human,
+  }
+
+  enum assignment-reason {
+    split,
+    holdout,
+    override,
+    default,
+  }
+
+  enum experiment-error-code {
+    invalid-definition,
+    unassigned-subject,
+    invalid-event,
+  }
+
+  record principal-ref {
+    kind: string,
+    id: string,
+    tenant: option<string>,
+  }
+
+  record experiment-variant {
+    key: string,
+    allocation-basis-points: u32,
+    flag-variant: string,
+  }
+
+  record metric-ref {
+    name: string,
+    kind: metric-kind,
+    source: string,
+    primary: bool,
+    guardrail: bool,
+  }
+
+  record experiment-definition {
+    key: string,
+    flag-key: string,
+    sample-ratio-basis-points: u32,
+    variants: list<experiment-variant>,
+    metrics: list<metric-ref>,
+  }
+
+  record assignment-request {
+    experiment-key: string,
+    subject: principal-ref,
+    context-hash: string,
+  }
+
+  record assignment {
+    experiment-key: string,
+    subject: principal-ref,
+    variant-key: string,
+    flag-key: string,
+    flag-variant: string,
+    sampled: bool,
+    reason: assignment-reason,
+  }
+
+  record exposure {
+    experiment-key: string,
+    subject: principal-ref,
+    variant-key: string,
+    sampled: bool,
+    occurred-at: string,
+  }
+
+  record analysis-result {
+    experiment-key: string,
+    verdict: analysis-verdict,
+    winning-variant: option<string>,
+    confidence: f64,
+    reason: string,
+  }
+
+  record experiment-error {
+    code: experiment-error-code,
+    message: string,
+  }
+}
+
+interface provider {
+  use types.{analysis-result, assignment, assignment-request, experiment-definition, experiment-error, exposure};
+
+  assign: func(definition: experiment-definition, request: assignment-request) -> assignment;
+  record-exposure: func(assignment: assignment, exposure: exposure) -> result<_, experiment-error>;
+  conclude: func(definition: experiment-definition) -> analysis-result;
+}
+
+world experiment {
+  export provider;
+}

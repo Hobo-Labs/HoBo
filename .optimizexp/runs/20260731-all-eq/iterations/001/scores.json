@@ -1,0 +1,56 @@
+{
+  "runId": "20260731-all-eq",
+  "iteration": 1,
+  "regime": "harm_reduce",
+  "phase": "harm-floor",
+  "scoredAt": "2026-07-31T15:39:00.000Z",
+  "metric_total": 0,
+  "metric_max": 0,
+  "implementableFindingsRemaining": 0,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "feature": "cli-help-and-doctor",
+      "surface": "pnpm run doctor",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "exitCode": 0
+    },
+    {
+      "persona": "product-coding-agent",
+      "feature": "agent-tooling-setup",
+      "surface": "setup --help",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "exitCode": 0
+    },
+    {
+      "persona": "product-designer",
+      "feature": "design-system-contract",
+      "surface": "design:lint",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "exitCode": 0
+    },
+    {
+      "persona": "product-end-user",
+      "feature": "public-site-first-impression",
+      "surface": "docs:site-nav",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "exitCode": 0
+    }
+  ]
+}

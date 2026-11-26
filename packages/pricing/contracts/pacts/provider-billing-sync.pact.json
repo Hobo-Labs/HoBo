@@ -1,0 +1,45 @@
+{
+  "consumer": { "name": "hobo-pricing-billing-sync-consumer" },
+  "provider": { "name": "hobo-pricing-billing-sync-adapter" },
+  "interactions": [
+    {
+      "description": "sync fixture FOCUS rows into a dated reconciliation snapshot",
+      "request": {
+        "method": "POST",
+        "path": "/pricing/v1/billing-sync",
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "syncAt": "2026-02-01T12:00:00Z",
+          "periodStart": "2026-01-01T00:00:00Z",
+          "periodEnd": "2026-01-31T23:59:59Z",
+          "reservationId": "reservation-pact-1",
+          "quotedIncrementalBilled": { "decimal": "1.00", "currency": "USD" },
+          "rows": [
+            {
+              "providerChargeId": "prov-charge-usage-1",
+              "agreementId": "agreement-a",
+              "chargeId": "overage",
+              "chargePeriodStart": "2026-01-01T00:00:00Z",
+              "chargePeriodEnd": "2026-01-31T23:59:59Z",
+              "billedCostDecimal": "1.50",
+              "currency": "USD",
+              "category": "usage",
+              "completeness": "complete"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "schema": "hobo.pricing.billing-sync.snapshot/v1",
+          "syncAt": "2026-02-01T12:00:00Z",
+          "completeness": "complete",
+          "importedCount": 1,
+          "reconciliationHash": "sha256:placeholder"
+        }
+      }
+    }
+  ]
+}

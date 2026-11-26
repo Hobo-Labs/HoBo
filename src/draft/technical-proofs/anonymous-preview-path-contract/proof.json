@@ -1,0 +1,18 @@
+{
+  "layer": "technical",
+  "slug": "anonymous-preview-path-contract",
+  "title": "Anonymous Preview Path Contract POC",
+  "linear": "HOBO-164",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package hobo.runner.github.v1;
+
+// Wire records for the GitHub Actions execution-host adapter
+// (@hobo/runner-github, HOBO-718). CUE constraints in runner_github.cue bound
+// every type declared here; the runtime parses untrusted manifest documents
+// into derived parsed types before use.
+
+message ExecutionHostCapability {
+  string port = 1;
+  string interface = 2;
+  string version = 3;
+  string stability = 4;
+  repeated string features = 5;
+}
+
+message ExecutionHostCostFactRecord {
+  string sku = 1;
+  string unit = 2;
+  string marginal_price = 3;
+  uint64 free_tier_included = 4;
+  string source_type = 5;
+  string source_digest = 6;
+}
+
+// Secretless posture: broker-minted short-lived GitHub App installation
+// tokens (HOBO-110); no PATs, no static vendor tokens.
+message AuthPosture {
+  string schema = 1;
+  string mode = 2;
+  string token_audience = 3;
+  string exchange = 4;
+  bool static_secrets = 5;
+}
+
+// A CI/action job the Dispatcher hands to the runner port.
+message RunnerJobRecord {
+  string job_id = 1;
+  string workflow = 2;
+  string ref = 3;
+  string command = 4;
+  uint64 estimated_units = 5;
+}
+
+// The durable outcome of a dispatched job (runner.JobStarted +
+// runner.JobSucceeded/JobFailed facts reference it).
+message RunnerResultRecord {
+  string provider_id = 1;
+  string category = 2;
+  string job_id = 3;
+  string status = 4;
+  uint64 run_id = 5;
+  string run_url = 6;
+}
+
+message DispatchCandidateRecord {
+  string provider = 1;
+  string effective_marginal_cost = 2;
+}
+
+// The past-tense dispatch.Decided fact: why a host won the cost routing
+// (ADR-0071) against the CreditLedgerView snapshot it consumed.
+message DispatchDecidedRecord {
+  string dispatch_id = 1;
+  string category = 2;
+  string selected_provider = 3;
+  string objective = 4;
+  uint64 ledger_seq = 5;
+  string balance_hash = 6;
+  repeated DispatchCandidateRecord candidates = 7;
+}
+
+// A pullable OCI image reference a completed build publishes.
+message ImageRefRecord {
+  string media_type = 1;
+  string uri = 2;
+  string digest = 3;
+}

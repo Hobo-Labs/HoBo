@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hobo.runtime_local.v1;
+
+enum StreamRunLifecycleStatus {
+  STREAM_RUN_LIFECYCLE_STATUS_UNSPECIFIED = 0;
+  STREAM_RUN_LIFECYCLE_STATUS_OPENED = 1;
+  STREAM_RUN_LIFECYCLE_STATUS_CLOSED = 2;
+  STREAM_RUN_LIFECYCLE_STATUS_FAILED = 3;
+}
+
+message StreamRunOpened {
+  string run_id = 1;
+  string opened_at = 2;
+}
+
+message StreamRunClosed {
+  string run_id = 1;
+  StreamRunLifecycleStatus status = 2;
+  string reason = 3;
+  string closed_at = 4;
+}

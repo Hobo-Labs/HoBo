@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Ephemeral state port records (relay cache): short-lived, loss-tolerant
+// key/value state with TTL, per-key versions for compare-and-set, owner-held
+// lock leases, and a capped append-only ring. These are the wire forms; the
+// parsed domain views live in src/ports/ephemeral-state.ts.
+
+// A stored value and its opaque version token.
+message EphemeralEntry {
+  string key = 1;
+  string value = 2;
+  string version = 3;
+  // TTL the entry was written with, in milliseconds.
+  int64 ttl_ms = 4;
+}
+
+// A lock held by `owner` until the key's TTL lapses.
+message EphemeralLockLease {
+  string key = 1;
+  string owner = 2;
+  string version = 3;
+}
+
+// One entry of a capped ring, by monotonic sequence number.
+message EphemeralRingEntry {
+  string ring = 1;
+  int64 seq = 2;
+  string value = 3;
+}
+
+// A read window over a ring.
+message EphemeralRingRead {
+  repeated EphemeralRingEntry entries = 1;
+  int64 head = 2;
+  int64 next = 3;
+  repeated int64 gaps = 4;
+  bool reset = 5;
+}
+
+// Backend commands one port operation issues on a Redis-protocol binding.
+message EphemeralCommandCost {
+  string operation = 1;
+  int32 commands = 2;
+}
+
+// Commands metered over a period, for logging against a monthly budget.
+message EphemeralCommandUsage {
+  int64 total = 1;
+  map<string, int64> by_verb = 2;
+}

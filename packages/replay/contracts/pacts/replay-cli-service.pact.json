@@ -1,0 +1,38 @@
+{
+  "consumer": { "name": "HoboReplayCli" },
+  "provider": { "name": "ReplayService" },
+  "interactions": [
+    {
+      "description": "doctor reports package and kill env",
+      "request": {
+        "method": "GET",
+        "path": "/replay/doctor"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "package": "@hobo/replay",
+          "defaultLocalOn": true,
+          "killEnv": "HOBO_REPLAY=0"
+        }
+      }
+    },
+    {
+      "description": "summarize session by id",
+      "request": {
+        "method": "GET",
+        "path": "/replay/sessions/sess-local-1/summarize",
+        "headers": { "x-hobo-station": "station:local" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "sessionId": "sess-local-1"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

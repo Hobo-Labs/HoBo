@@ -1,0 +1,49 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "OpaPolicyApi" },
+	"interactions": [
+		{
+			"description": "evaluate allow same tenant",
+			"request": {
+				"method": "POST",
+				"path": "/v1/data/hobo/authz",
+				"body": {
+					"input": {
+						"action": "junction.join",
+						"subject": { "tenant_id": "acme" },
+						"resource": { "tenant_id": "acme" }
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"result": { "allow": true, "reasons": ["same-tenant"] }
+				}
+			}
+		},
+		{
+			"description": "evaluate deny cross tenant",
+			"request": {
+				"method": "POST",
+				"path": "/v1/data/hobo/authz",
+				"body": {
+					"input": {
+						"action": "read",
+						"subject": { "tenant_id": "acme" },
+						"resource": { "tenant_id": "other" }
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"result": { "allow": false, "reasons": ["cross-tenant"] }
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

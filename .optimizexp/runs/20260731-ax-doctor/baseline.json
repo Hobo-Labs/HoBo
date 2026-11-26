@@ -1,0 +1,19 @@
+{
+  "runId": "20260731-ax-doctor",
+  "scoredAt": "2026-07-31T14:00:00.000Z",
+  "metric_total": 4,
+  "metric_max": 3,
+  "notes": "Prior AX plateaus left doctor as Node-only; operators had no single command for agent-tooling readiness.",
+  "cells": [
+    {
+      "persona": "product-agent-operator",
+      "surface": "pnpm run doctor (pre-reduce)",
+      "harms": 0,
+      "friction": 2,
+      "uncertainty": 3,
+      "total": 5,
+      "max": 3,
+      "notes": "Doctor OK for Node/pnpm but silent on AUTH/MCP/setup/PATH agent tools."
+    }
+  ]
+}

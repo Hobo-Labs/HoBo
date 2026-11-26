@@ -1,0 +1,1 @@
+{"type":"budget.ThresholdCrossed","data":{"tenantId":"example","thresholdFraction":0.8,"thresholdUsd":80,"budgetUsd":100,"netSpentUsd":90,"cycle":1,"signalKey":"budget:example:0.8:crossed:1"}}

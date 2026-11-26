@@ -1,0 +1,35 @@
+# OptimizeXP CLI evidence
+command: bash scripts/setup-agent-tools.sh --help
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 18
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T15:39:21.914Z
+
+## stdout
+Usage: bash scripts/setup-agent-tools.sh [options]
+
+Install/configure coding-agent tools for this repo (progressive layers).
+
+Options:
+  --common-only          Common/devcontainer-safe layer only (no agent CLI shims)
+  --agent NAME           One agent: claude-code | cursor | codex | copilot
+  --agents a,b           Comma-separated agent list
+  --no-gbrain            Skip gbrain (zero-key path; recommended first run)
+  --no-skillopt          Skip microsoft/SkillOpt install
+  -h, --help             Show this help and exit 0 (no install)
+
+Examples:
+  bash scripts/setup-agent-tools.sh --common-only --no-gbrain
+  bash scripts/setup-agent-tools.sh --agent codex --no-gbrain
+
+Keys / egress: AUTH.md
+Narrative:     docs/agent-tooling.md
+At-a-glance:   AGENTS.md
+MCP launchers (fail-closed): scripts/agent-mcp-{serena,headroom,gbrain}.sh
+Verify:        pnpm run doctor  (includes agent-tooling checks)
+
+
+## stderr
+(empty)

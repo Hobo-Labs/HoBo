@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "intent-alignment-iter2",
+  "experienceType": "dx",
+  "title": "Intent-alignment review iteration 2 — register contract proof",
+  "linear": "HOBO-691",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

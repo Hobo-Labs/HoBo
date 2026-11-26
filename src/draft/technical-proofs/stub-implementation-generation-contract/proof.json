@@ -1,0 +1,31 @@
+{
+  "layer": "technical",
+  "slug": "stub-implementation-generation-contract",
+  "title": "Stub Implementation Generation Contract",
+  "linear": "HOBO-652",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/generation-bounded-repair-loop-contract",
+      "src/draft/technical-proofs/generation-llm-fill-contract",
+      "src/draft/technical-proofs/generation-pipeline-io-contract",
+      "src/draft/technical-proofs/generation-scaffold-stage-contract",
+      "src/draft/technical-proofs/generation-validation-stage-contract",
+      "src/draft/technical-proofs/slsa-provenance-certification-contract",
+      "src/draft/technical-proofs/wit-port-stub-contract"
+    ],
+    "epicProofs": [
+      "src/draft/epic-proofs/generation-pipeline-training-ai-safety"
+    ],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/generated-stack.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

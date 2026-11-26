@@ -1,0 +1,67 @@
+{
+  "id": "starter.cli.api",
+  "version": 1,
+  "kind": "starter",
+  "maturity": "stable",
+  "title": "API starter",
+  "intent": "hobo new -t api",
+  "description": "hobo new -t api",
+  "aliases": [
+    "api"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "artifact:starter",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": false,
+      "default": "resource",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "starter:api"
+  ],
+  "requires": [],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    },
+    {
+      "id": "project",
+      "kind": "project",
+      "path": "body/project.txt.tpl",
+      "outputFiles": [
+        "app.ts"
+      ]
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

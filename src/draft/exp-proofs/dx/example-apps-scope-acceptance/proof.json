@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "example-apps-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Example Apps Scope Acceptance POC",
+  "linear": "HOBO-435",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

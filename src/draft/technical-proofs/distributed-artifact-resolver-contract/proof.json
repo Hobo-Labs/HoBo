@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "distributed-artifact-resolver-contract",
+  "title": "Distributed Artifact Resolver Contract",
+  "linear": "HOBO-370",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/distributed-artifact-version-policy"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

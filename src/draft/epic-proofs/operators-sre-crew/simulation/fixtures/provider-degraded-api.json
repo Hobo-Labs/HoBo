@@ -1,0 +1,30 @@
+{
+  "id": "provider-degraded-api",
+  "title": "SRE resolves a provider-degraded API through gated canary remediation",
+  "persona": "sre-operator",
+  "bddScenario": "Given an endpoint monitor reports high 5xx SLO burn, when the SRE operator diagnoses provider degradation, then it opens one incident, gates the remediation, runs a canary failover, and publishes replay evidence.",
+  "verticalSlice": "detect-diagnose-gate-remediate",
+  "incidentId": "inc-crew-001",
+  "service": "api",
+  "severity": "SEV2",
+  "correlationId": "corr-provider-degraded-api",
+  "signal": {
+    "burnRate": 14.2
+  },
+  "diagnosis": {
+    "evidence": ["probe-latency-p95", "provider-5xx-rate", "healthy-app-canary"]
+  },
+  "slo": {
+    "mttrMinutes": 9
+  },
+  "replayHash": "sha256-provider-degraded-api-replay",
+  "issueKey": "OPS-1024",
+  "mockInteractions": {
+    "endpoint-monitor-to-slo-signals": "publish-slo-budget-burn",
+    "sre-operator-to-projection-read-api": "read-diagnosis-projection",
+    "sre-operator-to-policy-engine": "decide-canary-remediation",
+    "sre-operator-to-remediation-gateway": "apply-live-fix-canary",
+    "sre-operator-to-issue-tracker": "sync-incident-ticket",
+    "sre-operator-to-knowledge-base": "publish-postmortem"
+  }
+}

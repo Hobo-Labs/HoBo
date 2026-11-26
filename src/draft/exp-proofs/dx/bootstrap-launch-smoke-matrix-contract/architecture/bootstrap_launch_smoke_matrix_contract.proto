@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Bootstrap Launch Smoke Matrix Contract
+// draft package reasons about. This is a design-time contract artifact.
+
+enum BootstrapLaunchSmokePathId {
+  BOOTSTRAP_LAUNCH_SMOKE_PATH_ID_UNSPECIFIED = 0;
+  BOOTSTRAP_LAUNCH_SMOKE_PATH_ID_SAAS_BOOTSTRAP = 1;
+  BOOTSTRAP_LAUNCH_SMOKE_PATH_ID_SELF_HOST_BOOTSTRAP = 2;
+  BOOTSTRAP_LAUNCH_SMOKE_PATH_ID_LOCAL_DEV_BOOTSTRAP = 3;
+}
+
+enum BootstrapLaunchSmokeStageId {
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_UNSPECIFIED = 0;
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_PREFLIGHT = 1;
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_AUTH_SEED = 2;
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_FIRST_PROJECT = 3;
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_FIRST_DEPLOY = 4;
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_FAILURE_RECOVERY = 5;
+  BOOTSTRAP_LAUNCH_SMOKE_STAGE_ID_CLEANUP_OR_UNINSTALL = 6;
+}
+
+enum BootstrapLaunchSmokeResultFeedTarget {
+  BOOTSTRAP_LAUNCH_SMOKE_RESULT_FEED_TARGET_UNSPECIFIED = 0;
+  BOOTSTRAP_LAUNCH_SMOKE_RESULT_FEED_TARGET_RELEASE_NOTES = 1;
+  BOOTSTRAP_LAUNCH_SMOKE_RESULT_FEED_TARGET_TROUBLESHOOTING = 2;
+  BOOTSTRAP_LAUNCH_SMOKE_RESULT_FEED_TARGET_SUPPORT_HANDOFF = 3;
+}
+
+message BootstrapLaunchSmokeStageEvidence {
+  BootstrapLaunchSmokeStageId id = 1;
+  string disposition = 2;
+  repeated string fixture_ids = 3;
+  repeated string mocked_boundary_ids = 4;
+  string result_id = 5;
+  string proves = 6;
+}
+
+message BootstrapLaunchSmokeSeedAuthEvidence {
+  string credential_source = 1;
+  repeated string allowed_scopes = 2;
+  uint32 ttl_seconds = 3;
+  string audit_event = 4;
+  string identity_handoff = 5;
+  bool no_ambient_cloud_key = 6;
+  bool zero_egress_mode = 7;
+}
+
+message BootstrapLaunchSmokePath {
+  BootstrapLaunchSmokePathId id = 1;
+  string primary_user = 2;
+  repeated string fixtures = 3;
+  repeated string mocked_boundaries = 4;
+  repeated string unsupported_states = 5;
+  string first_project_shape = 6;
+  string first_deploy_shape = 7;
+  BootstrapLaunchSmokeSeedAuthEvidence seed_auth = 8;
+  repeated BootstrapLaunchSmokeStageEvidence stages = 9;
+}
+
+message BootstrapLaunchSmokeResultFeed {
+  BootstrapLaunchSmokeResultFeedTarget target = 1;
+  string owner = 2;
+  repeated string source_result_ids = 3;
+  repeated string entries = 4;
+}
+
+message BootstrapLaunchSmokeMatrixRecord {
+  string issue = 1;
+  string phase = 2;
+  repeated BootstrapLaunchSmokePath paths = 3;
+  repeated BootstrapLaunchSmokeResultFeed result_feeds = 4;
+  repeated string scope_in = 5;
+  repeated string scope_out = 6;
+}

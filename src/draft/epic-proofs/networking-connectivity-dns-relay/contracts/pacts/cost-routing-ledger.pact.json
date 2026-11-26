@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "CostRoutingLedger" },
+  "interactions": [
+    {
+      "description": "rejects cost routing for single-writer resources",
+      "request": { "method": "POST", "path": "/routing/cost/eligibility" },
+      "response": { "status": 200, "body": { "eligible": false, "homeCamp": "prod-us" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

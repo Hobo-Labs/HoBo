@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "cli-mcp-parity-resource-lifecycle-contracts",
+  "experienceType": "ax",
+  "title": "CLI/MCP Parity Resource Lifecycle Contracts",
+  "linear": "HOBO-570",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "meta-cloud-broker-scope-contract",
+  "experienceType": "api",
+  "title": "Meta-cloud Broker Scope Contract",
+  "linear": "HOBO-521",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/meta-cloud-broker.md",
+      "docs/design/proofs/hobo-521-meta-cloud-broker/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

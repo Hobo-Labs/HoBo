@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "sdk-object-graph-manifest-ir-shapes",
+  "experienceType": "api",
+  "title": "SDK Object Graph Manifest IR Shapes",
+  "linear": "HOBO-568",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

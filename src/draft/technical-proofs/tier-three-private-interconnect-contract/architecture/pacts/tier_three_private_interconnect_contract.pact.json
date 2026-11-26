@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TierThreePrivateInterconnectContractConsumer"
+  },
+  "provider": {
+    "name": "TierThreePrivateInterconnectContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Tier Three Private Interconnect Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/tier-three-private-interconnect-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.tier_three_private_interconnect_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

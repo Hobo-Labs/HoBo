@@ -1,0 +1,37 @@
+{
+  "consumer": {
+    "name": "troubleshooting-guides-m1-planning"
+  },
+  "provider": {
+    "name": "troubleshooting-guides-m0-scope-record"
+  },
+  "interactions": [
+    {
+      "description": "read accepted troubleshooting guides M0 scope record",
+      "providerState": "HOBO-437 M0 scope has been accepted",
+      "request": {
+        "method": "GET",
+        "path": "/design/troubleshooting-guides/scope"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-437",
+          "project": "Troubleshooting Guides",
+          "phase": "M0",
+          "followUpGate": {
+            "allowedAfter": "M0 accepted"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

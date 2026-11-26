@@ -1,0 +1,52 @@
+{
+  "consumer": { "name": "PostCoreDeltaAuthor" },
+  "provider": { "name": "HoBoDesignSystemOfRecord" },
+  "interactions": [
+    {
+      "description": "records a post-core cross-cutting capability delta with owner, proof, and traceability",
+      "request": {
+        "method": "POST",
+        "path": "/design/post-core-deltas",
+        "body": {
+          "command": "RecordPostCoreDelta",
+          "issue_id": "HOBO-524",
+          "source_issue": "HOBO-521",
+          "proof_mode": "docs-pattern-proof"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "event": "PostCoreDeltaRecorded",
+          "decision": "accepted",
+          "traceability_row": "docs/design/traceability.md"
+        }
+      }
+    },
+    {
+      "description": "rejects a docs-only delta without Linear owner or proof path",
+      "request": {
+        "method": "POST",
+        "path": "/design/post-core-deltas",
+        "body": {
+          "command": "RecordPostCoreDelta",
+          "issue_id": "",
+          "proof_mode": "docs-only"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "event": "PostCoreDeltaRejected",
+          "decision": "rejected",
+          "reason": "missing-proof-path"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "issue": "HOBO-524",
+    "phase": "M1"
+  }
+}

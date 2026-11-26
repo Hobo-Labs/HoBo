@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "backup-restore-scope-contract",
+  "experienceType": "dx",
+  "title": "Backup & Restore Scope Contract",
+  "linear": "HOBO-429",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

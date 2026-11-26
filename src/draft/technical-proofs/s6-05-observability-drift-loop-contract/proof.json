@@ -1,0 +1,31 @@
+{
+  "layer": "technical",
+  "slug": "s6-05-observability-drift-loop-contract",
+  "title": "S6-05 Observability Drift Loop Contract",
+  "linear": "HOBO-660",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/alertmanager-routing-contract",
+      "src/draft/technical-proofs/autonomous-drift-remediation-contract",
+      "src/draft/technical-proofs/metrics-catalog-pipeline-contract",
+      "src/draft/technical-proofs/otel-traces-pipeline-contract",
+      "src/draft/technical-proofs/slo-as-code-contract",
+      "src/draft/technical-proofs/slo-computation-engine-contract",
+      "src/draft/technical-proofs/structured-log-pipeline-contract"
+    ],
+    "epicProofs": [
+      "src/draft/epic-proofs/reliability-observability-cost-finops"
+    ],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/reliability-observability-cost.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "HoboCodeParser" },
+  "interactions": [
+    {
+      "description": "parse Hobo Code and lower to the same manifest IR",
+      "providerStates": [{ "name": "L1 source is canonical" }],
+      "request": { "method": "POST", "path": "/hobo-code/parse", "body": { "source": "support-sync.hobo" } },
+      "response": { "status": 200, "body": { "canonicalAstHash": "sha256:hobo-code-ast-001", "byteIdenticalToTypescriptManifest": true } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

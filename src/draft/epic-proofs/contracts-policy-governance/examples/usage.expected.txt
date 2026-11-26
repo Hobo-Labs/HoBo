@@ -1,0 +1,5 @@
+governed deploy status=deployable policy=require-approval replayMatches=true
+boundary coverage ok=true missing=0 extra=0 liveCalls=0
+deny-ceiling bypass status=blocked bypassFlagged=true
+policy outage effect=deny failClosed=true boundary=mocked_provider_unavailable
+EPIC HELD: governance gates are mandatory, evidence replays, and uncertainty denies

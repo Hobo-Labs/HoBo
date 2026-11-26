@@ -1,0 +1,31 @@
+{
+  "accounts": [
+    {
+      "id": "example",
+      "budgetMicros": 0,
+      "spentMicros": 0,
+      "maxRuntimeMinutes": 30,
+      "startupMinutes": 5,
+      "offers": [
+        {
+          "id": "github",
+          "provider": "azure-devops",
+          "providerAccountId": "replace-owned-github-account",
+          "enabled": false,
+          "runsOn": "hobo-local",
+          "freeMinutes": 0,
+          "priceMicrosPerMinute": 10000,
+          "budgetMicros": 0,
+          "spentMicros": 0,
+          "concurrency": 1,
+          "observedAt": "2000-01-01T00:00:00Z",
+          "validUntil": "2000-01-02T00:00:00Z",
+          "sourceUrl": "https://example.invalid/replace-with-account-usage-evidence",
+          "bridgeAcknowledged": false,
+          "backend": "gh-actions"
+        }
+      ]
+    }
+  ],
+  "connections": []
+}

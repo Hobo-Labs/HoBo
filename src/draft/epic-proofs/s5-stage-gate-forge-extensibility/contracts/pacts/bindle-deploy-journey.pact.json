@@ -1,0 +1,16 @@
+{
+  "consumer": { "name": "S5StageGateForgeDrill" },
+  "provider": { "name": "BindleDeployOrchestrator" },
+  "interactions": [
+    {
+      "description": "forged provider deploys a Bindle resource end-to-end",
+      "providerState": "certified provider installed and bindle manifest pinned",
+      "contents": {
+        "deployOutcome": "succeeded",
+        "resourceStatus": "ready",
+        "providerDigestPinned": true
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

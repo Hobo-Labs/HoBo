@@ -1,0 +1,32 @@
+{
+  "consumer": {
+    "name": "LaunchSupportPrivateBetaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSupportPrivateBetaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Support Private Beta Evidence boundary returns its recorded M2 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/launch-support-private-beta-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.launch_support_private_beta_evidence/v1",
+          "issue": "HOBO-467",
+          "phase": "M2",
+          "milestoneGate": "M2 Private beta proof"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

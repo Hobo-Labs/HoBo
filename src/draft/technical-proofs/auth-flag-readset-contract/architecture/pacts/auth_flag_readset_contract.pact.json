@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AuthFlagReadsetContractConsumer"
+  },
+  "provider": {
+    "name": "AuthFlagReadsetContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Auth Flag Readset Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/auth-flag-readset-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.auth_flag_readset_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

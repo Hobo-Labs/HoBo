@@ -1,0 +1,10 @@
+{
+  "name": "@hobo/epic-reference-stage-gate-s3-agent-mcp-brokered-deploy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node --import tsx simulation/run-simulation.ts"
+  }
+}

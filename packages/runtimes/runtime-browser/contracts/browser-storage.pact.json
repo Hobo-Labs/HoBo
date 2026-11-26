@@ -1,0 +1,34 @@
+{
+	"consumer": { "name": "hobo-runtime-browser-eventstore" },
+	"provider": { "name": "hobo-browser-storage-worker" },
+	"interactions": [
+		{
+			"description": "append persists an event and readAll replays it in position order",
+			"request": {
+				"method": "append",
+				"streamId": "s",
+				"events": [{ "type": "t.A", "data": {} }],
+				"options": {
+					"expectedSeq": 0,
+					"actor": { "kind": "system", "id": "t" },
+					"tenant": "t"
+				}
+			},
+			"response": {
+				"ok": true,
+				"readAllCount": 1
+			}
+		},
+		{
+			"description": "persistence status reports the active durability mode",
+			"request": { "method": "persistenceStatus" },
+			"response": {
+				"mode": "opfs-sahpool | transient-memory | unavailable"
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" },
+		"evidence": "contracts/consumer/browser-storage.boundary.test.ts"
+	}
+}

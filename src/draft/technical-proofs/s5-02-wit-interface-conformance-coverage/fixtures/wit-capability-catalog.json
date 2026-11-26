@@ -1,0 +1,13 @@
+{
+  "schema": "hobo.wit.capability-catalog/v1",
+  "source": "packages/wit fixture (S0-06 scaffold; production inventory lands in S5-01+)",
+  "interfaces": [
+    { "wit": "hobo:capability/database@0.1.0", "port": "database", "kind": "provider-capability" },
+    { "wit": "hobo:capability/object-store@0.1.0", "port": "objectStore", "kind": "provider-capability" },
+    { "wit": "hobo:capability/compute@0.1.0", "port": "compute", "kind": "provider-capability" },
+    { "wit": "hobo:capability/queue@0.1.0", "port": "queue", "kind": "provider-capability" },
+    { "wit": "hobo:capability/cache@0.1.0", "port": "cache", "kind": "provider-capability" },
+    { "wit": "hobo:capability/kv@0.1.0", "port": "kv", "kind": "provider-capability" },
+    { "wit": "hobo:capability/dns@0.1.0", "port": "dns", "kind": "provider-capability" }
+  ]
+}

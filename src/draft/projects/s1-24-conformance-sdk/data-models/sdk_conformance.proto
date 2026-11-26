@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package hobo.conformance.sdk.v1;
+
+// Design-time contract for @hobo/conformance/sdk report shapes.
+// Runtime types in src/sdk/types.ts derive from these messages.
+
+message SemanticsAnnexVector {
+  string name = 1;
+  string category = 2;
+  string spec_version = 3;
+}
+
+message LoweringFixture {
+  string name = 1;
+}
+
+message VectorCaseResult {
+  string name = 1;
+  string category = 2;
+  string status = 3;
+  string reason = 4;
+  string expected_json = 5;
+  string actual_json = 6;
+  repeated string diff_paths = 7;
+}
+
+message LaneReport {
+  string lane = 1;
+  string status = 2;
+  bool bounded_by_corpus = 3;
+  repeated VectorCaseResult cases = 4;
+}
+
+message SdkConformanceReport {
+  string suite = 1;
+  string contract = 2;
+  string layer_name = 3;
+  string authorship = 4;
+  string status = 5;
+  string corpus_claim = 6;
+  repeated LaneReport lanes = 7;
+}

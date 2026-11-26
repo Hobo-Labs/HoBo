@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RegistryArtifactDescriptorContractConsumer"
+  },
+  "provider": {
+    "name": "RegistryArtifactDescriptorContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Registry Artifact Descriptor Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/registry-artifact-descriptor-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.registry_artifact_descriptor_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

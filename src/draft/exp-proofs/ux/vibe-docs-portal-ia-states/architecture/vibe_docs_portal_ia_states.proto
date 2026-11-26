@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-551 Docs Portal IA fixture.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibeDocsPortalProofMode {
+  VIBE_DOCS_PORTAL_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_DOCS_PORTAL_PROOF_MODE_LIVE = 1;
+  VIBE_DOCS_PORTAL_PROOF_MODE_SIMULATED = 2;
+  VIBE_DOCS_PORTAL_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_DOCS_PORTAL_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibeDocsPortalFreshnessSignal {
+  string status = 1;
+  string signal = 2;
+  string checked_at = 3;
+  string refresh_trigger = 4;
+  string stale_disposition = 5;
+}
+
+message VibeDocsPortalAudiencePath {
+  string persona = 1;
+  string entry_point = 2;
+  repeated string content_areas = 3;
+  string goal = 4;
+  string success_criteria = 5;
+  string blocked_route = 6;
+}
+
+message VibeDocsPortalContentInventoryEntry {
+  string id = 1;
+  string title = 2;
+  string slug = 3;
+  repeated string audience_paths = 4;
+  string content_area = 5;
+  string source_record = 6;
+  string owner = 7;
+  VibeDocsPortalFreshnessSignal freshness_signal = 8;
+  VibeDocsPortalProofMode proof_mode = 9;
+  string limitation_state = 10;
+  string support_or_release_owner = 11;
+  string customer_visible_status = 12;
+}
+
+message VibeDocsPortalSearchMetadataRecord {
+  string title = 1;
+  string slug = 2;
+  repeated string audiences = 3;
+  string content_area = 4;
+  string source_record = 5;
+  string owner = 6;
+  VibeDocsPortalFreshnessSignal freshness_signal = 7;
+  VibeDocsPortalProofMode proof_mode = 8;
+  string limitation_state = 9;
+  string support_or_release_owner = 10;
+  string searchable_summary = 11;
+}
+
+message VibeDocsPortalScenarioPath {
+  string id = 1;
+  string narrative = 2;
+  repeated string content_entry_ids = 3;
+  string safe_outcome = 4;
+}
+
+message VibeDocsPortalIaStatesRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated VibeDocsPortalAudiencePath audience_paths = 6;
+  repeated VibeDocsPortalContentInventoryEntry content_inventory = 7;
+  repeated VibeDocsPortalSearchMetadataRecord search_metadata = 8;
+  repeated VibeDocsPortalScenarioPath scenario_paths = 9;
+  repeated string accessibility_notes = 10;
+  repeated string scope_out = 11;
+}

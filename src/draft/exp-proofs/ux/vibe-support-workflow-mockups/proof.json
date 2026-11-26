@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-support-workflow-mockups",
+  "experienceType": "ux",
+  "title": "Vibe Support Workflow Mockups",
+  "linear": "HOBO-550",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,34 @@
+{
+  "consumer": {
+    "name": "S2_04PlannerDeploymentPlanDagPocConsumer"
+  },
+  "provider": {
+    "name": "S2_04PlannerDeploymentPlanDagPocBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Planner boundary emits deterministic DeploymentPlan and deployment.Planned rationale",
+      "request": {
+        "method": "POST",
+        "path": "/planner/plan",
+        "body": {
+          "schema": "hobo.manifest/v1",
+          "fixture": "hello-bindle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.planner/v1",
+          "plannedEventType": "deployment.Planned"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

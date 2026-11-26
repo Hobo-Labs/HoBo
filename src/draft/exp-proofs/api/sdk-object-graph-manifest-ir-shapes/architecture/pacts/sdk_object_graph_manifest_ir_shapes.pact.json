@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "HOBO-568 SDK object graph proof"
+  },
+  "provider": {
+    "name": "HoBo design proof registry"
+  },
+  "interactions": [
+    {
+      "description": "records SDK-facing object graph examples without production SDK or live provider scope",
+      "providerState": "HOBO-568 proof package is parsed",
+      "request": {
+        "method": "GET",
+        "path": "/design/proofs/sdk-object-graph-manifest-ir-shapes",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-568",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/api/sdk-object-graph-manifest-ir-shapes",
+          "proofModes": ["live", "simulated", "reference-fixture", "scope-out", "type-test"],
+          "exampleKinds": [
+            "desired-resource-graph",
+            "provider-capability-reference",
+            "deployment-plan-request",
+            "migration-plan-request",
+            "inspect-log-subscription-reader"
+          ],
+          "debtMarkers": ["raw-provider-edge", "authoritative-external-resource"],
+          "compileConsumers": ["todoApi"],
+          "fixtureInputs": ["fixtures/input/todo-api.sdk.ts"],
+          "fixtureOutputs": ["fixtures/output/todo-api.manifest.json"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

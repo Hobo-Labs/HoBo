@@ -1,0 +1,9 @@
+package hobo:auth@0.1.0;
+
+interface types {
+  record principal-ref {
+    kind: string,
+    id: string,
+    tenant: option<string>,
+  }
+}

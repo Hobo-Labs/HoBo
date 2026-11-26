@@ -1,0 +1,75 @@
+{
+	"consumer": { "name": "@hobo/sdk-runtime" },
+	"provider": { "name": "@hobo/runtime-local" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	},
+	"interactions": [
+		{
+			"description": "append happy path returns appended envelopes",
+			"request": {
+				"method": "POST",
+				"path": "/eventstore/append",
+				"body": {
+					"streamId": "run:checkout-1",
+					"events": [{ "type": "run.Started", "data": { "workflow": "checkout" } }],
+					"expectedSeq": 0,
+					"actor": { "kind": "system", "id": "runtime-local" },
+					"tenant": "tenant-a"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"streamId": "run:checkout-1",
+					"appended": [{ "type": "run.Started", "seq": 1 }],
+					"deduped": []
+				}
+			}
+		},
+		{
+			"description": "stale expectedSeq returns conflict envelope",
+			"request": {
+				"method": "POST",
+				"path": "/eventstore/append",
+				"body": {
+					"streamId": "order:1",
+					"events": [{ "type": "order.Discounted", "data": { "amount": 5 } }],
+					"expectedSeq": 0
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"error": "OptimisticSequenceConflictError",
+					"code": "stale_expected_seq"
+				}
+			}
+		},
+		{
+			"description": "idempotency-key retry returns deduped envelope",
+			"request": {
+				"method": "POST",
+				"path": "/eventstore/append",
+				"body": {
+					"streamId": "invoice:1",
+					"events": [
+						{
+							"type": "invoice.Charged",
+							"data": { "amount": 100 },
+							"meta": { "idempotencyKey": "charge-123" }
+						}
+					],
+					"expectedSeq": 0
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"appended": [],
+					"deduped": [{ "type": "invoice.Charged", "meta": { "idempotencyKey": "charge-123" } }]
+				}
+			}
+		}
+	]
+}

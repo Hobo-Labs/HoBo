@@ -1,0 +1,37 @@
+{
+	"name": "@hobo/runtime-local",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/storage-sqlite": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/conformance": "workspace:*",
+		"@types/node": ">=24.0.0"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run && node --import tsx --test contracts/consumer/*.test.ts contracts/provider/*.test.ts",
+		"test:unit": "vitest run",
+		"test:contract:consumer": "node --import tsx --test contracts/consumer/*.test.ts",
+		"test:contract:provider": "node --import tsx --test contracts/provider/*.test.ts"
+	}
+}

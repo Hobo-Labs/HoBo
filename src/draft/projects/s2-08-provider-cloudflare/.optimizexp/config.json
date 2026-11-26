@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "project",
+  "projectId": "s2-08-provider-cloudflare",
+  "label": "draft-project:s2-08-provider-cloudflare",
+  "defaults": {
+    "experiences": [
+      "ux",
+      "dx",
+      "ax"
+    ],
+    "driver": "cli"
+  },
+  "features": {
+    "defaultDriver": "cli",
+    "includeProjectFeatureGlobs": true
+  },
+  "evidence": {
+    "preferVideo": true,
+    "overwritePrimary": true,
+    "nativeCaptureEnv": "OPTIMIZEXP_NATIVE_CAPTURE"
+  },
+  "surfaces": {},
+  "gitignore": {
+    "enabled": true,
+    "managed": true,
+    "ignore": {
+      "runs": false,
+      "busEntries": false,
+      "evidenceMedia": true,
+      "evidenceAll": false,
+      "initReport": false,
+      "osJunk": true
+    },
+    "extra": [],
+    "negate": []
+  },
+  "notes": [
+    "Project-local personas/features live beside this file under s2-08-provider-cloudflare/.optimizexp/.",
+    "Bus/runs/backlog stay in the repo-root global .optimizexp/.",
+    "Project .gitignore ignores large evidence media by default."
+  ]
+}

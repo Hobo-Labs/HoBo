@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package hobo.chaos_resilience_tests_scope.v1;
+
+message ChaosResilienceTestsScope {
+  string issue = 1;
+  string project = 2;
+  ChaosResilienceState state = 3;
+  string goal = 4;
+  repeated ChaosResiliencePersona personas = 5;
+  repeated ChaosResilienceBoundary operating_boundaries = 6;
+  repeated ChaosResilienceEvidence m1_evidence = 7;
+  repeated string scope_in = 8;
+  repeated string scope_out = 9;
+}
+
+message ChaosResiliencePersona {
+  string id = 1;
+  string need = 2;
+}
+
+message ChaosResilienceBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message ChaosResilienceEvidence {
+  string id = 1;
+  string owner = 2;
+  string minimum_proof = 3;
+}
+
+enum ChaosResilienceState {
+  CHAOS_RESILIENCE_STATE_UNSPECIFIED = 0;
+  CHAOS_RESILIENCE_STATE_SCOPE_DRAFT = 1;
+  CHAOS_RESILIENCE_STATE_SCOPE_ACCEPTED = 2;
+  CHAOS_RESILIENCE_STATE_FOLLOW_UP_BLOCKED = 3;
+}

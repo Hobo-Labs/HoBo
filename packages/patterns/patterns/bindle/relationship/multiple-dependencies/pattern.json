@@ -1,0 +1,75 @@
+{
+  "id": "bindle.relationship.multiple-dependencies",
+  "version": 1,
+  "kind": "concept",
+  "maturity": "stable",
+  "title": "multiple dependsOn",
+  "intent": "one resource depends on many",
+  "description": "one resource depends on many",
+  "aliases": [
+    "multiple dependencies"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "relation:depends-on",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "fromName",
+      "kind": "typescript_identifier",
+      "required": false,
+      "default": "api",
+      "displayInReceipt": true
+    },
+    {
+      "name": "first",
+      "kind": "typescript_identifier",
+      "required": false,
+      "default": "products",
+      "displayInReceipt": true
+    },
+    {
+      "name": "second",
+      "kind": "typescript_identifier",
+      "required": false,
+      "default": "orders",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "edge:multi"
+  ],
+  "requires": [
+    "resource:api"
+  ],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

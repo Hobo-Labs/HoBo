@@ -1,0 +1,52 @@
+package hobo:artifact-repo@0.1.0;
+
+interface repository {
+  enum adapter-kind {
+    npm,
+    nuget,
+    pypi,
+    oci,
+    maven,
+    cargo,
+    rubygems
+  }
+
+  record artifact-coordinate {
+    ecosystem: adapter-kind,
+    name: string,
+    version: string
+  }
+
+  record artifact-ref {
+    media-type: string,
+    uri: string,
+    digest: string
+  }
+
+  type provenance-ref = artifact-ref;
+
+  record verified-artifact {
+    adapter-id: string,
+    coordinate: artifact-coordinate,
+    artifact: artifact-ref
+  }
+
+  record mirror-set {
+    name: string,
+    adapters: list<string>
+  }
+
+  variant artifact-repo-error {
+    unavailable(string),
+    unregistered-adapter(string),
+    not-digest-pinned(string),
+    missing-provenance(string)
+  }
+
+  pull: func(coordinate: artifact-coordinate) -> result<verified-artifact, artifact-repo-error>;
+  publish: func(artifact: artifact-ref, provenance: provenance-ref) -> result<artifact-ref, artifact-repo-error>;
+}
+
+world artifact-repo-provider {
+  export repository;
+}

@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "BetaPilotGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "BetaPilotGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Beta Pilot GA Handoff Evidence boundary returns the accepted M4 evidence gate",
+      "request": {
+        "method": "GET",
+        "path": "/beta-pilot-ga-handoff-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.beta-pilot-ga-handoff-evidence/2026-06-30",
+          "issue": "HOBO-477",
+          "phase": "M4"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

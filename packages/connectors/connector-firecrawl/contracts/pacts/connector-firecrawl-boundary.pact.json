@@ -1,0 +1,28 @@
+{
+	"consumer": {
+		"name": "hobo-station-connector-resolver"
+	},
+	"provider": {
+		"name": "firecrawl-auth-discovery"
+	},
+	"interactions": [
+		{
+			"description": "the Station resolver discovers the connector's auth protocol before minting a broker-issued token",
+			"request": {
+				"method": "GET",
+				"path": "/auth.md"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "text/markdown; charset=utf-8"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

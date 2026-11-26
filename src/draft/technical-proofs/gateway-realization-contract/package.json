@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/gateway-realization-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for realizing the HoBo gateway contract from HOBO-138.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

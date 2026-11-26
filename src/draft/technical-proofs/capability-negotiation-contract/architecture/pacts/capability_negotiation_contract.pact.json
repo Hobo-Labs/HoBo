@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CapabilityNegotiationContractConsumer"
+  },
+  "provider": {
+    "name": "CapabilityNegotiationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Capability Negotiation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/capability-negotiation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.capability_negotiation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

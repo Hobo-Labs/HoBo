@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "featureId": "design-system-contract",
+  "bindings": [
+    {
+      "kind": "package-script",
+      "command": "pnpm run design:lint",
+      "scriptName": "design:lint",
+      "confidence": "high",
+      "reason": "The visual token checker validates the implemented CSS palettes."
+    }
+  ]
+}

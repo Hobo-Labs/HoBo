@@ -1,0 +1,14 @@
+{
+  "consumer": { "name": "stage-gate-j2-agent" },
+  "provider": { "name": "hobo-mcp-security-gateway" },
+  "interactions": [
+    {
+      "description": "prod deploy requires human approval",
+      "request": { "tool": "deploy", "input": { "camp": "prod" } },
+      "response": {
+        "status": "require-approval",
+        "body": { "ok": false, "decision": { "effect": "require-approval" } }
+      }
+    }
+  ]
+}

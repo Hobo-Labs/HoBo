@@ -1,0 +1,8 @@
+syntax = "proto3";
+package hobo.ci.vercel.v1;
+
+// Ephemeral local execution plan, derived from Turbo's resolved task graph.
+message TurboCiPlan {
+  repeated string task_ids = 1;
+  repeated string run_args = 2;
+}

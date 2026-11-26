@@ -1,0 +1,40 @@
+{
+	"$schema": "../../../../node_modules/wrangler/config-schema.json",
+	"name": "hobo-ci-cf-example",
+	"main": "index.ts",
+	"compatibility_date": "2026-07-30",
+	"compatibility_flags": ["nodejs_compat"],
+	"artifacts": [
+		{ "binding": "ARTIFACTS", "namespace": "replace-owned-namespace" }
+	],
+	"containers": [
+		{
+			"class_name": "CiSandbox",
+			"image": "./Dockerfile",
+			"max_instances": 1,
+			"instance_type": "standard-4"
+		}
+	],
+	"durable_objects": {
+		"bindings": [{ "name": "SANDBOX", "class_name": "CiSandbox" }]
+	},
+	"exports": { "CiSandbox": { "type": "durable-object", "storage": "sqlite" } },
+	"workflows": [
+		{
+			"name": "hobo-ci-cf-example",
+			"binding": "CI_WORKFLOW",
+			"class_name": "HoBoCI"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BACKUP_BUCKET",
+			"bucket_name": "replace-owned-snapshot-bucket"
+		}
+	],
+	"vars": {
+		"HOBO_ACCOUNT_ID": "replace-hobo-account",
+		"BACKUP_BUCKET_NAME": "replace-owned-snapshot-bucket",
+		"CLOUDFLARE_ACCOUNT_ID": "replace-cloudflare-account"
+	}
+}

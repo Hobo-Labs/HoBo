@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package hobo.draft.v1_beta_pilot_private_beta_evidence.v1;
+
+message RequiredEvidence {
+  string id = 1;
+  string owner_project = 2;
+  repeated string evidence_kinds = 3;
+  string status = 4;
+}
+
+message BlockerState {
+  string id = 1;
+  string status = 2;
+  string owner_project = 3;
+  string disposition = 4;
+}
+
+message AcceptedRisk {
+  string id = 1;
+  string owner = 2;
+  string mitigation = 3;
+  string launch_note_or_follow_up = 4;
+}
+
+message ReleaseCutline {
+  repeated string consumes_projects = 1;
+  bool blocks_release_candidate_without_dependency_disposition = 2;
+}
+
+message PrivateBetaEvidenceGate {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated RequiredEvidence required_evidence = 5;
+  repeated BlockerState blocker_states = 6;
+  repeated AcceptedRisk accepted_risks = 7;
+  ReleaseCutline release_cutline = 8;
+  repeated string scope_in = 9;
+  repeated string scope_out = 10;
+}
+
+message PrivateBetaEvidenceGateCommand {
+  PrivateBetaEvidenceGate gate = 1;
+  string requested_by = 2;
+}
+
+message PrivateBetaEvidenceGateAccepted {
+  PrivateBetaEvidenceGate gate = 1;
+  string parent_readiness_signal = 2;
+}
+
+message PrivateBetaEvidenceGateDenied {
+  repeated string errors = 1;
+}

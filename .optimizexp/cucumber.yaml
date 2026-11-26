@@ -1,0 +1,21 @@
+# Cucumber profile for OptimizeXP experience features (not product epic proofs).
+# Product behavior lane remains root cucumber.yaml → src/draft/**/features.
+#
+# Paths include global + one-level project trees (site/, packages/*/).
+# Run:
+#   node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js \
+#     --config .optimizexp/cucumber.yaml
+default:
+  paths:
+    - ".optimizexp/features/*/*.feature"
+    - "*/.optimizexp/features/*/*.feature"
+    - "packages/*/.optimizexp/features/*/*.feature"
+    - "examples/*/.optimizexp/features/*/*.feature"
+    - "src/draft/projects/*/.optimizexp/features/*/*.feature"
+  import:
+    - ".optimizexp/features/*/steps/**/*.ts"
+    - "*/.optimizexp/features/*/steps/**/*.ts"
+    - "packages/*/.optimizexp/features/*/steps/**/*.ts"
+  publishQuiet: true
+  # Fail on pending/undefined steps so stubs are visible
+  failFast: false

@@ -1,0 +1,23 @@
+{
+  "consumer": { "name": "PortabilityRegistryReferenceApp" },
+  "provider": { "name": "OfflineBundleImporter" },
+  "interactions": [
+    {
+      "description": "imports bundle material into an in-boundary mirror without live egress",
+      "providerState": "offline trust material is carried with the bundle",
+      "contents": {
+        "command": "registry.importBundle",
+        "result": {
+          "type": "registry.BundleImported",
+          "egressAttempts": 0,
+          "verification": {
+            "revocation": "passed",
+            "antiRollback": "passed",
+            "transparency": "passed"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

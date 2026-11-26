@@ -1,0 +1,67 @@
+syntax = "proto3";
+package hobo.draft.convex_swaghaus_deploy_adapter;
+
+// Wire shapes for the thin `@hobo/provider-convex` deploy executor path
+// (ADR-0144). Every type below is constrained by deploy_adapter.cue and
+// parsed by src/parse.ts before the proof uses it.
+
+// How the executor actually reached the deployment. `DEPLOY_MODE_MOCK` is the
+// explicit CI lane in packages/providers/provider-convex/src/deploy.ts — never
+// a silent fallback for missing credentials.
+enum DeployMode {
+  DEPLOY_MODE_UNSPECIFIED = 0;
+  DEPLOY_MODE_CLOUD = 1;
+  DEPLOY_MODE_SELF_HOSTED = 2;
+  DEPLOY_MODE_MOCK = 3;
+}
+
+// Severity ladder of a plan-time impedance finding (impedance.ts): only a
+// paradigm mismatch blocks; everything else is evidence for the
+// PortabilityReport.
+enum ImpedanceSeverity {
+  IMPEDANCE_SEVERITY_UNSPECIFIED = 0;
+  IMPEDANCE_SEVERITY_INFO = 1;
+  IMPEDANCE_SEVERITY_WARN = 2;
+  IMPEDANCE_SEVERITY_BLOCK = 3;
+}
+
+// Presence-only fail-closed preflight for a swaghaus ship: WorkOS AuthKit env
+// plus Convex deploy credentials. Values are never carried — only names.
+message DeployPreflight {
+  // A non-mock deploy may proceed.
+  bool live = 1;
+  // Names of absent env vars (never their values).
+  repeated string missing = 2;
+  // Camp/broker routing sentence for the missing names.
+  string remediation = 3;
+  DeployMode mode = 4;
+}
+
+// A deploy request as it crosses into the executor. Credential *presence* is
+// recorded, never the material.
+message ConvexDeployRequest {
+  // Repo-relative Convex app directory (no absolute path, no `..` escape).
+  string root = 1;
+  string deployment_name = 2;
+  bool mock = 3;
+  string self_hosted_url = 4;
+  bool has_deploy_key = 5;
+  bool has_self_hosted_admin_key = 6;
+}
+
+// What `deployConvexApp` hands back — the untrusted boundary value, since the
+// URL is scraped from `convex deploy` stdout in the live lanes.
+message ConvexDeployReceipt {
+  bool ok = 1;
+  string deployment_url = 2;
+  string deployment_name = 3;
+  bool mocked = 4;
+  DeployMode mode = 5;
+}
+
+// One plan-time impedance finding from `convexImpedanceFindings`.
+message ImpedanceFindingRecord {
+  string code = 1;
+  ImpedanceSeverity severity = 2;
+  string message = 3;
+}

@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package hobo.draft.broker_admin_controls.v1;
+
+message AdminActor {
+  string id = 1;
+  string role = 2;
+}
+
+message BrokerEnvironmentProposal {
+  string id = 1;
+  string environment_id = 2;
+  string proposed_by = 3;
+  repeated string requested_changes = 4;
+  repeated string audit_evidence_ids = 5;
+  string state = 6;
+}
+
+message BrokerEnvironmentSnapshot {
+  string id = 1;
+  uint32 version = 2;
+  string source_proposal_id = 3;
+  string approved_by = 4;
+  repeated string audit_evidence_ids = 5;
+  string state = 6;
+}
+
+message ResolutionReceiptRef {
+  string receipt_id = 1;
+  string environment_id = 2;
+  uint32 environment_version = 3;
+  string digest = 4;
+  bool immutable = 5;
+}
+
+message BrokerAdminAction {
+  string kind = 1;
+  string actor_id = 2;
+  string target_environment_id = 3;
+  string proposal_id = 4;
+  string receipt_id = 5;
+  string audit_evidence_id = 6;
+  repeated string requested_changes = 7;
+  repeated string reviewer_evidence_ids = 8;
+}
+
+message BrokerAdminEvent {
+  string type = 1;
+  string actor_id = 2;
+  string target_environment_id = 3;
+  repeated string audit_evidence_ids = 4;
+}
+
+message BrokerAdminState {
+  repeated BrokerEnvironmentProposal pending_proposals = 1;
+  repeated BrokerEnvironmentSnapshot environment_snapshots = 2;
+  repeated ResolutionReceiptRef issued_receipt_refs = 3;
+}

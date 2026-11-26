@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package hobo.draft.exp_proofs.vibe_dashboard_freshness_rbac_fixtures.v1;
+
+message DashboardFreshnessRbacFixtureProof {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated DashboardReadStateFixture fixtures = 6;
+  repeated string scope_out = 7;
+  repeated string proof_mode_labels = 8;
+  repeated DashboardFixtureCoveragePath coverage_paths = 9;
+  repeated string accessibility_notes = 10;
+}
+
+message DashboardFixtureCoveragePath {
+  string id = 1;
+  repeated string fixture_ids = 2;
+  string accessibility_note = 3;
+  repeated string proof_mode_labels = 4;
+  string safe_outcome = 5;
+}
+
+message DashboardReadStateFixture {
+  string state = 1;
+  string fixture_id = 2;
+  string projection_source = 3;
+  DashboardFixtureScope scope = 4;
+  DashboardFixtureOwner owner = 5;
+  string evidence_link = 6;
+  string customer_safe_wording = 7;
+  string next_action = 8;
+  string proof_mode = 9;
+  string correlation_id = 10;
+  string status = 11;
+  DashboardFixtureFreshness freshness = 12;
+  DashboardFixtureRedaction redaction = 13;
+}
+
+message DashboardFixtureScope {
+  bool tenant_first = 1;
+  string tenant = 2;
+  string project = 3;
+  string environment = 4;
+  string rbac_role = 5;
+  string redaction_state = 6;
+}
+
+message DashboardFixtureOwner {
+  string actor = 1;
+  string initiative = 2;
+}
+
+message DashboardFixtureFreshness {
+  uint64 projection_sequence = 1;
+  uint32 max_age_seconds = 2;
+  string observed_at = 3;
+}
+
+message DashboardFixtureRedaction {
+  repeated string visible_fields = 1;
+  repeated string withheld_fields = 2;
+}

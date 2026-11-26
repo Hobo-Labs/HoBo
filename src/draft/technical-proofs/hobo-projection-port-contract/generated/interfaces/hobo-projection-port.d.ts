@@ -1,0 +1,15 @@
+/** @module Interface hobo:projection/port@0.1.0 **/
+export function declareProjection(spec: ProjectionSpec): ProjectionDeclared;
+export function materialize(name: string): ProjectionReadResult;
+export function rebuild(name: string): ProjectionReadResult;
+export function read(query: ProjectionQuery): ProjectionReadResult;
+export function readRaw(call: RawDriverCall): ProjectionReadResult;
+export function reportLag(event: ProjectionLagged): void;
+export function sinkRebound(event: ProjectionSinkRebound): void;
+export type ProjectionDeclared = import('./hobo-projection-types.js').ProjectionDeclared;
+export type ProjectionLagged = import('./hobo-projection-types.js').ProjectionLagged;
+export type ProjectionQuery = import('./hobo-projection-types.js').ProjectionQuery;
+export type ProjectionReadResult = import('./hobo-projection-types.js').ProjectionReadResult;
+export type ProjectionSinkRebound = import('./hobo-projection-types.js').ProjectionSinkRebound;
+export type ProjectionSpec = import('./hobo-projection-types.js').ProjectionSpec;
+export type RawDriverCall = import('./hobo-projection-types.js').RawDriverCall;

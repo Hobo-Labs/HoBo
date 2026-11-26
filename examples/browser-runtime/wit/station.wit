@@ -1,0 +1,18 @@
+package hobo:try@0.1.0;
+
+world browser-station {
+  record invoke-request {
+    example-id: string,
+    station-id: string,
+    method: string,
+    path: string,
+    body-json: string,
+  }
+
+  record invoke-response {
+    status: u32,
+    body-json: string,
+  }
+
+  export invoke: func(request: invoke-request) -> invoke-response;
+}

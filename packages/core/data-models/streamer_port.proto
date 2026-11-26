@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+enum StreamerRunStatus {
+  STREAMER_RUN_STATUS_UNSPECIFIED = 0;
+  STREAMER_RUN_STATUS_COMPLETED = 1;
+  STREAMER_RUN_STATUS_CLOSED = 2;
+  STREAMER_RUN_STATUS_FAILED = 3;
+}
+
+message StreamerFrame {
+  string run_id = 1;
+  int64 seq = 2;
+  string stream = 3;
+  bytes chunk = 4;
+}
+
+message StreamerRunResult {
+  string run_id = 1;
+  StreamerRunStatus status = 2;
+  string reason = 3;
+}

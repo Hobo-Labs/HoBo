@@ -1,0 +1,109 @@
+package hobo:projection@0.1.0;
+
+interface types {
+  enum sink-paradigm {
+    native,
+    relational,
+    document,
+    kv,
+    wide-column,
+    graph,
+    vector,
+    object-lake,
+    olap,
+  }
+
+  enum reactivity-class {
+    reactive,
+    non-reactive,
+  }
+
+  enum consistency-level {
+    strong,
+    bounded-staleness,
+    session,
+    consistent-prefix,
+    eventual,
+  }
+
+  record projection-sink {
+    %type: string,
+    paradigm: sink-paradigm,
+    reactive: bool,
+  }
+
+  record projection-spec {
+    name: string,
+    read-model: string,
+    read-set: list<string>,
+    fold: string,
+    reactivity: reactivity-class,
+    consistency: consistency-level,
+    sink: projection-sink,
+  }
+
+  record projection-query {
+    projection: string,
+    predicate: option<string>,
+    limit: option<u32>,
+  }
+
+  record raw-driver-call {
+    projection: string,
+    driver: string,
+    call: string,
+  }
+
+  record projection-read-result {
+    projection: string,
+    seq: u64,
+    encoded-json: string,
+  }
+
+  record projection-declared {
+    name: string,
+    read-model: string,
+    read-set: list<string>,
+    reactivity: reactivity-class,
+    consistency: consistency-level,
+    sink: projection-sink,
+  }
+
+  record projection-lagged {
+    name: string,
+    observed-lag-ms: u64,
+    bound-ms: u64,
+    policy-input: bool,
+  }
+
+  record projection-sink-rebound {
+    name: string,
+    match-decision-id: string,
+    %from: projection-sink,
+    %to: projection-sink,
+  }
+}
+
+interface port {
+  use types.{
+    projection-declared,
+    projection-lagged,
+    projection-query,
+    projection-read-result,
+    projection-sink-rebound,
+    projection-spec,
+    raw-driver-call,
+  };
+
+  declare-projection: func(spec: projection-spec) -> projection-declared;
+  materialize: func(name: string) -> projection-read-result;
+  rebuild: func(name: string) -> projection-read-result;
+  read: func(query: projection-query) -> projection-read-result;
+  read-raw: func(call: raw-driver-call) -> projection-read-result;
+  report-lag: func(event: projection-lagged);
+  sink-rebound: func(event: projection-sink-rebound);
+}
+
+world projection {
+  export port;
+}

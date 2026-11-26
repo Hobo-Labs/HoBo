@@ -1,0 +1,70 @@
+{
+	"consumer": {
+		"name": "@hobo/hobo-ci"
+	},
+	"provider": {
+		"name": "github-rest-api"
+	},
+	"interactions": [
+		{
+			"description": "the manifest code converts once into the App's credentials",
+			"providerState": "a manifest code GitHub issued for a user-owned App",
+			"request": {
+				"method": "POST",
+				"path": "/app-manifests/one-time-code/conversions",
+				"headers": { "accept": "application/vnd.github+json" }
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"id": 777,
+					"slug": "hobo-ci-test",
+					"owner": { "id": 4242, "type": "User" },
+					"external_url": "https://ci.hobo.example",
+					"pem": "<the App's private key, generated per run>",
+					"webhook_secret": "whsec-test",
+					"client_id": "Iv1.test",
+					"client_secret": "client-secret-test"
+				}
+			}
+		},
+		{
+			"description": "the App, read with its own key, matches the conversion",
+			"providerState": "the converted App",
+			"request": {
+				"method": "GET",
+				"path": "/app",
+				"headers": { "accept": "application/vnd.github+json" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": 777,
+					"slug": "hobo-ci-test",
+					"owner": { "id": 4242, "type": "User" },
+					"external_url": "https://ci.hobo.example"
+				}
+			}
+		},
+		{
+			"description": "the App's webhook goes to the reviewed relay URL",
+			"providerState": "the converted App",
+			"request": {
+				"method": "GET",
+				"path": "/app/hook/config",
+				"headers": { "accept": "application/vnd.github+json" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"url": "https://ci.hobo.example/github/webhooks",
+					"content_type": "json",
+					"insecure_ssl": "0"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" }
+	}
+}

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for HOBO-603 spike findings.
+
+message ComponentizeDeterminismFinding {
+  string componentize_js_version = 1;
+  string inputs_digest = 2;
+  string component_digest = 3;
+  bool smoke_stable = 4;
+  bool bytes_stable = 5;
+}
+
+message ComponentizeStageGateDecision {
+  bool require_inputs_digest = 1;
+  bool require_smoke_equivalence = 2;
+  bool require_oci_manifest_determinism = 3;
+  bool require_wasm_tools_validate = 4;
+  bool require_byte_identical_wasm = 5;
+}

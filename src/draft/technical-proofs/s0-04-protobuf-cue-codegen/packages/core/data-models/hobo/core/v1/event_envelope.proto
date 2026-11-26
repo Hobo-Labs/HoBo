@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+message EventEnvelope {
+  string id = 1;
+  string type = 2;
+  uint32 v = 3;
+  string stream_id = 4;
+  uint64 seq = 5;
+  string ts = 6;
+  string tenant = 7;
+  string correlation_id = 8;
+  string causation_id = 9;
+}

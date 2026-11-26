@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboAuthAuthoringSurfaceConsumer"
+  },
+  "provider": {
+    "name": "HoboAuthAuthoringSurfaceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Auth Authoring Surface boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-auth-authoring-surface/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_auth_authoring_surface/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

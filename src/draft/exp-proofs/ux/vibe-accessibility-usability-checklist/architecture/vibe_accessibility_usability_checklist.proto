@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package hobo.draft.vibe.accessibility.v1;
+
+message VibeAccessibilityChecklist {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated AccessibilityQuickstartFixtureReference quickstart_fixture_refs = 10;
+  repeated AccessibilityCheck checks = 6;
+  repeated SurfaceChecklistEntry surface_checklist = 7;
+  repeated ChecklistScenario scenarios = 8;
+  repeated string scope_out = 9;
+}
+
+message AccessibilityCheck {
+  string id = 1;
+  string label = 2;
+  string evidence_mode = 3;
+  string proves = 4;
+}
+
+message SurfaceChecklistEntry {
+  string surface = 1;
+  string owner = 2;
+  string evidence_mode = 3;
+  repeated string required_checks = 4;
+  string launch_severity = 5;
+  string accepted_risk_route = 6;
+  repeated string proof_modes = 7;
+}
+
+message AccessibilityQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  string consuming_surface = 4;
+  string accessibility_use = 5;
+}
+
+message ChecklistScenario {
+  string id = 1;
+  repeated string surface_refs = 2;
+  repeated string required_evidence = 3;
+  string safe_outcome = 4;
+}

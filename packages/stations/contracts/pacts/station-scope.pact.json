@@ -1,0 +1,35 @@
+{
+	"consumer": {
+		"name": "@hobo/stations"
+	},
+	"provider": {
+		"name": "station-local-store"
+	},
+	"interactions": [
+		{
+			"description": "station init creates sealed bootstrap rail and open station",
+			"request": {
+				"method": "POST",
+				"path": "/stations/init",
+				"body": {
+					"name": "local",
+					"tenant": "local",
+					"dataDir": "/tmp/hobo-station"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "station",
+					"status": "open",
+					"bootstrapActive": true
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

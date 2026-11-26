@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package hobo.conformance.anonymous.v1;
+
+// The anonymous/claimable conformance dimension: what a suite decided about a
+// product's bootstrap, claim, binding, and migration behavior, and the signed
+// evidence artifact a live run emits from it.
+//
+// Runtime TypeScript types are parse-don't-validate derivations of these
+// shapes; these records are the wire form.
+
+message AnonymousSuiteDescriptorRecord {
+  string suite_id = 1;
+  string dimension = 2;
+  repeated string checks = 3;
+  repeated string case_ids = 4;
+}
+
+message AnonymousCaseRecord {
+  string id = 1;
+  string check = 2;
+  string title = 3;
+  // Request and expectation are suite-specific; carried as canonical JSON so
+  // the case table stays pure data across languages.
+  bytes request_json = 4;
+  bytes expectation_json = 5;
+}
+
+message AnonymousCaseResultRecord {
+  string case_id = 1;
+  string check = 2;
+  // "pass" | "fail" | "unknown". Never widened.
+  string outcome = 3;
+  string detail = 4;
+  string failure_code = 5;
+}
+
+message AnonymousCheckOutcomeRecord {
+  string check = 1;
+  string outcome = 2;
+}
+
+message AnonymousConformanceReportRecord {
+  string schema = 1;
+  string suite_id = 2;
+  string dimension = 3;
+  string subject_id = 4;
+  repeated AnonymousCaseResultRecord cases = 5;
+  repeated AnonymousCheckOutcomeRecord checks = 6;
+  bool ok = 7;
+}
+
+message LiveRunGrantRecord {
+  string provider_id = 1;
+  // Redacted locator only. The reference path is never recorded in full.
+  string redacted_credential_ref = 2;
+  uint32 maximum_resources = 3;
+  string provider_docs_checked_at = 4;
+  string run_tag = 5;
+}
+
+message LiveResourceHandleRecord {
+  string id = 1;
+  string kind = 2;
+  string run_tag = 3;
+}
+
+message LiveCleanupOutcomeRecord {
+  repeated string attempted = 1;
+  repeated string destroyed = 2;
+  repeated string leaked = 3;
+  string detail = 4;
+}
+
+message EvidenceProvenanceRecord {
+  string adapter_version = 1;
+  string product_definition_digest = 2;
+  string provider_docs_checked_at = 3;
+  string run_tag = 4;
+  string signer_id = 5;
+  repeated string suite_ids = 6;
+}
+
+// The subset of hobo.trust-evidence/v1 an artifact carries. @hobo/trust owns
+// the canonical record; this mirrors it for the wire form of the artifact.
+message TrustEvidenceSummaryRecord {
+  string schema_version = 1;
+  string provider_id = 2;
+  string product_definition_id = 3;
+  string adapter_version = 4;
+  string provider_class = 5;
+  int64 tested_at = 6;
+  int64 expires_at = 7;
+  repeated AnonymousCheckOutcomeRecord checks = 8;
+  string creator_authority_after_claim = 9;
+  uint32 claim_action_count = 10;
+  string evidence_digest = 11;
+  string signature = 12;
+}
+
+message AnonymousTrustEvidenceArtifactRecord {
+  string schema = 1;
+  EvidenceProvenanceRecord provenance = 2;
+  TrustEvidenceSummaryRecord evidence = 3;
+  string artifact_digest = 4;
+  string signature = 5;
+}
+
+message LiveConformanceResultRecord {
+  string schema = 1;
+  LiveRunGrantRecord grant = 2;
+  string run_tag = 3;
+  repeated AnonymousConformanceReportRecord reports = 4;
+  LiveCleanupOutcomeRecord cleanup = 5;
+  AnonymousTrustEvidenceArtifactRecord artifact = 6;
+}

@@ -1,0 +1,3 @@
+slug: admin-console-scope
+layer: exp
+proof-identity: ok

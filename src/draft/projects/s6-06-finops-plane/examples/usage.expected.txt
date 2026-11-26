@@ -1,0 +1,12 @@
+scenario: nfr-012-plan-vs-actual (3 metering events)
+acceptance planEstimateWithinTolerance: true
+acceptance budgetBreachBlocksDeploy: true
+acceptance showbackReconciled: true
+acceptance deployAllowedUnderBudget: true
+plan vs actual: projected=$88.05 actual=$84 withinTolerance=true
+uncovered region rejected: eu-west-1 missing from cost.json coverage
+showback reconciled=true showbackTotal=$84 meteringTotal=$84
+gate under budget: effect=allow blocksDeploy=false
+gate over hard limit: effect=deny violation="camp-budget:tenant-a/camp-prod: projected spend 205 exceeds hard budget 200"
+gate agent soft cap: effect=require-approval requiresApproval=true
+CONTRACT HELD: finops estimates within tolerance, reconciles showback, and gates deploys on budget

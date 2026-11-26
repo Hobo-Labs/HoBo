@@ -1,0 +1,8 @@
+scim mapping: roles=org-admin source=hobo:auth/scim
+authorize role/bind: allow
+custom role: audit/read=allow policy-pack/approve=deny reason=no-bound-role-grants-action
+nfr: cacheTtlMs=300000 revocationBoundMs=30000
+before revocation: policy-pack/approve=allow
+after revocation (ttl not expired): cacheHit=false roles=[] decision=deny reason=unbound-principal
+revocation evidence: sequence=scim-revocation:42
+CONTRACT HELD: scim->role resolution, grant-scoped authorize, revocation beats TTL

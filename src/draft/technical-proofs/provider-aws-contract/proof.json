@@ -1,0 +1,25 @@
+{
+  "layer": "technical",
+  "slug": "provider-aws-contract",
+  "title": "HOBO-153 AWS Provider Contract POC",
+  "linear": "HOBO-153",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-realize-emission-contract",
+      "src/draft/technical-proofs/provider-capability-conformance-suites"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/control-plane.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

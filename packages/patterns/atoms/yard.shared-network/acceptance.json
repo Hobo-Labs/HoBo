@@ -1,0 +1,7 @@
+{
+	"params": { "name": "shop" },
+	"expectFiles": ["src/yard.ts"],
+	"expectContains": {
+		"src/yard.ts": ["\"shared\"", "camp(\"web\")"]
+	}
+}

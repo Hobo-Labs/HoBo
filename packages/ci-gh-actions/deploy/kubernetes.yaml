@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hobo-ci-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hobo-ci
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: hobo-ci}
+  template:
+    metadata:
+      labels: {app: hobo-ci}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: relay
+          image: hobo-ci-relay:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8787}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          env:
+            - {name: HOBO_CI_HOST, value: 0.0.0.0}
+            - {name: HOBO_CI_PORT, value: "8787"}
+            - {name: HOBO_CI_DB, value: /var/lib/hobo-ci/relay.sqlite}
+            - {name: HOBO_CI_CONFIG, value: /etc/hobo-ci/config.json}
+            - name: HOBO_CI_PUBLIC_URL
+              valueFrom:
+                configMapKeyRef: {name: hobo-ci-config, key: public-url}
+            - name: HOBO_CI_GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef: {name: hobo-ci-secrets, key: app-id}
+            - {name: HOBO_CI_GITHUB_APP_KEY_FILE, value: /run/secrets/github-app-key.pem}
+            - {name: HOBO_CI_WEBHOOK_SECRET_FILE, value: /run/secrets/webhook-secret}
+            - {name: HOBO_CI_CONTROL_TOKENS_FILE, value: /run/secrets/control-tokens.json}
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 15
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/hobo-ci}
+            - {name: config, mountPath: /etc/hobo-ci, readOnly: true}
+            - {name: secrets, mountPath: /run/secrets, readOnly: true}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: hobo-ci-data}
+        - name: config
+          configMap:
+            name: hobo-ci-config
+            items:
+              - {key: config.json, path: config.json}
+        - name: secrets
+          secret:
+            secretName: hobo-ci-secrets
+            defaultMode: 288 # 0440, written in decimal for YAML 1.1/1.2 parity.
+            items:
+              - {key: private-key.pem, path: github-app-key.pem}
+              - {key: webhook-secret, path: webhook-secret}
+              - {key: control-tokens.json, path: control-tokens.json}
+        - name: temporary
+          emptyDir: {medium: Memory, sizeLimit: 16Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hobo-ci
+spec:
+  type: ClusterIP
+  selector: {app: hobo-ci}
+  ports:
+    - {name: http, port: 8787, targetPort: http}

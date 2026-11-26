@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.draft.release_notes_private_beta;
+
+enum PrivateBetaEvidenceStatus {
+  EVIDENCE_STATUS_UNSPECIFIED = 0;
+  EVIDENCE_STATUS_ACCEPTED = 1;
+  EVIDENCE_STATUS_ACCEPTED_SUBSTITUTE = 2;
+  EVIDENCE_STATUS_MISSING = 3;
+}
+
+message RequiredPrivateBetaEvidence {
+  string id = 1;
+  PrivateBetaEvidenceStatus status = 2;
+  string owning_project = 3;
+  repeated string proof_source = 4;
+  repeated string feeds = 5;
+}
+
+message RecordedBlocker {
+  string id = 1;
+  string status = 2;
+  string owner = 3;
+  string summary = 4;
+}
+
+message AcceptedRisk {
+  string id = 1;
+  string owner = 2;
+  string mitigation = 3;
+  string revisit_gate = 4;
+}
+
+message ReleaseCutlineDependency {
+  string project = 1;
+  string issue_or_record = 2;
+  string cutline_role = 3;
+}
+
+message ReleaseNotesPrivateBetaEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone_gate = 4;
+  repeated RequiredPrivateBetaEvidence required_evidence = 5;
+  repeated RecordedBlocker blockers = 6;
+  repeated AcceptedRisk accepted_risks = 7;
+  repeated ReleaseCutlineDependency release_cutline_dependencies = 8;
+  string parent_initiative = 9;
+  bool gate_changes_launch_risk = 10;
+  string status_update_evidence = 11;
+}

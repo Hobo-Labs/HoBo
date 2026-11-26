@@ -1,0 +1,383 @@
+import { readFile } from "node:fs/promises";
+import * as Credentials from "@alchemy.run/aws/Credentials";
+import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
+import * as Endpoint from "@alchemy.run/aws/Endpoint";
+import { AWSEnvironment } from "@alchemy.run/aws/Environment";
+import { Bucket, BucketProvider } from "@alchemy.run/aws/S3";
+import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
+import { Queue, QueueProvider } from "@alchemy.run/aws/SQS";
+import { NodeHttpClient } from "@effect/platform-node";
+import { awsPlugin, getAwsStore } from "@emulators/aws";
+import { createServer } from "@emulators/core";
+import * as Provider from "alchemy/Provider";
+import { noopSession } from "alchemy/Report";
+import { ResourceContext } from "alchemy/ResourceContext";
+import { Stack } from "alchemy/Stack";
+import { StackContext } from "alchemy/StackContext";
+import { Stage } from "alchemy/Stage";
+import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import { describe, expect, it } from "vitest";
+import { bindle } from "../../../bindles/src/bindle.js";
+import { awsBindleMappers } from "../src/aws.js";
+import { mapBindleToAlchemy } from "../src/bindle.js";
+
+const credentials = {
+	accessKeyId: Redacted.make("local"),
+	secretAccessKey: Redacted.make("local"),
+};
+
+async function mappedResources() {
+	// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
+	const mapped = await Effect.runPromise(
+		mapBindleToAlchemy(
+			bindle("shop", (b) => ({
+				objects: b.bucket(),
+				sessions: b.kv(),
+				jobs: b.queue(),
+				events: b.topic(),
+			})),
+			awsBindleMappers(),
+			{ assessRequirements: () => ({ status: "supported" as const }) },
+		).pipe(
+			Effect.provideService(StackContext, {
+				name: "shop",
+				stage: "test",
+				resources: {},
+				bindings: {},
+				actions: {},
+			}),
+		) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+	);
+	const bucket = mapped.primary.objects;
+	if (!bucket || bucket.Type !== Bucket.Type)
+		throw new Error("bucket mapping missing");
+	const queue = mapped.primary.jobs;
+	if (!queue || queue.Type !== Queue.Type)
+		throw new Error("queue mapping missing");
+	const topic = mapped.primary.events;
+	if (!topic || topic.Type !== Topic.Type)
+		throw new Error("topic mapping missing");
+	const table = mapped.primary.sessions;
+	if (!table || table.Type !== Table.Type)
+		throw new Error("key-value table mapping missing");
+	return { bucket, queue, topic, table };
+}
+
+function environment(
+	endpoint: string,
+	kind: "bucket" | "queue" | "topic" | "kv" = "bucket",
+) {
+	return Layer.mergeAll(
+		Endpoint.of(endpoint),
+		Credentials.fromCredentials(credentials, "us-east-1"),
+		Layer.succeed(
+			AWSEnvironment,
+			Effect.succeed({
+				accountId: "000000000000",
+				region: "us-east-1",
+				credentials: Effect.succeed({
+					...credentials,
+					region: "us-east-1",
+					sessionToken: undefined,
+				}),
+			}),
+		),
+		Layer.succeed(Stack, {
+			name: "shop",
+			stage: "test",
+			resources: {},
+			bindings: {},
+			actions: {},
+		}),
+		Layer.succeed(Stage, "test"),
+		Layer.succeed(ResourceContext, {
+			logicalId:
+				kind === "bucket"
+					? "objects"
+					: kind === "queue"
+						? "jobs"
+						: kind === "topic"
+							? "events"
+							: "sessions",
+			fqn:
+				kind === "bucket"
+					? "objects"
+					: kind === "queue"
+						? "jobs"
+						: kind === "topic"
+							? "events"
+							: "sessions",
+			instanceId: "12345678901234567890123456789012",
+			type:
+				kind === "bucket"
+					? Bucket.Type
+					: kind === "queue"
+						? Queue.Type
+						: kind === "topic"
+							? Topic.Type
+							: Table.Type,
+		}),
+	);
+}
+
+async function precreate(
+	bucket: Awaited<ReturnType<typeof mappedResources>>["bucket"],
+	layer: Layer.Layer<never, never, never>,
+) {
+	// SAFETY: the fixture supplies all services used by the selected provider lifecycle operation.
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const provider = yield* Provider.Provider<Bucket>(Bucket.Type);
+			if (!provider.precreate)
+				throw new Error("bucket provider has no precreate");
+			return yield* provider.precreate({
+				id: bucket.LogicalId,
+				fqn: bucket.FQN,
+				instanceId: "12345678901234567890123456789012",
+				session: noopSession,
+				bindings: [],
+				news: bucket.Props,
+			});
+		}).pipe(
+			Effect.provide(BucketProvider()),
+			Effect.provide(layer),
+		) as Effect.Effect<Bucket["Attributes"], Provider.ProviderError, never>,
+	);
+}
+
+async function precreateQueue(
+	queue: Awaited<ReturnType<typeof mappedResources>>["queue"],
+	layer: Layer.Layer<never, never, never>,
+) {
+	// SAFETY: the fixture supplies all services used by the selected provider lifecycle operation.
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const provider = yield* Provider.Provider<Queue>(Queue.Type);
+			if (!provider.precreate)
+				throw new Error("queue provider has no precreate");
+			return yield* provider.precreate({
+				id: queue.LogicalId,
+				fqn: queue.FQN,
+				instanceId: "12345678901234567890123456789012",
+				session: noopSession,
+				bindings: [],
+				news: queue.Props,
+			});
+		}).pipe(
+			Effect.provide(QueueProvider()),
+			Effect.provide(layer),
+		) as Effect.Effect<Queue["Attributes"], Provider.ProviderError, never>,
+	);
+}
+
+async function reconcileTopic(
+	topic: Awaited<ReturnType<typeof mappedResources>>["topic"],
+	layer: Layer.Layer<never, never, never>,
+) {
+	// SAFETY: the fixture supplies all services used by the selected provider lifecycle operation.
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const provider = yield* Provider.Provider<Topic>(Topic.Type);
+			return yield* provider.reconcile({
+				id: topic.LogicalId,
+				fqn: topic.FQN,
+				instanceId: "12345678901234567890123456789012",
+				session: noopSession,
+				bindings: [],
+				news: topic.Props,
+				olds: undefined,
+				output: undefined,
+			});
+		}).pipe(
+			Effect.provide(TopicProvider()),
+			Effect.provide(layer),
+		) as Effect.Effect<Topic["Attributes"], Provider.ProviderError, never>,
+	);
+}
+
+async function reconcileTable(
+	table: Awaited<ReturnType<typeof mappedResources>>["table"],
+	layer: Layer.Layer<never, never, never>,
+) {
+	// SAFETY: the fixture supplies all services used by the selected provider lifecycle operation.
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const provider = yield* Provider.Provider<Table>(Table.Type);
+			return yield* provider.reconcile({
+				id: table.LogicalId,
+				fqn: table.FQN,
+				instanceId: "12345678901234567890123456789012",
+				session: noopSession,
+				bindings: [],
+				news: table.Props,
+				olds: undefined,
+				output: undefined,
+			});
+		}).pipe(
+			Effect.provide(TableProvider()),
+			Effect.provide(layer),
+		) as Effect.Effect<Table["Attributes"], Provider.ProviderError, never>,
+	);
+}
+
+describe("mapped Alchemy AWS resources in emulators", () => {
+	it("precreates the mapped S3 bucket through Vercel Labs AWS emulator", async () => {
+		const { app, store } = createServer(awsPlugin, {
+			baseUrl: "http://localhost:4566",
+		});
+		const layer = Layer.mergeAll(
+			environment("http://localhost:4566"),
+			FetchHttpClient.layer,
+			Layer.succeed(FetchHttpClient.Fetch, (url, init) =>
+				app.fetch(new Request(url, init)),
+			),
+		);
+		const { bucket } = await mappedResources();
+		const first = await precreate(bucket, layer);
+		const second = await precreate(bucket, layer);
+		expect(second.bucketName).toBe(first.bucketName);
+		expect(
+			getAwsStore(store)
+				.s3Buckets.all()
+				.map((entry) => entry.bucket_name),
+		).toEqual([first.bucketName]);
+	});
+
+	it("reports the unsupported queue tag check after the emulator creates the queue", async () => {
+		const { app, store } = createServer(awsPlugin, {
+			baseUrl: "http://localhost:4566",
+		});
+		const layer = Layer.mergeAll(
+			environment("http://localhost:4566/sqs", "queue"),
+			FetchHttpClient.layer,
+			Layer.succeed(FetchHttpClient.Fetch, (url, init) =>
+				app.fetch(new Request(url, init)),
+			),
+		);
+		const { queue } = await mappedResources();
+		await expect(precreateQueue(queue, layer)).rejects.toMatchObject({
+			_tag: "UnknownAwsError",
+			operation: "ListQueueTags",
+		});
+		expect(
+			getAwsStore(store)
+				.sqsQueues.all()
+				.map((entry) => entry.queue_name),
+		).toEqual(["shop-jobs-test-ci2fm6eqci2fm6eq"]);
+	});
+
+	const official = process.env.HOBO_ALCHEMY_AWS_EMULATOR === "1" ? it : it.skip;
+	official(
+		"precreates the mapped S3 bucket through the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			) {
+				throw new Error("AWS Emulator endpoint must be HTTPS loopback");
+			}
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw new Error("AWS Emulator CA is required");
+			const ca = await readFile(caPath);
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca, servername: "localhost" },
+				}),
+			);
+			const { bucket } = await mappedResources();
+			const first = await precreate(bucket, layer);
+			const second = await precreate(bucket, layer);
+			expect(first.bucketArn).toBe(`arn:aws:s3:::${first.bucketName}`);
+			expect(second.bucketName).toBe(first.bucketName);
+		},
+	);
+	official(
+		"precreates the mapped SQS queue through the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			) {
+				throw new Error("AWS Emulator endpoint must be HTTPS loopback");
+			}
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw new Error("AWS Emulator CA is required");
+			const ca = await readFile(caPath);
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin, "queue"),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca, servername: "localhost" },
+				}),
+			);
+			const { queue } = await mappedResources();
+			const first = await precreateQueue(queue, layer);
+			const second = await precreateQueue(queue, layer);
+			expect(first.queueArn).toBe(
+				`arn:aws:sqs:us-east-1:000000000000:${first.queueName}`,
+			);
+			expect(second.queueName).toBe(first.queueName);
+		},
+	);
+	official(
+		"reconciles the mapped SNS topic through the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			) {
+				throw new Error("AWS Emulator endpoint must be HTTPS loopback");
+			}
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw new Error("AWS Emulator CA is required");
+			const ca = await readFile(caPath);
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin, "topic"),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca, servername: "localhost" },
+				}),
+			);
+			const { topic } = await mappedResources();
+			const first = await reconcileTopic(topic, layer);
+			const second = await reconcileTopic(topic, layer);
+			expect(first.topicArn).toBe(
+				`arn:aws:sns:us-east-1:000000000000:${first.topicName}`,
+			);
+			expect(second.topicArn).toBe(first.topicArn);
+		},
+	);
+	official(
+		"reconciles the mapped DynamoDB table through the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			)
+				throw new Error("AWS Emulator endpoint must be HTTPS loopback");
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw new Error("AWS Emulator CA is required");
+			const ca = await readFile(caPath);
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin, "kv"),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca, servername: "localhost" },
+				}),
+			);
+			const { table } = await mappedResources();
+			const result = await reconcileTable(table, layer);
+			expect(result.tableArn).toBe(
+				`arn:aws:dynamodb:us-east-1:000000000000:table/${result.tableName}`,
+			);
+			expect(result.partitionKey).toBe("pk");
+			expect(result.billingMode).toBe("PAY_PER_REQUEST");
+		},
+		30_000,
+	);
+});

@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the S2-03 cloud Yard shell draft package.
+// Documents gateway command ingress, append-only event records, and deployment
+// timeline projection shapes. Design-time artifact; not compiled at runtime.
+
+enum CloudYardShellEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_GATEWAY_COMMAND = 1;
+  EVIDENCE_KIND_DEPLOYMENT_EVENT = 2;
+  EVIDENCE_KIND_TIMELINE_PROJECTION = 3;
+}
+
+message DeployRequestedCommand {
+  string deployment_id = 1;
+  string bindle_ref = 2;
+  string camp = 3;
+  string yard = 4;
+  string principal = 5;
+}
+
+message DeploymentTimelineEntry {
+  string deployment_id = 1;
+  string phase = 2;
+  string occurred_at = 3;
+  int64 seq = 4;
+}
+
+message CloudYardShellRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string evidence = 3;
+}

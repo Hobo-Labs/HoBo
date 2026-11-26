@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "TrainingLoopConsumer"
+  },
+  "provider": {
+    "name": "AxTrainingEngineProvider"
+  },
+  "interactions": [
+    {
+      "description": "training loop requests an optimization run over recorded trajectories",
+      "request": {
+        "method": "POST",
+        "path": "/training-engine/optimize",
+        "body": {
+          "requestId": "optimize-request-1",
+          "contract": {
+            "ref": "contract://support/classification@1.0.0",
+            "method": "classifyTicket",
+            "allowedRegionId": "region-classifyTicket-body"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "candidate-optimize-request-1",
+          "engineId": "hobo.training-engine/built-in-opto@0.1.0",
+          "artifact": {
+            "engineId": "hobo.training-engine/built-in-opto@0.1.0",
+            "engineVersion": "22.0.9",
+            "methodRef": "classifyTicket"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

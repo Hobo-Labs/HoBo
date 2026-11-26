@@ -1,0 +1,10 @@
+{
+  "integration": "cf",
+  "status": "implemented",
+  "executionAvailable": false,
+  "targetSdk": "@cloudflare/ci",
+  "targetDocumentation": "https://github.com/cloudflare/ci",
+  "pendingGates": [
+    "An implemented adapter cannot advertise execution as unavailable."
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "McpServerHardeningContractConsumer"
+  },
+  "provider": {
+    "name": "McpServerHardeningContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Mcp Server Hardening Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/mcp-server-hardening-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.mcp_server_hardening_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

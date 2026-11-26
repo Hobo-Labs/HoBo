@@ -1,0 +1,201 @@
+{
+	"consumer": { "name": "hobo-recipe-compiler" },
+	"provider": { "name": "hobo-trust-gate" },
+	"interactions": [
+		{
+			"description": "clean, signed, fresh evidence is selectable",
+			"request": {
+				"method": "POST",
+				"path": "/trust/evaluate",
+				"body": {
+					"productDefinitionId": "cloudflare.workers/v1",
+					"evidence": "signed-fresh",
+					"requirement": "default",
+					"verifier": "trust-root"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"selectable": true,
+					"signatureOutcome": "valid",
+					"reasonCodes": [],
+					"verdictDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "absent evidence fails closed rather than ranking lower",
+			"request": {
+				"method": "POST",
+				"path": "/trust/evaluate",
+				"body": {
+					"productDefinitionId": "cloudflare.workers/v1",
+					"evidence": "absent",
+					"requirement": "default",
+					"verifier": "trust-root"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"selectable": false,
+					"signatureOutcome": "unknown",
+					"reasonCodes": ["EVIDENCE_ABSENT"],
+					"verdictDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "a compiler that wires no trust root gets the same answer as an unsigned record",
+			"request": {
+				"method": "POST",
+				"path": "/trust/evaluate",
+				"body": {
+					"productDefinitionId": "cloudflare.workers/v1",
+					"evidence": "signed-fresh",
+					"requirement": "default",
+					"verifier": "none"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"selectable": false,
+					"signatureOutcome": "unknown",
+					"reasonCodes": ["EVIDENCE_UNSIGNED"],
+					"verdictDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "expired evidence is stale even though every check passed",
+			"request": {
+				"method": "POST",
+				"path": "/trust/evaluate",
+				"body": {
+					"productDefinitionId": "cloudflare.workers/v1",
+					"evidence": "expired",
+					"requirement": "default",
+					"verifier": "trust-root"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"selectable": false,
+					"signatureOutcome": "valid",
+					"reasonCodes": ["EVIDENCE_STALE"],
+					"verdictDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "an unknown check outcome is a gate, not a pass",
+			"request": {
+				"method": "POST",
+				"path": "/trust/evaluate",
+				"body": {
+					"productDefinitionId": "cloudflare.workers/v1",
+					"evidence": "unknown-check",
+					"requirement": "default",
+					"verifier": "trust-root"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"selectable": false,
+					"signatureOutcome": "valid",
+					"reasonCodes": ["CONFORMANCE_FAILED"],
+					"verdictDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "one untrustworthy product sinks the whole solution bundle",
+			"request": {
+				"method": "POST",
+				"path": "/trust/bundle",
+				"body": {
+					"requirement": "default",
+					"verifier": "trust-root",
+					"subjects": [
+						{ "subjectId": "cloudflare.workers/v1", "evidence": "signed-fresh" },
+						{ "subjectId": "neon.claimable-postgres/v1", "evidence": "expired" }
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"selectable": false,
+					"subjects": [
+						{
+							"subjectId": "cloudflare.workers/v1",
+							"selectable": true,
+							"freshness": "fresh"
+						},
+						{
+							"subjectId": "neon.claimable-postgres/v1",
+							"selectable": false,
+							"freshness": "expired"
+						}
+					],
+					"reasons": [
+						{ "subjectId": "neon.claimable-postgres/v1", "code": "EVIDENCE_STALE" }
+					],
+					"bundleDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "an operator override that covers every recorded code authorizes manually and never automatically",
+			"request": {
+				"method": "POST",
+				"path": "/trust/override",
+				"body": {
+					"productDefinitionId": "neon.claimable-postgres/v1",
+					"evidence": "expired",
+					"requirement": "default",
+					"verifier": "trust-root",
+					"waivedCodes": ["EVIDENCE_STALE"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"selectable": false,
+					"manuallyAuthorized": true,
+					"active": true,
+					"unwaivedCodes": [],
+					"recordDigest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "an override that misses a recorded code authorizes nothing",
+			"request": {
+				"method": "POST",
+				"path": "/trust/override",
+				"body": {
+					"productDefinitionId": "neon.claimable-postgres/v1",
+					"evidence": "expired-experimental",
+					"requirement": "default",
+					"verifier": "trust-root",
+					"waivedCodes": ["EVIDENCE_STALE"]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"selectable": false,
+					"manuallyAuthorized": false,
+					"active": true,
+					"unwaivedCodes": ["PROVIDER_MATURITY_DENIED"],
+					"recordDigest": "sha256:*"
+				}
+			}
+		}
+	]
+}

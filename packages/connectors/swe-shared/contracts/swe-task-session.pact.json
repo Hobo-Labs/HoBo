@@ -1,0 +1,55 @@
+{
+	"consumer": { "name": "hobo-vendor-swe-adapter" },
+	"provider": { "name": "hobo-connector-swe-shared" },
+	"interactions": [
+		{
+			"description": "runSweTask executes one governed SWE task and projects audit facts into reports",
+			"request": {
+				"method": "runSweTask",
+				"input": {
+					"connector": "swe-vendor",
+					"task": {
+						"taskId": "task-1",
+						"instruction": "fix the failing test",
+						"workspace": "workspace:/repo"
+					}
+				}
+			},
+			"response": {
+				"report": {
+					"schema": "hobo.swe-task-report/v1",
+					"taskId": "task-1",
+					"completed": true
+				},
+				"sandboxReport": {
+					"schema": "hobo.sandbox-access-report/v1",
+					"clean": true
+				}
+			}
+		},
+		{
+			"description": "guardrail-gated action classes (deploy/destroy/token/admin) are refused by policy",
+			"request": {
+				"method": "runSweTask",
+				"input": {
+					"connector": "swe-vendor",
+					"task": {
+						"taskId": "task-2",
+						"instruction": "deploy to production",
+						"workspace": "workspace:/repo"
+					}
+				}
+			},
+			"response": {
+				"report": {
+					"schema": "hobo.swe-task-report/v1",
+					"refusals": ["deploy"]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" },
+		"evidence": "src/swe-task.ts (runSweTask + sweTaskPolicy)"
+	}
+}

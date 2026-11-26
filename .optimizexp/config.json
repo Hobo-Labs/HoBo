@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "global",
+  "label": "Repository-wide OptimizeXP",
+  "product": {
+    "name": "HoBo",
+    "summary": "Design-first meta-cloud: one application shape onto many infrastructure shapes (WIT/WASM membrane)."
+  },
+  "defaults": {
+    "experiences": [
+      "ux",
+      "dx",
+      "ax"
+    ],
+    "projects": "all",
+    "passes": "infinite",
+    "delight": true,
+    "survey": true,
+    "reportOnly": false,
+    "maxPersonas": 12,
+    "maxFeatures": 12,
+    "driver": "cli"
+  },
+  "personas": {
+    "requireSchemaVersion": 2,
+    "defaultPriority": 50,
+    "prefer": [
+      "product-app-developer",
+      "product-end-user",
+      "product-designer",
+      "product-coding-agent",
+      "product-agent-operator",
+      "product-platform-engineer"
+    ],
+    "exclude": []
+  },
+  "features": {
+    "defaultDriver": "cli",
+    "includeProjectFeatureGlobs": true,
+    "prefer": [],
+    "exclude": []
+  },
+  "evidence": {
+    "preferVideo": true,
+    "overwritePrimary": true,
+    "nativeCaptureEnv": "OPTIMIZEXP_NATIVE_CAPTURE"
+  },
+  "safety": {
+    "forbidLiveNetworkByDefault": true,
+    "allowLocalInstall": true
+  },
+  "projects": {
+    "include": [],
+    "exclude": []
+  },
+  "gitignore": {
+    "enabled": true,
+    "managed": true,
+    "ignore": {
+      "runs": true,
+      "busEntries": true,
+      "evidenceMedia": true,
+      "evidenceAll": false,
+      "initReport": false,
+      "osJunk": true
+    },
+    "extra": [
+      "features/**/evidence/**/REPLAY.html",
+      "features/**/evidence/**/REPLAY.md",
+      "features/**/evidence/**/terminal.txt"
+    ],
+    "negate": [
+      "features/**/evidence/**/primary.cast",
+      "runs/*/",
+      "runs/*/baseline.json",
+      "runs/*/feature-coverage.json",
+      "runs/*/iterations/",
+      "runs/*/iterations/*/",
+      "runs/*/iterations/*/experiments/",
+      "runs/*/iterations/*/experiments/*.json",
+      "runs/*/iterations/*/scores.json",
+      "runs/*/scope.json",
+      "runs/*/summary.md",
+      "runs/*/superseded.json"
+    ]
+  },
+  "notes": [
+    "Global config: monorepo defaults. CLI flags always win.",
+    "Project configs live under <project>/.optimizexp/config.json.",
+    "Bus, runs, and backlog stay in this global tree only.",
+    "gitignore: managed .gitignore ignores runs/, bus entries, large evidence media."
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "layer": "epic",
+  "slug": "stage-6-acceptance-gate",
+  "title": "Stage-6 Acceptance Gate Reference Implementation",
+  "linear": "HOBO-665",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/multi-region-dr-replay-contract",
+      "src/draft/technical-proofs/s6-09-operator-crew-yard-services-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/ux/full-dashboard-projection-views-contract"
+    ],
+    "designDocs": [
+      "docs/archive/requirements/requirements.md",
+      "docs/archive/roadmap.md",
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/proofs/hobo-665-stage-6-acceptance-gate/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

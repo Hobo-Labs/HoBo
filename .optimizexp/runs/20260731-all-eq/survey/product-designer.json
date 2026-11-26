@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "kind": "persona-survey",
+  "runId": "20260731-all-eq",
+  "persona": "product-designer",
+  "experiences": [
+    "ux",
+    "dx"
+  ],
+  "surfaces": [
+    "pnpm run design:lint"
+  ],
+  "featureIds": [
+    "design-system-contract"
+  ],
+  "polledAt": "2026-07-31T15:39:56.130Z",
+  "primaryPhaseStop": "metrics-zero",
+  "answers": [
+    {
+      "id": "q_excitement",
+      "prompt": "excitement",
+      "score": 4,
+      "text": "design:lint is the real DESIGN.md contract, not docs prose lint."
+    },
+    {
+      "id": "q_ease",
+      "prompt": "ease",
+      "score": 5,
+      "text": "Happy path is one command/exit 0."
+    },
+    {
+      "id": "q_optimal",
+      "prompt": "optimal",
+      "score": 4,
+      "text": "Surface design:lint in more agent first-paths (AGENTS.md already mentions)."
+    },
+    {
+      "id": "q_delight",
+      "prompt": "delight",
+      "text": "design:lint is the real DESIGN.md contract, not docs prose lint."
+    },
+    {
+      "id": "q_friction_feel",
+      "prompt": "friction",
+      "text": "None on happy path."
+    },
+    {
+      "id": "q_one_change",
+      "prompt": "one change",
+      "text": "Surface design:lint in more agent first-paths (AGENTS.md already mentions)."
+    },
+    {
+      "id": "q_never",
+      "prompt": "never",
+      "text": "Never auto-install key tools or send embeddings without consent."
+    },
+    {
+      "id": "q_recommend",
+      "prompt": "recommend",
+      "recommend": "yes",
+      "text": "Clear fail-closed designmd gate."
+    }
+  ],
+  "positive": {
+    "excitement": 4,
+    "easeOfUse": 5,
+    "perceivedOptimality": 4,
+    "total": 13,
+    "min": 4,
+    "gapTotal": 2,
+    "gapMax": 1
+  },
+  "cognitive": {
+    "featureSprawl": 0,
+    "visualClutter": 0,
+    "interactiveClutter": 0,
+    "choiceOverload": 0,
+    "informationDensity": 1,
+    "noveltyTax": 0,
+    "contextSwitchTax": 0,
+    "workingMemoryLoad": 0,
+    "interruptionFragility": 0,
+    "total": 1,
+    "max": 1,
+    "breaches": []
+  },
+  "featureRequests": [
+    {
+      "id": "fr-design-lint-agent-first-path",
+      "title": "Keep design:lint as primary in agent first paths",
+      "problem": "Agents historically bound docs:design-lint for DESIGN.md.",
+      "desiredOutcome": "AGENTS/docs and optimizexp bindings stay on design:lint.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change"
+      ],
+      "persona": "product-designer",
+      "featureIds": [
+        "design-system-contract"
+      ],
+      "surfaces": [
+        "pnpm run design:lint"
+      ],
+      "impactOn": {
+        "excitement": 0,
+        "easeOfUse": 0,
+        "perceivedOptimality": 1
+      },
+      "effortHint": "S",
+      "antiGoals": [],
+      "smallestExperiment": "Already rewired; document only if drift recurs."
+    }
+  ],
+  "evidenceRefs": [
+    ".optimizexp/features/design-system-contract/evidence/"
+  ]
+}

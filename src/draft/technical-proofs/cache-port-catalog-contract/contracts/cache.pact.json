@@ -1,0 +1,34 @@
+{
+  "consumer": { "name": "hobo-app" },
+  "provider": { "name": "hobo-cache" },
+  "interactions": [
+    {
+      "description": "get on a cold key returns MISS (never an error)",
+      "request": { "method": "GET", "path": "/cache/user:1" },
+      "response": { "status": 200, "body": { "outcome": "miss" } }
+    },
+    {
+      "description": "set then get returns HIT within TTL",
+      "request": {
+        "method": "PUT",
+        "path": "/cache/user:1",
+        "body": { "value": "Ada", "ttlSeconds": 10, "tags": ["user"] }
+      },
+      "response": { "status": 204 }
+    },
+    {
+      "description": "get after TTL expiry or eviction returns MISS; caller recomputes from the durable source",
+      "request": { "method": "GET", "path": "/cache/user:1", "headers": { "x-sim-clock": "11" } },
+      "response": { "status": 200, "body": { "outcome": "miss" } }
+    },
+    {
+      "description": "invalidate by tag drops matching entries",
+      "request": { "method": "POST", "path": "/cache/invalidate", "body": { "tag": "user" } },
+      "response": { "status": 204 }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "note": "Illustrative boundary evidence for the ADR-0118 hobo:cache contract; the cache is never a source of truth."
+  }
+}

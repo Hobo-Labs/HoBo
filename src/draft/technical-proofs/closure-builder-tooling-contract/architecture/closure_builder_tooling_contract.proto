@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.closurebuilder.tooling.v1;
+
+message ClosureBuilderToolingManifest {
+  string schema = 1;
+  string bindle_name = 2;
+  repeated ClosureBuilderToolingResource resources = 3;
+  repeated ClosureBuilderToolingRelationship relationships = 4;
+}
+
+message ClosureBuilderToolingResource {
+  string alias = 1;
+  string generated_id = 2;
+  string kind = 3;
+  string file_name = 4;
+  uint32 line = 5;
+}
+
+message ClosureBuilderToolingRelationship {
+  string from = 1;
+  string to = 2;
+  string verb = 3;
+}
+
+message ClosureBuilderToolingCoverage {
+  string status = 1;
+  repeated string observed_resource_ids = 2;
+  repeated ClosureBuilderToolingDiagnostic diagnostics = 3;
+}
+
+message ClosureBuilderToolingDiagnostic {
+  string code = 1;
+  string severity = 2;
+  string alias = 3;
+  string generated_id = 4;
+  string file_name = 5;
+  uint32 line = 6;
+  string message = 7;
+}
+
+message ClosureBuilderGeneratedAlias {
+  string alias = 1;
+  string generated_id = 2;
+  string kind = 3;
+}
+
+message ClosureBuilderToolingEvidenceEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string issue_id = 3;
+  ClosureBuilderToolingManifest manifest = 4;
+  ClosureBuilderToolingCoverage coverage = 5;
+  repeated ClosureBuilderGeneratedAlias generated_aliases = 6;
+}

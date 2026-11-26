@@ -1,0 +1,22 @@
+{
+  "layer": "epic",
+  "slug": "gated-live-fix-loop",
+  "title": "Gated Live-Fix Loop Reference Implementation",
+  "linear": "HOBO-654",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/live-fix-gated-candidate-contract",
+      "src/draft/technical-proofs/slo-gated-rollback-analysis-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

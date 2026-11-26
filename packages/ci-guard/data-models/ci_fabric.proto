@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package hobo.ci_fabric.v1;
+
+message PullRequestGate {
+  bool blocks_pull_request = 1;
+  repeated string required_checks = 2;
+}
+
+message OidcFederation {
+  string mode = 1;
+  string audience = 2;
+  string token_broker = 3;
+  bool forbids_stored_secrets = 4;
+  string allowed_trust_domain = 5;
+}
+
+message CloudRole {
+  string name = 1;
+  repeated string allowed_actions = 2;
+  string fixture = 3;
+}
+
+message TeardownPolicy {
+  bool always = 1;
+  bool orphan_sweeper_enabled = 2;
+  int32 orphan_sweeper_max_age_minutes = 3;
+  string orphan_sweeper_selector = 4;
+}
+
+message QuarantinePolicy {
+  string label = 1;
+  string lane = 2;
+  bool continue_on_error = 3;
+  bool blocks_pull_request = 4;
+}
+
+message E2eLane {
+  string name = 1;
+  string fixture = 2;
+  OidcFederation auth = 3;
+  TeardownPolicy teardown = 4;
+  QuarantinePolicy quarantine = 5;
+}
+
+message CiFabricContract {
+  string schema = 1;
+  PullRequestGate pull_request_gate = 2;
+  E2eLane e2e = 3;
+}
+
+message E2eLifecycleEvent {
+  string type = 1;
+  string fixture = 2;
+  string run_id = 3;
+  string live_url = 4;
+  string selector = 5;
+  int32 max_age_minutes = 6;
+  int64 recorded_at_ms = 7;
+}

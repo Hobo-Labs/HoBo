@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package hobo.dx.cli_mcp_parity.v1;
+
+message CliMcpOperation {
+  string id = 1;
+  string cli_synopsis = 2;
+  repeated string flags = 3;
+  string mcp_tool = 4;
+  string shared_call_path = 5;
+  McpInputSchema mcp_input_schema = 6;
+}
+
+message McpInputSchema {
+  string schema_id = 1;
+  repeated McpInputField fields = 2;
+}
+
+message McpInputField {
+  string name = 1;
+  string type = 2;
+  bool required = 3;
+  string maps_to_cli_flag = 4;
+  string purpose = 5;
+  repeated string enum_values = 6;
+}
+
+message ResultEnvelope {
+  string status = 1;
+  string code = 2;
+  string human_message = 3;
+  string remediation = 4;
+  string proof_mode = 5;
+  string fixture_id = 6;
+  string correlation_id = 7;
+  string redaction_class = 8;
+}
+
+message ProofFixture {
+  string case_name = 1;
+  string fixture_id = 2;
+  string cli_command = 3;
+  string mcp_tool = 4;
+  ResultEnvelope result = 5;
+}

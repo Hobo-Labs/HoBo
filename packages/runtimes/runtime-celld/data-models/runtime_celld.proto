@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package hobo.runtime_celld.v1;
+
+enum CelldIsolationClass {
+  CELLD_ISOLATION_CLASS_UNSPECIFIED = 0;
+  CELLD_ISOLATION_CLASS_TRUSTED = 1;
+}
+
+message CelldRuntimeConfig {
+  string camp_id = 1;
+  string tenant_id = 2;
+  string bucket_uri = 3;
+  string bucket_secret_ref = 4;
+  string advertise = 5;
+  string internal_listen = 6;
+  string overlay = 7;
+  bool operator_port_public = 8;
+  CelldIsolationClass isolation = 9;
+  string svid_binding_ref = 10;
+}
+
+message CelldDoctorReport {
+  bool overlay_required = 1;
+  bool overlay_present = 2;
+  bool operator_port_private = 3;
+  bool bucket_cas_probed = 4;
+  bool hostile_rejected = 5;
+  string fidelity = 6;
+  repeated string notes = 7;
+  repeated string remediation = 8;
+}

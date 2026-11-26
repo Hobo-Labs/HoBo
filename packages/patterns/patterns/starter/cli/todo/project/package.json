@@ -1,0 +1,13 @@
+{
+  "name": "{{name}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "hobo dev",
+    "test": "node --experimental-strip-types --test app.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

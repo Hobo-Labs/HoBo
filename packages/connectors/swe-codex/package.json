@@ -1,0 +1,29 @@
+{
+	"name": "@hobo/swe-codex",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/connector-acp": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/swe-shared": "workspace:*"
+	},
+	"description": "HoBo SWE agent adapter for Codex over ACP via the vendor's codex-acp bridge (Codex SDK): governed SWE-task sessions with brokered vendor auth, sandbox access report, golden-transcript replay lane and cred-gated live lane (HOBO-724)."
+}

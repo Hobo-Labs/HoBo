@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/bootstrap-launch-smoke-matrix-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

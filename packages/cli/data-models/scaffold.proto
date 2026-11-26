@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package hobo.cli.v1;
+
+message ScaffoldRequest {
+  string name = 1;
+  string template = 2;
+  bool force = 3;
+}
+
+message ScaffoldResult {
+  string project_dir = 1;
+  repeated string created_files = 2;
+  repeated string next_steps = 3;
+  bool offline = 4;
+}

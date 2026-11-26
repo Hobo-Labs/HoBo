@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RegionObjectiveRankingContractConsumer"
+  },
+  "provider": {
+    "name": "RegionObjectiveRankingContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Region Objective Ranking Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/region-objective-ranking-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.region_objective_ranking_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

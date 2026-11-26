@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package hobo.adapter_opensesame.v1;
+
+// One reference-only binding from a HoBo secret locator to the OpenSesame
+// connection that holds the real credential. It names where a credential
+// lives and how far a surrogate for it may reach; it never carries a token.
+// `hobo.credentials.json` is a list of these.
+message CredentialBinding {
+  string locator = 1; // hobo-token://vercel/deploy, the locator the resolvers ask for
+  string connection = 2; // conn://acme/vercel; its last segment is the provider
+  string provider = 3; // vercel (aws is refused: provider_not_brokered)
+  string env_name = 4; // the variable the child reads the surrogate from
+  repeated string paths = 5; // absolute path prefixes the surrogate may reach
+  repeated string methods = 6; // HTTP methods the surrogate may use
+  string projection = 7; // legacy-token: one Authorization header
+}
+
+// The bindings file, `hobo.credentials.json` at the repository root: references
+// only, never a credential.
+message CredentialBindings {
+  repeated CredentialBinding bindings = 1;
+}
+
+// How one `opensesame dev --agent run` ended, as the adapter reads it. A
+// notice is one fixed sentence chosen by the kind (empty for a child's own
+// exit): no line of output, OpenSesame's or the child's, is ever copied into it.
+message ProxiedRunOutcome {
+  string kind = 1; // child_exit | tripwire | signalled | placeholders_only | scope_unbounded | schema_refused | plugin_pin_mismatch | store_unreadable | bridge_missing
+  int32 exit_code = 2; // the status the run ended with
+  string notice = 3; // a fixed sentence per kind, never a line of output
+}
+
+// What a run leaves behind about a surrogate without naming one: digests of
+// the connection and of the declared scope, so a receipt can say which grant
+// a run held without holding anything that redeems.
+message SurrogateEvidence {
+  string locator = 1;
+  string provider = 2;
+  string connection_digest = 3; // sha256 of the connection reference
+  string scope_digest = 4; // sha256 of the canonical paths and methods
+}

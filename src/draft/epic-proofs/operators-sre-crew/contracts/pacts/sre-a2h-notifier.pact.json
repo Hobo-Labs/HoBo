@@ -1,0 +1,41 @@
+{
+  "consumer": { "name": "SRE operator" },
+  "provider": { "name": "notify receiver" },
+  "interactions": [
+    {
+      "description": "notify-on-call-approval",
+      "providerStates": [{ "name": "on-call receiver is configured" }],
+      "request": {
+        "method": "POST",
+        "path": "/notify/on-call",
+        "body": {
+          "incidentId": "inc-crew-002",
+          "decisionRequired": "approve-dual-publish-shim",
+          "deadlineMinutes": 15
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": { "notificationId": "notify-001", "accepted": true }
+      }
+    },
+    {
+      "description": "notify-runaway-escalation",
+      "providerStates": [{ "name": "runaway remediation circuit opened" }],
+      "request": {
+        "method": "POST",
+        "path": "/notify/on-call",
+        "body": {
+          "incidentId": "inc-crew-003",
+          "decisionRequired": "review-runaway-remediation",
+          "deadlineMinutes": 5
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": { "notificationId": "notify-002", "accepted": true }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

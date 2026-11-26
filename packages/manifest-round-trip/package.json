@@ -1,0 +1,33 @@
+{
+	"name": "@hobo/manifest-round-trip",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "Cross-manifest round-trip proof: every shape decomposed into @hobo/manifest-* is checked against the package it came from and against the fixtures both are pinned by, so a decomposition that quietly loses a field fails here rather than in production.",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@hobo/manifest-capability": "workspace:*",
+		"@hobo/manifest-request": "workspace:*",
+		"@hobo/manifest-declaration": "workspace:*",
+		"@hobo/manifest-plan": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/capability-profiles": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

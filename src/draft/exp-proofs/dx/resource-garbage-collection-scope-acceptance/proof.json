@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "resource-garbage-collection-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Resource Garbage Collection Scope Acceptance",
+  "linear": "HOBO-443",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/resource-garbage-collection.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

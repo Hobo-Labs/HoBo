@@ -1,0 +1,1 @@
+{"steps":[{"key":"github","minutesLimitPercent":80},{"key":"machine"},{"key":"blacksmith","spendLimitUsd":100},{"key":"runs-on"},{"key":"github"}],"skipUnhealthy":false,"retry":{"enabled":true,"runner":"other","max":2},"autoSizeVcpus":4}

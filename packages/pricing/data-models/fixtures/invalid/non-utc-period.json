@@ -1,0 +1,67 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "products": [],
+    "rateCards": [],
+    "allowances": [],
+    "credits": [],
+    "commitments": []
+  },
+  "state": {
+    "schema": "hobo.pricing/v1",
+    "view": "provider-commercial-state",
+    "tenantId": "tenant-example",
+    "seq": 7,
+    "stateHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "asOf": "2026-11-03T00:00:00Z",
+    "agreements": [
+      {
+        "id": "agreement-non-utc",
+        "tenantId": "tenant-example",
+        "providerAccountRef": "provider-account-ref-1",
+        "productId": "product-compute",
+        "rateSchedule": [
+          {
+            "rateCardId": "rate-compute-2026-11",
+            "effective": {
+              "start": "2026-11-01T00:00:00Z"
+            }
+          }
+        ],
+        "status": "active",
+        "term": {
+          "start": "2026-11-01T00:00:00Z"
+        },
+        "billingPeriod": {
+          "interval": "monthly",
+          "anchor": "2026-11-01T00:00:00Z",
+          "timeZone": "America/New_York"
+        },
+        "quantities": {},
+        "cancellation": {
+          "allowed": false,
+          "refund": "none",
+          "fee": {
+            "decimal": "0",
+            "currency": "USD"
+          },
+          "notice": "P30D"
+        },
+        "evidence": {
+          "source": "provider-observation",
+          "observedAt": "2026-11-03T00:00:00Z",
+          "validFrom": "2026-11-01T00:00:00Z",
+          "validUntil": "2026-12-01T00:00:00Z",
+          "evidenceHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      }
+    ],
+    "allowances": [],
+    "credits": [],
+    "commitments": [],
+    "periodActuals": [],
+    "completeness": "complete",
+    "observations": []
+  }
+}

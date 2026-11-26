@@ -1,0 +1,2 @@
+simulator: 12 characters, 9 busy after 6 ticks
+otlp: mapped 1 event(s); demo-svc is working

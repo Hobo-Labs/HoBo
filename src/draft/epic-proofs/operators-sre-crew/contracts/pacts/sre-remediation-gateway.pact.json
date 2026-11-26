@@ -1,0 +1,42 @@
+{
+  "consumer": { "name": "SRE operator" },
+  "provider": { "name": "remediation live-fix gateway" },
+  "interactions": [
+    {
+      "description": "apply-live-fix-canary",
+      "providerStates": [{ "name": "canary lane is available" }],
+      "request": {
+        "method": "POST",
+        "path": "/live-fix/canary",
+        "body": {
+          "incidentId": "inc-crew-001",
+          "action": "failover-provider",
+          "percent": 5,
+          "rollbackOnRegression": true
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": { "canaryId": "canary-001", "accepted": true }
+      }
+    },
+    {
+      "description": "apply-contract-shim-canary",
+      "providerStates": [{ "name": "human approval has been recorded" }],
+      "request": {
+        "method": "POST",
+        "path": "/live-fix/canary",
+        "body": {
+          "incidentId": "inc-crew-002",
+          "action": "dual-publish-shim",
+          "approvalSnapshotHash": "sha256-prod-contract-skew-approval"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": { "canaryId": "canary-002", "accepted": true }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

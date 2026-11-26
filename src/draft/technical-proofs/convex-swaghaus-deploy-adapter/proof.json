@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "convex-swaghaus-deploy-adapter",
+  "title": "Convex Swaghaus Deploy Adapter",
+  "linear": "HOBO-0",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/competitors/convex.md",
+      "docs/design/adr/07-portability-extensibility.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": ["README.md"],
+    "bench": "bench"
+  },
+  "waivers": []
+}

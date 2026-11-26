@@ -1,0 +1,15 @@
+{
+	"params": {
+		"name": "research"
+	},
+	"expectFiles": [
+		"src/connector.ts"
+	],
+	"expectContains": {
+		"src/connector.ts": [
+			"b.connector",
+			"token",
+			"dependsOn"
+		]
+	}
+}

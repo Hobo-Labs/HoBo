@@ -1,0 +1,143 @@
+{
+	"consumer": { "name": "RuntimeOciHost" },
+	"provider": { "name": "KubernetesClusterApi" },
+	"interactions": [
+		{
+			"description": "probe kubectl client version",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/version",
+				"body": { "client": true }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"clientVersion": "v1.28.0"
+				}
+			}
+		},
+		{
+			"description": "probe cluster reachability",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/cluster-info"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"reachable": true
+				}
+			}
+		},
+		{
+			"description": "ensure namespace exists",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/namespace/ensure",
+				"body": { "namespace": "hobo-dev" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "ok": true, "namespace": "hobo-dev" }
+			}
+		},
+		{
+			"description": "apply deployment and service manifests",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/apply",
+				"body": {
+					"namespace": "hobo-dev",
+					"manifests": [
+						{ "kind": "Deployment", "metadata": { "name": "api" } },
+						{ "kind": "Service", "metadata": { "name": "api" } }
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "ok": true, "applied": 2 }
+			}
+		},
+		{
+			"description": "wait for deployment rollout",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/rollout-status",
+				"body": {
+					"namespace": "hobo-dev",
+					"name": "api",
+					"timeoutMs": 120000
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "ok": true, "ready": true }
+			}
+		},
+		{
+			"description": "open service port-forward",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/port-forward",
+				"body": {
+					"namespace": "hobo-dev",
+					"service": "api",
+					"targetPort": 8080
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"localPort": 18080,
+					"loopbackUrl": "http://127.0.0.1:18080"
+				}
+			}
+		},
+		{
+			"description": "proxy HTTP through the port-forward to private api",
+			"request": {
+				"method": "POST",
+				"path": "/kubectl/http-proxy",
+				"body": {
+					"namespace": "hobo-dev",
+					"service": "api",
+					"method": "GET",
+					"path": "/hello?name=Oci"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": 200,
+					"headers": { "content-type": "application/json" },
+					"json": {
+						"message": "howdy, Oci",
+						"greetingPrefix": "howdy"
+					}
+				}
+			}
+		},
+		{
+			"description": "delete deployment and service",
+			"request": {
+				"method": "DELETE",
+				"path": "/kubectl/resources",
+				"body": {
+					"namespace": "hobo-dev",
+					"name": "api"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "ok": true, "deleted": true }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

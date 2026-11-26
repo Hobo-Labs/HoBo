@@ -1,0 +1,57 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "StripeBillingApi" },
+	"interactions": [
+		{
+			"description": "create customer",
+			"request": {
+				"method": "POST",
+				"path": "/v1/customers",
+				"body": {
+					"metadata[tenant_id]": "acme"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "id": "cus_pact_1", "object": "customer" }
+			}
+		},
+		{
+			"description": "create payment intent",
+			"request": {
+				"method": "POST",
+				"path": "/v1/payment_intents",
+				"body": {
+					"currency": "usd",
+					"confirm": "false"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "pi_pact_1",
+					"object": "payment_intent",
+					"status": "requires_payment_method"
+				}
+			}
+		},
+		{
+			"description": "payment intent declined",
+			"request": {
+				"method": "POST",
+				"path": "/v1/payment_intents",
+				"body": {
+					"currency": "usd",
+					"amount": "99999999"
+				}
+			},
+			"response": {
+				"status": 402,
+				"body": { "error": { "message": "card_declined" } }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

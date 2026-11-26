@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hobo.dev/registry.descriptor.v1.schema.json",
+  "title": "HoBo Registry Descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "name",
+    "version",
+    "artifact",
+    "publisher",
+    "evidence",
+    "interfaces"
+  ],
+  "properties": {
+    "schema": {
+      "const": "registry.descriptor/v1"
+    },
+    "kind": {
+      "enum": [
+        "provider",
+        "resource-pack",
+        "policy-pack",
+        "agent-skill",
+        "runbook",
+        "hobo-code-module",
+        "bindle",
+        "camp",
+        "yard",
+        "junction"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+    },
+    "artifact": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "publisher": {
+      "$ref": "#/$defs/publisher"
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slsaProvenanceRef",
+        "conformanceReportRefs"
+      ],
+      "properties": {
+        "slsaProvenanceRef": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "conformanceReportRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conformanceReportRef"
+          }
+        }
+      }
+    },
+    "interfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exports",
+        "imports"
+      ],
+      "properties": {
+        "exports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/interfaceDeclaration"
+          }
+        },
+        "imports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/interfaceDeclaration"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mediaType",
+        "uri",
+        "digest"
+      ],
+      "properties": {
+        "mediaType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uri": {
+          "type": "string",
+          "pattern": "^oci://[^@\\s]+@sha256:[a-f0-9]{64}$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "conformanceReportRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suite",
+        "suiteVersion",
+        "ref"
+      ],
+      "properties": {
+        "suite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "suiteVersion": {
+          "type": "string",
+          "pattern": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+        },
+        "ref": {
+          "$ref": "#/$defs/artifactRef"
+        }
+      }
+    },
+    "publisher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trustDomain": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "interfaceDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "conformanceSuite",
+        "conformanceSuiteVersion",
+        "conformanceReportRef"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?@(stable|preview|experimental|deprecated)$"
+        },
+        "conformanceSuite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conformanceSuiteVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conformanceReportRef": {
+          "$ref": "#/$defs/artifactRef"
+        }
+      }
+    }
+  }
+}

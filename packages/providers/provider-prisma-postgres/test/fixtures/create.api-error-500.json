@@ -1,0 +1,6 @@
+{
+	"success": false,
+	"error": "api_error",
+	"message": "Upstream provisioning service failed",
+	"status": 503
+}

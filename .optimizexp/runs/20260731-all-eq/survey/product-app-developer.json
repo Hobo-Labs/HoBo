@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "kind": "persona-survey",
+  "runId": "20260731-all-eq",
+  "persona": "product-app-developer",
+  "experiences": [
+    "dx",
+    "ax"
+  ],
+  "surfaces": [
+    "pnpm run doctor"
+  ],
+  "featureIds": [
+    "cli-help-and-doctor"
+  ],
+  "polledAt": "2026-07-31T15:39:56.128Z",
+  "primaryPhaseStop": "metrics-zero",
+  "answers": [
+    {
+      "id": "q_excitement",
+      "prompt": "excitement",
+      "score": 3,
+      "text": "Doctor now names the exact zero-key command under gbrain warn."
+    },
+    {
+      "id": "q_ease",
+      "prompt": "ease",
+      "score": 5,
+      "text": "Happy path is one command/exit 0."
+    },
+    {
+      "id": "q_optimal",
+      "prompt": "optimal",
+      "score": 4,
+      "text": "Keep gbrain warn copy-pasteable (done this run); next: multi-gate agent:check wait is still L."
+    },
+    {
+      "id": "q_delight",
+      "prompt": "delight",
+      "text": "Doctor now names the exact zero-key command under gbrain warn."
+    },
+    {
+      "id": "q_friction_feel",
+      "prompt": "friction",
+      "text": "Still dull when many scopes stage at once on agent:check — not this surface."
+    },
+    {
+      "id": "q_one_change",
+      "prompt": "one change",
+      "text": "Keep gbrain warn copy-pasteable (done this run); next: multi-gate agent:check wait is still L."
+    },
+    {
+      "id": "q_never",
+      "prompt": "never",
+      "text": "Never auto-install key tools or send embeddings without consent."
+    },
+    {
+      "id": "q_recommend",
+      "prompt": "recommend",
+      "recommend": "yes",
+      "text": "Offline doctor with clear remediation lines."
+    }
+  ],
+  "positive": {
+    "excitement": 3,
+    "easeOfUse": 5,
+    "perceivedOptimality": 4,
+    "total": 12,
+    "min": 3,
+    "gapTotal": 3,
+    "gapMax": 2
+  },
+  "cognitive": {
+    "featureSprawl": 1,
+    "visualClutter": 0,
+    "interactiveClutter": 0,
+    "choiceOverload": 1,
+    "informationDensity": 1,
+    "noveltyTax": 0,
+    "contextSwitchTax": 1,
+    "workingMemoryLoad": 1,
+    "interruptionFragility": 0,
+    "total": 5,
+    "max": 1,
+    "breaches": []
+  },
+  "featureRequests": [
+    {
+      "id": "fr-agent-check-multi-gate-wait",
+      "title": "Narrow multi-scope agent:check concurrency messaging",
+      "problem": "When package.json + docs + skills stage together, wait feels multi-gate without ranked progress.",
+      "desiredOutcome": "Staged check prints ordered gate list with expected duration class.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-app-developer",
+      "featureIds": [
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "pnpm run doctor"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 2,
+        "perceivedOptimality": 2
+      },
+      "effortHint": "L",
+      "antiGoals": [],
+      "smallestExperiment": "Impact-policy progress lines per selected gate (L-effort)."
+    }
+  ],
+  "evidenceRefs": [
+    ".optimizexp/features/cli-help-and-doctor/evidence/"
+  ]
+}

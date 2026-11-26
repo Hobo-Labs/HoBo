@@ -1,0 +1,33 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "ConformanceSuiteProviderMock" },
+  "interactions": [
+    {
+      "description": "verify runtime, sdk, and host conformance before an upgrade manifest is repinned",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/verify-upgrade",
+        "body": {
+          "component": "checkout-workflow",
+          "runtimeSuite": "runtime-port",
+          "sdkSuite": "sdk-idiom",
+          "hostSuite": "component-host"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "runtimePassed": true,
+          "sdkPassed": false,
+          "hostPassed": true,
+          "upgradeAllowed": false,
+          "requiredEvidence": ["upcaster"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "conformance-upgrade-gate",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-release-notes-private-beta-evidence-contract",
+  "experienceType": "cx",
+  "title": "V1 Release Notes Private Beta Evidence Contract",
+  "linear": "HOBO-466",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

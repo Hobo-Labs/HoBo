@@ -1,0 +1,31 @@
+{
+	"name": "@hobo/provider-convex",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/sdk": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/bindles": "workspace:*"
+	},
+	"description": "HoBo Convex deploy-target CloudProvider: reactive TypeScript BaaS (Cloud or self-host) behind agnostic ports with honest-partial capability verdicts, typed impedance limits, SDK defineResource adapters, and credential-gated deploy/apply (ADR-0144). Anonymous Temporary self-host of official Convex OCI/binary is fail-closed under zero project API keys (rejection matrix in provisionConvexBackendAnonymous)."
+}

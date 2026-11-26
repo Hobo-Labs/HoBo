@@ -1,0 +1,89 @@
+{
+	"consumer": {
+		"name": "HoboTrailsDualOracle"
+	},
+	"provider": {
+		"name": "HoboSqliteDualRunPort"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The boundary @hobo/trails consumes without importing this package: the dual-run port. Trails declares the port structurally and this package satisfies it. The load-bearing rule is the first interaction — the oracle is given counts and digests, never rows — and the second: a write for a fenced tenant is refused, which is what keeps exactly one write authority during a pooled-to-silo move. test/data-dual-port.test.ts replays every interaction against two real SQLite files."
+	},
+	"interactions": [
+		{
+			"description": "evidence over a replicated dual run is counts and digests, and reports consistency",
+			"providerState": "three records were written to the source and replicated to the target",
+			"request": {
+				"method": "GET",
+				"path": "/dual-run/evidence"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"sourceCount": 3,
+					"targetCount": 3,
+					"consistent": true,
+					"fidelity": "live",
+					"keys": ["consistent", "fidelity", "source", "target"]
+				}
+			}
+		},
+		{
+			"description": "a write for a fenced tenant is refused and names the tenant, never the fence token",
+			"providerState": "tenant acme is fenced on the source",
+			"request": {
+				"method": "POST",
+				"path": "/dual-run/source/writes",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					{
+						"id": "order-9",
+						"doc": {
+							"total": 9
+						},
+						"tenant": "acme"
+					}
+				]
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"name": "FencedTenantError",
+						"code": "FENCED_WRITE",
+						"tenant": "acme"
+					}
+				}
+			}
+		},
+		{
+			"description": "a reap is refused while anything is un-replicated",
+			"providerState": "tenant acme is fenced and one change has not been replicated",
+			"request": {
+				"method": "DELETE",
+				"path": "/dual-run/source/tenants/acme"
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"refused": "1 un-replicated change(s) would be lost"
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,27 @@
+package hobo:contract-engine@0.1.0;
+
+interface contract-engine {
+  record contract-ref {
+    id: string,
+    kind: string,
+    producer: string,
+    consumer: string,
+    channel: string,
+  }
+
+  record verify-request {
+    producer: string,
+    consumer: string,
+  }
+
+  record verify-decision {
+    ok: bool,
+    engine-id: string,
+  }
+
+  verify: func(request: verify-request) -> verify-decision;
+}
+
+world contract-engine-world {
+  export contract-engine;
+}

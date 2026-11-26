@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package hobo.claims.v1;
+
+// Guest leases and claim bundles: the durable record of work that exists
+// before anyone owns it, and of the transition to an owner.
+
+message GuestLeaseRecord {
+  string schema_version = 1;
+  string id = 2;
+  string subject_ref = 3;
+  string bootstrap_strategy_ref = 4;
+  string created_at = 5;
+  string expires_at = 6;
+  string claim_by = 7;
+  bool renewable = 8;
+  uint32 maximum_renewals = 9;
+  uint32 renewal_count = 10;
+  string quota_ref = 11;
+  string cost_cap_ref = 12;
+  string cleanup_policy = 13;
+  string status = 14;
+  string observed_provider_version = 15;
+  string fencing_token = 16;
+}
+
+message ClaimContinuityRecord {
+  string endpoint = 1;
+  string data = 2;
+  string credentials = 3;
+}
+
+message PostClaimActionRecord {
+  string id = 1;
+  string kind = 2;
+  bool blocking = 3;
+  string description = 4;
+}
+
+message ClaimItemRecord {
+  string id = 1;
+  string subject_ref = 2;
+  string subject_kind = 3;
+  string provider_id = 4;
+  string claim_strategy_ref = 5;
+  string mode = 6;
+  // A reference to encrypted one-time material, never the material itself.
+  string one_time_action_ref = 7;
+  string deadline = 8;
+  ClaimContinuityRecord continuity = 9;
+  string creator_authority_after_claim = 10;
+  string verification_ref = 11;
+  repeated PostClaimActionRecord post_claim_actions = 12;
+  string status = 13;
+  string evidence_ref = 14;
+}
+
+message ClaimDependencyRecord {
+  string from_item_id = 1;
+  string to_item_id = 2;
+  string reason = 3;
+}
+
+message ClaimCompensationRecord {
+  string on_timeout = 1;
+  string on_partial_claim = 2;
+  string rollback_window = 3;
+}
+
+message ClaimBundleRecord {
+  string schema_version = 1;
+  string id = 2;
+  string deployment_ref = 3;
+  repeated ClaimItemRecord items = 4;
+  repeated ClaimDependencyRecord dependency_edges = 5;
+  string atomicity = 6;
+  string earliest_deadline = 7;
+  ClaimCompensationRecord compensation = 8;
+  string status = 9;
+}

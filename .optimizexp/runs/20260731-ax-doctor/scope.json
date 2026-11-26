@@ -1,0 +1,29 @@
+{
+  "runId": "20260731-ax-doctor",
+  "experiences": [
+    "ax"
+  ],
+  "projects": [
+    "all"
+  ],
+  "personas": [
+    "product-agent-operator",
+    "product-coding-agent"
+  ],
+  "features": [
+    "agent-tooling-setup",
+    "cli-help-and-doctor"
+  ],
+  "surfaces": [
+    "pnpm run doctor",
+    "bash scripts/setup-agent-tools.sh --help"
+  ],
+  "reportOnly": false,
+  "stopPolicy": "true-plateau-only",
+  "hostAgent": "grok",
+  "createdAt": "2026-07-31T14:00:00.000Z",
+  "priorRun": "20260731-ax-continue",
+  "passesCompleted": 2,
+  "lastImplementableFindings": 0,
+  "stopReason": "plateau"
+}

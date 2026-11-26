@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package hobo.sdk.v1;
+
+// Wire shapes for the operator SDK's greenfield declarations: the frozen, schema-versioned authoring contracts behind `waiver`,
+// `chaos`, `runbook`, `generateProvider`, and `runner`. The wrapped factories
+// (`dispatcher`, `policyPack`/`rule`, `defineResource`) lower onto shapes
+// owned by @hobo/dispatcher, @hobo/contracts, and @hobo/cloud — those wire
+// forms live in the owning packages' data-models, not here.
+
+message WaiverDeclaration {
+  string schema = 1; // hobo.sdk/v1.waiver
+  string decision_id = 2; // the policy.Decided audit id being waived
+  string reason = 3;
+  string approver = 4; // role: | user: | spiffe: principal — never the author (SoD)
+  string expires = 5; // RFC 3339; the waiver auto-revokes
+}
+
+message ChaosInjection {
+  string fault = 1;
+  string target = 2;
+}
+
+message ChaosDeclaration {
+  string schema = 1; // hobo.sdk/v1.chaos
+  string name = 2;
+  string steady_state = 3; // invariant, e.g. slo:checkout.latency
+  ChaosInjection inject = 4;
+  string blast_radius = 5; // bounded, e.g. "1 camp"
+  string abort_if = 6; // optional trip-wire
+}
+
+message RunbookTrigger {
+  string alert = 1;
+  string severity = 2; // optional severity floor, e.g. >=SEV2
+}
+
+message RunbookFixStep {
+  string when = 1; // classified condition
+  string do = 2; // fix verb: failover | scale | escalate | ...
+  string gate = 3; // auto | require-approval (fail-closed default)
+  string args_json = 4; // verb arguments (camp, to, ...), canonical JSON
+}
+
+message RunbookDeclaration {
+  string schema = 1; // hobo.sdk/v1.runbook
+  string name = 2;
+  RunbookTrigger on = 3;
+  repeated string diagnose = 4; // read-only diagnosis queries (MCP)
+  repeated RunbookFixStep fix = 5;
+}
+
+message GenerateProviderRequest {
+  string schema = 1; // hobo.sdk/v1.generate-provider
+  string docs_url = 2;
+  repeated string pipeline = 3; // scaffold | llm-fill | sandbox-conformance | sign
+}
+
+message RunnerDeclaration {
+  string schema = 1; // hobo.sdk/v1.runner
+  string kind = 2; // self-hosted | github | depot | blacksmith
+  string provider_id = 3; // dispatcher candidate id, e.g. runner.github
+  string category = 4; // always "runner"
+  string behind = 5; // optional self-hosted transport: "relay"; omitted selects direct local execution
+  double list_unit_cost = 6;
+  double switching_cost = 7;
+}
+
+message PluginExtensionEntry {
+  string point = 1; // hobo.<name>/v<major>
+  string export_name = 2;
+  string id = 3; // optional stable registration id
+}
+
+message PluginDeclaration {
+  string schema = 1; // hobo.sdk/v1.plugin
+  string package_name = 2;
+  string entry = 3; // package-relative, starts with ./
+  repeated PluginExtensionEntry extensions = 4;
+}
+
+// Persisted execution facts use @hobo/core EventEnvelope for identity, tenant,
+// ordering and actor. These fields describe the SDK-owned data payload; details
+// is JSON so the effect owner can retain observed, provider-specific evidence.
+message OperatorExecutionFact {
+  string execution_id = 1;
+  string kind = 2; // waiver | chaos | runbook | runner | provider-generation
+  string step = 3;
+  string status = 4;
+  string detail_json = 5;
+}
+
+message RunbookDiagnosis {
+  repeated string conditions = 1;
+  string evidence_json = 2;
+}
+
+message RunbookExecutionResult {
+  string execution_id = 1;
+  string status = 2; // completed | blocked | unmatched
+  repeated string completed_actions = 3;
+  string reason = 4;
+}
+
+message WaiverExecutionState {
+  string decision_id = 1;
+  string status = 2; // missing | requested | approved | expired | revoked
+  string requester = 3;
+  string approved_by = 4;
+  WaiverDeclaration declaration = 5;
+  string policy_fingerprint = 6;
+  int32 revision = 7;
+}
+
+message LocalRunnerJob {
+  string job_id = 1;
+  repeated string argv = 2;
+  string cwd = 3;
+  map<string, string> env = 4;
+  int32 timeout_ms = 5;
+  int32 max_output_bytes = 6;
+}
+
+message RunnerExecutionResult {
+  string job_id = 1;
+  string provider_id = 2;
+  string status = 3; // succeeded | failed
+  int32 exit_code = 4;
+  string stdout = 5;
+  string stderr = 6;
+  bool timed_out = 7;
+}
+
+message GeneratedProviderReceipt {
+  string provider_id = 1;
+  string source_path = 2;
+  string digest = 3;
+  string signature = 4;
+  string public_key = 5;
+  int32 operation_count = 6;
+}

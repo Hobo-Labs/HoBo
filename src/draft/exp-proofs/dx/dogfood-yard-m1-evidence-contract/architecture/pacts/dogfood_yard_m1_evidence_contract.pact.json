@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DogfoodYardM1EvidenceContractConsumer"
+  },
+  "provider": {
+    "name": "DogfoodYardM1EvidenceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Dogfood Yard M1 Evidence Contract boundary returns its recorded dogfood alpha evidence",
+      "request": {
+        "method": "GET",
+        "path": "/dogfood-yard-m1-evidence-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.dogfood_yard_m1_evidence_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

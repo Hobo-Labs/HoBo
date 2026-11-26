@@ -1,0 +1,14 @@
+{
+  "id": "01HABCDEFGHIJKLMNOPQRSTVW",
+  "type": "identity.Issued",
+  "v": 1,
+  "streamId": "identity/svid-agent-1",
+  "seq": 7,
+  "ts": "2026-06-25T12:00:00.000Z",
+  "actor": { "kind": "agent", "id": "agent:release" },
+  "tenant": "tenant-acme",
+  "correlationId": "corr-1",
+  "causationId": "cmd-1",
+  "data": { "identityId": "svid-agent-1" },
+  "meta": { "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" }
+}

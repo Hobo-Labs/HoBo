@@ -1,0 +1,14 @@
+{
+	"params": {
+		"name": "cutover"
+	},
+	"expectFiles": [
+		"src/trail.ts"
+	],
+	"expectContains": {
+		"src/trail.ts": [
+			"cutoverTrail",
+			"identity.continuous"
+		]
+	}
+}

@@ -1,0 +1,38 @@
+{
+  "consumer": {
+    "name": "downstream-vibe-artifacts"
+  },
+  "provider": {
+    "name": "dx-backbone-resource-lifecycle"
+  },
+  "interactions": [
+    {
+      "description": "downstream artifacts consume accepted DX quickstart evidence",
+      "providerState": "HOBO-566 backbone graph is accepted",
+      "request": {
+        "method": "GET",
+        "path": "/dx-backbone/downstream-gates"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "requiredQuickstartIssue": "HOBO-577",
+          "proofModes": ["live", "simulated", "reference fixture", "scope-out"],
+          "inventBehavior": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-566",
+      "targetPackage": "src/draft/exp-proofs/dx/dx-backbone-resource-lifecycle-vibe"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@hobo-draft/s3-08-hobo-mcp-server-poc",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/hobo-mcp-server.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

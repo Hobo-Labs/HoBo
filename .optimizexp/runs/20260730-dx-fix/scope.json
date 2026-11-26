@@ -1,0 +1,35 @@
+{
+  "runId": "20260730-dx-fix",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [
+    "product-app-developer",
+    "junior-typescript-developer",
+    "product-platform-engineer"
+  ],
+  "surfaces": [
+    "pnpm run agent:check -- --staged",
+    "pnpm run doctor"
+  ],
+  "maxIterations": 3,
+  "minIterations": 2,
+  "noPlateauStop": false,
+  "reportOnly": false,
+  "iterationsCompleted": 2,
+  "iterationMeaning": "persona-scenario-review-and-reduce-passes",
+  "hostAgent": "grok",
+  "createdAt": "2026-07-31T04:15:15.761Z",
+  "projects": [
+    "all"
+  ],
+  "features": [
+    "narrow-local-validation",
+    "cli-help-and-doctor",
+    "agent-check-staged"
+  ],
+  "mode": "review-reduce-verify",
+  "personaResolution": "focused dx critical path",
+  "stoppedReason": "plateau",
+  "lastImplementableFindings": 1
+}

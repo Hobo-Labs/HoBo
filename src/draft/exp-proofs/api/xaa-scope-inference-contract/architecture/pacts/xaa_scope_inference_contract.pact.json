@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "XaaScopeInferenceContractConsumer"
+  },
+  "provider": {
+    "name": "XaaScopeInferenceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Xaa Scope Inference Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/xaa-scope-inference-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.xaa_scope_inference_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

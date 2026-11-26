@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.runtime_local.failure.v1;
+
+// Membrane failure taxonomy (S1-23). The kinds mirror the WIT
+// hobo:runtime `runtime-error` variant exactly; no kind is invented outside it.
+enum RuntimeErrorKind {
+  RUNTIME_ERROR_KIND_UNSPECIFIED = 0;
+  RUNTIME_ERROR_KIND_RETRYABLE = 1;
+  RUNTIME_ERROR_KIND_FATAL = 2;
+  RUNTIME_ERROR_KIND_CANCELLED = 3;
+  RUNTIME_ERROR_KIND_VERSION_INCOMPATIBLE = 4;
+  RUNTIME_ERROR_KIND_AMBIGUOUS_COMMIT = 5;
+}
+
+// The lowered `runtime-error` record a link returns on the failure path.
+message RuntimeErrorRecord {
+  RuntimeErrorKind kind = 1;
+  string detail = 2;
+  bool retryable = 3;
+  bool ambiguous_commit = 4;
+}
+
+// A typed membrane failure signal emitted when a link enforces a deadline,
+// sheds load under backpressure, or severs mid-call with an unknown commit.
+message MembraneFailureSignal {
+  string code = 1;
+  string provider_id = 2;
+  string import_interface = 3;
+  string operation = 4;
+  RuntimeErrorKind kind = 5;
+  optional string deadline = 6;
+  optional uint32 max_in_flight = 7;
+  optional uint32 in_flight = 8;
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-accessibility-usability-checklist",
+  "experienceType": "ux",
+  "title": "Vibe Accessibility Usability Checklist",
+  "linear": "HOBO-554",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

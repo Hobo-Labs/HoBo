@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package hobo.manifest_request.v1;
+
+// A structured capability value is a JSON value narrowed to
+// bool | number | string | list-of-string, so google.protobuf.Value is its
+// exact protobuf spelling: its canonical JSON mapping IS the bare value this
+// package emits (`true`, `536870912`, `"aws-us-east-2"`, `["vector"]`).
+//
+// A hand-rolled `oneof` would have been a second spelling of the same union,
+// and the two would then have to be kept in step for no gain. What
+// google.protobuf.Value admits and this shape does not — null, and nested
+// objects — is narrowed by #StructuredCapabilityValue in the CUE and refused
+// by name at the parse boundary. That division is the point of carrying both
+// schemas: protobuf states the shape, CUE states the rules protobuf cannot.
+import "google/protobuf/struct.proto";
+
+// The request manifest: what a catalog offers into one selection request.
+//
+// A SelectionCandidate is the minimal structural view the capability selector
+// gates and ranks. It is a *projection* of a Resource Definition, not the
+// definition itself — `@hobo/cloud` widens its Resource Definition to satisfy
+// this shape rather than owning a second catalog
+// (`toSelectionCandidate` in packages/cloud/src/registry/resource-definition-vnext.ts).
+//
+// Two encoding decisions are load-bearing and are asserted by this package's
+// tests rather than left to prose:
+//
+//  1. `evidence_expires_at_ms` is `optional`, so absence is on the wire.
+//     Absent means "no live evidence recorded" and fails the evidence gate
+//     closed; it is NOT the same as zero, and it is not `null`. TypeScript's
+//     `exactOptionalPropertyTypes` draws the same line, and the canonical
+//     record omits the key rather than emitting a null.
+//  2. `implements_profiles` is ORDERED. Selection returns the first entry that
+//     satisfies a required profile, so reordering the list can change which
+//     realization is chosen. Every other repeated field here is a set and is
+//     canonically sorted by code point.
+//
+// Field numbers are stable. Adding a selection-relevant fact means a new field
+// number here AND a matching entry in the canonical record, because a fact the
+// selector reads but the record omits is invisible to any digest taken over it.
+
+// One profile implementation claim made by a hosted product or pack.
+message ProfileImplementationRecord {
+  string profile_id = 1;
+  string version_range = 2;
+  // "native" | "pack" | "bridge".
+  string realization = 3;
+  string conformance_ref = 4;
+  // "pass" | "fail" | "unknown". `unknown` fails closed.
+  string conformance = 5;
+}
+
+// How much of what the creator held survives the claim.
+message CandidateContinuityRecord {
+  // "preserved" | "rebound" | "migrated" | "changed" | "discarded" | "not-applicable".
+  string endpoint = 1;
+  string data = 2;
+  // "revoked" | "rotated" | "reauthorized" | "retained" | "unknown" | "not-applicable".
+  string credentials = 3;
+}
+
+message SelectionCandidateRecord {
+  string schema_version = 1;
+  string definition_id = 2;
+  string provider_id = 3;
+  // ORDERED: selection takes the first satisfying entry.
+  repeated ProfileImplementationRecord implements_profiles = 4;
+  // Sets from here on: sorted by code point, no duplicates.
+  repeated string runtime_models = 5;
+  map<string, google.protobuf.Value> structured_capabilities = 6;
+  repeated string produces_binding_profiles = 7;
+  repeated string migration_profiles = 8;
+  // "established" | "verified-emerging" | "experimental".
+  string provider_class = 9;
+  // Absent means no live evidence, which fails the evidence gate closed.
+  optional int64 evidence_expires_at_ms = 10;
+  bool evidence_signature_valid = 11;
+  // "absent" | "reauthorization-required" | "rotatable" | "retained" | "unknown".
+  string creator_authority_after_claim = 12;
+  // "single-resource" | "provider-bundled" | "best-effort-saga".
+  string claim_atomicity = 13;
+  uint32 claim_action_count = 14;
+  CandidateContinuityRecord continuity = 15;
+  bool supports_export = 16;
+  bool supports_rotation = 17;
+  bool supports_revocation = 18;
+  // Sponsor exposure in minor currency units. 0 for user-owned/anonymous.
+  uint64 sponsor_exposure_minor_units = 19;
+  bool has_registered_driver = 20;
+  bool secret_custody_available = 21;
+}

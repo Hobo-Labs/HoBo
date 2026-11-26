@@ -1,0 +1,80 @@
+{
+	"consumer": { "name": "hobo-claim-coordinator" },
+	"provider": { "name": "hobo-claim-strategy" },
+	"interactions": [
+		{
+			"description": "initiate a resource claim and receive a one-time action reference",
+			"request": {
+				"method": "POST",
+				"path": "/claim/initiate",
+				"body": {
+					"itemId": "claim-item-db",
+					"subjectRef": "resource:neon/db-1",
+					"claimStrategyRef": "claim.neon.database/v1",
+					"idempotencyKey": "deploy-1:claim-item-db"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"itemId": "claim-item-db",
+					"status": "in-progress",
+					"oneTimeActionRef": "hobo-secret://tenant-1/one-time/claim-item-db",
+					"deadline": "2026-08-11T00:00:00.000Z"
+				}
+			}
+		},
+		{
+			"description": "observing a provider-reported claim never completes the item by itself",
+			"request": {
+				"method": "GET",
+				"path": "/claim/observe",
+				"query": { "itemId": "claim-item-db" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"itemId": "claim-item-db",
+					"providerReportedClaimed": true,
+					"status": "observed"
+				}
+			}
+		},
+		{
+			"description": "independent ownership verification is what completes the item",
+			"request": {
+				"method": "POST",
+				"path": "/claim/verify",
+				"body": { "itemId": "claim-item-db" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"itemId": "claim-item-db",
+					"status": "verified",
+					"evidenceRef": "evidence:neon/ownership/db-1",
+					"creatorAuthorityAfterClaim": "rotatable",
+					"postClaimActions": [
+						{ "id": "rotate-db", "kind": "rotate-binding", "blocking": true }
+					]
+				}
+			}
+		},
+		{
+			"description": "a partially claimed bundle compensates rather than reporting success",
+			"request": {
+				"method": "POST",
+				"path": "/claim/compensate",
+				"body": { "bundleId": "bundle-1", "reason": "partial-claim" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"bundleId": "bundle-1",
+					"status": "compensating",
+					"retainedSubjects": ["resource:neon/db-1"]
+				}
+			}
+		}
+	]
+}

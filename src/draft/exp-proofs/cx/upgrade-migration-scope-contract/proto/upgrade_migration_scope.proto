@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package hobo.upgrade_migration.v1;
+
+// Data shapes for the HOBO-430 Upgrade & Migration Engine M0 scope record.
+// These mirror the structure validated by
+// `src/upgrade-migration-scope.mjs` so the design-time contract has a
+// language-neutral schema for downstream M1+ consumers.
+
+message Persona {
+  string role = 1;
+  string need = 2;
+}
+
+message Boundaries {
+  string service = 1;
+  string ux = 2;
+  string security = 3;
+  string support = 4;
+}
+
+message InitiativeDependency {
+  string owner = 1;
+  string consumes = 2;
+  string scope_boundary = 3;
+}
+
+message UpgradePathClass {
+  string name = 1;
+  string description = 2;
+}
+
+message FollowUpGate {
+  string allowed_after = 1;
+  string blocked_before = 2;
+}
+
+message UpgradeMigrationScope {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string goal = 4;
+  repeated Persona personas = 5;
+  repeated string scope_in = 6;
+  repeated string scope_out = 7;
+  repeated string non_goals = 8;
+  Boundaries boundaries = 9;
+  repeated string design_refs = 10;
+  repeated string adr_refs = 11;
+  repeated InitiativeDependency initiative_dependencies = 12;
+  repeated UpgradePathClass upgrade_path_classes = 13;
+  repeated string dry_run_outputs = 14;
+  FollowUpGate follow_up_gate = 15;
+}

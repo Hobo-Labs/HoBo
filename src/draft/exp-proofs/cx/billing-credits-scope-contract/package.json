@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/billing-credits-scope-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

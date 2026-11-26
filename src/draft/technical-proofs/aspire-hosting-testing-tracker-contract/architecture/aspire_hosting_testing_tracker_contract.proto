@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum AspireHostingTestingTrackerStatus {
+  TRACKER_STATUS_UNSPECIFIED = 0;
+  TRACKER_STATUS_PARITY = 1;
+  TRACKER_STATUS_DEFERRED = 2;
+  TRACKER_STATUS_PLANNED = 3;
+  TRACKER_STATUS_OVERCLAIMED = 4;
+}
+
+message AspireHostingTestingTrackerEvaluation {
+  string feature = 1;
+  AspireHostingTestingTrackerStatus status = 2;
+  bool has_whole_graph_harness_spec = 3;
+  bool ok = 4;
+  string reason = 5;
+}

@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package hobo.trust.v1;
+
+// A check outcome. `unknown` is deliberately not a pass: "we did not test it"
+// is never "it works".
+enum EvidenceCheckOutcome {
+  EVIDENCE_CHECK_OUTCOME_UNSPECIFIED = 0;
+  EVIDENCE_CHECK_OUTCOME_PASS = 1;
+  EVIDENCE_CHECK_OUTCOME_FAIL = 2;
+  EVIDENCE_CHECK_OUTCOME_UNKNOWN = 3;
+}
+
+// What a trust root answered about a signature. Anything other than valid is
+// a reason not to select the provider.
+enum EvidenceVerificationOutcome {
+  EVIDENCE_VERIFICATION_OUTCOME_UNSPECIFIED = 0;
+  EVIDENCE_VERIFICATION_OUTCOME_VALID = 1;
+  EVIDENCE_VERIFICATION_OUTCOME_INVALID = 2;
+  EVIDENCE_VERIFICATION_OUTCOME_UNKNOWN = 3;
+}
+
+// Why evidence is or is not usable at the evaluation instant.
+enum EvidenceFreshnessState {
+  EVIDENCE_FRESHNESS_STATE_UNSPECIFIED = 0;
+  EVIDENCE_FRESHNESS_STATE_FRESH = 1;
+  EVIDENCE_FRESHNESS_STATE_ABSENT = 2;
+  EVIDENCE_FRESHNESS_STATE_FUTURE_DATED = 3;
+  EVIDENCE_FRESHNESS_STATE_AGED = 4;
+  EVIDENCE_FRESHNESS_STATE_EXPIRED = 5;
+}
+
+// How much authority the operator will tolerate the creator keeping after a
+// claim completes.
+enum CreatorAuthorityRequirement {
+  CREATOR_AUTHORITY_REQUIREMENT_UNSPECIFIED = 0;
+  CREATOR_AUTHORITY_REQUIREMENT_MUST_BE_ABSENT = 1;
+  CREATOR_AUTHORITY_REQUIREMENT_MUST_BE_ROTATABLE = 2;
+  CREATOR_AUTHORITY_REQUIREMENT_MAY_BE_RETAINED = 3;
+}
+
+// A third-party source the evidence was derived from, plus the date a human
+// last checked it. Provider terms are ranking input, never billing input, so
+// every transcribed fact carries a URL and a date.
+message EvidenceSourceRef {
+  string url = 1;
+  // ISO date (YYYY-MM-DD) a human checked the source.
+  string checked_at = 2;
+  optional string note = 3;
+}
+
+// Wrapped so that "the adapter uses no extra realizations" and "the evidence
+// never said" stay distinguishable: a narrowing requirement denies silence.
+message DeclaredRealizations {
+  repeated string kinds = 1;
+}
+
+// What was actually tested against a provider adapter, when, and by whom.
+// Signed and dated, because evidence is a claim about the world.
+message TrustEvidence {
+  string schema_version = 1;
+  string provider_id = 2;
+  string product_definition_id = 3;
+  string adapter_version = 4;
+  string provider_class = 5;
+  // Epoch milliseconds the adapter was exercised.
+  int64 tested_at = 6;
+  // Epoch milliseconds after which this evidence is no longer usable.
+  int64 expires_at = 7;
+  map<string, EvidenceCheckOutcome> checks = 8;
+  string creator_authority_after_claim = 9;
+  // Human actions the observed claim flow required.
+  uint32 claim_action_count = 10;
+  // Realization kinds the adapter was observed to use. Absent means unstated,
+  // which a narrowing requirement treats as denied rather than as permitted.
+  DeclaredRealizations realizations = 11;
+  // Whether the observed bootstrap path spent HoBo sponsor budget. Absent is
+  // likewise unstated, not "no".
+  optional bool sponsor_backed = 12;
+  string evidence_digest = 13;
+  string signature = 14;
+  repeated EvidenceSourceRef source_refs = 15;
+}
+
+// What an operator demands before a provider adapter may be selected.
+// Defaults are fail-closed: anything not explicitly permitted is denied.
+message TrustRequirement {
+  string minimum_provider_class = 1;
+  bool require_official_bootstrap_contract = 2;
+  bool require_documented_claim_contract = 3;
+  CreatorAuthorityRequirement creator_authority_after_claim = 4;
+  uint32 maximum_claim_actions = 5;
+  int64 maximum_evidence_age_ms = 6;
+  bool require_standard_binding = 7;
+  bool require_export_profile = 8;
+  bool allow_sponsor = 9;
+  bool allow_pack = 10;
+  bool allow_bridge = 11;
+  // Extra check keys that must be present and pass.
+  repeated string required_checks = 12;
+}
+
+// One recorded reason a verdict is not clean. Codes are the shared selection
+// rejection codes plus the trust-only ones.
+message TrustReason {
+  string code = 1;
+  string detail = 2;
+}
+
+// The answer to "may this one adapter be selected", at one explicit instant.
+message TrustVerdict {
+  string schema_version = 1;
+  // True only when every gate passed. Operator overrides never set this.
+  bool selectable = 2;
+  string provider_id = 3;
+  string product_definition_id = 4;
+  string adapter_version = 5;
+  int64 evaluated_at_ms = 6;
+  string verifier_id = 7;
+  EvidenceVerificationOutcome signature_outcome = 8;
+  // Absent on the evidence-absent verdict, which records no facts about a
+  // record that does not exist.
+  optional string evidence_digest = 9;
+  optional int64 evidence_age_ms = 10;
+  optional int64 expires_at_ms = 11;
+  // Sorted by code then detail so equal facts serialize identically.
+  repeated TrustReason reasons = 12;
+  // Deterministic digest of the verdict body, for audit joins.
+  string verdict_digest = 13;
+}
+
+message EvidenceFreshness {
+  EvidenceFreshnessState state = 1;
+  bool fresh = 2;
+  string detail = 3;
+  optional int64 age_ms = 4;
+  optional int64 expires_at_ms = 5;
+  // Milliseconds of validity left. Never negative.
+  optional int64 remaining_ms = 6;
+}
+
+message TrustBundleSubjectVerdict {
+  string subject_id = 1;
+  TrustVerdict verdict = 2;
+  EvidenceFreshness freshness = 3;
+}
+
+message TrustBundleReason {
+  string subject_id = 1;
+  string code = 2;
+  string detail = 3;
+}
+
+// The same answer for a whole solution's worth of products, evaluated at one
+// instant so the bundle digest can be pinned into a receipt.
+message TrustBundleVerdict {
+  string schema_version = 1;
+  // True only when every subject is selectable. One bad product sinks it.
+  bool selectable = 2;
+  int64 evaluated_at_ms = 3;
+  string verifier_id = 4;
+  repeated TrustBundleSubjectVerdict subjects = 5;
+  repeated TrustBundleReason reasons = 6;
+  string bundle_digest = 7;
+}
+
+// The audited escape hatch. An operator may accept a provider the evidence
+// does not vouch for, but only by naming themselves, the reason, the exact
+// codes waived, and an expiry.
+message OperatorOverrideRecord {
+  string schema_version = 1;
+  string operator_id = 2;
+  string reason = 3;
+  int64 granted_at_ms = 4;
+  int64 expires_at_ms = 5;
+  // Exactly the codes this override waives. Anything else still gates.
+  repeated string waived_codes = 6;
+  optional string ticket_ref = 7;
+  bool active = 8;
+  // Reason codes the override did not cover, in verdict order.
+  repeated string unwaived_codes = 9;
+  string record_digest = 10;
+}
+
+// A verdict that travelled through the audited path. `selectable` stays false:
+// an override is an operator accepting a known risk, not evidence appearing.
+message OverriddenTrustVerdict {
+  TrustVerdict verdict = 1;
+  // True only when an active override waives every recorded reason code.
+  bool manually_authorized = 2;
+  OperatorOverrideRecord override = 3;
+}

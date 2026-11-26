@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/runtime-local-component-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the Wasmtime-shaped runtime-local component-host skeleton from HOBO-17.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

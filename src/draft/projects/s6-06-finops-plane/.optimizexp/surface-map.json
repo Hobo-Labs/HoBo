@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "projectId": "s6-06-finops-plane",
+  "scannedAt": "2026-11-17T18:35:43.927Z",
+  "productName": "@hobo-draft/s6-06-finops-plane",
+  "packageDir": "src/draft/projects/s6-06-finops-plane",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/s6-06-finops-plane/package.json: no package bin is declared"
+  },
+  "binaries": [],
+  "binAssessments": [],
+  "defaultEntry": null,
+  "nonInteractiveHelp": null,
+  "commands": [],
+  "interactiveSurfaces": [],
+  "requiredJourneys": [
+    "happy-critical-path"
+  ],
+  "probes": []
+}

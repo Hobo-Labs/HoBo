@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package hobo.upgrade_rollback_dry_run.v1;
+
+// Data shapes for the HOBO-499 Upgrade & Migration Engine dry-run contract.
+// These are design-time contract artifacts, not runtime generated sources.
+
+enum UpgradeDryRunStatus {
+  UPGRADE_DRY_RUN_STATUS_UNSPECIFIED = 0;
+  UPGRADE_DRY_RUN_STATUS_PASSED = 1;
+  UPGRADE_DRY_RUN_STATUS_BLOCKED = 2;
+  UPGRADE_DRY_RUN_STATUS_FAILED = 3;
+}
+
+enum CompatibilityResult {
+  COMPATIBILITY_RESULT_UNSPECIFIED = 0;
+  COMPATIBILITY_RESULT_SUPPORTED = 1;
+  COMPATIBILITY_RESULT_UNSUPPORTED = 2;
+}
+
+enum BackupRequirement {
+  BACKUP_REQUIREMENT_UNSPECIFIED = 0;
+  BACKUP_REQUIREMENT_REQUIRED_AND_SATISFIED = 1;
+  BACKUP_REQUIREMENT_REQUIRED_BUT_MISSING = 2;
+  BACKUP_REQUIREMENT_OPTIONAL_LOCAL_SNAPSHOT_PRESENT = 3;
+}
+
+enum MigrationPhase {
+  MIGRATION_PHASE_UNSPECIFIED = 0;
+  MIGRATION_PHASE_EXPAND = 1;
+  MIGRATION_PHASE_BACKFILL = 2;
+  MIGRATION_PHASE_CONTRACT = 3;
+}
+
+enum RollbackEvidenceState {
+  ROLLBACK_EVIDENCE_STATE_UNSPECIFIED = 0;
+  ROLLBACK_EVIDENCE_STATE_AVAILABLE = 1;
+  ROLLBACK_EVIDENCE_STATE_UNAVAILABLE = 2;
+  ROLLBACK_EVIDENCE_STATE_REQUIRED_BEFORE_EXECUTION = 3;
+  ROLLBACK_EVIDENCE_STATE_RECOVERABLE = 4;
+}
+
+message UpgradeDryRunRequest {
+  string id = 1;
+  string source_version = 2;
+  string target_version = 3;
+  string deployment_mode = 4;
+  CompatibilityInput compatibility = 5;
+  BackupEvidence backup = 6;
+  MigrationPlan migration_plan = 7;
+  RollbackEvidence rollback_evidence = 8;
+  ReleaseNotesHandoff release_notes = 9;
+  SupportHandoff support_handoff = 10;
+}
+
+message CompatibilityInput {
+  string matrix_ref = 1;
+  CompatibilityResult result = 2;
+  string component_host_pin = 3;
+  string manifest_version = 4;
+}
+
+message BackupEvidence {
+  BackupRequirement requirement = 1;
+  string evidence_ref = 2;
+}
+
+message MigrationPlan {
+  repeated MigrationStep steps = 1;
+  MigrationFailure failure = 2;
+}
+
+message MigrationStep {
+  MigrationPhase phase = 1;
+  string summary = 2;
+}
+
+message MigrationFailure {
+  MigrationPhase phase = 1;
+  string reason = 2;
+}
+
+message RollbackEvidence {
+  RollbackEvidenceState state = 1;
+  string immutable_set_ref = 2;
+  string snapshot_ref = 3;
+  string restore_prerequisite = 4;
+  string escalation_owner = 5;
+}
+
+message ReleaseNotesHandoff {
+  repeated string required_inputs = 1;
+  string known_limitation = 2;
+}
+
+message SupportHandoff {
+  string owner = 1;
+  string handoff = 2;
+  string next_action = 3;
+  string escalation = 4;
+}
+
+message UnsupportedPathReport {
+  string reason = 1;
+  string remediation = 2;
+}
+
+message UpgradeDryRunReport {
+  string schema = 1;
+  UpgradeDryRunStatus status = 2;
+  CompatibilityInput compatibility = 3;
+  BackupEvidence backup = 4;
+  MigrationPlan migration_plan = 5;
+  RollbackEvidence rollback_evidence = 6;
+  ReleaseNotesHandoff release_notes = 7;
+  SupportHandoff support_handoff = 8;
+  UnsupportedPathReport unsupported_path = 9;
+  repeated string mutation_commands = 10;
+  string digest = 11;
+}

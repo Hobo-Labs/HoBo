@@ -1,0 +1,168 @@
+{
+	"consumer": { "name": "HoboStations" },
+	"provider": { "name": "TrafficRoutingSynthesis" },
+	"interactions": [
+		{
+			"description": "synthesize a degraded best-effort routing plan",
+			"request": {
+				"method": "POST",
+				"path": "/traffic-routing/synthesize",
+				"body": {
+					"topology": {
+						"service": "checkout",
+						"tenantId": "tenant-a",
+						"stationId": "station:prod",
+						"backends": [
+							{ "id": "backend:primary", "service": "checkout" }
+						]
+					},
+					"availability": {
+						"minHealthyBackends": 1,
+						"minDistinctLocations": 1
+					},
+					"policyDecision": {
+						"effect": "allow",
+						"engineId": "pact-policy",
+						"reasons": ["allowed"],
+						"audit": {
+							"decidedAt": "2026-08-03T15:00:00.000Z",
+							"tenantId": "tenant-a",
+							"action": "routing.plan",
+							"resourceKind": "service",
+							"resourceId": "checkout",
+							"subjectIdentity": "router"
+						}
+					},
+					"planId": "plan:checkout:pact",
+					"now": "2026-08-03T15:00:00.000Z"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "plan",
+					"plan": {
+						"planId": "plan:checkout:pact",
+						"intent": {
+							"service": "checkout",
+							"tenantId": "tenant-a",
+							"rules": [
+								{
+									"backends": [
+										{
+											"id": "backend:primary",
+											"service": "checkout"
+										}
+									],
+									"weightStrategy": "prefer-healthy"
+								}
+							],
+							"availability": {
+								"minHealthyBackends": 1,
+								"minDistinctLocations": 1
+							}
+						},
+						"backends": [
+							{ "id": "backend:primary", "service": "checkout" }
+						],
+						"stationId": "station:prod",
+						"createdAt": "2026-08-03T15:00:00.000Z",
+						"degraded": true,
+						"notes": [
+							"1 backend health signal(s) missing; using best effort",
+							"1 backend location signal(s) missing; using best effort",
+							"availability has 0 confirmed healthy backend(s); requires 1",
+							"availability has 0 known location(s); requires 1"
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "deny routing synthesis without Station context",
+			"request": {
+				"method": "POST",
+				"path": "/traffic-routing/synthesize",
+				"body": {
+					"topology": {
+						"service": "checkout",
+						"tenantId": "tenant-a",
+						"backends": [
+							{ "id": "backend:primary", "service": "checkout" }
+						]
+					},
+					"policyDecision": {
+						"effect": "allow",
+						"engineId": "pact-policy",
+						"reasons": ["allowed"],
+						"audit": {
+							"decidedAt": "2026-08-03T15:00:00.000Z",
+							"tenantId": "tenant-a",
+							"action": "routing.plan",
+							"resourceKind": "service",
+							"resourceId": "checkout",
+							"subjectIdentity": "router"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"kind": "denied",
+					"reasons": [
+						{
+							"code": "station-missing",
+							"message": "routing synthesis requires Station context"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "deny routing synthesis after policy denial",
+			"request": {
+				"method": "POST",
+				"path": "/traffic-routing/synthesize",
+				"body": {
+					"topology": {
+						"service": "checkout",
+						"tenantId": "tenant-a",
+						"stationId": "station:prod",
+						"backends": [
+							{ "id": "backend:primary", "service": "checkout" }
+						]
+					},
+					"policyDecision": {
+						"effect": "deny",
+						"engineId": "pact-policy",
+						"reasons": ["routing denied"],
+						"audit": {
+							"decidedAt": "2026-08-03T15:00:00.000Z",
+							"tenantId": "tenant-a",
+							"action": "routing.plan",
+							"resourceKind": "service",
+							"resourceId": "checkout",
+							"subjectIdentity": "router"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"kind": "denied",
+					"reasons": [
+						{
+							"code": "policy-denied",
+							"message": "routing denied"
+						}
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

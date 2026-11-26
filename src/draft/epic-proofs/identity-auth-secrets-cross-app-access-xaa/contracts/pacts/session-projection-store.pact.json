@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "SessionStoreProjection" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "replays session events and reports revoked sessions",
+      "providerStates": [{ "name": "session sess-orders-1 has a revoke event" }],
+      "request": {
+        "method": "POST",
+        "path": "/sessions/replay",
+        "headers": { "content-type": "application/json" },
+        "body": { "sessionId": "sess-orders-1", "subject": "user_alice" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "sessionId": "sess-orders-1", "state": "revoked", "events": ["session.Started", "session.Revoked"] }
+      }
+    }
+  ]
+}

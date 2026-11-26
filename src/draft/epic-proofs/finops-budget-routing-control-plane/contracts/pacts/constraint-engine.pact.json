@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "ConstraintEngine"
+  },
+  "interactions": [
+    {
+      "description": "filter invalid candidates before metric vectors exist",
+      "request": {
+        "method": "POST",
+        "path": "/constraints/filter"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "passed": ["candidate-balanced"],
+          "rejected": ["candidate-ineligible"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

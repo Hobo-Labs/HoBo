@@ -1,0 +1,57 @@
+{
+  "consumer": {
+    "name": "IacBackendConformanceConsumer"
+  },
+  "provider": {
+    "name": "IacTerraformBackendBoundary"
+  },
+  "interactions": [
+    {
+      "description": "HCL IaC backend satisfies the @hobo/conformance/iac-backend suite for a trivial program",
+      "request": {
+        "method": "POST",
+        "path": "/iac-terraform/conformance",
+        "body": {
+          "adapter": "@hobo/iac-terraform",
+          "program": "trivial"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "suite": "@hobo/conformance/iac-backend",
+          "provider": "terraform",
+          "passed": true,
+          "assertions": [
+            "preview-diff",
+            "apply-outputs",
+            "binding-outputs",
+            "refresh-clean",
+            "destroy-clean"
+          ]
+        }
+      }
+    },
+    {
+      "description": "HCL IaC backend reports its binary, pinned toolchain, and per-resource workspace model",
+      "request": {
+        "method": "GET",
+        "path": "/iac-terraform/identity"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "@hobo/iac-terraform",
+          "binary": "tofu",
+          "toolchainVersion": "1.8.3",
+          "workspaceModel": "per-resource-workspace"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+package wasi:blobstore@0.2.0;
+
+interface blobstore {
+  record object {
+    name: string,
+    content-type: string,
+    digest: string,
+    size: u64,
+  }
+
+  get: func(name: string) -> option<object>;
+  put: func(object: object, body: list<u8>);
+  delete: func(name: string);
+}

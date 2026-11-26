@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/internal-ca-private-acme-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for internal CA / private ACME certificate issuance in air-gapped Yards from HOBO-171.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

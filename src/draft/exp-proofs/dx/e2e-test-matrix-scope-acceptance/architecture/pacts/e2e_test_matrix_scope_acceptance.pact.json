@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "E2eTestMatrixScopeAcceptanceConsumer"
+  },
+  "provider": {
+    "name": "E2eTestMatrixScopeAcceptanceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "E2e Test Matrix Scope Acceptance boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/e2e-test-matrix-scope-acceptance/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.e2e_test_matrix_scope_acceptance/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

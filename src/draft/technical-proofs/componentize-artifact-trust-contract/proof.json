@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "componentize-artifact-trust-contract",
+  "title": "Componentize Artifact Trust Contract (S0-10 POC)",
+  "linear": "HOBO-587",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

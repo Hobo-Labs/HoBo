@@ -1,0 +1,91 @@
+{
+  "consumer": {
+    "name": "MembraneCaller"
+  },
+  "provider": {
+    "name": "MembraneDeadlineBackpressureBoundary"
+  },
+  "interactions": [
+    {
+      "description": "slow provider returns deadline-exceeded typed error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/membrane/call",
+        "body": {
+          "timeoutMs": 10,
+          "operation": "get"
+        }
+      },
+      "response": {
+        "status": 408,
+        "body": {
+          "code": "deadline-exceeded",
+          "failureClass": "transient",
+          "strategy": { "kind": "backoff-budget" }
+        }
+      }
+    },
+    {
+      "description": "saturated provider returns overloaded typed error envelope before invoke",
+      "request": {
+        "method": "POST",
+        "path": "/membrane/call",
+        "body": {
+          "providerId": "kv",
+          "maxInFlight": 0
+        }
+      },
+      "response": {
+        "status": 429,
+        "body": {
+          "code": "WRPC_OVERLOADED",
+          "membrane": "overloaded",
+          "failureClass": "transient"
+        }
+      }
+    },
+    {
+      "description": "severed mid-call returns partial-failure typed error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/membrane/call",
+        "body": {
+          "operation": "streamPut"
+        }
+      },
+      "response": {
+        "status": 500,
+        "body": {
+          "code": "WRPC_SEVERED",
+          "membrane": "severed",
+          "failureClass": "partial-failure",
+          "requiresIdempotencyDecision": true
+        }
+      }
+    },
+    {
+      "description": "ambiguous return returns partial-failure typed error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/membrane/call",
+        "body": {
+          "operation": "write"
+        }
+      },
+      "response": {
+        "status": 500,
+        "body": {
+          "code": "WRPC_AMBIGUOUS_RETURN",
+          "membrane": "ambiguous-return",
+          "failureClass": "partial-failure",
+          "requiresIdempotencyDecision": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

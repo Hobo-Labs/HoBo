@@ -1,0 +1,9 @@
+id: no-agent-broad-node-test
+language: TypeScript
+severity: warning
+message: Keep agent edit loops on targeted Bun/Vitest commands; reserve broad Node test runs for final validation.
+rule:
+  any:
+    - pattern: '"node --test"'
+    - pattern: "'node --test'"
+    - pattern: '`node --test`'

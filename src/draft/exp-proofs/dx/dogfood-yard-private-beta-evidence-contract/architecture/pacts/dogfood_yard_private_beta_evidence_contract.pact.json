@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "DogfoodYardPrivateBetaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "DogfoodYardPrivateBetaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Dogfood Yard private beta evidence boundary returns accepted M2 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/dogfood-yard/private-beta/evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.v1.dogfood-yard.private-beta/2026-06-30",
+          "issue": "HOBO-462",
+          "phase": "M2",
+          "milestoneGate": "M2 Private beta proof"
+        }
+      }
+    },
+    {
+      "description": "Dogfood Yard private beta evidence boundary rejects production readiness promotion",
+      "request": {
+        "method": "POST",
+        "path": "/dogfood-yard/private-beta/claims"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "production readiness claim is not allowed from M2 private beta evidence"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

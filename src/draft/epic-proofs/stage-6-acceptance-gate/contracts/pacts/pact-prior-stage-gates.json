@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "prior-stage-gates-boundary" },
+  "interactions": [
+    {
+      "description": "prior stage gates S0-S5 re-run green",
+      "request": { "method": "GET", "path": "/acceptance/prior-gates" },
+      "response": { "status": 200, "body": { "ok": true, "gates": [] } }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "prior-stage-gates",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

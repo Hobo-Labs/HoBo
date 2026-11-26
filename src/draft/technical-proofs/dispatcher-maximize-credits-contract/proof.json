@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "dispatcher-maximize-credits-contract",
+  "title": "Dispatcher Maximize-Credits Contract POC",
+  "linear": "HOBO-363",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-event-schema-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProviderCapabilityConformanceSuitesConsumer"
+  },
+  "provider": {
+    "name": "ProviderCapabilityConformanceSuitesBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Provider Capability Conformance Suites boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/provider-capability-conformance-suites/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.provider_capability_conformance_suites/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

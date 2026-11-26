@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TrainingDataPoisoningGuardContractConsumer"
+  },
+  "provider": {
+    "name": "TrainingDataPoisoningGuardContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Training Data Poisoning Guard Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/training-data-poisoning-guard-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.training_data_poisoning_guard_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

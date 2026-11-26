@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// The direct-provider-API deployment path: one convergent resolver per
+// product, talking to a provider REST API over a guarded HTTPS transport,
+// with no IaC engine in between. The invariants here are load-bearing for
+// that path's safety and its idempotence. On the transport side: the scheme
+// is https and nothing else, the host is an exact allowlist member (a
+// wildcard would turn one compromised subdomain into every subdomain), the
+// path sits under an allowlisted prefix, and both the time and the byte
+// bounds are positive and capped by policy — an unbounded call on a
+// credentialed connection is an outage waiting for a slow origin. On the
+// resolver side: the action vocabulary is closed so a caller can tell a
+// create from a duplicate, the physical id is present on every outcome, and
+// credential_ref is a scheme://... locator and never the material, because a
+// secret that reaches this record reaches the event log, the plan digest, and
+// every diagnostic printed from them.
+
+// What a guarded transport is allowed to reach. Hosts are exact, never
+// wildcards or suffixes.
+message TransportGuardPolicyRecord {
+  repeated string allowed_hosts = 1;
+  repeated string allowed_path_prefixes = 2;
+  // Hard cap. A request over it is refused, never clamped: a clamp turns an
+  // authoring mistake into a mystery timeout instead of a named refusal.
+  uint32 max_timeout_ms = 3;
+  uint32 max_response_bytes = 4;
+}
+
+// One outbound provider call. The headers this rides with carry the
+// sponsoring credential, which is why every field below is bounded.
+message TransportRequestRecord {
+  // GET | POST | PUT | PATCH | DELETE
+  string method = 1;
+  // https only, default port, no userinfo, no percent-encoded dot segments.
+  string url = 2;
+  // JSON-encoded request body, empty when the method carries none.
+  string body_json = 3;
+  uint32 timeout_ms = 4;
+  uint32 max_response_bytes = 5;
+}
+
+// The refusal a guarded transport reports. Carries the code so a caller can
+// branch on the reason instead of matching on a message.
+message TransportGuardRefusalRecord {
+  // TRANSPORT_SCHEME_FORBIDDEN | TRANSPORT_HOST_FORBIDDEN |
+  // TRANSPORT_PATH_FORBIDDEN | TRANSPORT_TIMEOUT_EXCEEDED |
+  // TRANSPORT_BODY_TOO_LARGE | TRANSPORT_REDIRECT_REFUSED
+  string code = 1;
+  string message = 2;
+}
+
+// The identity a reconcile converges on. logical_id is the author-facing name
+// that survives redeploys; physical_id is the provider's own id, empty until
+// the resource exists.
+message ResolvedResourceRefRecord {
+  // web | api | service | data | kv | bucket | queue | topic | secretRef | webhook
+  string slot = 1;
+  string product_id = 2;
+  string logical_id = 3;
+  string physical_id = 4;
+}
+
+// One reconcile request. desired and observed are JSON-encoded non-sensitive
+// values under code-unit-sorted keys; credential_ref is a locator only.
+message ResolveRequestRecord {
+  ResolvedResourceRefRecord ref = 1;
+  map<string, string> desired = 2;
+  map<string, string> observed = 3;
+  // scheme://... locator the host resolves at call time. Never a connection
+  // string, bearer token, PEM block, or any value with embedded userinfo.
+  string credential_ref = 4;
+}
+
+// What a reconcile reports. The action is what lets a caller tell a working
+// deploy from a duplicate one, so it is never defaulted or omitted.
+message ResolveOutcomeRecord {
+  // Always "hobo.resource-resolver/v1".
+  string contract = 1;
+  // create | update | replace | delete | adopt | noop
+  string action = 2;
+  string physical_id = 3;
+  // JSON-encoded non-sensitive outputs, keys sorted by code unit.
+  map<string, string> outputs = 4;
+  // Ordered narrative, not a set: sorting it would scramble the sequence.
+  repeated string diagnostics = 5;
+}
+
+// The refusal a resolver or one of its parse boundaries reports.
+message ResolverRefusalRecord {
+  // RESOLVER_CREDENTIAL_MISSING | RESOLVER_CREDENTIAL_NOT_A_REF |
+  // RESOLVER_PRODUCT_UNSUPPORTED | RESOLVER_PROVIDER_REJECTED |
+  // RESOLVER_OUTPUT_UNPARSEABLE
+  string code = 1;
+  // The product under resolution, when it was recognized before the refusal.
+  string product_id = 2;
+  string message = 3;
+}

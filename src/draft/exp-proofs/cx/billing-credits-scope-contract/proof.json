@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "billing-credits-scope-contract",
+  "experienceType": "cx",
+  "title": "Billing & Credits Scope Contract POC",
+  "linear": "HOBO-418",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MultiCloudShopProviderE2eContractConsumer"
+  },
+  "provider": {
+    "name": "MultiCloudShopProviderE2eContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Multi Cloud Shop Provider E2e Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/multi-cloud-shop-provider-e2e-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.multi_cloud_shop_provider_e2e_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

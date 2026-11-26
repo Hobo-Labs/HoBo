@@ -1,0 +1,218 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-prisma-postgres"
+	},
+	"provider": {
+		"name": "PrismaCreateDbCli"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"boundary": {
+			"kind": "process",
+			"transport": "child-process",
+			"specifier": "create-db@1.2.1",
+			"note": "This provider is a pinned child process, not an HTTP service. The pact shape is kept so every boundary in the repo reads the same way, with one honest substitution: `request` is the argv plus the explicit environment handed to an injected ProcessRunner, and `response.status` is the process exit code with the stdout document as the body.",
+			"executedBy": "test/contract.test.ts, against contracts/create-db-cli-boundary.contract.json, which carries the same interactions in the runner's own vocabulary and is the machine-readable half"
+		},
+		"redaction": "The pinned CLI prints a `connectionString` and a `claimUrl`. Neither appears in this document. The connection string is parsed and deposited into SecretCustodyPort inside one function scope and travels onward only as the `hobo-secret://…` locator shown below; the claim URL is bearer authority for the transfer ceremony, so only its required host is recorded. The sanitized stdout fixtures under test/fixtures/ are what the tests actually feed the parser.",
+		"invariants": {
+			"noShell": "argv is an array handed to an injected ProcessRunner; no shell is ever spawned",
+			"noAmbientEnvironment": "the child receives exactly CI, NO_COLOR, and FORCE_COLOR",
+			"noLatestSpecifier": "the specifier names an exact reviewed version; `create-db@latest` would hand credential minting to an unreviewed program chosen at run time",
+			"oneRunPerKey": "at most one spawn per idempotency key, because there is no read-by-id API to find a duplicate anonymous project with"
+		},
+		"sourceRefs": [
+			{
+				"url": "https://www.prisma.io/docs/postgres/npx-create-db",
+				"checkedAt": "2026-08-08"
+			},
+			{
+				"url": "https://github.com/prisma/create-db",
+				"checkedAt": "2026-08-08"
+			},
+			{
+				"url": "https://www.npmjs.com/package/create-db/v/1.2.1",
+				"checkedAt": "2026-08-08"
+			}
+		]
+	},
+	"interactions": [
+		{
+			"description": "create a temporary database and ask for the machine-readable document",
+			"providerState": "the create-db worker is accepting anonymous creates",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"],
+					"environment": {
+						"CI": "1",
+						"NO_COLOR": "1",
+						"FORCE_COLOR": "0"
+					},
+					"timeoutMs": 120000,
+					"maxOutputBytes": 65536
+				}
+			},
+			"response": {
+				"status": 0,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"success": true,
+					"connectionString": "<redacted at the parse boundary; the record keeps only hobo-secret://<tenant>/prisma/<resource>#connection-string>",
+					"claimUrl": "<redacted bearer URL; the host must equal create-db.prisma.io and the query must carry projectID=proj_…>",
+					"deletionDate": "2026-08-09T13:00:00.000Z",
+					"region": "us-east-1",
+					"name": "2026-08-08T13:00:00.000Z",
+					"projectId": "proj_fake000000000000"
+				},
+				"stdoutFixture": "create.success.json",
+				"parsedInto": {
+					"endpoint": {
+						"host": "db.prisma.io",
+						"port": 5432,
+						"databaseName": "postgres",
+						"tls": true
+					},
+					"credentialRef": "hobo-secret://<tenant>/prisma/<resource>#connection-string",
+					"expirySource": "cli-local-clock",
+					"documentedTtlHours": 24
+				}
+			}
+		},
+		{
+			"description": "create in a documented region, as one fused argv element",
+			"providerState": "the create-db worker is accepting anonymous creates",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": [
+						"npx",
+						"--yes",
+						"create-db@1.2.1",
+						"create",
+						"--json",
+						"--region=eu-central-1"
+					],
+					"timeoutMs": 120000
+				},
+				"note": "Run without --region the pinned CLI geolocates the calling host and picks a region for you, which is not a placement anyone chose. The flag and its value are one argv element so no shell quoting question can arise."
+			},
+			"response": {
+				"status": 0,
+				"stdoutFixture": "create.success.json"
+			}
+		},
+		{
+			"description": "ask for a shorter lifetime than the 24-hour default",
+			"providerState": "the create-db worker is accepting anonymous creates",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": [
+						"npx",
+						"--yes",
+						"create-db@1.2.1",
+						"create",
+						"--json",
+						"--region=eu-central-1",
+						"--ttl=4h"
+					],
+					"timeoutMs": 120000
+				},
+				"note": "The pinned CLI accepts 30m or 1h-24h. A shorter TTL is the only blast-radius control available on an anonymous database."
+			},
+			"response": {
+				"status": 0,
+				"stdoutFixture": "create.success.json"
+			}
+		},
+		{
+			"description": "rate limited by the create-db worker",
+			"providerState": "the caller has exceeded the documented 100 requests per minute",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"]
+				}
+			},
+			"response": {
+				"status": 1,
+				"body": {
+					"success": false,
+					"error": "RATE_LIMIT_EXCEEDED",
+					"message": "We're experiencing a high volume of requests. Please try again later.",
+					"status": 429,
+					"rateLimitInfo": {
+						"retryAfterMs": 60000
+					}
+				},
+				"stdoutFixture": "create.rate-limited.json",
+				"mapsToHoboCode": "PROVIDER_RATE_LIMITED"
+			}
+		},
+		{
+			"description": "upstream 5xx: the CLI reached the service, so a create may or may not have happened",
+			"providerState": "the upstream provisioning service is failing",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"]
+				}
+			},
+			"response": {
+				"status": 1,
+				"body": {
+					"success": false,
+					"error": "api_error",
+					"message": "Upstream provisioning service failed",
+					"status": 503
+				},
+				"stdoutFixture": "create.api-error-500.json",
+				"mapsToHoboCode": "PROVIDER_OPERATION_AMBIGUOUS"
+			}
+		},
+		{
+			"description": "the CLI dies without printing a document",
+			"providerState": "the child process is killed before it writes stdout",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"]
+				}
+			},
+			"response": {
+				"status": 137,
+				"body": "",
+				"mapsToHoboCode": "PROVIDER_OPERATION_AMBIGUOUS",
+				"note": "The idempotency key stays in-flight rather than being released. There is no read-by-id API, so a retry could orphan a database nobody can reach again."
+			}
+		},
+		{
+			"description": "a CLI build without --json prints the documented pretty output",
+			"providerState": "the caller asked for the human output mode",
+			"request": {
+				"method": "SPAWN",
+				"path": "create-db@1.2.1 create",
+				"body": {
+					"argv": ["npx", "--yes", "create-db@1.2.1", "create"]
+				}
+			},
+			"response": {
+				"status": 0,
+				"stdoutFixture": "create.human.txt",
+				"parsedBy": "human-v1",
+				"note": "The pretty output is read by documented label, not by scanning for a URI. A parser that keeps working after the layout changes is worse than one that stops."
+			}
+		}
+	]
+}

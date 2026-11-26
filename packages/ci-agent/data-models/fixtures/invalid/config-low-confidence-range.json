@@ -1,0 +1,1 @@
+{ "mode": "observe", "engines": [{ "id": "primary", "kind": "gateway", "model": "openai/gpt-5.1" }], "resolution": { "minConfidence": 1.5 } }

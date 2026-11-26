@@ -1,0 +1,30 @@
+{
+  "featureId": "agent-check-staged",
+  "scenarioSlug": "probe-command-reports-version-for-evidence-harness",
+  "personaIds": [
+    "developer",
+    "coding-agent"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T03:03:10.582Z",
+  "runId": "20260730-evidence-smoke",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 221,
+    "sha256": "b6cd1d4e3cccad3af89c741b2b5e9301b2159282de8444e30248bb9b414c1534"
+  },
+  "frames": [],
+  "repro": {
+    "command": "node -v",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

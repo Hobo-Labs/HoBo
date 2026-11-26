@@ -1,0 +1,9 @@
+{
+  "name": "@hobo-draft/cache-port-catalog-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx examples/usage.ts",
+    "bench": "vitest bench --run"
+  }
+}

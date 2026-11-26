@@ -1,0 +1,264 @@
+{
+  "consumer": {
+    "name": "marketplace-downstream-copy-state-consumer"
+  },
+  "provider": {
+    "name": "vibe-marketplace-trust-copy-states"
+  },
+  "interactions": [
+    {
+      "description": "reads customer-safe marketplace trust copy states",
+      "providerStates": [
+        {
+          "name": "HOBO-547 marketplace trust copy fixtures are published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-547",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states",
+          "proofNote": "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
+          "designRefs": [
+            "docs/design/marketplace-ux.md",
+            "docs/design/org-catalogs.md"
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "proofMode": "reference-fixture",
+              "copyStates": ["preview-warning"],
+              "trustCopyUse": "Preview warning copy cites accepted collect fixture evidence before surfacing missing-review limits."
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "copyStates": ["policy-block"],
+              "trustCopyUse": "Policy-block wording reuses the accepted plan preview boundary instead of inventing a policy engine."
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "live",
+              "copyStates": ["installable-with-evidence"],
+              "trustCopyUse": "Installable-with-evidence copy can cite accepted deploy evidence while still requiring review links."
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "copyStates": ["deprecated-guidance"],
+              "trustCopyUse": "Deprecated guidance uses stale-evidence quickstart labels instead of implying current installability."
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "copyStates": ["yanked-support-route", "hidden-listing"],
+              "trustCopyUse": "Yanked and hidden-listing copy reuse scope-out quickstart evidence for support and visibility limits."
+            }
+          ],
+          "scopeOut": [
+            "production UI",
+            "publisher portal UI",
+            "approval service",
+            "security scanner",
+            "policy engine",
+            "notification delivery",
+            "support queue",
+            "launch claims without evidence",
+            "live provider calls",
+            "real credentials",
+            "customer data"
+          ],
+          "scenarios": [
+            {
+              "kind": "preview-warning",
+              "fixtureId": "mtc-preview-warning-v1",
+              "listingState": "preview-only",
+              "path": "stale-or-unknown",
+              "proofMode": "reference-fixture",
+              "audience": "app developer",
+              "ownerRoute": "Marketplace Publisher Trust Evidence",
+              "evidenceSource": "docs/design/marketplace-publisher-trust-evidence.md",
+              "safeClaim": "Preview listings are visible only with explicit missing-evidence limits.",
+              "copy": {
+                "headline": "Preview listing",
+                "body": "This capability is available as a reference preview. Required review, conformance, and catalog evidence are not complete.",
+                "nextAction": "Review the evidence checklist before planning use."
+              },
+              "accessibilityNotes": [
+                { "check": "keyboard-only", "note": "Keyboard path named." },
+                { "check": "focus-order", "note": "Focus order named." },
+                { "check": "semantic-labels", "note": "Semantic labels named." },
+                { "check": "contrast", "note": "Contrast named." },
+                { "check": "responsive-layout", "note": "Responsive layout named." },
+                { "check": "reduced-motion", "note": "Reduced motion named." },
+                { "check": "screen-reader-smoke", "note": "Screen-reader smoke named." },
+                { "check": "state-copy-clarity", "note": "State copy clarity named." }
+              ]
+            },
+            {
+              "kind": "installable-with-evidence",
+              "fixtureId": "mtc-installable-evidence-v1",
+              "listingState": "installable",
+              "path": "happy",
+              "proofMode": "live",
+              "audience": "workspace administrator",
+              "ownerRoute": "Capability Review & Approval",
+              "evidenceSource": "docs/design/capability-review-approval.md",
+              "safeClaim": "Installable wording is allowed only when required evidence is linked.",
+              "copy": {
+                "headline": "Installable with linked evidence",
+                "body": "This fixture has provenance, conformance, security review, org catalog, and policy evidence for the recorded workspace scope.",
+                "nextAction": "Open the linked evidence before approving install intent."
+              },
+              "accessibilityNotes": [
+                { "check": "keyboard-only", "note": "Keyboard path named." },
+                { "check": "focus-order", "note": "Focus order named." },
+                { "check": "semantic-labels", "note": "Semantic labels named." },
+                { "check": "contrast", "note": "Contrast named." },
+                { "check": "responsive-layout", "note": "Responsive layout named." },
+                { "check": "reduced-motion", "note": "Reduced motion named." },
+                { "check": "screen-reader-smoke", "note": "Screen-reader smoke named." },
+                { "check": "state-copy-clarity", "note": "State copy clarity named." }
+              ]
+            },
+            {
+              "kind": "policy-block",
+              "fixtureId": "mtc-policy-block-v1",
+              "listingState": "blocked-by-policy",
+              "path": "blocked",
+              "proofMode": "simulated",
+              "audience": "workspace administrator",
+              "ownerRoute": "Org Catalogs",
+              "evidenceSource": "docs/design/org-catalogs.md",
+              "safeClaim": "Policy-blocked listings name the catalog or policy evidence that prevents new use.",
+              "copy": {
+                "headline": "Blocked for this workspace",
+                "body": "The org catalog or mandatory policy does not allow this listing for the selected workspace, project, or environment.",
+                "nextAction": "Ask the catalog owner to review the policy evidence and support handoff."
+              },
+              "accessibilityNotes": [
+                { "check": "keyboard-only", "note": "Keyboard path named." },
+                { "check": "focus-order", "note": "Focus order named." },
+                { "check": "semantic-labels", "note": "Semantic labels named." },
+                { "check": "contrast", "note": "Contrast named." },
+                { "check": "responsive-layout", "note": "Responsive layout named." },
+                { "check": "reduced-motion", "note": "Reduced motion named." },
+                { "check": "screen-reader-smoke", "note": "Screen-reader smoke named." },
+                { "check": "state-copy-clarity", "note": "State copy clarity named." }
+              ]
+            },
+            {
+              "kind": "deprecated-guidance",
+              "fixtureId": "mtc-deprecated-guidance-v1",
+              "listingState": "deprecated",
+              "path": "stale-or-unknown",
+              "proofMode": "reference-fixture",
+              "audience": "app developer",
+              "ownerRoute": "Registry Distribution",
+              "evidenceSource": "docs/design/adr/07-portability-extensibility.md#adr-0062",
+              "safeClaim": "Deprecated listings remain visible only for existing-use and migration guidance.",
+              "copy": {
+                "headline": "Deprecated listing",
+                "body": "This listing remains visible for existing use while replacement, migration, or retirement evidence is prepared.",
+                "nextAction": "Use the migration guidance or choose a replacement with current evidence."
+              },
+              "accessibilityNotes": [
+                { "check": "keyboard-only", "note": "Keyboard path named." },
+                { "check": "focus-order", "note": "Focus order named." },
+                { "check": "semantic-labels", "note": "Semantic labels named." },
+                { "check": "contrast", "note": "Contrast named." },
+                { "check": "responsive-layout", "note": "Responsive layout named." },
+                { "check": "reduced-motion", "note": "Reduced motion named." },
+                { "check": "screen-reader-smoke", "note": "Screen-reader smoke named." },
+                { "check": "state-copy-clarity", "note": "State copy clarity named." }
+              ]
+            },
+            {
+              "kind": "yanked-support-route",
+              "fixtureId": "mtc-yanked-support-route-v1",
+              "listingState": "yanked",
+              "path": "support-handoff",
+              "proofMode": "simulated",
+              "audience": "support operator",
+              "ownerRoute": "Support Workflow",
+              "evidenceSource": "docs/design/support-workflow.md",
+              "safeClaim": "Yanked listings route customers to support or migration guidance.",
+              "copy": {
+                "headline": "Yanked from new selection",
+                "body": "This listing is no longer available for new use. Existing users should follow the customer-safe support or migration route.",
+                "nextAction": "Open the redacted support handoff and owner route."
+              },
+              "accessibilityNotes": [
+                { "check": "keyboard-only", "note": "Keyboard path named." },
+                { "check": "focus-order", "note": "Focus order named." },
+                { "check": "semantic-labels", "note": "Semantic labels named." },
+                { "check": "contrast", "note": "Contrast named." },
+                { "check": "responsive-layout", "note": "Responsive layout named." },
+                { "check": "reduced-motion", "note": "Reduced motion named." },
+                { "check": "screen-reader-smoke", "note": "Screen-reader smoke named." },
+                { "check": "state-copy-clarity", "note": "State copy clarity named." }
+              ]
+            },
+            {
+              "kind": "hidden-listing",
+              "fixtureId": "mtc-hidden-listing-v1",
+              "listingState": "not-visible",
+              "path": "blocked",
+              "proofMode": "scope-out",
+              "audience": "marketplace operator",
+              "ownerRoute": "Marketplace UX",
+              "evidenceSource": "docs/design/marketplace-ux.md",
+              "safeClaim": "Hidden listings are not visible until required evidence exists.",
+              "copy": {
+                "headline": "Listing hidden",
+                "body": "This listing should not appear in marketplace search or install intent because required evidence is missing.",
+                "nextAction": "Keep it hidden until the owning review lane records accepted evidence."
+              },
+              "accessibilityNotes": [
+                { "check": "keyboard-only", "note": "Keyboard path named." },
+                { "check": "focus-order", "note": "Focus order named." },
+                { "check": "semantic-labels", "note": "Semantic labels named." },
+                { "check": "contrast", "note": "Contrast named." },
+                { "check": "responsive-layout", "note": "Responsive layout named." },
+                { "check": "reduced-motion", "note": "Reduced motion named." },
+                { "check": "screen-reader-smoke", "note": "Screen-reader smoke named." },
+                { "check": "state-copy-clarity", "note": "State copy clarity named." }
+              ]
+            }
+          ],
+          "handoffs": [
+            { "owner": "Marketplace UX", "consumes": "copy states", "mustNotOwn": ["production UI"] },
+            { "owner": "Capability Review & Approval", "consumes": "review evidence", "mustNotOwn": ["review service"] },
+            { "owner": "Marketplace Publisher Trust Evidence", "consumes": "trust warning copy", "mustNotOwn": ["publisher portal UI"] },
+            { "owner": "Org Catalogs", "consumes": "catalog evidence", "mustNotOwn": ["RBAC runtime"] },
+            { "owner": "Registry Distribution", "consumes": "deprecation and yank lifecycle", "mustNotOwn": ["registry storage"] },
+            { "owner": "Support Workflow", "consumes": "support route", "mustNotOwn": ["support queue"] },
+            { "owner": "Accessibility & Usability Quality", "consumes": "accessibility checks", "mustNotOwn": ["full accessibility audit"] }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-547",
+      "proof": "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ForgeCertificationLoopContractConsumer"
+  },
+  "provider": {
+    "name": "ForgeCertificationLoopContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Forge Certification Loop Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/forge-certification-loop-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.forge_certification_loop_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

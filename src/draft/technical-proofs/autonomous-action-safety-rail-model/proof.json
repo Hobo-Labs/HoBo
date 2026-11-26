@@ -1,0 +1,26 @@
+{
+  "layer": "technical",
+  "slug": "autonomous-action-safety-rail-model",
+  "title": "Autonomous Action Safety-Rail Model",
+  "linear": "HOBO-263",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": [
+    {
+      "requirement": "bench",
+      "reason": "Documentation-only POC by accepted decision: ADR-0094 keeps this spike free of runtime code, so there is no executable hot path to measure; the in-package ADR records the deliberate scope.",
+      "adr": "ADR.md"
+    }
+  ]
+}

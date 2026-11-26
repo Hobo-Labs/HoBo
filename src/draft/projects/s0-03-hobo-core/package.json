@@ -1,0 +1,18 @@
+{
+  "name": "@hobo-draft/s0-03-hobo-core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "S0-03 draft POC for @hobo/core — promotes to packages/core/ when S0-01 merges (HOBO-580).",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm run build && vitest run --passWithNoTests"
+  }
+}

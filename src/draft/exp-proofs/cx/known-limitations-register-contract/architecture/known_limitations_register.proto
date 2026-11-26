@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Known Limitations
+// Register draft package reasons about. Not compiled at runtime; this is a
+// design-time contract artifact.
+
+enum KnownLimitationState {
+  KNOWN_LIMITATION_STATE_UNSPECIFIED = 0;
+  KNOWN_LIMITATION_STATE_REAL = 1;
+  KNOWN_LIMITATION_STATE_BETA_ONLY = 2;
+  KNOWN_LIMITATION_STATE_SIMULATED_REFERENCE = 3;
+  KNOWN_LIMITATION_STATE_UNSUPPORTED = 4;
+  KNOWN_LIMITATION_STATE_DEFERRED = 5;
+  KNOWN_LIMITATION_STATE_POST_GA = 6;
+}
+
+message KnownLimitation {
+  string id = 1;
+  string summary = 2;
+  KnownLimitationState state = 3;
+  string affected_persona = 4;
+  string user_visible_impact = 5;
+  string workaround = 6;
+  string owner = 7;
+  string follow_up_issue = 8;
+  bool requires_follow_up = 9;
+  string release_note_section = 10;
+  string support_script_route = 11;
+  string docs_route = 12;
+  string launch_messaging_disposition = 13;
+}
+
+message KnownLimitationHandoffTarget {
+  string id = 1;
+  string owner = 2;
+  repeated string consumes = 3;
+  repeated string required_evidence = 4;
+}
+
+message KnownLimitationReviewCheckpoint {
+  string gate = 1;
+  string owner = 2;
+  repeated string required_fields = 3;
+  bool blocks_publication_when_stale = 4;
+}
+
+message KnownLimitationsRegister {
+  string issue = 1;
+  string phase = 2;
+  repeated KnownLimitation limitations = 3;
+  repeated KnownLimitationHandoffTarget handoff_targets = 4;
+  repeated KnownLimitationReviewCheckpoint review_checkpoints = 5;
+  repeated string allowed_framing = 6;
+}

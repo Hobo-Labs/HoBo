@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/eval-promotion-gate-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the eval rubric and promotion gate contract.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

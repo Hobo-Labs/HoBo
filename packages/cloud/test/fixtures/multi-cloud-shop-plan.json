@@ -1,0 +1,12 @@
+{
+	"schema": "hobo.deployment-plan/v1",
+	"objective": "min-cost",
+	"dependencyOrder": ["network", "database", "cache", "api", "web"],
+	"resources": [
+		{ "name": "network", "port": "network", "provider": "@hobo/provider-local", "deps": [] },
+		{ "name": "database", "port": "database", "provider": "@hobo/provider-local", "deps": ["network"] },
+		{ "name": "cache", "port": "cache", "provider": "@hobo/provider-local", "deps": ["network"] },
+		{ "name": "api", "port": "compute", "provider": "@hobo/provider-local", "deps": ["database", "cache"] },
+		{ "name": "web", "port": "compute", "provider": "@hobo/provider-local", "deps": ["api"] }
+	]
+}

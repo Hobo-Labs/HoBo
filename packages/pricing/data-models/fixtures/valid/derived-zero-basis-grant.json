@@ -1,0 +1,56 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "products": [],
+    "rateCards": [],
+    "allowances": [],
+    "credits": [
+      {
+        "id": "credit-derived-promo",
+        "tenantId": "tenant-example",
+        "category": "promotional",
+        "faceValue": {
+          "money": {
+            "decimal": "10.00",
+            "currency": "USD"
+          }
+        },
+        "economicBasis": {
+          "kind": "acquisition",
+          "acquisitionAmount": {
+            "decimal": "0.00",
+            "currency": "USD"
+          }
+        },
+        "scope": {
+          "productIds": ["product-compute"],
+          "rateCardIds": [],
+          "chargeIds": [],
+          "dimensions": []
+        },
+        "derivedFrom": "agreement-source",
+        "effective": {
+          "start": "2026-11-01T00:00:00Z",
+          "end": "2026-12-01T00:00:00Z"
+        },
+        "recurrence": {
+          "interval": "none"
+        },
+        "rollover": {
+          "max": "0",
+          "reset": true
+        },
+        "priority": 10,
+        "evidence": {
+          "source": "provider-observation",
+          "observedAt": "2026-11-01T00:00:00Z",
+          "validFrom": "2026-11-01T00:00:00Z",
+          "validUntil": "2026-12-01T00:00:00Z",
+          "evidenceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ],
+    "commitments": []
+  }
+}

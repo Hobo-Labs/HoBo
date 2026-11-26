@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package hobo.data.v1;
+
+// Wire records for the @hobo/data CQRS fold kernel (S1-15a). Design source:
+// docs/design/data-plane.md (Plan 11 + Plan 32). These are the persisted/cached
+// shapes; the runtime EventEnvelope (packages/core) carries the event bodies.
+
+enum ReactivityClass {
+  REACTIVITY_CLASS_UNSPECIFIED = 0;
+  REACTIVITY_CLASS_REACTIVE = 1;
+  REACTIVITY_CLASS_NON_REACTIVE = 2;
+}
+
+// Aggregate write-model snapshot: a fold result + the seq it covers, so actor
+// activation replays only the tail. A cache, never a source of truth.
+message AggregateSnapshotRecord {
+  string stream_id = 1;
+  uint64 seq = 2;
+  string fence_token = 3;
+  string state_json = 4;
+  string saved_at = 5;
+}
+
+// Projection read-model checkpoint: the folded rows + the log position reached.
+// Rebuildable from zero by replay; the checkpoint only skips already-folded tail.
+message ProjectionCheckpointRecord {
+  string projection = 1;
+  uint64 seq = 2;
+  string rows_json = 3;
+  string saved_at = 4;
+}
+
+// A poison event neutralized deterministically by a *.Quarantined fact.
+message QuarantineRecord {
+  uint64 offending_seq = 1;
+  uint64 quarantine_seq = 2;
+  string type = 3;
+  string reason = 4;
+}
+
+// A registered forward-only upcaster in the chain for an event type.
+message UpcasterRegistration {
+  string type = 1;
+  uint32 from_version = 2;
+  uint32 to_version = 3;
+}
+
+// actor.* lifecycle facts emitted by the aggregate single-writer boundary.
+message ActorActivatedData {
+  string stream_id = 1;
+  string holder_id = 2;
+  string fence_token = 3;
+}
+
+message ActorStateAppendedData {
+  string stream_id = 1;
+  uint64 seq = 2;
+  string fence_token = 3;
+}
+
+message ActorPassivatedData {
+  string stream_id = 1;
+  uint64 seq = 2;
+}
+
+// projection.* facts: declaration read-set, lag signal, sink rebind.
+message ProjectionDeclaredData {
+  string projection = 1;
+  repeated string read_set = 2;
+  ReactivityClass reactivity_class = 3;
+}
+
+message ProjectionLaggedData {
+  string projection = 1;
+  uint64 lag_seq = 2;
+  uint64 bound = 3;
+}
+
+message ProjectionSinkReboundData {
+  string projection = 1;
+  string match_decided_ref = 2;
+}

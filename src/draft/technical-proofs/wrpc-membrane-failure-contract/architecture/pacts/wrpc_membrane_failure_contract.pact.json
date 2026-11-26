@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "WrpcMembraneFailureContractConsumer"
+  },
+  "provider": {
+    "name": "WrpcMembraneFailureContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Wrpc Membrane Failure Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/wrpc-membrane-failure-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.wrpc_membrane_failure_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package hobo.broker_environment_publication.v1;
+
+message ProviderCapabilityPublication {
+  string provider_id = 1;
+  string manifest_digest = 2;
+  string conformance_digest = 3;
+  repeated Capability capabilities = 4;
+}
+
+message Capability {
+  string type = 1;
+  repeated string features = 2;
+}
+
+message BrokerCatalogPublication {
+  string catalog_version = 1;
+  string snapshot_digest = 2;
+  string issued_at = 3;
+  string stale_after = 4;
+}
+
+message MappingPublication {
+  string mapping_id = 1;
+  string mapping_digest = 2;
+  string provider_id = 3;
+  string resource_type = 4;
+  string provider_resource_class = 5;
+  repeated string requires = 6;
+  string compatibility = 7;
+}
+
+message ApprovalEvidence {
+  string approval_id = 1;
+  string approved_by = 2;
+  string decision = 3;
+  string approved_at = 4;
+  string evidence_digest = 5;
+}
+
+message PublicationProvenance {
+  string source_issue = 1;
+  repeated string source_refs = 2;
+  string digest = 3;
+}
+
+message ProviderDefaultInput {
+  string definition_id = 1;
+  string provider_id = 2;
+  string type = 3;
+  string resource_class = 4;
+  string role = 5;
+}
+
+message BrokerEnvironmentSnapshot {
+  string snapshot_id = 1;
+  string schema = 2;
+  ProviderCapabilityPublication provider = 3;
+  BrokerCatalogPublication catalog = 4;
+  MappingPublication mapping = 5;
+  ApprovalEvidence approval = 6;
+  PublicationProvenance provenance = 7;
+  repeated ProviderDefaultInput provider_defaults = 8;
+}

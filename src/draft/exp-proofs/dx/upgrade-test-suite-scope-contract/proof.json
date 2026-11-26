@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "upgrade-test-suite-scope-contract",
+  "experienceType": "dx",
+  "title": "Upgrade Test Suite Scope POC",
+  "linear": "HOBO-433",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

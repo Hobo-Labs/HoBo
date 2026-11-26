@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OrchestratorChoreographySkeletonContractConsumer"
+  },
+  "provider": {
+    "name": "OrchestratorChoreographySkeletonContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Orchestrator Choreography Skeleton Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/orchestrator-choreography-skeleton-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.orchestrator_choreography_skeleton_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

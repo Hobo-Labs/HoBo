@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package hobo.draft.exp_proofs.sdk_object_graph_manifest_ir_shapes.v1;
+
+message TypeSurface {
+  string import_from = 1;
+  repeated string generated_bindings = 2;
+  string manifest_version = 3;
+  string lowers_to = 4;
+  string compile_proof = 5;
+}
+
+message CompileConsumer {
+  string import_from = 1;
+  repeated string generated_bindings = 2;
+  string manifest_version = 3;
+  repeated string resource_refs = 4;
+  repeated string typed_client_calls = 5;
+  repeated string debt_markers = 6;
+}
+
+message Audience {
+  string actor = 1;
+  string goal = 2;
+  string friction = 3;
+  string success_criteria = 4;
+}
+
+message ExampleConsumer {
+  string kind = 1;
+  string proof_mode = 2;
+  string fixture_id = 3;
+  string fixture_input = 4;
+  string fixture_output = 5;
+  string sdk_snippet = 6;
+  string manifest_ir_shape = 7;
+  string expected_artifact = 8;
+  TypeSurface type_surface = 9;
+}
+
+message DebtMarker {
+  string kind = 1;
+  repeated string surfaced_by = 2;
+  string author_message = 3;
+}
+
+message ScopeBoundary {
+  repeated string in_scope = 1;
+  repeated string out_of_scope = 2;
+}
+
+message SdkObjectGraphProof {
+  string issue = 1;
+  string parent_issue = 2;
+  string phase = 3;
+  string target_package = 4;
+  string proof_note = 5;
+  repeated string design_anchors = 6;
+  repeated Audience audience = 7;
+  repeated string proof_mode_labels = 8;
+  TypeSurface type_surface = 9;
+  repeated ExampleConsumer example_consumers = 10;
+  repeated DebtMarker debt_markers = 11;
+  ScopeBoundary scope_boundary = 12;
+  repeated string compile_expectations = 13;
+  repeated CompileConsumer compile_consumers = 14;
+}

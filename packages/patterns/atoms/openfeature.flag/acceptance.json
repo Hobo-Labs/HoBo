@@ -1,0 +1,17 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"src/flags.ts",
+		"features/flag.feature"
+	],
+	"expectContains": {
+		"src/flags.ts": [
+			"app.feature.primary"
+		],
+		"features/flag.feature": [
+			"OpenFeature"
+		]
+	}
+}

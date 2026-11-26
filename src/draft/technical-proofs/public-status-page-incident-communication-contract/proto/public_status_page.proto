@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+// Wire/data-shape definitions for the HOBO-497 public status page and incident
+// communication contract. These are M0 schema records only; no live publishing,
+// transport, or storage implementation is provided here.
+package hobo.status.incident.v1;
+
+// Public, customer-safe lifecycle state of an incident or maintenance notice.
+enum IncidentState {
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  INCIDENT_STATE_INVESTIGATING = 1;
+  INCIDENT_STATE_IDENTIFIED = 2;
+  INCIDENT_STATE_MONITORING = 3;
+  INCIDENT_STATE_RESOLVED = 4;
+}
+
+// A customer-readable component group rendered on the public status page.
+message StatusPageComponent {
+  string id = 1;
+  string label = 2;
+  string owner_lane = 3;
+  string evidence = 4;
+}
+
+// Event: an incident has been opened and confirmed customer-visible.
+message IncidentOpened {
+  string incident_id = 1;
+  repeated string affected_components = 2;
+  IncidentState current_status = 3;
+  string next_update_condition = 4;
+}
+
+// Event: a customer-safe progress update has been published for an incident.
+message IncidentUpdated {
+  string incident_id = 1;
+  IncidentState current_status = 2;
+  string known_workaround = 3;
+  string next_update_condition = 4;
+}
+
+// Event: customer-visible impact has ended for an incident.
+message IncidentResolved {
+  string incident_id = 1;
+  string resolution_summary = 2;
+  string followup_owner = 3;
+}
+
+// Event: planned maintenance has been scheduled with an approved public window.
+message MaintenanceScheduled {
+  string incident_id = 1;
+  string window_start = 2;
+  string window_end = 3;
+  repeated string affected_components = 4;
+  string expected_impact = 5;
+}

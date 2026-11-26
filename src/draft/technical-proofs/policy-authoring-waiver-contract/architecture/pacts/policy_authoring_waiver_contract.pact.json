@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PolicyAuthoringWaiverContractConsumer"
+  },
+  "provider": {
+    "name": "PolicyAuthoringWaiverContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Policy Authoring Waiver Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/policy-authoring-waiver-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.policy_authoring_waiver_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

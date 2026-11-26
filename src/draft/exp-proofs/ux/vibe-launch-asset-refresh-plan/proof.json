@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-launch-asset-refresh-plan",
+  "experienceType": "ux",
+  "title": "Vibe Launch Asset Refresh Plan",
+  "linear": "HOBO-556",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

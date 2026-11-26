@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-569
+// control-plane API resource lifecycle shape contract. This is a design-time
+// schema artifact, not a runtime server implementation.
+
+enum ControlPlaneApiProofMode {
+  CONTROL_PLANE_API_PROOF_MODE_UNSPECIFIED = 0;
+  CONTROL_PLANE_API_PROOF_MODE_REFERENCE_FIXTURE = 1;
+  CONTROL_PLANE_API_PROOF_MODE_CONTRACT_FIXTURE = 2;
+  CONTROL_PLANE_API_PROOF_MODE_PROJECTION_SNAPSHOT = 3;
+  CONTROL_PLANE_API_PROOF_MODE_SUPPORT_SAFE_EVIDENCE = 4;
+}
+
+message ControlPlaneApiOperation {
+  string id = 1;
+  string human_name = 2;
+  string cli_command = 3;
+  string api_endpoint = 4;
+  string mcp_tool = 5;
+  repeated string request_shape = 6;
+  repeated string response_shape = 7;
+  repeated string domain_terms = 8;
+  bool shared_result_envelope = 9;
+  string fixture_id = 10;
+}
+
+message ControlPlaneApiRefusalEnvelope {
+  string code = 1;
+  string trigger = 2;
+  string remediation = 3;
+  ControlPlaneApiProofMode proof_mode = 4;
+  string fixture_id = 5;
+  string redaction_class = 6;
+}
+
+message ControlPlaneApiContractFixtures {
+  string protobuf = 1;
+  string cue = 2;
+  string pact = 3;
+}
+
+message ControlPlaneApiResourceLifecycleContract {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated ControlPlaneApiOperation operations = 6;
+  repeated ControlPlaneApiRefusalEnvelope refusal_envelopes = 7;
+  ControlPlaneApiContractFixtures contract_fixtures = 8;
+  repeated string scope_out = 9;
+}

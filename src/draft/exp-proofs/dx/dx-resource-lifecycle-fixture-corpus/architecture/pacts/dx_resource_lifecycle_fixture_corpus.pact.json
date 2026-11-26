@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "DxResourceLifecycleFixtureCorpusConsumer"
+  },
+  "provider": {
+    "name": "DxResourceLifecycleFixtureCorpusBoundary"
+  },
+  "interactions": [
+    {
+      "description": "DX resource lifecycle fixture corpus boundary returns accepted corpus metadata",
+      "request": {
+        "method": "GET",
+        "path": "/dx-resource-lifecycle-fixture-corpus/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.dx_resource_lifecycle_fixture_corpus/v1",
+          "issue": "HOBO-572",
+          "requiredFactKinds": [
+            "resources",
+            "links",
+            "manifest-ir",
+            "deployment-plan",
+            "deployment-set",
+            "delta",
+            "gatekeeper-decision",
+            "resourceactor-events",
+            "projection-snapshot",
+            "logs",
+            "drift-report",
+            "import-adopt-state",
+            "migration-phase",
+            "support-evidence"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

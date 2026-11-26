@@ -1,0 +1,25 @@
+{
+  "layer": "epic",
+  "slug": "providers-iac-build-adapters",
+  "title": "Providers, IaC & Build Adapters Reference Implementation",
+  "linear": "HOBO-87",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/generation-provider-loop-contract",
+      "src/draft/technical-proofs/iac-crossplane-backend-contract",
+      "src/draft/technical-proofs/iac-pulumi-backend-contract",
+      "src/draft/technical-proofs/provider-fly-contract",
+      "src/draft/technical-proofs/provider-vercel-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package hobo.manifest.plan.v1;
+
+// Wire records for the plan manifest: the resolved DAG the Planner emits and
+// the control plane content-addresses. Decomposed out of hobo.cloud.v1 so the
+// shape has one owner; every record carries a matching CUE constraint in
+// resource_plan.cue and a parse-don't-validate parsed derived type in
+// ../src/index.ts.
+//
+// Two deliberate departures from the hobo.cloud.v1 originals, both about
+// **field presence**, because a DeploymentPlan is content-addressed and a
+// presence mistake changes the digest rather than merely the type:
+//
+//  1. Every optional scalar is `optional`. hobo.cloud.v1 spells these as bare
+//     proto3 singular strings, which have no presence: an absent `region` and
+//     `region: ""` are the same wire value, but they are different plan values
+//     and they hash differently. Measured on
+//     packages/cloud/test/fixtures/multi-cloud-shop-plan.json, materialising
+//     the four absent optionals as "" moves the plan hash from
+//     sha256:6012432813829d6ffc013426b9792365f85ad2260c14c3f22276625a597f3421
+//     to sha256:ea2cc73d364877f2720d296a1ad1328a1f0f33a06cf892079104bdd3d46c5860.
+//
+//  2. `realization_parameters` is a google.protobuf.Struct, not a
+//     map<string, string>. The domain type is Record<string, unknown> and real
+//     values carry non-strings (packages/cloud/test/plan-binding-authority.test.ts
+//     asserts `{ ttlSeconds: 3600, tier: "standard" }`). Encoding those as
+//     canonical JSON text — the convention hobo.cloud.v1's comment names — is
+//     not injective: the number 3600 and the string "3600" both encode to
+//     "3600", so decoding cannot recover which one was hashed.
+
+import "google/protobuf/struct.proto";
+
+// Presence wrapper for an optional list.
+//
+// proto3 `repeated` has no field presence, so an absent list and an empty list
+// are indistinguishable on the wire. `non_portable_rows` is optional in the
+// domain type and absent-vs-empty is a real distinction here: absent means no
+// applied row contributed realization parameters, empty would mean rows
+// contributed but none is nameable, and the two serialize to different JSON
+// and therefore to different plan digests. A message-typed field carries
+// presence, so wrapping restores the distinction that `repeated` erases.
+message NonPortableRows {
+  repeated string values = 1;
+}
+
+// A resolved node of the DeploymentPlan DAG (control-plane.md step 6).
+message ResourcePlan {
+  // Resource id, unique within the plan; `deps` and `dependency_order`
+  // reference nodes by this.
+  string name = 1;
+  // Capability class: compute | kv | objectStore | ...
+  string port = 2;
+  // The provider package that won the match for this node.
+  string provider = 3;
+  // Bind-edge dependency ids.
+  repeated string deps = 4;
+
+  optional string strategy = 5;
+  optional string region = 6;
+  optional string deployment_id = 7;
+
+  // The provider offering this node resolves to (ADR-0157). A deployment
+  // driver keys its resolver lookup on this. Absent on the legacy port-only
+  // planning path; absent means "not decided here", so a driver that cannot
+  // find a product must fail closed rather than infer one from the port
+  // (ADR-0144 forbids naming-convention inference).
+  optional string product_id = 8;
+
+  // Yard-scoped, provider-native realization parameters merged from the
+  // applied Yard binding rows (ADR-0157). A message-typed field, so presence is
+  // explicit. Values are arbitrary JSON, matching the domain type; see the
+  // header note on why map<string, string> is not a faithful wire form.
+  //
+  // Never carries credential material: the Yard binding parse boundary
+  // (packages/yards/src/canonical.ts) refuses credential-shaped keys before a
+  // row can reach a plan, and this package's parse boundary refuses them again
+  // so a plan assembled by any other route cannot smuggle one in.
+  google.protobuf.Struct realization_parameters = 9;
+
+  // Canonical keys of the applied rows that contributed realization
+  // parameters, so a PortabilityReport can attribute the loss rather than
+  // merely report that something was lost.
+  NonPortableRows non_portable_rows = 10;
+}
+
+// The content-addressed DeploymentPlan DAG.
+//
+// The digest is taken over the canonical JSON of this record: keys sorted at
+// every depth by JavaScript's default (UTF-16 code unit) string order, arrays
+// left in their given order, no whitespace. Array order is therefore part of
+// the digest — `resources` and `dependency_order` are not sets.
+message DeploymentPlan {
+  // Always "hobo.deployment-plan/v1".
+  string schema = 1;
+  repeated ResourcePlan resources = 2;
+  // Provisioning order over the bind-edge DAG. Not guaranteed to be a
+  // topological order: the producing planner appends the members of a
+  // dependency cycle alphabetically rather than rejecting the plan
+  // (packages/cloud/src/planner/plan.ts, "A cycle would leave nodes
+  // unordered"), so a consumer that needs acyclicity must check for it.
+  repeated string dependency_order = 3;
+  string objective = 4;
+}

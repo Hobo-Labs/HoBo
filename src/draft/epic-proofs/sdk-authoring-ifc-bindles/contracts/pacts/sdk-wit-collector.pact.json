@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "SdkWitCollector" },
+  "interactions": [
+    {
+      "description": "collect IfC authoring facts for the sample Bindle",
+      "providerStates": [{ "name": "sample authoring graph exists" }],
+      "request": { "method": "POST", "path": "/collect", "body": { "bindle": "support-sync" } },
+      "response": { "status": 200, "body": { "schema": "hobo.collector/v1", "facts": ["resources", "bindings", "handlers"] } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

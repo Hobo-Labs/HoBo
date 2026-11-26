@@ -1,0 +1,15 @@
+{
+	"params": {
+		"name": "local"
+	},
+	"expectFiles": [
+		"src/station.ts"
+	],
+	"expectContains": {
+		"src/station.ts": [
+			"station(STATION_NAME)",
+			"initStation",
+			"STATION_ID"
+		]
+	}
+}

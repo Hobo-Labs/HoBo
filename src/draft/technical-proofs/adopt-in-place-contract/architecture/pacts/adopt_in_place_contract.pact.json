@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AdoptInPlaceContractConsumer"
+  },
+  "provider": {
+    "name": "AdoptInPlaceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Adopt In Place Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/adopt-in-place-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.adopt_in_place_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

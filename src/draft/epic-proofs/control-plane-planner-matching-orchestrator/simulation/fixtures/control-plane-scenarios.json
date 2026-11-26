@@ -1,0 +1,60 @@
+{
+  "personas": [
+    "Platform engineer",
+    "Release manager",
+    "SRE operator",
+    "DevOps platform owner"
+  ],
+  "bddScenarios": [
+    {
+      "persona": "Platform engineer",
+      "scenario": "Plan a Bindle into replayable provider decisions",
+      "verticalSlice": "deterministic-planning-and-matching"
+    },
+    {
+      "persona": "Release manager",
+      "scenario": "Promote a Delta into a Set and converge resources",
+      "verticalSlice": "delta-to-set-reconciliation"
+    },
+    {
+      "persona": "SRE operator",
+      "scenario": "Recover from drift and partial realization",
+      "verticalSlice": "safety-and-recovery"
+    },
+    {
+      "persona": "DevOps platform owner",
+      "scenario": "Seed a Yard and hand over identity",
+      "verticalSlice": "self-host-bootstrap"
+    }
+  ],
+  "resources": [
+    {
+      "name": "orders-db",
+      "port": "database.postgres",
+      "provider": "aws-rds",
+      "driver": "terraform",
+      "deps": []
+    },
+    {
+      "name": "checkout-api",
+      "port": "service.http",
+      "provider": "azure-container",
+      "driver": "container",
+      "deps": ["orders-db"]
+    },
+    {
+      "name": "web-edge",
+      "port": "gateway.http",
+      "provider": "cloudflare-workers",
+      "driver": "custom-webhook",
+      "deps": ["checkout-api"]
+    },
+    {
+      "name": "receipt-worker",
+      "port": "queue.worker",
+      "provider": "local-container",
+      "driver": "echo",
+      "deps": ["checkout-api"]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the S5-03 Forge Ingestion Contract
+// draft package reasons about. Documents the records/objects this package owns so the
+// architecture guard has a language-neutral schema reference. Not compiled at
+// runtime; this is a design-time contract artifact.
+
+enum S503ForgeIngestionContractEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_DESIGN_RECORD = 1;
+  EVIDENCE_KIND_CONTRACT_TEST = 2;
+}
+
+message ForgeIngestionFixtureIndex {
+  string schema = 1;
+  string request_id = 2;
+  string artifact_kind = 3;
+  string target_wit_port = 4;
+  string provider_id = 5;
+  string conformance_suite_id = 6;
+}
+
+message ForgeIngestionEventRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string evidence = 3;
+}

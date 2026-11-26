@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "FeedbackProposalGate"
+  },
+  "interactions": [
+    {
+      "description": "convert actuals and overrides into proposals without direct mutation",
+      "request": {
+        "method": "POST",
+        "path": "/feedback/proposals"
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "accepted": true,
+          "mutatesMetricsDirectly": false,
+          "mutatesPolicyDirectly": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

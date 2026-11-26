@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.draft.vibe_launch_asset_refresh_plan.v1;
+
+message AssetRefreshPlan {
+  string schema = 1;
+  string issue = 2;
+  string target_package_path = 3;
+  string proof_note_path = 4;
+  repeated string source_refs = 5;
+  repeated string audience = 6;
+  repeated LaunchAsset assets = 7;
+  repeated FixtureExample fixture_examples = 8;
+  repeated RefreshScenario scenarios = 9;
+  repeated string scope_out = 10;
+}
+
+message LaunchAsset {
+  string id = 1;
+  string kind = 2;
+  string label = 3;
+  string source_owner = 4;
+  string proof_mode = 5;
+  string evidence_source = 6;
+  string freshness_rule = 7;
+  string refresh_trigger = 8;
+  string validation_route = 9;
+  string stale_downgrade = 10;
+}
+
+message FixtureExample {
+  string id = 1;
+  string proof_mode = 2;
+  string asset_kind = 3;
+  string evidence_source = 4;
+  string claim_boundary = 5;
+}
+
+message RefreshScenario {
+  string id = 1;
+  string kind = 2;
+  string proof_mode = 3;
+  repeated string asset_ids = 4;
+  string expected_state = 5;
+  string launch_readiness_impact = 6;
+  string safe_next_action = 7;
+  string support_handoff = 8;
+  string accessibility_note = 9;
+}
+
+message ScopeCreepDenial {
+  string decision = 1;
+  string reason = 2;
+  string request = 3;
+}

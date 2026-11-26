@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "DataPlaneSearchMaterialization" },
+  "provider": { "name": "SearchEmbedBoundary" },
+  "interactions": [
+    {
+      "description": "run reactive full-text search and local vector extension",
+      "request": {
+        "method": "POST",
+        "path": "/search/orders",
+        "body": { "text": "snapshop", "tenantId": "tenant-a" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "hits": [{ "id": "order:1001" }], "embedder": "local-only" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

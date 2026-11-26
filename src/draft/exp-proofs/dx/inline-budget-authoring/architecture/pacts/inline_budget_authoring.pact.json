@@ -1,0 +1,27 @@
+{
+  "consumer": "inline-budget-authoring",
+  "provider": "hobo-plan-preview",
+  "interactions": [
+    {
+      "description": "plan preview requests budget surfacing for a camp policy block",
+      "request": {
+        "method": "POST",
+        "path": "/plan/budget-surface",
+        "body": {
+          "camp": "prod",
+          "projectedMonthlyUsd": 63.5,
+          "policy": {
+            "budget": { "softLimitUsd": 4000, "hardLimitUsd": 5000, "period": "monthly" }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "headroomUsd": 4936.5,
+          "humanBlock": "Cost & budget (camp prod, monthly)"
+        }
+      }
+    }
+  ]
+}

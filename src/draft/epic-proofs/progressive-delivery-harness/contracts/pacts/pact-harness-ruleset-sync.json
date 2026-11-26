@@ -1,0 +1,29 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-ruleset-sync-stream" },
+  "interactions": [
+    {
+      "description": "resolve latest ruleset freshness",
+      "providerStates": [{ "name": "ruleset seq 7 has reached the evaluator" }],
+      "request": {
+        "method": "GET",
+        "path": "/rulesets/latest",
+        "body": {}
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "seq": 7,
+          "freshness": {
+            "status": "fresh",
+            "ageMs": 1200
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "ruleset-sync",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

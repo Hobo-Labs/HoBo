@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "graphql-facade-generation-poc",
+  "title": "GraphQL Facade Generation POC",
+  "linear": "HOBO-65",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

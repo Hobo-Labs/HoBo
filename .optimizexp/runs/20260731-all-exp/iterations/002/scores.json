@@ -1,0 +1,90 @@
+{
+  "runId": "20260731-all-exp",
+  "iteration": 2,
+  "phase": "re-survey-plateau",
+  "scoredAt": "2026-07-31T15:04:00.000Z",
+  "metric_total": 1,
+  "metric_max": 1,
+  "implementableFindingsRemaining": 0,
+  "flatVsPrev": true,
+  "cells": [
+    {
+      "persona": "product-designer",
+      "feature": "design-system-contract",
+      "surface": "pnpm run design:lint",
+      "experience": "ux",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-coding-agent",
+      "feature": "agent-tooling-setup",
+      "surface": "bash scripts/setup-agent-tools.sh --help",
+      "experience": "ax",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-app-developer",
+      "feature": "cli-help-and-doctor",
+      "surface": "pnpm run doctor",
+      "experience": "dx",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-end-user",
+      "feature": "public-site-first-impression",
+      "surface": "pnpm run docs:site-nav",
+      "experience": "ux",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-coding-agent",
+      "feature": "draft-experience-proof-navigation",
+      "surface": "exp-proofs _classification.md",
+      "experience": "ax",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-app-developer",
+      "feature": "narrow-local-validation",
+      "surface": "discovery + agent:check --staged",
+      "experience": "dx",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "feature": "agent-check-staged",
+      "surface": "pnpm run agent:check -- --staged",
+      "experience": "dx",
+      "harms": 0,
+      "friction": 1,
+      "uncertainty": 0,
+      "total": 1,
+      "max": 1,
+      "note": "irreducible L residual"
+    }
+  ]
+}

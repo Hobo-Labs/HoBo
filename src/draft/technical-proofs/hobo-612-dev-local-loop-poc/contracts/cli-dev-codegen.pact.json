@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "@hobo/cli-dev"
+  },
+  "provider": {
+    "name": "@hobo/codegen-engine"
+  },
+  "interactions": [
+    {
+      "description": "generate checked-in _generated tree from sources",
+      "request": {
+        "method": "POST",
+        "path": "/codegen/generate",
+        "body": {
+          "layouts": [".hobo/generated", "src/_generated"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "written": ["src/_generated/bindings.d.ts"]
+        }
+      }
+    },
+    {
+      "description": "check drift without mutating",
+      "request": {
+        "method": "POST",
+        "path": "/codegen/check",
+        "body": {
+          "mode": "check"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "drift": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

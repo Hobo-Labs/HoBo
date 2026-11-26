@@ -1,0 +1,41 @@
+{
+  "consumer": {
+    "name": "GenerationReferenceApp"
+  },
+  "provider": {
+    "name": "GenerationCertificationRegistry"
+  },
+  "interactions": [
+    {
+      "description": "publish signed certification descriptor after green gates",
+      "providerStates": [
+        {
+          "name": "validation, provenance, and policy reports are signed"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/generation/certifications",
+        "body": {
+          "artifact": "@acme/provider-postgres",
+          "provenance": "signed",
+          "validation": "passed"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "events": [
+            "gen.Certified",
+            "gen.PluginCertified"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

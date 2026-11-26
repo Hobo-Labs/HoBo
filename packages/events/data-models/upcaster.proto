@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package hobo.events.v1;
+
+// Golden-replay corpus + upcaster-totality gate shapes (ADR-0032, data-plane
+// Plan 9-11), promoted from event-body-upcaster-gate. Language-neutral schema
+// reference for the architecture guard; not compiled at runtime.
+
+message CorpusEntryRecord {
+  string schema = 1; // hobo.golden-replay-corpus-entry/v1
+  string id = 2;
+  string type = 3;
+  uint32 version = 4;
+  string encoding = 5; // protobuf-lite
+  string body_base64 = 6;
+  string body_digest = 7; // sha256:<hex>
+}
+
+message CorpusBaselineEntryRecord {
+  string key = 1; // <type>@v<version>#<id>
+  string body_digest = 2;
+}
+
+message CorpusBaselineRecord {
+  string schema = 1; // hobo.golden-replay-corpus-baseline/v1
+  repeated CorpusBaselineEntryRecord entries = 2;
+}
+
+message UpcasterGateReportRecord {
+  bool ok = 1;
+  repeated string errors = 2;
+}

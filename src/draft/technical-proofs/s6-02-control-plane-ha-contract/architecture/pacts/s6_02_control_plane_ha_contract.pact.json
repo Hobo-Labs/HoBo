@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "S6ControlPlaneHaContractConsumer"
+  },
+  "provider": {
+    "name": "S6ControlPlaneHaContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Control-plane HA boundary returns quorum-fenced failover evidence",
+      "request": {
+        "method": "GET",
+        "path": "/s6-02-control-plane-ha/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s6_02_control_plane_ha_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+	"params": {
+		"name": "bare"
+	},
+	"expectFiles": [
+		"src/bindle.ts"
+	],
+	"expectContains": {
+		"src/bindle.ts": [
+			"bindle(\"bare\""
+		]
+	}
+}

@@ -1,0 +1,11 @@
+discovery: issuer=https://identity.yard.example jwks_keys=1
+issued: subject=spiffe://yard/tenant-a/agent/deployer event=identity.Issued expiresAt=2026-06-25T15:15:00.000Z
+tenant binding: measured tenant-a beats claimed tenant-evil
+gateway: status=authenticated tenant=tenant-a scope=database/shop.db:write
+rotated: event=identity.Rotated newKid=yard-rollover-2026-07 oldTokenStillValid=true
+early rotation denied: rotation-outside-renewal-grace
+scope widening denied: scope-widening-requires-live-identity
+tampered attestation denied: host-signature-invalid
+expired attestation denied: launch-measurement-expired
+audit log: events=identity.Issued,identity.Rotated
+CONTRACT HELD: identity issues attestation-bound, scope-frozen, rotatable JWT-SVIDs and fails closed

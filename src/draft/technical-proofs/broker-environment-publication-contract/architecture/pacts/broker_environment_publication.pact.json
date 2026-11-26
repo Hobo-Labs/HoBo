@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "ProviderCatalogPublisher"
+  },
+  "provider": {
+    "name": "MetaCloudBrokerEnvironmentSnapshot"
+  },
+  "interactions": [
+    {
+      "description": "publishes approved provider/catalog/mapping evidence into a broker environment snapshot",
+      "request": {
+        "method": "POST",
+        "path": "/broker/environments",
+        "headers": {
+          "content-type": "application/vnd.hobo.broker-environment-publication.v1+json"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "schema": "hobo.broker-environment-snapshot/v1",
+          "snapshotId": "bes_contract_fixture",
+          "providerDefaultsRole": "broker-validation-input"
+        }
+      }
+    },
+    {
+      "description": "rejects unapproved stale incompatible or shadow publication attempts",
+      "request": {
+        "method": "POST",
+        "path": "/broker/environments",
+        "headers": {
+          "content-type": "application/vnd.hobo.broker-environment-publication.v1+json"
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "schema": "hobo.broker-environment-rejection/v1",
+          "reason": "fail-closed-publication"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "source": "src/draft/broker-environment-publication-contract",
+    "issue": "HOBO-526"
+  }
+}

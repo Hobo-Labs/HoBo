@@ -1,0 +1,32 @@
+{
+  "runId": "20260731-jts-dev",
+  "experiences": [
+    "dx",
+    "ax"
+  ],
+  "personas": [
+    "junior-typescript-developer"
+  ],
+  "personaResolution": "generated this invocation via --persona",
+  "generatedPersonas": [
+    {
+      "id": "junior-typescript-developer",
+      "seed": "junior typescript developer",
+      "path": ".optimizexp/personas/junior-typescript-developer.md"
+    }
+  ],
+  "generatedFeatures": [],
+  "features": [
+    "agent-check-staged"
+  ],
+  "surfaces": [
+    "pnpm run agent:check -- --staged"
+  ],
+  "maxIterations": 1,
+  "minIterations": 1,
+  "noPlateauStop": false,
+  "iterationsCompleted": 1,
+  "iterationMeaning": "persona-scenario-review-passes",
+  "hostAgent": "grok",
+  "stopReason": "cap"
+}

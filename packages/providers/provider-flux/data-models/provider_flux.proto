@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package hobo.provider_flux.v1;
+
+enum FluxSourceKind {
+  FLUX_SOURCE_KIND_UNSPECIFIED = 0;
+  FLUX_SOURCE_KIND_OCI = 1;
+  FLUX_SOURCE_KIND_GIT = 2;
+}
+
+enum FluxTier {
+  FLUX_TIER_UNSPECIFIED = 0;
+  FLUX_TIER_COMMUNITY_FREE = 1;
+  FLUX_TIER_PAID_MULTI_INSTANCE = 2;
+}
+
+message FluxDeploySpec {
+  FluxSourceKind source = 1;
+  string image_digest = 2;
+  string git_repository = 3;
+  string webhook_secret_ref = 4;
+  string api_key_secret_ref = 5;
+  bool webhook_signed = 6;
+  bool status_logs_authenticated = 7;
+  FluxTier tier = 8;
+  string environment = 9;
+}

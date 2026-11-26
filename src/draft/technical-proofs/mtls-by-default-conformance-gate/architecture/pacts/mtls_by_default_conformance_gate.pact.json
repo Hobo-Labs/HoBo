@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MtlsByDefaultConformanceGateConsumer"
+  },
+  "provider": {
+    "name": "MtlsByDefaultConformanceGateBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Mtls By Default Conformance Gate boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/mtls-by-default-conformance-gate/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.mtls_by_default_conformance_gate/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

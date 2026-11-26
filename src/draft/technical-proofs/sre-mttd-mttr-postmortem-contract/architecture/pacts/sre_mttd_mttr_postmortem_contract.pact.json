@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SreMttdMttrPostmortemContractConsumer"
+  },
+  "provider": {
+    "name": "SreMttdMttrPostmortemContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Sre Mttd Mttr Postmortem Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/sre-mttd-mttr-postmortem-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.sre_mttd_mttr_postmortem_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@hobo/draft-config-secret-schema-contract",
+  "private": true,
+  "type": "module",
+  "main": "./src/config-schema.ts",
+  "types": "./src/config-schema.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/config-schema.d.mts",
+      "import": "./src/config-schema.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

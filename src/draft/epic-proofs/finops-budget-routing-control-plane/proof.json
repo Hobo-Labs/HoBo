@@ -1,0 +1,22 @@
+{
+  "layer": "epic",
+  "slug": "finops-budget-routing-control-plane",
+  "title": "FinOps Budget Routing Control Plane",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/cost-degradation-saga-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/finops-budget-routing-control-plane.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

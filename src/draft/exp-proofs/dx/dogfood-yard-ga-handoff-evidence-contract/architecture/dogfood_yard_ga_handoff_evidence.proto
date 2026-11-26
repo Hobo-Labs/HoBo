@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package hobo.draft.dogfood_yard_ga_handoff_evidence;
+
+// Architecture-guard evidence: protobuf data shapes the Dogfood Yard GA
+// Handoff Evidence draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum DogfoodYardGaEvidenceStatus {
+  DOGFOOD_YARD_GA_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  DOGFOOD_YARD_GA_EVIDENCE_STATUS_ACCEPTED = 1;
+  DOGFOOD_YARD_GA_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  DOGFOOD_YARD_GA_EVIDENCE_STATUS_IN_REVIEW = 3;
+  DOGFOOD_YARD_GA_EVIDENCE_STATUS_MISSING = 4;
+}
+
+enum DogfoodYardGaBlockerState {
+  DOGFOOD_YARD_GA_BLOCKER_STATE_UNSPECIFIED = 0;
+  DOGFOOD_YARD_GA_BLOCKER_STATE_BLOCKED = 1;
+  DOGFOOD_YARD_GA_BLOCKER_STATE_ACCEPTED_RISK = 2;
+  DOGFOOD_YARD_GA_BLOCKER_STATE_CLEARED = 3;
+}
+
+message DogfoodYardGaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  DogfoodYardGaEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message DogfoodYardGaBlocker {
+  string id = 1;
+  string owner_project = 2;
+  DogfoodYardGaBlockerState state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message DogfoodYardGaAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message DogfoodYardGaReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message DogfoodYardGaMissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+}
+
+message DogfoodYardGaFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message DogfoodYardGaInitiativeStatusGate {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message DogfoodYardGaPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message DogfoodYardGaHandoffEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated string scope_in = 5;
+  repeated string scope_out = 6;
+  repeated DogfoodYardGaEvidenceItem evidence = 7;
+  repeated DogfoodYardGaBlocker blockers = 8;
+  repeated DogfoodYardGaAcceptedRisk accepted_risks = 9;
+  repeated DogfoodYardGaReleaseCutlineDependency release_cutline_dependencies = 10;
+  repeated DogfoodYardGaMissingEvidence missing_evidence = 11;
+  repeated DogfoodYardGaFollowUp follow_ups = 12;
+  DogfoodYardGaInitiativeStatusGate initiative_status = 13;
+  repeated DogfoodYardGaPublicClaimGuard public_claim_guards = 14;
+}

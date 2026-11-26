@@ -1,0 +1,8 @@
+{
+  "name": "gatekeeper-v1-policy-contracts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

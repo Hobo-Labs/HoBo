@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "matching-engine-skeleton-contract",
+  "title": "HOBO-64 Matching Engine Skeleton Contract",
+  "linear": "HOBO-64",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-event-schema-contract",
+      "src/draft/technical-proofs/matching-specificity-vectors",
+      "src/draft/technical-proofs/resource-definition-driver-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

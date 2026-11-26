@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "CapabilityContractGate" },
+  "interactions": [
+    {
+      "description": "reject allow narrowing below observed usage",
+      "providerStates": [{ "name": "used verbs exceed explicit allow set" }],
+      "request": { "method": "POST", "path": "/capability-contract/evaluate", "body": { "required": ["get", "set"], "granted": ["get"] } },
+      "response": { "status": 422, "body": { "ok": false, "reason": "capability.required-not-granted" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

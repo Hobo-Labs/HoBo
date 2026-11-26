@@ -1,0 +1,21 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "JWKSIdentityProvider" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "publishes JWKS kid needed for hobo auth token verification",
+      "providerStates": [{ "name": "fixture issuer has active and rollover keys" }],
+      "request": {
+        "method": "GET",
+        "path": "/.well-known/jwks.json",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "keys": [{ "kid": "yard-genesis-2026-06", "kty": "OKP", "use": "sig" }] }
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "marketplace-ux-scope-contract",
+  "experienceType": "ux",
+  "title": "Marketplace UX Scope Contract",
+  "linear": "HOBO-421",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/marketplace-ux.md",
+      "docs/design/proofs/hobo-421-marketplace-ux/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

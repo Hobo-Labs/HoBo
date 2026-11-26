@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "accessibility-usability-launch-baseline-contract",
+  "experienceType": "ux",
+  "title": "Accessibility And Usability Launch Baseline Contract",
+  "linear": "HOBO-505",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

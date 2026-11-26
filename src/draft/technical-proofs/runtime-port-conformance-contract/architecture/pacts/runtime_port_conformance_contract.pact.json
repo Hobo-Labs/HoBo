@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RuntimePortConformanceContractConsumer"
+  },
+  "provider": {
+    "name": "RuntimePortConformanceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Runtime Port Conformance Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/runtime-port-conformance-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.runtime_port_conformance_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

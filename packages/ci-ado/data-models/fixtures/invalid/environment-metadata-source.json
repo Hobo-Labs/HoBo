@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "hobo.ci.ado/v1",
+  "pool": "hobo-local",
+  "pipelinePath": "pipeline.json",
+  "artifactPrefix": "hobo",
+  "environmentRefs": { "TOKEN": "HOBO_CI_BUNDLE_READY" }
+}

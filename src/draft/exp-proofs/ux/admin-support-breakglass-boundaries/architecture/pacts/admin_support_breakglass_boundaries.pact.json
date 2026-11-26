@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AdminSupportBreakGlassBoundaryConsumer"
+  },
+  "provider": {
+    "name": "AdminSupportBreakGlassBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Admin support break-glass boundary returns recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/admin-support-breakglass-boundaries/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.admin_support_breakglass_boundaries/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

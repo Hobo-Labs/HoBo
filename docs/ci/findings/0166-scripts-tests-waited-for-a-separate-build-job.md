@@ -1,0 +1,43 @@
+---
+type: CI Performance Finding
+title: "Finding 166: scripts tests waited for a separate build job"
+description: "A pull-request run of HoBo CI Fabric built the scripts-test packages in a scripts-tests-build job, then waited for runners again before the four scripts-tests shards could start. Since every gate job restores the main build cache, each shard now builds what it imports itself, which removes one serial stage and one runner pickup."
+tags: [hobo, ci, performance, turbo, scripts-tests]
+---
+
+# Finding 166: scripts tests waited for a separate build job
+
+## Measurements
+
+Run 45322146069 of HoBo CI Fabric, the scripts lane after the route job:
+
+- `scripts-tests-build` took 1.5 minutes: it built the packages the scripts tests import, packed every `dist/` tree into a tarball and uploaded it as an artifact.
+- The four `scripts-tests` shards needed that job, so they queued only after it finished and then waited about 3.5 minutes for runners under contention.
+- The shards took about 3 minutes each, after downloading and extracting the tarball.
+
+The lane's critical path was route, then build (1.5 minutes), then a second runner pickup (3 to 5 minutes), then the shards (3 minutes).
+
+The separate build existed because each shard rebuilding the import graph from an empty cache cost more than the hand-off. Since [finding 162](0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md), every gate job restores the whole-workspace `main-build` Turbo cache a push to main saves; shard 0 of workspace tests in the same run saw 100 of 101 build tasks hit it.
+
+## Fix
+
+- The `scripts-tests-build` job and its `dist/` tarball artifact are gone. `scripts-tests` needs only `route` and `ci-runner-image`, so its shards start as soon as the route job does.
+- Each shard runs "Build the packages the scripts tests import": the same step a signed local run already used, with the `scripts-test-imports.mts` and `affected-lanes.mts` filters, a 6-minute limit, and the same fail-closed empty-base check. It now runs whenever the scope step selects the lane, in CI as locally.
+- The shards restore `main-build` and then their own `scripts-tests` Turbo archive. Only shard 0 prunes and saves that archive. [Finding 155](0155-merge-queue-vitest-file-shards-and-release-integration-lane.md) gave the scripts matrix no save because the build job was its sole saver; without that job nothing else seeds `scripts-tests`, so one shard takes the save, as one shard of every other matrix does, and four shards never race to write the same key.
+- The PR impact gate no longer needs or checks the build job; it requires the four shards as before.
+
+## Expected effect
+
+The scripts lane loses one serial stage and one runner pickup, about 3 to 5 minutes of a pull-request or merge-group run under contention. Each shard pays a mostly cached build instead of an artifact download and extract.
+
+## Remaining limits
+
+- A change that reaches many packages the scripts tests import rebuilds them in all four shards rather than once; the main build cache only covers what main already built.
+
+## Follow-up
+
+The shard build step ran `turbo run build --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}`, but the workflow-level env sets `HOBO_TURBO_CONCURRENCY: "1"` to serialize tests, so each shard built one package at a time. Merge-group run 45393405752 (job 138443029109) restored the `main-build` cache from an older lockfile key, so all 170 build tasks missed the cache and executed; three of the four shards hit "The action 'Build the packages the scripts tests import' has timed out after 6 minutes".
+
+The step now passes `--concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%}`, the build knob the workspace shards honor and the full concurrency `main_build_cache` uses. That job's whole-workspace build took at most 2 minutes 40 seconds in recent pushes to main on the same `ubuntu-24.04` runner, so the six-minute limit stays.
+
+`.github/workflows/actions.lock` no longer pins `actions/download-artifact` for `hobo-ci.yml`, which stopped using it with the build job.

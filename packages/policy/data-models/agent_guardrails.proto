@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package hobo.policy.v1;
+
+enum AgentActionClassEffect {
+  AGENT_ACTION_CLASS_EFFECT_UNSPECIFIED = 0;
+  AGENT_ACTION_CLASS_EFFECT_AUTO_ALLOW = 1;
+  AGENT_ACTION_CLASS_EFFECT_REQUIRE_APPROVAL = 2;
+  AGENT_ACTION_CLASS_EFFECT_DENY = 3;
+}
+
+message AgentActionClassPolicy {
+  string read = 1;
+  string write = 2;
+  string deploy = 3;
+  string destroy = 4;
+  string token = 5;
+  string admin = 6;
+}
+
+message DestroyGrant {
+  bool granted = 1;
+  string grant_id = 2;
+}
+
+message AgentGuardrailPolicy {
+  string schema_version = 1;
+  string agent_id = 2;
+  AgentActionClassPolicy action_classes = 3;
+  double spend_cap_usd = 4;
+  repeated string allowed_approvers = 5;
+  DestroyGrant destroy_grant = 6;
+}
+
+message AgentGuardrailEvaluation {
+  string action_class = 1;
+  string effect = 2;
+  string reason = 3;
+  string enforcement_point = 4;
+}

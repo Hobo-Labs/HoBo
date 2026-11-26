@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "TopologyLowerer" },
+  "interactions": [
+    {
+      "description": "lower first-class topology objects with deterministic precedence",
+      "providerStates": [{ "name": "bindle camp yard graph available" }],
+      "request": { "method": "POST", "path": "/topology/lower", "body": { "bindle": "support-sync", "camp": "local-dev" } },
+      "response": { "status": 200, "body": { "resolutionOrder": ["bindings", "tiers", "defaultProvider"], "inferredCampAutoApproved": false } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,21 @@
+{
+  "consumer": {"name": "HostingTransitionCoordinator"},
+  "provider": {"name": "BrokerBudgetAdmissionAuthority"},
+  "metadata": {"pactSpecification": {"version": "3.0.0"}, "evidence": "hand-authored offline in-process port expectations"},
+  "messages": [{
+    "description": "a liability reservation is idempotent and holds funds from competing work",
+    "contents": {
+      "snapshot": {
+        "identity": {"tenantId": "tenant", "budgetId": "hosting", "periodId": "2026-10", "policyRevision": "r1"},
+        "limitMicros": 100, "observedAt": "2026-10-29T00:00:00Z", "validUntil": "2026-11-01T00:00:00Z"
+      },
+      "quote": {
+        "quoteId": "quote", "yardId": "yard", "providerId": "aws", "ownerTenantId": "tenant", "currency": "USD",
+        "totalMicros": 30, "liabilityBoundMicros": 60, "components": [{"name": "complete-request", "costMicros": 30}],
+        "requestDigest": "request", "observedAt": "2026-10-29T00:00:00Z", "validUntil": "2026-11-01T00:00:00Z"
+      },
+      "now": "2026-10-29T12:00:00Z",
+      "expectedStatus": "held", "expectedReservedMicros": 60, "competingRefusal": "budget exhausted"
+    }
+  }]
+}

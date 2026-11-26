@@ -1,0 +1,179 @@
+package hobo:sdk@0.1.0;
+
+interface types {
+  enum stability-tier {
+    stable,
+    preview,
+    experimental,
+    deprecated,
+  }
+
+  enum resource-kind {
+    api,
+    schedule,
+    website,
+    storage,
+    secret,
+    config,
+    database,
+    cache,
+    queue,
+    event-stream,
+    feature-flag,
+    function,
+    workflow,
+    actor,
+    agent,
+  }
+
+  enum grant-verb {
+    read,
+    write,
+    invoke,
+    publish,
+    subscribe,
+    deploy,
+    administer,
+  }
+
+  enum step-status {
+    completed,
+    retry,
+    compensating,
+    failed,
+  }
+
+  record interface-ref {
+    namespace: string,
+    package-name: string,
+    interface-name: string,
+    version: string,
+    stability: stability-tier,
+  }
+
+  record resource-ref {
+    kind: resource-kind,
+    name: string,
+    interface-ref: interface-ref,
+  }
+
+  record capability-grant {
+    target: resource-ref,
+    verbs: list<grant-verb>,
+  }
+
+  record manifest-ir {
+    component: string,
+    resources: list<resource-ref>,
+    grants: list<capability-grant>,
+  }
+
+  record workflow-step {
+    name: string,
+    idempotency-key: string,
+    timeout-ms: u64,
+    grants: list<capability-grant>,
+  }
+
+  record step-result {
+    status: step-status,
+    encoded-json: string,
+  }
+
+  record command-message {
+    name: string,
+    encoded-json: string,
+    idempotency-key: string,
+  }
+
+  record subscription-filter {
+    stream-name: string,
+    event-types: list<string>,
+  }
+
+  record data-query {
+    target: resource-ref,
+    predicate-json: string,
+    limit: option<u32>,
+  }
+
+  record data-change {
+    target: resource-ref,
+    event-type: string,
+    encoded-json: string,
+  }
+
+  variant sdk-error {
+    unauthorized(string),
+    not-found(string),
+    conflict(string),
+    deadline-exceeded(string),
+    invalid-contract(string),
+  }
+}
+
+interface workflow {
+  use types.{sdk-error, step-result, workflow-step};
+
+  step: func(spec: workflow-step) -> result<step-result, sdk-error>;
+  compensate: func(spec: workflow-step) -> result<step-result, sdk-error>;
+}
+
+interface actor {
+  use types.{command-message, sdk-error};
+
+  send: func(actor-id: string, message: command-message) -> result<string, sdk-error>;
+  ask: func(actor-id: string, message: command-message) -> result<string, sdk-error>;
+}
+
+interface saga {
+  use types.{sdk-error, step-result, workflow-step};
+
+  begin: func(name: string, idempotency-key: string) -> result<string, sdk-error>;
+  record-step: func(saga-id: string, spec: workflow-step, step-output: step-result) -> result<_, sdk-error>;
+  rollback: func(saga-id: string, reason: string) -> result<_, sdk-error>;
+}
+
+interface agent {
+  use types.{command-message, sdk-error};
+
+  invoke: func(agent-id: string, prompt: command-message) -> result<command-message, sdk-error>;
+}
+
+interface command {
+  use types.{command-message, sdk-error};
+
+  dispatch: func(command: command-message) -> result<string, sdk-error>;
+}
+
+interface subscription {
+  use types.{data-change, sdk-error, subscription-filter};
+
+  subscribe: func(filter: subscription-filter) -> result<string, sdk-error>;
+  next: func(subscription-id: string) -> result<option<data-change>, sdk-error>;
+}
+
+interface capability {
+  use types.{capability-grant, resource-ref, sdk-error};
+
+  require: func(target: resource-ref, verbs: list<string>) -> result<capability-grant, sdk-error>;
+  allow: func(grant: capability-grant) -> result<_, sdk-error>;
+}
+
+interface data {
+  use types.{data-change, data-query, sdk-error};
+
+  query: func(query: data-query) -> result<list<data-change>, sdk-error>;
+  append: func(change: data-change) -> result<string, sdk-error>;
+}
+
+world sdk {
+  import workflow;
+  import actor;
+  import saga;
+  import agent;
+  import command;
+  import subscription;
+  import capability;
+  import data;
+}

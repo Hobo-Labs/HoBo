@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package hobo.conformance.v1;
+
+message CertifiedHostPin {
+  string kind = 1;
+  string version = 2;
+}
+
+message ComponentHostManifestSection {
+  string suite = 1;
+  string suite_version = 2;
+  repeated CertifiedHostPin certified_hosts = 3;
+}
+
+message ComponentHostManifest {
+  string schema = 1;
+  ComponentHostManifestSection component_host = 2;
+}
+
+message HostReport {
+  string kind = 1;
+  string version = 2;
+  string boundary_mode = 3;
+  string status = 4;
+}
+
+message CrossHostAssertion {
+  string name = 1;
+  string status = 2;
+}
+
+message ComponentHostConformanceReport {
+  string schema = 1;
+  string status = 2;
+  repeated HostReport hosts = 3;
+  repeated CrossHostAssertion cross_host_assertions = 4;
+  repeated string non_covered_divergences = 5;
+}

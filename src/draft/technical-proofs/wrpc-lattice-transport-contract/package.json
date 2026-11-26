@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/wrpc-lattice-transport-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

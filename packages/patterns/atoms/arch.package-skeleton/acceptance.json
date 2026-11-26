@@ -1,0 +1,14 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"package.json",
+		"tsconfig.json"
+	],
+	"expectContains": {
+		"package.json": [
+			"@hobo/app-greeter"
+		]
+	}
+}

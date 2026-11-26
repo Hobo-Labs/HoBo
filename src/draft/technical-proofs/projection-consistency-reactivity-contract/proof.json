@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "projection-consistency-reactivity-contract",
+  "title": "Projection Consistency + Reactivity Contract POC",
+  "linear": "HOBO-53",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

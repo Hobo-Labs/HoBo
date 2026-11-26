@@ -1,0 +1,44 @@
+{
+  "consumer": {
+    "name": "WitInterfaceConformanceCoverageConsumer"
+  },
+  "provider": {
+    "name": "WitInterfaceConformanceCoverageBoundary"
+  },
+  "interactions": [
+    {
+      "description": "coverage report boundary returns complete suite-backed inventory",
+      "request": {
+        "method": "GET",
+        "path": "/s5-02-wit-interface-conformance-coverage/coverage-report"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.conformance.wit-coverage-report/v1",
+          "complete": true,
+          "coveragePercent": 100
+        }
+      }
+    },
+    {
+      "description": "publish gate blocks provider when claimed interface fails",
+      "request": {
+        "method": "POST",
+        "path": "/s5-02-wit-interface-conformance-coverage/publish-gate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.conformance.registry-publish-gate/v1",
+          "status": "blocked"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

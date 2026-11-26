@@ -1,0 +1,54 @@
+{
+  "consumer": { "name": "HoboCdCampReconciler" },
+  "provider": { "name": "HoboCdReconcilerTransport" },
+  "interactions": [
+    {
+      "description": "a reconciler claims the Camp lease keyed by Camp",
+      "providerState": "camp prod-eu has no lease holder",
+      "request": { "method": "CLAIM", "body": { "reconcilerId": "r-a", "campId": "prod-eu", "holderId": "host-a", "ttlMs": 30000 } },
+      "response": {
+        "body": { "ok": true, "lease": { "reconcilerId": "r-a", "campId": "prod-eu", "holderId": "host-a", "fence": "1" } },
+        "matchingRules": { "$.body.lease.fence": { "match": "regex", "regex": "^[1-9][0-9]*$" } }
+      }
+    },
+    {
+      "description": "a second reconciler with a different id is refused while the lease is held",
+      "providerState": "camp prod-eu is leased by r-a",
+      "request": { "method": "CLAIM", "body": { "reconcilerId": "r-b", "campId": "prod-eu", "holderId": "host-b", "ttlMs": 30000 } },
+      "response": { "body": { "ok": false, "code": "lease-held", "hasRemediation": true } }
+    },
+    {
+      "description": "the feed yields desired-state changes after the checkpoint with management and observe fields",
+      "providerState": "camp prod-eu has one Set and no checkpoint",
+      "request": { "method": "FEED", "body": { "campId": "prod-eu" } },
+      "response": { "body": { "changes": [{ "management": "CAMP_MANAGEMENT_MANAGED", "observeFields": ["tls.minVersion"], "setOrigin": "SET_ORIGIN_PROMOTION" }] } }
+    },
+    {
+      "description": "a missing resolved-set blob is a typed refusal",
+      "providerState": "the Set's blob is missing from the artifact store",
+      "request": { "method": "RESOLVED", "body": { "campId": "prod-eu" } },
+      "response": { "body": { "ok": false, "code": "resolved-set-missing", "hasRemediation": true } }
+    },
+    {
+      "description": "a report lands on the Camp status stream, never the spec stream",
+      "providerState": "camp prod-eu is leased by r-a",
+      "request": { "method": "REPORT", "body": { "campId": "prod-eu", "status": "RECONCILE_STATUS_CONVERGED" } },
+      "response": {
+        "body": { "ok": true, "stream": "cd-camp-status-prod-eu", "events": ["deployment.StatusObserved", "deployment.Converged"] }
+      }
+    },
+    {
+      "description": "a report or checkpoint with a stale fence is refused",
+      "providerState": "r-a's lease on prod-eu was taken over by r-b",
+      "request": { "method": "REPORT", "body": { "campId": "prod-eu", "fence": "stale" } },
+      "response": { "body": { "ok": false, "code": "stale-fence", "hasRemediation": true } }
+    },
+    {
+      "description": "a checkpoint is fenced and monotonic",
+      "providerState": "camp prod-eu is leased by r-a with a committed checkpoint",
+      "request": { "method": "CHECKPOINT", "body": { "campId": "prod-eu", "position": "behind" } },
+      "response": { "body": { "ok": false, "code": "checkpoint-regression", "hasRemediation": true } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

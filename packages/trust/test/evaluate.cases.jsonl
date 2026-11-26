@@ -1,0 +1,32 @@
+# Every reason set below is the WHOLE set, not a "contains" check. The suite
+# this replaced used toContain, which stays green when an unrelated rule also
+# starts firing.
+{"method":"verdict","name":"clean, signed, fresh evidence","input":[{}],"expect":{"selectable":true,"signatureOutcome":"valid","reasons":[]}}
+{"method":"verdict","name":"evidence absent","input":[{"noEvidence":true}],"expect":{"selectable":false,"signatureOutcome":"unknown","reasons":["EVIDENCE_ABSENT"]}}
+{"method":"verdict","name":"no verifier injected","input":[{"signature":"absent"}],"expect":{"selectable":false,"signatureOutcome":"unknown","reasons":["EVIDENCE_UNSIGNED"]}}
+{"method":"verdict","name":"signature does not verify","input":[{"signature":"invalid"}],"expect":{"selectable":false,"signatureOutcome":"invalid","reasons":["EVIDENCE_UNSIGNED"]}}
+{"method":"verdict","name":"recorded digest does not describe the body","input":[{"digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}],"expect":{"selectable":false,"signatureOutcome":"invalid","reasons":["EVIDENCE_DIGEST_MISMATCH","EVIDENCE_UNSIGNED"]}}
+# Freshness: three separate ways evidence can be out of date.
+{"method":"verdict","name":"evidence expired","input":[{"evidence":{"expiresAt":1786147199999}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["EVIDENCE_STALE"]}}
+{"method":"verdict","name":"evidence older than the maximum age","input":[{"requirement":{"maximumEvidenceAgeMs":86400000}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["EVIDENCE_STALE"]}}
+{"method":"verdict","name":"evidence dated after the evaluation instant","input":[{"evidence":{"testedAt":1786233600000,"expiresAt":1788739200000}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["EVIDENCE_STALE"]}}
+# Checks: fail and unknown are both gates, and so is a required check nobody ran.
+{"method":"verdict","name":"a failed check is a gate","input":[{"evidence":{"checks":{"bootstrap.official-contract":"pass","claim.documented-contract":"pass","conformance.suite":"fail"}}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["CONFORMANCE_FAILED"]}}
+{"method":"verdict","name":"an unknown check is a gate, not a pass","input":[{"evidence":{"checks":{"bootstrap.official-contract":"pass","claim.documented-contract":"pass","conformance.suite":"unknown"}}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["CONFORMANCE_FAILED"]}}
+{"method":"verdict","name":"an absent required check is a gate","input":[{"requirement":{"requiredChecks":["claim.verification"]}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["CONFORMANCE_FAILED"]}}
+# Policy gates.
+{"method":"verdict","name":"missing bootstrap and claim contracts get distinct codes","input":[{"evidence":{"checks":{"conformance.suite":"pass"}}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["BOOTSTRAP_POLICY_DENIED","CLAIM_MODE_INSUFFICIENT"]}}
+{"method":"verdict","name":"provider below the minimum maturity","input":[{"evidence":{"providerClass":"experimental"}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["PROVIDER_MATURITY_DENIED"]}}
+{"method":"verdict","name":"a strong claim the requirement demands","input":[{"requirement":{"creatorAuthorityAfterClaim":"must-be-absent"}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["STRONG_CLAIM_REQUIRED"]}}
+{"method":"verdict","name":"creator authority retained where rotatable is required","input":[{"evidence":{"creatorAuthorityAfterClaim":"retained"}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["STRONG_CLAIM_REQUIRED"]}}
+{"method":"verdict","name":"too many human claim actions","input":[{"evidence":{"claimActionCount":5}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["TOO_MANY_CLAIM_ACTIONS"]}}
+{"method":"verdict","name":"evidence silent on realization and sponsorship","input":[{"omit":["realizations","sponsorBacked"],"requirement":{"allowPack":false,"allowSponsor":false}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["BOOTSTRAP_POLICY_DENIED","REALIZATION_DENIED"]}}
+{"method":"verdict","name":"a pack realization the requirement forbids","input":[{"evidence":{"realizations":["pack"]},"requirement":{"allowPack":false,"allowSponsor":false}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["REALIZATION_DENIED"]}}
+{"method":"verdict","name":"sponsor backing the requirement forbids","input":[{"evidence":{"sponsorBacked":true},"requirement":{"allowPack":false,"allowSponsor":false}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["BOOTSTRAP_POLICY_DENIED"]}}
+{"method":"verdict","name":"standard binding and export evidence demanded","input":[{"requirement":{"requireStandardBinding":true,"requireExportProfile":true}}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["BINDING_UNAVAILABLE","MIGRATION_REQUIRED_BUT_UNAVAILABLE"]}}
+# The clock is read only through nowMs: the same record flips at expiry, not before.
+{"method":"verdict","name":"one millisecond before expiry","input":[{"nowRelativeToExpiry":-1}],"expect":{"selectable":true,"signatureOutcome":"valid","reasons":[]}}
+{"method":"verdict","name":"exactly at expiry","input":[{"nowRelativeToExpiry":0}],"expect":{"selectable":false,"signatureOutcome":"valid","reasons":["EVIDENCE_STALE"]}}
+# Determinism needs two calls, so it is a predicate rather than a value case.
+{"method":"isDeterministic","name":"identical facts in a different authoring order","input":[{"evidence":{"providerClass":"experimental","claimActionCount":9}},{"evidence":{"claimActionCount":9,"providerClass":"experimental"}}],"expect":true}
+{"method":"isDeterministic","name":"different facts do not collide","input":[{"evidence":{"claimActionCount":9}},{"evidence":{"claimActionCount":1}}],"expect":false}

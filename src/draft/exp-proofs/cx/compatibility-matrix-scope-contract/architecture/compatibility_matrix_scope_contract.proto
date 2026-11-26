@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Compatibility Matrix Scope draft package
+// reasons about. Documents the records/objects this package owns so the architecture guard has a
+// language-neutral schema reference. Not compiled at runtime; this is a design-time contract
+// artifact.
+
+enum CompatibilityMatrixScopeEvidenceKind {
+  COMPATIBILITY_MATRIX_SCOPE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  COMPATIBILITY_MATRIX_SCOPE_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  COMPATIBILITY_MATRIX_SCOPE_EVIDENCE_KIND_CONTRACT_TEST = 2;
+}
+
+message CompatibilityMatrixScopeRecord {
+  string issue = 1;
+  string phase = 2;
+  string summary = 3;
+  repeated string personas = 4;
+  repeated string owner_boundaries = 5;
+  repeated string scope_out = 6;
+  repeated string evidence = 7;
+}

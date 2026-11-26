@@ -1,0 +1,47 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "46.0.1"
+  },
+  "resources": {
+    "orders-db": {
+      "type": "data.v1",
+      "port": "database.postgres",
+      "paradigm": "postgres",
+      "outputs": ["connectionString"],
+      "planner": {
+        "resourceType": "database",
+        "resourceClass": "managed"
+      }
+    },
+    "checkout-api": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "exports": ["wasi:http/incoming-handler"],
+      "links": [{ "import": "database.postgres", "to": "orders-db" }],
+      "planner": {
+        "resourceType": "service",
+        "resourceClass": "http"
+      }
+    },
+    "web-edge": {
+      "type": "website.v1",
+      "bind": ["checkout-api"],
+      "planner": {
+        "resourceType": "gateway",
+        "resourceClass": "edge"
+      }
+    },
+    "receipt-worker": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "exports": ["hobo:queue/worker"],
+      "bind": ["checkout-api"],
+      "planner": {
+        "resourceType": "queue",
+        "resourceClass": "worker"
+      }
+    }
+  }
+}

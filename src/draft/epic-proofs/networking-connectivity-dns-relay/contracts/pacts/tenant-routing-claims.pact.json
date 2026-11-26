@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "TenantRoutingClaims" },
+  "interactions": [
+    {
+      "description": "resolves ctx.tenant before handlers and blocks mismatched JWT tenant claims",
+      "request": { "method": "GET", "path": "/api/orders", "headers": { "Host": "alpha.hobo.example" } },
+      "response": { "status": 200, "body": { "tenant": "tenant-alpha", "resolvedBeforeHandler": true } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

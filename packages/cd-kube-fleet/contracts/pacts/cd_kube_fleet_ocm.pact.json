@@ -1,0 +1,679 @@
+{
+	"consumer": {
+		"name": "HoboCdKubeFleetOcmRealizer"
+	},
+	"provider": {
+		"name": "OpenClusterManagementHub"
+	},
+	"interactions": [
+		{
+			"description": "lists the Camp's ManifestWorks before the first apply",
+			"providerState": "first-converge",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.open-cluster-management.io/v1/namespaces/edge-paris-01/manifestworks",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "work.open-cluster-management.io/v1",
+					"kind": "ManifestWorkList",
+					"metadata": {
+						"resourceVersion": "731300"
+					},
+					"items": []
+				}
+			}
+		},
+		{
+			"description": "creates one single-cluster ManifestWork for the Camp",
+			"providerState": "first-converge",
+			"request": {
+				"method": "POST",
+				"path": "/apis/work.open-cluster-management.io/v1/namespaces/edge-paris-01/manifestworks",
+				"headers": {
+					"authorization": "Bearer hub-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"apiVersion": "work.open-cluster-management.io/v1",
+					"kind": "ManifestWork",
+					"metadata": {
+						"name": "hobo-store-paris-8c6f962d",
+						"namespace": "edge-paris-01",
+						"labels": {
+							"hobo.dev/camp": "store-paris"
+						}
+					},
+					"spec": {
+						"deleteOption": {
+							"propagationPolicy": "Foreground"
+						},
+						"manifestConfigs": [
+							{
+								"resourceIdentifier": {
+									"group": "apps",
+									"resource": "deployments",
+									"namespace": "shop",
+									"name": "web"
+								},
+								"feedbackRules": [
+									{
+										"type": "WellKnownStatus"
+									},
+									{
+										"type": "JSONPaths",
+										"jsonPaths": [
+											{
+												"name": "status.availableReplicas",
+												"path": ".availableReplicas"
+											}
+										]
+									}
+								]
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"apiVersion": "work.open-cluster-management.io/v1",
+					"kind": "ManifestWork",
+					"metadata": {
+						"name": "hobo-store-paris-8c6f962d",
+						"namespace": "edge-paris-01",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo",
+							"hobo.dev/camp": "store-paris"
+						},
+						"annotations": {
+							"hobo.dev/camp-id": "store-paris",
+							"hobo.dev/set-id": "set_e40220f01ebc",
+							"hobo.dev/content-hash": "sha256:8c6f962d211461f08ef75c0c0a7418806db53e0e34796ec233d6ab629eca5fc9",
+							"hobo.dev/manifests-digest": "sha256:3641d55af201b632ef877175d43b576d0b0acb3a2ef0c0f15287197aed9724f2",
+							"hobo.dev/fence": "7",
+							"hobo.dev/reconciler": "rec-1",
+							"hobo.dev/resource-index": "[[\"apps/Deployment/shop/web\",\"web\",\"compute\"]]",
+							"hobo.dev/spec-digest": "sha256:bb1066319cfb0965b5281710baa907d5bcb5ce7069445b9f8b21fd470b377733"
+						},
+						"generation": 1,
+						"resourceVersion": "731204",
+						"uid": "5d0d5c3e-0b3a-4d55-9b0e-2f1d7f2c9a10",
+						"creationTimestamp": "2026-11-12T09:59:30Z"
+					},
+					"spec": {
+						"workload": {
+							"manifests": [
+								{
+									"apiVersion": "apps/v1",
+									"kind": "Deployment",
+									"metadata": {
+										"name": "web",
+										"namespace": "shop"
+									},
+									"spec": {
+										"replicas": 3,
+										"selector": {
+											"matchLabels": {
+												"app": "web"
+											}
+										},
+										"template": {
+											"metadata": {
+												"labels": {
+													"app": "web"
+												}
+											},
+											"spec": {
+												"containers": [
+													{
+														"name": "web",
+														"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+													}
+												]
+											}
+										}
+									}
+								}
+							]
+						},
+						"deleteOption": {
+							"propagationPolicy": "Foreground"
+						},
+						"manifestConfigs": [
+							{
+								"resourceIdentifier": {
+									"group": "apps",
+									"resource": "deployments",
+									"namespace": "shop",
+									"name": "web"
+								},
+								"feedbackRules": [
+									{
+										"type": "WellKnownStatus"
+									},
+									{
+										"type": "JSONPaths",
+										"jsonPaths": [
+											{
+												"name": "status.availableReplicas",
+												"path": ".availableReplicas"
+											}
+										]
+									}
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "the work agent applied the work and every resource is Available",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.open-cluster-management.io/v1/namespaces/edge-paris-01/manifestworks",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "work.open-cluster-management.io/v1",
+					"kind": "ManifestWorkList",
+					"metadata": {
+						"resourceVersion": "731300"
+					},
+					"items": [
+						{
+							"apiVersion": "work.open-cluster-management.io/v1",
+							"kind": "ManifestWork",
+							"metadata": {
+								"name": "hobo-store-paris-8c6f962d",
+								"namespace": "edge-paris-01",
+								"labels": {
+									"app.kubernetes.io/managed-by": "hobo",
+									"hobo.dev/camp": "store-paris"
+								},
+								"annotations": {
+									"hobo.dev/camp-id": "store-paris",
+									"hobo.dev/set-id": "set_e40220f01ebc",
+									"hobo.dev/content-hash": "sha256:8c6f962d211461f08ef75c0c0a7418806db53e0e34796ec233d6ab629eca5fc9",
+									"hobo.dev/manifests-digest": "sha256:3641d55af201b632ef877175d43b576d0b0acb3a2ef0c0f15287197aed9724f2",
+									"hobo.dev/fence": "7",
+									"hobo.dev/reconciler": "rec-1",
+									"hobo.dev/resource-index": "[[\"apps/Deployment/shop/web\",\"web\",\"compute\"]]",
+									"hobo.dev/spec-digest": "sha256:bb1066319cfb0965b5281710baa907d5bcb5ce7069445b9f8b21fd470b377733"
+								},
+								"generation": 1,
+								"resourceVersion": "731204",
+								"uid": "5d0d5c3e-0b3a-4d55-9b0e-2f1d7f2c9a10",
+								"creationTimestamp": "2026-11-12T09:59:30Z"
+							},
+							"spec": {
+								"workload": {
+									"manifests": [
+										{
+											"apiVersion": "apps/v1",
+											"kind": "Deployment",
+											"metadata": {
+												"name": "web",
+												"namespace": "shop"
+											},
+											"spec": {
+												"replicas": 3,
+												"selector": {
+													"matchLabels": {
+														"app": "web"
+													}
+												},
+												"template": {
+													"metadata": {
+														"labels": {
+															"app": "web"
+														}
+													},
+													"spec": {
+														"containers": [
+															{
+																"name": "web",
+																"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+															}
+														]
+													}
+												}
+											}
+										}
+									]
+								},
+								"deleteOption": {
+									"propagationPolicy": "Foreground"
+								},
+								"manifestConfigs": [
+									{
+										"resourceIdentifier": {
+											"group": "apps",
+											"resource": "deployments",
+											"namespace": "shop",
+											"name": "web"
+										},
+										"feedbackRules": [
+											{
+												"type": "WellKnownStatus"
+											},
+											{
+												"type": "JSONPaths",
+												"jsonPaths": [
+													{
+														"name": "status.availableReplicas",
+														"path": ".availableReplicas"
+													}
+												]
+											}
+										]
+									}
+								]
+							},
+							"status": {
+								"conditions": [
+									{
+										"type": "Applied",
+										"status": "True",
+										"reason": "AppliedManifestWorkComplete",
+										"message": "Apply manifest work complete",
+										"observedGeneration": 1,
+										"lastTransitionTime": "2026-11-12T09:59:41Z"
+									},
+									{
+										"type": "Available",
+										"status": "True",
+										"reason": "ResourcesAvailable",
+										"message": "All resources are available",
+										"observedGeneration": 1,
+										"lastTransitionTime": "2026-11-12T09:59:41Z"
+									}
+								],
+								"resourceStatus": {
+									"manifests": [
+										{
+											"resourceMeta": {
+												"ordinal": 0,
+												"group": "apps",
+												"version": "v1",
+												"kind": "Deployment",
+												"resource": "deployments",
+												"name": "web",
+												"namespace": "shop"
+											},
+											"conditions": [
+												{
+													"type": "Applied",
+													"status": "True",
+													"reason": "AppliedManifestComplete",
+													"message": "Apply manifest complete",
+													"observedGeneration": 1,
+													"lastTransitionTime": "2026-11-12T09:59:41Z"
+												},
+												{
+													"type": "Available",
+													"status": "True",
+													"reason": "ResourceAvailable",
+													"message": "Resource is available",
+													"observedGeneration": 1,
+													"lastTransitionTime": "2026-11-12T09:59:41Z"
+												},
+												{
+													"type": "StatusFeedbackSynced",
+													"status": "True",
+													"reason": "StatusFeedbackSynced",
+													"message": "",
+													"observedGeneration": 1,
+													"lastTransitionTime": "2026-11-12T09:59:41Z"
+												}
+											],
+											"statusFeedback": {
+												"values": [
+													{
+														"name": "ReadyReplicas",
+														"fieldValue": {
+															"type": "Integer",
+															"integer": 3
+														}
+													},
+													{
+														"name": "Replicas",
+														"fieldValue": {
+															"type": "Integer",
+															"integer": 3
+														}
+													},
+													{
+														"name": "AvailableReplicas",
+														"fieldValue": {
+															"type": "Integer",
+															"integer": 3
+														}
+													},
+													{
+														"name": "status.availableReplicas",
+														"fieldValue": {
+															"type": "Integer",
+															"integer": 3
+														}
+													}
+												]
+											}
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "the work agent could not apply a manifest",
+			"providerState": "blocked",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.open-cluster-management.io/v1/namespaces/edge-paris-01/manifestworks",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "work.open-cluster-management.io/v1",
+					"kind": "ManifestWorkList",
+					"metadata": {
+						"resourceVersion": "731300"
+					},
+					"items": [
+						{
+							"apiVersion": "work.open-cluster-management.io/v1",
+							"kind": "ManifestWork",
+							"metadata": {
+								"name": "hobo-store-paris-8c6f962d",
+								"namespace": "edge-paris-01",
+								"labels": {
+									"app.kubernetes.io/managed-by": "hobo",
+									"hobo.dev/camp": "store-paris"
+								},
+								"annotations": {
+									"hobo.dev/camp-id": "store-paris",
+									"hobo.dev/set-id": "set_e40220f01ebc",
+									"hobo.dev/content-hash": "sha256:8c6f962d211461f08ef75c0c0a7418806db53e0e34796ec233d6ab629eca5fc9",
+									"hobo.dev/manifests-digest": "sha256:3641d55af201b632ef877175d43b576d0b0acb3a2ef0c0f15287197aed9724f2",
+									"hobo.dev/fence": "7",
+									"hobo.dev/reconciler": "rec-1",
+									"hobo.dev/resource-index": "[[\"apps/Deployment/shop/web\",\"web\",\"compute\"]]",
+									"hobo.dev/spec-digest": "sha256:bb1066319cfb0965b5281710baa907d5bcb5ce7069445b9f8b21fd470b377733"
+								},
+								"generation": 1,
+								"resourceVersion": "731204",
+								"uid": "5d0d5c3e-0b3a-4d55-9b0e-2f1d7f2c9a10",
+								"creationTimestamp": "2026-11-12T09:59:30Z"
+							},
+							"spec": {
+								"workload": {
+									"manifests": [
+										{
+											"apiVersion": "apps/v1",
+											"kind": "Deployment",
+											"metadata": {
+												"name": "web",
+												"namespace": "shop"
+											},
+											"spec": {
+												"replicas": 3,
+												"selector": {
+													"matchLabels": {
+														"app": "web"
+													}
+												},
+												"template": {
+													"metadata": {
+														"labels": {
+															"app": "web"
+														}
+													},
+													"spec": {
+														"containers": [
+															{
+																"name": "web",
+																"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+															}
+														]
+													}
+												}
+											}
+										}
+									]
+								},
+								"deleteOption": {
+									"propagationPolicy": "Foreground"
+								},
+								"manifestConfigs": [
+									{
+										"resourceIdentifier": {
+											"group": "apps",
+											"resource": "deployments",
+											"namespace": "shop",
+											"name": "web"
+										},
+										"feedbackRules": [
+											{
+												"type": "WellKnownStatus"
+											},
+											{
+												"type": "JSONPaths",
+												"jsonPaths": [
+													{
+														"name": "status.availableReplicas",
+														"path": ".availableReplicas"
+													}
+												]
+											}
+										]
+									}
+								]
+							},
+							"status": {
+								"conditions": [
+									{
+										"type": "Applied",
+										"status": "False",
+										"reason": "AppliedManifestWorkFailed",
+										"message": "Failed to apply manifest work",
+										"observedGeneration": 1,
+										"lastTransitionTime": "2026-11-12T09:59:41Z"
+									},
+									{
+										"type": "Available",
+										"status": "False",
+										"reason": "ResourcesNotAvailable",
+										"message": "1 of 1 resources are not available",
+										"observedGeneration": 1,
+										"lastTransitionTime": "2026-11-12T09:59:41Z"
+									}
+								],
+								"resourceStatus": {
+									"manifests": [
+										{
+											"resourceMeta": {
+												"ordinal": 0,
+												"group": "apps",
+												"version": "v1",
+												"kind": "Deployment",
+												"resource": "deployments",
+												"name": "web",
+												"namespace": "shop"
+											},
+											"conditions": [
+												{
+													"type": "Applied",
+													"status": "False",
+													"reason": "AppliedManifestFailed",
+													"message": "admission webhook \"policy.example\" denied the request: image is not signed",
+													"observedGeneration": 1,
+													"lastTransitionTime": "2026-11-12T09:59:41Z"
+												},
+												{
+													"type": "Available",
+													"status": "False",
+													"reason": "ResourceNotAvailable",
+													"message": "Resource is not available",
+													"observedGeneration": 1,
+													"lastTransitionTime": "2026-11-12T09:59:41Z"
+												},
+												{
+													"type": "StatusFeedbackSynced",
+													"status": "False",
+													"reason": "StatusFeedbackNotSynced",
+													"message": "",
+													"observedGeneration": 1,
+													"lastTransitionTime": "2026-11-12T09:59:41Z"
+												}
+											]
+										}
+									]
+								}
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "the work exists but the agent has not reported yet",
+			"providerState": "converging",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.open-cluster-management.io/v1/namespaces/edge-paris-01/manifestworks",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "work.open-cluster-management.io/v1",
+					"kind": "ManifestWorkList",
+					"metadata": {
+						"resourceVersion": "731300"
+					},
+					"items": [
+						{
+							"apiVersion": "work.open-cluster-management.io/v1",
+							"kind": "ManifestWork",
+							"metadata": {
+								"name": "hobo-store-paris-8c6f962d",
+								"namespace": "edge-paris-01",
+								"labels": {
+									"app.kubernetes.io/managed-by": "hobo",
+									"hobo.dev/camp": "store-paris"
+								},
+								"annotations": {
+									"hobo.dev/camp-id": "store-paris",
+									"hobo.dev/set-id": "set_e40220f01ebc",
+									"hobo.dev/content-hash": "sha256:8c6f962d211461f08ef75c0c0a7418806db53e0e34796ec233d6ab629eca5fc9",
+									"hobo.dev/manifests-digest": "sha256:3641d55af201b632ef877175d43b576d0b0acb3a2ef0c0f15287197aed9724f2",
+									"hobo.dev/fence": "7",
+									"hobo.dev/reconciler": "rec-1",
+									"hobo.dev/resource-index": "[[\"apps/Deployment/shop/web\",\"web\",\"compute\"]]",
+									"hobo.dev/spec-digest": "sha256:bb1066319cfb0965b5281710baa907d5bcb5ce7069445b9f8b21fd470b377733"
+								},
+								"generation": 1,
+								"resourceVersion": "731204",
+								"uid": "5d0d5c3e-0b3a-4d55-9b0e-2f1d7f2c9a10",
+								"creationTimestamp": "2026-11-12T09:59:30Z"
+							},
+							"spec": {
+								"workload": {
+									"manifests": [
+										{
+											"apiVersion": "apps/v1",
+											"kind": "Deployment",
+											"metadata": {
+												"name": "web",
+												"namespace": "shop"
+											},
+											"spec": {
+												"replicas": 3,
+												"selector": {
+													"matchLabels": {
+														"app": "web"
+													}
+												},
+												"template": {
+													"metadata": {
+														"labels": {
+															"app": "web"
+														}
+													},
+													"spec": {
+														"containers": [
+															{
+																"name": "web",
+																"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+															}
+														]
+													}
+												}
+											}
+										}
+									]
+								},
+								"deleteOption": {
+									"propagationPolicy": "Foreground"
+								},
+								"manifestConfigs": [
+									{
+										"resourceIdentifier": {
+											"group": "apps",
+											"resource": "deployments",
+											"namespace": "shop",
+											"name": "web"
+										},
+										"feedbackRules": [
+											{
+												"type": "WellKnownStatus"
+											},
+											{
+												"type": "JSONPaths",
+												"jsonPaths": [
+													{
+														"name": "status.availableReplicas",
+														"path": ".availableReplicas"
+													}
+												]
+											}
+										]
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "2.0.0"
+		}
+	}
+}

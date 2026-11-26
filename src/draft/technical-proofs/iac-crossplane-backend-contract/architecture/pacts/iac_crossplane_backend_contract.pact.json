@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IacCrossplaneBackendContractConsumer"
+  },
+  "provider": {
+    "name": "IacCrossplaneBackendContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Iac Crossplane Backend Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/iac-crossplane-backend-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.iac_crossplane_backend_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

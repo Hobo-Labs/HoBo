@@ -1,0 +1,39 @@
+{
+  "schema": "hobo.sandbox.profile/v1",
+  "id": "gen-provider-db-profile",
+  "isolation": {
+    "tier": "microvm",
+    "engine": "firecracker"
+  },
+  "network": {
+    "mode": "none",
+    "allow": []
+  },
+  "filesystem": {
+    "scratch": "/sandbox/scratch",
+    "writable": ["/sandbox/scratch"],
+    "readonly": ["/workspace/input"]
+  },
+  "capabilities": [
+    {
+      "interface": "hobo:conformance/runner@0.1.0",
+      "stability": "preview",
+      "scope": {
+        "suiteId": "conformance.provider.database@0.1.0",
+        "targetPort": "hobo:database/postgres@0.1.0"
+      },
+      "verbs": ["run"]
+    }
+  ],
+  "resources": {
+    "cpuMs": 30000,
+    "memoryMiB": 512,
+    "wallClockMs": 60000
+  },
+  "assertions": [
+    "no-egress",
+    "capability-scoped",
+    "scratch-only-write",
+    "resource-budgeted"
+  ]
+}

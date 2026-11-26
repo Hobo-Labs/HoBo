@@ -1,0 +1,41 @@
+{
+  "consumer": {
+    "name": "@hobo/bindles"
+  },
+  "provider": {
+    "name": "@hobo/runtime"
+  },
+  "interactions": [
+    {
+      "description": "bindles emits hobo.config/v1 manifest with refs only",
+      "request": {
+        "method": "POST",
+        "path": "/config/manifest",
+        "body": {
+          "schema": "hobo.config/v1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.config/v1",
+          "entries": {
+            "GREETING": {
+              "sensitivity": "config",
+              "source": { "kind": "camp-env", "ref": "GREETING" }
+            },
+            "API_KEY": {
+              "sensitivity": "secret",
+              "source": { "kind": "secret-ref", "ref": "hello/api-key" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,355 @@
+{
+  "consumer": {
+    "name": "docs-troubleshooting-consumer"
+  },
+  "provider": {
+    "name": "vibe-troubleshooting-decision-trees-proof"
+  },
+  "interactions": [
+    {
+      "description": "HOBO-553 troubleshooting decision tree fixture",
+      "request": {
+        "method": "GET",
+        "path": "/draft/vibe-troubleshooting-decision-trees"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-553",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-troubleshooting-decision-trees",
+          "proofNote": "docs/design/proofs/vibe-troubleshooting-decision-trees/README.md",
+          "designRefs": [
+            "docs/design/troubleshooting-guides.md",
+            "docs/design/proofs/hobo-437-troubleshooting-guides-scope/index.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/launch-support-escalation.md",
+            "docs/design/support-sla-channels.md",
+            "docs/design/known-limitations-register.md"
+          ],
+          "proofModes": [
+            "live",
+            "simulated",
+            "reference fixture",
+            "scope-out"
+          ],
+          "cases": [
+            {
+              "caseId": "happy-reference-check",
+              "pathState": "happy",
+              "symptom": "Reference quickstart health check completes and evidence is current.",
+              "diagnosticEvidence": [
+                "hobo doctor quickstart --fixture rlq-inspect-event-projection-v1",
+                "fixture:rlq-deploy-run-accepted-v1"
+              ],
+              "owner": "Docs maintainer",
+              "safeNextAction": "Keep the accepted quickstart fixture id with the guide and avoid broadening the claim beyond the recorded proof mode.",
+              "customerSafeWording": "The quickstart fixture is current and no escalation is needed from this guide entry.",
+              "escalationRoute": "No escalation; revisit if freshness or proof-mode evidence changes.",
+              "proofMode": "reference fixture",
+              "quickstartFixtureRefs": [
+                "rlq-deploy-run-accepted-v1",
+                "rlq-inspect-event-projection-v1"
+              ],
+              "accessibilityNotes": [
+                "Healthy status is stated in text and does not depend on green color alone."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "fixture id",
+                  "projection freshness",
+                  "owner"
+                ],
+                "withheldFields": [
+                  "tenant id",
+                  "raw logs",
+                  "provider account"
+                ]
+              }
+            },
+            {
+              "caseId": "install-failure",
+              "pathState": "blocked",
+              "symptom": "Local install or bootstrap preflight fails before the first project exists.",
+              "diagnosticEvidence": [
+                "hobo doctor install --fixture tg-install-preflight-failed-v1",
+                "preflight.missing-supported-runtime"
+              ],
+              "owner": "Platform Engineering",
+              "safeNextAction": "Run the supported bootstrap preflight again after environment repair; do not install tools from the guide automatically.",
+              "customerSafeWording": "Your local environment is missing a supported prerequisite. Keep the preflight output and follow the supported setup path.",
+              "escalationRoute": "Support Workflow when the supported preflight remains blocked.",
+              "proofMode": "reference fixture",
+              "quickstartFixtureRefs": [
+                "rlq-define-object-graph-v1"
+              ],
+              "accessibilityNotes": [
+                "The missing prerequisite and safe retry are named before any command block."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "runtime name",
+                  "preflight code",
+                  "operating system"
+                ],
+                "withheldFields": [
+                  "home directory",
+                  "machine username",
+                  "local secret paths"
+                ]
+              }
+            },
+            {
+              "caseId": "missing-auth-svid",
+              "pathState": "blocked",
+              "symptom": "CLI or MCP command cannot find a valid workload SVID or agent principal.",
+              "diagnosticEvidence": [
+                "hobo doctor auth --fixture tg-auth-svid-missing-v1",
+                "identity.svid.missing"
+              ],
+              "owner": "Identity / Security",
+              "safeNextAction": "Refresh the fixture principal or route to identity support; never paste tokens or private key material into the guide.",
+              "customerSafeWording": "Authentication evidence is missing or expired. The next step is identity handoff, not credential sharing.",
+              "escalationRoute": "Identity support with redacted principal fingerprint and correlation id.",
+              "proofMode": "simulated",
+              "quickstartFixtureRefs": [
+                "rlq-collect-manifest-ir-v1"
+              ],
+              "accessibilityNotes": [
+                "The blocked auth state is textual and includes the correlation id location."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "principal fingerprint",
+                  "correlation id",
+                  "auth reason"
+                ],
+                "withheldFields": [
+                  "bearer token",
+                  "private key",
+                  "raw SVID"
+                ]
+              }
+            },
+            {
+              "caseId": "blocked-plan",
+              "pathState": "blocked",
+              "symptom": "Plan preview is blocked by capacity, compatibility, or missing approval evidence.",
+              "diagnosticEvidence": [
+                "hobo plan --fixture rlq-plan-safe-preview-v1 --json",
+                "gatekeeper.plan.blocked"
+              ],
+              "owner": "Plan/Diff Reviewer",
+              "safeNextAction": "Keep the Gatekeeper reason, required approval, and cost/capacity evidence together before asking for review.",
+              "customerSafeWording": "The plan is blocked pending review evidence. No deployment has been attempted.",
+              "escalationRoute": "Plan/Diff review owner with Gatekeeper reason and proof-mode label.",
+              "proofMode": "reference fixture",
+              "quickstartFixtureRefs": [
+                "rlq-plan-safe-preview-v1"
+              ],
+              "accessibilityNotes": [
+                "Blocked reason, reviewer, and next action are written as separate lines."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "gate code",
+                  "approval route",
+                  "cost band"
+                ],
+                "withheldFields": [
+                  "provider quote detail",
+                  "account id",
+                  "customer budget notes"
+                ]
+              }
+            },
+            {
+              "caseId": "deploy-failure",
+              "pathState": "blocked",
+              "symptom": "Deploy run fails after acceptance begins and needs owner routing.",
+              "diagnosticEvidence": [
+                "hobo up --fixture tg-deploy-run-failed-v1 --json",
+                "resource.actor.failed"
+              ],
+              "owner": "Control Plane / Operators",
+              "safeNextAction": "Collect the deployment-set id, failed resource, and correlation id; do not perform live repair from the guide.",
+              "customerSafeWording": "The deploy reference failed and needs operator review with a redacted evidence pack.",
+              "escalationRoute": "Operators/SRE with deployment-set id and redacted failure envelope.",
+              "proofMode": "reference fixture",
+              "quickstartFixtureRefs": [
+                "rlq-deploy-run-accepted-v1"
+              ],
+              "accessibilityNotes": [
+                "Failure state, owner, and no-live-repair boundary are visible in plain text."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "deployment-set id",
+                  "resource alias",
+                  "correlation id"
+                ],
+                "withheldFields": [
+                  "provider credential",
+                  "raw provider log",
+                  "customer payload"
+                ]
+              }
+            },
+            {
+              "caseId": "policy-denial",
+              "pathState": "blocked",
+              "symptom": "Policy denies the requested action or capability.",
+              "diagnosticEvidence": [
+                "hobo doctor policy --fixture tg-policy-denial-v1",
+                "policy.denied"
+              ],
+              "owner": "Policy / Security",
+              "safeNextAction": "Show the denied action, policy id, and required approval path; do not describe bypass instructions.",
+              "customerSafeWording": "A policy rule blocked the action. The safe path is approval or a scoped change request.",
+              "escalationRoute": "Security review with policy id, decision id, and redacted subject.",
+              "proofMode": "simulated",
+              "quickstartFixtureRefs": [
+                "rlq-plan-safe-preview-v1"
+              ],
+              "accessibilityNotes": [
+                "Denied state does not rely on red color and includes approval route text."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "policy id",
+                  "decision id",
+                  "action"
+                ],
+                "withheldFields": [
+                  "subject token",
+                  "tenant policy internals",
+                  "private exception notes"
+                ]
+              }
+            },
+            {
+              "caseId": "stale-evidence",
+              "pathState": "stale-or-unknown",
+              "symptom": "Troubleshooting evidence is stale, unknown, or not backed by an accepted fixture.",
+              "diagnosticEvidence": [
+                "hobo inspect evidence --fixture rlq-manage-stale-evidence-v1",
+                "evidence.freshness.unknown"
+              ],
+              "owner": "Docs / Support",
+              "safeNextAction": "Mark the answer stale, collect current fixture evidence, and stop before making readiness claims.",
+              "customerSafeWording": "The evidence is not current enough to use as a readiness signal.",
+              "escalationRoute": "Docs maintainer for fixture refresh; Support if a customer workflow is blocked.",
+              "proofMode": "reference fixture",
+              "quickstartFixtureRefs": [
+                "rlq-manage-stale-evidence-v1"
+              ],
+              "accessibilityNotes": [
+                "Staleness duration and stop condition are present in text."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "freshness window",
+                  "fixture id",
+                  "owner"
+                ],
+                "withheldFields": [
+                  "customer run log",
+                  "raw telemetry",
+                  "tenant identifier"
+                ]
+              }
+            },
+            {
+              "caseId": "unsupported-request",
+              "pathState": "blocked",
+              "symptom": "Requested troubleshooting action is outside v1 support or launch claims.",
+              "diagnosticEvidence": [
+                "hobo doctor request --fixture rlq-recover-scope-out-v1",
+                "scope.out.unsupported"
+              ],
+              "owner": "Known Limitations / Cutline",
+              "safeNextAction": "Route to known limitations and do not describe unsupported behavior as available.",
+              "customerSafeWording": "That request is outside the current supported path. The guide can record the limitation and follow-up owner.",
+              "escalationRoute": "Cutline owner for accepted-risk or follow-up routing.",
+              "proofMode": "scope-out",
+              "quickstartFixtureRefs": [
+                "rlq-recover-scope-out-v1"
+              ],
+              "accessibilityNotes": [
+                "Unsupported state is explicit and includes the follow-up owner."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "limitation id",
+                  "follow-up owner",
+                  "safe alternative"
+                ],
+                "withheldFields": [
+                  "customer promise",
+                  "private roadmap date",
+                  "account-specific workaround"
+                ]
+              }
+            },
+            {
+              "caseId": "support-handoff",
+              "pathState": "support-handoff",
+              "symptom": "User has a blocked workflow and a support-safe evidence pack is ready.",
+              "diagnosticEvidence": [
+                "hobo doctor --support-bundle --fixture tg-support-handoff-v1",
+                "support.handoff.ready"
+              ],
+              "owner": "Support Workflow",
+              "safeNextAction": "Attach only support-safe fields and preserve the owner route, severity, and safe next action.",
+              "customerSafeWording": "A redacted support handoff is ready. It includes the owner route and excludes private payloads.",
+              "escalationRoute": "Support operator with severity, owner route, and redaction evidence.",
+              "proofMode": "reference fixture",
+              "quickstartFixtureRefs": [
+                "rlq-inspect-event-projection-v1",
+                "rlq-manage-stale-evidence-v1"
+              ],
+              "accessibilityNotes": [
+                "Severity and owner route are text-first and available outside color or icon state."
+              ],
+              "redaction": {
+                "redacted": true,
+                "visibleFields": [
+                  "severity",
+                  "owner route",
+                  "correlation id"
+                ],
+                "withheldFields": [
+                  "raw diagnostic payload",
+                  "customer data",
+                  "provider credential"
+                ]
+              }
+            }
+          ],
+          "scopeOut": [
+            "No diagnostic automation.",
+            "No support queue or ticket routing implementation.",
+            "No live repair workflow.",
+            "No production docs portal publication.",
+            "No customer data or unredacted logs.",
+            "No launch claims without accepted evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

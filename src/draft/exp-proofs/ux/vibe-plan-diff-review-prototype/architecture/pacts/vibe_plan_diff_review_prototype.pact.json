@@ -1,0 +1,533 @@
+{
+  "consumer": {
+    "name": "@hobo/draft-vibe-plan-diff-review-prototype"
+  },
+  "provider": {
+    "name": "@hobo/draft-vibe-plan-diff-review-prototype-fixture-boundary"
+  },
+  "interactions": [
+    {
+      "description": "HOBO-560 plan/diff review prototype response",
+      "request": {
+        "method": "GET",
+        "path": "/draft/vibe-plan-diff-review-prototype"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-560",
+          "phase": "M2",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-plan-diff-review-prototype",
+          "proofNote": "docs/design/proofs/vibe-plan-diff-review-prototype/README.md",
+          "designRefs": [
+            "docs/design/plan-diff-viewer.md",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/proofs/vibe-plan-review-states/README.md",
+            "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "sourceDependencies": [
+            {
+              "issue": "HOBO-542",
+              "title": "Vibe plan review states",
+              "status": "accepted",
+              "evidence": "src/draft/exp-proofs/ux/vibe-plan-review-states"
+            },
+            {
+              "issue": "HOBO-543",
+              "title": "Vibe plan annotation pseudocode",
+              "status": "accepted",
+              "evidence": "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode"
+            },
+            {
+              "issue": "HOBO-577",
+              "title": "Vibe resource lifecycle quickstart examples",
+              "status": "accepted",
+              "evidence": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+            }
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "plan-summary",
+              "planDiffUse": "golden create, update, no-op, and blocked plan fixtures reuse the accepted safe preview quickstart"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "cost-capacity",
+              "planDiffUse": "stale evidence golden fixture cites accepted stale-evidence quickstart copy"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-migrate-brownfield-preview-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "risk-policy",
+              "planDiffUse": "unknown-evidence golden fixture cites accepted brownfield owner gap quickstart"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "change-diff",
+              "planDiffUse": "destructive golden fixture cites accepted rollback boundary quickstart"
+            }
+          ],
+          "goldenFixtures": [
+            {
+              "state": "create",
+              "surface": "plan-summary",
+              "sourceIssue": "HOBO-542",
+              "sourceFixtureId": "rlq-plan-safe-preview-v1/Delta.create",
+              "planReviewStateId": "create",
+              "evidenceSource": "fixture://rlq-plan-safe-preview-v1/Delta.create",
+              "owner": "Control Plane",
+              "safeNextAction": "approve simulated plan preview after policy receipt review",
+              "riskCategory": "low additive change",
+              "policyDisposition": "Gatekeeper allow with audit receipt",
+              "costDisposition": "estimated monthly delta is present and bounded",
+              "capacityDisposition": "capacity envelope has explicit headroom",
+              "customerSafeWording": "Safe preview: creates new resources after approval; no live apply happens in this proof.",
+              "proofMode": "simulated",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.cost-estimate",
+                  "annotationCase": "cost estimate",
+                  "displayGroup": "cost",
+                  "severity": "info",
+                  "proofMode": "simulated"
+                },
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.capacity-warning",
+                  "annotationCase": "capacity warning",
+                  "displayGroup": "capacity",
+                  "severity": "warning",
+                  "proofMode": "simulated"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-542",
+                "correlationId": "cor_hobo_560_create",
+                "customerSafeWording": "Cost is simulated from reference fixtures; support must not present it as billed or provider-quoted spend.",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "finops-owner",
+                "nextAction": "approve simulated plan preview after policy receipt review",
+                "liveTicketCreated": false
+              }
+            },
+            {
+              "state": "update",
+              "surface": "plan-summary",
+              "sourceIssue": "HOBO-542",
+              "sourceFixtureId": "rlq-plan-safe-preview-v1/Delta.update",
+              "planReviewStateId": "update",
+              "evidenceSource": "fixture://rlq-plan-safe-preview-v1/Delta.update",
+              "owner": "Plan/Diff Viewer",
+              "safeNextAction": "review changed fields and open approval handoff",
+              "riskCategory": "medium configuration change",
+              "policyDisposition": "obligation requires reviewer acknowledgement",
+              "costDisposition": "cost estimate changed and cites reliability owner",
+              "capacityDisposition": "capacity impact is known from reference fixture",
+              "customerSafeWording": "Preview update: review changed settings before deploy simulation.",
+              "proofMode": "reference fixture",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.cost-estimate",
+                  "annotationCase": "cost estimate",
+                  "displayGroup": "cost",
+                  "severity": "info",
+                  "proofMode": "simulated"
+                },
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.widened-permission",
+                  "annotationCase": "widened permission",
+                  "displayGroup": "policy",
+                  "severity": "critical",
+                  "proofMode": "reference fixture"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-542",
+                "correlationId": "cor_hobo_560_update",
+                "customerSafeWording": "Cost is simulated from reference fixtures; support must not present it as billed or provider-quoted spend.",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "finops-owner",
+                "nextAction": "review changed fields and open approval handoff",
+                "liveTicketCreated": false
+              }
+            },
+            {
+              "state": "no-op",
+              "surface": "plan-summary",
+              "sourceIssue": "HOBO-542",
+              "sourceFixtureId": "rlq-plan-safe-preview-v1/Delta.no-op",
+              "planReviewStateId": "no-op",
+              "evidenceSource": "fixture://rlq-plan-safe-preview-v1/Delta.no-op",
+              "owner": "Developer Experience",
+              "safeNextAction": "approve no-op or revise manifest if change was expected",
+              "riskCategory": "no material change",
+              "policyDisposition": "no new policy obligation",
+              "costDisposition": "no cost delta",
+              "capacityDisposition": "no capacity delta",
+              "customerSafeWording": "No change: preview found no resource difference.",
+              "proofMode": "live",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.cost-estimate",
+                  "annotationCase": "cost estimate",
+                  "displayGroup": "cost",
+                  "severity": "info",
+                  "proofMode": "simulated"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-542",
+                "correlationId": "cor_hobo_560_no_op",
+                "customerSafeWording": "Cost is simulated from reference fixtures; support must not present it as billed or provider-quoted spend.",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "finops-owner",
+                "nextAction": "approve no-op or revise manifest if change was expected",
+                "liveTicketCreated": false
+              }
+            },
+            {
+              "state": "destructive",
+              "surface": "change-diff",
+              "sourceIssue": "HOBO-543",
+              "sourceFixtureId": "rlq-recover-snapshot-restore-v1/rollback-boundary",
+              "planReviewStateId": "destructive",
+              "evidenceSource": "fixture://rlq-recover-snapshot-restore-v1/rollback-boundary",
+              "owner": "Control Plane",
+              "safeNextAction": "block until rollback and owner approval evidence exists",
+              "riskCategory": "high destructive action",
+              "policyDisposition": "Gatekeeper blocks without explicit approval",
+              "costDisposition": "cost may decrease but cannot override destructive risk",
+              "capacityDisposition": "capacity removal requires recovery fixture",
+              "customerSafeWording": "Destructive preview: blocked until rollback and approval evidence are present.",
+              "proofMode": "reference fixture",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.missing-approval",
+                  "annotationCase": "missing approval",
+                  "displayGroup": "approval",
+                  "severity": "blocked",
+                  "proofMode": "scope-out"
+                },
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.widened-permission",
+                  "annotationCase": "widened permission",
+                  "displayGroup": "policy",
+                  "severity": "critical",
+                  "proofMode": "reference fixture"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-543",
+                "correlationId": "cor_hobo_560_destructive",
+                "customerSafeWording": "Approval runtime is out of scope; the annotation names the missing approval and safe owner route only.",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "approval-owner",
+                "nextAction": "block until rollback and owner approval evidence exists",
+                "liveTicketCreated": false
+              }
+            },
+            {
+              "state": "blocked",
+              "surface": "risk-policy",
+              "sourceIssue": "HOBO-543",
+              "sourceFixtureId": "rlq-plan-safe-preview-v1/Gatekeeper.denied",
+              "planReviewStateId": "blocked",
+              "evidenceSource": "fixture://rlq-plan-safe-preview-v1/Gatekeeper.denied",
+              "owner": "Security",
+              "safeNextAction": "open policy owner review and revise requested permission",
+              "riskCategory": "security policy denial",
+              "policyDisposition": "deny-ceiling blocks deploy",
+              "costDisposition": "cost estimate is not enough to proceed",
+              "capacityDisposition": "capacity is not evaluated after denial",
+              "customerSafeWording": "Blocked: policy evidence prevents this plan from proceeding.",
+              "proofMode": "simulated",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.policy-denial",
+                  "annotationCase": "policy denial",
+                  "displayGroup": "policy",
+                  "severity": "blocked",
+                  "proofMode": "reference fixture"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-543",
+                "correlationId": "cor_hobo_560_blocked",
+                "customerSafeWording": "customer-safe plan review note: evidence is delayed or blocked, not failed silently",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "security-reviewer",
+                "nextAction": "open policy owner review and revise requested permission",
+                "liveTicketCreated": false
+              }
+            },
+            {
+              "state": "stale",
+              "surface": "cost-capacity",
+              "sourceIssue": "HOBO-542",
+              "sourceFixtureId": "rlq-manage-stale-evidence-v1/projection",
+              "planReviewStateId": "stale",
+              "evidenceSource": "fixture://rlq-manage-stale-evidence-v1/projection",
+              "owner": "Reliability",
+              "safeNextAction": "wait for projection refresh or handoff support packet",
+              "riskCategory": "stale operational evidence",
+              "policyDisposition": "approval held until fresh enough evidence exists",
+              "costDisposition": "cost signal is stale and must be labeled",
+              "capacityDisposition": "capacity signal is stale and must be labeled",
+              "customerSafeWording": "Stale preview: evidence is delayed; wait for refresh before approving.",
+              "proofMode": "reference fixture",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.stale-slo-signal",
+                  "annotationCase": "stale SLO signal",
+                  "displayGroup": "readiness",
+                  "severity": "warning",
+                  "proofMode": "reference fixture"
+                },
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.cost-estimate",
+                  "annotationCase": "cost estimate",
+                  "displayGroup": "cost",
+                  "severity": "info",
+                  "proofMode": "simulated"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-542",
+                "correlationId": "cor_hobo_560_stale",
+                "customerSafeWording": "customer-safe plan review note: evidence is delayed or blocked, not failed silently",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "sre-owner",
+                "nextAction": "wait for projection refresh or handoff support packet",
+                "liveTicketCreated": false
+              }
+            },
+            {
+              "state": "unknown-evidence",
+              "surface": "cost-capacity",
+              "sourceIssue": "HOBO-542",
+              "sourceFixtureId": "rlq-migrate-brownfield-preview-v1/missing-owner",
+              "planReviewStateId": "unknown-evidence",
+              "evidenceSource": "fixture://rlq-migrate-brownfield-preview-v1/missing-owner",
+              "owner": "Support",
+              "safeNextAction": "handoff to support with missing owner and evidence source",
+              "riskCategory": "unknown evidence",
+              "policyDisposition": "fail closed until owner and source are known",
+              "costDisposition": "cost unavailable",
+              "capacityDisposition": "capacity unavailable",
+              "customerSafeWording": "Unknown preview: evidence is missing, so the plan cannot proceed yet.",
+              "proofMode": "scope-out",
+              "annotationRefs": [
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.stale-slo-signal",
+                  "annotationCase": "stale SLO signal",
+                  "displayGroup": "readiness",
+                  "severity": "warning",
+                  "proofMode": "reference fixture"
+                },
+                {
+                  "sourceIssue": "HOBO-543",
+                  "fixtureId": "fixture.plan.annotation.missing-approval",
+                  "annotationCase": "missing approval",
+                  "displayGroup": "approval",
+                  "severity": "blocked",
+                  "proofMode": "scope-out"
+                }
+              ],
+              "supportHandoff": {
+                "issue": "HOBO-560",
+                "sourceIssue": "HOBO-542",
+                "correlationId": "cor_hobo_560_unknown_evidence",
+                "customerSafeWording": "customer-safe plan review note: evidence is delayed or blocked, not failed silently",
+                "visibleFields": [
+                  "planId",
+                  "fixtureId",
+                  "state",
+                  "owner",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "tenantData",
+                  "providerCredential",
+                  "internalPolicyId",
+                  "rawProjectionPayload"
+                ],
+                "ownerRoute": "sre-owner",
+                "nextAction": "handoff to support with missing owner and evidence source",
+                "liveTicketCreated": false
+              }
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "happy-path",
+              "title": "Safe create, update, and no-op plan review",
+              "goldenStates": [
+                "create",
+                "update",
+                "no-op"
+              ],
+              "proofModeLabels": [
+                "simulated",
+                "reference fixture",
+                "live"
+              ],
+              "safeOutcome": "review golden fixtures with policy, cost, and capacity annotations without live apply"
+            },
+            {
+              "id": "blocked-path",
+              "title": "Policy and destructive guardrails",
+              "goldenStates": [
+                "blocked",
+                "destructive"
+              ],
+              "proofModeLabels": [
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "safeOutcome": "block progression until policy, approval, or rollback evidence is present"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "title": "Stale and unknown evidence labels",
+              "goldenStates": [
+                "stale",
+                "unknown-evidence"
+              ],
+              "proofModeLabels": [
+                "reference fixture",
+                "scope-out"
+              ],
+              "safeOutcome": "wait for refresh or route support without treating missing evidence as success"
+            },
+            {
+              "id": "support-handoff",
+              "title": "Customer-safe support packets across non-green states",
+              "goldenStates": [
+                "blocked",
+                "stale",
+                "unknown-evidence",
+                "destructive"
+              ],
+              "proofModeLabels": [
+                "simulated",
+                "reference fixture",
+                "scope-out"
+              ],
+              "safeOutcome": "handoff redacted evidence packets without live approval or ticketing systems"
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order follows plan summary, change diff, risk policy, cost capacity, then approval support regions.",
+            "Screen reader labels include plan state, evidence source, owner, annotation severity, proof mode, and safe next action.",
+            "Color cannot be the only signal for safe, blocked, destructive, stale, or unknown evidence states.",
+            "Reduced motion users get static diff groups and no animated risk transition requirement."
+          ],
+          "scopeOut": [
+            "No planner, matcher, apply, rollback, or approval service implementation.",
+            "No live cloud cost API or provider credentials.",
+            "No production plan/diff UI.",
+            "No launch claims without evidence."
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "events": [
+    {
+      "cursor": "cursor-for-position-41",
+      "type": "ci.JobQueued",
+      "at": "2026-11-02T12:00:00.000Z",
+      "leaseId": "",
+      "state": "",
+      "repository": "Org/Repo",
+      "jobId": 7,
+      "jobName": "test",
+      "runId": 900,
+      "runAttempt": 1
+    },
+    {
+      "cursor": "cursor-for-position-42",
+      "type": "ci.LeaseReserved",
+      "at": "2026-11-02T12:00:01.000Z",
+      "leaseId": "01234567-89ab-4cde-8fab-0123456789ab",
+      "state": "reserved",
+      "repository": "Org/Repo",
+      "jobId": 7,
+      "jobName": "test",
+      "runId": 900,
+      "runAttempt": 1
+    }
+  ],
+  "cursor": "cursor-for-position-42",
+  "timedOut": false,
+  "more": false,
+  "truncated": false
+}

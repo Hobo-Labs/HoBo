@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "support-workflow-scope-contract",
+  "experienceType": "cx",
+  "title": "Support Workflow Scope Contract",
+  "linear": "HOBO-448",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

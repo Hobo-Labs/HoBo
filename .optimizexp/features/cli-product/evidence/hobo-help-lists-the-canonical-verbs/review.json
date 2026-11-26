@@ -1,0 +1,21 @@
+{
+  "status": "accepted",
+  "reviewer": "evidence-review-agent",
+  "relevance": "relevant",
+  "completeness": "complete",
+  "coverageMode": "full-journey",
+  "coveredClaims": [
+    "claim-1",
+    "claim-2",
+    "claim-3",
+    "claim-4",
+    "claim-5",
+    "claim-6",
+    "claim-7",
+    "claim-8",
+    "claim-9"
+  ],
+  "artifactSha256": "2b77738e47db86050e0f38009997b4775465477ae00efd721bcd81e614585d04",
+  "reviewedAt": "2026-08-01T15:32:10.097Z",
+  "notes": "Fresh plateau replay covered claims 1-9; Start here remains before the unchanged 40-verb canonical inventory with no visible regression."
+}

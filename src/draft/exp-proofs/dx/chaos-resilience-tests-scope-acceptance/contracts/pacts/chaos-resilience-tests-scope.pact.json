@@ -1,0 +1,58 @@
+{
+  "consumer": {
+    "name": "ReleaseCutlineGate"
+  },
+  "provider": {
+    "name": "ChaosResilienceTestsScopeRecord"
+  },
+  "interactions": [
+    {
+      "description": "accepted M0 scope exposes chaos and resilience evidence requirements",
+      "providerState": "HOBO-439 M0 scope is accepted",
+      "request": {
+        "method": "GET",
+        "path": "/chaos-resilience-tests/scope/HOBO-439"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-439",
+          "phase": "M0",
+          "state": "SCOPE_ACCEPTED",
+          "boundaries": ["service", "ux", "security", "support"],
+          "m1Evidence": [
+            "scope-record",
+            "experiment-inventory",
+            "steady-state-hypothesis-fixture",
+            "fault-boundary-policy",
+            "blast-radius-abort-evidence",
+            "support-and-release-handoff"
+          ]
+        }
+      }
+    },
+    {
+      "description": "follow-up work is blocked before M0 acceptance",
+      "providerState": "HOBO-439 M0 scope is not accepted",
+      "request": {
+        "method": "POST",
+        "path": "/chaos-resilience-tests/follow-up",
+        "body": {
+          "phase": "M1"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "CHAOS_RESILIENCE_M0_REQUIRED",
+          "issue": "HOBO-439"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

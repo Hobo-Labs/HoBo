@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "operator-integration-ports-contract",
+  "title": "Operator Integration Ports Contract POC",
+  "linear": "HOBO-297",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

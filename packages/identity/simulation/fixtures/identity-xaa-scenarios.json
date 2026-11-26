@@ -1,0 +1,22 @@
+{
+  "epic": "identity-auth-secrets-cross-app-access-xaa",
+  "note": "Scoped-down S3-03 fixture lifted from the epic proof: the provider-STS keyless token-exchange scenario the broker federates.",
+  "broker": {
+    "provider": "aws",
+    "audience": "aws",
+    "ttlSeconds": 600,
+    "issuer": "https://identity.yard.example"
+  },
+  "subject": "spiffe://yard/tenant-a/bindle/orders-api/agent/deployer",
+  "requestedScope": {
+    "port": "bucket",
+    "resource": "orders-archive",
+    "action": "write"
+  },
+  "expected": {
+    "flow": "oidc-federation",
+    "tokenRef": "tokenref://provider/aws/orders-archive/write/0",
+    "expiresInSeconds": 600,
+    "narrowed": true
+  }
+}

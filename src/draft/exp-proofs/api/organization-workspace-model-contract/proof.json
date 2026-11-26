@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "organization-workspace-model-contract",
+  "experienceType": "api",
+  "title": "Organization & Workspace Model Contract",
+  "linear": "HOBO-413",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,10 @@
+{
+	"id": "todo-api",
+	"title": "Todo API",
+	"blurb": "Trainable Todos bound to b.web — list, create, and toggle over KV.",
+	"tags": ["api", "kv", "trainable"],
+	"needs": ["http", "kv"],
+	"ui": "todos",
+	"entry": "app.ts",
+	"sourcePath": "examples/try-site/apps/todo-api/app.ts"
+}

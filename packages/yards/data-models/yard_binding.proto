@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package hobo.yards.v1;
+
+// Yard binding rows (ADR-0157): the Yard's mapping from a capability profile to
+// the provider offerings that may satisfy it.
+//
+// Two invariants are load-bearing and are enforced by the matching CUE:
+//  1. A row must constrain product_id or connectivity_id (or both). A row that
+//     constrains neither would read as a portability claim it does not make.
+//  2. Rows are a set keyed by (profile, product_id, connectivity_id), sorted on
+//     that tuple. Repetition order carries no preference — ADR-0151 forbids
+//     authoring order from influencing selection, which is hard gates then
+//     lexicographic ordering, never a weighted score.
+//
+// properties are provider-native refs only. A credential-shaped key is refused
+// at the parse boundary; non-string JSON values are carried as canonical JSON
+// text in this wire form.
+message YardBindingRecord {
+  string contract = 1;
+  string profile = 2;
+  string product_id = 3;
+  string connectivity_id = 4;
+  repeated string require = 5;
+  map<string, string> properties = 6;
+}
+
+// One localhost seed row: a Bindle catalog primitive mapped to the local
+// implementation that stands in for it, labeled with how the claim arose and
+// how faithful the stand-in is (ADR-0042).
+message LocalhostSeedRowRecord {
+  string profile = 1;
+  string product_id = 2;
+  string provenance = 3;
+  string fidelity = 4;
+}
+
+// A primitive the local host cannot satisfy. Recorded, never omitted: a
+// silently dropped primitive reads as "no opinion" when the truth is "not
+// possible here".
+message LocalhostSeedUnavailableRecord {
+  string profile = 1;
+  string reason = 2;
+}
+
+// The seed as a whole. Derived purely from observations — it carries no
+// timestamp, because nothing about it depends on when it was computed.
+message LocalhostYardSeedRecord {
+  string contract = 1;
+  string yard_name = 2;
+  string provider_id = 3;
+  repeated LocalhostSeedRowRecord rows = 4;
+  repeated LocalhostSeedUnavailableRecord unavailable = 5;
+}

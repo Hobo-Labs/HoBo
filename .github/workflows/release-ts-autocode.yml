@@ -1,0 +1,120 @@
+name: ts-autocode release (HoBo pins cone)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    paths:
+      - "tools/pins/siblings.json"
+      - "scripts/bootstrap-siblings.mts"
+      - "scripts/test/ts-autocode-consumer-surface.test.ts"
+      - "scripts/lib/ci-runner-contract.mts"
+      - "scripts/ci-runner-preflight.mts"
+      - ".github/actions/ci-runner-preflight/**"
+      - ".github/workflows/release-ts-autocode.yml"
+  push:
+    tags:
+      - "ts-autocode-v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TS_AUTOCODE_SPARSE_PATHS: |
+    .github
+    scripts
+    packages
+    tools/pins
+    external
+    package.json
+    pnpm-lock.yaml
+    pnpm-workspace.yaml
+    .mise/locks
+    mise.toml
+    mise.lock
+
+concurrency:
+  group: ts-autocode-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  route:
+    name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
+    # it is choosing against. The fleet while it takes jobs, an enrolled local
+    # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.route.outputs.runner }}
+      tier: ${{ steps.route.outputs.tier }}
+    steps:
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.routing-base.outputs.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            scripts/ci/route-runner.mts
+            packages/ci/src/fleet-overflow.ts
+            scripts/ci/runner-routing.mts
+            .hobo/ci.json
+      - id: route
+        uses: ./.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+
+  ts-autocode-release-contract:
+    name: ts-autocode pin cone + npm dry-run
+    needs: route
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          sparse-paths: ${{ env.TS_AUTOCODE_SPARSE_PATHS }}
+          submodules: recursive
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode sparse cone
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Consumer surface contract
+        run: node --import tsx --test scripts/test/ts-autocode-consumer-surface.test.ts
+      - name: npm pack dry-run (grounding package)
+        run: |
+          set -euo pipefail
+          cd external/ts-autocode/packages/grounding
+          npm pack --dry-run --ignore-scripts

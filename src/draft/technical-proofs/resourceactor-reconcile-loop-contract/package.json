@@ -1,0 +1,12 @@
+{
+  "name": "@hobo/draft-resourceactor-reconcile-loop-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/resourceactor-reconcile-loop.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

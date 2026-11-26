@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package hobo.collector.v1;
+
+// Collection-coverage gate records for S1-17 (HOBO-607 draft POC).
+
+message DeclaredResource {
+  string resource_id = 1;
+  string callee = 2;
+  string file_name = 3;
+  int32 line = 4;
+  string branch = 5;
+  bool reachable = 6;
+  string evidence = 7;
+}
+
+message DeclaredBind {
+  string from = 1;
+  string to = 2;
+  string key = 3;
+  string file_name = 4;
+  int32 line = 5;
+  string branch = 6;
+  bool reachable = 7;
+  string evidence = 8;
+}
+
+message UnresolvedDeclaration {
+  string callee = 1;
+  string argument = 2;
+  string file_name = 3;
+  int32 line = 4;
+  string branch = 5;
+  string reason = 6;
+}
+
+message CoverageDiagnostic {
+  string code = 1;
+  string severity = 2;
+  string message = 3;
+  string resource_id = 4;
+  string bind_key = 5;
+  string branch = 6;
+  string file_name = 7;
+  int32 line = 8;
+  string callee = 9;
+}
+
+message CoverageResult {
+  bool ok = 1;
+  string can_deploy_dimension = 2;
+  string status = 3;
+  repeated string observed_resource_ids = 4;
+  repeated string observed_bind_keys = 5;
+  repeated DeclaredResource declared_resources = 6;
+  repeated DeclaredBind declared_binds = 7;
+  repeated DeclaredResource unobserved_declarations = 8;
+  repeated DeclaredBind unobserved_binds = 9;
+  repeated DeclaredResource unreachable_declarations = 10;
+  repeated DeclaredBind unreachable_binds = 11;
+  repeated UnresolvedDeclaration unresolved_declarations = 12;
+  repeated UnresolvedDeclaration unresolved_binds = 13;
+  repeated CoverageDiagnostic diagnostics = 14;
+}

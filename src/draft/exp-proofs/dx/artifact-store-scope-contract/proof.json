@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "artifact-store-scope-contract",
+  "experienceType": "dx",
+  "title": "Artifact Store Scope POC",
+  "linear": "HOBO-445",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package hobo.examples.durable_agent.v1;
+
+// Command/receipt contract for the ops agent in src/agent.ts.
+
+message OrderCommand {
+  string order_id = 1;
+}
+
+message OrderReceipt {
+  string order_id = 1;
+  string token_ref = 2;
+}

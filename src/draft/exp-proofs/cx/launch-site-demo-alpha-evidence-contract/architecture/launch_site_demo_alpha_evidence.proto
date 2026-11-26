@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-458 launch
+// site demo alpha evidence contract. This is a design-time schema artifact,
+// not a runtime compilation target.
+
+enum LaunchSiteDemoEvidenceStatus {
+  LAUNCH_SITE_DEMO_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SITE_DEMO_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SITE_DEMO_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  LAUNCH_SITE_DEMO_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum LaunchSiteDemoProofMode {
+  LAUNCH_SITE_DEMO_PROOF_MODE_UNSPECIFIED = 0;
+  LAUNCH_SITE_DEMO_PROOF_MODE_DESIGN_RECORD = 1;
+  LAUNCH_SITE_DEMO_PROOF_MODE_REFERENCE_FIXTURE = 2;
+  LAUNCH_SITE_DEMO_PROOF_MODE_LIVE_RECORDING = 3;
+  LAUNCH_SITE_DEMO_PROOF_MODE_MANUAL_REVIEW = 4;
+}
+
+enum LaunchSiteDemoLaunchRiskEffect {
+  LAUNCH_SITE_DEMO_LAUNCH_RISK_EFFECT_UNSPECIFIED = 0;
+  LAUNCH_SITE_DEMO_LAUNCH_RISK_EFFECT_UNCHANGED = 1;
+  LAUNCH_SITE_DEMO_LAUNCH_RISK_EFFECT_INCREASED = 2;
+  LAUNCH_SITE_DEMO_LAUNCH_RISK_EFFECT_REDUCED = 3;
+}
+
+message LaunchSiteDemoEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  LaunchSiteDemoProofMode proof_mode = 4;
+  LaunchSiteDemoEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message LaunchSiteDemoBlocker {
+  string id = 1;
+  string owner_project = 2;
+  string state = 3;
+  string evidence_source = 4;
+  string mitigation = 5;
+}
+
+message LaunchSiteDemoAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  LaunchSiteDemoLaunchRiskEffect launch_risk_effect = 4;
+}
+
+message LaunchSiteDemoReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message LaunchSiteDemoFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message LaunchSiteDemoInitiativeStatusGate {
+  string parent_initiative = 1;
+  LaunchSiteDemoLaunchRiskEffect launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message LaunchSiteDemoPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message LaunchSiteDemoAlphaEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated LaunchSiteDemoEvidenceItem evidence = 5;
+  repeated LaunchSiteDemoBlocker blockers = 6;
+  repeated LaunchSiteDemoAcceptedRisk accepted_risks = 7;
+  repeated LaunchSiteDemoReleaseCutlineDependency release_cutline_dependencies = 8;
+  repeated LaunchSiteDemoFollowUp follow_ups = 9;
+  LaunchSiteDemoInitiativeStatusGate initiative_status = 10;
+  repeated string scope_out = 11;
+  repeated LaunchSiteDemoPublicClaimGuard public_claim_guards = 12;
+}

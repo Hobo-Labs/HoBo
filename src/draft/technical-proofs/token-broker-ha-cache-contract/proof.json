@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "token-broker-ha-cache-contract",
+  "title": "Token Broker HA Credential Cache Contract",
+  "linear": "HOBO-287",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/svid-partition-grace-spike"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/ai-native-agent-auth.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

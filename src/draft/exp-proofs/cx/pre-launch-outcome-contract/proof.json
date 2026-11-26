@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "pre-launch-outcome-contract",
+  "experienceType": "cx",
+  "title": "Pre-Launch Outcome Contract",
+  "linear": "HOBO-509",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,24 @@
+{
+  "consumer": { "name": "Endpoint Monitor operator" },
+  "provider": { "name": "SLO signal source" },
+  "interactions": [
+    {
+      "description": "publish-slo-budget-burn",
+      "providerStates": [{ "name": "api availability budget is burning" }],
+      "request": {
+        "method": "POST",
+        "path": "/signals/slo-budget-burned",
+        "body": {
+          "service": "api",
+          "burnRate": 14.2,
+          "correlationId": "corr-provider-degraded-api"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": { "accepted": true, "signalId": "slo-signal-001" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

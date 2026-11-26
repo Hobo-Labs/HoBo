@@ -1,0 +1,36 @@
+{
+  "consumer": {
+    "name": "BackupRestoreLaunchDrillConsumer"
+  },
+  "provider": {
+    "name": "BackupRestoreLaunchDrillBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Backup restore launch drill boundary returns accepted drill evidence requirements",
+      "request": {
+        "method": "GET",
+        "path": "/backup-restore-launch-drill/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.backup_restore_launch_drill/v1",
+          "issue": "HOBO-498",
+          "phase": "M1",
+          "requiredDataSetCount": 5,
+          "requiredRestoreContextCount": 3,
+          "requiredFailureModeCount": 6,
+          "forbidsProductionRestoreClaimWithoutEvidence": true,
+          "forbidsLiveCustomerData": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

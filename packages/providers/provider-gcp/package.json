@@ -1,0 +1,28 @@
+{
+	"name": "@hobo/provider-gcp",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
+	},
+	"description": "HoBo GCP CloudProvider: Cloud Run/Firestore/GCS/Cloud SQL/PubSub/Memorystore behind the agnostic ports (HOBO-713)."
+}

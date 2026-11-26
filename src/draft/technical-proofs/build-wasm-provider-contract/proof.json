@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "build-wasm-provider-contract",
+  "title": "HOBO-145 Build Wasm Provider Contract",
+  "linear": "HOBO-145",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-realize-emission-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SecopsPolicyAuditJourneyContractConsumer"
+  },
+  "provider": {
+    "name": "SecopsPolicyAuditJourneyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Secops Policy Audit Journey Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/secops-policy-audit-journey-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.secops_policy_audit_journey_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

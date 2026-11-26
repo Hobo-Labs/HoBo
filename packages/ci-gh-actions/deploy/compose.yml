@@ -1,0 +1,50 @@
+name: hobo-ci
+services:
+  relay:
+    image: ${HOBO_CI_IMAGE:-hobo-ci-relay:local}
+    build:
+      context: ../../..
+      dockerfile: packages/ci-gh-actions/deploy/Dockerfile
+    user: "1000:1000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 90s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=16m]
+    ports:
+      - "127.0.0.1:${HOBO_CI_LOCAL_PORT:-8787}:8787"
+    environment:
+      HOBO_CI_HOST: 0.0.0.0
+      HOBO_CI_PORT: "8787"
+      HOBO_CI_DB: /var/lib/hobo-ci/relay.sqlite
+      HOBO_CI_CONFIG: /etc/hobo-ci/config.json
+      HOBO_CI_PUBLIC_URL: ${HOBO_CI_PUBLIC_URL:?Set the public HTTPS origin}
+      HOBO_CI_GITHUB_APP_ID: ${HOBO_CI_GITHUB_APP_ID:?Set the GitHub App ID}
+      HOBO_CI_GITHUB_APP_KEY_FILE: /run/secrets/github-app-key.pem
+      HOBO_CI_WEBHOOK_SECRET_FILE: /run/secrets/webhook-secret
+      HOBO_CI_CONTROL_TOKENS_FILE: /run/secrets/control-tokens.json
+    volumes:
+      - relay-data:/var/lib/hobo-ci
+      - type: bind
+        source: ${HOBO_CI_CONFIG_FILE:?Set an absolute configuration path}
+        target: /etc/hobo-ci/config.json
+        read_only: true
+    secrets:
+      - source: github-app-key
+        target: github-app-key.pem
+      - source: webhook-secret
+        target: webhook-secret
+      - source: control-tokens
+        target: control-tokens.json
+secrets:
+  github-app-key:
+    file: ${HOBO_CI_GITHUB_APP_KEY_PATH:?Set the absolute private-key path}
+  webhook-secret:
+    file: ${HOBO_CI_WEBHOOK_SECRET_PATH:?Set the absolute webhook-secret path}
+  control-tokens:
+    file: ${HOBO_CI_CONTROL_TOKENS_PATH:?Set the absolute account-token file path}
+volumes:
+  relay-data:
+    name: ${HOBO_CI_DATA_VOLUME:-hobo-ci-data}

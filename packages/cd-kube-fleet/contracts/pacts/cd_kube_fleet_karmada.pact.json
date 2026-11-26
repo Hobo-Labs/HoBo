@@ -1,0 +1,699 @@
+{
+	"consumer": {
+		"name": "HoboCdKubeFleetKarmadaRealizer"
+	},
+	"provider": {
+		"name": "KarmadaControlPlane"
+	},
+	"interactions": [
+		{
+			"description": "lists the Camp's PropagationPolicies before the first apply",
+			"providerState": "first-converge",
+			"request": {
+				"method": "GET",
+				"path": "/apis/policy.karmada.io/v1alpha1/propagationpolicies",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "policy.karmada.io/v1alpha1",
+					"kind": "PropagationPolicyList",
+					"metadata": {
+						"resourceVersion": "88200"
+					},
+					"items": []
+				}
+			}
+		},
+		{
+			"description": "reads the resource template (absent)",
+			"providerState": "first-converge",
+			"request": {
+				"method": "GET",
+				"path": "/apis/apps/v1/namespaces/shop/deployments/web",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"status": "Failure",
+					"reason": "NotFound",
+					"code": 404,
+					"message": "not found"
+				}
+			}
+		},
+		{
+			"description": "creates a PropagationPolicy pinned to exactly one member",
+			"providerState": "first-converge",
+			"request": {
+				"method": "POST",
+				"path": "/apis/policy.karmada.io/v1alpha1/namespaces/shop/propagationpolicies",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				},
+				"body": {
+					"kind": "PropagationPolicy",
+					"metadata": {
+						"name": "hobo-store-paris",
+						"namespace": "shop"
+					},
+					"spec": {
+						"placement": {
+							"clusterAffinity": {
+								"clusterNames": [
+									"edge-paris-01"
+								]
+							},
+							"replicaScheduling": {
+								"replicaSchedulingType": "Duplicated"
+							}
+						},
+						"preserveResourcesOnDeletion": false,
+						"conflictResolution": "Abort",
+						"propagateDeps": false
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"apiVersion": "policy.karmada.io/v1alpha1",
+					"kind": "PropagationPolicy",
+					"metadata": {
+						"name": "hobo-store-paris",
+						"namespace": "shop",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo",
+							"hobo.dev/camp": "store-paris"
+						},
+						"annotations": {
+							"hobo.dev/camp-id": "store-paris",
+							"hobo.dev/fence": "7",
+							"hobo.dev/reconciler": "rec-1",
+							"hobo.dev/resource-index": "[{\"identity\":\"apps/Deployment/shop/web\",\"resource\":\"web\",\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"plural\":\"deployments\",\"namespace\":\"shop\",\"name\":\"web\"}]"
+						},
+						"generation": 1,
+						"resourceVersion": "88120",
+						"uid": "1e8f4c64-6a0f-4c1a-8a51-0b6c3f3c2d11"
+					},
+					"spec": {
+						"resourceSelectors": [
+							{
+								"apiVersion": "apps/v1",
+								"kind": "Deployment",
+								"namespace": "shop",
+								"name": "web"
+							}
+						],
+						"placement": {
+							"clusterAffinity": {
+								"clusterNames": [
+									"edge-paris-01"
+								]
+							},
+							"replicaScheduling": {
+								"replicaSchedulingType": "Duplicated"
+							}
+						},
+						"preserveResourcesOnDeletion": false,
+						"conflictResolution": "Abort",
+						"propagateDeps": false
+					}
+				}
+			}
+		},
+		{
+			"description": "creates the resource template",
+			"providerState": "first-converge",
+			"request": {
+				"method": "POST",
+				"path": "/apis/apps/v1/namespaces/shop/deployments",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				},
+				"body": {
+					"kind": "Deployment",
+					"metadata": {
+						"name": "web",
+						"namespace": "shop",
+						"labels": {
+							"hobo.dev/camp": "store-paris"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "web",
+						"namespace": "shop",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo",
+							"hobo.dev/camp": "store-paris"
+						},
+						"annotations": {
+							"hobo.dev/camp-id": "store-paris",
+							"hobo.dev/set-id": "set_e40220f01ebc",
+							"hobo.dev/manifests-digest": "sha256:47099abe5d24e028e0cdbb50db9c1ba64e64ec9e4a77a55b433af95b581f5643",
+							"hobo.dev/fence": "7"
+						},
+						"generation": 1,
+						"resourceVersion": "88121",
+						"uid": "a3b1f2d4-5c6e-4f70-8a9b-0c1d2e3f4a5b"
+					},
+					"spec": {
+						"replicas": 3,
+						"selector": {
+							"matchLabels": {
+								"app": "web"
+							}
+						},
+						"template": {
+							"metadata": {
+								"labels": {
+									"app": "web"
+								}
+							},
+							"spec": {
+								"containers": [
+									{
+										"name": "web",
+										"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+									}
+								]
+							}
+						},
+						"strategy": {
+							"type": "RollingUpdate",
+							"rollingUpdate": {
+								"maxSurge": "25%",
+								"maxUnavailable": "25%"
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "no ResourceBinding yet",
+			"providerState": "first-converge",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.karmada.io/v1alpha2/namespaces/shop/resourcebindings/web-deployment",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"status": "Failure",
+					"reason": "NotFound",
+					"code": 404,
+					"message": "not found"
+				}
+			}
+		},
+		{
+			"description": "lists the Camp's PropagationPolicies",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/apis/policy.karmada.io/v1alpha1/propagationpolicies",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "policy.karmada.io/v1alpha1",
+					"kind": "PropagationPolicyList",
+					"metadata": {
+						"resourceVersion": "88200"
+					},
+					"items": [
+						{
+							"apiVersion": "policy.karmada.io/v1alpha1",
+							"kind": "PropagationPolicy",
+							"metadata": {
+								"name": "hobo-store-paris",
+								"namespace": "shop",
+								"labels": {
+									"app.kubernetes.io/managed-by": "hobo",
+									"hobo.dev/camp": "store-paris"
+								},
+								"annotations": {
+									"hobo.dev/camp-id": "store-paris",
+									"hobo.dev/fence": "7",
+									"hobo.dev/reconciler": "rec-1",
+									"hobo.dev/resource-index": "[{\"identity\":\"apps/Deployment/shop/web\",\"resource\":\"web\",\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"plural\":\"deployments\",\"namespace\":\"shop\",\"name\":\"web\"}]"
+								},
+								"generation": 1,
+								"resourceVersion": "88120",
+								"uid": "1e8f4c64-6a0f-4c1a-8a51-0b6c3f3c2d11"
+							},
+							"spec": {
+								"resourceSelectors": [
+									{
+										"apiVersion": "apps/v1",
+										"kind": "Deployment",
+										"namespace": "shop",
+										"name": "web"
+									}
+								],
+								"placement": {
+									"clusterAffinity": {
+										"clusterNames": [
+											"edge-paris-01"
+										]
+									},
+									"replicaScheduling": {
+										"replicaSchedulingType": "Duplicated"
+									}
+								},
+								"preserveResourcesOnDeletion": false,
+								"conflictResolution": "Abort",
+								"propagateDeps": false
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "reads the resource template",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/apis/apps/v1/namespaces/shop/deployments/web",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "web",
+						"namespace": "shop",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo",
+							"hobo.dev/camp": "store-paris"
+						},
+						"annotations": {
+							"hobo.dev/camp-id": "store-paris",
+							"hobo.dev/set-id": "set_e40220f01ebc",
+							"hobo.dev/manifests-digest": "sha256:47099abe5d24e028e0cdbb50db9c1ba64e64ec9e4a77a55b433af95b581f5643",
+							"hobo.dev/fence": "7"
+						},
+						"generation": 1,
+						"resourceVersion": "88121",
+						"uid": "a3b1f2d4-5c6e-4f70-8a9b-0c1d2e3f4a5b"
+					},
+					"spec": {
+						"replicas": 3,
+						"selector": {
+							"matchLabels": {
+								"app": "web"
+							}
+						},
+						"template": {
+							"metadata": {
+								"labels": {
+									"app": "web"
+								}
+							},
+							"spec": {
+								"containers": [
+									{
+										"name": "web",
+										"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+									}
+								]
+							}
+						},
+						"strategy": {
+							"type": "RollingUpdate",
+							"rollingUpdate": {
+								"maxSurge": "25%",
+								"maxUnavailable": "25%"
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "the binding is applied and Healthy on the one member",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.karmada.io/v1alpha2/namespaces/shop/resourcebindings/web-deployment",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "work.karmada.io/v1alpha2",
+					"kind": "ResourceBinding",
+					"metadata": {
+						"name": "web-deployment",
+						"namespace": "shop",
+						"resourceVersion": "88130",
+						"labels": {
+							"propagationpolicy.karmada.io/permanent-id": "6f1d9a52-1d6f-4b3e-9a43-2a8f1c3b7e01"
+						}
+					},
+					"spec": {
+						"resource": {
+							"apiVersion": "apps/v1",
+							"kind": "Deployment",
+							"namespace": "shop",
+							"name": "web",
+							"uid": "a3b1f2d4-5c6e-4f70-8a9b-0c1d2e3f4a5b",
+							"resourceVersion": "88121"
+						},
+						"replicas": 3,
+						"clusters": [
+							{
+								"name": "edge-paris-01",
+								"replicas": 3
+							}
+						],
+						"placement": {
+							"clusterAffinity": {
+								"clusterNames": [
+									"edge-paris-01"
+								]
+							},
+							"replicaScheduling": {
+								"replicaSchedulingType": "Duplicated"
+							}
+						},
+						"conflictResolution": "Abort"
+					},
+					"status": {
+						"schedulerObservedGeneration": 1,
+						"conditions": [
+							{
+								"type": "Scheduled",
+								"status": "True",
+								"reason": "Success",
+								"message": "Binding has been scheduled successfully.",
+								"lastTransitionTime": "2026-11-12T09:59:35Z"
+							},
+							{
+								"type": "FullyApplied",
+								"status": "True",
+								"reason": "FullyAppliedSuccess",
+								"message": "All works have been successfully applied",
+								"lastTransitionTime": "2026-11-12T09:59:40Z"
+							}
+						],
+						"aggregatedStatus": [
+							{
+								"clusterName": "edge-paris-01",
+								"applied": true,
+								"health": "Healthy",
+								"status": {
+									"replicas": 3,
+									"readyReplicas": 3,
+									"availableReplicas": 3,
+									"updatedReplicas": 3,
+									"observedGeneration": 1,
+									"generation": 1,
+									"resourceTemplateGeneration": 1
+								}
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "lists the Camp's PropagationPolicies",
+			"providerState": "pinning-violated",
+			"request": {
+				"method": "GET",
+				"path": "/apis/policy.karmada.io/v1alpha1/propagationpolicies",
+				"query": "labelSelector=hobo.dev%2Fcamp%3Dstore-paris",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "policy.karmada.io/v1alpha1",
+					"kind": "PropagationPolicyList",
+					"metadata": {
+						"resourceVersion": "88200"
+					},
+					"items": [
+						{
+							"apiVersion": "policy.karmada.io/v1alpha1",
+							"kind": "PropagationPolicy",
+							"metadata": {
+								"name": "hobo-store-paris",
+								"namespace": "shop",
+								"labels": {
+									"app.kubernetes.io/managed-by": "hobo",
+									"hobo.dev/camp": "store-paris"
+								},
+								"annotations": {
+									"hobo.dev/camp-id": "store-paris",
+									"hobo.dev/fence": "7",
+									"hobo.dev/reconciler": "rec-1",
+									"hobo.dev/resource-index": "[{\"identity\":\"apps/Deployment/shop/web\",\"resource\":\"web\",\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"plural\":\"deployments\",\"namespace\":\"shop\",\"name\":\"web\"}]"
+								},
+								"generation": 1,
+								"resourceVersion": "88120",
+								"uid": "1e8f4c64-6a0f-4c1a-8a51-0b6c3f3c2d11"
+							},
+							"spec": {
+								"resourceSelectors": [
+									{
+										"apiVersion": "apps/v1",
+										"kind": "Deployment",
+										"namespace": "shop",
+										"name": "web"
+									}
+								],
+								"placement": {
+									"clusterAffinity": {
+										"clusterNames": [
+											"edge-paris-01"
+										]
+									},
+									"replicaScheduling": {
+										"replicaSchedulingType": "Duplicated"
+									}
+								},
+								"preserveResourcesOnDeletion": false,
+								"conflictResolution": "Abort",
+								"propagateDeps": false
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "reads the resource template",
+			"providerState": "pinning-violated",
+			"request": {
+				"method": "GET",
+				"path": "/apis/apps/v1/namespaces/shop/deployments/web",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "web",
+						"namespace": "shop",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo",
+							"hobo.dev/camp": "store-paris"
+						},
+						"annotations": {
+							"hobo.dev/camp-id": "store-paris",
+							"hobo.dev/set-id": "set_e40220f01ebc",
+							"hobo.dev/manifests-digest": "sha256:47099abe5d24e028e0cdbb50db9c1ba64e64ec9e4a77a55b433af95b581f5643",
+							"hobo.dev/fence": "7"
+						},
+						"generation": 1,
+						"resourceVersion": "88121",
+						"uid": "a3b1f2d4-5c6e-4f70-8a9b-0c1d2e3f4a5b"
+					},
+					"spec": {
+						"replicas": 3,
+						"selector": {
+							"matchLabels": {
+								"app": "web"
+							}
+						},
+						"template": {
+							"metadata": {
+								"labels": {
+									"app": "web"
+								}
+							},
+							"spec": {
+								"containers": [
+									{
+										"name": "web",
+										"image": "registry.example/shop/web@sha256:6a1f0c9d8e7b5a4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c"
+									}
+								]
+							}
+						},
+						"strategy": {
+							"type": "RollingUpdate",
+							"rollingUpdate": {
+								"maxSurge": "25%",
+								"maxUnavailable": "25%"
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "the binding reaches a second member",
+			"providerState": "pinning-violated",
+			"request": {
+				"method": "GET",
+				"path": "/apis/work.karmada.io/v1alpha2/namespaces/shop/resourcebindings/web-deployment",
+				"headers": {
+					"authorization": "Bearer hub-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "work.karmada.io/v1alpha2",
+					"kind": "ResourceBinding",
+					"metadata": {
+						"name": "web-deployment",
+						"namespace": "shop",
+						"resourceVersion": "88130",
+						"labels": {
+							"propagationpolicy.karmada.io/permanent-id": "6f1d9a52-1d6f-4b3e-9a43-2a8f1c3b7e01"
+						}
+					},
+					"spec": {
+						"resource": {
+							"apiVersion": "apps/v1",
+							"kind": "Deployment",
+							"namespace": "shop",
+							"name": "web",
+							"uid": "a3b1f2d4-5c6e-4f70-8a9b-0c1d2e3f4a5b",
+							"resourceVersion": "88121"
+						},
+						"replicas": 3,
+						"clusters": [
+							{
+								"name": "edge-paris-01",
+								"replicas": 3
+							},
+							{
+								"name": "edge-lyon-02",
+								"replicas": 3
+							}
+						],
+						"placement": {
+							"clusterAffinity": {
+								"clusterNames": [
+									"edge-paris-01"
+								]
+							},
+							"replicaScheduling": {
+								"replicaSchedulingType": "Duplicated"
+							}
+						},
+						"conflictResolution": "Abort"
+					},
+					"status": {
+						"schedulerObservedGeneration": 1,
+						"conditions": [
+							{
+								"type": "Scheduled",
+								"status": "True",
+								"reason": "Success",
+								"message": "Binding has been scheduled successfully.",
+								"lastTransitionTime": "2026-11-12T09:59:35Z"
+							},
+							{
+								"type": "FullyApplied",
+								"status": "True",
+								"reason": "FullyAppliedSuccess",
+								"message": "All works have been successfully applied",
+								"lastTransitionTime": "2026-11-12T09:59:40Z"
+							}
+						],
+						"aggregatedStatus": [
+							{
+								"clusterName": "edge-paris-01",
+								"applied": true,
+								"health": "Healthy",
+								"status": {
+									"replicas": 3,
+									"readyReplicas": 3,
+									"availableReplicas": 3,
+									"updatedReplicas": 3,
+									"observedGeneration": 1,
+									"generation": 1,
+									"resourceTemplateGeneration": 1
+								}
+							},
+							{
+								"clusterName": "edge-lyon-02",
+								"applied": true,
+								"health": "Healthy",
+								"status": {
+									"replicas": 3,
+									"readyReplicas": 3,
+									"availableReplicas": 3,
+									"updatedReplicas": 3,
+									"observedGeneration": 1,
+									"generation": 1,
+									"resourceTemplateGeneration": 1
+								}
+							}
+						]
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "2.0.0"
+		}
+	}
+}

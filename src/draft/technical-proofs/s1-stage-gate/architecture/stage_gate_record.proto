@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package hobo.examples.hello_bindle.stage_gate.v1;
+
+message StageGateS1Record {
+  string gate_id = 1;
+  string commit_sha = 2;
+  string workflow_run_url = 3;
+  repeated StageGateCheck checks = 4;
+  string recorded_at = 5;
+}
+
+message StageGateCheck {
+  string check_id = 1;
+  string status = 2;
+  uint64 duration_ms = 3;
+  string report_ref = 4;
+}

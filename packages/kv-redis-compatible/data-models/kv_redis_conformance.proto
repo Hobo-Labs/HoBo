@@ -1,0 +1,178 @@
+// Wire records for Redis-compatible conformance.
+//
+// A case is pure data — command templates and expectations — and a report is
+// the durable evidence a run produced. These are the shapes that leave the
+// process: recorded against a product in the catalog, replayed by a reviewer,
+// and folded into the profile implementations selection reads.
+//
+// Two absences are load-bearing. There is no "assumed" case outcome: a case
+// that could not run is SKIPPED, which is why a report can say `INCOMPLETE`
+// instead of over-claiming a pass. And no field here is a credential — the
+// executor already holds whatever it needs to reach the store, and the suite
+// never passes one, so a report is safe to append to an event store.
+
+syntax = "proto3";
+
+package hobo.kv.redis_compatible.v1;
+
+// The six areas the suite is closed over. Delivery is deliberately not one of
+// them: no case in this suite is evidence for a queue or topic profile.
+enum ConformanceArea {
+  CONFORMANCE_AREA_UNSPECIFIED = 0;
+  CONFORMANCE_AREA_TRANSPORT = 1;
+  CONFORMANCE_AREA_KEY_VALUE = 2;
+  CONFORMANCE_AREA_TTL = 3;
+  CONFORMANCE_AREA_ATOMICITY = 4;
+  CONFORMANCE_AREA_BOUNDED_PAYLOAD = 5;
+  CONFORMANCE_AREA_CONSISTENCY = 6;
+}
+
+// A case is only ever evidence for a kv profile. Adding a member here is how a
+// queue claim would sneak in, so the set is closed on purpose.
+enum CaseProfileId {
+  CASE_PROFILE_ID_UNSPECIFIED = 0;
+  // kv.key-value/v1
+  CASE_PROFILE_ID_KEY_VALUE = 1;
+  // kv.redis-compatible/v1
+  CASE_PROFILE_ID_REDIS_COMPATIBLE = 2;
+}
+
+// Payload sizes a case cannot hardcode, because they depend on the limit the
+// implementation declared. An undeclared limit skips the case; the runner
+// never invents one.
+enum FillKind {
+  FILL_KIND_UNSPECIFIED = 0;
+  FILL_KIND_MAX_VALUE_BYTES = 1;
+  FILL_KIND_OVER_MAX_VALUE_BYTES = 2;
+}
+
+enum CaseOutcome {
+  CASE_OUTCOME_UNSPECIFIED = 0;
+  CASE_OUTCOME_PASS = 1;
+  CASE_OUTCOME_FAIL = 2;
+  CASE_OUTCOME_SKIPPED = 3;
+}
+
+// `INCOMPLETE` projects to `conformance: "unknown"`, which selection fails
+// closed on. It exists so a run with a skipped required case cannot be
+// recorded as a pass.
+enum RunOutcome {
+  RUN_OUTCOME_UNSPECIFIED = 0;
+  RUN_OUTCOME_PASS = 1;
+  RUN_OUTCOME_FAIL = 2;
+  RUN_OUTCOME_INCOMPLETE = 3;
+}
+
+enum ReplyExpectationKind {
+  REPLY_EXPECTATION_KIND_UNSPECIFIED = 0;
+  REPLY_EXPECTATION_KIND_VALUE = 1;
+  REPLY_EXPECTATION_KIND_ONE_OF = 2;
+  REPLY_EXPECTATION_KIND_INTEGER_BETWEEN = 3;
+  REPLY_EXPECTATION_KIND_ERROR = 4;
+  REPLY_EXPECTATION_KIND_BYTE_LENGTH = 5;
+}
+
+// A reply value as a client surfaces it. `null_value` is the Redis nil and is
+// distinct from an empty string, which several cases depend on.
+message RedisValue {
+  oneof value {
+    string string_value = 1;
+    double number_value = 2;
+    bool null_value = 3;
+    RedisValueArray array_value = 4;
+  }
+}
+
+message RedisValueArray {
+  repeated RedisValue items = 1;
+}
+
+// One argument of a command template: either a literal, or a placeholder the
+// runner resolves from the declared value-size limit.
+message CommandArgTemplate {
+  oneof argument {
+    string literal = 1;
+    FillKind fill = 2;
+  }
+}
+
+message ReplyExpectation {
+  ReplyExpectationKind kind = 1;
+  // VALUE
+  RedisValue value = 2;
+  // ONE_OF: any of these replies is acceptable, e.g. TTL rounding.
+  repeated RedisValue values = 3;
+  // INTEGER_BETWEEN
+  int64 min = 4;
+  int64 max = 5;
+  // BYTE_LENGTH: a string reply of exactly the filled length, which is what
+  // proves a byte-for-byte round trip.
+  FillKind of = 6;
+}
+
+message ConformanceStep {
+  // Verb in element 0, arguments after it.
+  repeated CommandArgTemplate command = 1;
+  ReplyExpectation expect = 2;
+  // Requires the executor to expose time control. Absent control skips the
+  // case; it never passes it.
+  optional uint32 wait_ms = 3;
+}
+
+message ConformanceCase {
+  string id = 1;
+  ConformanceArea area = 2;
+  CaseProfileId profile_id = 3;
+  string title = 4;
+  // Why the case exists, in terms of what breaks without it. A case without a
+  // stated reason is a case nobody can decide to delete.
+  string rationale = 5;
+  repeated ConformanceStep steps = 6;
+  // Structured capability keys this case substantiates when it passes.
+  repeated string substantiates = 7;
+  // An optional case never fails a run; it is reported and skipped.
+  bool optional = 8;
+}
+
+message StepResult {
+  // The resolved command, rendered for a human. Arguments are already
+  // prefixed, so this is what actually reached the store.
+  string command = 1;
+  bool passed = 2;
+  string detail = 3;
+}
+
+message ConformanceCaseResult {
+  string case_id = 1;
+  ConformanceArea area = 2;
+  CaseProfileId profile_id = 3;
+  CaseOutcome outcome = 4;
+  string reason = 5;
+  // A skipped case records no steps: nothing ran, so nothing is claimed.
+  repeated StepResult steps = 6;
+}
+
+message ConformanceReport {
+  // Always conformance.kv.redis-compatible/v1.
+  string suite_ref = 1;
+  // How the run reached the store. `restTransport` is substantiated by this
+  // field rather than by any command, because it is a property of the run.
+  string transport = 2;
+  RunOutcome outcome = 3;
+  repeated ConformanceCaseResult results = 4;
+  // Only keys whose every substantiating case passed.
+  repeated string substantiated_capabilities = 5;
+  repeated string failed_case_ids = 6;
+  repeated string skipped_case_ids = 7;
+}
+
+// A consistency property the suite either stands behind or explicitly does
+// not. The unasserted rows are the point: a provider that copies this list
+// inherits the "no" answers too.
+message ConsistencyClaim {
+  string key = 1;
+  bool asserted = 2;
+  string note = 3;
+  // Present only when asserted: the case that establishes the property.
+  optional string conformance_case_id = 4;
+}

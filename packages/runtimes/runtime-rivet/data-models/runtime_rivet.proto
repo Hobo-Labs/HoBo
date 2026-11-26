@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.runtime_rivet.v1;
+
+// Rivet optional Camp runtime adapter wire records.
+// HoBo remains control-plane authority; Rivet is a data-plane resolver.
+
+enum RivetRuntimeMode {
+  RIVET_RUNTIME_MODE_UNSPECIFIED = 0;
+  RIVET_RUNTIME_MODE_LOCAL = 1;
+  RIVET_RUNTIME_MODE_RUNNER = 2;
+  RIVET_RUNTIME_MODE_SERVERLESS = 3;
+  RIVET_RUNTIME_MODE_MANAGED = 4;
+}
+
+enum RivetInboxStatus {
+  RIVET_INBOX_STATUS_UNSPECIFIED = 0;
+  RIVET_INBOX_STATUS_PERSISTED = 1;
+  RIVET_INBOX_STATUS_PROCESSING = 2;
+  RIVET_INBOX_STATUS_COMMITTED = 3;
+  RIVET_INBOX_STATUS_COMPLETED = 4;
+  RIVET_INBOX_STATUS_FAILED_RETRYABLE = 5;
+  RIVET_INBOX_STATUS_FAILED_TERMINAL = 6;
+}
+
+message RivetRuntimeConfig {
+  string camp_id = 1;
+  string tenant_id = 2;
+  RivetRuntimeMode mode = 3;
+  string engine_image_digest = 4;
+  string endpoint_secret_ref = 5;
+  string admin_token_secret_ref = 6;
+  string svid_binding_ref = 7;
+}
+
+message RivetActorBinding {
+  string tenant_id = 1;
+  string project_id = 2;
+  string actor_type_id = 3;
+  repeated string key_segments = 4;
+  uint32 schema_version = 5;
+  uint64 binding_epoch = 6;
+}
+
+message RivetDoctorReport {
+  string mode = 1;
+  bool rivetkit_available = 2;
+  bool journal_ready = 3;
+  string fidelity = 4; // local-sqlite | rivetkit | unsupported
+  repeated string notes = 5;
+  repeated string remediation = 6;
+}

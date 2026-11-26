@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GenesisBreakglassContractConsumer"
+  },
+  "provider": {
+    "name": "GenesisBreakglassContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Genesis Breakglass Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/genesis-breakglass-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.genesis_breakglass_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

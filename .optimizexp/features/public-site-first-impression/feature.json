@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "public-site-first-impression",
+  "title": "Public site first impression",
+  "experiences": [
+    "ux"
+  ],
+  "personas": [
+    "product-end-user"
+  ],
+  "interfaces": [
+    "web"
+  ],
+  "driver": "web",
+  "surfaces": [
+    "site/src/pages/index.astro",
+    "/guide/getting-started/"
+  ],
+  "tags": [
+    "@optimizexp",
+    "@ux"
+  ],
+  "bindings": {
+    "steps": "steps/bindings.steps.ts",
+    "implementations": "steps/implementations.ts",
+    "tests": "test/public-site-first-impression.bindings.test.ts"
+  },
+  "implementationStatus": "wired",
+  "primaryCommand": "pnpm --dir site exec astro dev"
+}

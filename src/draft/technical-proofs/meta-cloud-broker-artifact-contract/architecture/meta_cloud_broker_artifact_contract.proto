@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package hobo.meta_cloud_broker_artifact_contract.v1;
+
+message BrokerArtifactEnvelope {
+  string kind = 1;
+  string schema = 2;
+  string version = 3;
+  string owner = 4;
+  BrokerArtifactProvenance provenance = 5;
+}
+
+message BrokerArtifactProvenance {
+  BrokerArtifactSource source = 1;
+  string proof_mode = 2;
+  BrokerSignature signature = 3;
+}
+
+message BrokerArtifactSource {
+  string issue = 1;
+  repeated string refs = 2;
+}
+
+message BrokerSignature {
+  string issuer = 1;
+  string algorithm = 2;
+  string digest = 3;
+}
+
+message ContractManifestArtifact {
+  string manifest_digest = 1;
+  string manifest_schema = 2;
+  repeated string requested_capabilities = 3;
+  repeated ContractFact declared_facts = 4;
+}
+
+message ContractFact {
+  string ref = 1;
+  string edge = 2;
+  string digest = 3;
+}
+
+message BrokerEnvironmentArtifact {
+  string environment_digest = 1;
+  string approved_by = 2;
+  string catalog_snapshot_digest = 3;
+  repeated string allowed_provider_ids = 4;
+}
+
+message MappingContractArtifact {
+  string mapping_digest = 1;
+  string environment_digest = 2;
+  repeated MappingProvider allowed_providers = 3;
+  bool unilateral_selection = 4;
+}
+
+message MappingProvider {
+  string provider_id = 1;
+  string catalog_digest = 2;
+  int32 priority = 3;
+}
+
+message BrokerCatalogSnapshotArtifact {
+  string snapshot_digest = 1;
+  string catalog_version = 2;
+  repeated CatalogCapability capabilities = 3;
+}
+
+message CatalogCapability {
+  string provider_id = 1;
+  string port = 2;
+  string interface_name = 3;
+  string version = 4;
+}
+
+message ResolutionReceiptArtifact {
+  string receipt_id = 1;
+  string manifest_digest = 2;
+  string environment_digest = 3;
+  string mapping_digest = 4;
+  bool no_hosted_broker_re_resolve = 5;
+}
+
+message ResolutionRejectionArtifact {
+  string rejection_id = 1;
+  string manifest_digest = 2;
+  string environment_digest = 3;
+  string reason_code = 4;
+  string reason_message = 5;
+}

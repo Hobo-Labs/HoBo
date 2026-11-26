@@ -1,0 +1,279 @@
+{
+  "consumer": {
+    "name": "@hobo/draft-vibe-topology-status-prototype"
+  },
+  "provider": {
+    "name": "@hobo/draft-vibe-topology-status-prototype-fixture-boundary"
+  },
+  "interactions": [
+    {
+      "description": "HOBO-561 topology/status prototype response",
+      "request": {
+        "method": "GET",
+        "path": "/draft/vibe-topology-status-prototype"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-561",
+          "phase": "M2",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-topology-status-prototype",
+          "proofNote": "docs/design/proofs/vibe-topology-status-prototype/README.md",
+          "designRefs": [
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/data-plane.md#plan-32",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "sourceDependencies": [
+            {
+              "issue": "HOBO-544",
+              "title": "Vibe deployment dashboard mockups",
+              "status": "accepted",
+              "evidence": "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups"
+            },
+            {
+              "issue": "HOBO-545",
+              "title": "Vibe dashboard freshness/RBAC fixtures",
+              "status": "accepted",
+              "evidence": "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures"
+            },
+            {
+              "issue": "HOBO-577",
+              "title": "Vibe resource lifecycle quickstart examples",
+              "status": "accepted",
+              "evidence": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+            }
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "deployment-timeline",
+              "topologyUse": "deployment timeline states reuse the accepted deploy-run fixture instead of inventing a dashboard-only deploy story"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-inspect-event-projection-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "topology-graph",
+              "topologyUse": "topology graph nodes cite accepted projection evidence instead of live provider traversal"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "freshness-rbac-state",
+              "topologyUse": "freshness and RBAC strips reuse the stale-evidence quickstart copy and owner route"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "live",
+              "consumingSurface": "run-inspector",
+              "topologyUse": "run inspector rollback copy marks recovery as gated live evidence, not a production restore implementation"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "consumingSurface": "support-handoff",
+              "topologyUse": "support handoff keeps recovery scope-out claims explicit and customer safe"
+            }
+          ],
+          "surfaces": [
+            {
+              "id": "deployment-timeline",
+              "title": "Deployment timeline over accepted projection snapshots",
+              "consumesFrom": ["HOBO-544", "HOBO-545", "HOBO-577"],
+              "operatingQuestion": "What deployment state is current, failed, rolled back, or completed, and which event-backed snapshot proves it?"
+            },
+            {
+              "id": "topology-graph",
+              "title": "Topology graph status from projection-backed mockups",
+              "consumesFrom": ["HOBO-544", "HOBO-545", "HOBO-577"],
+              "operatingQuestion": "Which topology nodes and edges are visible, stale, unavailable, redacted, or scope-limited without live provider traversal?"
+            },
+            {
+              "id": "run-inspector",
+              "title": "Run inspector state from redacted replay and support fixtures",
+              "consumesFrom": ["HOBO-544", "HOBO-545", "HOBO-577"],
+              "operatingQuestion": "Which run, event, actor, and replay snapshot explain the deployment outcome for a developer or support operator?"
+            },
+            {
+              "id": "freshness-rbac-state",
+              "title": "Freshness and tenant/RBAC status strip",
+              "consumesFrom": ["HOBO-545"],
+              "operatingQuestion": "Can the surface disclose freshness, tenant-first scope, role disposition, and redaction without implementing RBAC?"
+            },
+            {
+              "id": "support-handoff",
+              "title": "Support-safe evidence handoff",
+              "consumesFrom": ["HOBO-544", "HOBO-545", "HOBO-577"],
+              "operatingQuestion": "What redacted packet can support use, and what stays withheld, without creating a live ticket or SLA promise?"
+            }
+          ],
+          "snapshots": [
+            {
+              "state": "fresh",
+              "surface": "freshness-rbac-state",
+              "sourceIssue": "HOBO-545",
+              "sourceFixtureId": "hobo-545-dashboard-fresh",
+              "projectionSource": "DeploymentView",
+              "freshnessLabel": "current projection sequence inside accepted window",
+              "tenantRbacDisposition": "tenant scoped with RBAC role platform-operator",
+              "safeNextAction": "inspect current deployment status",
+              "proofMode": "reference fixture"
+            },
+            {
+              "state": "stale",
+              "surface": "freshness-rbac-state",
+              "sourceIssue": "HOBO-545",
+              "sourceFixtureId": "hobo-545-dashboard-stale",
+              "projectionSource": "TopologyView",
+              "freshnessLabel": "stale projection sequence outside accepted window",
+              "tenantRbacDisposition": "tenant scoped with stale topology label",
+              "safeNextAction": "wait for projection replay or route evidence to support",
+              "proofMode": "reference fixture"
+            },
+            {
+              "state": "unavailable",
+              "surface": "freshness-rbac-state",
+              "sourceIssue": "HOBO-545",
+              "sourceFixtureId": "hobo-545-dashboard-unavailable",
+              "projectionSource": "RunView",
+              "freshnessLabel": "read model unavailable",
+              "tenantRbacDisposition": "tenant scoped last-known-safe metadata only",
+              "safeNextAction": "route unavailable state to support owner",
+              "proofMode": "reference fixture"
+            },
+            {
+              "state": "redacted",
+              "surface": "freshness-rbac-state",
+              "sourceIssue": "HOBO-545",
+              "sourceFixtureId": "hobo-545-dashboard-redacted",
+              "projectionSource": "ProjectView",
+              "freshnessLabel": "fresh but redacted",
+              "tenantRbacDisposition": "tenant scoped with redacted payload fields",
+              "safeNextAction": "review projection evidence and hidden-field reasons",
+              "proofMode": "reference fixture"
+            },
+            {
+              "state": "unauthorized",
+              "surface": "freshness-rbac-state",
+              "sourceIssue": "HOBO-545",
+              "sourceFixtureId": "hobo-545-dashboard-unauthorized",
+              "projectionSource": "EnvironmentView",
+              "freshnessLabel": "fresh but denied",
+              "tenantRbacDisposition": "RBAC denied with tenant and correlation id only",
+              "safeNextAction": "route denied state to support owner",
+              "proofMode": "reference fixture"
+            },
+            {
+              "state": "partial",
+              "surface": "freshness-rbac-state",
+              "sourceIssue": "HOBO-545",
+              "sourceFixtureId": "hobo-545-dashboard-partial",
+              "projectionSource": "AvailabilityView",
+              "freshnessLabel": "partial projection replay",
+              "tenantRbacDisposition": "tenant scoped partial read",
+              "safeNextAction": "wait for replay and keep support packet visible",
+              "proofMode": "reference fixture"
+            },
+            {
+              "state": "failed",
+              "surface": "deployment-timeline",
+              "sourceIssue": "HOBO-544",
+              "sourceFixtureId": "health-cost-incident",
+              "projectionSource": "AvailabilityView",
+              "freshnessLabel": "unknown incident and cost rollup freshness",
+              "tenantRbacDisposition": "tenant scoped showback with redacted incident details",
+              "safeNextAction": "escalate incident inc-41 and review can-deploy warning",
+              "proofMode": "live"
+            },
+            {
+              "state": "rolled-back",
+              "surface": "deployment-timeline",
+              "sourceIssue": "HOBO-577",
+              "sourceFixtureId": "rlq-recover-snapshot-restore-v1",
+              "projectionSource": "DeploymentView",
+              "freshnessLabel": "rollback represented by accepted quickstart recovery fixture",
+              "tenantRbacDisposition": "tenant scoped first; provider data withheld",
+              "safeNextAction": "review rollback event and handoff recovery evidence",
+              "proofMode": "simulated"
+            },
+            {
+              "state": "completed",
+              "surface": "run-inspector",
+              "sourceIssue": "HOBO-544",
+              "sourceFixtureId": "deployment-state",
+              "projectionSource": "RunView",
+              "freshnessLabel": "reads-your-writes sequence accepted",
+              "tenantRbacDisposition": "project grant required; event redaction profile controls details",
+              "safeNextAction": "inspect run run-982 and continue release review",
+              "proofMode": "reference fixture"
+            }
+          ],
+          "scenarios": [
+            {
+              "id": "happy-path",
+              "title": "Fresh and completed deployment review",
+              "snapshotStates": ["fresh", "completed"],
+              "proofModeLabels": ["reference fixture", "live"],
+              "safeOutcome": "render current state from snapshots"
+            },
+            {
+              "id": "blocked-path",
+              "title": "RBAC, redaction, failure, and rollback guardrails",
+              "snapshotStates": ["redacted", "unauthorized", "failed", "rolled-back"],
+              "proofModeLabels": ["reference fixture", "live", "simulated", "scope-out"],
+              "safeOutcome": "show blocked or recovery states with owner route"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "title": "Stale, unavailable, and partial projection reads",
+              "snapshotStates": ["stale", "unavailable", "partial"],
+              "proofModeLabels": ["reference fixture", "simulated"],
+              "safeOutcome": "wait for replay or route support"
+            },
+            {
+              "id": "support-handoff",
+              "title": "Customer-safe handoff across every non-green state",
+              "snapshotStates": [
+                "stale",
+                "unavailable",
+                "redacted",
+                "unauthorized",
+                "partial",
+                "failed",
+                "rolled-back"
+              ],
+              "proofModeLabels": ["reference fixture", "live", "simulated", "scope-out"],
+              "safeOutcome": "produce redacted packets without live support tooling"
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order follows timeline, topology, run inspector, freshness/RBAC, and support handoff regions.",
+            "Screen reader labels announce projection source, freshness, tenant/RBAC disposition, proof mode, and safe action.",
+            "Color is never the only signal.",
+            "Motion is optional and respects reduced-motion preferences."
+          ],
+          "scopeOut": [
+            "No production dashboard frontend.",
+            "No graph renderer.",
+            "No projection runtime, read store, GraphQL facade, or subscription service.",
+            "No tenant RBAC implementation.",
+            "No live provider traversal.",
+            "No launch claims without evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

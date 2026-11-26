@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Usage-To-Invoice
+// Reconciliation Contract draft package reasons about. Not compiled at runtime;
+// this is a design-time contract artifact.
+
+enum UsageInvoiceFixtureCase {
+  USAGE_INVOICE_FIXTURE_CASE_UNSPECIFIED = 0;
+  USAGE_INVOICE_FIXTURE_CASE_NORMAL_USAGE = 1;
+  USAGE_INVOICE_FIXTURE_CASE_LATE_USAGE = 2;
+  USAGE_INVOICE_FIXTURE_CASE_DUPLICATE_USAGE = 3;
+  USAGE_INVOICE_FIXTURE_CASE_REFUND_OR_CREDIT_CORRECTION = 4;
+  USAGE_INVOICE_FIXTURE_CASE_DISPUTED_USAGE = 5;
+}
+
+message UsageInvoiceMapping {
+  string id = 1;
+  string source = 2;
+  string target = 3;
+  string proof = 4;
+}
+
+message UsageInvoiceFixture {
+  string id = 1;
+  string proves = 2;
+}
+
+message UsageInvoicePrivacyConstraint {
+  string id = 1;
+  string rule = 2;
+  bool customer_visible = 3;
+  bool support_visible = 4;
+}
+
+message UsageInvoiceAuditRecord {
+  string id = 1;
+  string usage_event_ref = 2;
+  string support_visible_reason = 3;
+  string retention_class = 4;
+  repeated string redacted_fields = 5;
+}
+
+message UsageInvoiceContractRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  repeated string scope_in = 4;
+  repeated string scope_out = 5;
+  repeated UsageInvoiceMapping mappings = 6;
+  repeated UsageInvoiceFixture fixture_cases = 7;
+  repeated UsageInvoicePrivacyConstraint privacy_constraints = 8;
+}

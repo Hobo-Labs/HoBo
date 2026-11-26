@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MarketplacePublisherTrustEvidenceContractConsumer"
+  },
+  "provider": {
+    "name": "MarketplacePublisherTrustEvidenceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Marketplace Publisher Trust Evidence Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/marketplace-publisher-trust-evidence-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.marketplace_publisher_trust_evidence_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

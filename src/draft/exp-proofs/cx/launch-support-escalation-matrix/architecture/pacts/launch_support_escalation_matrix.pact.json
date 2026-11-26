@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "LaunchSupportEscalationMatrixConsumer"
+  },
+  "provider": {
+    "name": "LaunchSupportEscalationMatrixBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Support Escalation Matrix boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/launch-support-escalation-matrix/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.launch_support_escalation_matrix/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

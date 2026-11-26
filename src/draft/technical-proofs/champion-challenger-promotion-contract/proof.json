@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "champion-challenger-promotion-contract",
+  "title": "Champion/Challenger Promotion Contract (HOBO-344)",
+  "linear": "HOBO-344",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/training-engine-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

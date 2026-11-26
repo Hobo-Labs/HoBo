@@ -1,0 +1,34 @@
+{
+	"name": "@hobo/provider-cloudflare",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/backend-routing": "workspace:*",
+		"@hobo/bindings": "workspace:*",
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/fleet": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
+		"@hobo/r2-object": "workspace:*",
+		"zod": "^4.1.13"
+	}
+}

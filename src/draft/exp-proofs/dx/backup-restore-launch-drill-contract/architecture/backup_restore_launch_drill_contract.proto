@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Backup Restore Launch
+// Drill draft package reasons about. Not compiled at runtime; this is a
+// design-time contract artifact.
+
+enum BackupRestoreDrillEvidenceKind {
+  BACKUP_RESTORE_DRILL_EVIDENCE_KIND_UNSPECIFIED = 0;
+  BACKUP_RESTORE_DRILL_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  BACKUP_RESTORE_DRILL_EVIDENCE_KIND_DRILL_FIXTURE = 2;
+  BACKUP_RESTORE_DRILL_EVIDENCE_KIND_FAILURE_ROUTE = 3;
+  BACKUP_RESTORE_DRILL_EVIDENCE_KIND_READINESS_GUARD = 4;
+}
+
+message BackupRestoreLaunchDrillRecord {
+  string issue = 1;
+  string phase = 2;
+  repeated BackupRestoreDataSet data_sets = 3;
+  repeated BackupRestorePath restore_paths = 4;
+  repeated FailureModeRouting failure_modes = 5;
+  repeated GapRoute gap_routes = 6;
+  repeated ScopeGuard scope_guards = 7;
+}
+
+message BackupRestoreDataSet {
+  string id = 1;
+  string owner = 2;
+  string restore_target = 3;
+  string source_evidence = 4;
+}
+
+message BackupRestorePath {
+  string id = 1;
+  string context = 2;
+  string owner = 3;
+  string restore_target = 4;
+  uint32 rpo_minutes = 5;
+  uint32 rto_minutes = 6;
+  string evidence_source = 7;
+  DrillEvidenceOutput evidence_output = 8;
+  string rollback_path = 9;
+  repeated string unsupported_states = 10;
+}
+
+message DrillEvidenceOutput {
+  string format = 1;
+  repeated string fields = 2;
+}
+
+message FailureModeRouting {
+  string id = 1;
+  string required_routing = 2;
+  string rollback_or_escalation = 3;
+}
+
+message GapRoute {
+  string id = 1;
+  string owner = 2;
+}
+
+message ScopeGuard {
+  string id = 1;
+  string forbidden_work = 2;
+  string owning_boundary = 3;
+}

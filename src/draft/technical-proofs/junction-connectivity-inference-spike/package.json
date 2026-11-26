@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/draft-junction-connectivity-inference-spike",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/junction-connectivity-inference.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

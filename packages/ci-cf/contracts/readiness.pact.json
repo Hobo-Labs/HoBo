@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "HoboCiReadinessConsumer"
+  },
+  "provider": {
+    "name": "HoboCiCfSdk"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "evidence": "Hand-authored synchronous-message SDK contract; mocked consumer verification only; no vendor verification."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "read HoBo CI Cf implemented adapter readiness",
+      "request": {
+        "contents": {
+          "operation": "getReadiness"
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "integration": "cf",
+            "status": "implemented",
+            "executionAvailable": true,
+            "targetSdk": "@cloudflare/ci",
+            "targetDocumentation": "https://github.com/cloudflare/ci",
+            "pendingGates": [
+              "Deployment-specific binding of source, Workflow termination, and account-scoped budget reservations.",
+              "Live provider acceptance is outside local PACT validation."
+            ]
+          },
+          "contentType": "application/json"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@hobo/draft-delta-set-apply-reconcile-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/delta-set-apply-reconcile.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

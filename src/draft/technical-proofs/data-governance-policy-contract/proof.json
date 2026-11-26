@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "data-governance-policy-contract",
+  "title": "Data Governance Policy Contract POC",
+  "linear": "HOBO-183",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-policy-ir-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

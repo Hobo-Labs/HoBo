@@ -1,0 +1,28 @@
+{
+  "layer": "exp",
+  "slug": "sre-drift-remediation-journey-contract",
+  "experienceType": "dx",
+  "title": "SRE Drift Remediation Journey Contract POC",
+  "linear": "HOBO-216",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/autonomous-drift-remediation-contract",
+      "src/draft/technical-proofs/crew-event-contract",
+      "src/draft/technical-proofs/failure-taxonomy-safe-fix-classifier",
+      "src/draft/technical-proofs/gated-autonomous-remediation-contract",
+      "src/draft/technical-proofs/hobo-up-convergence-contract",
+      "src/draft/technical-proofs/incident-aggregate-contract",
+      "src/draft/technical-proofs/remediation-safety-gate-contract",
+      "src/draft/technical-proofs/sre-diagnose-projection-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

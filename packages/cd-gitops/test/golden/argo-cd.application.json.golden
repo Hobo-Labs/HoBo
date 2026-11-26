@@ -1,0 +1,39 @@
+{
+  "apiVersion": "argoproj.io/v1alpha1",
+  "kind": "Application",
+  "metadata": {
+    "annotations": {
+      "hobo.dev/camp-id": "prod",
+      "hobo.dev/content-hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "hobo.dev/freight-id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "hobo.dev/set-id": "set-prod-7"
+    },
+    "labels": {
+      "app.kubernetes.io/managed-by": "hobo",
+      "hobo.dev/camp": "camp-prod"
+    },
+    "name": "hobo-prod",
+    "namespace": "argocd"
+  },
+  "spec": {
+    "destination": {
+      "namespace": "hobo-system",
+      "server": "https://kubernetes.default.svc"
+    },
+    "project": "default",
+    "source": {
+      "path": "hobo/camps/camp-prod/manifests",
+      "repoURL": "https://git.example/acme/deploy.git",
+      "targetRevision": "main"
+    },
+    "syncPolicy": {
+      "automated": {
+        "prune": true,
+        "selfHeal": true
+      },
+      "syncOptions": [
+        "CreateNamespace=true"
+      ]
+    }
+  }
+}

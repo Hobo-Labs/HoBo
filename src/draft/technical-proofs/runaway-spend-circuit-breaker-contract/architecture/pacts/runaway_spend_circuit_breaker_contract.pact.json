@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RunawaySpendCircuitBreakerContractConsumer"
+  },
+  "provider": {
+    "name": "RunawaySpendCircuitBreakerContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Runaway Spend Circuit Breaker Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/runaway-spend-circuit-breaker-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.runaway_spend_circuit_breaker_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

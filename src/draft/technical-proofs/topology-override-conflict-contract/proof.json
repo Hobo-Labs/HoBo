@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "topology-override-conflict-contract",
+  "title": "Topology Override Conflict Contract",
+  "linear": "HOBO-204",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/connectivity-policy-enforcement-contract",
+      "src/draft/technical-proofs/connectivity-tier-ir-contract",
+      "src/draft/technical-proofs/junction-connectivity-plan-contract",
+      "src/draft/technical-proofs/yard-topology-manifest-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

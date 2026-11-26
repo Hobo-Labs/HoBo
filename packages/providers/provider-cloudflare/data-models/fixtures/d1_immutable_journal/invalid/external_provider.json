@@ -1,0 +1,14 @@
+{
+  "contract": "hobo.d1-immutable-journal/v1",
+  "anchorDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fleetId": "fleet",
+  "member": {
+    "id": "member",
+    "provider": "vercel",
+    "accountId": "account",
+    "resourceId": "database",
+    "incarnation": "generation"
+  },
+  "initializationId": "fresh",
+  "entries": []
+}

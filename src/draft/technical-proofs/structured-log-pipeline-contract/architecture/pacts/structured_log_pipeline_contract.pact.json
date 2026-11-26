@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "StructuredLogPipelineContractConsumer"
+  },
+  "provider": {
+    "name": "StructuredLogPipelineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Structured Log Pipeline Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/structured-log-pipeline-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.structured_log_pipeline_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

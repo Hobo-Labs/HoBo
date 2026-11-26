@@ -1,0 +1,12 @@
+{
+  "name": "@hobo-draft/schema-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "hobo-codegen": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "vitest run --no-isolate ../../packages/schema-tools/test"
+  }
+}

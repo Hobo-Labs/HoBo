@@ -1,0 +1,46 @@
+{
+	"name": "@hobo/adapter-opensesame",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "Optional OpenSesame SecretsPort adapter for HoBo: a proxied invocation (`opensesame dev --agent run`) with secret references in place of credentials, so the process holds an osr_ surrogate in place of the token in the environment the adapter builds. Vercel only; AWS is a typed provider_not_brokered refusal.",
+	"type": "module",
+	"engines": {
+		"node": "^22.21.0 || >=24"
+	},
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/bindings": "workspace:*",
+		"@hobo/identity": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:types": "tsc --noEmit -p tsconfig.types.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer",
+		"test:contract:provider": "vitest run contracts/provider",
+		"test:real": "vitest run --config vitest.real.config.ts"
+	}
+}

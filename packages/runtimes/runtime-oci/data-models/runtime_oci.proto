@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hobo.runtime_oci.v1;
+
+message OciIsolationInfo {
+  string isolate_boundary = 1; // "kubernetes_oci"
+  uint32 private_sandboxes = 2;
+  string namespace = 3;
+  repeated string image_refs = 4;
+}
+
+message OciPackRecord {
+  string resource_name = 1;
+  string image_ref = 2;
+  string digest = 3;
+  string media_type = 4;
+}

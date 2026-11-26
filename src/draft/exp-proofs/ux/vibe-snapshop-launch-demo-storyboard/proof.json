@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-snapshop-launch-demo-storyboard",
+  "experienceType": "ux",
+  "title": "Vibe Snapshop Launch Demo Storyboard",
+  "linear": "HOBO-555",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

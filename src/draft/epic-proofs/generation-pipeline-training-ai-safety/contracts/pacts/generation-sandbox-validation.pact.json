@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "GenerationReferenceApp"
+  },
+  "provider": {
+    "name": "GenerationSandboxValidation"
+  },
+  "interactions": [
+    {
+      "description": "validate generated provider candidate in no-egress sandbox",
+      "providerStates": [
+        {
+          "name": "database provider candidate and replay trace are available"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/generation/validate",
+        "body": {
+          "requestId": "gen-hobo-348",
+          "candidateRef": "oci://registry.example/hobo/candidates/provider-postgres"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "conformance": "passed",
+          "traceReplay": "passed",
+          "egressAttempts": 0
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

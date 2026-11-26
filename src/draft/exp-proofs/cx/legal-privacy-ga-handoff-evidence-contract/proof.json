@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "legal-privacy-ga-handoff-evidence-contract",
+  "experienceType": "cx",
+  "title": "Legal Privacy GA Handoff Evidence Contract",
+  "linear": "HOBO-478",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

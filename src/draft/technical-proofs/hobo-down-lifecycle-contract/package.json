@@ -1,0 +1,12 @@
+{
+  "name": "@hobo/draft-down-lifecycle-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/down-lifecycle.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

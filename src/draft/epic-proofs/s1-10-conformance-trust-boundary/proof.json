@@ -1,0 +1,19 @@
+{
+  "layer": "epic",
+  "slug": "s1-10-conformance-trust-boundary",
+  "title": "S1-10 Conformance Trust Boundary (HOBO-599)",
+  "linear": "HOBO-599",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

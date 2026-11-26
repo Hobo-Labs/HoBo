@@ -1,0 +1,48 @@
+package hobo:scheduler@0.1.0;
+
+/// stability: experimental
+interface scheduler {
+  enum scheduler-error-code {
+    invalid-argument,
+    provider-error,
+  }
+
+  record scheduler-error {
+    code: scheduler-error-code,
+    message: option<string>,
+    retryable: bool,
+  }
+
+  record every-spec {
+    every-ms: u64,
+    start-at-ms: option<u64>,
+    jitter-ms: option<u64>,
+  }
+
+  record cron-spec {
+    expr: string,
+    timezone: string,
+  }
+
+  variant trigger-spec {
+    every(every-spec),
+    cron(cron-spec),
+  }
+
+  record schedule-ref {
+    schedule-id: string,
+    spec: trigger-spec,
+  }
+
+  every: func(spec: every-spec) -> result<schedule-ref, scheduler-error>;
+
+  cron: func(expr: string) -> result<schedule-ref, scheduler-error>;
+}
+
+world scheduler-guest {
+  import scheduler;
+}
+
+world scheduler-provider {
+  export scheduler;
+}

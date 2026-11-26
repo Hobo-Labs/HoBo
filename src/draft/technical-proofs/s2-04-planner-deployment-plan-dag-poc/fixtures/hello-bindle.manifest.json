@@ -1,0 +1,19 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "46.0.1"
+  },
+  "resources": {
+    "service": {
+      "type": "component.v1",
+      "image": "oci://registry.example.com/hello-bindle@0.1.0/service@sha256:deadbeef",
+      "runtime": "wasm",
+      "exports": ["wasi:http/incoming-handler"],
+      "planner": {
+        "resourceType": "service",
+        "resourceClass": "http"
+      }
+    }
+  }
+}

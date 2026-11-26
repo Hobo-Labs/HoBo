@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/draft-hobo-relay-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/hobo-relay.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

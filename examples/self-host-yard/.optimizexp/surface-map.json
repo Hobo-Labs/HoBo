@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "projectId": "self-host-yard",
+  "scannedAt": "2026-11-17T18:35:43.719Z",
+  "productName": "@hobo/example-self-host-yard",
+  "packageDir": "examples/self-host-yard",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "examples/self-host-yard/package.json: no package bin is declared"
+  },
+  "binaries": [],
+  "binAssessments": [],
+  "defaultEntry": null,
+  "nonInteractiveHelp": null,
+  "commands": [],
+  "interactiveSurfaces": [],
+  "requiredJourneys": [
+    "happy-critical-path"
+  ],
+  "probes": []
+}

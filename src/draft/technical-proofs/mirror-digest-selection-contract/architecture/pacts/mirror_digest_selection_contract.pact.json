@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MirrorDigestSelectionContractConsumer"
+  },
+  "provider": {
+    "name": "MirrorDigestSelectionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Mirror Digest Selection Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/mirror-digest-selection-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.mirror_digest_selection_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

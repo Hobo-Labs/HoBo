@@ -1,0 +1,173 @@
+syntax = "proto3";
+
+package hobo.provider.ttl_sh.v1;
+
+// Design-time contract artifacts for @hobo/provider-ttl-sh: the data shapes the
+// package reasons about at its boundaries — the parsed image reference, the
+// push record, the provision receipt, and the emitted provider facts. Not
+// compiled at runtime; the TypeScript parsers in src/reference.ts and the
+// projections in src/receipt.ts are the executable view and must stay
+// reconciled with these shapes.
+//
+// There is deliberately no field anywhere below that could hold credential
+// material. ttl.sh accepts none, so a credential in one of these records could
+// only have come from somewhere it should not have.
+
+enum TtlShNameKind {
+  TTL_SH_NAME_KIND_UNSPECIFIED = 0;
+  // A minted UUID: unguessable per deployment.
+  TTL_SH_NAME_KIND_UUID = 1;
+  // sha256-<digest>: unguessable and stable for identical content.
+  TTL_SH_NAME_KIND_CONTENT_ADDRESSED = 2;
+}
+
+enum TtlShTtlUnit {
+  TTL_SH_TTL_UNIT_UNSPECIFIED = 0;
+  TTL_SH_TTL_UNIT_MINUTES = 1;
+  TTL_SH_TTL_UNIT_HOURS = 2;
+}
+
+enum TtlShPushState {
+  TTL_SH_PUSH_STATE_UNSPECIFIED = 0;
+  TTL_SH_PUSH_STATE_IN_FLIGHT = 1;
+  TTL_SH_PUSH_STATE_PUSHED = 2;
+  TTL_SH_PUSH_STATE_FAILED = 3;
+}
+
+enum TtlShFactKind {
+  TTL_SH_FACT_KIND_UNSPECIFIED = 0;
+  TTL_SH_FACT_KIND_ARTIFACT_PUSHED = 1;
+  TTL_SH_FACT_KIND_ARTIFACT_ADOPTED = 2;
+  TTL_SH_FACT_KIND_LEASE_EXPIRED = 3;
+  TTL_SH_FACT_KIND_ARTIFACT_PROMOTED = 4;
+}
+
+// What the artifact is. Every value here is reproducible from source, which is
+// what makes a 24-hour ceiling tolerable: if the artifact vanishes, the recovery
+// procedure is to build it again.
+//
+// There is deliberately no value for application state, a database backup, an
+// event-store journal, or secret material. The omission is the contract: a
+// record that could name durable state would let a projection describe a durable
+// use of a registry that deletes everything within a day.
+enum TtlShPayloadKind {
+  TTL_SH_PAYLOAD_KIND_UNSPECIFIED = 0;
+  TTL_SH_PAYLOAD_KIND_CI_BUILD_IMAGE = 1;
+  TTL_SH_PAYLOAD_KIND_INTEGRATION_TEST_FIXTURE = 2;
+  TTL_SH_PAYLOAD_KIND_CROSS_MACHINE_HANDOFF = 3;
+  TTL_SH_PAYLOAD_KIND_PACK_CANDIDATE_IMAGE = 4;
+  // The one narrow exception, and the only value that requires an
+  // acknowledgement record.
+  TTL_SH_PAYLOAD_KIND_ACCEPTED_TEMPORARY_HANDOFF = 5;
+}
+
+// The attributed, bounded acceptance that a data handoff is going through an
+// ephemeral registry on purpose.
+message TtlShHandoffAcknowledgement {
+  string accepted_by = 1;             // a person or a pipeline, never "the system"
+  string reason = 2;
+  string durable_copy_location = 3;   // where the durable copy lives right now
+  string promotion_target = 4;        // owner-controlled registry host
+  uint32 promote_within_minutes = 5;  // must fall inside the artifact's TTL
+}
+
+// What was pushed, recorded alongside the push so a receipt says why an
+// ephemeral registry was the right place for it.
+message TtlShPayloadDescriptor {
+  TtlShPayloadKind kind = 1;
+  string artifact_type = 2;   // media type of the artifact's config
+  // Required for every reproducible kind: the recovery procedure, written down
+  // before the artifact exists rather than remembered after it is gone.
+  string reproduced_by = 3;
+  // Present only for TTL_SH_PAYLOAD_KIND_ACCEPTED_TEMPORARY_HANDOFF.
+  TtlShHandoffAcknowledgement acknowledgement = 4;
+}
+
+// A digest-to-digest copy into a registry somebody is responsible for. The only
+// exit from the none-expire lifecycle, and not an ownership change on ttl.sh:
+// the source keeps expiring on schedule.
+message TtlShPromotionRecord {
+  string source_reference = 1;   // ttl.sh/<name>@sha256:<hex>
+  string target_registry = 2;    // never ttl.sh
+  string target_repository = 3;
+  string target_tag = 4;
+  string digest = 5;             // identical in both registries, by verification
+  int64 promoted_at_ms = 6;
+  int64 source_remaining_ms = 7; // how much lease was left when the copy ran
+  bool discharged_acknowledgement = 8;
+}
+
+// The requested lifetime, as written in the tag and as normalized minutes.
+message TtlShTtlWindow {
+  uint32 value = 1;
+  TtlShTtlUnit unit = 2;
+  uint32 minutes = 3;   // 1..1440; the only field expiry math reads
+  string text = 4;      // the tag verbatim, e.g. "90m"
+}
+
+// A parsed ttl.sh/<name>:<ttl> reference. The host is a constant rather than an
+// input: this package addresses exactly one registry.
+message TtlShImageReference {
+  string host = 1;              // always "ttl.sh"
+  string name = 2;              // UUID or sha256-<digest>
+  TtlShNameKind name_kind = 3;
+  TtlShTtlWindow ttl = 4;
+  string pull_reference = 5;    // "ttl.sh/<name>:<ttl>"
+}
+
+// One completed push. expires_at_ms is local arithmetic over the requested TTL,
+// because the registry reports no expiry instant.
+message TtlShPushRecord {
+  string definition_id = 1;
+  string provider_id = 2;
+  string resource_ref = 3;
+  TtlShImageReference reference = 4;
+  string digest = 5;            // sha256:<64 hex>, reported by the registry
+  uint64 size_bytes = 6;
+  int64 pushed_at_ms = 7;
+  int64 expires_at_ms = 8;
+  string expiry_source = 9;     // always "computed-from-ttl"
+  bool adopted = 10;
+  TtlShPushState state = 11;
+}
+
+// The projection that leaves the package. claim_action_count is zero and
+// cleanup_policy is retain-until-provider-expiry: an artifact here is never
+// claimable and can only be left to expire.
+message TtlShProvisionReceipt {
+  string schema_version = 1;
+  string definition_id = 2;
+  string provider_id = 3;
+  string resource_ref = 4;
+  string pull_reference = 5;
+  string registry_host = 6;
+  string artifact_name = 7;
+  TtlShNameKind name_kind = 8;
+  string digest = 9;
+  uint64 size_bytes = 10;
+  TtlShTtlWindow ttl = 11;
+  int64 pushed_at_ms = 12;
+  int64 expires_at_ms = 13;
+  string expires_at_iso = 14;
+  string expiry_source = 15;
+  bool adopted = 16;
+  string bootstrap_class = 17;        // always "public-anonymous"
+  string claim_mode = 18;             // always "none-expire"
+  uint32 claim_action_count = 19;     // always 0
+  string cleanup_policy = 20;         // always "retain-until-provider-expiry"
+  string teardown = 21;               // always "expiry-only"
+  string visibility = 22;             // always "public-unauthenticated"
+  repeated string binding_profiles = 23;
+  repeated string migration_profiles = 24;
+}
+
+// An emitted fact. Detail values are flattened scalars so a projection can read
+// them without re-parsing a nested payload.
+message TtlShProviderFact {
+  TtlShFactKind kind = 1;
+  int64 occurred_at_ms = 2;
+  string resource_ref = 3;
+  string pull_reference = 4;
+  string digest = 5;
+  map<string, string> detail = 6;
+}

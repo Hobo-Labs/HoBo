@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-representative-a11y-usability-checks",
+  "experienceType": "ux",
+  "title": "Vibe Representative Accessibility And Usability Checks",
+  "linear": "HOBO-565",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

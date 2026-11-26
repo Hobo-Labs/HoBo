@@ -1,0 +1,24 @@
+{
+  "layer": "exp",
+  "slug": "secops-policy-audit-journey-contract",
+  "experienceType": "dx",
+  "title": "SecOps Policy Audit Journey Contract POC",
+  "linear": "HOBO-213",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-up-convergence-contract",
+      "src/draft/technical-proofs/identity-event-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/api/policy-audit-export-contract"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

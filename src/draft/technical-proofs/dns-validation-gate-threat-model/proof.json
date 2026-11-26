@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "dns-validation-gate-threat-model",
+  "title": "DNS validation-gate threat model spike",
+  "linear": "HOBO-189",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/07-portability-extensibility.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

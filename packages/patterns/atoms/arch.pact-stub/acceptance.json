@@ -1,0 +1,14 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"contracts/pacts/greeter-web-to-api.pact.json"
+	],
+	"expectContains": {
+		"contracts/pacts/greeter-web-to-api.pact.json": [
+			"\"name\": \"greeter-web\"",
+			"3.0.0"
+		]
+	}
+}

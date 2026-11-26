@@ -1,0 +1,17 @@
+# sanitizeDnsLabel — DNS labels are case-insensitive and alphanumeric-or-dash.
+{"method":"sanitizeDnsLabel","name":"lowercases and replaces non-alphanumerics","input":["Feature/Auth_Flow"],"expect":"feature-auth-flow"}
+{"method":"sanitizeDnsLabel","name":"collapses dashes and trims edges","input":["--Hello--World--"],"expect":"hello-world"}
+{"method":"sanitizeDnsLabel","name":"honours max length and never ends in a dash","input":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-x",10],"match":"^(?!.*-$)[a-z0-9-]{1,10}$"}
+# getNamedEndpoint — the URL a developer types; scheme and port are part of it.
+{"method":"getNamedEndpoint","name":"local names end in .hobo.localhost","input":[{"resource":"web","app":"myapp","env":"local","mode":"local"}],"expect":"https://web.myapp.local.hobo.localhost"}
+{"method":"getNamedEndpoint","name":"a non-default listen port shows up","input":[{"resource":"web","app":"hello-world","env":"local","mode":"local","scheme":"http","port":48211}],"expect":"http://web.hello-world.local.hobo.localhost:48211"}
+{"method":"getNamedEndpoint","name":"prod is omitted on overlay","input":[{"resource":"web","app":"myapp","env":"prod","mode":"overlay"}],"expect":"https://web.myapp.hobo.test"}
+{"method":"getNamedEndpoint","name":"non-prod env and tenant are kept","input":[{"resource":"api","app":"payments","env":"staging","tenant":"acme","mode":"overlay"}],"expect":"https://api.payments.staging.acme.hobo.test"}
+# getNamedEndpointHost — the same name without the scheme.
+{"method":"getNamedEndpointHost","name":"branch / preview segments are sanitized","input":[{"resource":"web","app":"myapp","branch":"feature/auth-flow","mode":"overlay"}],"expect":"web.myapp.feature-auth-flow.hobo.test"}
+{"method":"getNamedEndpointHost","name":"never emits a bare .hobo","input":[{"resource":"web","app":"myapp","mode":"local"}],"match":"\\.hobo\\.localhost$"}
+{"method":"getNamedEndpointHost","name":"refuses to guess a tenant when one is required","input":[{"resource":"web","app":"myapp","mode":"overlay","requireTenant":true}],"throws":"tenant"}
+{"method":"getNamedEndpointHost","name":"sanitizes a tenant that needs it","input":[{"resource":"web","app":"myapp","env":"dev","tenant":"Acme Corp","mode":"overlay"}],"expect":"web.myapp.dev.acme-corp.hobo.test"}
+# isHoboHierarchicalName — the predicate the two builders must satisfy.
+{"method":"isHoboHierarchicalName","name":"accepts a name the builder produced","input":["web.myapp.local.hobo.localhost"],"expect":true}
+{"method":"isHoboHierarchicalName","name":"rejects a bare .hobo","input":["web.myapp.hobo"],"expect":false}

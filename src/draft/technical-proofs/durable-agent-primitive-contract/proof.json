@@ -1,0 +1,25 @@
+{
+  "layer": "technical",
+  "slug": "durable-agent-primitive-contract",
+  "title": "HoBo Durable Agent Primitive POC",
+  "linear": "HOBO-632",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-auth-json-contract",
+      "src/draft/technical-proofs/identity-event-contract",
+      "src/draft/technical-proofs/token-broker-skeleton-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/ai-native-agent-auth.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

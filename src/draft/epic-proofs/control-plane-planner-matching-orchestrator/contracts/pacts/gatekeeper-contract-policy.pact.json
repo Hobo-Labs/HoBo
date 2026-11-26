@@ -1,0 +1,1 @@
+{"consumer":{"name":"ControlPlaneReferenceApp"},"provider":{"name":"GatekeeperContractPolicy"},"interactions":[{"description":"authorizes Delta apply before Set creation","request":{"type":"message","body":{"delta":"delta:checkout-prod:002","checks":["contracts","policy","evals","cost"]}},"response":{"body":{"decision":"allow","obligations":[],"event":"gatekeeper.Decided"}}}]}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260731-survey-smoke",
+  "personaCount": 1,
+  "delight_total": 10,
+  "delight_min": 3,
+  "delight_mean": 3.3333333333333335,
+  "gap_max": 2,
+  "featureRequestCount": 1,
+  "featureRequests": [
+    {
+      "id": "fr-doctor-gbrain-next-step",
+      "title": "Doctor gbrain warn prints zero-key next command",
+      "problem": "Warn leaves next step ambiguous.",
+      "desiredOutcome": "Transcript includes copy-pasteable remediation line.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-app-developer",
+      "featureIds": [
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "pnpm run doctor"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 1,
+        "perceivedOptimality": 2
+      },
+      "effortHint": "S",
+      "antiGoals": [
+        "never auto-install gbrain"
+      ],
+      "smallestExperiment": "Add remediation line under gbrain PATH warn in doctor output."
+    }
+  ],
+  "problems": [],
+  "aggregatedAt": "2026-07-31T15:17:24.450Z"
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-role-tutorial-outlines",
+  "experienceType": "ux",
+  "title": "Vibe Role Tutorial Outlines",
+  "linear": "HOBO-552",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

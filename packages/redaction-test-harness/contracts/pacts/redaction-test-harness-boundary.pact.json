@@ -1,0 +1,15 @@
+{
+	"consumer": { "name": "RedactionTestSuite" },
+	"provider": { "name": "RedactionTestHarnessPackage" },
+	"interactions": [
+		{
+			"description": "the harness is a test-only in-process library with no service boundary",
+			"request": { "method": "GET", "path": "/redaction-test-harness/boundary" },
+			"response": {
+				"status": 200,
+				"body": { "ownsServiceBoundary": false }
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

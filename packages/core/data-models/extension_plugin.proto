@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// hobo.plugin/v1 wire records (ADR-0156): the plugin manifest a package
+// declares under its package.json "hobo" key, plus registry duplicate
+// policy vocabulary for the extension-registry primitive.
+
+enum DuplicatePolicy {
+  DUPLICATE_POLICY_UNSPECIFIED = 0;
+  DUPLICATE_POLICY_THROW = 1;
+  DUPLICATE_POLICY_REPLACE = 2;
+}
+
+message PluginExtensionDeclaration {
+  // Extension-point id: hobo.<name>/v<major>.
+  string point = 1;
+  // Named export of the plugin entry module providing this extension.
+  string export_name = 2;
+  // Optional stable registration id (e.g. installable-catalog key).
+  string id = 3;
+}
+
+message PluginManifest {
+  // Always "hobo.plugin/v1".
+  string schema = 1;
+  // Package-relative module specifier of the plugin entry (starts with ./).
+  string entry = 2;
+  repeated PluginExtensionDeclaration extensions = 3;
+}
+
+message PluginPackageManifest {
+  string package_name = 1;
+  PluginManifest plugin = 2;
+}

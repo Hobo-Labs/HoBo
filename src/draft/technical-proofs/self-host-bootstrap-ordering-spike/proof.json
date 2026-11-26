@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "self-host-bootstrap-ordering-spike",
+  "title": "Self-Host Bootstrap Ordering Spike",
+  "linear": "HOBO-59",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

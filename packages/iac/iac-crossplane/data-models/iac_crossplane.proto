@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package hobo.iac.crossplane.v1;
+
+// Wire records for the Kubernetes-substrate IaC adapter (@hobo/iac-crossplane).
+// CUE constraints in iac_crossplane.cue bound every type declared here; the
+// runtime parses untrusted input into the derived parsed domain program before
+// use.
+
+enum IacChangeOp {
+  IAC_CHANGE_OP_UNSPECIFIED = 0;
+  IAC_CHANGE_OP_CREATE = 1;
+  IAC_CHANGE_OP_UPDATE = 2;
+  IAC_CHANGE_OP_DELETE = 3;
+}
+
+message CompositionSelector {
+  map<string, string> match_labels = 1;
+}
+
+message IacResourceSpec {
+  string name = 1;
+  string type = 2;
+  string provider = 3;
+  CompositionSelector composition_selector = 4;
+  repeated string outputs = 5;
+}
+
+message IacProgramSpec {
+  string api_version = 1;
+  string kind = 2;
+  // Always "crossplane" for this adapter.
+  string provider = 3;
+  string deployment_id = 4;
+  string stack = 5;
+  repeated IacResourceSpec resources = 6;
+}
+
+message CompositeResourceClaimSpec {
+  string api_version = 1;
+  string kind = 2;
+  string composition_ref = 3;
+  string resource_type = 4;
+}
+
+message ClaimStatus {
+  string phase = 1;
+  map<string, string> outputs = 2;
+}
+
+message CompositeResourceClaimRecord {
+  string id = 1;
+  string name = 2;
+  CompositeResourceClaimSpec spec = 3;
+  string spec_hash = 4;
+  ClaimStatus status = 5;
+  // Snapshot of outputs observed at apply time; refresh compares live status
+  // against this to detect out-of-band status mutation.
+  map<string, string> applied_outputs = 6;
+}
+
+message IacChange {
+  IacChangeOp op = 1;
+  string resource = 2;
+  string reason = 3;
+}
+
+message IacDiff {
+  string kind = 1;
+  string provider = 2;
+  string model = 3;
+  repeated IacChange changes = 4;
+  bool dirty = 5;
+}
+
+message IacDriftedResource {
+  string name = 1;
+  string reason = 2;
+  string output = 3;
+}
+
+message IacDriftReport {
+  string kind = 1;
+  string provider = 2;
+  string model = 3;
+  bool drifted = 4;
+  repeated IacDriftedResource resources = 5;
+}
+
+message IacResourceOutputs {
+  string id = 1;
+  string status = 2;
+  map<string, string> outputs = 3;
+}
+
+message IacOutputs {
+  string kind = 1;
+  string provider = 2;
+  string model = 3;
+  map<string, IacResourceOutputs> resources = 4;
+  map<string, string> stack_outputs = 5;
+  map<string, string> bindings = 6;
+}

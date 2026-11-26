@@ -1,0 +1,6 @@
+# Base image build context is this directory only (see build.sh).
+README.md
+build.sh
+Dockerfile.monolithic
+oci-layout/
+mise-version.txt

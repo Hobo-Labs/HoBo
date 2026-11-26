@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BetaPilotFeedbackContractConsumer"
+  },
+  "provider": {
+    "name": "BetaPilotFeedbackContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Beta Pilot Feedback Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/beta-pilot-feedback-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.beta_pilot_feedback_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

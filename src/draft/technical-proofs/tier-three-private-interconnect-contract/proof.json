@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "tier-three-private-interconnect-contract",
+  "title": "Tier-Three Private Interconnect Contract POC",
+  "linear": "HOBO-127",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/connectivity-tier-ir-contract",
+      "src/draft/technical-proofs/mtls-data-path-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

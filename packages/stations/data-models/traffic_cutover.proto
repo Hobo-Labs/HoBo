@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package hobo.stations.v1;
+
+// Domain cutover saga shapes promoted from the
+// `domain-cutover-saga-contract` draft proof (scripts/promotions.json) and
+// re-expressed over the traffic-routing port. Language-neutral schema
+// contract; compiled generated records accompany runtime refinements.
+
+// Resolver-cache precondition: rollback can only be as fast as the TTL
+// clients already cached, so the effective RTO is the previous TTL.
+message CutoverTtlPrecondition {
+  uint32 previous_ttl_seconds = 1;
+  uint32 lowered_ttl_seconds = 2;
+  uint32 waited_seconds = 3;
+}
+
+message CutoverValidation {
+  string status = 1; // only "validated" may proceed
+  string change_id = 2;
+}
+
+// Fail-closed preconditions checked before any traffic shifts.
+message CutoverPreconditionRecord {
+  CutoverValidation validation = 1;
+  CutoverTtlPrecondition ttl = 2;
+  string incumbent_plan_id = 3;
+  string mechanism = 4; // weighted | dns; DNS requires TTL evidence
+  string incumbent_plan_json = 5; // immutable approved RoutingPlan artifact
+}
+
+message CutoverRefusedEventData {
+  string service = 1;
+  string from_backend_id = 2;
+  string to_backend_id = 3;
+  repeated CutoverReason reasons = 4;
+  string refused_at = 5;
+}
+
+message CutoverReason {
+  string code = 1;
+  string message = 2;
+}
+
+message TtlLoweredEventData {
+  string service = 1;
+  uint32 previous_ttl_seconds = 2;
+  uint32 lowered_ttl_seconds = 3;
+  uint32 waited_seconds = 4;
+  uint32 effective_rto_seconds = 5;
+  string lowered_at = 6;
+}
+
+message CutoverStartedEventData {
+  string service = 1;
+  string from_backend_id = 2;
+  string to_backend_id = 3;
+  repeated uint32 ramp_steps = 4;
+  string validation_change_id = 5;
+  uint32 effective_rto_seconds = 6;
+  string started_at = 7;
+}
+
+message RampAdvancedEventData {
+  string service = 1;
+  string to_backend_id = 2;
+  uint32 percent = 3;
+  string plan_id = 4;
+}
+
+message RoutingChangedEventData {
+  string service = 1;
+  string from_backend_id = 2;
+  string to_backend_id = 3;
+  string changed_at = 4;
+}
+
+message RolledBackEventData {
+  string service = 1;
+  string from_backend_id = 2;
+  string to_backend_id = 3;
+  uint32 aborted_at_percent = 4;
+  repeated CutoverReason reasons = 5;
+  uint32 effective_rto_seconds = 6;
+  string rolled_back_at = 7;
+}

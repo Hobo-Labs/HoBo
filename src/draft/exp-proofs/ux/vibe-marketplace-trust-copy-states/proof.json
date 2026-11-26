@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "vibe-marketplace-trust-copy-states",
+  "experienceType": "ux",
+  "title": "Vibe Marketplace Trust Copy States",
+  "linear": "HOBO-547",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

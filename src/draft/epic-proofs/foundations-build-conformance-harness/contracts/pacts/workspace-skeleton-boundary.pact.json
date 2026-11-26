@@ -1,0 +1,18 @@
+{
+  "consumer": { "name": "FoundationsReferenceApp" },
+  "provider": { "name": "WorkspaceSkeletonBoundary" },
+  "interactions": [
+    {
+      "description": "validate workspace skeleton and deny adapter cross-imports",
+      "request": { "method": "POST", "path": "/workspace/validate" },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "valid",
+          "boundaryViolation": { "effect": "deny" }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

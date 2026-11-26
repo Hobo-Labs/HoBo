@@ -1,0 +1,18 @@
+package wasi:io@0.2.0;
+
+interface streams {
+  resource input-stream {
+    read: func(len: u64) -> list<u8>;
+  }
+
+  resource output-stream {
+    write: func(contents: list<u8>);
+    flush: func();
+  }
+}
+
+interface poll {
+  resource pollable {
+    ready: func() -> bool;
+  }
+}

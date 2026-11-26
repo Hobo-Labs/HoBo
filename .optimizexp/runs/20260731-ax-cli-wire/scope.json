@@ -1,0 +1,28 @@
+{
+  "runId": "20260731-ax-cli-wire",
+  "experiences": [
+    "ax"
+  ],
+  "projects": [
+    "all"
+  ],
+  "personas": [
+    "product-coding-agent",
+    "product-agent-operator"
+  ],
+  "features": [
+    "cli-help-and-doctor",
+    "agent-tooling-setup"
+  ],
+  "surfaces": [
+    "pnpm run doctor"
+  ],
+  "reportOnly": false,
+  "stopPolicy": "true-plateau-only",
+  "hostAgent": "grok",
+  "priorRun": "20260731-ax-doctor",
+  "createdAt": "2026-07-31T14:05:00.000Z",
+  "passesCompleted": 2,
+  "lastImplementableFindings": 0,
+  "stopReason": "plateau"
+}

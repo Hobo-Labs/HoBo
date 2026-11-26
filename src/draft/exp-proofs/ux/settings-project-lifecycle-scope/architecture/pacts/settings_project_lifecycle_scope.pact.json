@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SettingsProjectLifecycleScopeConsumer"
+  },
+  "provider": {
+    "name": "SettingsProjectLifecycleScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Settings Project Lifecycle Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/settings-project-lifecycle-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.settings_project_lifecycle_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

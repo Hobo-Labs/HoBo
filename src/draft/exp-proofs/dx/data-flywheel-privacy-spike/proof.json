@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "data-flywheel-privacy-spike",
+  "experienceType": "dx",
+  "title": "Data-flywheel privacy spike",
+  "linear": "HOBO-364",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

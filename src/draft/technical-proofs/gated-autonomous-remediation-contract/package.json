@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/gated-autonomous-remediation-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for policy-gated SRE remediation application through live-fix canary rollback.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

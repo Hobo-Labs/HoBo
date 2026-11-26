@@ -1,0 +1,33 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-rollback-compensator" },
+  "interactions": [
+    {
+      "description": "complete rollback compensation for SLO burn",
+      "providerStates": [{ "name": "traffic split can be reset to prior revision" }],
+      "request": {
+        "method": "POST",
+        "path": "/rollbacks/compensate",
+        "body": {
+          "mode": "success",
+          "reason": "slo-burn"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "obligation": {
+            "status": "satisfied"
+          },
+          "status": "rolled_back",
+          "completedSteps": ["reset-traffic-split"],
+          "incompleteSteps": []
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "rollback-compensation",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

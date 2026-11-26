@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-version-pinning-drift-guard-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

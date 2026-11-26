@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "YardTopologyManifest" },
+  "interactions": [
+    {
+      "description": "projects deterministic Yard manifests for topology fold",
+      "request": { "method": "POST", "path": "/yard/topology/project" },
+      "response": { "status": 200, "body": { "manifestCount": 2, "contentHash": "sha256:*" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

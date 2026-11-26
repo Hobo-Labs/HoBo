@@ -1,0 +1,159 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-ttl-sh"
+	},
+	"provider": {
+		"name": "TtlShEphemeralRegistry"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"sourceRefs": [
+			{
+				"url": "https://ttl.sh",
+				"checkedAt": "2026-08-08"
+			},
+			{
+				"url": "https://github.com/opencontainers/distribution-spec",
+				"checkedAt": "2026-08-08"
+			}
+		],
+		"notes": [
+			"Every request in this contract is anonymous. No interaction carries an Authorization, Cookie, or X-Registry-Auth header, and the transport guard refuses to send one — a credential offered to this registry is a credential disclosed to anyone.",
+			"Digests and artifact names in the fixtures are obviously fake: the name is a fixed UUID and the digest is a repeating hex pattern."
+		]
+	},
+	"interactions": [
+		{
+			"description": "probe the distribution API anonymously",
+			"request": {
+				"method": "GET",
+				"path": "/v2/",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Distribution-Api-Version": "registry/2.0"
+				},
+				"body": {}
+			}
+		},
+		{
+			"description": "read the manifest of a live ephemeral artifact",
+			"request": {
+				"method": "GET",
+				"path": "/v2/0f8fad5b-d9cb-469f-a165-70867728950e/manifests/1h",
+				"headers": {
+					"Accept": "application/vnd.oci.image.manifest.v1+json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/vnd.oci.image.manifest.v1+json",
+					"Docker-Content-Digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+				},
+				"body": {
+					"schemaVersion": 2,
+					"mediaType": "application/vnd.oci.image.manifest.v1+json",
+					"config": {
+						"mediaType": "application/vnd.oci.image.config.v1+json",
+						"digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+						"size": 1024
+					},
+					"layers": [
+						{
+							"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+							"digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+							"size": 65536
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "read a manifest whose TTL has elapsed; the registry has deleted it and there is no recovery path",
+			"request": {
+				"method": "GET",
+				"path": "/v2/0f8fad5b-d9cb-469f-a165-70867728950e/manifests/1h",
+				"headers": {
+					"Accept": "application/vnd.oci.image.manifest.v1+json"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"errors": [
+						{
+							"code": "MANIFEST_UNKNOWN",
+							"message": "manifest unknown"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "a rate-limited read, which is retryable because a read changes nothing",
+			"request": {
+				"method": "GET",
+				"path": "/v2/0f8fad5b-d9cb-469f-a165-70867728950e/manifests/1h"
+			},
+			"response": {
+				"status": 429,
+				"headers": {
+					"Retry-After": "30"
+				},
+				"body": {
+					"errors": [
+						{
+							"code": "TOOMANYREQUESTS",
+							"message": "too many requests"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "an authentication challenge, which this anonymous registry must never issue and the driver treats as a contract change rather than a prompt for a credential",
+			"request": {
+				"method": "GET",
+				"path": "/v2/"
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"Www-Authenticate": "Bearer realm=\"https://ttl.sh/token\",service=\"ttl.sh\""
+				},
+				"body": {
+					"errors": [
+						{
+							"code": "UNAUTHORIZED",
+							"message": "authentication required"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "a redirect off the allowlisted host, which the driver refuses to follow",
+			"request": {
+				"method": "GET",
+				"path": "/v2/0f8fad5b-d9cb-469f-a165-70867728950e/manifests/1h"
+			},
+			"response": {
+				"status": 302,
+				"headers": {
+					"Location": "https://mirror.example.com/v2/0f8fad5b-d9cb-469f-a165-70867728950e/manifests/1h"
+				},
+				"body": ""
+			}
+		}
+	]
+}

@@ -1,0 +1,197 @@
+{
+	"consumer": {
+		"name": "HoboAuthAuthoring"
+	},
+	"provider": {
+		"name": "HoboBetterAuthAdapter"
+	},
+	"interactions": [
+		{
+			"description": "a config carrying a brokered secret locator parses into a frozen adapter record",
+			"providerState": "the better-auth adapter is registered",
+			"request": {
+				"method": "POST",
+				"path": "/auth-adapters/better-auth/config",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"basePath": "/api/auth",
+					"secretRef": "hobo-secret://camp-prod/auth/better-auth-signing-key",
+					"database": {
+						"profile": "data.relational/v1"
+					},
+					"organizations": {
+						"enabled": true
+					},
+					"socialProviders": ["google", "github"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "ok",
+					"contract": "hobo.auth-adapter/v1",
+					"adapterId": "better-auth",
+					"basePath": "/api/auth",
+					"signingSecretRef": "hobo-secret://camp-prod/auth/better-auth-signing-key",
+					"databaseProfile": "data.relational/v1",
+					"emailAndPasswordEnabled": true,
+					"socialProviders": ["github", "google"],
+					"organizationsEnabled": true
+				}
+			}
+		},
+		{
+			"description": "REFUSAL: an inline signing secret is rejected — the app never holds signing material",
+			"providerState": "the better-auth adapter is registered",
+			"request": {
+				"method": "POST",
+				"path": "/auth-adapters/better-auth/config",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"basePath": "/api/auth",
+					"secretRef": "an-opaque-signing-value",
+					"database": {
+						"profile": "data.relational/v1"
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "refused",
+					"code": "BETTER_AUTH_SECRET_INLINE",
+					"remediation": "deposit the signing secret into brokered custody and reference it, e.g. secretRef: \"hobo-secret://camp/auth/better-auth-signing-key\"; HoBo never stores signing material in an authored config"
+				}
+			}
+		},
+		{
+			"description": "REFUSAL: a missing basePath is rejected rather than guessed",
+			"providerState": "the better-auth adapter is registered",
+			"request": {
+				"method": "POST",
+				"path": "/auth-adapters/better-auth/config",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"secretRef": "hobo-secret://camp-prod/auth/better-auth-signing-key",
+					"database": {
+						"profile": "data.relational/v1"
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "refused",
+					"code": "BETTER_AUTH_BASE_PATH_INVALID",
+					"remediation": "set basePath to the route mount point, e.g. \"/api/auth\""
+				}
+			}
+		},
+		{
+			"description": "verified claims map to a version-stamped principal with sorted roles",
+			"providerState": "the better-auth claims mapping is at better-auth-claims/v1",
+			"request": {
+				"method": "POST",
+				"path": "/auth-adapters/better-auth/principal",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"sub": "user_07",
+					"iss": "https://app.example.com",
+					"email": "grace@example.com",
+					"activeOrganizationId": "org_hobo",
+					"role": "admin",
+					"roles": ["member"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "ok",
+					"subject": "user_07",
+					"issuer": "https://app.example.com",
+					"email": "grace@example.com",
+					"organizationId": "org_hobo",
+					"roles": ["admin", "member"],
+					"claimsMappingVersion": "better-auth-claims/v1"
+				}
+			}
+		},
+		{
+			"description": "REFUSAL: an unmapped claim shape is rejected, not coerced onto the principal",
+			"providerState": "the better-auth claims mapping is at better-auth-claims/v1",
+			"request": {
+				"method": "POST",
+				"path": "/auth-adapters/better-auth/principal",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"sub": "user_13",
+					"iss": "https://app.example.com",
+					"groups": ["engineering"]
+				}
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "refused",
+					"code": "BETTER_AUTH_CLAIMS_UNKNOWN_FIELD"
+				}
+			}
+		},
+		{
+			"description": "REFUSAL: serving auth routes without the better-auth runtime fails closed instead of downgrading to the built-in issuer",
+			"providerState": "the better-auth npm package is not installed in the bundle",
+			"request": {
+				"method": "POST",
+				"path": "/auth-adapters/better-auth/serve",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"basePath": "/api/auth",
+					"runtimePresent": false
+				}
+			},
+			"response": {
+				"status": 503,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "refused",
+					"code": "BETTER_AUTH_RUNTIME_UNAVAILABLE",
+					"remediation": "install better-auth in the deployed bundle and re-run; @hobo/adapter-better-auth ships the descriptor, config parse, and claims mapping only, and refuses rather than falling back to the built-in passkey/magic-link issuer"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

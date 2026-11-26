@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "compliance-evidence-pack-scope",
+  "experienceType": "cx",
+  "title": "Compliance Evidence Pack Scope",
+  "linear": "HOBO-452",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

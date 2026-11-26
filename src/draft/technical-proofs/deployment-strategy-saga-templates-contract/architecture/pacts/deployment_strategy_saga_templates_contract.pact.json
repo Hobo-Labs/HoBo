@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DeploymentStrategySagaTemplatesContractConsumer"
+  },
+  "provider": {
+    "name": "DeploymentStrategySagaTemplatesContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Deployment Strategy Saga Templates Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/deployment-strategy-saga-templates-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.deployment_strategy_saga_templates_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

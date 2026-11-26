@@ -1,0 +1,119 @@
+{
+	"consumer": {
+		"name": "@hobo/stations"
+	},
+	"provider": {
+		"name": "station-yard-catalog"
+	},
+	"interactions": [
+		{
+			"description": "two yards both able to allocate web.hosted/v1 aggregate to coverage 2, not a conflict",
+			"request": {
+				"method": "POST",
+				"path": "/stations/station:acme/capability-coverage",
+				"body": {
+					"expected": ["web.hosted/v1"],
+					"yards": [
+						{
+							"yardName": "yard:azure-east",
+							"providerId": "azure",
+							"bindings": [
+								{ "profile": "web.hosted/v1", "productId": "azure:app-service" },
+								{ "profile": "web.hosted/v1", "productId": "azure:static-web-apps" }
+							]
+						},
+						{
+							"yardName": "yard:cf",
+							"providerId": "cloudflare",
+							"bindings": [
+								{ "profile": "web.hosted/v1", "productId": "cf:workers" }
+							]
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.station-capability-coverage/v1",
+					"stationId": "station:acme",
+					"ok": true,
+					"served": [
+						{
+							"profile": "web.hosted/v1",
+							"offeringCount": 3,
+							"yardNames": ["yard:azure-east", "yard:cf"],
+							"providerIds": ["azure", "cloudflare"],
+							"expected": true
+						}
+					],
+					"gaps": [],
+					"singlySourced": []
+				}
+			}
+		},
+		{
+			"description": "an expected profile no yard can allocate is a gap with remediation, and ok is false",
+			"request": {
+				"method": "POST",
+				"path": "/stations/station:acme/capability-coverage",
+				"body": {
+					"expected": ["data.postgres/v1"],
+					"yards": [
+						{
+							"yardName": "yard:cf",
+							"providerId": "cloudflare",
+							"bindings": [
+								{ "profile": "web.hosted/v1", "productId": "cf:workers" }
+							]
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.station-capability-coverage/v1",
+					"stationId": "station:acme",
+					"ok": false,
+					"gaps": [
+						{
+							"profile": "data.postgres/v1",
+							"remediation": "no Yard on this Station declares an offering for data.postgres/v1; add a row to a Yard whose provider publishes one (yards on this Station: yard:cf)"
+						}
+					],
+					"singlySourced": ["web.hosted/v1"]
+				}
+			}
+		},
+		{
+			"description": "a row constraining neither productId nor connectivityId is refused, never skipped",
+			"request": {
+				"method": "POST",
+				"path": "/stations/station:acme/capability-coverage",
+				"body": {
+					"expected": [],
+					"yards": [
+						{
+							"yardName": "yard:cf",
+							"providerId": "cloudflare",
+							"bindings": [{ "profile": "web.hosted/v1" }]
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "STATION_COVERAGE_EMPTY_CONSTRAINT",
+					"remediation": "name the product or connectivity implementation that satisfies the profile — a row that constrains neither claims coverage it does not have"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

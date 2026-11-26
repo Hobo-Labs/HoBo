@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "org-catalogs-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Org Catalogs Scope Acceptance",
+  "linear": "HOBO-424",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

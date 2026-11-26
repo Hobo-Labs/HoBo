@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AuthPortRbacResolutionContractConsumer"
+  },
+  "provider": {
+    "name": "AuthPortRbacResolutionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Auth Port Rbac Resolution Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/auth-port-rbac-resolution-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.auth_port_rbac_resolution_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

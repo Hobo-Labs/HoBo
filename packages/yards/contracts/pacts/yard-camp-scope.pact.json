@@ -1,0 +1,33 @@
+{
+  "consumer": {
+    "name": "@hobo/yards"
+  },
+  "provider": {
+    "name": "@hobo/camps"
+  },
+  "interactions": [
+    {
+      "description": "yard accepts parsed camp objects with matching provider id",
+      "request": {
+        "method": "POST",
+        "path": "/yards/compose",
+        "body": {
+          "name": "local",
+          "camps": [{ "kind": "camp", "providerId": "local" }]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "kind": "yard",
+          "providerId": "local"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

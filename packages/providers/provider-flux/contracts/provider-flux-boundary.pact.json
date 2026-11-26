@@ -1,0 +1,19 @@
+{
+	"consumer": { "name": "@hobo/cloud" },
+	"provider": { "name": "ProviderFluxBoundary" },
+	"metadata": { "pactSpecification": { "version": "3.0.0" } },
+	"interactions": [
+		{
+			"description": "production apply refuses unsigned webhook",
+			"request": {
+				"method": "POST",
+				"path": "/provider/flux/apply",
+				"body": { "environment": "production", "webhookSigned": false }
+			},
+			"response": {
+				"status": 400,
+				"body": { "code": "WEBHOOK_UNSIGNED", "applied": false }
+			}
+		}
+	]
+}

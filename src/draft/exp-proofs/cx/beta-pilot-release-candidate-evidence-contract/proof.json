@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "beta-pilot-release-candidate-evidence-contract",
+  "experienceType": "cx",
+  "title": "Beta Pilot Release Candidate Evidence Contract",
+  "linear": "HOBO-470",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

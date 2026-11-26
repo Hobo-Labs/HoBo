@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for HOBO-543. These records describe deterministic
+// plan annotation fixtures only; they are not policy, billing, approval, or UI
+// runtime implementations.
+
+enum PlanAnnotationProofMode {
+  PLAN_ANNOTATION_PROOF_MODE_UNSPECIFIED = 0;
+  PLAN_ANNOTATION_PROOF_MODE_REFERENCE_FIXTURE = 1;
+  PLAN_ANNOTATION_PROOF_MODE_SIMULATED = 2;
+  PLAN_ANNOTATION_PROOF_MODE_SCOPE_OUT = 3;
+}
+
+message PlanAnnotationFixture {
+  string case = 1;
+  string annotation_input = 2;
+  string display_group = 3;
+  string severity = 4;
+  PlanAnnotationProofMode proof_mode = 5;
+  string evidence_state = 6;
+  string missing_evidence_behavior = 7;
+  string support_owner_route = 8;
+  string support_safe_wording = 9;
+  string accessibility_note = 10;
+  string fixture_id = 11;
+}
+
+message PlanAnnotationContractFixtures {
+  string protobuf = 1;
+  string cue = 2;
+  string pact = 3;
+}
+
+message PlanAnnotationPseudocodeContract {
+  string schema = 1;
+  string issue = 2;
+  string phase = 3;
+  string target_package_path = 4;
+  string proof_note_path = 5;
+  repeated string design_refs = 6;
+  repeated PlanAnnotationFixture annotations = 7;
+  PlanAnnotationContractFixtures contract_fixtures = 8;
+  repeated string scope_out = 9;
+}

@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "LaunchSiteDemoAlphaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSiteDemoAlphaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Site Demo Alpha Evidence boundary returns the accepted M1 evidence gate",
+      "request": {
+        "method": "GET",
+        "path": "/launch-site-demo-alpha-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.launch-site-demo-alpha-evidence/2026-06-30",
+          "issue": "HOBO-458",
+          "phase": "M1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

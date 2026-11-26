@@ -1,0 +1,6 @@
+package hobo:examples@0.1.0;
+
+world hello-bindle {
+  import hobo:sdk/workflow@0.1.0;
+  export health: func() -> string;
+}

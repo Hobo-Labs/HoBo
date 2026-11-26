@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DeltaSetApplyReconcileContractConsumer"
+  },
+  "provider": {
+    "name": "DeltaSetApplyReconcileContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Delta Set Apply Reconcile Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/delta-set-apply-reconcile-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.delta_set_apply_reconcile_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

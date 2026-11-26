@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Support Workflow Scope
+// Contract draft package reasons about. Not compiled at runtime; this is a
+// design-time contract artifact.
+
+enum SupportWorkflowIntakeState {
+  SUPPORT_WORKFLOW_INTAKE_STATE_UNSPECIFIED = 0;
+  SUPPORT_WORKFLOW_INTAKE_STATE_RECEIVED = 1;
+  SUPPORT_WORKFLOW_INTAKE_STATE_CLASSIFIED = 2;
+  SUPPORT_WORKFLOW_INTAKE_STATE_EVIDENCE_LINKED = 3;
+  SUPPORT_WORKFLOW_INTAKE_STATE_OWNER_ROUTED = 4;
+  SUPPORT_WORKFLOW_INTAKE_STATE_CUSTOMER_UPDATED = 5;
+  SUPPORT_WORKFLOW_INTAKE_STATE_CLOSED = 6;
+}
+
+message SupportWorkflowScopeRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string intake_states = 3;
+  repeated string required_evidence = 4;
+  repeated string owner_routes = 5;
+  repeated string m1_evidence = 6;
+}

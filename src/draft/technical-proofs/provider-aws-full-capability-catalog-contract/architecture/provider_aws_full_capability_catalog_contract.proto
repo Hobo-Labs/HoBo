@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Provider Aws Full Capability
+// Catalog Contract draft package reasons about.
+
+enum ProviderAwsFullCatalogEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_DESIGN_RECORD = 1;
+  EVIDENCE_KIND_CONTRACT_TEST = 2;
+}
+
+message ProviderAwsFullCatalogRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string catalog_ports = 3;
+  repeated string evidence = 4;
+}

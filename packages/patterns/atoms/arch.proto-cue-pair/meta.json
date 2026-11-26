@@ -1,0 +1,46 @@
+{
+	"id": "arch.proto-cue-pair",
+	"tier": 0,
+	"kind": "architecture",
+	"description": "Matching protobuf message and CUE #Type pair plus buf.yaml.",
+	"tags": [
+		"protobuf",
+		"cue",
+		"data-models",
+		"proto cue pair"
+	],
+	"queries": [
+		"protobuf and cue",
+		"proto cue pair",
+		"data-models schema"
+	],
+	"requires": [],
+	"provides": [
+		"arch.proto"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "data-models/{{name}}.proto",
+			"from": "body/schema.proto.tpl"
+		},
+		{
+			"path": "data-models/{{name}}.cue",
+			"from": "body/schema.cue.tpl"
+		},
+		{
+			"path": "data-models/buf.yaml",
+			"from": "body/buf.yaml.tpl"
+		}
+	]
+}

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Deployment-phase vocabulary (ADR-0158). The invariants here are
+// load-bearing for host enforcement: a phase token is never defaulted (a
+// wrong default admits request state into instance state), dev is a MODE
+// carried alongside the phase rather than a fourth phase, and every
+// phase-scoped capability names exactly one phase in which touching it is
+// legal.
+
+// The phase a host is executing in. "plan" builds the desired graph with no
+// live resources; "init" runs module top-level once per instance; "handle"
+// runs per request.
+message PhaseScopeRecord {
+  string phase = 1; // plan | init | handle
+  // Dev MODE, not a phase: `hobo dev` runs plan then init with dev = true.
+  bool dev = 2;
+}
+
+// A capability whose access is legal in exactly one phase, and the phase it
+// belongs to. Emitted as the catalog hosts enforce against.
+message PhaseScopedCapabilityRecord {
+  string capability = 1; // request | reply | requestPrincipal | requestSpan | bindingClient | instanceState
+  string phase = 2; // plan | init | handle
+}
+
+// The refusal a host reports when a phase-scoped capability is touched
+// outside its phase. Carries both phases so the remediation names the move.
+message PhaseViolationRecord {
+  string code = 1; // always PHASE_VIOLATION
+  string capability = 2;
+  string required_phase = 3;
+  string actual_phase = 4;
+  string message = 5;
+}

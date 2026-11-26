@@ -1,0 +1,1461 @@
+{
+ "consumer": {
+  "name": "HoboCiAgent"
+ },
+ "provider": {
+  "name": "GithubGraphqlApi"
+ },
+ "metadata": {
+  "pactSpecification": {
+   "version": "3.0.0"
+  },
+  "evidence": "Hand-authored consumer expectations from GitHub's published GraphQL schema; mocked transport only; no provider verification or captured traffic.",
+  "consumerFixtures": {
+   "repository": "hobo-labs/hobo",
+   "baseRef": "main",
+   "label": "hobo-queue",
+   "observedAt": "2026-11-10T12:00:00.000Z"
+  }
+ },
+ "interactions": [
+  {
+   "description": "read the merge queue and the labelled pull requests waiting behind it",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "target": {
+         "oid": "9999999999999999999999999999999999999999"
+        }
+       },
+       "mergeQueue": {
+        "entries": {
+         "nodes": [
+          {
+           "position": 1,
+           "enqueuedAt": "2026-11-10T11:30:00Z",
+           "pullRequest": {
+            "id": "PR_node_12",
+            "number": 12,
+            "headRefOid": "2222222222222222222222222222222222222222",
+            "headRefName": "feat/b",
+            "baseRefName": "main",
+            "isCrossRepository": false,
+            "isDraft": false,
+            "createdAt": "2026-11-09T08:00:00Z",
+            "labels": {
+             "nodes": []
+            },
+            "files": {
+             "nodes": [
+              {
+               "path": "src/b.ts"
+              }
+             ],
+             "pageInfo": {
+              "hasNextPage": false
+             }
+            },
+            "timelineItems": {
+             "nodes": []
+            }
+           }
+          },
+          {
+           "position": 0,
+           "enqueuedAt": "2026-11-10T11:00:00Z",
+           "pullRequest": {
+            "id": "PR_node_11",
+            "number": 11,
+            "headRefOid": "1111111111111111111111111111111111111111",
+            "headRefName": "feat/a",
+            "baseRefName": "main",
+            "isCrossRepository": false,
+            "isDraft": false,
+            "createdAt": "2026-11-09T08:00:00Z",
+            "labels": {
+             "nodes": [
+              {
+               "name": "hotfix"
+              }
+             ]
+            },
+            "files": {
+             "nodes": [
+              {
+               "path": "src/a.ts"
+              }
+             ],
+             "pageInfo": {
+              "hasNextPage": false
+             }
+            },
+            "timelineItems": {
+             "nodes": []
+            }
+           }
+          }
+         ]
+        }
+       },
+       "pullRequests": {
+        "nodes": [
+         {
+          "id": "PR_node_13",
+          "number": 13,
+          "headRefOid": "3333333333333333333333333333333333333333",
+          "headRefName": "feat/c",
+          "baseRefName": "main",
+          "isCrossRepository": true,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/c.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:50:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_14",
+          "number": 14,
+          "headRefOid": "4444444444444444444444444444444444444444",
+          "headRefName": "feat/d",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/d.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": true
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:40:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_15",
+          "number": 15,
+          "headRefOid": "5555555555555555555555555555555555555555",
+          "headRefName": "feat/e",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": true,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/e.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:10:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_12",
+          "number": 12,
+          "headRefOid": "2222222222222222222222222222222222222222",
+          "headRefName": "feat/b",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/b.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:20:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "baseSha": "9999999999999999999999999999999999999999",
+    "entries": [
+     {
+      "number": 11,
+      "position": 0,
+      "started": true,
+      "headRef": "feat/a",
+      "labels": [
+       "hotfix"
+      ],
+      "changedPaths": [
+       "src/a.ts"
+      ],
+      "fork": false,
+      "enqueuedAt": "2026-11-10T11:00:00Z"
+     },
+     {
+      "number": 12,
+      "position": 1,
+      "started": true,
+      "headRef": "feat/b",
+      "labels": [],
+      "changedPaths": [
+       "src/b.ts"
+      ],
+      "fork": false,
+      "enqueuedAt": "2026-11-10T11:30:00Z"
+     },
+     {
+      "number": 14,
+      "position": 2,
+      "started": false,
+      "headRef": "feat/d",
+      "labels": [
+       "hobo-queue"
+      ],
+      "changedPaths": [],
+      "fork": false,
+      "enqueuedAt": "2026-11-10T11:40:00Z"
+     },
+     {
+      "number": 13,
+      "position": 3,
+      "started": false,
+      "headRef": "feat/c",
+      "labels": [
+       "hobo-queue"
+      ],
+      "changedPaths": [
+       "src/c.ts"
+      ],
+      "fork": true,
+      "enqueuedAt": "2026-11-10T11:50:00Z"
+     }
+    ]
+   }
+  },
+  {
+   "description": "a branch without a merge queue reports only labelled pull requests",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "target": {
+         "oid": "9999999999999999999999999999999999999999"
+        }
+       },
+       "mergeQueue": null,
+       "pullRequests": {
+        "nodes": [
+         {
+          "id": "PR_node_13",
+          "number": 13,
+          "headRefOid": "3333333333333333333333333333333333333333",
+          "headRefName": "feat/c",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/c.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": []
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "baseSha": "9999999999999999999999999999999999999999",
+    "entries": [
+     {
+      "number": 13,
+      "position": 0,
+      "started": false,
+      "headRef": "feat/c",
+      "labels": [
+       "hobo-queue"
+      ],
+      "changedPaths": [
+       "src/c.ts"
+      ],
+      "fork": false,
+      "enqueuedAt": "2026-11-09T08:00:00Z"
+     }
+    ]
+   }
+  },
+  {
+   "description": "enqueue an observed pull request at exactly its observed head commit",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentEnqueue",
+     "variables": {
+      "pullRequest": "PR_node_13",
+      "head": "3333333333333333333333333333333333333333"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "enqueuePullRequest": {
+       "mergeQueueEntry": {
+        "position": 2
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "description": "comment on an observed pull request",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentComment",
+     "variables": {
+      "subject": "PR_node_13",
+      "body": "**hobo-ci-agent** fixture comment"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "addComment": {
+       "clientMutationId": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "description": "a refused mutation is an error that carries no response text",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentEnqueue",
+     "variables": {
+      "pullRequest": "PR_node_13",
+      "head": "3333333333333333333333333333333333333333"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": null,
+     "errors": [
+      {
+       "type": "UNPROCESSABLE",
+       "message": "Pull request is not mergeable: review required for SECRET-PROJECT"
+      }
+     ]
+    }
+   },
+   "expectedError": "GitHub GraphQL request was refused (UNPROCESSABLE)"
+  },
+  {
+   "description": "an HTTP failure is an error that names only the status",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 502,
+    "body": {
+     "message": "upstream text"
+    }
+   },
+   "expectedError": "GitHub GraphQL request failed (502)"
+  },
+  {
+   "description": "read the default branch of a connected repository",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentDefaultBranch",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "defaultBranchRef": {
+        "name": "main"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "description": "a base branch whose protection rule names required checks is confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": {
+         "requiresStatusChecks": true,
+         "requiredStatusCheckContexts": [
+          "PR impact gate"
+         ]
+        },
+        "rules": {
+         "nodes": []
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": true
+  },
+  {
+   "description": "a protection rule that requires checks but names none is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": {
+         "requiresStatusChecks": true,
+         "requiredStatusCheckContexts": []
+        },
+        "rules": {
+         "nodes": []
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a protection rule without required checks is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": {
+         "requiresStatusChecks": false,
+         "requiredStatusCheckContexts": [
+          "PR impact gate"
+         ]
+        },
+        "rules": {
+         "nodes": []
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a base branch with no protection rule is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": null,
+        "rules": {
+         "nodes": []
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a base branch that cannot be read is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": null
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a ruleset that requires named checks confirms the base branch",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": null,
+        "rules": {
+         "nodes": [
+          {
+           "type": "PULL_REQUEST",
+           "parameters": {}
+          },
+          {
+           "type": "REQUIRED_STATUS_CHECKS",
+           "parameters": {
+            "requiredStatusChecks": [
+             {
+              "context": "PR impact gate"
+             }
+            ]
+           }
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": true
+  },
+  {
+   "description": "a ruleset rule that requires checks but names none is not confirmed",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentBaseProtection",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "ref": "refs/heads/main"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "branchProtectionRule": null,
+        "rules": {
+         "nodes": [
+          {
+           "type": "REQUIRED_STATUS_CHECKS",
+           "parameters": {
+            "requiredStatusChecks": []
+           }
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedProtected": false
+  },
+  {
+   "description": "a commit whose checks failed reports what failed, bounded",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "FAILURE",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "typecheck",
+            "conclusion": "FAILURE",
+            "title": "2 errors",
+            "summary": "tsc exited 2",
+            "annotations": {
+             "nodes": [
+              {
+               "path": "src/pricing.ts",
+               "message": "Cannot find name 'CURRENCY'.",
+               "location": {
+                "start": {
+                 "line": 3
+                }
+               }
+              }
+             ]
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "lint",
+            "conclusion": "SUCCESS",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "ci/legacy",
+            "state": "ERROR",
+            "description": "build broke\u0007"
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "failure",
+    "failures": "check typecheck (FAILURE): 2 errors\ntsc exited 2\n  src/pricing.ts:3 Cannot find name 'CURRENCY'.\nstatus ci/legacy: build broke"
+   }
+  },
+  {
+   "description": "a commit whose checks only timed out, failed to start or errored is an infrastructure failure",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "FAILURE",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "test",
+            "conclusion": "TIMED_OUT",
+            "title": "runner timed out",
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "e2e",
+            "conclusion": "STARTUP_FAILURE",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "lint",
+            "conclusion": "CANCELLED",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "ci/legacy",
+            "state": "ERROR",
+            "description": "agent lost"
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "typecheck",
+            "conclusion": "SUCCESS",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "infrastructure",
+    "failures": ""
+   }
+  },
+  {
+   "description": "a commit with more checks than one page is not called an infrastructure failure",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "FAILURE",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": true
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "test",
+            "conclusion": "TIMED_OUT",
+            "title": "runner timed out",
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "e2e",
+            "conclusion": "STARTUP_FAILURE",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "lint",
+            "conclusion": "CANCELLED",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "ci/legacy",
+            "state": "ERROR",
+            "description": "agent lost"
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "typecheck",
+            "conclusion": "SUCCESS",
+            "title": null,
+            "summary": null,
+            "annotations": {
+             "nodes": []
+            }
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "failure",
+    "failures": "check test (TIMED_OUT): runner timed out\ncheck e2e (STARTUP_FAILURE): \nstatus ci/legacy: agent lost"
+   }
+  },
+  {
+   "description": "a commit whose checks passed reports success",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "SUCCESS",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "success",
+    "failures": ""
+   }
+  },
+  {
+   "description": "a commit with checks still running is pending",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": {
+         "state": "PENDING",
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "pending",
+    "failures": ""
+   }
+  },
+  {
+   "description": "a commit with no checks reports none",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentCommitChecks",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "oid": "4444444444444444444444444444444444444444"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "object": {
+        "statusCheckRollup": null
+       }
+      }
+     }
+    }
+   },
+   "expectedChecks": {
+    "state": "none",
+    "failures": ""
+   }
+  },
+  {
+   "description": "a stacked pull request depends on the one whose head branch it targets",
+   "request": {
+    "method": "POST",
+    "path": "/graphql",
+    "headers": {
+     "Accept": "application/vnd.github+json",
+     "Content-Type": "application/json",
+     "Authorization": "Bearer ghs_consumer_fixture_only"
+    },
+    "body": {
+     "operation": "HoboAgentQueue",
+     "variables": {
+      "owner": "hobo-labs",
+      "name": "hobo",
+      "branch": "main",
+      "ref": "refs/heads/main",
+      "label": "hobo-queue"
+     }
+    }
+   },
+   "response": {
+    "status": 200,
+    "body": {
+     "data": {
+      "repository": {
+       "ref": {
+        "target": {
+         "oid": "9999999999999999999999999999999999999999"
+        }
+       },
+       "mergeQueue": null,
+       "pullRequests": {
+        "nodes": [
+         {
+          "id": "PR_node_21",
+          "number": 21,
+          "headRefOid": "1111111111111111111111111111111111111111",
+          "headRefName": "stack/top",
+          "baseRefName": "stack/middle",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/21.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:00:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_22",
+          "number": 22,
+          "headRefOid": "2222222222222222222222222222222222222222",
+          "headRefName": "stack/middle",
+          "baseRefName": "stack/bottom",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/22.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:01:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_23",
+          "number": 23,
+          "headRefOid": "3333333333333333333333333333333333333333",
+          "headRefName": "stack/bottom",
+          "baseRefName": "main",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/23.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:02:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "id": "PR_node_24",
+          "number": 24,
+          "headRefOid": "5555555555555555555555555555555555555555",
+          "headRefName": "release-fix",
+          "baseRefName": "release/1.x",
+          "isCrossRepository": false,
+          "isDraft": false,
+          "createdAt": "2026-11-09T08:00:00Z",
+          "labels": {
+           "nodes": [
+            {
+             "name": "hobo-queue"
+            }
+           ]
+          },
+          "files": {
+           "nodes": [
+            {
+             "path": "src/24.ts"
+            }
+           ],
+           "pageInfo": {
+            "hasNextPage": false
+           }
+          },
+          "timelineItems": {
+           "nodes": [
+            {
+             "createdAt": "2026-11-10T11:03:00Z",
+             "label": {
+              "name": "hobo-queue"
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "expected": {
+    "baseSha": "9999999999999999999999999999999999999999",
+    "entries": [
+     {
+      "number": 21,
+      "baseRef": "stack/middle",
+      "dependsOn": [
+       22
+      ]
+     },
+     {
+      "number": 22,
+      "baseRef": "stack/bottom",
+      "dependsOn": [
+       23
+      ]
+     },
+     {
+      "number": 23,
+      "baseRef": "main",
+      "dependsOn": []
+     }
+    ]
+   }
+  }
+ ]
+}

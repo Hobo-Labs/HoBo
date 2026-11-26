@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "VersionCompatResolutionSemanticsConsumer"
+  },
+  "provider": {
+    "name": "VersionCompatResolutionSemanticsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Version Compat Resolution Semantics boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/version-compat-resolution-semantics/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.version_compat_resolution_semantics/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

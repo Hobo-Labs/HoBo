@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package hobo.cli.v1;
+
+import "google/protobuf/struct.proto";
+
+message CliContext {
+  string cwd = 1;
+  optional string project_dir = 2;
+  optional string identity = 3;
+  CliClients clients = 4;
+}
+
+message CliClients {
+  string read_api = 1;
+  string runtime = 2;
+}
+
+message CliEnvelope {
+  bool ok = 1;
+  string verb = 2;
+  string status = 3;
+  string code = 4;
+  string message = 5;
+  repeated string remediation = 6;
+  CliContext context = 7;
+  google.protobuf.Struct data = 8;
+}

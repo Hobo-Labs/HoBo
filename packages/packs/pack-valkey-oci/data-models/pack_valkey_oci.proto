@@ -1,0 +1,190 @@
+// Wire records for the Valkey implementation pack.
+//
+// These are the durable shapes: what a Yard recorded when it rendered and ran
+// the pack, what a probe observed, what an operation invocation produced, and
+// what binding a workload was handed. Runtime values in `src/` are parsed
+// derivations of these records — a branded resource ref or a `SecretRef`
+// narrows a `string` field here, it never widens it.
+//
+// One field family is specific to this pack and load-bearing everywhere:
+// retention. A Redis-compatible server is a durable keyspace or a lossy cache
+// depending on its durability mode and eviction policy, so every record that
+// describes a running server carries the retention facts rather than leaving a
+// reader to infer them from the image name.
+//
+// Credential material appears nowhere in this file. Every field that concerns a
+// credential is a locator (`*_secret_ref`), which is what makes these records
+// safe to append to an event store and replay.
+
+syntax = "proto3";
+
+package hobo.packs.valkey.v1;
+
+// The pinned image a deployment actually ran.
+message ValkeyImagePinRecord {
+  // Fully qualified repository, e.g. docker.io/valkey/valkey.
+  string repository = 1;
+  // sha256:<64 hex>. Never a tag.
+  string digest = 2;
+  // OCI platform string, e.g. linux/amd64.
+  string architecture = 3;
+  // Tag the digest was resolved from, recorded as provenance only.
+  string resolved_from_tag = 4;
+  // Digest of the image index the per-platform digest came out of.
+  string index_digest = 5;
+  string server_version = 6;
+  uint32 server_major = 7;
+}
+
+// Durable storage bound to the pack's data directory.
+message ValkeyVolumeBindingRecord {
+  string volume_name = 1;
+  string mount_path = 2;
+  // `local-volume` only: an RDB or AOF is written with ordinary file semantics.
+  string storage_kind = 3;
+  string volume_id = 4;
+  uint64 minimum_bytes = 5;
+}
+
+// What the deployed server guarantees about the keys it is given.
+//
+// Recorded rather than derived at read time: a later reader of the event stream
+// would have to know which release's defaults applied, and the whole point of
+// this pack is that the guarantee is a deployment decision.
+message ValkeyRetentionRecord {
+  // none | rdb-snapshots | aof-everysec | aof-always.
+  string durability_mode = 1;
+  // The `appendfsync` setting, or not-applicable when no AOF is written.
+  string append_fsync = 2;
+  // Writes lost on an unexpected exit. -1 means the entire keyspace.
+  int64 worst_case_loss_ms = 3;
+  bool survives_restart = 4;
+  bool acknowledges_before_durable = 5;
+  // maxmemory-policy in force.
+  string eviction_policy = 6;
+  // True for the allkeys-* policies: a key with no TTL can be discarded.
+  bool evicts_keys_without_ttl = 7;
+  // error | evict-then-accept.
+  string write_behaviour_at_limit = 8;
+  // True when a successfully written key may later be gone.
+  bool key_loss_possible = 9;
+  // True only when a committed write survives a crash and stays present.
+  bool durable_keyspace = 10;
+}
+
+// The server configuration the pack rendered, as directives.
+//
+// Kept as the rendered lines rather than as a parsed structure because the file
+// is the artifact the container consumes: a receipt that records anything else
+// records something the server never read.
+message ValkeyRenderedConfigRecord {
+  string path = 1;
+  repeated string directives = 2;
+  // sha256 of the rendered bytes, so a later edit in place is detectable.
+  string digest = 3;
+  // Path of the credential file the last directive includes.
+  string requirepass_include_path = 4;
+  // Octal mode the credential file is written with.
+  string requirepass_include_mode = 5;
+}
+
+// The deployment description a Yard executor consumed.
+message ValkeyDeploymentRecord {
+  string pack_id = 1;
+  string pack_version = 2;
+  string resource_ref = 3;
+  ValkeyImagePinRecord image = 4;
+  ValkeyVolumeBindingRecord data_volume = 5;
+  // argv the container is started with. No credential, no shell.
+  repeated string command = 6;
+  // Non-secret environment. Empty for this pack, deliberately.
+  map<string, string> env = 7;
+  ValkeyRenderedConfigRecord config = 8;
+  // Locator for the requirepass credential. Projected as an included file.
+  string auth_secret_ref = 9;
+  uint32 container_port = 10;
+  uint64 maxmemory_bytes = 11;
+  uint32 databases = 12;
+  ValkeyRetentionRecord retention = 13;
+}
+
+// One probe observation against a running server.
+//
+// Recorded because readiness for this image is not a socket fact: during an AOF
+// or RDB load the port accepts connections and every command is refused with
+// LOADING, so a probe result has to say which question was asked.
+message ValkeyProbeResultRecord {
+  // readiness | liveness | startup.
+  string probe = 1;
+  // exec | tcp.
+  string kind = 2;
+  repeated string argv = 3;
+  string port_name = 4;
+  bool ready = 5;
+  int32 exit_code = 6;
+  // Substring the probe matched, e.g. PONG.
+  string stdout_marker = 7;
+  string observed_at = 8;
+  uint32 consecutive_failures = 9;
+}
+
+// One argv-array operation invocation.
+message ValkeyOperationRecord {
+  string operation_id = 1;
+  string kind = 2;
+  // Migration profile this invocation implements, when it has one.
+  string profile_ref = 3;
+  repeated string argv = 4;
+  // Non-secret environment only.
+  map<string, string> env = 5;
+  // Environment variable name -> secret locator, resolved at spawn time.
+  map<string, string> secret_env = 6;
+  uint32 timeout_ms = 7;
+  int32 exit_code = 8;
+  string artifact_path = 9;
+}
+
+// A live keyspace handoff: three commands, never a shell pipeline.
+message ValkeyHandoffRecord {
+  string profile_ref = 1;
+  ValkeyOperationRecord replicate = 2;
+  ValkeyOperationRecord await_sync = 3;
+  ValkeyOperationRecord promote = 4;
+  // `host:port` on both sides.
+  string source_endpoint = 5;
+  string target_endpoint = 6;
+}
+
+// The binding.redis-protocol/v1 handed to a workload.
+message ValkeyBindingRecord {
+  string binding_id = 1;
+  string resource_ref = 2;
+  string capability_profile_ref = 3;
+  string binding_profile_ref = 4;
+  string host = 5;
+  uint32 port = 6;
+  bool tls = 7;
+  // Logical database index the consumer should SELECT.
+  uint32 database = 8;
+  string credential_secret_ref = 9;
+  string certificate_secret_ref = 10;
+  string image_digest = 11;
+  ValkeyRetentionRecord retention = 12;
+  // Always "none": lists, streams, and pub/sub are not a delivery guarantee.
+  string delivery_guarantees = 13;
+  string producer_evidence_ref = 14;
+}
+
+// Recorded conformance evidence for one profile claim.
+message ValkeyConformanceRecord {
+  string suite_ref = 1;
+  string profile_ref = 2;
+  string outcome = 3;
+  string evidence_checked_at = 4;
+  bool executed_against_container = 5;
+  string image_digest = 6;
+  string architecture = 7;
+  // The durability mode the evidence was recorded against. A restart-survival
+  // pass means nothing without it.
+  string durability_mode = 8;
+}

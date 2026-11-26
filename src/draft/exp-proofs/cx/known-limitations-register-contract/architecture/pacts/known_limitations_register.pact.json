@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "KnownLimitationsRegisterConsumer"
+  },
+  "provider": {
+    "name": "KnownLimitationsRegister"
+  },
+  "interactions": [
+    {
+      "description": "Known limitations register returns customer-safe release-note projection",
+      "request": {
+        "method": "GET",
+        "path": "/known-limitations-register/release-notes-view"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.known_limitations_register/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

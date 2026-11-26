@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "Gatekeeper Verify"
+  },
+  "provider": {
+    "name": "Obligation Engine"
+  },
+  "interactions": [
+    {
+      "description": "start and replay approval and canary obligations for a policy decision",
+      "providerStates": [
+        {
+          "name": "policy decision contains reference obligations"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/obligations/start",
+        "body": {
+          "decisionDigest": "like:sha256-decision",
+          "obligations": "like:obligation-list"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "blocked": false,
+          "satisfied": "like:satisfied-obligations",
+          "ignoredEvents": []
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Gatekeeper to Obligation Engine",
+    "status": "consumer_tested",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

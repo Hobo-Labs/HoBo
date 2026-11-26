@@ -1,0 +1,9 @@
+{
+  "name": "hobo-principal-ref-contract",
+  "private": true,
+  "type": "module",
+  "types": "./src/principal-ref.d.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

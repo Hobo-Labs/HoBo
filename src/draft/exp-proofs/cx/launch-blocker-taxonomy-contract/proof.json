@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-blocker-taxonomy-contract",
+  "experienceType": "cx",
+  "title": "Launch Blocker Taxonomy Contract",
+  "linear": "HOBO-402",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "data-paradigm-authoring-contract",
+  "title": "Data Paradigm Authoring Contract",
+  "linear": "HOBO-389",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

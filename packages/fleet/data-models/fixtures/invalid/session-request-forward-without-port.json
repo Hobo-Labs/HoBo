@@ -1,0 +1,10 @@
+{
+  "peer": "dev_0123456789abcdef0123456789abcdef",
+  "purpose": "SESSION_PURPOSE_FORWARD",
+  "initiator": {
+    "memberId": "dev_fedcba9876543210fedcba9876543210",
+    "principal": "github:1234",
+    "transportIdentity": "node-7f3a",
+    "sealPublicKey": "Qm9vbXNoYWthbGFrYS1ib29tc2hha2FsYWthLWJvb20"
+  }
+}

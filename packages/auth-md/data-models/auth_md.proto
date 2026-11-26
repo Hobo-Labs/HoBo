@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package hobo.authmd.v1;
+
+// Wire forms for the auth.md agent-principal plane. Public records are refs-only:
+// assertions, tokens, and private keys use opaque locators. The explicitly named
+// StoredCli* records at the end belong ONLY to owner-only local custody files
+// and must never cross a public output, event, or network boundary.
+
+// Phase of the agent principal state machine (independent of the human
+// session and of infrastructure ownership).
+enum AgentPrincipalPhaseRecord {
+  AGENT_PRINCIPAL_PHASE_RECORD_UNSPECIFIED = 0;
+  AGENT_PRINCIPAL_PHASE_RECORD_UNREGISTERED = 1;
+  AGENT_PRINCIPAL_PHASE_RECORD_PRE_CLAIM = 2;
+  AGENT_PRINCIPAL_PHASE_RECORD_HUMAN_BOUND = 3;
+  AGENT_PRINCIPAL_PHASE_RECORD_REVOKED = 4;
+}
+
+// Phase of the human HoBo session state machine.
+enum HumanSessionPhaseRecord {
+  HUMAN_SESSION_PHASE_RECORD_UNSPECIFIED = 0;
+  HUMAN_SESSION_PHASE_RECORD_ANONYMOUS = 1;
+  HUMAN_SESSION_PHASE_RECORD_AUTHENTICATED = 2;
+}
+
+// Phase of the infrastructure ownership state machine.
+enum InfrastructurePhaseRecord {
+  INFRASTRUCTURE_PHASE_RECORD_UNSPECIFIED = 0;
+  INFRASTRUCTURE_PHASE_RECORD_TEMPORARY = 1;
+  INFRASTRUCTURE_PHASE_RECORD_OWNER_CONTROLLED = 2;
+  INFRASTRUCTURE_PHASE_RECORD_EXPIRED = 3;
+}
+
+// Machine-authoritative OAuth Protected Resource Metadata
+// (/.well-known/oauth-protected-resource).
+message ProtectedResourceMetadataRecord {
+  string resource = 1;
+  repeated string authorization_servers = 2;
+  repeated string scopes_supported = 3;
+  repeated string bearer_methods_supported = 4;
+  string anonymous_registration_endpoint = 5;
+  string auth_md_url = 6;
+}
+
+// The agent-readable companion prose document served at /auth.md. Advisory:
+// when it disagrees with the metadata record, the metadata record wins.
+message AuthMdDocumentRecord {
+  string url = 1;
+  repeated string declared_scopes = 2;
+  bool declares_anonymous_registration = 3;
+  string sha256 = 4;
+}
+
+// One recorded disagreement between prose and structured metadata.
+message MetadataProseConflictRecord {
+  string field = 1;
+  string metadata_value = 2;
+  string document_value = 3;
+  string authority = 4; // always "metadata"
+}
+
+// Binding that scopes a pre-claim authorization: session + tenant/project +
+// audience + exact service. All four must match on every later use.
+message SessionBindingRecord {
+  string session_id = 1;
+  string tenant_id = 2;
+  string project_id = 3;
+  string audience = 4;
+  string service = 5;
+}
+
+// An anonymous agent registration. `key_material_locator` is an opaque
+// SecretRef-style locator; the key value never crosses this boundary.
+message AgentRegistrationRecord {
+  string registration_ref = 1;
+  repeated string pre_claim_scopes = 2;
+  string key_material_locator = 3;
+  SessionBindingRecord binding = 4;
+  string issued_at = 5;
+  string expires_at = 6;
+  AgentPrincipalPhaseRecord phase = 7;
+  string rotation_endpoint = 8;
+  string revocation_endpoint = 9;
+}
+
+// Pointer used by ClaimBundle integration to reconcile a pre-claim agent with
+// the human who eventually claims the work.
+message AgentPrincipalClaimRefRecord {
+  string protocol = 1; // "auth.md" | "custom"
+  string registration_ref = 2;
+  repeated string pre_claim_scopes = 3;
+  repeated string post_claim_scopes = 4;
+  bool rotate_after_infrastructure_claim = 5;
+}
+
+// Verified identity assertion, refs only (no assertion string, no signature).
+message IdentityAssertionRecord {
+  string registration_ref = 1;
+  string subject = 2;
+  string issuer = 3;
+  string audience = 4;
+  repeated string scopes = 5;
+  string issued_at = 6;
+  string expires_at = 7;
+  string assertion_locator = 8;
+}
+
+// Result of a key/credential rotation. Locators only.
+message KeyRotationRecord {
+  string registration_ref = 1;
+  string previous_key_locator = 2;
+  string current_key_locator = 3;
+  string rotated_at = 4;
+  string reason = 5;
+}
+
+// Event envelope for the authmd.* family appended to the event store.
+message AgentPrincipalEventRecord {
+  string type = 1;
+  string registration_ref = 2;
+  string occurred_at = 3;
+  AgentPrincipalPhaseRecord phase = 4;
+  repeated string scopes = 5;
+  string detail = 6;
+}
+
+// OAuth client-credentials token receipt. Private key and access token remain in custody.
+message AgentAccessTokenRecord {
+ string registration_ref = 1;
+ string access_token_locator = 2;
+ string token_type = 3;
+ repeated string scopes = 4;
+ SessionBindingRecord binding = 5;
+ string issued_at = 6;
+ string expires_at = 7;
+ string issuer = 8;
+}
+
+// Claimed principal persisted by the CLI, independent of infrastructure ownership.
+message ClaimedAgentPrincipalRecord {
+  string registration_ref = 1;
+  string phase = 2; // human-bound
+  string human_subject = 3;
+  SessionBindingRecord binding = 4;
+  repeated string pre_claim_scopes = 5;
+  repeated string post_claim_scopes = 6;
+  string claimed_at = 7;
+  bool rotate_after_infrastructure_claim = 8;
+  bool rotation_satisfied = 9;
+}
+
+// Public claim-poll receipt. The poll token is held only in private custody.
+message ClaimInitiationRecord {
+  string registration_ref = 1;
+  string claim_url = 2;
+  string poll_endpoint = 3;
+  string expires_at = 4;
+  double interval_seconds = 5;
+  repeated string requested_post_claim_scopes = 6;
+  string poll_token_locator = 7;
+}
+
+message RevokedAgentPrincipalRecord {
+  string revoked_at = 1;
+}
+
+// Public refs-only persisted-state projection. This is safe to serialize as a
+// public record: no private key or claim poll token is represented by value.
+message CliAuthMdStateRecord {
+  string schema_version = 1; // hobo.cli-authmd/v1
+  string resource = 2;
+  string registration_ref = 3;
+  SessionBindingRecord binding = 4;
+  repeated string pre_claim_scopes = 5;
+  string key_material_locator = 6;
+  string issued_at = 7;
+  optional string expires_at = 8;
+  optional string claim_endpoint = 9;
+  optional string rotation_endpoint = 10;
+  optional string revocation_endpoint = 11;
+  RevokedAgentPrincipalRecord revoked = 12;
+  repeated string deployments = 13;
+  repeated string owned_deployments = 14;
+  ClaimInitiationRecord initiation = 15;
+  ClaimedAgentPrincipalRecord principal = 16;
+}
+
+// PRIVATE LOCAL CUSTODY ONLY. Never return this record through CLI output,
+// events, network APIs, or logs. The containing file must be owner-only.
+message StoredCliAuthMdClaimInitiationRecord {
+  string registration_ref = 1;
+  string claim_url = 2;
+  string poll_endpoint = 3;
+  string expires_at = 4;
+  double interval_seconds = 5;
+  repeated string requested_post_claim_scopes = 6;
+  string poll_material = 7;
+}
+
+// PRIVATE LOCAL CUSTODY ONLY. Exact state shape of the owner-only CLI file.
+// CliAuthMdStateRecord is the separate refs-only public boundary.
+message StoredCliAuthMdStateRecord {
+  string schema_version = 1; // hobo.cli-authmd/v1
+  string resource = 2;
+  string registration_ref = 3;
+  SessionBindingRecord binding = 4;
+  repeated string pre_claim_scopes = 5;
+  string private_key = 6;
+  string issued_at = 7;
+  optional string expires_at = 8;
+  optional string claim_endpoint = 9;
+  optional string rotation_endpoint = 10;
+  optional string revocation_endpoint = 11;
+  RevokedAgentPrincipalRecord revoked = 12;
+  repeated string deployments = 13;
+  repeated string owned_deployments = 14;
+  StoredCliAuthMdClaimInitiationRecord initiation = 15;
+  ClaimedAgentPrincipalRecord principal = 16;
+}

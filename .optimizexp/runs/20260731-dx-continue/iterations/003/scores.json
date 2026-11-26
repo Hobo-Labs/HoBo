@@ -1,0 +1,46 @@
+{
+  "iteration": 3,
+  "runId": "20260731-dx-continue",
+  "scoredAt": "2026-07-31T13:30:00.000Z",
+  "source": "pass3 re-verify; no implementable backlog",
+  "metric_total": 2,
+  "metric_max": 1,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "outcomeId": "2026-07-31T13:10:00Z-2001-outcome",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "matchedExpectation": true
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "outcomeId": "2026-07-31T13:10:20Z-2002-outcome",
+      "harms": 0,
+      "friction": 1,
+      "uncertainty": 0,
+      "matchedExpectation": true
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "outcomeId": "2026-07-31T13:10:40Z-2003-outcome",
+      "harms": 0,
+      "friction": 1,
+      "uncertainty": 0,
+      "matchedExpectation": true
+    }
+  ],
+  "vsPrev": {
+    "metric_total_delta": 0,
+    "metric_max_delta": 0,
+    "plateau": true
+  },
+  "vsBaseline": {
+    "metric_total_delta": -7,
+    "metric_max_delta": -1
+  }
+}

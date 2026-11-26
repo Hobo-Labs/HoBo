@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BuildDaggerProviderContractConsumer"
+  },
+  "provider": {
+    "name": "BuildDaggerProviderContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Build Dagger Provider Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/build-dagger-provider-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.build_dagger_provider_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

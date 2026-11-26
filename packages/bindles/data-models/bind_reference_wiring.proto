@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package hobo.bindles.v1;
+
+message Link {
+  string import = 1;
+  string to = 2;
+}
+
+message BindingMeta {
+  string port = 1;
+  string resource = 2;
+  string client_type = 3;
+}
+
+message Endpoint {
+  string scheme = 1;
+  int32 port = 2;
+  int32 target_port = 3;
+  bool external = 4;
+  string protocol = 5;
+}
+
+message WaitAnnotation {
+  string to = 1;
+  string until = 2;
+}

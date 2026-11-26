@@ -1,0 +1,16 @@
+provider: @hobo/provider-cloudflare
+port web/service -> cloudflare:workers-script (Workers) features=edge,worker,wasm-native,http
+port kv -> cloudflare:kv-namespace (KV) features=eventual,edge,key-value
+port objectStore -> cloudflare:r2-bucket (R2) features=durable,s3-compatible
+published: /.well-known/capability-manifest/auth.json
+published: /.well-known/capability-manifest/capabilities.json
+published: /.well-known/capability-manifest/cost.json
+published: /.well-known/capability-manifest/index.json
+manifest parse ok=true schema=hobo.capability-manifest/v1 staticSecrets=false
+manifest bytes deterministic: true
+tampered manifest rejected: auth must not publish static secrets
+plan hello-bindle-cloudflare: env=preview colo=WNAM resources=service:compute,assets:objectStore,sessions:kv
+bind: wasi:blobstore/blobstore -> assets (objectStore)
+bind: hobo:kv/store -> sessions (kv)
+option block: port=compute name=worker negotiation=prefer cpuMs=50 memoryMb=128
+CONTRACT HELD: cloudflare provider publishes a canonical, secret-free capability manifest covering the initial ports

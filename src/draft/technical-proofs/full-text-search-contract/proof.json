@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "full-text-search-contract",
+  "title": "Full-Text Search Contract POC",
+  "linear": "HOBO-245",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

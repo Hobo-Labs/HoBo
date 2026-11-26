@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SreDecisionTreeContractConsumer"
+  },
+  "provider": {
+    "name": "SreDecisionTreeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Sre Decision Tree Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/sre-decision-tree-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.sre_decision_tree_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

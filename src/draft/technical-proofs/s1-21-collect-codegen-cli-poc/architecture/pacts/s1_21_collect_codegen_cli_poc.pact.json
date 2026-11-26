@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "S121CollectCodegenCliPocConsumer"
+  },
+  "provider": {
+    "name": "S121CollectCodegenCliPocBoundary"
+  },
+  "interactions": [
+    {
+      "description": "S1-21 integrated collect+codegen POC boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/s1-21-collect-codegen-cli-poc/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s1_21_collect_codegen_cli_poc/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

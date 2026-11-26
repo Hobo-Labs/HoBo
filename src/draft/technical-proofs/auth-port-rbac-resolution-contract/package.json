@@ -1,0 +1,9 @@
+{
+  "name": "auth-port-rbac-resolution-contract",
+  "private": true,
+  "type": "module",
+  "types": "./src/auth-port-rbac-resolution.d.mts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

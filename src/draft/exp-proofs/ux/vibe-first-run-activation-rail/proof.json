@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-first-run-activation-rail",
+  "experienceType": "ux",
+  "title": "Vibe first-run activation rail",
+  "linear": "HOBO-540",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

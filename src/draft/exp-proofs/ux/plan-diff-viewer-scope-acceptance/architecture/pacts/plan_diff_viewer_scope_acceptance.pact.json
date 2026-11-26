@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PlanDiffViewerScopeAcceptanceConsumer"
+  },
+  "provider": {
+    "name": "PlanDiffViewerScopeAcceptanceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Plan Diff Viewer Scope Acceptance boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/plan-diff-viewer-scope-acceptance/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.plan_diff_viewer_scope_acceptance/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "wit-port-stub-contract",
+  "title": "WIT Port Stub Contract POC",
+  "linear": "HOBO-651",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

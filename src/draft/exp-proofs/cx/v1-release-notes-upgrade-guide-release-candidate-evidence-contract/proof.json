@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-release-notes-upgrade-guide-release-candidate-evidence-contract",
+  "experienceType": "cx",
+  "title": "V1 Release Notes Upgrade Guide Release Candidate Evidence",
+  "linear": "HOBO-473",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

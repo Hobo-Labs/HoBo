@@ -1,0 +1,43 @@
+{
+  "index": {
+    "schemaVersion": "hobo.core/v1",
+    "issuer": "https://acme-cloud.example.com",
+    "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "signature": {
+      "alg": "HOBO-FIXTURE-SHA256",
+      "keyId": "acme-provider-key",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "files": ["capabilities.json", "auth.json", "cost.json"]
+  },
+  "capabilities": {
+    "ports": [
+      { "port": "compute", "kinds": ["container", "function"], "stability": "stable" },
+      { "port": "database", "kinds": ["postgres"], "stability": "stable" }
+    ],
+    "regions": ["us-east-1", "us-west-2"],
+    "equivalenceClasses": ["container", "postgres"]
+  },
+  "auth": {
+    "issuer": "https://other-cloud.example.com",
+    "flows": [
+      {
+        "type": "oidc-federation",
+        "audience": "hobo",
+        "exchange": "sts:AssumeRoleWithWebIdentity",
+        "trust": { "oidcDiscovery": "https://yard.example.com/.well-known/openid-configuration" }
+      }
+    ],
+    "scopeModel": "least-privilege-per-resource",
+    "resourceIndicators": ["urn:acme:compute"],
+    "tokenLifetimeSec": 3600,
+    "audit": { "events": ["token.Granted"] }
+  },
+  "cost": {
+    "currency": "USD",
+    "unitPrices": {
+      "compute.container.vcpu-hour": { "unit": "hour", "amount": 0.04, "regions": ["us-east-1"] }
+    },
+    "freeTier": []
+  }
+}

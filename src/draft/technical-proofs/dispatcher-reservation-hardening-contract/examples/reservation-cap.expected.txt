@@ -1,0 +1,3 @@
+selected: free-runner,free-runner,paid-runner,paid-runner,paid-runner
+free-runner remaining headroom: 0
+reservation-cap: ok

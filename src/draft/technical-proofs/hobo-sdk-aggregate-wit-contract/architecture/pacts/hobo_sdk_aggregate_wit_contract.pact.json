@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboSdkAggregateWitContractConsumer"
+  },
+  "provider": {
+    "name": "HoboSdkAggregateWitContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Sdk Aggregate Wit Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-sdk-aggregate-wit-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_sdk_aggregate_wit_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

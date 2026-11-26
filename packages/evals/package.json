@@ -1,0 +1,27 @@
+{
+	"name": "@hobo/evals",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@hobo/contracts": "workspace:*"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"description": "HoBo evals engine (design PLAN-23): schema-versioned rubric declarations with weighted boolean/scale/golden-match criteria, deterministic frozen scoring reports mirroring the @hobo/conformance suite/report vocabulary, and promotion-gate verdicts shaped as Gatekeeper precomputed dimensions ({ok, reasons}) so evals feeds gatekeeping as a machine-readable reason gate value. Evaluators are ports; no model hosting."
+}

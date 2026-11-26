@@ -1,0 +1,62 @@
+{
+	"consumer": { "name": "@hobo/hobo first-party catalog" },
+	"provider": { "name": "@hobo/provider-local" },
+	"metadata": {
+		"note": "In-process boundary only: the paths below name catalog reads a composition performs against this package's exports, not HTTP endpoints. test/contract.test.ts replays every interaction against the real exports. Engine facts traced in @hobo/runtime-local at 2026-11-08; see LOCAL_SOURCE_EVIDENCE_REFS."
+	},
+	"interactions": [
+		{
+			"description": "the catalog reads every claimed local definition, sorted by id, each naming its seed product",
+			"request": { "method": "GET", "path": "/provider-local/definitions" },
+			"response": {
+				"status": 200,
+				"body": {
+					"providerId": "local",
+					"definitions": [
+						{ "id": "local.in-memory-queue/v1", "productId": "local:in-memory-queue", "profiles": ["queue.at-least-once/v1"] },
+						{ "id": "local.in-process-worker/v1", "productId": "local:in-process-worker", "profiles": ["service.worker/v1"] },
+						{ "id": "local.node-http-server/v1", "productId": "local:node-http-server", "profiles": ["api.http/v1", "webhook.inbound-http/v1"] },
+						{ "id": "local.sqlite-file/v1", "productId": "local:sqlite-file", "profiles": ["data.relational/v1", "data.sqlite/v1"] }
+					]
+				}
+			}
+		},
+		{
+			"description": "a profile whose seed product has no local engine resolves to nothing, never to a substitute",
+			"request": { "method": "GET", "path": "/provider-local/definitions?profile=kv.key-value/v1" },
+			"response": {
+				"status": 200,
+				"body": { "providerId": "local", "profile": "kv.key-value/v1", "definitionIds": [] }
+			}
+		},
+		{
+			"description": "the unclaimed seed products are published as named gaps, so the denominator is auditable",
+			"request": { "method": "GET", "path": "/provider-local/gaps" },
+			"response": {
+				"status": 200,
+				"body": {
+					"providerId": "local",
+					"gapProductIds": [
+						"local:filesystem-bucket",
+						"local:in-memory-kv",
+						"local:in-memory-secret-locator",
+						"local:in-memory-topic",
+						"local:static-file-server"
+					]
+				}
+			}
+		},
+		{
+			"description": "shipped constants do not attest themselves: signature invalid and conformance unknown until a composition injects station evidence",
+			"request": { "method": "GET", "path": "/provider-local/definitions/local.in-memory-queue/v1/evidence" },
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "local.in-memory-queue/v1",
+					"evidenceSignatureValid": false,
+					"conformance": ["unknown"]
+				}
+			}
+		}
+	]
+}

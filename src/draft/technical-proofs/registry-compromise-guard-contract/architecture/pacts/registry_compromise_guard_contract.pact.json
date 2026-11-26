@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RegistryCompromiseGuardContractConsumer"
+  },
+  "provider": {
+    "name": "RegistryCompromiseGuardContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Registry Compromise Guard Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/registry-compromise-guard-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.registry_compromise_guard_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

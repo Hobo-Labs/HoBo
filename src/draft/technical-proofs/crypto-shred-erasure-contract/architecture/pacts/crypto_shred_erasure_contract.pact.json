@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CryptoShredErasureContractConsumer"
+  },
+  "provider": {
+    "name": "CryptoShredErasureContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Crypto Shred Erasure Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/crypto-shred-erasure-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.crypto_shred_erasure_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

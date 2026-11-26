@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "UpgradeTestSuiteScopeConsumer"
+  },
+  "provider": {
+    "name": "UpgradeTestSuiteScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Upgrade Test Suite Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/upgrade-test-suite-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.upgrade_test_suite_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

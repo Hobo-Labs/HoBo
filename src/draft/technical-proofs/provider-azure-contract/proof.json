@@ -1,0 +1,27 @@
+{
+  "layer": "technical",
+  "slug": "provider-azure-contract",
+  "title": "HOBO-157 Azure Provider Contract POC",
+  "linear": "HOBO-157",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-realize-emission-contract",
+      "src/draft/technical-proofs/provider-aws-contract",
+      "src/draft/technical-proofs/provider-capability-conformance-suites"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/control-plane.md",
+      "docs/design/platform-engineering.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

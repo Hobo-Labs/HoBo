@@ -1,0 +1,49 @@
+{
+  "$comment": "What bounds a surrogate's scope (ADR 0150 section 8, docs/operators/plugins.md). One definition, two enforcers: the env-spec resolver (crates/env-spec/src/scope.rs) refuses an unbounded `paths=` entry or a method that is not an HTTP method when a schema is read, and the surrogate-proxy plugin (crates/surrogate-proxy/src/plugin/wire.rs) refuses them again on the wire before it issues anything. `bounded` and `unbounded` are path prefixes; `methods.valid` and `methods.invalid` are single method tokens, exact and upper case (the resolver upper-cases a declaration before asking). Each enforcer runs every case below. Change a case here and both must follow.",
+  "version": 1,
+  "bounded": [
+    "/user",
+    "/user/",
+    "/repos/acme",
+    "/repos/acme/app/pulls",
+    "/api/v2",
+    "/a%20b",
+    "/v1/charges"
+  ],
+  "unbounded": [
+    "",
+    "/",
+    "//",
+    "///",
+    "repos",
+    "repos/acme",
+    "/repos/../admin",
+    "/repos/./x",
+    "/repos//x",
+    "/..",
+    "/.",
+    "/a?b=1",
+    "/a#b",
+    "/a b",
+    "/a\tb",
+    "/a\\b",
+    "/a;b",
+    "/a\u0000b",
+    "/a\nb"
+  ],
+  "methods": {
+    "valid": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    "invalid": [
+      "",
+      "*",
+      "get",
+      "GET ",
+      "GET,POST",
+      "CONNECT",
+      "TRACE",
+      "TEAPOT",
+      "G\u0000T",
+      "GE\tT"
+    ]
+  }
+}

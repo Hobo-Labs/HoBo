@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/capability/auth-json.v1.json",
+  "title": "HoBo auth.json v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issuer",
+    "flows",
+    "scopeModel",
+    "resourceIndicators",
+    "tokenLifetimeSec",
+    "audit"
+  ],
+  "properties": {
+    "issuer": {
+      "$ref": "#/$defs/httpsUrl"
+    },
+    "flows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/oidcFederationFlow" },
+          { "$ref": "#/$defs/oauth2OboFlow" },
+          { "$ref": "#/$defs/oauth2XaaFlow" },
+          { "$ref": "#/$defs/deviceCodeFlow" },
+          { "$ref": "#/$defs/apiKeyFlow" }
+        ]
+      }
+    },
+    "scopeModel": {
+      "const": "least-privilege-per-resource"
+    },
+    "resourceIndicators": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "tokenLifetimeSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "allOf": [
+            { "contains": { "const": "token.Granted" } },
+            { "contains": { "const": "token.Used" } }
+          ],
+          "items": {
+            "type": "string",
+            "pattern": "^(token|identity|session|secret|config)\\.[A-Z][A-Za-z0-9]+$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^\\s/?#]+(?:[/?#].*)?$"
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "oidcFederationFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "audience", "exchange", "trust"],
+      "properties": {
+        "type": { "const": "oidc-federation" },
+        "audience": { "type": "string", "minLength": 1 },
+        "exchange": { "type": "string", "minLength": 1 },
+        "trust": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["oidcDiscovery"],
+          "properties": {
+            "oidcDiscovery": { "$ref": "#/$defs/httpsUrl" }
+          }
+        }
+      }
+    },
+    "oauth2OboFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "authorizationServer", "scopes"],
+      "properties": {
+        "type": { "const": "oauth2-obo" },
+        "authorizationServer": { "$ref": "#/$defs/httpsUrl" },
+        "scopes": { "$ref": "#/$defs/scopes" }
+      }
+    },
+    "oauth2XaaFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "idJag",
+        "idJagDraftVersion",
+        "authorizationServer",
+        "audience",
+        "scopes"
+      ],
+      "properties": {
+        "type": { "const": "oauth2-xaa" },
+        "idJag": { "const": true },
+        "idJagDraftVersion": {
+          "const": "draft-ietf-oauth-identity-assertion-authz-grant-04"
+        },
+        "authorizationServer": { "$ref": "#/$defs/httpsUrl" },
+        "audience": { "type": "string", "minLength": 1 },
+        "scopes": { "$ref": "#/$defs/scopes" }
+      }
+    },
+    "deviceCodeFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "device-code" },
+        "authorizationServer": { "$ref": "#/$defs/httpsUrl" }
+      }
+    },
+    "apiKeyFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "header", "rotation"],
+      "properties": {
+        "type": { "const": "api-key" },
+        "header": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]*$" },
+        "rotation": { "enum": ["manual", "automatic", "brokered"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "cli-deploy-transcript-prototype",
+  "experienceType": "dx",
+  "title": "CLI Deploy Transcript Prototype",
+  "linear": "HOBO-573",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

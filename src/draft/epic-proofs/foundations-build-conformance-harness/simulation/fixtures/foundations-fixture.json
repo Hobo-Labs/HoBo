@@ -1,0 +1,11 @@
+{
+  "workspace": "canonical pnpm and Turborepo skeleton",
+  "component": "hello-bindle",
+  "artifactCoordinate": "@hobo/hello-bindle",
+  "mockedBoundaries": [
+    "GitHubActions",
+    "OIDCTokenIssuer",
+    "SandboxCloud",
+    "ArtifactTrustBoundary"
+  ]
+}

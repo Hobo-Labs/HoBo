@@ -1,0 +1,13 @@
+{
+  "featureId": "designer-council-consensus",
+  "bindings": [
+    {
+      "kind": "repo-cli",
+      "id": "optimizexp:consensus-loop",
+      "command": "node --import tsx .agents/skills/optimizexp/workflows/cross-agent/consensus-loop.mts --mode validate",
+      "confidence": "high",
+      "reason": "the dedicated consensus CLI is the reviewed surface"
+    }
+  ],
+  "notes": ["Focused bindings exercise the public deterministic protocol helpers without network access."]
+}

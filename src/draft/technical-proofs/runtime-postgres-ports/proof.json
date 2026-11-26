@@ -1,0 +1,28 @@
+{
+  "layer": "technical",
+  "slug": "runtime-postgres-ports",
+  "title": "Runtime Postgres Ports POC",
+  "linear": "HOBO-617",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/actor-host-runtime-port-contract",
+      "src/draft/technical-proofs/camp-eventstore-runtime-port-contract",
+      "src/draft/technical-proofs/queue-clock-runtime-port-contract",
+      "src/draft/technical-proofs/runtime-port-conformance-contract",
+      "src/draft/technical-proofs/streamer-runtime-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/data-plane.md",
+      "docs/design/sdk-api.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

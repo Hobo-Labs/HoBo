@@ -1,0 +1,39 @@
+{
+  "layer": "epic",
+  "slug": "generation-pipeline-training-ai-safety",
+  "title": "Generation Pipeline, Training & AI Safety",
+  "linear": "HOBO-307",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/built-in-opto-training-engine-contract",
+      "src/draft/technical-proofs/champion-challenger-promotion-contract",
+      "src/draft/technical-proofs/cross-layer-generated-stack-propagation-contract",
+      "src/draft/technical-proofs/eval-promotion-gate-contract",
+      "src/draft/technical-proofs/generation-bounded-repair-loop-contract",
+      "src/draft/technical-proofs/generation-llm-fill-contract",
+      "src/draft/technical-proofs/generation-material-sanitization-contract",
+      "src/draft/technical-proofs/generation-pipeline-io-contract",
+      "src/draft/technical-proofs/generation-reference-run-contract",
+      "src/draft/technical-proofs/generation-safety-gate-contract",
+      "src/draft/technical-proofs/human-approval-generation-gate-contract",
+      "src/draft/technical-proofs/live-evals-runtime-contract",
+      "src/draft/technical-proofs/live-fix-gated-candidate-contract",
+      "src/draft/technical-proofs/no-egress-generation-sandbox-contract",
+      "src/draft/technical-proofs/openinference-trajectory-capture-contract",
+      "src/draft/technical-proofs/training-data-poisoning-guard-contract",
+      "src/draft/technical-proofs/training-engine-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/dx/data-flywheel-privacy-spike"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/bootstrap-installer-scope-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

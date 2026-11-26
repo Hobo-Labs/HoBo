@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the DX Resource Lifecycle
+// Fixture Corpus package reasons about. This is a design-time contract artifact,
+// not runtime generated code.
+
+enum DxFixtureProofMode {
+  DX_FIXTURE_PROOF_MODE_UNSPECIFIED = 0;
+  DX_FIXTURE_PROOF_MODE_REFERENCE_FIXTURE = 1;
+  DX_FIXTURE_PROOF_MODE_SIMULATED = 2;
+  DX_FIXTURE_PROOF_MODE_LIVE = 3;
+  DX_FIXTURE_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message DxLifecycleFixtureFact {
+  string kind = 1;
+  string id = 2;
+  string summary = 3;
+  bool redacted = 4;
+  bool tenant_safe = 5;
+  DxFixtureProofMode proof_mode = 6;
+  string source = 7;
+}
+
+message DxLifecycleScenario {
+  string id = 1;
+  string persona = 2;
+  string lifecycle_step = 3;
+  repeated string commands = 4;
+  repeated string artifacts = 5;
+  repeated string fixture_ids = 6;
+  DxFixtureProofMode proof_mode = 7;
+  bool deterministic = 8;
+  bool redacted = 9;
+  bool tenant_safe = 10;
+  repeated DxLifecycleFixtureFact fixture_facts = 11;
+}
+
+message DxResourceLifecycleFixtureCorpus {
+  string issue = 1;
+  string package_path = 2;
+  string proof_note = 3;
+  repeated string source_refs = 4;
+  repeated string boundary_contracts = 5;
+  repeated string consumers = 6;
+  repeated DxLifecycleScenario scenarios = 7;
+}

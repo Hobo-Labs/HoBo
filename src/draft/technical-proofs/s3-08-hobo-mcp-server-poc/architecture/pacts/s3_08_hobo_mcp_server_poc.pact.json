@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "S308HoboMcpServerPocConsumer"
+  },
+  "provider": {
+    "name": "S308HoboMcpServerPocBoundary"
+  },
+  "interactions": [
+    {
+      "description": "MCP gateway returns surface parity and rate-limit contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/s3-08-hobo-mcp-server-poc/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s3_08_hobo_mcp_server_poc/v1",
+          "surfaceParity": true,
+          "rateLimitCode": "MCP_RATE_LIMITED"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

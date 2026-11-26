@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.closurebuilder.authorflow.v1;
+
+enum ClosureBuilderAuthorFlowResourceKind {
+  CLOSURE_BUILDER_AUTHOR_FLOW_RESOURCE_KIND_UNSPECIFIED = 0;
+  CLOSURE_BUILDER_AUTHOR_FLOW_RESOURCE_KIND_API = 1;
+  CLOSURE_BUILDER_AUTHOR_FLOW_RESOURCE_KIND_CACHE = 2;
+  CLOSURE_BUILDER_AUTHOR_FLOW_RESOURCE_KIND_QUEUE = 3;
+}
+
+message ClosureBuilderAuthorFlowCorpus {
+  string name = 1;
+  string bindle_name = 2;
+  repeated ClosureBuilderAuthorFlowResource resources = 3;
+  repeated ClosureBuilderAuthorFlowAlias aliases = 4;
+  repeated ClosureBuilderAuthorFlowRelationship relationships = 5;
+  ClosureBuilderAuthorFlowManifest manifest = 6;
+  string conformance_corpus_path = 7;
+}
+
+message ClosureBuilderAuthorFlowResource {
+  string generated_id = 1;
+  ClosureBuilderAuthorFlowResourceKind kind = 2;
+  string owner_bindle_id = 3;
+  bool has_inert_workload = 4;
+}
+
+message ClosureBuilderAuthorFlowAlias {
+  string alias = 1;
+  string generated_id = 2;
+  ClosureBuilderAuthorFlowResourceKind kind = 3;
+  string physical_name_seed = 4;
+}
+
+message ClosureBuilderAuthorFlowRelationship {
+  string from = 1;
+  string to = 2;
+  string verb = 3;
+}
+
+message ClosureBuilderAuthorFlowManifest {
+  string schema = 1;
+  string bindle = 2;
+  repeated ClosureBuilderAuthorFlowResource resources = 3;
+  repeated ClosureBuilderAuthorFlowRelationship relationships = 4;
+  repeated ClosureBuilderAuthorFlowAlias authoring_aliases = 5;
+}
+
+message ClosureBuilderAuthorFlowCorpusPublished {
+  string event_id = 1;
+  string event_type = 2;
+  string issue_id = 3;
+  ClosureBuilderAuthorFlowCorpus corpus = 4;
+}

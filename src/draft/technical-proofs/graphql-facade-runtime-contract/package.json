@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/graphql-facade-runtime-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contract proof for GraphQL facade resolvers over cached materializations.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "cross-yard-policy-attestation-contract",
+  "title": "Cross-Yard Policy Attestation Contract",
+  "linear": "HOBO-196",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/contracts-policy-flags.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

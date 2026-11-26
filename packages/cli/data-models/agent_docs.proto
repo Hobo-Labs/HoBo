@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.cli.v1;
+
+// Wire records for the S3-05 agent-docs surface (ai-native-agent-auth.md §6.4 +
+// developer-experience.md). HoBo publishes llms.txt / llms-full.txt / docs.json
+// so any agent can self-serve the operations surface. The SINGLE source of truth
+// is @hobo/cli's CANONICAL_VERBS + the 1:1 MCP tool surface derived from it; this
+// manifest is a deterministic projection over that source, never a hand-authored
+// parallel list. Regeneration is drift-gated exactly like `hobo codegen --check`
+// (regenerate -> compare -> fail on drift). The TypeScript surface in
+// src/agent-docs/ follows parse-don't-validate: these wire shapes are narrowed
+// into derived domain views built only by this package's generator. See
+// agent_docs.cue for one CUE constraint per message.
+
+// The capability scope an SVID must hold to invoke the MCP tool for one entry.
+// Mirrors @hobo/identity's ScopeEntry vocabulary and @hobo/mcp's capability
+// triple { port: "hobo:mcp", resource: "tool:<name>", verb: "call" }.
+message AgentDocCapability {
+  string port = 1;
+  string resource = 2;
+  string verb = 3;
+}
+
+// One documented capability: a canonical CLI verb and its 1:1 MCP tool. Derived
+// structurally from a CANONICAL_VERBS entry so the docs surface cannot drift from
+// the CLI/MCP surface.
+message AgentDocEntry {
+  string name = 1;
+  string role = 2;
+  string summary = 3;
+  string cli = 4;
+  string mcp_tool = 5;
+  AgentDocCapability capability = 6;
+}
+
+// The structured, machine-readable docs manifest emitted as docs.json.
+message AgentDocsManifest {
+  string schema_version = 1;
+  string generator = 2;
+  string product = 3;
+  repeated AgentDocEntry entries = 4;
+  repeated string global_flags = 5;
+  repeated string artifacts = 6;
+}
+
+// One generated agent-docs artifact file (llms.txt / llms-full.txt / docs.json),
+// addressed by its output-directory-relative path.
+message AgentDocsArtifact {
+  string path = 1;
+  string content = 2;
+}

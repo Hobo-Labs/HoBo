@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "MetricContractRegistry"
+  },
+  "interactions": [
+    {
+      "description": "parse tiered metric contracts before routing",
+      "request": {
+        "method": "POST",
+        "path": "/metric-contracts/parse"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "tiers": ["system", "derived", "user"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

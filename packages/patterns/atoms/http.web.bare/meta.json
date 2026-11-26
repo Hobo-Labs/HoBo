@@ -1,0 +1,38 @@
+{
+	"id": "http.web.bare",
+	"tier": 1,
+	"kind": "http",
+	"description": "Minimal public HTML page with no private API.",
+	"tags": [
+		"http",
+		"web",
+		"barebones",
+		"hono"
+	],
+	"queries": [
+		"barebones web",
+		"blank page",
+		"minimal html"
+	],
+	"requires": [],
+	"provides": [
+		"http.handler.web"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/webapp.ts",
+			"from": "body/webapp.ts.tpl"
+		}
+	]
+}

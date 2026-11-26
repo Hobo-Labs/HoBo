@@ -1,0 +1,37 @@
+{
+  "consumer": {
+    "name": "Meta-cloud Broker artifact contract consumer"
+  },
+  "provider": {
+    "name": "Meta-cloud Broker artifact contract boundary"
+  },
+  "interactions": [
+    {
+      "description": "Artifact contract boundary returns deterministic receipt and rejection fixtures",
+      "request": {
+        "method": "GET",
+        "path": "/meta-cloud-broker-artifact-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.meta-cloud-broker.artifact-contract/v1",
+          "artifacts": [
+            "contract-manifest",
+            "broker-environment",
+            "mapping-contract",
+            "broker-catalog-snapshot",
+            "resolution-receipt",
+            "resolution-rejection"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

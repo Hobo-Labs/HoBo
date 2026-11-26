@@ -1,0 +1,219 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-browser-wasm"
+	},
+	"provider": {
+		"name": "BrowserWasmHostAssetOrigin"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"source": {
+			"description": "The HoBo host page's own asset origin: the /_hobo/ routes that report the browsing context's capabilities and serve guest component bundles.",
+			"url": "https://developer.mozilla.org/en-US/docs/WebAssembly/JavaScript_interface/instantiateStreaming",
+			"checkedAt": "2026-08-08"
+		},
+		"binaryBodies": "Responses whose body is a WebAssembly bundle carry \"encoding\": \"base64\"; every other body is recorded as JSON."
+	},
+	"interactions": [
+		{
+			"description": "report a cross-origin isolated context with durable storage",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/host/capabilities",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json",
+					"Cross-Origin-Opener-Policy": "same-origin",
+					"Cross-Origin-Embedder-Policy": "require-corp"
+				},
+				"body": {
+					"schemaVersion": "hobo.browser-wasm.host-capabilities/v1",
+					"origin": "https://try-site.browser-wasm.hobo.localhost",
+					"crossOriginIsolated": true,
+					"dedicatedWorkers": true,
+					"persistence": "opfs-sahpool",
+					"maxMemoryBytes": 1073741824
+				}
+			}
+		},
+		{
+			"description": "report a private-mode context with no durable storage and no isolation",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/host/capabilities"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"schemaVersion": "hobo.browser-wasm.host-capabilities/v1",
+					"origin": "https://try-site.browser-wasm.hobo.localhost",
+					"crossOriginIsolated": false,
+					"dedicatedWorkers": true,
+					"persistence": "unavailable",
+					"maxMemoryBytes": 268435456
+				}
+			}
+		},
+		{
+			"description": "serve the guest manifest",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/try-site/manifest.json",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json",
+					"Cache-Control": "no-cache"
+				},
+				"body": {
+					"schemaVersion": "hobo.browser-wasm.guest-manifest/v1",
+					"guestId": "try-site",
+					"port": "compute",
+					"resourceClass": "browser-wasm:guest",
+					"world": "hobo:guest/http-handler@0.1.0",
+					"componentPath": "/_hobo/guests/try-site/component.wasm",
+					"contentDigest": "sha256-24eaf3439a60c96764c4f2c92a0a81b52bd4fe5d5b91f090184a0f6486b1bf29",
+					"byteLength": 8,
+					"imports": [
+						"wasi:io/streams@0.2.0",
+						"wasi:http/outgoing-handler@0.2.0"
+					],
+					"exports": ["wasi:http/incoming-handler@0.2.0"],
+					"persistence": "opfs-sahpool",
+					"memoryLimitBytes": 268435456,
+					"sharedMemory": false
+				}
+			}
+		},
+		{
+			"description": "serve the component bundle",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/try-site/component.wasm",
+				"headers": {
+					"Accept": "application/wasm"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/wasm",
+					"Content-Length": "8",
+					"ETag": "\"sha256-24eaf3439a60c96764c4f2c92a0a81b52bd4fe5d5b91f090184a0f6486b1bf29\"",
+					"Cross-Origin-Resource-Policy": "same-origin",
+					"Cache-Control": "public, max-age=31536000, immutable"
+				},
+				"encoding": "base64",
+				"body": "AGFzbQ0AAQA="
+			}
+		},
+		{
+			"description": "serve the single-page-app document where a missing bundle should have been a 404",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/try-site/component.wasm"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "text/html; charset=utf-8"
+				},
+				"encoding": "base64",
+				"body": "PCFkb2N0eXBlIGh0bWw+PHRpdGxlPnRyeS1zaXRlPC90aXRsZT4="
+			}
+		},
+		{
+			"description": "serve bytes that are not the ones the manifest describes",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/try-site/component.wasm"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/wasm",
+					"Content-Length": "8"
+				},
+				"encoding": "base64",
+				"body": "AGFzbQEAAAA="
+			}
+		},
+		{
+			"description": "serve a manifest whose bundle is a core module rather than a component",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/legacy-module/manifest.json"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"schemaVersion": "hobo.browser-wasm.guest-manifest/v1",
+					"guestId": "legacy-module",
+					"port": "compute",
+					"resourceClass": "browser-wasm:guest",
+					"world": "hobo:guest/http-handler@0.1.0",
+					"componentPath": "/_hobo/guests/legacy-module/component.wasm",
+					"contentDigest": "sha256-93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476",
+					"byteLength": 8,
+					"imports": [],
+					"exports": ["wasi:http/incoming-handler@0.2.0"],
+					"persistence": "transient-memory",
+					"memoryLimitBytes": 268435456,
+					"sharedMemory": false
+				}
+			}
+		},
+		{
+			"description": "serve that core module, digest and all",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/legacy-module/component.wasm"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/wasm",
+					"Content-Length": "8"
+				},
+				"encoding": "base64",
+				"body": "AGFzbQEAAAA="
+			}
+		},
+		{
+			"description": "report GUEST_NOT_FOUND for a guest this origin does not serve",
+			"request": {
+				"method": "GET",
+				"path": "/_hobo/guests/ghost/manifest.json"
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"schemaVersion": "hobo.browser-wasm.host-fault/v1",
+					"code": "GUEST_NOT_FOUND",
+					"message": "no guest bundle is published for \"ghost\"",
+					"guestId": "ghost"
+				}
+			}
+		}
+	]
+}

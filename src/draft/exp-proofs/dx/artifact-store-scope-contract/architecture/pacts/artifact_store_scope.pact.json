@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ArtifactStoreScopeConsumer"
+  },
+  "provider": {
+    "name": "ArtifactStoreScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Artifact Store Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/artifact-store-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.artifact_store_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

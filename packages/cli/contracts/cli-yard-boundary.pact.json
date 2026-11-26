@@ -1,0 +1,63 @@
+{
+	"consumer": {
+		"name": "@hobo/cli"
+	},
+	"provider": {
+		"name": "@hobo/cloud"
+	},
+	"interactions": [
+		{
+			"description": "hobo plan previews the DeploymentPlan without side-effect events",
+			"request": {
+				"operation": "hobo plan",
+				"bindle": "hello-bindle"
+			},
+			"response": {
+				"status": "planned",
+				"dependencyOrder": ["assets", "sessions", "service"],
+				"resources": ["assets", "service", "sessions"],
+				"sideEffectEvents": []
+			}
+		},
+		{
+			"description": "hobo up drives the Yard gateway and orchestrator to deployment.Deployed",
+			"request": {
+				"operation": "hobo up",
+				"bindle": "hello-bindle"
+			},
+			"response": {
+				"status": "deployed",
+				"provisioned": ["assets", "service", "sessions"],
+				"terminalEvent": "deployment.Deployed"
+			}
+		},
+		{
+			"description": "hobo down drives the compensation/destroy path to Destroyed",
+			"request": {
+				"operation": "hobo down",
+				"bindle": "hello-bindle"
+			},
+			"response": {
+				"status": "destroyed",
+				"destroyed": ["assets", "service", "sessions"]
+			}
+		},
+		{
+			"description": "an unsatisfiable manifest is rejected with machine-readable remediation",
+			"request": {
+				"operation": "hobo plan",
+				"bindle": "unsatisfiable"
+			},
+			"response": {
+				"status": "rejected",
+				"remediationResource": "ledger",
+				"remediationCode": "capability.port-unavailable"
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

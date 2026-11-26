@@ -1,0 +1,70 @@
+{
+  "consumer": { "name": "SRE operator" },
+  "provider": { "name": "policy engine" },
+  "interactions": [
+    {
+      "description": "decide-canary-remediation",
+      "providerStates": [{ "name": "action is reversible and blast radius bounded" }],
+      "request": {
+        "method": "POST",
+        "path": "/policy/remediation/decide",
+        "body": {
+          "incidentId": "inc-crew-001",
+          "environment": "prod",
+          "effect": "canary_with_auto_rollback",
+          "blastRadius": "single-service"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "decision": "allow_canary",
+          "obligations": ["watch-error-budget", "rollback-on-regression"]
+        }
+      }
+    },
+    {
+      "description": "require-human-approval",
+      "providerStates": [{ "name": "contract skew touches production consumer" }],
+      "request": {
+        "method": "POST",
+        "path": "/policy/remediation/decide",
+        "body": {
+          "incidentId": "inc-crew-002",
+          "environment": "prod",
+          "effect": "require_approval",
+          "blastRadius": "producer-consumer-boundary"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "decision": "require_approval",
+          "obligations": ["on-call-ack", "operator-console-approval"]
+        }
+      }
+    },
+    {
+      "description": "deny-self-caused-write",
+      "providerStates": [{ "name": "remediation cooldown is active" }],
+      "request": {
+        "method": "POST",
+        "path": "/policy/remediation/decide",
+        "body": {
+          "incidentId": "inc-crew-003",
+          "environment": "prod",
+          "effect": "write",
+          "selfCausation": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "decision": "deny_write_escalate",
+          "obligations": ["human-review", "runbook-revision"]
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

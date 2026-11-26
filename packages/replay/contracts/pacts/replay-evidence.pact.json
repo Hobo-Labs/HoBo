@@ -1,0 +1,27 @@
+{
+  "consumer": { "name": "ReplayEvidence" },
+  "provider": { "name": "ReplayService" },
+  "interactions": [
+    {
+      "description": "build evidence pack with playwright refs",
+      "request": {
+        "method": "POST",
+        "path": "/replay/evidence/pack",
+        "body": {
+          "sessionId": "sess-evidence-1",
+          "events": [{ "type": 2, "timestamp": 1, "data": {} }],
+          "playwrightRefs": ["trace.zip"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schemaVersion": "hobo.replay-evidence/v1",
+          "playwrightRefs": ["trace.zip"]
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

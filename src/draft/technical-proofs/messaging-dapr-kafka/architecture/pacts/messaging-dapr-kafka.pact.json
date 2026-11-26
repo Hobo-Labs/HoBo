@@ -1,0 +1,33 @@
+{
+	"consumer": { "name": "@hobo-draft/messaging-dapr-kafka" },
+	"provider": { "name": "MessagingDaprKafkaProof" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	},
+	"interactions": [
+		{
+			"description": "native kafka publish/consume roundtrip",
+			"request": {
+				"method": "POST",
+				"path": "/proof/native-kafka",
+				"body": { "wit": "wasi:messaging/messaging@0.2.0" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "backend": "native-kafka", "secretless": true }
+			}
+		},
+		{
+			"description": "dapr actor dual placement parity",
+			"request": {
+				"method": "POST",
+				"path": "/proof/actor-dual",
+				"body": { "modes": ["native", "dapr"] }
+			},
+			"response": {
+				"status": 200,
+				"body": { "singleWriter": true, "equivalent": true }
+			}
+		}
+	]
+}

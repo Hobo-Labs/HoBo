@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package hobo.manifest.declaration.v1;
+
+// The declaration manifest: one provider-neutral ResourceIntent node, lowered
+// from a `hobo.manifest/v1` resource before any provider, product, SKU or
+// region has been chosen (control-plane.md, "The Planner", step 0).
+//
+// Field numbers are inherited verbatim from
+// packages/cloud/data-models/cloud.proto so the two spellings are the same wire
+// record, not a fork. Two deliberate divergences from that file are recorded
+// here because both were found by round-tripping real values:
+//
+//  1. `region` is declared `optional`. In cloud.proto it is a bare proto3
+//     scalar, which has *implicit* presence: the encoder omits it whenever it
+//     equals the type default, so `{"region": ""}` and a record with no region
+//     at all produce identical bytes and decode to the same value. The
+//     TypeScript domain view spells the field `region?: string` under
+//     `exactOptionalPropertyTypes: true`, where absent and `""` are different
+//     values. `optional` is the proto3 spelling of that distinction; without it
+//     the schema silently conflates the two. `region` is the only optional
+//     *scalar* in the record, so it is the only field where this bites — every
+//     other string is required and constrained non-empty in CUE, and the three
+//     optional fields that remain are messages, which already carry explicit
+//     presence.
+//
+//  2. `negotiation`, `op`, `mode` and `scope` stay `string` rather than
+//     becoming enums. Their vocabularies are closed and are pinned in
+//     resource_intent.cue, but a proto enumeration encodes as a varint on the
+//     wire where a string is length-delimited; converting them would be a
+//     silent wire break for a readability gain. The constraint belongs in CUE,
+//     and it is there.
+//
+// The parse boundary in src/index.ts additionally refuses `region: ""`. A
+// region that is present but empty names no region, so it is a malformed
+// declaration rather than a value worth preserving; refusing it at the boundary
+// means no producer can mint a value whose meaning depends on which encoder
+// saw it.
+
+// Step 0 output: a manifest IR node lowered to a provider-neutral intent.
+message ResourceIntent {
+  // Graph identity: the resource id inside the declaring manifest. Unique
+  // within a plan; `deps` entries of sibling intents refer to it by this name.
+  string name = 1;
+  // Capability class: compute | kv | objectStore | ... A bare token, or a
+  // namespaced one such as `hobo:database` when the manifest port was not
+  // mapped to a known class.
+  string port = 2;
+  // Required capability features. A candidate that cannot satisfy every entry
+  // is rejected, never degraded.
+  repeated string require = 3;
+  // Preferred (degradable) features. Ranking input only.
+  repeated string prefer = 4;
+  // "require" | "prefer" — whole-intent degradation mode.
+  string negotiation = 5;
+  // Bind-edge dependency ids: the names of sibling intents this one binds to.
+  repeated string deps = 6;
+  // Explicit region pin, when the declaration carries one. Explicit presence:
+  // see the note above.
+  optional string region = 7;
+  // Routing objective (default: min-cost).
+  string objective = 8;
+  // Optional placement-constraint vocabulary (E19).
+  PlacementCriteria placement = 9;
+  // When a schedule runs: a five-field cron expression from the Bindle's
+  // `cadence` trait. Explicit presence, like `region`.
+  optional string cadence = 10;
+}
+
+// ---- E19: placement-constraint vocabulary (HoBo-native shapes; semantics
+// cited from KubeFleet property-aware placement — no Kubernetes types cross
+// this boundary, ADR-0107 non-goal). The vocabulary records what the Planner
+// PLANS; spread/anti-affinity EXECUTION stays delegated to the runtime
+// scheduler (wadm — adr/01-architecture-core.md:419).
+
+// A property selector over a Resource Definition candidate: well-known keys
+// (cost | region | provider | capacity | latency) or a custom feature key.
+message PlacementPropertySelector {
+  string key = 1;
+  // "eq" | "ne" | "in" | "not-in" | "lt" | "lte" | "gt" | "gte" | "exists"
+  string op = 2;
+  // Comparison operands. Empty for "exists", non-empty for every other op.
+  repeated string values = 3;
+}
+
+// Affinity/anti-affinity between resource classes (capability ports): the
+// matched candidate must co-locate with (affinity) or avoid (anti-affinity)
+// the placements already decided for the target class, at the given scope.
+message PlacementAffinityRule {
+  // "affinity" | "anti-affinity"
+  string mode = 1;
+  // The referenced resource class (capability port).
+  string target_port = 2;
+  // "region" | "yard"
+  string scope = 3;
+}
+
+// Spread the placements of one resource class across a topology dimension.
+message PlacementSpread {
+  // "region" | "yard"
+  string dimension = 1;
+}
+
+// pickN cardinality: matching must find at least `count` distinct satisfying
+// candidates (the full ranking records them); the Planner still places one.
+message PlacementPickN {
+  uint32 count = 1;
+}
+
+// The composed placement-constraint set carried by a ResourceIntent.
+message PlacementCriteria {
+  repeated PlacementPropertySelector selectors = 1;
+  repeated PlacementAffinityRule affinities = 2;
+  PlacementSpread spread = 3;
+  PlacementPickN pick_n = 4;
+}

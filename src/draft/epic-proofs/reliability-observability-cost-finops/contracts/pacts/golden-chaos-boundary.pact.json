@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "GoldenChaosBoundary"
+  },
+  "interactions": [
+    {
+      "description": "run Golden Suite plus node-loss chaos under mocked CI budget",
+      "providerStates": [
+        {
+          "name": "runtime-local and camp golden targets passed"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/reliability/golden-chaos",
+        "body": {
+          "suiteId": "deploy-golden-suite",
+          "fault": "node-loss",
+          "environment": "ci"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "passed",
+          "effect": "allow-continue",
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

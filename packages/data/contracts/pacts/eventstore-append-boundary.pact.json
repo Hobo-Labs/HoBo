@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "DataPlaneReferenceCQRS" },
+  "provider": { "name": "EventStoreAppendBoundary" },
+  "interactions": [
+    {
+      "description": "append order.Placed after aggregate command",
+      "request": {
+        "method": "POST",
+        "path": "/streams/order:1001/events",
+        "body": { "expectedSeq": 0, "type": "order.Placed" }
+      },
+      "response": {
+        "status": 201,
+        "body": { "streamId": "order:1001", "seq": 1 }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

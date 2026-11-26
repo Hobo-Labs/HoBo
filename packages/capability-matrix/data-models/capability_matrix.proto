@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package hobo.capability_matrix.v1;
+
+// The derived Bindle primitive x runtime coverage view (ADR-0151 decision 14).
+//
+// Closed vocabularies travel as strings here and are narrowed by
+// capability_matrix.cue, matching the convention in
+// @hobo/capability-profiles: the wire form stays additive, and the constraint
+// that a value is one of five buckets lives where cross-field invariants
+// already live.
+
+// Why one candidate cannot be selected automatically right now.
+message CandidateUnavailabilityRecord {
+  string code = 1;
+  string detail = 2;
+}
+
+// One registered definition's claim on one cell.
+message CapabilityMatrixCandidateRecord {
+  string primitive = 1;
+  string runtime = 2;
+  string definition_id = 3;
+  string provider_id = 4;
+  string profile_id = 5;
+  // native | pack | bridge, as declared by the definition.
+  string realization = 6;
+  // Which of the five separated buckets this candidate counts towards.
+  string bucket = 7;
+  bool available = 8;
+  string evidence_state = 9;
+  // Epoch milliseconds. Zero when no evidence record was found at all.
+  int64 evidence_expires_at_ms = 10;
+  string conformance = 11;
+  // Empty when the implementation claim names no conformance suite.
+  string conformance_ref = 12;
+  // Empty exactly when `available` is true.
+  repeated CandidateUnavailabilityRecord unavailability = 13;
+}
+
+// Definition ids in one bucket, split by whether they are selectable now.
+// Availability is never folded into the id list, because a cell that lost its
+// evidence must stay distinguishable from a cell nobody registered.
+message CapabilityMatrixBucketRecord {
+  repeated string available = 1;
+  repeated string unavailable = 2;
+}
+
+// The five buckets a cell reports separately.
+message CapabilityMatrixBucketsRecord {
+  CapabilityMatrixBucketRecord native = 1;
+  CapabilityMatrixBucketRecord pack = 2;
+  CapabilityMatrixBucketRecord bridge = 3;
+  CapabilityMatrixBucketRecord substrate = 4;
+  CapabilityMatrixBucketRecord sponsor = 5;
+}
+
+message CapabilityMatrixCellRecord {
+  // "<primitive>/<runtime>".
+  string key = 1;
+  string primitive = 2;
+  string runtime = 3;
+  // Derived from the buckets; never authored independently of them.
+  string verdict = 4;
+  CapabilityMatrixBucketsRecord buckets = 5;
+  repeated CapabilityMatrixCandidateRecord candidates = 6;
+}
+
+// A declared claim that reached no cell, and why.
+message CapabilityMatrixExclusionRecord {
+  string definition_id = 1;
+  // Empty when the exclusion is about the whole definition.
+  string profile_id = 2;
+  string code = 3;
+  string detail = 4;
+}
+
+message CapabilityMatrixRecord {
+  string schema_version = 1;
+  // The evaluation instant the caller supplied. Never a clock read.
+  int64 evaluated_at_ms = 2;
+  string profile_registry_digest = 3;
+  string trust_bundle_digest = 4;
+  // Exactly one cell per primitive/runtime pair, in canonical grid order.
+  repeated CapabilityMatrixCellRecord cells = 5;
+  repeated CapabilityMatrixExclusionRecord excluded = 6;
+  string digest = 7;
+}
+
+message CapabilityMatrixFindingRecord {
+  string code = 1;
+  string severity = 2;
+  string primitive = 3;
+  string runtime = 4;
+  string detail = 5;
+  repeated string definition_ids = 6;
+}
+
+message CoverageSummaryRecord {
+  string verdict = 1;
+  uint32 cells = 2;
+}
+
+message CapabilityMatrixValidationRecord {
+  int64 evaluated_at_ms = 1;
+  string matrix_digest = 2;
+  int64 expiry_horizon_ms = 3;
+  // One entry per verdict, in canonical verdict order.
+  repeated CoverageSummaryRecord summary = 4;
+  repeated CapabilityMatrixFindingRecord findings = 5;
+}

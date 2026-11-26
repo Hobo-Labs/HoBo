@@ -1,0 +1,40 @@
+{
+  "lowRiskFailover": {
+    "kind": "failover",
+    "target": { "kind": "camp", "id": "prod-aws" },
+    "blastRadius": {
+      "scope": "camp",
+      "reversible": true,
+      "compensationPath": "route-back-to-prod-aws",
+      "estimatedImpact": "low"
+    },
+    "environment": "staging",
+    "idempotencyKey": "incident-42/failover/prod-aws",
+    "conformanceState": "green"
+  },
+  "prodCredentialRotation": {
+    "kind": "rotate-credential",
+    "target": { "kind": "resource", "id": "token-broker" },
+    "blastRadius": {
+      "scope": "resource",
+      "reversible": false,
+      "estimatedImpact": "medium"
+    },
+    "environment": "prod",
+    "idempotencyKey": "incident-14/rotate/token-broker",
+    "conformanceState": "green"
+  },
+  "mediumRiskCircuitBreak": {
+    "kind": "circuit-break",
+    "target": { "kind": "resource", "id": "payments" },
+    "blastRadius": {
+      "scope": "camp",
+      "reversible": true,
+      "compensationPath": "close-breaker",
+      "estimatedImpact": "medium"
+    },
+    "environment": "staging",
+    "idempotencyKey": "incident-9/circuit-break/payments",
+    "conformanceState": "green"
+  }
+}

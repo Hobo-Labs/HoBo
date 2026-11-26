@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "entitlement-abuse-rate-limit-policy-contract",
+  "title": "Entitlement Abuse Rate-Limit Policy Contract",
+  "linear": "HOBO-491",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/entitlements-plan-limits.md",
+      "docs/design/proofs/hobo-491-entitlement-abuse-rate-limit-policy/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

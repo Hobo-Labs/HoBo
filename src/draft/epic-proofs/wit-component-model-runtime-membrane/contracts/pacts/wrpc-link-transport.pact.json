@@ -1,0 +1,31 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "WRPCTransportProviderMock" },
+  "interactions": [
+    {
+      "description": "negotiate a linked-only wRPC route with deadline and wire floor checks",
+      "request": {
+        "method": "POST",
+        "path": "/wrpc/negotiate-link",
+        "body": {
+          "import": "wasi:keyvalue/store@0.2.0",
+          "provider": "kv-provider",
+          "wireVersion": "0.9.0",
+          "deadlineMs": 250
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "route": "linked-only",
+          "deadlinePropagated": true,
+          "crossHostAllowed": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "wrpc-link-transport",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

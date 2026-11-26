@@ -1,0 +1,55 @@
+{
+  "consumer": { "name": "ContractManifestSubmitter" },
+  "provider": { "name": "MetaCloudBrokerResolutionAuthority" },
+  "interactions": [
+    {
+      "description": "issues a receipt for a manifest resolved against an approved broker environment",
+      "request": {
+        "method": "POST",
+        "path": "/broker/resolutions",
+        "body": {
+          "command": "ResolveContractManifest",
+          "manifest_digest": "sha256:manifest-ok",
+          "environment_digest": "sha256:environment-approved",
+          "proof_mode": "contract-test"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "event": "ResolutionReceiptIssued",
+          "receipt_id": "rr_0123456789abcdef",
+          "decision": "accepted",
+          "source": "src/draft/exp-proofs/api/meta-cloud-broker-scope-contract"
+        }
+      }
+    },
+    {
+      "description": "rejects stale or ambiguous mapping input with structured evidence",
+      "request": {
+        "method": "POST",
+        "path": "/broker/resolutions",
+        "body": {
+          "command": "ResolveContractManifest",
+          "manifest_digest": "sha256:manifest-stale",
+          "environment_digest": "sha256:environment-stale",
+          "proof_mode": "negative-test"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "event": "ResolutionRejectionIssued",
+          "rejection_id": "rej_0123456789abcdef",
+          "reason": "stale-catalog-snapshot",
+          "source": "src/draft/exp-proofs/api/meta-cloud-broker-scope-contract"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "issue": "HOBO-521",
+    "phase": "M0"
+  }
+}

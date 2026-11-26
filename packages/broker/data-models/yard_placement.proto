@@ -1,0 +1,337 @@
+syntax = "proto3";
+
+package hobo.broker.yard.v1;
+
+// Wire contracts for Yard-first placement (artifacts, not topology primitives).
+
+message YardShape {
+  string provider_id = 1;
+  string runtime_id = 2;
+  repeated string regions = 3;
+  repeated string require = 4;
+  repeated string prefer = 5;
+  map<string, string> labels = 6;
+}
+
+message YardPlacementRequest {
+  string request_id = 1;
+  // exact | compatible | compatible-or-generate
+  string selection_mode = 2;
+  string requested_yard_id = 3;
+  YardShape requested_shape = 4;
+  string bindle_manifest_hash = 5;
+  string bindle_requirements_hash = 6;
+  bool allow_generation_requested = 7;
+}
+
+message YardInstanceRegistration {
+  string schema_version = 1;
+  string yard_id = 2;
+  string owner_tenant_id = 3;
+  string provider_id = 4;
+  string runtime_id = 5;
+  // registering | attesting | ready | degraded | draining | offline
+  string status = 6;
+  uint64 registration_seq = 7;
+}
+
+message YardInventorySnapshot {
+  string schema_version = 1;
+  string broker_id = 2;
+  uint64 seq = 3;
+  string content_hash = 4;
+  repeated YardInstanceRegistration yards = 5;
+}
+
+message YardRuntimeRegistration {
+  string schema_version = 1;
+  string runtime_id = 2;
+  string provider_id = 3;
+  string version = 4;
+  string generator_connector_id = 5;
+  // registered | approved | disabled
+  string status = 6;
+  int32 priority = 7;
+  bool is_default = 8;
+}
+
+message BindleDeploymentRequest {
+  string schema_version = 1;
+  string request_id = 2;
+  string bindle_name = 3;
+  string manifest_hash = 4;
+  YardPlacementRequest yard = 5;
+  string objective = 6;
+  double spend_estimate_usd = 7;
+  string owner_tenant_id = 8;
+}
+
+message YardPlacementReceipt {
+  string schema_version = 1;
+  string request_id = 2;
+  string broker_id = 3;
+  string selected_yard_id = 4;
+  string selected_provider_id = 5;
+  string selected_camp_id = 6;
+  string inventory_hash = 7;
+  string content_hash = 8;
+  BudgetReservation budget_reservation = 9;
+  HostingQuote hosting_quote = 10;
+  HostingPolicyProof hosting_policy_proof = 11;
+}
+
+
+message BudgetIdentity {
+  string tenant_id = 1;
+  string budget_id = 2;
+  string period_id = 3;
+  string policy_revision = 4;
+}
+
+// USD integer microdollars. Zero is a hard zero allowance, never unlimited.
+message BudgetLedgerSnapshot {
+  BudgetIdentity identity = 1;
+  uint32 seq = 2;
+  double limit_micros = 3;
+  double spent_micros = 4;
+  double reserved_micros = 5;
+  string observed_at = 6;
+  string valid_until = 7;
+  repeated BudgetProviderAccount provider_accounts = 8;
+  repeated BudgetEntitlement entitlements = 9;
+  // External unresolved liabilities, excluding this authority's held reservations.
+  double unresolved_micros = 10;
+  double recovery_reserve_micros = 11;
+  // Commitments owned by another authority; excludes this journal's holds.
+  double external_committed_micros = 12;
+  // Active admissions with unknown, unbounded liability. While nonzero the
+  // monetary counters are only known lower bounds and bounded admission stops.
+  uint32 unbounded_exposure_count = 13;
+}
+
+message BudgetProviderAccount {
+  string provider_account_id = 1;
+  double limit_micros = 2;
+  double spent_micros = 3;
+  double reserved_micros = 4;
+  double external_committed_micros = 5;
+}
+message BudgetEntitlement {
+  string bucket_id = 1;
+  string unit = 2;
+  string period_id = 3;
+  double remaining_units = 4;
+  double reserved_units = 5;
+  string observed_at = 6;
+  string valid_until = 7;
+  // allowance | credit | commitment
+  string kind = 8;
+}
+message ProviderAccountExposure {
+  string provider_account_id = 1;
+  double liability_micros = 2;
+}
+message EntitlementClaim {
+  string bucket_id = 1;
+  string unit = 2;
+  double units = 3;
+  // allowance | credit | commitment
+  string kind = 4;
+}
+message BudgetSettlementEvidence {
+  string usage_evidence_ref = 1;
+  string source_stopped_evidence_ref = 2;
+  repeated ProviderAccountExposure provider_accounts = 3;
+  repeated EntitlementClaim entitlement_claims = 4;
+  // A receiver receipt and independent finance signature are required when the
+  // original reservation carries a fenced route guard.
+  string fence_operation_receipt_json = 5;
+  string finance_signature = 6;
+}
+
+message BudgetFencedPlacement {
+  string yard_id = 1;
+  string camp_id = 2;
+  string provider_id = 3;
+  string provider_account_id = 4;
+  string resource_id = 5;
+  string deployment_id = 6;
+  string incarnation_id = 7;
+  string manifest_hash = 8;
+  string plan_hash = 9;
+}
+
+// Immutable, non-secret scope pinned at initial reservation, not retrofitted
+// after execution. The route digest binds this scope to the exact budget,
+// request and quote; the keys are independently enrolled public keys.
+message BudgetFenceSettlementGuard {
+  string contract = 1;
+  string dataset = 2;
+  string scope_tenant = 3;
+  string operation_id = 4;
+  string fence_token_digest = 5;
+  string receiver_key_id = 6;
+  string receiver_public_key = 7;
+  string finance_key_id = 8;
+  string finance_public_key = 9;
+  string logical_camp_id = 10;
+  BudgetFencedPlacement source = 11;
+  BudgetFencedPlacement destination = 12;
+  string decision = 13;
+  string execution_digest = 14;
+  string route_digest = 15;
+  string expected_route_generation = 16;
+  string current_set_id = 17;
+  string desired_set_id = 18;
+  string migration_id = 19;
+  string decision_head = 20;
+}
+
+message HostingQuoteComponent {
+  string name = 1;
+  double cost_micros = 2;
+}
+
+// Complete incremental quote for one unsplittable request, including setup,
+// execution, cleanup, network, overlap/migration and applicable credits.
+message HostingQuote {
+  string quote_id = 1;
+  string yard_id = 2;
+  string provider_id = 3;
+  string owner_tenant_id = 4;
+  string currency = 5;
+  double total_micros = 6;
+  string observed_at = 7;
+  string valid_until = 8;
+  repeated HostingQuoteComponent components = 9;
+  string request_digest = 10;
+  // Conservative enforceable exposure bound; absence is an estimate only.
+  optional double liability_bound_micros = 11;
+  repeated ProviderAccountExposure provider_accounts = 12;
+  repeated EntitlementClaim entitlement_claims = 13;
+  string financial_plan_hash = 14;
+}
+
+message BudgetReservation {
+  string reservation_id = 1;
+  BudgetIdentity identity = 2;
+  string request_digest = 3;
+  string quote_id = 4;
+  double reserved_micros = 5;
+  // held | uncertain | settled | released
+  string status = 6;
+  double actual_micros = 7;
+  uint32 ledger_seq = 8;
+  string quote_digest = 9;
+  string usage_evidence_ref = 10;
+  string source_stopped_evidence_ref = 11;
+  repeated ProviderAccountExposure provider_accounts = 12;
+  repeated EntitlementClaim entitlement_claims = 13;
+  BudgetSettlementEvidence settlement_evidence = 14;
+  string execution_digest = 15;
+  string financial_plan_hash = 16;
+  // Field 17 is allocated by the shared subscope work.
+  BudgetFenceSettlementGuard fence_settlement_guard = 18;
+  // A held/uncertain reservation with this marker represents unknown liability;
+  // reserved_micros and account amounts are not estimates or upper bounds.
+  bool unbounded_exposure = 19;
+  IacUnpricedPolicyProof unpriced_policy_proof = 20;
+  IacUnpricedScopeProof unpriced_scope_proof = 21;
+  IacPricingPin iac_pricing_pin = 22;
+  string fence_settlement_payload_version = 23;
+}
+
+message BudgetAuthorityEvent {
+  string type = 1;
+  BudgetLedgerSnapshot snapshot = 2;
+  repeated BudgetReservation reservations = 3;
+  string reconciliation_evidence_ref = 4;
+}
+
+message HostingPolicyProof {
+  string request_digest = 1;
+  string quote_id = 2;
+  BudgetIdentity identity = 3;
+  string policy_hash = 4;
+  string effect = 5;
+  string evidence_ref = 6;
+  bool obligations_satisfied = 7;
+}
+
+// Policy explicitly authorizes execution without financial budget evaluation.
+message IacUnpricedPolicyProof {
+  string request_digest = 1;
+  string inventory_hash = 2;
+  BudgetIdentity identity = 3;
+  string policy_hash = 4;
+  string effect = 5;
+  string evidence_ref = 6;
+  bool obligations_satisfied = 7;
+  string observed_at = 8;
+  string valid_until = 9;
+}
+
+// An independent financial-scope authority attests exclusive ownership until
+// the provider source is stopped and the unbounded admission is settled.
+message IacUnpricedScopeProof {
+  BudgetIdentity identity = 1;
+  repeated string provider_account_ids = 2;
+  string authority_ref = 3;
+  string evidence_ref = 4;
+  string ownership_epoch = 5;
+  string observed_at = 6;
+  bool exclusive_until_settled = 7;
+  bool no_shared_entitlements = 8;
+  string signature = 9;
+}
+
+// Inputs that made a priced IaC admission; immutable for the claimed effect.
+message IacPricingPin {
+  string plan_digest = 1;
+  string inventory_hash = 2;
+  string model_hash = 3;
+  string quote_hash = 4;
+  string evidence_hash = 5;
+  string valid_until = 6;
+}
+
+// A trusted host verifies this separately from developer-authored pricing.
+message IacTargetLiabilityEvidence {
+  string evidence_ref = 1;
+  string target_id = 2;
+  string tenant_id = 3;
+  string plan_digest = 4;
+  string inventory_hash = 5;
+  string model_hash = 6;
+  string quote_hash = 7;
+  // Legacy bound; maximum_micros_exact wins when both are present.
+  optional double maximum_micros = 8;
+  string observed_at = 9;
+  string valid_until = 10;
+  repeated ProviderAccountExposure provider_accounts = 11;
+  // Exact bound; prefer this field alone for new payloads.
+  optional int64 maximum_micros_exact = 12;
+  repeated EntitlementClaim entitlement_claims = 13;
+}
+
+message IacBudgetDisclosure {
+  string evaluation = 1;
+  string reservation = 2;
+}
+
+message IacTargetAdmissionDecision {
+  string request_id = 1;
+  string target_id = 2;
+  string status = 3;
+  string code = 4;
+  string message = 5;
+  IacBudgetDisclosure budget = 6;
+  string request_digest = 7;
+  string inventory_hash = 8;
+  string model_hash = 9;
+  string quote_hash = 10;
+  HostingQuote quote = 11;
+  BudgetReservation reservation = 12;
+  HostingPolicyProof policy_proof = 13;
+  IacUnpricedPolicyProof unpriced_policy_proof = 14;
+}

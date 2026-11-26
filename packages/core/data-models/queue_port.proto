@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Queue port records for runtime-local conformance (HOBO-596 / HOBO-22).
+
+enum LeaseState {
+  LEASE_STATE_UNSPECIFIED = 0;
+  LEASE_STATE_PENDING = 1;
+  LEASE_STATE_LEASED = 2;
+  LEASE_STATE_COMPLETED = 3;
+  LEASE_STATE_RELEASED = 4;
+}
+
+message EnqueueRequest {
+  string queue_name = 1;
+  string idempotency_key = 2;
+  string body_json = 3;
+  int64 available_at_ms = 4;
+}
+
+message QueueMessage {
+  string message_id = 1;
+  string queue_name = 2;
+  string idempotency_key = 3;
+  string body_json = 4;
+  LeaseState state = 5;
+  int64 available_at_ms = 6;
+  int32 delivery_attempt = 7;
+  string lease_id = 8;
+  int64 lease_expires_at_ms = 9;
+  int64 completed_at_ms = 10;
+}
+
+message QueueEventRecord {
+  string type = 1;
+  string queue_name = 2;
+  string message_id = 3;
+  string idempotency_key = 4;
+}

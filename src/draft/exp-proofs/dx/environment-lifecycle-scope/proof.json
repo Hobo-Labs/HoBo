@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "environment-lifecycle-scope",
+  "experienceType": "dx",
+  "title": "Environment Lifecycle Scope POC",
+  "linear": "HOBO-414",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

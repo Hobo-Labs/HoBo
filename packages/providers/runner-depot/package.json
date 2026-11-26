@@ -1,0 +1,31 @@
+{
+	"name": "@hobo/runner-depot",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/runner-github": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/runner-blacksmith": "workspace:*"
+	},
+	"description": "HoBo Depot execution-host adapter: remote container builds with shared-cache economics (hobo:build-machine first-class via the Depot BuildService API) plus Depot-managed Actions runners (hobo:runner) — HOBO-720, ADR-0071."
+}

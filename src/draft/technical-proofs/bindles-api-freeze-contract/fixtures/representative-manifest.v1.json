@@ -1,0 +1,76 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "1.0.0"
+  },
+  "resources": {
+    "store": {
+      "type": "data.v1",
+      "port": "hobo:data",
+      "allow": ["query", "read"],
+      "driver": "postgres"
+    },
+    "api": {
+      "type": "component.v1",
+      "image": "oci://registry.example.com/hobo399/api@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "runtime": "wasi-preview2",
+      "exports": ["wasi:http/incoming-handler"],
+      "links": [
+        {
+          "import": "hobo:data",
+          "to": "store",
+          "allow": ["query", "read"]
+        }
+      ],
+      "env": {
+        "ConnectionStrings__store": "{store.connectionString}"
+      },
+      "annotations": {
+        "providerWith": [
+          {
+            "provider": "aws",
+            "option": "fargate",
+            "active": true,
+            "config": {
+              "cpu": 512,
+              "memoryMiB": 1024
+            }
+          },
+          {
+            "provider": "azure",
+            "option": "containerApps",
+            "active": false,
+            "config": {
+              "scale": 1
+            }
+          }
+        ],
+        "rawEdges": [
+          {
+            "code": "RAW_DRIVER_ESCAPE_HATCH",
+            "driver": "postgres",
+            "projection": "ticket_projection",
+            "readOnly": true,
+            "satisfiedBy": ["postgres"]
+          }
+        ]
+      }
+    },
+    "site": {
+      "type": "website.v1",
+      "bind": ["api"]
+    }
+  },
+  "connectors": {
+    "asana": {
+      "type": "connector.v1",
+      "via": "xaa",
+      "audience": "https://app.asana.com",
+      "onBehalfOf": "user",
+      "allow": ["tasks:write"],
+      "observedScopes": ["tasks:write"],
+      "requestedScopeSource": "usage-inferred"
+    }
+  }
+}

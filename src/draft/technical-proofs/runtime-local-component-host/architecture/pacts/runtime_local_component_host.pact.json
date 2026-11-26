@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RuntimeLocalComponentHostConsumer"
+  },
+  "provider": {
+    "name": "RuntimeLocalComponentHostBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Runtime Local Component Host boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/runtime-local-component-host/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.runtime_local_component_host/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

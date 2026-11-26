@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "cli-cloud-yard-path",
+  "experienceType": "dx",
+  "title": "CLI Cloud Yard Path",
+  "linear": "HOBO-625",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

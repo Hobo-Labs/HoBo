@@ -1,0 +1,10 @@
+package wasi:logging@0.2.0;
+
+interface logging {
+  record field {
+    key: string,
+    value: string,
+  }
+
+  log: func(level: string, message: string, fields: list<field>);
+}

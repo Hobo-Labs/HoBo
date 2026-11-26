@@ -1,0 +1,69 @@
+{
+  "personas": [
+    "Platform engineer curating provider defaults",
+    "Provider author shipping a certified adapter",
+    "SecOps engineer containing untrusted provider code",
+    "DevOps engineer proving multi-cloud portability"
+  ],
+  "bddScenarios": [
+    {
+      "feature": "Provider contract and conformance",
+      "persona": "Platform engineer curating provider defaults",
+      "scenario": "Register provider-owned defaults",
+      "given": "AWS, Azure, GCP, Cloudflare, Hetzner, Fly, Vercel, and Kubernetes providers publish manifests and defaults",
+      "when": "the Yard registers them into the capability catalog",
+      "then": "every claimed port has conformance evidence and Matching can reject unsupported require clauses"
+    },
+    {
+      "feature": "Realize through IaC and build adapters",
+      "persona": "Provider author shipping a certified adapter",
+      "scenario": "Realize a Bindle resource without live providers",
+      "given": "a resolved ResourcePlan and mocked IaC, build, and driver boundaries",
+      "when": "the provider emits IacProgram and BuildSpec fixtures",
+      "then": "the pipeline previews, applies, refreshes, and returns outputs as bindings"
+    },
+    {
+      "feature": "Provider safety and portability",
+      "persona": "SecOps engineer containing untrusted provider code",
+      "scenario": "Reject malicious and drifting provider behavior",
+      "given": "a forged report, undeclared egress, partial apply, and drift signal",
+      "when": "the conformance, sandbox, and refresh gates evaluate the evidence",
+      "then": "the provider is denied, drift is recorded, and rollback requires orphan sweep"
+    },
+    {
+      "feature": "Multi-cloud provider gate",
+      "persona": "DevOps engineer proving multi-cloud portability",
+      "scenario": "Run the same shop Bindle on AWS and Azure",
+      "given": "one unchanged Bindle source and provider-specific mappings",
+      "when": "the multi-cloud shop gate compares topology, bindings, and portability reports",
+      "then": "equivalent targets pass and unsatisfied require or option leaks fail"
+    }
+  ],
+  "providers": [
+    { "id": "aws", "family": "full-cloud", "capabilities": ["compute", "database", "objectStore", "queue", "cache"], "iacAdapters": ["pulumi", "opentofu"] },
+    { "id": "azure", "family": "full-cloud", "capabilities": ["compute", "database", "objectStore", "queue", "cache"], "iacAdapters": ["pulumi", "opentofu"] },
+    { "id": "gcp", "family": "full-cloud", "capabilities": ["compute", "database", "objectStore", "queue", "cache"], "iacAdapters": ["pulumi", "opentofu"] },
+    { "id": "cloudflare", "family": "edge", "capabilities": ["edgeCompute", "objectStore", "kv", "queue", "dns"], "iacAdapters": ["wrangler", "terraform"] },
+    { "id": "hetzner", "family": "self-host-substrate", "capabilities": ["compute", "network", "volume", "objectStore"], "iacAdapters": ["pulumi", "opentofu"] },
+    { "id": "fly", "family": "global-vm", "capabilities": ["compute", "volume", "postgres"], "iacAdapters": ["pulumi", "terraform"] },
+    { "id": "vercel", "family": "web-edge", "capabilities": ["web", "function", "blob"], "iacAdapters": ["vercel-cli", "terraform"] },
+    { "id": "kubernetes", "family": "self-host-runtime", "capabilities": ["compute", "network", "component-host"], "iacAdapters": ["crossplane", "template"] }
+  ],
+  "defaultDefinitions": [
+    { "id": "aws.database.postgres.managed", "provider": "aws", "port": "database", "class": "managed-postgres" },
+    { "id": "azure.database.postgres.managed", "provider": "azure", "port": "database", "class": "managed-postgres" },
+    { "id": "gcp.database.postgres.managed", "provider": "gcp", "port": "database", "class": "managed-postgres" },
+    { "id": "cloudflare.object.r2", "provider": "cloudflare", "port": "objectStore", "class": "s3-compatible" },
+    { "id": "hetzner.compute.k8s", "provider": "hetzner", "port": "compute", "class": "self-host-substrate" },
+    { "id": "vercel.web.ssr", "provider": "vercel", "port": "web", "class": "edge-ssr" }
+  ],
+  "equivalenceDecisions": [
+    { "request": "database.postgres.managed", "winner": "aws.database.postgres.managed", "status": "full" },
+    { "request": "objectStore.s3-compatible", "winner": "cloudflare.object.r2", "status": "full" },
+    { "request": "compute.container.ephemeral", "winner": "kubernetes.compute.local", "status": "full" },
+    { "request": "database.postgres.managed", "winner": "hetzner.compute.container-postgres", "status": "partial" }
+  ],
+  "childPocs": [
+    "HOBO-87", "HOBO-93", "HOBO-102", "HOBO-108", "HOBO-112", "HOBO-114", "HOBO-120", "HOBO-131", "HOBO-135", "HOBO-139", "HOBO-145", "HOBO-149", "HOBO-153", "HOBO-157", "HOBO-161", "HOBO-165", "HOBO-169", "HOBO-174", "HOBO-178", "HOBO-182", "HOBO-186", "HOBO-188", "HOBO-191", "HOBO-195", "HOBO-199", "HOBO-202", "HOBO-207", "HOBO-211", "HOBO-214", "HOBO-217", "HOBO-221", "HOBO-225", "HOBO-228", "HOBO-231"
+  ]
+}

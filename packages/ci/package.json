@@ -1,0 +1,106 @@
+{
+  "name": "@hobo/ci",
+  "version": "0.0.1",
+  "description": "HoBo CI account-scoped allocation routing and durable lease contracts",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "LICENSE",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "default": "./dist/execution.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    },
+    "./store": {
+      "types": "./dist/store.d.ts",
+      "default": "./dist/store.js"
+    },
+    "./scheduler": {
+      "types": "./dist/scheduler.d.ts",
+      "default": "./dist/scheduler.js"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite-store.d.ts",
+      "default": "./dist/sqlite-store.js"
+    },
+    "./insights": {
+      "types": "./dist/insights/index.d.ts",
+      "default": "./dist/insights/index.js"
+    },
+    "./runner-order/machine-registry-sqlite": {
+      "types": "./dist/runner-order/machine-registry-sqlite.d.ts",
+      "default": "./dist/runner-order/machine-registry-sqlite.js"
+    },
+    "./insights/history-sqlite": {
+      "types": "./dist/insights/history-sqlite.d.ts",
+      "default": "./dist/insights/history-sqlite.js"
+    },
+    "./insights/usage": {
+      "types": "./dist/insights/usage.d.ts",
+      "default": "./dist/insights/usage.js"
+    },
+    "./runner-order": {
+      "types": "./dist/runner-order/index.d.ts",
+      "default": "./dist/runner-order/index.js"
+    },
+    "./insights/breakdown": {
+      "types": "./dist/insights/breakdown.d.ts",
+      "default": "./dist/insights/breakdown.js"
+    },
+    "./runner-order/testing": {
+      "types": "./dist/runner-order/testing.d.ts",
+      "default": "./dist/runner-order/testing.js"
+    },
+    "./runner-order/journal-sqlite": {
+      "types": "./dist/runner-order/journal-sqlite.d.ts",
+      "default": "./dist/runner-order/journal-sqlite.js"
+    },
+    "./runner-order/provider-health-sqlite": {
+      "types": "./dist/runner-order/provider-health-sqlite.d.ts",
+      "default": "./dist/runner-order/provider-health-sqlite.js"
+    },
+    "./workspace-backend": {
+      "types": "./dist/workspace-backend.d.ts",
+      "default": "./dist/workspace-backend.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@hobo/bindles": "workspace:*",
+    "@hobo/broker": "workspace:*",
+    "@hobo/core": "workspace:*",
+    "@hobo/dispatcher": "workspace:*",
+    "@hobo/fleet": "workspace:*",
+    "@hobo/pricing": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/pg": "8.15.5",
+    "fast-check": "^4.3.0",
+    "pg": "8.22.0",
+    "testcontainers": "11.8.1"
+  }
+}

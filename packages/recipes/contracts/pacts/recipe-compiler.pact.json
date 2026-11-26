@@ -1,0 +1,159 @@
+{
+	"consumer": { "name": "hobo-conductor" },
+	"provider": { "name": "hobo-recipe-compiler" },
+	"interactions": [
+		{
+			"description": "a compatible recipe compiles to a resolved topology and a signable offer",
+			"request": {
+				"method": "POST",
+				"path": "/recipes/compile",
+				"body": {
+					"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+					"policy": "default"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+					"topologyDigest": "sha256:*",
+					"resolutionDigest": "sha256:*",
+					"claimSummary": {
+						"actionCount": 2,
+						"providerCount": 2,
+						"atomicity": "best-effort-saga"
+					},
+					"degradationNotices": []
+				}
+			}
+		},
+		{
+			"description": "a resource-only Yard carries its resource without a fabricated Camp",
+			"request": {
+				"method": "POST",
+				"path": "/recipes/compile",
+				"body": {
+					"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
+					"policy": "default"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
+					"topologyDigest": "sha256:*",
+					"resolutionDigest": "sha256:*",
+					"yards": [
+						{
+							"yardId": "data",
+							"providerId": "neon",
+							"resourceOnly": true,
+							"campCount": 0,
+							"resourceCount": 1
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "sponsor exposure above the policy cap is refused, not discounted",
+			"request": {
+				"method": "POST",
+				"path": "/recipes/compile",
+				"body": {
+					"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
+					"policy": "default"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"ok": false,
+					"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
+					"rejectionCodes": ["SPONSOR_BUDGET_EXCEEDED"]
+				}
+			}
+		},
+		{
+			"description": "an undisclosed downgrade is refused with the axis that was weakened",
+			"request": {
+				"method": "POST",
+				"path": "/recipes/compile",
+				"body": {
+					"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",
+					"policy": "default",
+					"requestedRealtime": "websocket"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"ok": false,
+					"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",
+					"rejectionCodes": ["WEBSOCKET_REQUIRED"]
+				}
+			}
+		},
+		{
+			"description": "a permitted downgrade compiles and is disclosed in the offer",
+			"request": {
+				"method": "POST",
+				"path": "/recipes/compile",
+				"body": {
+					"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",
+					"policy": "allow-realtime-widening",
+					"requestedRealtime": "websocket"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",
+					"topologyDigest": "sha256:*",
+					"resolutionDigest": "sha256:*",
+					"degradationNotices": ["realtime.websocket-to-polling"]
+				}
+			}
+		},
+		{
+			"description": "an acceptance is rejected once the product catalog has moved",
+			"request": {
+				"method": "POST",
+				"path": "/offers/accept/verify",
+				"body": {
+					"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+					"catalogDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"valid": false,
+					"reasonCodes": ["CATALOG_DIGEST_MISMATCH"]
+				}
+			}
+		},
+		{
+			"description": "an offer never carries a secret, token, claim URL, or connection string",
+			"request": {
+				"method": "POST",
+				"path": "/offers/build",
+				"body": {
+					"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+					"policy": "default"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"offerId": "offer/*",
+					"secretFree": true,
+					"signature": { "algorithm": "test.detached-digest/v1", "payloadDigest": "sha256:*" }
+				}
+			}
+		}
+	]
+}

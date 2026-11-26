@@ -1,0 +1,28 @@
+{
+  "consumer": { "name": "Chaos experiment orchestrator" },
+  "provider": { "name": "sandbox fault injector" },
+  "interactions": [
+    {
+      "description": "start-bounded-chaos-experiment",
+      "providerStates": [{ "name": "sandbox lane and blast radius budget are available" }],
+      "request": {
+        "method": "POST",
+        "path": "/chaos/experiments",
+        "body": {
+          "experiment": "provider-latency-spike",
+          "scope": "sandbox-camp",
+          "maxDurationMinutes": 10,
+          "rollbackOnSloBurn": true
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "experimentRunId": "chaos-run-001",
+          "accepted": true
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

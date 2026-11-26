@@ -1,0 +1,164 @@
+[
+  {
+    "name": "workspace-env-artifact",
+    "steps": [
+      {
+        "id": "build",
+        "argv": [
+          "sh",
+          "-c",
+          "mkdir -p output; cat seed.txt > output/report.txt; printf '%s\\n' \"$MESSAGE\" >> output/report.txt"
+        ],
+        "cwd": ".",
+        "env": {
+          "MESSAGE": "literal $VALUE 'quote'"
+        }
+      },
+      {
+        "id": "read",
+        "argv": [
+          "cat",
+          "output/report.txt"
+        ],
+        "cwd": ".",
+        "env": {}
+      },
+      {
+        "id": "clean-env",
+        "argv": [
+          "sh",
+          "-c",
+          "test -z \"${MESSAGE+x}\"; printf isolated"
+        ],
+        "cwd": ".",
+        "env": {}
+      }
+    ],
+    "artifactPaths": [
+      "output/report.txt"
+    ],
+    "expectedStatus": "succeeded",
+    "expectedExitCodes": [
+      0,
+      0,
+      0
+    ],
+    "expectedStdout": [
+      "",
+      "source seed\nliteral $VALUE 'quote'\n",
+      "isolated"
+    ],
+    "expectedStderr": [
+      "",
+      "",
+      ""
+    ],
+    "expectedArtifact": "source seed\nliteral $VALUE 'quote'\n"
+  },
+  {
+    "name": "exact-failure",
+    "steps": [
+      {
+        "id": "fail",
+        "argv": [
+          "sh",
+          "-c",
+          "printf before; printf broken >&2; exit 7"
+        ],
+        "cwd": ".",
+        "env": {}
+      },
+      {
+        "id": "must-not-run",
+        "argv": [
+          "sh",
+          "-c",
+          "touch forbidden"
+        ],
+        "cwd": ".",
+        "env": {}
+      }
+    ],
+    "artifactPaths": [],
+    "expectedStatus": "failed",
+    "expectedExitCodes": [
+      7
+    ],
+    "expectedStdout": [
+      "before"
+    ],
+    "expectedStderr": [
+      "broken"
+    ],
+    "expectedArtifact": ""
+  },
+  {
+    "name": "literal-argv",
+    "steps": [
+      {
+        "id": "literal",
+        "argv": [
+          "printf",
+          "%s",
+          "$(touch forbidden); 'quoted' $HOME"
+        ],
+        "cwd": ".",
+        "env": {}
+      }
+    ],
+    "artifactPaths": [],
+    "expectedStatus": "succeeded",
+    "expectedExitCodes": [
+      0
+    ],
+    "expectedStdout": [
+      "$(touch forbidden); 'quoted' $HOME"
+    ],
+    "expectedStderr": [
+      ""
+    ],
+    "expectedArtifact": ""
+  },
+  {
+    "name": "tracked-source-mutation",
+    "steps": [
+      {
+        "id": "mutate",
+        "argv": [
+          "sh",
+          "-c",
+          "printf 'changed source\\n' > seed.txt; rm tracked-delete.txt"
+        ],
+        "cwd": ".",
+        "env": {}
+      },
+      {
+        "id": "read-mutated",
+        "argv": [
+          "sh",
+          "-c",
+          "test ! -e tracked-delete.txt && cat seed.txt"
+        ],
+        "cwd": ".",
+        "env": {}
+      }
+    ],
+    "artifactPaths": [
+      "seed.txt"
+    ],
+    "expectedStatus": "succeeded",
+    "expectedExitCodes": [
+      0,
+      0
+    ],
+    "expectedStdout": [
+      "",
+      "changed source\n"
+    ],
+    "expectedStderr": [
+      "",
+      ""
+    ],
+    "expectedArtifact": "changed source\n"
+  }
+]

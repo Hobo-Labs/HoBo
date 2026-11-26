@@ -1,0 +1,14 @@
+{
+  "accountId": "example",
+  "repository": "example/repository",
+  "repositoryId": 1,
+  "installationId": 1,
+  "runnerGroupId": 1,
+  "allowedEvents": [],
+  "allowedRefs": [],
+  "trustedRepositoryAcknowledged": true,
+  "acceptAllMatchingRepositoryJobs": true,
+  "publicRepositoryAcknowledged": true,
+  "isolatedOnly": true,
+  "bridgeWorkflow": "host.yml"
+}

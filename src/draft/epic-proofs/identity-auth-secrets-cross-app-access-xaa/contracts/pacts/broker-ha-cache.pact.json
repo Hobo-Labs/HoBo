@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "BrokerCredentialCache" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "renews same-or-narrower credentials inside signed grace during broker failover",
+      "providerStates": [{ "name": "signed renewal grace is active for run" }],
+      "request": {
+        "method": "POST",
+        "path": "/broker-cache/renew",
+        "headers": { "content-type": "application/json" },
+        "body": { "tokenRef": "tokenref://identity/svid/run-2026-06-29/orders-api/0", "scope": { "port": "bucket", "resource": "orders-archive", "action": "write" } }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "decision": "renewed-from-cache", "renewalGraceSeconds": 300, "sameOrNarrower": true }
+      }
+    }
+  ]
+}

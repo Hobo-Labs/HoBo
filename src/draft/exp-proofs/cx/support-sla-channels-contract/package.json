@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/support-sla-channels-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

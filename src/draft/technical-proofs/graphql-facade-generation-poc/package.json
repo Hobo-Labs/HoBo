@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/graphql-facade-generation-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike proof for generating a GraphQL facade from WIT read-model records and materialization metadata.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

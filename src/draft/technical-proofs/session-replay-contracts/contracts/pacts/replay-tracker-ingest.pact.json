@@ -1,0 +1,52 @@
+{
+	"consumer": { "name": "@hobo/replay-tracker" },
+	"provider": { "name": "replay-ingest-local" },
+	"interactions": [
+		{
+			"description": "tracker posts masked chunk under station dual fixture",
+			"request": {
+				"method": "POST",
+				"path": "/replay/sessions/sess-local-1/chunks",
+				"headers": {
+					"content-type": "application/json",
+					"x-hobo-station": "station:local"
+				},
+				"body": {
+					"seq": 0,
+					"events": [{ "type": 2, "data": { "tag": "div" } }],
+					"privacy": {
+						"maskInputs": true,
+						"maskPasswords": true
+					}
+				}
+			},
+			"response": {
+				"status": 202,
+				"body": {
+					"ok": true,
+					"sessionId": "sess-local-1",
+					"chunkSeq": 0,
+					"blobRef": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+				}
+			}
+		},
+		{
+			"description": "kill switch rejects ingest when HOBO_REPLAY=0",
+			"request": {
+				"method": "POST",
+				"path": "/replay/sessions/sess-local-1/chunks",
+				"headers": {
+					"x-hobo-replay": "0"
+				},
+				"body": { "seq": 1, "events": [] }
+			},
+			"response": {
+				"status": 204,
+				"body": { "ok": true, "disabled": true }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "membrane-deadline-backpressure-contract",
+  "title": "HOBO-598 Membrane Deadline + Backpressure Contract",
+  "linear": "HOBO-598",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/camp-eventstore-runtime-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

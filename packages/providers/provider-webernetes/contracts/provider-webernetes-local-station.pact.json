@@ -1,0 +1,131 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-webernetes"
+	},
+	"provider": {
+		"name": "WebernetesLocalStationHost"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"boundary": {
+			"kind": "injected-transport",
+			"note": "The local station host is reached through LocalTempTransport, the one seam in this package. Interactions are the messages that cross it: a provision request in, a pair of URLs back. test/local-station.contract.test.ts fakes exactly that seam and drives the real provisionTemporaryEnvironmentStation() against each recorded reply.",
+			"consumerNote": "The Examples dev server implements this transport in site/scripts/vite-temporary-station-api.mts, handing back its own same-origin /api/anon/host/<id>/ URL. The recorded loopback replies are the shapes it produces."
+		}
+	},
+	"interactions": [
+		{
+			"description": "provision a station through an injected host transport, which names a .hobo.localhost host",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "provision",
+					"stationId": "st-fake-0001"
+				}
+			},
+			"response": {
+				"body": {
+					"stationUrl": "https://st-fake-0001.webernetes.hobo.localhost",
+					"claimUrl": "https://claim.hobo.localhost/webernetes/st-fake-0001"
+				}
+			}
+		},
+		{
+			"description": "provision a station through the Examples dev server, which answers same-origin on loopback over plain http",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "provision",
+					"stationId": "st-fake-0002"
+				}
+			},
+			"response": {
+				"body": {
+					"stationUrl": "http://localhost:4321/HoBo/api/anon/host/st-fake-0002/",
+					"claimUrl": "http://localhost:4321/HoBo/api/anon/host/st-fake-0002/#claim"
+				}
+			}
+		},
+		{
+			"description": "provision a station through a dev server bound to a LAN address",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "provision",
+					"stationId": "st-fake-0003"
+				}
+			},
+			"response": {
+				"body": {
+					"stationUrl": "http://192.168.1.20:4321/HoBo/api/anon/host/st-fake-0003/",
+					"claimUrl": "http://192.168.1.20:4321/HoBo/api/anon/host/st-fake-0003/#claim"
+				}
+			}
+		},
+		{
+			"description": "refuse a transport reply that points at a public host, which would not be an anonymous local station",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "provision",
+					"stationId": "st-fake-0004"
+				}
+			},
+			"response": {
+				"body": {
+					"stationUrl": "https://example.github.io/HoBo/station/st-fake-0004/",
+					"claimUrl": "https://example.github.io/HoBo/station/st-fake-0004/#claim"
+				}
+			},
+			"providerStates": [
+				{
+					"name": "the transport was pointed at a deployed site instead of the local host"
+				}
+			]
+		},
+		{
+			"description": "refuse a transport reply whose URL carries userinfo",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "provision",
+					"stationId": "st-fake-0005"
+				}
+			},
+			"response": {
+				"body": {
+					"stationUrl": "http://agent:REDACTED@localhost:4321/HoBo/api/anon/host/st-fake-0005/",
+					"claimUrl": "http://localhost:4321/HoBo/api/anon/host/st-fake-0005/#claim"
+				}
+			},
+			"providerStates": [
+				{
+					"name": "the transport embedded a credential in the station locator"
+				}
+			]
+		},
+		{
+			"description": "refuse a bare .hobo station name, which ADR-0130 forbids in favour of .hobo.localhost",
+			"request": {
+				"type": "message",
+				"body": {
+					"call": "provision",
+					"stationId": "st-fake-0006"
+				}
+			},
+			"response": {
+				"body": {
+					"stationUrl": "https://st-fake-0006.webernetes.hobo/",
+					"claimUrl": "https://claim.hobo/webernetes/st-fake-0006"
+				}
+			},
+			"providerStates": [
+				{
+					"name": "the transport emitted a bare .hobo name"
+				}
+			]
+		}
+	]
+}

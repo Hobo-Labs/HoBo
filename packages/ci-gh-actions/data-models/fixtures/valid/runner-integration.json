@@ -1,0 +1,7 @@
+{
+  "id": "depot-builds",
+  "provider": "depot",
+  "organization": "Hobo-Labs",
+  "runsOn": ["depot-ubuntu-24.04"],
+  "auth": { "method": "oidc", "projectId": "abc123def4" }
+}

@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "@hobo/cli"
+  },
+  "provider": {
+    "name": "ComponentizeArtifactBoundary"
+  },
+  "interactions": [
+    {
+      "description": "componentize produces a deterministic wasm component artifact with contract metadata",
+      "request": {
+        "method": "POST",
+        "path": "/componentize/hello-bindle"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.componentize/v1",
+          "mediaType": "application/vnd.wasm.component.v1+wasm",
+          "witWorld": "hobo:examples/hello-bindle@0.1.0/service"
+        }
+      }
+    },
+    {
+      "description": "componentize validates an artifact digest and contract metadata before use",
+      "request": {
+        "method": "POST",
+        "path": "/componentize/validate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "passed": true,
+          "format": "wasm-component-contract"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

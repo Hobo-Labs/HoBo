@@ -1,0 +1,15 @@
+{
+	"id": "local-checks",
+	"accountId": "local",
+	"timeoutSeconds": 600,
+	"steps": [
+		{
+			"id": "check",
+			"argv": ["node", "--version"],
+			"cwd": ".",
+			"env": {}
+		}
+	],
+	"artifactPaths": [],
+	"requiredCapabilities": []
+}

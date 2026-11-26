@@ -1,0 +1,3 @@
+# Nerdbank.GitVersioning only — not part of the CI runner image contract.
+[tools]
+dotnet = "10.0.100"

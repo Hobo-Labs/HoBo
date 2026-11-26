@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MatchingSpecificityVectorsConsumer"
+  },
+  "provider": {
+    "name": "MatchingSpecificityVectorsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Matching Specificity Vectors boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/matching-specificity-vectors/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.matching_specificity_vectors/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

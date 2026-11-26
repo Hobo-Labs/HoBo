@@ -1,0 +1,11 @@
+{
+  "name": "@hobo-draft/policy-ir-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the HoBo policy IR decision request/response contract.",
+  "scripts": {
+    "test": "npm run typecheck && vitest run --root .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

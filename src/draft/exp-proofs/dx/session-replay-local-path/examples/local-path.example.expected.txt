@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "sessionId": "sess-dx-1",
+  "summary": "session sess-dx-1 status=ended station=station:local env=local-dev chunks=1 bytes=191 error=err-dx-1 flags=hobo.session-replay",
+  "killSwitchWorks": true,
+  "autowireLocalDefault": true,
+  "evidenceSchema": "hobo.replay-evidence/v1",
+  "openUiKind": "hobo.replay.player"
+}

@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package hobo.runtime_dapr.v1;
+
+// Dapr optional Camp runtime adapter wire records (ADR-0138).
+// HoBo remains control-plane authority; Dapr is data-plane realization.
+
+enum DaprDeployMode {
+  DAPR_DEPLOY_MODE_UNSPECIFIED = 0;
+  DAPR_DEPLOY_MODE_SELF_HOSTED = 1;
+  DAPR_DEPLOY_MODE_KUBERNETES = 2;
+}
+
+message DaprRuntimeConfig {
+  string camp_id = 1;
+  string tenant_id = 2;
+  string app_id = 3; // tenant-scoped Dapr app-id
+  DaprDeployMode mode = 4;
+  string http_endpoint = 5; // e.g. http://127.0.0.1:3500
+  string grpc_endpoint = 6;
+  string placement_address = 7;
+  bool actors_enabled = 8;
+  bool pubsub_enabled = 9;
+  bool workflow_enabled = 10;
+  string default_pubsub_name = 11;
+  string svid_binding_ref = 12; // secretless identity injection
+}
+
+message DaprComponentSpec {
+  string name = 1;
+  string type = 2; // pubsub.kafka | state.redis | ...
+  string version = 3;
+  map<string, string> metadata = 4; // values are binding refs, never secrets
+  repeated string scopes = 5; // from HoBo .allow()
+}
+
+message DaprComponentYaml {
+  string api_version = 1;
+  string kind = 2;
+  string name = 3;
+  string body = 4; // generated YAML text
+  bool secretless = 5;
+}
+
+message DaprDoctorReport {
+  bool dapr_cli_available = 1;
+  bool runtime_reachable = 2;
+  string fidelity = 3; // simulated | live
+  repeated string notes = 4;
+  repeated string remediation = 5;
+}

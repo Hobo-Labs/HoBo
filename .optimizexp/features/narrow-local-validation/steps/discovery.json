@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "featureId": "narrow-local-validation",
+  "bindings": [
+    {
+      "kind": "package-script",
+      "command": "pnpm run agent:check -- --staged --explain",
+      "scriptName": "agent:check",
+      "confidence": "high",
+      "reason": "The staged runner reports the selected gates before executing them."
+    }
+  ]
+}

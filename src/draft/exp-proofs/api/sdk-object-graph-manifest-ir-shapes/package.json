@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/sdk-object-graph-manifest-ir-shapes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsc --project tsconfig.json --noEmit && vitest run --root ."
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4"
+  }
+}

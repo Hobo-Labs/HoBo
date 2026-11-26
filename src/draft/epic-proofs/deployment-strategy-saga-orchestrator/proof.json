@@ -1,0 +1,22 @@
+{
+  "layer": "epic",
+  "slug": "deployment-strategy-saga-orchestrator",
+  "title": "Deployment Strategy Saga Orchestrator (HOBO-658)",
+  "linear": "HOBO-658",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/deployment-strategy-saga-templates-contract",
+      "src/draft/technical-proofs/slo-gated-rollback-analysis-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

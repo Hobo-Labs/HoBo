@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "SloPolicyGate"
+  },
+  "interactions": [
+    {
+      "description": "rollback a rollout when SLO budget is exhausted",
+      "providerStates": [
+        {
+          "name": "deployment SLO burn rate breaches rollback threshold"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/slo/policy-gate",
+        "body": {
+          "sloId": "deploy-success-rate",
+          "burnRate": 3.2,
+          "remainingBudgetRatio": 0
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "rollback",
+          "obligation": "error-budget.auto-revert",
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Clock port records for deterministic virtual time (HOBO-596 / HOBO-22).
+
+message SleepTimer {
+  string timer_id = 1;
+  string run_id = 2;
+  string idempotency_key = 3;
+  int64 delay_ms = 4;
+  int64 scheduled_at_ms = 5;
+  int64 fire_at_ms = 6;
+  int64 fired_at_ms = 7;
+  int32 fired_order = 8;
+}
+
+message CronSchedule {
+  string schedule_id = 1;
+  int64 every_ms = 2;
+  int64 start_at_ms = 3;
+  int64 next_fire_at_ms = 4;
+  int32 occurrence = 5;
+}
+
+message ClockTraceEntry {
+  string type = 1;
+  string seed = 2;
+  int64 at_ms = 3;
+  int64 delta_ms = 4;
+  string fire_id = 5;
+  int32 occurrence = 6;
+  int32 order = 7;
+}
+
+message ClockSnapshot {
+  string seed = 1;
+  int64 now_ms = 2;
+  repeated SleepTimer timers = 3;
+  repeated CronSchedule cron_schedules = 4;
+}

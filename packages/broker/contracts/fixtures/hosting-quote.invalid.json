@@ -1,0 +1,1 @@
+{"quoteId":"q","yardId":"yard:a","providerId":"aws","ownerTenantId":"tenant","currency":"USD","totalMicros":20,"liabilityBoundMicros":10,"components":[{"name":"compute","costMicros":12},{"name":"egress","costMicros":8}],"requestDigest":"request","observedAt":"2026-10-29T00:00:00Z","validUntil":"2026-11-01T00:00:00Z"}

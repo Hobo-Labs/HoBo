@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Incident Communications
+// Scope Contract draft package reasons about. Documents the records/objects this
+// package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+enum IncidentCommunicationEvidenceKind {
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_UNSPECIFIED = 0;
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_REFERENCE_FIXTURE = 3;
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_REDACTION_REVIEW = 4;
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_SUPPORT_HANDOFF = 5;
+  INCIDENT_COMMUNICATION_EVIDENCE_KIND_LAUNCH_CLAIM_REVIEW = 6;
+}
+
+message IncidentCommunicationScopeRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string personas = 3;
+  repeated string communication_surfaces = 4;
+  repeated string incident_states = 5;
+  repeated string template_kinds = 6;
+  repeated string evidence = 7;
+}

@@ -1,0 +1,36 @@
+{
+  "accountId": "acme",
+  "tenantId": "acme",
+  "pool": {
+    "label": "hobo",
+    "os": "linux",
+    "architecture": "x64"
+  },
+  "providers": [
+    {
+      "id": "ado",
+      "kind": "azure-devops",
+      "connectionRef": "ado-pool",
+      "runsOn": "hobo-local",
+      "enabled": true
+    }
+  ],
+  "budget": {
+    "scope": "ci-account",
+    "currency": "USD",
+    "limitMicros": 100000000,
+    "period": "manual",
+    "timeZone": "UTC"
+  },
+  "routing": {
+    "strategy": "lowest-total-incremental-cost",
+    "noEligibleProvider": "queue",
+    "unknownAllocation": "zero"
+  },
+  "thresholds": [
+    {
+      "fraction": 1,
+      "allow": []
+    }
+  ]
+}

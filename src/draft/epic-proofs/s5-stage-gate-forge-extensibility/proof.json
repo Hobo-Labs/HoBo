@@ -1,0 +1,24 @@
+{
+  "layer": "epic",
+  "slug": "s5-stage-gate-forge-extensibility",
+  "title": "S5 Stage Gate — Forge & Extensibility",
+  "linear": "HOBO-655",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/eval-promotion-gate-contract",
+      "src/draft/technical-proofs/generation-reference-run-contract",
+      "src/draft/technical-proofs/live-fix-gated-candidate-contract",
+      "src/draft/technical-proofs/signed-artifact-publish-install-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

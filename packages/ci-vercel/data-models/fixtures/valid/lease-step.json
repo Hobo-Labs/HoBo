@@ -1,0 +1,15 @@
+{
+  "kind": "lease-step",
+  "leaseId": "8a0b8b8e-3f0c-5d7e-9a51-1c2d3e4f5a6b",
+  "step": "reconcile",
+  "n": 3,
+  "job": {
+    "id": 4001,
+    "runId": 900,
+    "runAttempt": 1,
+    "repositoryId": 101,
+    "installationId": 10,
+    "repository": "Org/Repo",
+    "isolatedRequired": true
+  }
+}

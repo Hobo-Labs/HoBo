@@ -1,0 +1,7 @@
+# runner.* — the authoring namespace; each factory freezes a schema-versioned declaration.
+{"method":"github","name":"frozen and schema-versioned","input":[],"subset":{"schema":"hobo.sdk/v1.runner","kind":"github","providerId":"runner.github","category":"runner"}}
+{"method":"selfHosted","name":"pins self-hosted runners behind the outbound relay","input":[{"behind":"relay"}],"subset":{"behind":"relay","providerId":"runner.self-hosted"}}
+{"method":"selfHosted","name":"refuses a placement that is not the relay","input":[{"behind":"vpn"}],"throwsSubset":{"name":"SdkDeclarationError"}}
+{"method":"github","name":"refuses a negative cost","input":[{"listUnitCost":-1}],"throwsSubset":{"name":"SdkDeclarationError"}}
+{"method":"depot","name":"frozen and schema-versioned","input":[{"listUnitCost":3}],"subset":{"schema":"hobo.sdk/v1.runner","kind":"depot","category":"runner"}}
+{"method":"blacksmith","name":"frozen and schema-versioned","input":[{"listUnitCost":4}],"subset":{"schema":"hobo.sdk/v1.runner","kind":"blacksmith","category":"runner"}}

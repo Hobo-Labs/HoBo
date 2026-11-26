@@ -1,0 +1,36 @@
+{
+  "consumer": { "name": "CoreReferenceConsumer" },
+  "provider": { "name": "CoreContractSurface" },
+  "interactions": [
+    {
+      "description": "expose the core contract surface with boundary-standard event mappings",
+      "request": { "method": "POST", "path": "/core/contract-surface" },
+      "response": {
+        "status": 200,
+        "body": {
+          "schemaVersion": "hobo.core/v1",
+          "eventMappings": { "cloudEventSpecversion": "1.0" },
+          "publicSurface": { "ok": true }
+        }
+      }
+    },
+    {
+      "description": "reject an unsupported schema version with a structured error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/core/contract-surface",
+        "body": { "schemaVersion": "hobo.core/v0" }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "HOBO_CORE_UNSUPPORTED_SCHEMA",
+            "message": "unsupported schemaVersion"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

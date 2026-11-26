@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "sequence": 1,
+      "previousHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "eventType": "fleet.FleetDefined",
+      "eventId": "ev_00",
+      "subject": "fleet.ci",
+      "actor": "github:1234",
+      "at": "2026-11-12T10:00:00.000Z",
+      "dataDigest": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "subjectSequence": 1
+    }
+  ]
+}

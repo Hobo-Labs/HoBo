@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package hobo.stations.v1;
+
+// Station is the hard control-plane isolation boundary a Conductor occupies.
+// Not app-topology containment (Bindle ⊂ Camp ⊂ Yard ⊂ Junction).
+
+message StationIsolation {
+  string tenant = 1;
+  string residency = 2;
+  bool airgap = 3;
+  string trust_domain = 4;
+}
+
+message StationRecord {
+  string schema_version = 1;
+  string id = 2;
+  string name = 3;
+  StationIsolation isolation = 4;
+  string data_dir = 5;
+  string status = 6; // open | closed
+  string active_rail_hash = 7;
+  string bootstrap_rail_hash = 8;
+  string created_at = 9;
+  string updated_at = 10;
+  uint64 seq = 11;
+}
+
+message RailRecord {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string content_hash = 4;
+  string activation_status = 5; // draft | approved | active | retired
+  string station_id = 6;
+  string policy_pack_ref = 7;
+  string catalog_snapshot_pin = 8;
+  bool is_bootstrap = 9;
+  string published_at = 10;
+}
+
+// Declared Station capability (ADR-0155). id = capability:<kind>:<slug>.
+message StationCapabilityRecord {
+  string schema = 1; // hobo.station-capability/v1
+  string id = 2;
+  string kind = 3; // runtime | vcs | isolation-backend | model-server | toolchain | harness | sidecar | pam | replay
+  string slug = 4;
+  string title = 5;
+  string provenance = 6; // default | discovered | declared
+  bool required = 7;
+  string remediation = 8;
+  map<string, string> metadata = 9;
+}
+
+// One declared capability matched against host evidence (fail-closed).
+message MatchedStationCapabilityRecord {
+  StationCapabilityRecord capability = 1;
+  string status = 2; // present | missing
+  repeated string evidence = 3;
+  string detail = 4;
+}
+
+// Audited match of a declared capability set against the occupying host.
+message StationCapabilityManifestRecord {
+  string schema = 1; // hobo.station-capability-manifest/v1
+  string station_id = 2;
+  bool ok = 3; // every required capability present
+  repeated MatchedStationCapabilityRecord capabilities = 4;
+  repeated string missing_required = 5;
+  repeated string remediation = 6;
+  string generated_at = 7;
+}
+
+message StationCreatedEventData {
+  string station_id = 1;
+  string name = 2;
+  StationIsolation isolation = 3;
+  string bootstrap_rail_hash = 4;
+}
+
+message RailActivatedEventData {
+  string station_id = 1;
+  string rail_id = 2;
+  string content_hash = 3;
+  bool is_bootstrap = 4;
+}

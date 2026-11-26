@@ -1,0 +1,534 @@
+/* ==========================================================================
+   WORLDS — what the design axis could never be as tokens alone.
+
+   Each design carries its own marketing surface: copy, art, nav, interaction.
+   This file owns the switching rule and each world's chrome. The contract
+   with the audit stays intact: with no `data-design`, none of this renders
+   and ink is pixel-identical to its baseline; with one set, the ink hero,
+   parallax band and ink nav hide and the world's own surface takes over.
+   ========================================================================== */
+
+/* ---- The switching rule ---- */
+.world-hero,
+.world-nav {
+	display: none;
+}
+:root[data-design] .ink-world {
+	display: none;
+}
+:root[data-design="broadsheet"] .world-herald,
+:root[data-design="titlecard"] .world-photoplay,
+:root[data-design="ledger"] .world-dispatch,
+:root[data-design="cutout"] .world-scrapbook {
+	display: block;
+}
+:root[data-design="broadsheet"] .world-nav-herald,
+:root[data-design="titlecard"] .world-nav-photoplay,
+:root[data-design="ledger"] .world-nav-dispatch,
+:root[data-design="cutout"] .world-nav-scrapbook {
+	display: flex;
+}
+
+/* ==========================================================================
+   HERALD — front page. Masthead, column rules, an engraving with a caption.
+   Interaction register: print. Hovers are ink underlines, nothing moves.
+   ========================================================================== */
+.world-herald {
+	padding-block: 1.5rem 3rem;
+}
+.herald-masthead {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+}
+.herald-title {
+	font-family: var(--font-display);
+	font-size: clamp(2.2rem, 6vw, 3.8rem);
+	margin: 0;
+	text-align: center;
+	flex: 1;
+}
+.herald-ears {
+	font-size: 0.7rem;
+	letter-spacing: 0.08em;
+	color: var(--text-mute);
+	margin: 0;
+	white-space: nowrap;
+}
+.herald-rule {
+	border: 0;
+	border-top: 3px double var(--ink);
+	margin: 0.4rem 0 1.6rem;
+}
+.herald-page {
+	display: grid;
+	grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+	gap: 2rem;
+}
+.herald-story h1 {
+	font-size: clamp(1.6rem, 3.6vw, 2.6rem);
+	line-height: 1.12;
+	margin: 0 0 0.7rem;
+	letter-spacing: -0.01em;
+}
+.herald-dek {
+	font-style: italic;
+	font-size: 1.05rem;
+	color: var(--text-mute);
+	border-block: 1px solid var(--border-strong);
+	padding-block: 0.5rem;
+	margin: 0 0 0.9rem;
+}
+.herald-dateline {
+	font-weight: 700;
+	letter-spacing: 0.04em;
+}
+.herald-figure {
+	margin: 0;
+}
+.herald-figure img {
+	width: 100%;
+	height: auto;
+	display: block;
+	border: 1px solid var(--ink);
+	filter: grayscale(1) contrast(1.05);
+}
+.herald-figure figcaption {
+	font-size: 0.78rem;
+	font-style: italic;
+	color: var(--text-mute);
+	margin-top: 0.4rem;
+}
+.world-nav-herald a:hover {
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+/* ==========================================================================
+   PHOTOPLAY — a silent film. The hero IS an intertitle card inside the
+   generated deco frame; clicking advances the card. Grain flickers unless
+   reduced motion asks it not to.
+   ========================================================================== */
+.world-photoplay {
+	padding-block: 2.5rem 3rem;
+	text-align: center;
+}
+.photoplay-stage {
+	max-width: 900px;
+}
+.photoplay-frame {
+	position: relative;
+	aspect-ratio: 21 / 9;
+	overflow: hidden;
+	background: #0d0c0a;
+}
+.photoplay-border {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	opacity: 0.9;
+}
+.photoplay-card {
+	position: absolute;
+	inset: 12%;
+	display: none;
+	place-items: center;
+	color: #f2ecd9;
+	font-family: var(--font-display);
+	font-size: clamp(1.1rem, 2.8vw, 2rem);
+	letter-spacing: 0.06em;
+	line-height: 1.5;
+	text-align: center;
+}
+.photoplay-card.is-active {
+	display: grid;
+	animation: photoplay-flicker 2.4s steps(2) infinite;
+}
+.photoplay-card p {
+	margin: 0;
+}
+.photoplay-next {
+	position: absolute;
+	right: 6%;
+	bottom: 6%;
+	background: none;
+	border: 1px solid #f2ecd9;
+	color: #f2ecd9;
+	font-family: var(--font-display);
+	font-size: 0.75rem;
+	letter-spacing: 0.1em;
+	padding: 0.3rem 0.7rem;
+	cursor: pointer;
+}
+.photoplay-next:hover {
+	background: rgba(242, 236, 217, 0.14);
+}
+.photoplay-ctas {
+	justify-content: center;
+	margin-top: 1.4rem;
+}
+@keyframes photoplay-flicker {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.93; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.photoplay-card.is-active {
+		animation: none;
+	}
+}
+
+/* ==========================================================================
+   DISPATCH — the yard board. A log that types itself on, a cursor that
+   blinks, art that reads as machinery. Interaction register: terminal.
+   ========================================================================== */
+.world-dispatch {
+	padding-block: 2rem 3rem;
+	font-family: var(--font-mono);
+}
+.world-dispatch .container {
+	display: grid;
+	grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+	gap: 2rem;
+	align-items: center;
+}
+.dispatch-title {
+	font-size: 0.75rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--text-mute);
+	border-bottom: 1px solid var(--border-strong);
+	padding-bottom: 0.4rem;
+}
+.dispatch-log {
+	list-style: none;
+	margin: 0 0 1.2rem;
+	padding: 0;
+	font-size: 0.95rem;
+	line-height: 2;
+}
+.dispatch-log span {
+	color: var(--text-faint);
+	margin-right: 0.75rem;
+}
+.dispatch-typed {
+	overflow: hidden;
+	white-space: nowrap;
+	animation: dispatch-type 0.5s steps(40, end) both;
+}
+.dispatch-cursor span {
+	animation: dispatch-blink 1.1s steps(1) infinite;
+}
+.dispatch-art {
+	width: 100%;
+	height: auto;
+	border: 1px solid var(--border-strong);
+	filter: grayscale(1);
+}
+@keyframes dispatch-type {
+	from { max-width: 0; }
+	to { max-width: 100%; }
+}
+@keyframes dispatch-blink {
+	50% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.dispatch-typed,
+	.dispatch-cursor span {
+		animation: none;
+	}
+}
+
+/* ==========================================================================
+   SCRAPBOOK — pasted paper. Photo and postcard sit as taped scraps; hovering
+   lifts a scrap slightly, like checking whether the glue held.
+   ========================================================================== */
+.world-scrapbook {
+	padding-block: 2rem 3rem;
+}
+.scrapbook-title {
+	font-family: var(--font-display);
+	font-size: clamp(1.8rem, 4vw, 2.8rem);
+	margin: 0 0 1.4rem;
+}
+.scrapbook-spread {
+	display: grid;
+	grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+	gap: 2.2rem;
+	align-items: start;
+}
+.scrapbook-photo,
+.scrapbook-card {
+	position: relative;
+	background: var(--bg-raised);
+	border: 2px solid var(--ink);
+	box-shadow: 6px 6px 0 var(--accent-soft);
+	padding: 0.8rem;
+	transition: transform var(--dur-move) var(--ease), box-shadow var(--dur-move) var(--ease);
+}
+.scrapbook-photo:hover,
+.scrapbook-card:hover {
+	transform: translate(-2px, -2px);
+	box-shadow: 9px 9px 0 var(--accent-soft);
+}
+.scrapbook-photo img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+.scrapbook-card p {
+	font-size: 1.1rem;
+	line-height: 1.7;
+	margin: 0.4rem 0 1rem;
+}
+.tape {
+	position: absolute;
+	top: -12px;
+	left: 28px;
+	width: 74px;
+	height: 24px;
+	background: var(--bg-inset);
+	opacity: 0.85;
+	border: 1px solid var(--border);
+	transform: rotate(-4deg);
+}
+.tape-r {
+	left: auto;
+	right: 28px;
+	transform: rotate(3deg);
+}
+@media (prefers-reduced-motion: reduce) {
+	.scrapbook-photo,
+	.scrapbook-card {
+		transition: none;
+	}
+	.scrapbook-photo:hover,
+	.scrapbook-card:hover {
+		transform: none;
+	}
+}
+
+/* ---- World navs share the header slot; each is its own structure ---- */
+.world-nav {
+	/* Five labelled destinations must hold one row at desktop: the first cut
+	   wrapped the Herald's uppercase nav into its own masthead. Tighter type,
+	   tighter gap, no separators — the vocabulary does the differentiating. */
+	gap: 0.85rem;
+	align-items: baseline;
+	white-space: nowrap;
+}
+.world-nav a {
+	text-decoration: none;
+	color: var(--text);
+}
+.world-nav-herald {
+	font-size: 0.72rem;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+.world-nav-photoplay {
+	font-family: var(--font-display);
+	font-size: 0.74rem;
+	letter-spacing: 0.06em;
+}
+.world-nav-photoplay .act {
+	color: var(--text-faint);
+	margin-right: 0.25rem;
+}
+.world-nav-dispatch {
+	font-family: var(--font-mono);
+	font-size: 0.72rem;
+}
+.world-nav-dispatch .trk {
+	color: var(--text-faint);
+	margin-right: 0.3rem;
+}
+.world-nav-scrapbook {
+	align-items: center;
+}
+.world-nav-scrapbook a {
+	display: inline-block;
+	background: var(--bg-inset);
+	border: 1.5px solid var(--ink);
+	padding: 0.1rem 0.45rem;
+	border-radius: 4px 10px 4px 10px;
+	font-size: 0.74rem;
+	transform: rotate(-1deg);
+}
+.world-nav-scrapbook a:nth-child(even) {
+	transform: rotate(1.2deg);
+}
+.world-nav-scrapbook a:hover {
+	transform: rotate(0deg);
+}
+
+@media (max-width: 860px) {
+	.herald-page,
+	.world-dispatch .container,
+	.scrapbook-spread {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.herald-masthead {
+		flex-direction: column;
+		align-items: center;
+		gap: 0.1rem;
+	}
+	/* The header collapses to the hamburger below 860px; world navs render
+	   inside the same panel and inherit its stacking. */
+	.world-nav {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+}
+
+/* The ink nav keeps its flex row from inside the gating wrapper. */
+.site-nav .nav-links {
+	display: flex;
+	gap: inherit;
+	align-items: inherit;
+}
+
+/* ---- World bodies: the rest of each page, in its own form ---- */
+.herald-rule-thin { border-top-width: 1px; margin-block: 1.6rem; }
+.herald-columns {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1.6rem;
+}
+.herald-columns h2 {
+	font-size: 1.05rem;
+	line-height: 1.25;
+	margin: 0 0 0.5rem;
+	letter-spacing: 0.01em;
+}
+.herald-columns p { margin: 0; font-size: 0.95rem; }
+.herald-kicker {
+	font-size: 0.7rem;
+	letter-spacing: 0.12em;
+	color: var(--text-mute);
+	margin: 0 0 0.6rem;
+}
+.herald-ads {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 1rem;
+}
+.herald-ads p {
+	border: 1px solid var(--border-strong);
+	padding: 0.6rem 0.7rem;
+	margin: 0;
+	font-size: 0.82rem;
+}
+.herald-notice {
+	margin: 1.6rem 0 0;
+	font-size: 0.8rem;
+	letter-spacing: 0.04em;
+	color: var(--text-mute);
+	border-top: 3px double var(--ink);
+	padding-top: 0.7rem;
+}
+
+.photoplay-scenes {
+	display: grid;
+	grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+	gap: 1.6rem;
+	align-items: center;
+	margin-top: 2.4rem;
+	text-align: left;
+}
+.photoplay-still img {
+	width: 100%; height: auto; display: block;
+	border: 4px solid #0d0c0a;
+}
+.photoplay-titles { text-align: center; }
+.pp-scene {
+	font-size: 0.7rem;
+	letter-spacing: 0.18em;
+	color: var(--text-faint);
+	margin: 1.1rem 0 0.3rem;
+}
+.pp-line {
+	font-family: var(--font-display);
+	font-size: 1.15rem;
+	letter-spacing: 0.05em;
+	line-height: 1.5;
+	margin: 0;
+}
+.photoplay-cast { margin-top: 2.2rem; }
+.photoplay-cast dl {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 1rem;
+	margin: 0.4rem 0 0;
+}
+.photoplay-cast dt a {
+	font-family: var(--font-display);
+	letter-spacing: 0.06em;
+	text-decoration: none;
+	color: var(--text);
+}
+.photoplay-cast dd {
+	margin: 0.2rem 0 0;
+	font-style: italic;
+	color: var(--text-mute);
+	font-size: 0.88rem;
+}
+.pp-end {
+	margin: 2.4rem 0 0;
+	font-family: var(--font-display);
+	letter-spacing: 0.12em;
+	font-size: 0.85rem;
+	color: var(--text-mute);
+}
+
+.dispatch-tables {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 2rem;
+	margin-top: 2rem;
+}
+.dispatch-tt {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.85rem;
+}
+.dispatch-tt td {
+	border-bottom: 1px solid var(--border);
+	padding: 0.4rem 0.5rem 0.4rem 0;
+	vertical-align: top;
+}
+.dispatch-tt td:first-child { color: var(--text-faint); white-space: nowrap; }
+.dispatch-tt a { color: var(--text); }
+.dispatch-status {
+	margin: 1.6rem 0 0;
+	font-size: 0.75rem;
+	letter-spacing: 0.1em;
+	color: var(--text-mute);
+	border-top: 1px solid var(--border-strong);
+	padding-top: 0.6rem;
+}
+
+.scrapbook-more { margin-top: 2.2rem; }
+.scrap-list-title {
+	font-family: var(--font-display);
+	font-size: 1.1rem;
+	margin: 0 0 0.4rem;
+}
+.scrap-list { list-style: none; margin: 0; padding: 0; line-height: 1.9; }
+.scrap-list a { color: var(--text); }
+.scrapbook-post2 { margin-top: 2.2rem; max-width: 46rem; }
+.scrap-stub {
+	border-top: 1px dashed var(--border-strong);
+	padding-top: 0.6rem;
+	font-size: 0.9rem;
+	color: var(--text-mute);
+}
+
+@media (max-width: 860px) {
+	.herald-columns, .herald-ads, .photoplay-scenes,
+	.photoplay-cast dl, .dispatch-tables {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

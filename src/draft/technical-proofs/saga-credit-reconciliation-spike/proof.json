@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "saga-credit-reconciliation-spike",
+  "title": "Saga Compensation and Credit Reconciliation Spike",
+  "linear": "HOBO-339",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/reliability-observability-cost.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

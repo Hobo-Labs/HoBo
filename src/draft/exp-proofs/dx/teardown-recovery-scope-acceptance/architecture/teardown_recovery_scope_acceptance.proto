@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Teardown & Recovery
+// Scope Acceptance draft package reasons about. Documents the records/objects
+// this package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+enum TeardownRecoveryState {
+  TEARDOWN_RECOVERY_STATE_UNSPECIFIED = 0;
+  TEARDOWN_RECOVERY_STATE_REQUESTED = 1;
+  TEARDOWN_RECOVERY_STATE_BLOCKED = 2;
+  TEARDOWN_RECOVERY_STATE_DRAINING = 3;
+  TEARDOWN_RECOVERY_STATE_TEARDOWN_READY = 4;
+  TEARDOWN_RECOVERY_STATE_RECOVERABLE = 5;
+  TEARDOWN_RECOVERY_STATE_TERMINAL = 6;
+  TEARDOWN_RECOVERY_STATE_ESCALATED = 7;
+}
+
+enum TeardownRecoveryMode {
+  TEARDOWN_RECOVERY_MODE_UNSPECIFIED = 0;
+  TEARDOWN_RECOVERY_MODE_RESUME = 1;
+  TEARDOWN_RECOVERY_MODE_ROLLBACK = 2;
+  TEARDOWN_RECOVERY_MODE_RESTORE_FROM_EVIDENCE = 3;
+  TEARDOWN_RECOVERY_MODE_MANUAL_ESCALATION = 4;
+}
+
+message TeardownRecoveryScopeRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string teardown_states = 3;
+  repeated string recovery_modes = 4;
+  repeated string required_evidence = 5;
+  repeated string m1_evidence = 6;
+}

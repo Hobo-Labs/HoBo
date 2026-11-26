@@ -1,0 +1,36 @@
+{
+  "consumer": {
+    "name": "cli-mcp-reference-app"
+  },
+  "provider": {
+    "name": "runtime-local-camp-projections"
+  },
+  "interactions": [
+    {
+      "description": "local dev replay remains deterministic",
+      "request": {
+        "operation": "runAppDeveloperJourney"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "devReplayDiff": [],
+          "upStatus": "deployed"
+        }
+      }
+    },
+    {
+      "description": "blocked deploy gate does not mutate state",
+      "request": {
+        "operation": "runBlockedDeployGateScenario"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "blocked",
+          "applied": false
+        }
+      }
+    }
+  ]
+}

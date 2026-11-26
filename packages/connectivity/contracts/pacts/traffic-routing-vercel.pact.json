@@ -1,0 +1,240 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "VercelTrafficRoutingApi" },
+	"interactions": [
+		{
+			"description": "configure rolling release stages",
+			"request": {
+				"method": "PATCH",
+				"path": "/v1/projects/prj_checkout/rolling-release/config",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"target": "production",
+					"stages": [
+						{ "targetPercentage": 25, "requireApproval": false },
+						{ "targetPercentage": 100, "requireApproval": false }
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rollingRelease": {
+						"target": "production",
+						"stages": [
+							{ "targetPercentage": 25, "requireApproval": false },
+							{ "targetPercentage": 100, "requireApproval": false }
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "start rolling release with canary deployment",
+			"request": {
+				"method": "POST",
+				"path": "/v1/projects/prj_checkout/rolling-release/start",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"canaryDeploymentId": "dpl_canary"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rollingRelease": {
+						"state": "ACTIVE",
+						"canaryDeployment": { "id": "dpl_canary" }
+					}
+				}
+			}
+		},
+		{
+			"description": "observe active rolling release",
+			"request": {
+				"method": "GET",
+				"path": "/v1/projects/prj_checkout/rolling-release"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"rollingRelease": {
+						"state": "ACTIVE",
+						"canaryDeployment": { "id": "dpl_canary" }
+					}
+				}
+			}
+		},
+		{
+			"description": "delete rolling release configuration",
+			"request": {
+				"method": "DELETE",
+				"path": "/v1/projects/prj_checkout/rolling-release/config"
+			},
+			"response": {
+				"status": 200,
+				"body": { "rollingRelease": null }
+			}
+		},
+		{
+			"description": "stage project routes for path rewrites",
+			"request": {
+				"method": "PUT",
+				"path": "/v1/projects/prj_checkout/routes",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"overwrite": true,
+					"routes": [
+						{
+							"id": "hobo-plan-checkout-rewrites-0",
+							"name": "hobo:plan:checkout:rewrites:0",
+							"enabled": true,
+							"route": {
+								"src": "/api/:path*",
+								"dest": "https://api.example.test/:path*"
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"version": {
+						"id": "ver_routes_1",
+						"s3Key": "routes/ver_routes_1",
+						"lastModified": 1,
+						"createdBy": "test",
+						"isStaging": true,
+						"ruleCount": 1
+					}
+				}
+			}
+		},
+		{
+			"description": "promote staged project routes",
+			"request": {
+				"method": "POST",
+				"path": "/v1/projects/prj_checkout/routes/versions",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"id": "ver_routes_1",
+					"action": "promote"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"version": {
+						"id": "ver_routes_1",
+						"s3Key": "routes/ver_routes_1",
+						"lastModified": 2,
+						"createdBy": "test",
+						"isLive": true,
+						"ruleCount": 1
+					}
+				}
+			}
+		},
+		{
+			"description": "observe project routes",
+			"request": {
+				"method": "GET",
+				"path": "/v1/projects/prj_checkout/routes"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"routes": [
+						{
+							"id": "hobo-plan-checkout-rewrites-0",
+							"name": "hobo:plan:checkout:rewrites:0",
+							"enabled": true,
+							"route": {
+								"src": "/api/:path*",
+								"dest": "https://api.example.test/:path*"
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "clear project routes on revoke",
+			"request": {
+				"method": "PUT",
+				"path": "/v1/projects/prj_checkout/routes",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"overwrite": true,
+					"routes": []
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"version": {
+						"id": "ver_routes_empty",
+						"s3Key": "routes/ver_routes_empty",
+						"lastModified": 3,
+						"createdBy": "test",
+						"isStaging": true,
+						"ruleCount": 0
+					}
+				}
+			}
+		},
+		{
+			"description": "promote empty routes on revoke",
+			"request": {
+				"method": "POST",
+				"path": "/v1/projects/prj_checkout/routes/versions",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"id": "ver_routes_empty",
+					"action": "promote"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"version": {
+						"id": "ver_routes_empty",
+						"s3Key": "routes/ver_routes_empty",
+						"lastModified": 4,
+						"createdBy": "test",
+						"isLive": true,
+						"ruleCount": 0
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

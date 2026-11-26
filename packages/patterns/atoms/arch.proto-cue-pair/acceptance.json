@@ -1,0 +1,16 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"data-models/greeter.proto",
+		"data-models/greeter.cue",
+		"data-models/buf.yaml"
+	],
+	"expectContains": {
+		"data-models/greeter.proto": [
+			"package hobo.app.greeter.v1",
+			"message Greeting"
+		]
+	}
+}

@@ -1,0 +1,6 @@
+{
+  "candidate_id": "candidate-1",
+  "outcome": "PROMOTION_OUTCOME_UNSPECIFIED",
+  "passed": { "conformance": true, "eval": true, "policy": true },
+  "failures": []
+}

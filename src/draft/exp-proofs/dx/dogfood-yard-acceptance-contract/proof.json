@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dogfood-yard-acceptance-contract",
+  "experienceType": "dx",
+  "title": "Dogfood Yard Acceptance Contract",
+  "linear": "HOBO-403",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

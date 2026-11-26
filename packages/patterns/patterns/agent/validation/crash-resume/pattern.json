@@ -1,0 +1,63 @@
+{
+  "id": "agent.validation.crash-resume",
+  "version": 1,
+  "kind": "concept",
+  "maturity": "stable",
+  "title": "Crash resume",
+  "intent": "completed steps are not rerun",
+  "description": "completed steps are not rerun",
+  "aliases": [
+    "crash resume"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "artifact:agent",
+      "weight": 1
+    },
+    {
+      "id": "property:durable",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": false,
+      "default": "resource",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "validation:crash"
+  ],
+  "requires": [],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

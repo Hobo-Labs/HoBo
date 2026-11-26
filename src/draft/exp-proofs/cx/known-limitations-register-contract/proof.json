@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "known-limitations-register-contract",
+  "experienceType": "cx",
+  "title": "Known Limitations Register Contract",
+  "linear": "HOBO-485",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

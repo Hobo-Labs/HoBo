@@ -1,0 +1,120 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderHostingerBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for the two Hostinger equivalence-class ports",
+      "request": {
+        "method": "POST",
+        "path": "/providers/hostinger/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "broker-custody credential locator posture: no static secrets in the package",
+      "request": {
+        "method": "GET",
+        "path": "/providers/hostinger/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "svid-federation",
+          "exchange": "hobo:broker-credential-locator",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "realize a compute ResourcePlan into a pulumi IacProgram with a hostinger:vps resource",
+      "request": {
+        "method": "POST",
+        "path": "/providers/hostinger/realize",
+        "body": {
+          "name": "api",
+          "port": "compute",
+          "provider": "hostinger"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "iac": {
+            "apiVersion": "hobo.iac-program/v1",
+            "kind": "iac-program",
+            "provider": "pulumi",
+            "resources": [
+              {
+                "name": "api",
+                "type": "hostinger:vps",
+                "provider": "hostinger"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "adopt an already-purchased VPS by hostname, twice, without mutating it",
+      "request": {
+        "method": "POST",
+        "path": "/providers/hostinger/resolve",
+        "body": {
+          "productId": "hostinger.vps/v1",
+          "logicalId": "api-1",
+          "desired": {
+            "template": "ubuntu-24-04"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contract": "hobo.resource-resolver/v1",
+          "action": "adopt",
+          "mutatingCalls": 0,
+          "reconcileTwiceAction": "noop"
+        }
+      }
+    },
+    {
+      "description": "restart an owned VPS by hostname through the fleet, never a purchase route",
+      "request": {
+        "method": "POST",
+        "path": "/providers/hostinger/fleet/power",
+        "body": {
+          "target": "hobo-arc-1.example.test",
+          "action": "restart"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "machineId": "1201",
+          "mutatingCalls": 1
+        }
+      }
+    }
+  ]
+}

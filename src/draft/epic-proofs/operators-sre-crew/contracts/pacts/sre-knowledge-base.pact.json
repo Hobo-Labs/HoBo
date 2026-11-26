@@ -1,0 +1,41 @@
+{
+  "consumer": { "name": "SRE operator" },
+  "provider": { "name": "knowledge port" },
+  "interactions": [
+    {
+      "description": "publish-postmortem",
+      "providerStates": [{ "name": "incident replay is available" }],
+      "request": {
+        "method": "POST",
+        "path": "/ports/knowledge/postmortems",
+        "body": {
+          "incidentId": "inc-crew-001",
+          "replayHash": "sha256-provider-degraded-api-replay",
+          "audience": "internal"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": { "documentId": "pm-001", "published": true }
+      }
+    },
+    {
+      "description": "publish-dr-postmortem",
+      "providerStates": [{ "name": "DR replay evidence is available" }],
+      "request": {
+        "method": "POST",
+        "path": "/ports/knowledge/postmortems",
+        "body": {
+          "incidentId": "inc-crew-004",
+          "replayHash": "sha256-regional-dr-failover-replay",
+          "audience": "internal"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": { "documentId": "pm-004", "published": true }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

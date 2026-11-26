@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "WorkspaceOnboardingScopeAcceptanceConsumer"
+  },
+  "provider": {
+    "name": "WorkspaceOnboardingScopeAcceptanceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Workspace Onboarding Scope Acceptance boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/workspace-onboarding-scope-acceptance/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.workspace_onboarding_scope_acceptance/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

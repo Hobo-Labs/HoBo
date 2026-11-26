@@ -1,0 +1,3 @@
+slug: stage-6-acceptance-gate
+layer: epic
+proof-identity: ok

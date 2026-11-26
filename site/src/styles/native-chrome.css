@@ -1,0 +1,200 @@
+/* ==========================================================================
+   Native chrome — scrollbars, cursors, selects, details, form accents.
+   OS defaults break Rubberhose (grey thumbs, system arrows, bland pointers).
+   Loaded from Base.astro after global.css so tokens re-ink day/night/palettes.
+   ========================================================================== */
+
+:root {
+	--control-radius: 8px;
+	/* Thick-ink cursors. White stroke stays readable on night paper. */
+	--cursor-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23101010' stroke='%23f2f1ec' stroke-width='1.6' stroke-linejoin='round' d='M3.5 2.5 19 11.2l-6.2 1.6 2.8 7.1-2.7 1.1-2.9-7.2L3.5 17.5z'/%3E%3C/svg%3E")
+		4 2,
+		auto;
+	--cursor-point: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23101010' stroke='%23f2f1ec' stroke-width='1.6' stroke-linejoin='round' d='M8 2v13.2l3.1-2.4 2.4 5.9 2.6-1-2.5-6.1H19z'/%3E%3C/svg%3E")
+		8 2,
+		pointer;
+	--cursor-type: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='24' viewBox='0 0 20 24'%3E%3Cpath fill='%23101010' stroke='%23f2f1ec' stroke-width='1.4' d='M7 2h6v2H12v16h1v2H7v-2h1V4H7z'/%3E%3C/svg%3E")
+		8 10,
+		text;
+}
+
+html {
+	cursor: var(--cursor-ink);
+	scrollbar-width: auto;
+	scrollbar-color: var(--ink) var(--bg-inset);
+}
+
+/* Sticker scrollbar — hard ink thumb on inset track.
+   Declaring width/height opts out of overlay scrollbars so the chrome shows. */
+*::-webkit-scrollbar {
+	width: 14px;
+	height: 14px;
+}
+
+*::-webkit-scrollbar-track {
+	background: var(--bg-inset);
+	border: 2.5px solid var(--ink);
+	border-radius: 4px;
+	box-shadow: inset 1px 1px 0 color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+*::-webkit-scrollbar-thumb {
+	background: var(--ink);
+	border: 2.5px solid var(--bg);
+	border-radius: 4px;
+	min-height: 2.5rem;
+	box-shadow: 2px 2px 0 var(--pop-soft);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--spark);
+	border-color: var(--bg);
+}
+
+*::-webkit-scrollbar-thumb:active {
+	background: var(--accent-strong, var(--ink));
+}
+
+*::-webkit-scrollbar-button {
+	display: none;
+	width: 0;
+	height: 0;
+}
+
+*::-webkit-scrollbar-corner {
+	background: var(--bg-inset);
+	border: 2px solid var(--ink);
+}
+
+a,
+button,
+summary,
+label,
+select,
+[role="button"],
+[role="option"],
+[role="menuitem"],
+[role="tab"],
+[aria-pressed],
+.icon-btn,
+.ex-yard-option,
+.ex-text-btn,
+.ex-view-tabs button,
+.ex-host-tabs button {
+	cursor: var(--cursor-point);
+}
+
+input:not([type="submit"]):not([type="button"]):not([type="reset"]):not(
+		[type="checkbox"]
+	):not([type="radio"]):not([type="range"]):not([type="file"]),
+textarea,
+[contenteditable="true"],
+code,
+pre {
+	cursor: var(--cursor-type);
+}
+
+:disabled,
+[disabled],
+[aria-disabled="true"],
+.btn:disabled,
+.ex-text-btn:disabled,
+.ex-stamp:disabled {
+	cursor: not-allowed;
+}
+
+/* Single-selects: strip OS chrome, ink chevron, sticker edge. */
+select:not([multiple]) {
+	appearance: none;
+	-webkit-appearance: none;
+	min-height: 2.75rem;
+	padding: 0.45rem 2.1rem 0.45rem 0.65rem;
+	border: 2.5px solid var(--ink);
+	border-radius: var(--control-radius);
+	background-color: var(--bg-inset);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='10' viewBox='0 0 14 10'%3E%3Cpath fill='%23101010' stroke='%23f2f1ec' stroke-width='1' stroke-linejoin='round' d='M1 1.5 7 8l6-6.5'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 0.7rem center;
+	background-size: 0.85rem 0.6rem;
+	color: var(--text);
+	box-shadow: 2px 2px 0 var(--pop-soft);
+	font: 0.95rem/1.4 var(--font-sans);
+}
+
+:root[data-theme="dark"] select:not([multiple]) {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='10' viewBox='0 0 14 10'%3E%3Cpath fill='%23f2f1ec' stroke='%23101010' stroke-width='1' stroke-linejoin='round' d='M1 1.5 7 8l6-6.5'/%3E%3C/svg%3E");
+}
+
+select:not([multiple]):hover {
+	box-shadow: 3px 3px 0 var(--pop-soft);
+}
+
+select:not([multiple]):focus-visible {
+	outline: 2.5px solid var(--spark);
+	outline-offset: 2px;
+}
+
+select:not([multiple]):disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Disclosure: ink chevron instead of OS triangle. */
+details > summary {
+	list-style: none;
+	cursor: var(--cursor-point);
+}
+
+details > summary::-webkit-details-marker {
+	display: none;
+}
+
+details > summary::before {
+	content: "";
+	display: inline-block;
+	width: 0.55rem;
+	height: 0.55rem;
+	margin-right: 0.45rem;
+	border-right: 2.5px solid var(--ink);
+	border-bottom: 2.5px solid var(--ink);
+	transform: rotate(-45deg) translateY(-0.1rem);
+	transform-origin: 60% 60%;
+	transition: transform var(--dur-tap) var(--ease);
+	vertical-align: middle;
+}
+
+details[open] > summary::before {
+	transform: rotate(45deg) translateY(-0.15rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	details > summary::before {
+		transition: none;
+	}
+}
+
+::placeholder {
+	color: var(--text-faint, var(--text-mute));
+	opacity: 1;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+	accent-color: var(--ink);
+	cursor: var(--cursor-point);
+	width: 1.05rem;
+	height: 1.05rem;
+}
+
+input[type="range"] {
+	accent-color: var(--ink);
+	cursor: var(--cursor-point);
+}
+
+/* Kill the AI-tell left accent bar on blockquotes — even ink frame instead. */
+.prose blockquote {
+	border: 2.5px dashed color-mix(in srgb, var(--accent) 70%, var(--ink));
+	border-left-width: 2.5px;
+	border-left-style: dashed;
+	border-left-color: color-mix(in srgb, var(--accent) 70%, var(--ink));
+}

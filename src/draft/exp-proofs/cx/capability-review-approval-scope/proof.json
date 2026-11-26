@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "capability-review-approval-scope",
+  "experienceType": "cx",
+  "title": "Capability Review & Approval Scope Contract",
+  "linear": "HOBO-423",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/capability-review-approval.md",
+      "docs/design/proofs/hobo-423-capability-review-approval/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

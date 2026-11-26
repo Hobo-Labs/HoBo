@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AcmeDns01CertIssuanceContractConsumer"
+  },
+  "provider": {
+    "name": "AcmeDns01CertIssuanceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Acme Dns01 Cert Issuance Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/acme-dns01-cert-issuance-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.acme_dns01_cert_issuance_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

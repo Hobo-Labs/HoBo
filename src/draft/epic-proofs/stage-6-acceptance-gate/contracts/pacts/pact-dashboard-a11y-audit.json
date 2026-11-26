@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "dashboard-a11y-audit-boundary" },
+  "interactions": [
+    {
+      "description": "dashboard WCAG 2.1 AA and pseudo-loc audits",
+      "request": { "method": "GET", "path": "/dashboard/a11y-audit" },
+      "response": { "status": 200, "body": { "ok": true, "status": "pass" } }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "dashboard-a11y-audit",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-479 launch
+// site GA handoff evidence contract. This is a design-time schema artifact,
+// not a runtime compilation target.
+
+enum LaunchSiteGaEvidenceStatus {
+  LAUNCH_SITE_GA_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SITE_GA_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SITE_GA_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  LAUNCH_SITE_GA_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum LaunchSiteGaProofMode {
+  LAUNCH_SITE_GA_PROOF_MODE_UNSPECIFIED = 0;
+  LAUNCH_SITE_GA_PROOF_MODE_DESIGN_RECORD = 1;
+  LAUNCH_SITE_GA_PROOF_MODE_ISSUE_STATE = 2;
+  LAUNCH_SITE_GA_PROOF_MODE_MANUAL_REVIEW = 3;
+  LAUNCH_SITE_GA_PROOF_MODE_LIVE_RECORDING = 4;
+}
+
+enum LaunchSiteGaLaunchRiskEffect {
+  LAUNCH_SITE_GA_LAUNCH_RISK_EFFECT_UNSPECIFIED = 0;
+  LAUNCH_SITE_GA_LAUNCH_RISK_EFFECT_UNCHANGED = 1;
+  LAUNCH_SITE_GA_LAUNCH_RISK_EFFECT_INCREASED = 2;
+  LAUNCH_SITE_GA_LAUNCH_RISK_EFFECT_REDUCED = 3;
+}
+
+message LaunchSiteGaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  LaunchSiteGaProofMode proof_mode = 4;
+  LaunchSiteGaEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message LaunchSiteGaBlocker {
+  string id = 1;
+  string owner_project = 2;
+  string state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message LaunchSiteGaAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  LaunchSiteGaLaunchRiskEffect launch_risk_effect = 4;
+}
+
+message LaunchSiteGaCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message LaunchSiteGaFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message LaunchSiteGaInitiativeStatusGate {
+  string parent_initiative = 1;
+  LaunchSiteGaLaunchRiskEffect launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message LaunchSiteGaPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message LaunchSiteGaHandoffEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated LaunchSiteGaEvidenceItem evidence = 5;
+  repeated LaunchSiteGaBlocker blockers = 6;
+  repeated LaunchSiteGaAcceptedRisk accepted_risks = 7;
+  repeated LaunchSiteGaCutlineDependency release_cutline_dependencies = 8;
+  repeated LaunchSiteGaFollowUp follow_ups = 9;
+  LaunchSiteGaInitiativeStatusGate initiative_status = 10;
+  repeated string scope_out = 11;
+  repeated LaunchSiteGaPublicClaimGuard public_claim_guards = 12;
+}

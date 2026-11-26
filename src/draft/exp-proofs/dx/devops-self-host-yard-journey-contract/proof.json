@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "devops-self-host-yard-journey-contract",
+  "experienceType": "dx",
+  "title": "DevOps Self-Host Yard Journey Contract POC",
+  "linear": "HOBO-219",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/self-host-bootstrap-saga-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

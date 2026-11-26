@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package hobo.draft.oteloffice.v1;
+
+// Normalized activity the office reacts to. The OTLP/JSON intake endpoints
+// are parsed into these records at the server boundary; everything
+// downstream (reducer, SSE snapshot, client) consumes the parsed forms.
+message SpanRecord {
+  string trace_id = 1;
+  string span_id = 2;
+  string parent_span_id = 3;
+  string name = 4;
+  // OTLP span kind number (1=internal, 2=server, 3=client, 4=producer, 5=consumer).
+  uint32 kind = 5;
+  // OTLP status code number (0=unset, 1=ok, 2=error).
+  uint32 status_code = 6;
+  uint64 start_time_unix_nano = 7;
+  uint64 end_time_unix_nano = 8;
+}
+
+message LogRecord {
+  string trace_id = 1;
+  uint32 severity_number = 2;
+  string severity_text = 3;
+  string body = 4;
+}
+
+message MetricSample {
+  string metric = 1;
+  double value = 2;
+}
+
+// HoBo primitive identity carried on OTLP resource attributes.
+message PrimitiveRef {
+  string service_name = 1; // bindle id (or hobo.bindle override)
+  string station = 2;      // hobo.station
+  string yard = 3;         // hobo.yard
+  string camp = 4;         // hobo.camp
+  string junction = 5;     // hobo.junction
+  string primitive = 6;    // hobo.primitive: bindle|crew|actor
+}
+
+// Character state machine states, mirroring src/model.ts.
+enum CharacterState {
+  CHARACTER_STATE_UNSPECIFIED = 0;
+  CHARACTER_STATE_IDLE = 1;
+  CHARACTER_STATE_WORKING = 2;
+  CHARACTER_STATE_READING = 3;
+  CHARACTER_STATE_STUCK = 4;
+}

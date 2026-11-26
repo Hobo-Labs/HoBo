@@ -1,0 +1,56 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "products": [],
+    "rateCards": [
+      {
+        "id": "rate-multiple-fallbacks",
+        "version": "1",
+        "currency": "USD",
+        "effective": {
+          "start": "2026-11-01T00:00:00Z"
+        },
+        "charges": [
+          {
+            "base": {
+              "id": "fallback-a",
+              "selectors": {},
+              "exclusiveGroup": "request-price",
+              "fallback": true,
+              "invoiceBehavior": "separate-line"
+            },
+            "usage": {
+              "dimension": "requests",
+              "timing": "arrears",
+              "perUnit": {
+                "decimal": "0.01",
+                "currency": "USD"
+              }
+            }
+          },
+          {
+            "base": {
+              "id": "fallback-b",
+              "selectors": {},
+              "exclusiveGroup": "request-price",
+              "fallback": true,
+              "invoiceBehavior": "separate-line"
+            },
+            "usage": {
+              "dimension": "requests",
+              "timing": "arrears",
+              "perUnit": {
+                "decimal": "0.02",
+                "currency": "USD"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "allowances": [],
+    "credits": [],
+    "commitments": []
+  }
+}

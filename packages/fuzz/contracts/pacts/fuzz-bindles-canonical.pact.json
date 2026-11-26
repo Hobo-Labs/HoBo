@@ -1,0 +1,29 @@
+{
+	"consumer": { "name": "hobo-fuzz" },
+	"provider": { "name": "bindles-manifest" },
+	"interactions": [
+		{
+			"description": "equivalent key-shuffled manifests hash identically",
+			"request": {
+				"method": "POST",
+				"path": "/canonical-hash",
+				"headers": { "content-type": "application/json" },
+				"body": {
+					"schema": "hobo.manifest/v1",
+					"componentHost": { "kind": "wasmtime", "version": "1.0.0" },
+					"resources": {
+						"db": { "type": "data.v1", "port": "hobo:data" }
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json" },
+				"body": { "ok": true, "algorithm": "sha256" }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

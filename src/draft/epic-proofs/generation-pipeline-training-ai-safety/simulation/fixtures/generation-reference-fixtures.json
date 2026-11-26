@@ -1,0 +1,18 @@
+{
+  "epic": "Generation Pipeline, Training & AI Safety",
+  "coldStartProvider": {
+    "targetWitPort": "hobo:database/postgres@0.1.0",
+    "validationScript": ["trace-mismatch", "pass"],
+    "repairBudget": 2
+  },
+  "training": {
+    "method": "classifyTicket",
+    "trajectoryCount": 3,
+    "shadowTraffic": "15%",
+    "minSamples": 3
+  },
+  "liveFix": {
+    "environment": "prod",
+    "expectedDecision": "requires-human-approval"
+  }
+}

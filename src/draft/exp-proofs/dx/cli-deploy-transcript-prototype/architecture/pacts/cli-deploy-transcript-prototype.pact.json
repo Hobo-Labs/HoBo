@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "HOBO-573 CLI deploy transcript prototype"
+  },
+  "provider": {
+    "name": "M1 resource lifecycle fixture corpus"
+  },
+  "interactions": [
+    {
+      "description": "render terminal deploy transcript from deployment fixture corpus",
+      "providerStates": [
+        {
+          "name": "reference fixture corpus contains deploy, policy denied, contract incompatible, and stale evidence cases"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/fixtures/cli-deploy-transcript",
+        "body": {
+          "issue": "HOBO-573",
+          "requiredFixtureKinds": [
+            "deployment-plan",
+            "deployment-set",
+            "delta",
+            "gatekeeper-decision",
+            "resource-actor-event",
+            "projection",
+            "log"
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.cli-deploy-transcript-prototype/v1",
+          "scenarioCount": 4,
+          "gatekeeperExplanation": true,
+          "valueProof": true,
+          "mcpEquivalent": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "teardown-recovery-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Teardown & Recovery Scope Acceptance",
+  "linear": "HOBO-444",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

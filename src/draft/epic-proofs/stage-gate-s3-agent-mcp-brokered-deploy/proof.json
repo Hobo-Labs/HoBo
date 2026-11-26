@@ -1,0 +1,25 @@
+{
+  "layer": "epic",
+  "slug": "stage-gate-s3-agent-mcp-brokered-deploy",
+  "title": "Stage Gate S3: Agent MCP Brokered Deploy",
+  "linear": "HOBO-636",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/cli-credential-hardening-contract",
+      "src/draft/technical-proofs/hobo-auth-json-contract",
+      "src/draft/technical-proofs/hobo-mcp-server-contract",
+      "src/draft/technical-proofs/mcp-server-hardening-contract",
+      "src/draft/technical-proofs/token-broker-skeleton-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

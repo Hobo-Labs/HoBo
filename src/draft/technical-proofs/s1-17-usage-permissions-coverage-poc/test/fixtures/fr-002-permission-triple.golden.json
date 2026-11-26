@@ -1,0 +1,56 @@
+[
+  {
+    "resource": "user-created",
+    "iam": {
+      "verbs": ["publish"],
+      "provenance": [{ "verb": "publish", "provenance": "declared-narrow-or-equal" }]
+    },
+    "link": {
+      "import": "wasi:messaging",
+      "to": "user-created",
+      "allow": ["publish"],
+      "contractStatus": "satisfied"
+    },
+    "tokenScope": {
+      "resource": "user-created",
+      "verbs": ["publish"]
+    }
+  },
+  {
+    "resource": "receipts",
+    "iam": {
+      "verbs": ["read", "write"],
+      "provenance": [
+        { "verb": "read", "provenance": "inferred-from-usage" },
+        { "verb": "write", "provenance": "inferred-from-usage" }
+      ]
+    },
+    "link": {
+      "import": "wasi:blobstore",
+      "to": "receipts",
+      "allow": ["read", "write"],
+      "contractStatus": "satisfied"
+    },
+    "tokenScope": {
+      "resource": "receipts",
+      "verbs": ["read", "write"]
+    }
+  },
+  {
+    "resource": "profile-cache",
+    "iam": {
+      "verbs": ["get"],
+      "provenance": [{ "verb": "get", "provenance": "declared-narrow-or-equal" }]
+    },
+    "link": {
+      "import": "wasi:keyvalue",
+      "to": "profile-cache",
+      "allow": ["get"],
+      "contractStatus": "failed"
+    },
+    "tokenScope": {
+      "resource": "profile-cache",
+      "verbs": ["get"]
+    }
+  }
+]

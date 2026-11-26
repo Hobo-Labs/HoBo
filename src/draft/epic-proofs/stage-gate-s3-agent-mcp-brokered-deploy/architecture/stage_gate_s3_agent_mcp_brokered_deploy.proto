@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum StageGateS3EvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_J2_JOURNEY = 1;
+  EVIDENCE_KIND_ADVERSARIAL = 2;
+}
+
+message StageGateS3DrillRecord {
+  string issue = 1;
+  string journey = 2;
+  string fixture = 3;
+  repeated string token_event_types = 4;
+  bool replayable = 5;
+  bool static_secrets_absent = 6;
+}

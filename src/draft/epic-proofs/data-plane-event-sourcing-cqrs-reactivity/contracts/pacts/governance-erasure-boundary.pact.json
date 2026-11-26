@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "DataPlanePrivacyProjection" },
+  "provider": { "name": "GovernanceErasureBoundary" },
+  "interactions": [
+    {
+      "description": "crypto-shred subject without rewriting original events",
+      "request": {
+        "method": "POST",
+        "path": "/governance/erasure/subjects/buyer-1",
+        "body": { "tenantId": "tenant-a", "reason": "gdpr-request" }
+      },
+      "response": {
+        "status": 202,
+        "body": { "tombstoneVisible": true, "originalEventsUnchanged": true }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

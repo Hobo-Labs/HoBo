@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/s3-07-agent-guardrails-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

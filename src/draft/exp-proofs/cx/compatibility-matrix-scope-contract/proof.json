@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "compatibility-matrix-scope-contract",
+  "experienceType": "cx",
+  "title": "Compatibility Matrix Scope Contract POC",
+  "linear": "HOBO-432",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

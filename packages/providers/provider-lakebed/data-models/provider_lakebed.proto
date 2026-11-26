@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hobo.provider.lakebed.v1;
+
+// Wire records for the Lakebed deploy-target CloudProvider
+// (@hobo/provider-lakebed, ADR-0127). CUE constraints in provider_lakebed.cue
+// bound every type declared here; the runtime parses untrusted manifest
+// documents into derived parsed types before use.
+
+message EquivalenceMapping {
+  string class = 1;
+  string port = 2;
+  string resource_class = 3;
+  string provider_service = 4;
+  repeated string features = 5;
+}
+
+message CapabilityManifestIndex {
+  string schema = 1;
+  string provider_id = 2;
+  string manifest_schema = 3;
+}
+
+message CostFact {
+  string port = 1;
+  string sku = 2;
+  string unit = 3;
+  string marginal_price = 4;
+  uint64 free_tier_included = 5;
+}
+
+// Secretless posture: broker-minted short-lived deploy tokens (HOBO-110);
+// no static vendor tokens.
+message AuthPosture {
+  string schema = 1;
+  string mode = 2;
+  string token_audience = 3;
+  string exchange = 4;
+  bool static_secrets = 5;
+}
+
+message DriverResourceRecord {
+  string name = 1;
+  string type = 2;
+  string provider = 3;
+  repeated string outputs = 4;
+}
+
+// The lakebed-deploy DRIVER program (a Driver, not IaC — ADR-0127).
+message DriverProgramRecord {
+  string api_version = 1;
+  string kind = 2;
+  string driver = 3;
+  string deployment_id = 4;
+  string capsule = 5;
+  repeated DriverResourceRecord resources = 6;
+}

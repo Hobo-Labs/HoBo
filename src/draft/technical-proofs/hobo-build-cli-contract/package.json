@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/build-cli-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the hobo build componentization and OCI fallback contract.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "finops-cost-estimate-boundary" },
+  "interactions": [
+    {
+      "description": "plan-time cost estimate within fixture tolerance",
+      "request": { "method": "GET", "path": "/finops/plan-cost" },
+      "response": { "status": 200, "body": { "ok": true, "status": "pass" } }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "finops-cost-estimate",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

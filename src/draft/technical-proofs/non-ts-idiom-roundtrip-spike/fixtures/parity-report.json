@@ -1,0 +1,45 @@
+{
+  "language": "rust",
+  "sourceContract": "hobo:sdk@0.1.0 world sdk",
+  "artifact": "sample:orders-rust-component.wasm",
+  "surface": {
+    "status": "pass",
+    "missingImports": [],
+    "extraImports": [],
+    "signatureDrift": [],
+    "digest": "sample-hobo-398-reviewed-surface"
+  },
+  "lowering": {
+    "status": "proposed",
+    "corpus": "src/draft/technical-proofs/idiom-layer-lowering-contract/fixtures/lowering-corpus.json",
+    "mustProduce": [
+      "ordered hobo:sdk call records",
+      "byte-identical hobo.manifest/v1 resources",
+      "provider-options as inert annotations"
+    ]
+  },
+  "semanticsAnnex": {
+    "status": "required-before-parity",
+    "requiredVectors": [
+      "result-to-Rust-Result error mapping",
+      "async cancellation",
+      "IfC collection side-effect ordering",
+      "negative narrowing-below-usage marker"
+    ]
+  },
+  "idiomTranslations": [
+    {
+      "typescriptAssumption": "builder chains",
+      "rustMitigation": "typed builder methods that record the same declaration facts"
+    },
+    {
+      "typescriptAssumption": "module-execution collection side effects",
+      "rustMitigation": "explicit collect(registry) function or macro-generated registrar"
+    },
+    {
+      "typescriptAssumption": "throw/promise semantics",
+      "rustMitigation": "Result and cancellation mapping owned by semantics annex"
+    }
+  ],
+  "recommendation": "Keep @hobo/bindles as the TypeScript idiom layer, but freeze declaration facts, WIT call records, manifest output, and semantics-annex gates before claiming non-TS parity."
+}

@@ -1,0 +1,28 @@
+{
+  "consumer": { "name": "ReplayService" },
+  "provider": { "name": "ReplayEventLog" },
+  "interactions": [
+    {
+      "description": "emit chunk ingested lifecycle event with blob ref only",
+      "request": {
+        "method": "POST",
+        "path": "/replay/events/emit",
+        "body": {
+          "type": "replay.ChunkIngested",
+          "sessionId": "sess-1",
+          "blobRef": "mem:sess-1:0:abc",
+          "bytes": 128
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "type": "replay.ChunkIngested",
+          "sessionId": "sess-1"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

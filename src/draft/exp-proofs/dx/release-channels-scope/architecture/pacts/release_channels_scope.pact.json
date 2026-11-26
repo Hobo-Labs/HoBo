@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ReleaseChannelsScopeConsumer"
+  },
+  "provider": {
+    "name": "ReleaseChannelsScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Release Channels Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/release-channels-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.release_channels_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "iteration": 2,
+  "runId": "20260730-dx-fix",
+  "scoredAt": "2026-07-30T19:12:00.000Z",
+  "source": "outcome judged after doctor next/hint alignment",
+  "metric_total": 9,
+  "metric_max": 2,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "harms": 0, "friction": 2, "uncertainty": 1, "total": 3, "max": 2
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "harms": 0, "friction": 2, "uncertainty": 1, "total": 3, "max": 2,
+      "note": "doctor next/hint aligned with agent:check"
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "harms": 0, "friction": 2, "uncertainty": 1, "total": 3, "max": 2
+    }
+  ],
+  "vsPrev": {
+    "metric_total_delta": 0,
+    "metric_max_delta": 0,
+    "plateau": true
+  }
+}

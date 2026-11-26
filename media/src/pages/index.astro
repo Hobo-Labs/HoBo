@@ -1,0 +1,410 @@
+---
+import SpritePlayer from "../components/SpritePlayer.astro";
+import ModelViewer from "../components/ModelViewer.astro";
+import { BILL_SPRITES, BO_PIXEL_SHEETS, CHARACTERS, PLATES, SCENE_PROPS, SHEETS, SPRITES, TURNAROUND,
+	CAST_SHEETS,
+	CAST_BOARDS,
+	TRAIL_PROP_BOARDS,
+} from "../data/assets";
+import { href } from "../lib/url";
+
+const title = "Bo — art department";
+const description =
+	"Every reference sheet, sprite sheet and scenery plate for Bo the bindlebug, shown moving.";
+---
+
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<meta name="color-scheme" content="light dark" />
+		<link rel="icon" href={href("/sprites/bo-stand.png")} />
+		<script is:inline>
+			(() => {
+				const stored = localStorage.getItem("hobo-theme");
+				document.documentElement.dataset.theme =
+					stored === "light" || stored === "dark"
+						? stored
+						: matchMedia("(prefers-color-scheme: dark)").matches
+							? "dark"
+							: "light";
+			})();
+		</script>
+	</head>
+	<body>
+		<header class="top">
+			<div class="wrap">
+				<SpritePlayer sheet={SPRITES[3]} height="3rem" />
+				<div>
+					<h1>Bo's art department</h1>
+					<p class="lede">
+						Every drawing of Bo the bindlebug in one place — and the sprite
+						sheets play here, because a sprite sheet shown flat tells you
+						nothing about what it does.
+					</p>
+				</div>
+				<button class="toggle" type="button" aria-label="Toggle theme">◐</button>
+			</div>
+		</header>
+
+		<main class="wrap">
+			<section>
+				<h2>Two characters</h2>
+				<div class="grid">
+					{
+						CHARACTERS.map((c) => (
+							<article class="card">
+								<h3>{c.name}</h3>
+								<p><strong>{c.tagline}</strong></p>
+								<p>{c.note}</p>
+							</article>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>Bo — animations</h2>
+				<p class="section-note">
+					Playing at their exported cadence. The frame geometry beneath each one
+					is what the site itself reads — if these numbers drift, the preview
+					stops matching what ships.
+				</p>
+				<div class="grid">
+					{
+						SPRITES.map((s) => (
+							<article class="card">
+								<div class="stage">
+									<SpritePlayer sheet={s} height="9rem" />
+								</div>
+								<h3>{s.title}</h3>
+								<dl class="spec">
+									<div><dt>Frames</dt><dd>{s.frames}</dd></div>
+									<div><dt>Grid</dt><dd>{s.grid.cols}×{s.grid.rows}</dd></div>
+									<div><dt>Frame</dt><dd>{s.frame.w}×{s.frame.h}</dd></div>
+									<div><dt>Cadence</dt><dd>{Math.round(s.tick * 1000)}ms</dd></div>
+								</dl>
+								<p>{s.note}</p>
+								<a class="dl" href={href(s.file)} download>Download sheet</a>
+							</article>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>Bo — pixel reference</h2>
+				<p class="section-note">
+					Bo's model sheet on a 48px grid — turnaround, poses and expressions,
+					flat black and white with a 1px dual rim so he reads on light and
+					dark grounds alike. Not generated: the bodies are a deterministic
+					downscale of the shipped sheets above and the poses are pixel
+					surgery on those bases, rebuilt by
+					<code>media/scripts/build-bo-pixel-reference.py</code> — so the pixel
+					Bo cannot drift from the real one. The north view is derived (front
+					stand mirrored, enclosed whites inked out); east and west remain
+					separate drawings, <strong>never</strong> mirrors of each other.
+				</p>
+				<div class="stack">
+					{
+						BO_PIXEL_SHEETS.map((r) => (
+							<figure class={`card${r.wide ? " wide" : ""}`}>
+								<img src={href(r.file)} alt={`Bo ${r.title.toLowerCase()} sheet, pixel art`} loading="lazy" class="px" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>The cast — hobits who are not Bo</h2>
+				<p class="section-note">
+					Four new characters for the site's troupe: the travelers who turn
+					up around Bo when the page has been still a while. Generated with
+					the Higgsfield CLI (GPT Image 2.6, native transparency), reviewed,
+					and normalized by <code>media/scripts/build-trail-art.py</code> to
+					one sheet contract. These are <strong>pose sheets, not cycles</strong>
+					— the player steps through all twelve cells so each can be
+					inspected. Cells 1–3 are derived from cell 0 by moving colour only,
+					so a character can look around without its outline boiling.
+				</p>
+				<div class="grid">
+					{
+						CAST_SHEETS.map((s) => (
+							<article class="card">
+								<div class="stage">
+									<SpritePlayer sheet={s} height="9rem" />
+								</div>
+								<h3>{s.title}</h3>
+								<dl class="spec">
+									<div><dt>Poses</dt><dd>{s.frames}</dd></div>
+									<div><dt>Grid</dt><dd>{s.grid.cols}×{s.grid.rows}</dd></div>
+									<div><dt>Cell</dt><dd>{s.frame.w}×{s.frame.h}</dd></div>
+								</dl>
+								<p>{s.note}</p>
+								<a class="dl" href={href(s.file)} download>Download sheet</a>
+							</article>
+						))
+					}
+				</div>
+				<div class="stack">
+					{
+						CAST_BOARDS.map((r) => (
+							<figure class={`card${r.wide ? " wide" : ""}`}>
+								<img src={href(r.file)} alt={`${r.title}, black-and-white rubberhose character art`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>Trail props — the landmarks' source boards</h2>
+				<p class="section-note">
+					Eighteen props for the trail band, six to a board, each one tied to
+					a section of the landing page. Cut apart and normalized into
+					<code>site/public/parallax/landmarks/</code> by the same build.
+				</p>
+				<div class="stack">
+					{
+						TRAIL_PROP_BOARDS.map((r) => (
+							<figure class="card wide">
+								<img src={href(r.file)} alt={`${r.title}: six roadside props in ink`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>HoBit Bill — animations</h2>
+				<p class="section-note">
+					Generated with the Spriterrific CLI from Bill's own turnaround.
+					Authored <strong>west</strong> and never mirrored — <code>--auto-orient</code>
+					is a flip and was turned off; the facing check returned ok/left at
+					confidence 1.0.
+				</p>
+				<div class="grid">
+					{
+						BILL_SPRITES.map((s) => (
+							<article class="card">
+								<div class="stage">
+									<SpritePlayer sheet={s} height="9rem" />
+								</div>
+								<h3>{s.title}</h3>
+								<dl class="spec">
+									<div><dt>Frames</dt><dd>{s.frames}</dd></div>
+									<div><dt>Grid</dt><dd>{s.grid.cols}×{s.grid.rows}</dd></div>
+									<div><dt>Cell</dt><dd>{s.frame.w}×{s.frame.h}</dd></div>
+									<div><dt>Cadence</dt><dd>{Math.round(s.tick * 1000)}ms</dd></div>
+								</dl>
+								<p>{s.note}</p>
+								<a class="dl" href={href(s.file)} download>Download sheet</a>
+							</article>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>HoBit Bill — turnaround</h2>
+				<p class="section-note">
+					Bill's model sheet, and what the 3D lift was built from. He is
+					<strong>asymmetric</strong> — the bindle hangs from one specific arm
+					and stays on that shoulder in every view, so nothing here may be
+					produced by mirroring. Same rule as Bo, different character.
+				</p>
+				<div class="grid grid-4">
+					{
+						TURNAROUND.map((r) => (
+							<figure class="card">
+								<img src={href(r.file)} alt={`Bo, ${r.title.toLowerCase()} view`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>HoBit Bill — 3D</h2>
+				<div class="card model">
+					<ModelViewer
+						src="/reference/bill.glb"
+						poster="/reference/bill-model-3d-preview.webp"
+						height="24rem"
+					/>
+					<div>
+						<p>
+							A textured mesh lifted from the four turnaround views, for use as
+							a pose and lighting reference when generating video — not as a
+							shipping asset. Symmetry enforcement was turned <em>off</em>
+							during the lift: it would have "corrected" the bindle by giving
+							him two, or by deleting it.
+						</p>
+						<p class="caveat">
+							It is a generated lift, not a modelled character. Treat it as
+							scaffolding for reference frames; the drawings above remain the
+							identity.
+						</p>
+						<a class="dl" href={href("/reference/bill.glb")} download>Download .glb (2.6 MB)</a>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<h2>HoBit Bill — reference sheets</h2>
+				<div class="stack">
+					{
+						SHEETS.map((r) => (
+							<figure class="card wide">
+								<img src={href(r.file)} alt={`Bo ${r.title.toLowerCase()} reference sheet`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>Scene props — approved</h2>
+				<p class="section-note">
+					Owner-approved, round 1. The five full-width scene panels these
+					were meant to replace have been removed from the homepage
+					altogether; the drawings stand on the trail band instead, as the
+					landmarks each section arrives at.
+				</p>
+				<div class="grid">
+					{
+						SCENE_PROPS.map((r) => (
+							<figure class="card">
+								<img src={href(r.file)} alt={`${r.title} scene prop`} loading="lazy" />
+								<figcaption><strong>{r.title}</strong> — {r.note}</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+
+			<section>
+				<h2>Scenery plates</h2>
+				<p class="section-note">
+					Back to front. Each tiles left-to-right and scrolls at its own speed;
+					that ratio is the depth.
+				</p>
+				<div class="stack">
+					{
+						PLATES.map((p) => (
+							<figure class="card wide plate">
+								<img src={href(p.file)} alt={`${p.title} parallax plate`} loading="lazy" />
+								<figcaption>
+									<strong>{p.title}</strong> · {p.speed}× ground — {p.note}
+								</figcaption>
+							</figure>
+						))
+					}
+				</div>
+			</section>
+		</main>
+
+		<footer class="wrap">
+			<p>
+				Source of truth for the shipped sprite sheets and plates is
+				<code>site/public/parallax/</code>; copies here are for reference. The
+				identity is <strong>HoBo Rubberhose</strong> — see
+				<code>site/src/styles/global.css</code>.
+			</p>
+		</footer>
+
+		<script is:inline>
+			document.querySelector(".toggle")?.addEventListener("click", () => {
+				const root = document.documentElement;
+				const next = root.dataset.theme === "dark" ? "light" : "dark";
+				root.dataset.theme = next;
+				localStorage.setItem("hobo-theme", next);
+			});
+		</script>
+
+		<style is:global>
+			:root {
+				--bg: #ffffff;
+				--paper: #faf9f6;
+				--ink: #101010;
+				--mute: #5a5a55;
+				--line: #e3e2de;
+				--ease: cubic-bezier(0.22, 1, 0.36, 1);
+				color-scheme: light;
+			}
+			:root[data-theme="dark"] {
+				--bg: #0a0a0a;
+				--paper: #131313;
+				--ink: #f2f1ec;
+				--mute: #b0aea8;
+				--line: rgba(242, 241, 236, 0.16);
+				color-scheme: dark;
+			}
+			* { box-sizing: border-box; }
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+			}
+			.wrap { max-width: 1100px; margin-inline: auto; padding-inline: 1.25rem; }
+			.top { border-bottom: 2px solid var(--ink); padding: 1.5rem 0; }
+			.top .wrap { display: flex; gap: 1rem; align-items: center; }
+			h1 { font-size: 1.5rem; margin: 0; }
+			.lede { margin: 0.25rem 0 0; color: var(--mute); max-width: 62ch; }
+			.toggle {
+				margin-left: auto; background: none; border: 2px solid var(--ink);
+				color: var(--ink); border-radius: 8px; width: 2.5rem; height: 2.5rem;
+				font-size: 1.1rem; cursor: pointer; transition: background 120ms var(--ease);
+			}
+			.toggle:hover { background: var(--paper); }
+			main { padding-block: 2.5rem 4rem; }
+			section + section { margin-top: 3.5rem; }
+			h2 { font-size: 1.25rem; margin: 0 0 0.35rem; }
+			.section-note { margin: 0 0 1.25rem; color: var(--mute); max-width: 70ch; }
+			.grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+			.grid-4 { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+			.stack { display: grid; gap: 1.25rem; }
+			.card {
+				border: 2px solid var(--ink); border-radius: 12px; background: var(--paper);
+				padding: 1rem; box-shadow: 3px 3px 0 var(--ink);
+			}
+			.card h3 { margin: 0.75rem 0 0.5rem; font-size: 1rem; }
+			.card p { margin: 0.5rem 0 0; color: var(--mute); font-size: 0.9rem; }
+			.stage {
+				display: grid; place-items: center; min-height: 10rem;
+				background: repeating-linear-gradient(45deg, transparent 0 8px, rgba(128,128,128,0.07) 8px 16px);
+				border-radius: 8px;
+			}
+			:root[data-theme="dark"] .stage :global(.sprite) { filter: invert(1); }
+			.spec { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; margin: 0; font-size: 0.8rem; }
+			.spec div { display: flex; gap: 0.35rem; }
+			.spec dt { color: var(--mute); margin: 0; }
+			.spec dd { margin: 0; font-variant-numeric: tabular-nums; }
+			figure { margin: 0; }
+			.card img { display: block; width: 100%; height: auto; border-radius: 8px; background: #fff; }
+			.card img.px { image-rendering: pixelated; }
+			.plate img { image-rendering: auto; }
+			:root[data-theme="dark"] .plate img { filter: invert(1); }
+			figcaption { margin-top: 0.6rem; color: var(--mute); font-size: 0.9rem; }
+			.model { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 20rem) minmax(0, 1fr); align-items: start; }
+			.caveat { border-left: 3px solid var(--ink); padding-left: 0.75rem; }
+			.dl {
+				display: inline-block; margin-top: 0.85rem; color: var(--ink);
+				font-size: 0.85rem; text-underline-offset: 3px;
+			}
+			code { background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em; }
+			footer { border-top: 1px solid var(--line); padding-block: 1.5rem 3rem; color: var(--mute); font-size: 0.9rem; }
+			@media (max-width: 720px) { .model { grid-template-columns: 1fr; } }
+		</style>
+	</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "1.0.0"
+  },
+  "resources": {
+    "orders": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "exports": ["hobo:trigger/topic-subscriber"]
+    },
+    "nightly": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "exports": ["hobo:trigger/scheduled-run"]
+    },
+    "uploads": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "exports": ["hobo:trigger/blob-event"]
+    }
+  },
+  "triggerEdges": [
+    {
+      "id": "orders.ingested",
+      "kind": "topic-subscribe",
+      "resourceId": "orders",
+      "exportInterface": "hobo:trigger/topic-subscriber",
+      "event": "orders.ingested"
+    },
+    {
+      "id": "nightly.cron",
+      "kind": "schedule-cron",
+      "resourceId": "nightly",
+      "exportInterface": "hobo:trigger/scheduled-run",
+      "event": "0 2 * * *"
+    },
+    {
+      "id": "uploads.write",
+      "kind": "blob-event",
+      "resourceId": "uploads",
+      "exportInterface": "hobo:trigger/blob-event",
+      "event": "write"
+    }
+  ]
+}

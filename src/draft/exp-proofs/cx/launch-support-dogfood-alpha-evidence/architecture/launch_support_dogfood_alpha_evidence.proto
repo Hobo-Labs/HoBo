@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Launch Support
+// Dogfood/Alpha Evidence draft package reasons about. Not compiled at runtime;
+// this is a design-time contract artifact.
+
+enum LaunchSupportEvidenceStatus {
+  LAUNCH_SUPPORT_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SUPPORT_EVIDENCE_STATUS_MISSING_FOLLOW_UP = 2;
+}
+
+enum LaunchSupportFindingClassification {
+  LAUNCH_SUPPORT_FINDING_CLASSIFICATION_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_FINDING_CLASSIFICATION_ACCEPTED_RISK = 1;
+  LAUNCH_SUPPORT_FINDING_CLASSIFICATION_LAUNCH_NOTE = 2;
+  LAUNCH_SUPPORT_FINDING_CLASSIFICATION_POST_GA_FOLLOW_UP = 3;
+  LAUNCH_SUPPORT_FINDING_CLASSIFICATION_LAUNCH_BLOCKER = 4;
+}
+
+message LaunchSupportEvidenceRecord {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proves = 4;
+  LaunchSupportEvidenceStatus status = 5;
+  string follow_up_title = 6;
+  bool blocks_launch = 7;
+}
+
+message LaunchSupportFindingRecord {
+  string id = 1;
+  string source_evidence_id = 2;
+  LaunchSupportFindingClassification classification = 3;
+  string owner_project = 4;
+  bool blocks_launch = 5;
+  string mitigation = 6;
+  string expiry = 7;
+}
+
+message LaunchSupportDependencyRecord {
+  string owner_project = 1;
+  string cutline_ref = 2;
+  bool required_for_m1 = 3;
+  string consumes = 4;
+}
+
+message LaunchSupportDogfoodAlphaRecord {
+  string issue = 1;
+  string phase = 2;
+  string project = 3;
+  repeated LaunchSupportEvidenceRecord evidence = 4;
+  repeated LaunchSupportFindingRecord findings = 5;
+  repeated LaunchSupportDependencyRecord dependencies = 6;
+}

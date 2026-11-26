@@ -1,0 +1,32 @@
+{
+  "consumer": { "name": "HoboCiCli" },
+  "provider": { "name": "HoboCiAccountControlApi" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" } },
+  "interactions": [
+    {
+      "description": "read authenticated CI account policy",
+      "request": { "method": "GET", "path": "/v1/accounts/self/policy", "headers": { "Authorization": "Bearer cli-test-token" } },
+      "response": { "status": 200, "body": { "revision": 7, "account": { "id": "account-test" } } }
+    },
+    {
+      "description": "discover bound GitHub App installations",
+      "request": { "method": "GET", "path": "/v1/accounts/self/installations", "headers": { "Authorization": "Bearer cli-test-token" } },
+      "response": { "status": 200, "body": { "accountId": "account-test", "installationIds": [42] } }
+    },
+    {
+      "description": "connect a repository with isolated runner consent and revision",
+      "request": {
+        "method": "POST", "path": "/v1/accounts/self/repositories/isolated-connect",
+        "headers": { "Authorization": "Bearer cli-test-token", "Content-Type": "application/json", "If-Match": "\"7\"" },
+        "body": { "repository": "example/project", "installationId": 42, "trustedRepositoryAcknowledged": true, "publicRepositoryAcknowledged": true, "acceptAllMatchingRepositoryJobs": true }
+      },
+      "response": { "status": 200, "body": { "accountId": "account-test", "repository": "example/project", "installationId": 42, "isolatedOnly": true, "acceptAllMatchingRepositoryJobs": true } }
+    },
+    {
+      "description": "read authenticated CI account policy with an isolated connection",
+      "providerStates": [{ "name": "example/project is connected in isolated mode" }],
+      "request": { "method": "GET", "path": "/v1/accounts/self/policy", "headers": { "Authorization": "Bearer cli-test-token" } },
+      "response": { "status": 200, "body": { "revision": 7, "account": { "id": "account-test" }, "connections": [{ "accountId": "account-test", "repository": "example/project", "installationId": 42, "isolatedOnly": true, "acceptAllMatchingRepositoryJobs": true }] } }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "resource-pack-distribution-contract",
+  "title": "Resource Pack Distribution Contract",
+  "linear": "HOBO-228",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/signed-artifact-publish-install-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

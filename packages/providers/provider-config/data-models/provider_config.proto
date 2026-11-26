@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package hobo.provider_config.v1;
+
+// Evidence for the optional wasi:config/store capability provider (ADR-0142).
+message ConfigProviderBoundary {
+  string package_name = 1; // @hobo/provider-config
+  string wit = 2; // wasi:config/store@0.2.0
+  bool import_optional = 3; // true — no always-on service
+  bool residual_secrets = 4; // false — not a vault
+  string default_backend = 5; // memory
+}

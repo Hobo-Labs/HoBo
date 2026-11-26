@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "S4StageGateMultiCloudContractConsumer"
+  },
+  "provider": {
+    "name": "S4StageGateMultiCloudContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "S4 Stage Gate Multi Cloud Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/s4-stage-gate-multi-cloud-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s4_stage_gate_multi_cloud_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

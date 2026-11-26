@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IacPulumiBackendContractConsumer"
+  },
+  "provider": {
+    "name": "IacPulumiBackendContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Iac Pulumi Backend Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/iac-pulumi-backend-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.iac_pulumi_backend_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

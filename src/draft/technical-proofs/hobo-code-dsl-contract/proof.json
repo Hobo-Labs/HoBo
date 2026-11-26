@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "hobo-code-dsl-contract",
+  "title": "Hobo Code DSL Contract POC",
+  "linear": "HOBO-394",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-manifest-contract",
+      "src/draft/technical-proofs/sdk-codegen-surface-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,38 @@
+{
+  "runId": "20260731-ax-continue",
+  "scoredAt": "2026-07-31T13:42:00.000Z",
+  "metric_total": 5,
+  "metric_max": 3,
+  "notes": "Prior run 20260731-ax-review left residual L: chatty re-install when tools present. This baseline re-scores that residual as implementable S.",
+  "cells": [
+    {
+      "persona": "product-agent-operator",
+      "surface": "setup --common-only re-run (pre-reduce)",
+      "harms": 0,
+      "friction": 3,
+      "uncertainty": 1,
+      "total": 4,
+      "max": 3,
+      "notes": "Re-ran pip/uv install even when headroom/serena present; wall of Requirement already satisfied."
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "serena/headroom bare MCP missing binary",
+      "harms": 0,
+      "friction": 2,
+      "uncertainty": 2,
+      "total": 4,
+      "max": 2,
+      "notes": "Bare host command-not-found; gbrain already fail-closed, serena/headroom not."
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "setup --help + gbrain fail-closed (prior)",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    }
+  ]
+}

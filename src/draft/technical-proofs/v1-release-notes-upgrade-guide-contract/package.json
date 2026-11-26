@@ -1,0 +1,8 @@
+{
+  "name": "v1-release-notes-upgrade-guide-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

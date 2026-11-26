@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "HoBoRelayPrivateExecutor" },
+  "interactions": [
+    {
+      "description": "dispatches scoped work over outbound-only relay and strips credential egress",
+      "request": { "method": "POST", "path": "/relay/private-executor/work" },
+      "response": { "status": 200, "body": { "status": "completed", "outboundOnly": true } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

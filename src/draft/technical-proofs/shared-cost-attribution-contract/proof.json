@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "shared-cost-attribution-contract",
+  "title": "Shared Cost Attribution Contract POC",
+  "linear": "HOBO-325",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

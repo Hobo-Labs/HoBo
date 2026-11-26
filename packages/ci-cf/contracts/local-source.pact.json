@@ -1,0 +1,24 @@
+{
+	"consumer": { "name": "hobo-ci-cf-local" },
+	"provider": { "name": "cloudflare-ci-source-adapter" },
+	"interactions": [
+		{
+			"description": "check out the image snapshot without remote credentials",
+			"request": {
+				"provider": "cloudflare-artifacts",
+				"owner": "local",
+				"repo": "workspace",
+				"sha": "1111111111111111111111111111111111111111",
+				"providerData": { "namespace": "local" }
+			},
+			"response": {
+				"checkout": {
+					"kind": "archive",
+					"url": "file:///opt/hobo-ci/source.tar.gz"
+				},
+				"cache": null,
+				"notification": null
+			}
+		}
+	]
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "governance-conformance-suite-contract",
+  "title": "Governance Conformance Suite Contract",
+  "linear": "HOBO-227",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,4 @@
+{
+  "description": "Proof packages created before the artifact-hardening baseline. Burn-down complete as of 2026-07-31: packages array is empty; draft:artifacts is strict for all proofs. Do not add new entries \u2014 harden new packages at creation time.",
+  "packages": []
+}

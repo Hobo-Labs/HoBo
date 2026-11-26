@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-tax-currency-receipt-obligations-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

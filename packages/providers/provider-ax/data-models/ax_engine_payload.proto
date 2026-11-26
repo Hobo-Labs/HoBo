@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package hobo.provider_ax.v1;
+
+// The engine-internal payload this provider stores in the platform
+// artifact program's engine_payload_json (ADR-0125): ax's serialized
+// optimized program, pinned by the artifact's engine_version.
+message AxEnginePayload {
+  string serialized_program_json = 1;
+}

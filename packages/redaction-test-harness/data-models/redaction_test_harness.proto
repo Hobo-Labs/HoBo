@@ -1,0 +1,23 @@
+syntax = "proto3";
+package hobo.redaction_test_harness.v1;
+
+// One growth measurement (`linear-time`): the cost of n and 4n characters, in
+// CPU time.
+message GrowthMeasurement {
+  uint32 length = 1;
+  uint32 repeat = 2;
+  bool calibrated = 3;
+  double small_ms = 4;
+  double large_ms = 5;
+  double ratio = 6;
+}
+
+// One sweep input's outcome (`linear-sweep`): its name, the screen's ratio of
+// its call to the reference scan, and, for an input the screen could not
+// settle, its growth or the time it hung for.
+message SweepOutcome {
+  string input = 1;
+  double ratio = 2;
+  double hung_ms = 3;
+  GrowthMeasurement growth = 4;
+}

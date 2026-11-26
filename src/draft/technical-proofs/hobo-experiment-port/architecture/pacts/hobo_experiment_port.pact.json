@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboExperimentPortConsumer"
+  },
+  "provider": {
+    "name": "HoboExperimentPortBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Experiment Port boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-experiment-port/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_experiment_port/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

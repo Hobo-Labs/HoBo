@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dx-result-refusal-proof-envelopes",
+  "experienceType": "dx",
+  "title": "DX Result Refusal Proof Envelopes",
+  "linear": "HOBO-571",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,48 @@
+{
+  "consumer": {
+    "name": "v1-release-cutline"
+  },
+  "provider": {
+    "name": "dogfood-yard-release-candidate-evidence"
+  },
+  "interactions": [
+    {
+      "description": "release cutline consumes owner-mapped M3 dogfood operations evidence",
+      "request": {
+        "method": "GET",
+        "path": "/evidence/dogfood-yard/release-candidate/HOBO-469"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "schema": "hobo.dogfood-yard.release-candidate/2026-06-30",
+          "issue": "HOBO-469",
+          "phase": "M3",
+          "milestone": "M3 Release candidate",
+          "evidence": [
+            {
+              "id": "release-candidate-scenario-ledger",
+              "ownerProject": "V1 Dogfood Yard & Hosted Operations",
+              "status": "accepted"
+            }
+          ],
+          "followUps": [
+            {
+              "id": "HOBO-476",
+              "evidenceId": "ga-operations-handoff",
+              "disposition": "existing-issue"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-policy-supply-chain-trust-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

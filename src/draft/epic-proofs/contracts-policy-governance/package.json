@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/epic-reference-contracts-policy-governance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node --import tsx simulation/run-simulation.ts"
+  }
+}

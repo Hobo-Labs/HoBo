@@ -1,0 +1,18 @@
+{
+  "runId": "20260731-ax-exp-nav",
+  "metric_total": 7,
+  "metric_max": 4,
+  "notes": "draft-experience-proof-navigation primaryCommand was pnpm run gate:s1 (fails; wrong surface). Discovery could still promote eval:agent:live via keyword agent.",
+  "cells": [
+    {
+      "persona": "product-coding-agent",
+      "surface": "gate:s1 as exp-proofs navigation",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 3,
+      "total": 7,
+      "max": 4,
+      "notes": "gate:s1 fails (vitest suite misuse); does not show exp-proofs classification."
+    }
+  ]
+}

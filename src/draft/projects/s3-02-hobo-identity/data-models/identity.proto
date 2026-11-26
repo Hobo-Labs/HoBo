@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the S3-02 @hobo/identity draft POC.
+// Design-time contract artifact; not compiled at runtime.
+
+message AttestationBinding {
+  string run_id = 1;
+  string tenant = 2;
+  PrincipalRef parent_principal = 3;
+  CodeVersion code_version = 4;
+  string component_image_digest = 5;
+}
+
+message PrincipalRef {
+  string kind = 1;
+  string id = 2;
+}
+
+message CodeVersion {
+  string digest = 1;
+  string version = 2;
+}
+
+message ScopeEntry {
+  string port = 1;
+  string resource = 2;
+  repeated string verbs = 3;
+}
+
+message JwtSvidRecord {
+  string identity_id = 1;
+  string subject = 2;
+  string svid_ref = 3;
+  repeated ScopeEntry scope = 4;
+  string expires_at = 5;
+  string signer_kid = 6;
+}
+
+message IdentityIssuedEventData {
+  string identity_id = 1;
+  string subject = 2;
+  string svid_ref = 3;
+  repeated ScopeEntry scope = 4;
+  string expires_at = 5;
+}
+
+message IdentityRotatedEventData {
+  string identity_id = 1;
+  string previous_identity_id = 2;
+  string subject = 3;
+  string svid_ref = 4;
+  string expires_at = 5;
+}
+
+message IdentityServiceEvidence {
+  string issue = 1;
+  string summary = 2;
+  repeated string event_families = 3;
+}

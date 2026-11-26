@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-dashboard-freshness-rbac-fixtures",
+  "experienceType": "ux",
+  "title": "Vibe Dashboard Freshness/RBAC Fixtures",
+  "linear": "HOBO-545",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

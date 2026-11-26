@@ -1,0 +1,69 @@
+{
+  "featureId": "cli-product",
+  "scenarioSlug": "hobo-help-lists-the-canonical-verbs",
+  "personaIds": [
+    "product-app-developer",
+    "product-coding-agent"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-08-01T15:31:39.126Z",
+  "runId": "20260801-ux-dx-ax-bare-resume",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.cast",
+    "kind": "recording",
+    "bytes": 3715,
+    "sha256": "2b77738e47db86050e0f38009997b4775465477ae00efd721bcd81e614585d04"
+  },
+  "claims": [
+    {
+      "id": "claim-1",
+      "text": "When I run the hobo CLI with arguments \"--help\""
+    },
+    {
+      "id": "claim-2",
+      "text": "Then the exit code is 0"
+    },
+    {
+      "id": "claim-3",
+      "text": "And stdout contains \"Start here:\""
+    },
+    {
+      "id": "claim-4",
+      "text": "And stdout contains \"hobo new my-app -t api\""
+    },
+    {
+      "id": "claim-5",
+      "text": "And stdout contains \"Canonical verbs:\""
+    },
+    {
+      "id": "claim-6",
+      "text": "And stdout contains \"doctor\""
+    },
+    {
+      "id": "claim-7",
+      "text": "And stdout contains \"deploy\""
+    },
+    {
+      "id": "claim-8",
+      "text": "And stdout contains \"up\""
+    },
+    {
+      "id": "claim-9",
+      "text": "And evidence is capturable for this scenario"
+    }
+  ],
+  "frames": [],
+  "repro": {
+    "command": "node packages/cli/dist/bin/hobo.js --help",
+    "cwd": ".",
+    "via": "capture-evidence"
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

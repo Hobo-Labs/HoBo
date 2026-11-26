@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package hobo.conformance.v1;
+
+message ConformanceCheckResult {
+  string check_id = 1;
+  string port = 2;
+  string tag = 3;
+  string status = 4;
+}
+
+message ConformanceFailure {
+  string check_id = 1;
+  string message = 2;
+}
+
+message LocalCoverage {
+  string status = 1;
+  int32 passed = 2;
+  int32 failed = 3;
+  int32 total = 4;
+}
+
+message RuntimePortConformanceReport {
+  string contract = 1;
+  string backend = 2;
+  string status = 3;
+  repeated ConformanceCheckResult checks = 4;
+  repeated ConformanceFailure failures = 5;
+  LocalCoverage local_coverage = 6;
+}
+
+message CertifiedHostPin {
+  string kind = 1;
+  string version = 2;
+}
+
+message ComponentHostManifest {
+  string schema = 1;
+  repeated CertifiedHostPin certified_hosts = 2;
+}
+
+message ComponentHostConformanceReport {
+  string schema = 1;
+  string status = 2;
+  repeated string non_covered_divergences = 3;
+}

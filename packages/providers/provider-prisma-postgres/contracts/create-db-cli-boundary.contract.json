@@ -1,0 +1,133 @@
+{
+	"schemaVersion": "hobo.process-boundary-contract/v1",
+	"consumer": {
+		"name": "@hobo/provider-prisma-postgres"
+	},
+	"provider": {
+		"name": "create-db",
+		"kind": "process",
+		"pinnedVersion": "1.2.1",
+		"specifier": "create-db@1.2.1"
+	},
+	"metadata": {
+		"note": "The provider boundary here is a child process, not an HTTP service, so the consumer-driven expectations are over argv, environment, exit code, and the stdout document rather than over a request/response pair. Verified by test/contract.test.ts.",
+		"sourceRefs": [
+			{
+				"url": "https://www.prisma.io/docs/postgres/npx-create-db",
+				"checkedAt": "2026-08-08"
+			},
+			{
+				"url": "https://github.com/prisma/create-db",
+				"checkedAt": "2026-08-08"
+			},
+			{
+				"url": "https://www.npmjs.com/package/create-db/v/1.2.1",
+				"checkedAt": "2026-08-08"
+			}
+		]
+	},
+	"invariants": {
+		"noShell": "argv is passed as an array to an injected ProcessRunner; the runner must not spawn a shell",
+		"noAmbientEnvironment": "only the keys in `environment` are passed to the child",
+		"noLatestSpecifier": "the package specifier must name an exact reviewed version"
+	},
+	"environment": ["CI", "NO_COLOR", "FORCE_COLOR"],
+	"interactions": [
+		{
+			"description": "create a temporary database and ask for the machine-readable document",
+			"request": {
+				"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"],
+				"timeoutMs": 120000
+			},
+			"response": {
+				"code": 0,
+				"stdoutFixture": "create.success.json",
+				"stdout": {
+					"success": true,
+					"connectionString": "postgresql://<username>:<password>@db.prisma.io:5432/postgres?sslmode=require",
+					"claimUrl": "https://create-db.prisma.io/claim?projectID=proj_…",
+					"deletionDate": "<ISO 8601 instant computed by the CLI's local clock>",
+					"region": "us-east-1",
+					"name": "<ISO 8601 creation instant used as the default name>",
+					"projectId": "proj_…"
+				}
+			}
+		},
+		{
+			"description": "create in a documented region, as one fused argv element",
+			"request": {
+				"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json", "--region=eu-central-1"],
+				"timeoutMs": 120000
+			},
+			"response": {
+				"code": 0,
+				"stdoutFixture": "create.success.json"
+			}
+		},
+		{
+			"description": "ask for a shorter lifetime than the 24-hour default",
+			"request": {
+				"argv": [
+					"npx",
+					"--yes",
+					"create-db@1.2.1",
+					"create",
+					"--json",
+					"--region=eu-central-1",
+					"--ttl=4h"
+				],
+				"timeoutMs": 120000,
+				"note": "The pinned CLI accepts 30m or 1h-24h. A shorter TTL is the only blast-radius control available on an anonymous database, so it is worth being able to ask for one."
+			},
+			"response": {
+				"code": 0,
+				"stdoutFixture": "create.success.json"
+			}
+		},
+		{
+			"description": "rate limited by the create-db worker",
+			"request": {
+				"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"]
+			},
+			"response": {
+				"code": 1,
+				"stdoutFixture": "create.rate-limited.json",
+				"mapsToHoboCode": "PROVIDER_RATE_LIMITED"
+			}
+		},
+		{
+			"description": "upstream 5xx: the CLI reached the service, so a create may or may not have happened",
+			"request": {
+				"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"]
+			},
+			"response": {
+				"code": 1,
+				"stdoutFixture": "create.api-error-500.json",
+				"mapsToHoboCode": "PROVIDER_OPERATION_AMBIGUOUS"
+			}
+		},
+		{
+			"description": "the CLI dies without printing a document",
+			"request": {
+				"argv": ["npx", "--yes", "create-db@1.2.1", "create", "--json"]
+			},
+			"response": {
+				"code": 137,
+				"stdout": "",
+				"mapsToHoboCode": "PROVIDER_OPERATION_AMBIGUOUS",
+				"note": "The idempotency key stays in-flight: there is no read-by-id API, so a retry could orphan an unreachable project."
+			}
+		},
+		{
+			"description": "a CLI build without --json prints the documented pretty output",
+			"request": {
+				"argv": ["npx", "--yes", "create-db@1.2.1", "create"]
+			},
+			"response": {
+				"code": 0,
+				"stdoutFixture": "create.human.txt",
+				"parsedBy": "human-v1"
+			}
+		}
+	]
+}

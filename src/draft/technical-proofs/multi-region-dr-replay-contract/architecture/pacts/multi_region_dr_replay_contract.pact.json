@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MultiRegionDrReplayContractConsumer"
+  },
+  "provider": {
+    "name": "MultiRegionDrReplayContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Multi-region DR replay boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/multi-region-dr-replay-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.multi_region_dr_replay_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

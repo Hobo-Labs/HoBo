@@ -1,0 +1,282 @@
+{
+  "scenarios": {
+    "healthyCanary": {
+      "name": "healthy-canary",
+      "flag": {
+        "key": "checkout-v2",
+        "defaultValue": "control",
+        "value": "treatment"
+      },
+      "ruleset": {
+        "seq": 7,
+        "freshness": {
+          "status": "fresh",
+          "ageMs": 1200
+        }
+      },
+      "policy": {
+        "flagFlipEffect": "allow",
+        "rolloutEffect": "allow"
+      },
+      "rollout": {
+        "id": "rollout-checkout-v2",
+        "steps": [10, 50, 100]
+      },
+      "traffic": {
+        "observedByStep": {
+          "10": 10,
+          "50": 50,
+          "100": 100,
+          "0": 0
+        }
+      },
+      "slo": {
+        "snapshots": [
+          { "seq": 101, "verdict": "promote", "reason": "healthy", "burnRate": 0.4 },
+          { "seq": 102, "verdict": "promote", "reason": "healthy", "burnRate": 0.5 },
+          { "seq": 103, "verdict": "promote", "reason": "healthy", "burnRate": 0.6 }
+        ]
+      },
+      "experiment": {
+        "key": "checkout-v2-conversion",
+        "variant": "treatment",
+        "scheduledLook": true,
+        "sampleSize": 1200,
+        "minSampleSize": 1000,
+        "guardrailRegressed": false,
+        "verdict": "ship"
+      },
+      "rollback": {
+        "mode": "success"
+      }
+    },
+    "sloBurnRollback": {
+      "name": "slo-burn-rollback",
+      "flag": {
+        "key": "checkout-v2",
+        "defaultValue": "control",
+        "value": "treatment"
+      },
+      "ruleset": {
+        "seq": 8,
+        "freshness": {
+          "status": "fresh",
+          "ageMs": 900
+        }
+      },
+      "policy": {
+        "flagFlipEffect": "allow",
+        "rolloutEffect": "allow"
+      },
+      "rollout": {
+        "id": "rollout-checkout-v2",
+        "steps": [10, 50]
+      },
+      "traffic": {
+        "observedByStep": {
+          "10": 10,
+          "0": 0
+        }
+      },
+      "slo": {
+        "snapshots": [
+          { "seq": 201, "verdict": "rollback", "reason": "slo-burn", "burnRate": 4.2 }
+        ]
+      },
+      "experiment": {
+        "key": "checkout-v2-conversion",
+        "variant": "treatment",
+        "scheduledLook": true,
+        "sampleSize": 0,
+        "minSampleSize": 1000,
+        "guardrailRegressed": false,
+        "verdict": "do-not-conclude"
+      },
+      "rollback": {
+        "mode": "success"
+      }
+    },
+    "staleRuleset": {
+      "name": "stale-ruleset",
+      "flag": {
+        "key": "checkout-v2",
+        "defaultValue": "control",
+        "value": "treatment"
+      },
+      "ruleset": {
+        "seq": 6,
+        "freshness": {
+          "status": "stale",
+          "ageMs": 120000
+        }
+      },
+      "policy": {
+        "flagFlipEffect": "allow",
+        "rolloutEffect": "allow"
+      },
+      "rollout": {
+        "id": "rollout-checkout-v2",
+        "steps": [10]
+      },
+      "traffic": {
+        "observedByStep": {}
+      },
+      "slo": {
+        "snapshots": [
+          { "seq": 301, "verdict": "hold", "reason": "stale-ruleset", "burnRate": 0 }
+        ]
+      },
+      "experiment": {
+        "key": "checkout-v2-conversion",
+        "variant": "control",
+        "scheduledLook": false,
+        "sampleSize": 0,
+        "minSampleSize": 1000,
+        "guardrailRegressed": false,
+        "verdict": "do-not-conclude"
+      },
+      "rollback": {
+        "mode": "success"
+      }
+    },
+    "underpoweredExperiment": {
+      "name": "underpowered-experiment",
+      "flag": {
+        "key": "checkout-v2",
+        "defaultValue": "control",
+        "value": "treatment"
+      },
+      "ruleset": {
+        "seq": 9,
+        "freshness": {
+          "status": "fresh",
+          "ageMs": 700
+        }
+      },
+      "policy": {
+        "flagFlipEffect": "allow",
+        "rolloutEffect": "allow"
+      },
+      "rollout": {
+        "id": "rollout-checkout-v2",
+        "steps": [10, 50, 100]
+      },
+      "traffic": {
+        "observedByStep": {
+          "10": 10,
+          "50": 50,
+          "100": 100
+        }
+      },
+      "slo": {
+        "snapshots": [
+          { "seq": 401, "verdict": "promote", "reason": "healthy", "burnRate": 0.3 },
+          { "seq": 402, "verdict": "promote", "reason": "healthy", "burnRate": 0.3 },
+          { "seq": 403, "verdict": "promote", "reason": "healthy", "burnRate": 0.3 }
+        ]
+      },
+      "experiment": {
+        "key": "checkout-v2-conversion",
+        "variant": "treatment",
+        "scheduledLook": true,
+        "sampleSize": 120,
+        "minSampleSize": 1000,
+        "guardrailRegressed": false,
+        "verdict": "ship"
+      },
+      "rollback": {
+        "mode": "success"
+      }
+    },
+    "stuckRollout": {
+      "name": "stuck-rollout",
+      "flag": {
+        "key": "checkout-v2",
+        "defaultValue": "control",
+        "value": "treatment"
+      },
+      "ruleset": {
+        "seq": 10,
+        "freshness": {
+          "status": "fresh",
+          "ageMs": 700
+        }
+      },
+      "policy": {
+        "flagFlipEffect": "allow",
+        "rolloutEffect": "allow"
+      },
+      "rollout": {
+        "id": "rollout-checkout-v2",
+        "steps": [50]
+      },
+      "traffic": {
+        "observedByStep": {
+          "50": 35
+        }
+      },
+      "slo": {
+        "snapshots": [
+          { "seq": 501, "verdict": "promote", "reason": "healthy", "burnRate": 0.4 }
+        ]
+      },
+      "experiment": {
+        "key": "checkout-v2-conversion",
+        "variant": "treatment",
+        "scheduledLook": true,
+        "sampleSize": 0,
+        "minSampleSize": 1000,
+        "guardrailRegressed": false,
+        "verdict": "do-not-conclude"
+      },
+      "rollback": {
+        "mode": "success"
+      }
+    },
+    "rollbackCompensationFailure": {
+      "name": "rollback-compensation-failure",
+      "flag": {
+        "key": "checkout-v2",
+        "defaultValue": "control",
+        "value": "treatment"
+      },
+      "ruleset": {
+        "seq": 11,
+        "freshness": {
+          "status": "fresh",
+          "ageMs": 500
+        }
+      },
+      "policy": {
+        "flagFlipEffect": "allow",
+        "rolloutEffect": "allow"
+      },
+      "rollout": {
+        "id": "rollout-checkout-v2",
+        "steps": [10]
+      },
+      "traffic": {
+        "observedByStep": {
+          "10": 10
+        }
+      },
+      "slo": {
+        "snapshots": [
+          { "seq": 601, "verdict": "rollback", "reason": "slo-burn", "burnRate": 5.1 }
+        ]
+      },
+      "experiment": {
+        "key": "checkout-v2-conversion",
+        "variant": "treatment",
+        "scheduledLook": true,
+        "sampleSize": 0,
+        "minSampleSize": 1000,
+        "guardrailRegressed": false,
+        "verdict": "do-not-conclude"
+      },
+      "rollback": {
+        "mode": "fail"
+      }
+    }
+  }
+}

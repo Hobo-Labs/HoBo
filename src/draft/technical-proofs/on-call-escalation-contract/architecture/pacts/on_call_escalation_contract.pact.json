@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OnCallEscalationContractConsumer"
+  },
+  "provider": {
+    "name": "OnCallEscalationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "On Call Escalation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/on-call-escalation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.on_call_escalation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

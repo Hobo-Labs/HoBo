@@ -1,0 +1,56 @@
+{
+  "consumer": {
+    "name": "HOBO-575 CLI migration transcript prototype"
+  },
+  "provider": {
+    "name": "HoBo design proof registry"
+  },
+  "interactions": [
+    {
+      "description": "read the HOBO-575 CLI migration transcript prototype proof",
+      "request": {
+        "method": "GET",
+        "path": "/design-proofs/cli-migration-transcript-prototype"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-575",
+          "phase": "M2",
+          "requiredTranscriptCases": [
+            "adopt-in-place",
+            "still-external",
+            "safe-additive-migration",
+            "blocked-destructive-contract",
+            "snapshot-restore",
+            "cross-cloud-export-import-cutover"
+          ],
+          "requiredEvents": [
+            "migration.Planned",
+            "migration.SnapshotTaken",
+            "migration.PhaseApplied",
+            "migration.Verified",
+            "migration.RolledBack",
+            "migration.Exported",
+            "migration.Imported",
+            "migration.CutOver"
+          ],
+          "requiredGateBlockers": [
+            "Gatekeeper",
+            "Pact compatibility",
+            "can-deploy"
+          ],
+          "proofNote": "docs/design/proofs/cli-migration-transcript-prototype/README.md"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

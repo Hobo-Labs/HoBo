@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "LaunchSiteReleaseCandidateEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSiteReleaseCandidateEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Site Release Candidate Evidence boundary returns the accepted M3 evidence gate",
+      "request": {
+        "method": "GET",
+        "path": "/launch-site-release-candidate-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.launch-site-release-candidate-evidence/2026-06-30",
+          "issue": "HOBO-472",
+          "phase": "M3"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

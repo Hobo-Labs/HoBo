@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "hobo-dev-loop-contract",
+  "title": "HoBo Dev Loop Contract POC",
+  "linear": "HOBO-122",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-codegen-cli-contract",
+      "src/draft/technical-proofs/hobo-new-scaffold-contract",
+      "src/draft/technical-proofs/local-dev-test-authoring-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

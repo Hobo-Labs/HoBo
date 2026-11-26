@@ -1,0 +1,85 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "CloudflareDnsApi" },
+	"interactions": [
+		{
+			"description": "list dns records empty",
+			"request": {
+				"method": "GET",
+				"path": "/v4/zones/zone-1/dns_records?type=CNAME&name=web.myapp.hobo.example.com"
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true, "result": [] }
+			}
+		},
+		{
+			"description": "create cname dns record",
+			"request": {
+				"method": "POST",
+				"path": "/v4/zones/zone-1/dns_records",
+				"body": {
+					"type": "CNAME",
+					"name": "web.myapp.hobo.example.com",
+					"content": "funnel.ts.net"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true, "result": { "id": "rec1" } }
+			}
+		},
+		{
+			"description": "update cname dns record",
+			"request": {
+				"method": "PUT",
+				"path": "/v4/zones/zone-1/dns_records/rec1",
+				"body": {
+					"type": "CNAME",
+					"name": "web.myapp.hobo.example.com",
+					"content": "funnel.ts.net"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true, "result": { "id": "rec1" } }
+			}
+		},
+		{
+			"description": "list all zone records",
+			"request": {
+				"method": "GET",
+				"path": "/v4/zones/zone-1/dns_records?per_page=100"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"result": [
+						{
+							"id": "rec1",
+							"name": "web.myapp.hobo.example.com",
+							"type": "CNAME",
+							"content": "funnel.ts.net",
+							"ttl": 300
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "delete dns record",
+			"request": {
+				"method": "DELETE",
+				"path": "/v4/zones/zone-1/dns_records/rec1"
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

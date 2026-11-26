@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
+  "defaultEnvironment": "local",
+  "definitions": {
+    "pools": {
+      "linux": {
+        "label": "hobo",
+        "os": "linux",
+        "architecture": "x64"
+      }
+    },
+    "routing": {
+      "freeThenCheapest": {
+        "strategy": "lowest-total-incremental-cost",
+        "noEligibleProvider": "queue",
+        "unknownAllocation": "zero"
+      }
+    },
+    "budgets": {
+      "local": {
+        "scope": "ci-account",
+        "currency": "USD",
+        "period": "manual",
+        "timeZone": "UTC",
+        "limitMicros": 1000000
+      },
+      "integration": {
+        "scope": "ci-account",
+        "currency": "USD",
+        "period": "manual",
+        "timeZone": "UTC",
+        "limitMicros": 5000000
+      }
+    },
+    "providers": {
+      "localGithub": {
+        "id": "local-github",
+        "kind": "github",
+        "connectionRef": "local-github",
+        "runsOn": "ubuntu-24.04",
+        "enabled": true
+      },
+      "integrationSandbox": {
+        "id": "integration-sandbox",
+        "kind": "vercel",
+        "connectionRef": "integration-vercel",
+        "runsOn": "sandbox",
+        "location": "vercel",
+        "enabled": true
+      }
+    },
+    "secrets": {
+      "relay": {
+        "HOBO_CI_ACCOUNT_TOKEN": {
+          "requiredFor": [
+            "deployment"
+          ]
+        },
+        "HOBO_CI_WEBHOOK_SECRET": {
+          "requiredFor": [
+            "execution"
+          ]
+        }
+      }
+    }
+  },
+  "environments": {
+    "local": {
+      "relayOrigin": "http://127.0.0.1:8787",
+      "githubWebhookOrigin": "https://local-ci.example.com",
+      "allowInsecureLoopback": true,
+      "secrets": {
+        "$ref": "#/definitions/secrets/relay"
+      },
+      "policy": {
+        "accountId": "local-ci",
+        "tenantId": "local-ci",
+        "pool": {
+          "$ref": "#/definitions/pools/linux"
+        },
+        "providers": [
+          {
+            "$ref": "#/definitions/providers/localGithub"
+          }
+        ],
+        "budget": {
+          "$ref": "#/definitions/budgets/local"
+        },
+        "routing": {
+          "$ref": "#/definitions/routing/freeThenCheapest"
+        },
+        "thresholds": []
+      }
+    },
+    "integration": {
+      "relayOrigin": "https://ci.example.com",
+      "githubWebhookOrigin": "https://ci.example.com",
+      "secrets": {
+        "$ref": "#/definitions/secrets/relay"
+      },
+      "policy": {
+        "accountId": "integration-ci",
+        "tenantId": "integration-ci",
+        "pool": {
+          "$ref": "#/definitions/pools/linux"
+        },
+        "providers": [
+          {
+            "$ref": "#/definitions/providers/integrationSandbox"
+          }
+        ],
+        "budget": {
+          "$ref": "#/definitions/budgets/integration"
+        },
+        "routing": {
+          "$ref": "#/definitions/routing/freeThenCheapest"
+        },
+        "thresholds": []
+      }
+    }
+  }
+}

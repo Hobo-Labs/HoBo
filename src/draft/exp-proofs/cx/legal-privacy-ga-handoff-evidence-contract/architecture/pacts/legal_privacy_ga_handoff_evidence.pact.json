@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "LegalPrivacyGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LegalPrivacyGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Legal privacy GA handoff boundary returns accepted M4 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/legal-privacy-ga-handoff-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.legal_privacy_ga_handoff_evidence/v1",
+          "issue": "HOBO-478",
+          "phase": "M4",
+          "milestone": "M4 GA handoff"
+        }
+      }
+    },
+    {
+      "description": "Legal privacy GA handoff boundary rejects unsupported public claims",
+      "request": {
+        "method": "POST",
+        "path": "/legal-privacy-ga-handoff-evidence/claims"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "unsupported public legal/privacy claim"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

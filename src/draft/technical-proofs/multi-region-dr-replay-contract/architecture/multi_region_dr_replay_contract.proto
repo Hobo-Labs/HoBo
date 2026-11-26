@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Multi Region Dr Replay Contract
+// draft package reasons about. Design-time contract artifact only.
+
+enum MultiRegionTopologyMode {
+  TOPOLOGY_MODE_UNSPECIFIED = 0;
+  TOPOLOGY_MODE_ACTIVE_PASSIVE_LOG = 1;
+  TOPOLOGY_MODE_ACTIVE_ACTIVE_STATELESS = 2;
+}
+
+enum RestoreDrillStatus {
+  RESTORE_DRILL_STATUS_UNSPECIFIED = 0;
+  RESTORE_DRILL_STATUS_PASSED = 1;
+  RESTORE_DRILL_STATUS_FAILED = 2;
+}
+
+message MultiRegionDrReplayContractRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string evidence = 3;
+}

@@ -1,0 +1,267 @@
+{
+  "package": "@hobo/bindles",
+  "version": "hobo.bindles.public-api/v1",
+  "resourceHandleSignature": {
+    "allow": "allow(...verbs: AllowVerb[]): ResourceHandle<Kind, NarrowedAllow>",
+    "descriptor": "toDescriptor(): ResourceDescriptor<Kind>",
+    "identity": "readonly identity: { kind: Kind; name: string; stableId: string }"
+  },
+  "exports": [
+    {
+      "name": "CATALOG",
+      "kind": "readonly-catalog",
+      "signature": "readonly ResourceCatalogEntry[]"
+    },
+    {
+      "name": "api",
+      "kind": "resource-factory",
+      "signature": "api(name: string): ResourceHandle<\"api\", never>",
+      "portRef": [
+        "wasi:http",
+        "hobo:http"
+      ],
+      "allowVerbs": []
+    },
+    {
+      "name": "kv",
+      "kind": "resource-factory",
+      "signature": "kv(name: string): ResourceHandle<\"kv\", \"delete\" | \"get\" | \"set\">",
+      "portRef": [
+        "wasi:keyvalue"
+      ],
+      "allowVerbs": [
+        "get",
+        "set",
+        "delete"
+      ]
+    },
+    {
+      "name": "cache",
+      "kind": "resource-factory",
+      "signature": "cache(name: string): ResourceHandle<\"cache\", \"delete\" | \"get\" | \"invalidate\" | \"set\">",
+      "portRef": [
+        "hobo:cache"
+      ],
+      "allowVerbs": [
+        "get",
+        "set",
+        "delete",
+        "invalidate"
+      ]
+    },
+    {
+      "name": "bucket",
+      "kind": "resource-factory",
+      "signature": "bucket(name: string): ResourceHandle<\"bucket\", \"delete\" | \"read\" | \"write\">",
+      "portRef": [
+        "wasi:blobstore",
+        "hobo:blob-events"
+      ],
+      "allowVerbs": [
+        "read",
+        "write",
+        "delete"
+      ]
+    },
+    {
+      "name": "queue",
+      "kind": "resource-factory",
+      "signature": "queue(name: string): ResourceHandle<\"queue\", \"dequeue\" | \"enqueue\">",
+      "portRef": [
+        "hobo:queue"
+      ],
+      "allowVerbs": [
+        "enqueue",
+        "dequeue"
+      ]
+    },
+    {
+      "name": "topic",
+      "kind": "resource-factory",
+      "signature": "topic(name: string): ResourceHandle<\"topic\", \"publish\" | \"subscribe\">",
+      "portRef": [
+        "wasi:messaging"
+      ],
+      "allowVerbs": [
+        "publish",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "secret",
+      "kind": "resource-factory",
+      "signature": "secret(name: string): ResourceHandle<\"secret\", \"access\" | \"put\">",
+      "portRef": [
+        "wasi:config",
+        "hobo:secrets"
+      ],
+      "allowVerbs": [
+        "put",
+        "access"
+      ]
+    },
+    {
+      "name": "data",
+      "kind": "resource-factory",
+      "signature": "data(name: string): ResourceHandle<\"data\", \"admin\" | \"query\" | \"read\" | \"write\">",
+      "portRef": [
+        "hobo:data"
+      ],
+      "allowVerbs": [
+        "read",
+        "write",
+        "query",
+        "admin"
+      ]
+    },
+    {
+      "name": "schedule",
+      "kind": "resource-factory",
+      "signature": "schedule(name: string): ResourceHandle<\"schedule\", never>",
+      "portRef": [
+        "hobo:scheduler"
+      ],
+      "allowVerbs": []
+    },
+    {
+      "name": "websocket",
+      "kind": "resource-factory",
+      "signature": "websocket(name: string): ResourceHandle<\"websocket\", \"accept\" | \"broadcast\" | \"connect\" | \"send\" | \"subscribe\">",
+      "portRef": [
+        "wasi:websocket",
+        "hobo:websocket"
+      ],
+      "allowVerbs": [
+        "accept",
+        "connect",
+        "send",
+        "broadcast",
+        "subscribe"
+      ]
+    },
+    {
+      "name": "job",
+      "kind": "resource-factory",
+      "signature": "job(name: string): ResourceHandle<\"job\", \"submit\">",
+      "portRef": [
+        "hobo:job"
+      ],
+      "allowVerbs": [
+        "submit"
+      ]
+    },
+    {
+      "name": "web",
+      "kind": "resource-factory",
+      "signature": "web(name: string): ResourceHandle<\"web\", never>",
+      "portRef": [
+        "wasi:http"
+      ],
+      "allowVerbs": []
+    },
+    {
+      "name": "service",
+      "kind": "resource-factory",
+      "signature": "service(name: string): ResourceHandle<\"service\", never>",
+      "portRef": [
+        "wasi:http"
+      ],
+      "allowVerbs": []
+    },
+    {
+      "name": "flag",
+      "kind": "resource-factory",
+      "signature": "flag(name: string): ResourceHandle<\"flag\", \"change\" | \"eval\">",
+      "portRef": [
+        "hobo:feature-flag"
+      ],
+      "allowVerbs": [
+        "eval",
+        "change"
+      ]
+    },
+    {
+      "name": "auth",
+      "kind": "resource-factory",
+      "signature": "auth(name: string): ResourceHandle<\"auth\", \"session\" | \"verify\">",
+      "portRef": [
+        "hobo:auth"
+      ],
+      "allowVerbs": [
+        "verify",
+        "session"
+      ]
+    },
+    {
+      "name": "crypto",
+      "kind": "resource-factory",
+      "signature": "crypto(name: string): ResourceHandle<\"crypto\", \"decrypt\" | \"encrypt\" | \"sign\" | \"verify\">",
+      "portRef": [
+        "hobo:crypto"
+      ],
+      "allowVerbs": [
+        "encrypt",
+        "decrypt",
+        "sign",
+        "verify"
+      ]
+    },
+    {
+      "name": "notify",
+      "kind": "resource-factory",
+      "signature": "notify(name: string): ResourceHandle<\"notify\", \"send\">",
+      "portRef": [
+        "hobo:notify"
+      ],
+      "allowVerbs": [
+        "send"
+      ]
+    },
+    {
+      "name": "guardrail",
+      "kind": "resource-factory",
+      "signature": "guardrail(name: string): ResourceHandle<\"guardrail\", \"check\">",
+      "portRef": [
+        "hobo:guardrail"
+      ],
+      "allowVerbs": [
+        "check"
+      ]
+    },
+    {
+      "name": "ui",
+      "kind": "resource-factory",
+      "signature": "ui(name: string): ResourceHandle<\"ui\", \"drive\" | \"render\">",
+      "portRef": [
+        "hobo:ui-render"
+      ],
+      "allowVerbs": [
+        "render",
+        "drive"
+      ]
+    },
+    {
+      "name": "experiment",
+      "kind": "resource-factory",
+      "signature": "experiment(name: string): ResourceHandle<\"experiment\", \"analyze\" | \"assign\" | \"expose\">",
+      "portRef": [
+        "hobo:experiment"
+      ],
+      "allowVerbs": [
+        "assign",
+        "expose",
+        "analyze"
+      ]
+    },
+    {
+      "name": "catalogFactoryNames",
+      "kind": "catalog-helper",
+      "signature": "catalogFactoryNames(): readonly string[]"
+    },
+    {
+      "name": "secretRef",
+      "kind": "helper",
+      "signature": "secretRef(ref: string): SecretRef"
+    }
+  ]
+}

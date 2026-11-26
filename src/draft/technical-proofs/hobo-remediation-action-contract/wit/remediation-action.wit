@@ -1,0 +1,80 @@
+package hobo:crew@0.1.0;
+
+/// Autonomous Crew write envelope. This is a contract only; no executor lives here.
+interface remediation-action {
+  enum remediation-action-kind {
+    failover,
+    scale,
+    retry,
+    circuit-break,
+    resync,
+    compensate,
+    dead-letter,
+    revert-champion,
+    rotate-credential,
+    halt-spend,
+    degrade,
+    escalate,
+    propose,
+  }
+
+  enum target-kind {
+    resource,
+    camp,
+    region,
+  }
+
+  enum blast-radius-scope {
+    resource,
+    camp,
+    region,
+  }
+
+  enum estimated-impact {
+    low,
+    medium,
+    high,
+  }
+
+  enum conformance-state {
+    green,
+    unknown,
+    failing,
+  }
+
+  enum policy-effect-class {
+    auto,
+    canary-with-auto-rollback,
+    require-approval,
+  }
+
+  record target-ref {
+    kind: target-kind,
+    id: string,
+  }
+
+  record blast-radius {
+    scope: blast-radius-scope,
+    reversible: bool,
+    compensation-path: option<string>,
+    estimated-impact: estimated-impact,
+  }
+
+  record remediation-action {
+    kind: string,
+    target: target-ref,
+    blast-radius: blast-radius,
+    environment: option<string>,
+    idempotency-key: string,
+    conformance-state: conformance-state,
+  }
+
+  record remediation-decision {
+    effect-class: policy-effect-class,
+    reason: string,
+  }
+}
+
+world remediation-action-contract {
+  export remediation-action;
+}

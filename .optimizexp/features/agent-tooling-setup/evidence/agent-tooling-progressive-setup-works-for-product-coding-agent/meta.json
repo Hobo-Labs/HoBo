@@ -1,0 +1,32 @@
+{
+  "featureId": "agent-tooling-setup",
+  "scenarioSlug": "agent-tooling-progressive-setup-works-for-product-coding-agent",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T15:39:21.915Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 1162,
+    "sha256": "3dc6ddc26bf323b4309a4072b9e20deb4f0801e17f92f0069192c3368ad6053f"
+  },
+  "frames": [],
+  "repro": {
+    "command": "bash scripts/setup-agent-tools.sh --help",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

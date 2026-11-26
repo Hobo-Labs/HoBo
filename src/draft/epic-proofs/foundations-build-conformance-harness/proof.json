@@ -1,0 +1,25 @@
+{
+  "layer": "epic",
+  "slug": "foundations-build-conformance-harness",
+  "title": "Foundations, Build & Conformance Harness Reference Implementation",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/ci-fabric-oidc-e2e-contract",
+      "src/draft/technical-proofs/hobo-componentize-contract",
+      "src/draft/technical-proofs/hobo-core-contract",
+      "src/draft/technical-proofs/hobo-monorepo-skeleton-contract",
+      "src/draft/technical-proofs/hobo-wit-toolchain-contract",
+      "src/draft/technical-proofs/signed-artifact-publish-install-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

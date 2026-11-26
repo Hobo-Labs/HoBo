@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hobo.draft.cli_manage_inspect_logs_drift.v1;
+
+message ManageTranscriptPrototype {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated ManageTranscriptScene scenes = 6;
+  repeated string scope_out = 7;
+}
+
+message ManageTranscriptScene {
+  string state = 1;
+  string fixture_id = 2;
+  repeated string fixture_sources = 3;
+  string proof_mode = 4;
+  string correlation_id = 5;
+  CommandTranscript cli = 6;
+  McpToolCall mcp = 7;
+  MachineResult machine = 8;
+  HumanTranscript human = 9;
+  RedactionEvidence redaction = 10;
+}
+
+message CommandTranscript {
+  string command = 1;
+  int32 exit_code = 2;
+}
+
+message McpToolCall {
+  string tool = 1;
+  map<string, string> input = 2;
+  MachineResult result = 3;
+}
+
+message MachineResult {
+  string status = 1;
+  string code = 2;
+  string message = 3;
+  string remediation = 4;
+}
+
+message HumanTranscript {
+  string summary = 1;
+  repeated string lines = 2;
+  repeated string accessibility_notes = 3;
+}
+
+message RedactionEvidence {
+  bool redacted = 1;
+  string classification = 2;
+  repeated string visible_fields = 3;
+  repeated string withheld_fields = 4;
+}

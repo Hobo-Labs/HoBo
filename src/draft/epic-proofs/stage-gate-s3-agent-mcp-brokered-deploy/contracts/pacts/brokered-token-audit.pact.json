@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "stage-gate-j2-agent" },
+  "provider": { "name": "hobo-token-broker" },
+  "interactions": [
+    {
+      "description": "request_token inside .allow() ceiling grants brokered credential",
+      "request": {
+        "tool": "request_token",
+        "input": {
+          "provider": "s2-cloud",
+          "scope": { "port": "compute", "resource": "hello-bindle.api", "action": "deploy" }
+        }
+      },
+      "response": {
+        "status": "ok",
+        "body": { "ok": true, "events": ["token.Granted", "token.Used"] }
+      }
+    },
+    {
+      "description": "request_token outside .allow() ceiling is denied",
+      "request": {
+        "tool": "request_token",
+        "input": {
+          "scope": { "port": "database", "resource": "shop.db", "action": "admin" }
+        }
+      },
+      "response": { "status": "denied", "body": { "ok": false } }
+    }
+  ]
+}

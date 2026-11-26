@@ -1,0 +1,15 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"package.json",
+		"README.md"
+	],
+	"expectContains": {
+		"package.json": [
+			"@hobo/app-greeter",
+			"@hobo/bindles"
+		]
+	}
+}

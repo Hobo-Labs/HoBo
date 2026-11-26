@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "EntitlementAbuseRateLimitPolicyConsumer"
+  },
+  "provider": {
+    "name": "EntitlementAbuseRateLimitPolicyBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Entitlement abuse rate-limit policy boundary returns its accepted policy evidence",
+      "request": {
+        "method": "GET",
+        "path": "/entitlement-abuse-rate-limit-policy/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.entitlement_abuse_rate_limit_policy/v1",
+          "issue": "HOBO-491",
+          "requiredLimitTypeCount": 6,
+          "requiredCustomerStateCount": 5,
+          "requiresAppealPolicy": true,
+          "requiresSupportOverrides": true,
+          "forbidsFraudScoringSelection": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

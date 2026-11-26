@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-472 launch
+// site release-candidate evidence contract. This is a design-time schema
+// artifact, not a runtime compilation target.
+
+enum LaunchSiteReleaseCandidateEvidenceStatus {
+  LAUNCH_SITE_RELEASE_CANDIDATE_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SITE_RELEASE_CANDIDATE_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SITE_RELEASE_CANDIDATE_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  LAUNCH_SITE_RELEASE_CANDIDATE_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum LaunchSiteReleaseCandidateProofMode {
+  LAUNCH_SITE_RELEASE_CANDIDATE_PROOF_MODE_UNSPECIFIED = 0;
+  LAUNCH_SITE_RELEASE_CANDIDATE_PROOF_MODE_DESIGN_RECORD = 1;
+  LAUNCH_SITE_RELEASE_CANDIDATE_PROOF_MODE_ISSUE_STATE = 2;
+  LAUNCH_SITE_RELEASE_CANDIDATE_PROOF_MODE_MANUAL_REVIEW = 3;
+  LAUNCH_SITE_RELEASE_CANDIDATE_PROOF_MODE_REFERENCE_FIXTURE = 4;
+  LAUNCH_SITE_RELEASE_CANDIDATE_PROOF_MODE_LIVE_RECORDING = 5;
+}
+
+enum LaunchSiteReleaseCandidateLaunchRiskEffect {
+  LAUNCH_SITE_RELEASE_CANDIDATE_LAUNCH_RISK_EFFECT_UNSPECIFIED = 0;
+  LAUNCH_SITE_RELEASE_CANDIDATE_LAUNCH_RISK_EFFECT_UNCHANGED = 1;
+  LAUNCH_SITE_RELEASE_CANDIDATE_LAUNCH_RISK_EFFECT_INCREASED = 2;
+  LAUNCH_SITE_RELEASE_CANDIDATE_LAUNCH_RISK_EFFECT_REDUCED = 3;
+}
+
+message LaunchSiteReleaseCandidateEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  LaunchSiteReleaseCandidateProofMode proof_mode = 4;
+  LaunchSiteReleaseCandidateEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message LaunchSiteReleaseCandidateBlocker {
+  string id = 1;
+  string owner_project = 2;
+  string state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message LaunchSiteReleaseCandidateAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  LaunchSiteReleaseCandidateLaunchRiskEffect launch_risk_effect = 4;
+}
+
+message LaunchSiteReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message LaunchSiteReleaseCandidateFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message LaunchSiteInitiativeStatusGate {
+  string parent_initiative = 1;
+  LaunchSiteReleaseCandidateLaunchRiskEffect launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message LaunchSitePublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message LaunchSiteReleaseCandidateEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated LaunchSiteReleaseCandidateEvidenceItem evidence = 5;
+  repeated LaunchSiteReleaseCandidateBlocker blockers = 6;
+  repeated LaunchSiteReleaseCandidateAcceptedRisk accepted_risks = 7;
+  repeated LaunchSiteReleaseCutlineDependency release_cutline_dependencies = 8;
+  repeated LaunchSiteReleaseCandidateFollowUp follow_ups = 9;
+  LaunchSiteInitiativeStatusGate initiative_status = 10;
+  repeated string scope_out = 11;
+  repeated LaunchSitePublicClaimGuard public_claim_guards = 12;
+}

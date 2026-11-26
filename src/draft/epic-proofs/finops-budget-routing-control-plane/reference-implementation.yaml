@@ -1,0 +1,41 @@
+epic:
+  slug: finops-budget-routing-control-plane
+  title: Standards-first FinOps budget routing control plane
+  status: draft-proof
+
+pipeline:
+  - ResourceIntent
+  - CandidateGeneration
+  - ConstraintFilter
+  - PolicyDecision
+  - MetricVector
+  - ParetoFrontier
+  - PreferenceSelection
+  - StabilityDecision
+  - DecisionGraph
+  - RoutingDecision
+  - ActionPlan
+  - ExecutionAdapter
+  - FeedbackLoop
+
+mockedBoundaries:
+  - MetricContractRegistry
+  - ConstraintEngine
+  - ParetoEvaluator
+  - StabilityController
+  - DecisionGraphPublisher
+  - FeedbackProposalGate
+  - SimulationRunner
+
+adapterFixtures:
+  - terraform-plan-json
+  - pulumi-automation-api
+  - crossplane-composition
+  - kubernetes-runtime-controller
+
+scopeOut:
+  - live billing API
+  - live provider API
+  - production IaC
+  - payment or tax logic
+  - production dashboard

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "WorkspaceActivationTelemetryContractConsumer"
+  },
+  "provider": {
+    "name": "WorkspaceActivationTelemetryContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Workspace Activation Telemetry Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/workspace-activation-telemetry-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.workspace_activation_telemetry_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

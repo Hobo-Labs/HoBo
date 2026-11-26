@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "BillingCreditsScopeContractConsumer"
+  },
+  "provider": {
+    "name": "BillingCreditsScopeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Billing & Credits Scope Contract boundary returns its accepted M0 scope evidence",
+      "request": {
+        "method": "GET",
+        "path": "/billing-credits-scope-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.billing_credits_scope_contract/v1",
+          "issue": "HOBO-418"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

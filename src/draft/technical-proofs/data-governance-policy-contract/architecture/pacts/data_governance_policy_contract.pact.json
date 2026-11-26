@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DataGovernancePolicyContractConsumer"
+  },
+  "provider": {
+    "name": "DataGovernancePolicyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Data Governance Policy Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/data-governance-policy-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.data_governance_policy_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

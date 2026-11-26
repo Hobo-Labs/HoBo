@@ -1,0 +1,71 @@
+{
+  "consumer": {
+    "name": "@hobo/connector-acp"
+  },
+  "provider": {
+    "name": "SweGeminiBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "stock ACP handshake with the Gemini agent — no adapter-side protocol patches",
+      "request": {
+        "method": "POST",
+        "path": "/agents/gemini/initialize",
+        "body": {
+          "protocolVersion": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "description": "a scripted SWE task completes governed end to end",
+      "request": {
+        "method": "POST",
+        "path": "/agents/gemini/tasks/fix-tests",
+        "body": {
+          "instruction": "fix the failing tests",
+          "workspace": "/workspace/shop"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "report": {
+            "schema": "hobo.swe-task-report/v1",
+            "taskId": "fix-tests",
+            "stopReason": "end_turn",
+            "edits": ["workspace:write edit src/index.ts"],
+            "refusals": [],
+            "completed": true
+          }
+        }
+      }
+    },
+    {
+      "description": "vendor credentials are brokered — the launch env carries exactly one injected key",
+      "request": {
+        "method": "GET",
+        "path": "/agents/gemini/launch"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "command": "gemini",
+          "args": ["--experimental-acp"],
+          "credentialEnv": "GEMINI_API_KEY",
+          "staticSecrets": false
+        }
+      }
+    }
+  ]
+}

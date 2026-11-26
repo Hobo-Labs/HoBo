@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PolicySupplyChainTrustContractConsumer"
+  },
+  "provider": {
+    "name": "PolicySupplyChainTrustContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Policy Supply Chain Trust Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/policy-supply-chain-trust-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.policy_supply_chain_trust_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

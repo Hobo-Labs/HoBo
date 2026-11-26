@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+message CapabilityGrant {
+  string component_id = 1;
+  string import_interface = 2;
+  string resource = 3;
+  repeated string operations = 4;
+}
+
+message CapabilityUsage {
+  repeated string inferred = 1;
+  string source = 2;
+}
+
+message CapabilityDiagnostic {
+  string code = 1;
+  string severity = 2;
+  string resource = 3;
+  string message = 4;
+  string file_name = 5;
+  int32 line = 6;
+}
+
+message GrantEvaluation {
+  string schema = 1;
+  bool ok = 2;
+  string can_deploy_dimension = 3;
+  repeated CapabilityDiagnostic diagnostics = 4;
+  repeated CapabilityGrant grants = 5;
+}
+
+message LinkEstablished {
+  string component_id = 1;
+  string import_interface = 2;
+  string provider_id = 3;
+  string export_interface = 4;
+  string transport = 5;
+  string grant_source = 6;
+}
+
+message LinkCalled {
+  string component_id = 1;
+  string import_interface = 2;
+  string provider_id = 3;
+  string export_interface = 4;
+  string operation = 5;
+  string resource = 6;
+  string grant_source = 7;
+  string transport = 8;
+}
+
+message CapabilityGrantDenied {
+  string reason = 1;
+  string component_id = 2;
+  string import_interface = 3;
+  string operation = 4;
+  string resource = 5;
+  string provider_id = 6;
+  string export_interface = 7;
+}

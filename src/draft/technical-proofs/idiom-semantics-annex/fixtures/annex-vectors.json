@@ -1,0 +1,69 @@
+{
+  "goldenIr": {
+    "name": "orders-handler",
+    "program": {
+      "bindle": "orders",
+      "resources": [
+        { "kind": "service", "name": "api" },
+        { "kind": "kv", "name": "orders" }
+      ],
+      "handlers": [
+        { "resource": "api", "event": "http.request", "exportName": "handle" }
+      ]
+    },
+    "expectedWitCalls": [
+      { "interface": "hobo:sdk/resource-catalog", "function": "declare-resource", "args": { "kind": "kv", "name": "orders" } },
+      { "interface": "hobo:sdk/resource-catalog", "function": "declare-resource", "args": { "kind": "service", "name": "api" } },
+      { "interface": "hobo:sdk/handlers", "function": "attach-handler", "args": { "resource": "api", "event": "http.request", "exportName": "handle" } }
+    ],
+    "expectedManifest": {
+      "schema": "hobo.manifest/v1",
+      "bindle": "orders",
+      "resources": [
+        { "kind": "kv", "name": "orders" },
+        { "kind": "service", "name": "api" }
+      ],
+      "handlers": [
+        { "resource": "api", "event": "http.request", "exportName": "handle" }
+      ]
+    }
+  },
+  "semantics": [
+    {
+      "name": "result-error-mapping",
+      "category": "error-mapping",
+      "result": { "err": { "tag": "deadline-exceeded", "message": "step timed out" } },
+      "expectedThrow": { "name": "HoboWitError", "tag": "deadline-exceeded" }
+    },
+    {
+      "name": "caller-cancellation",
+      "category": "cancellation",
+      "signal": { "reason": "caller-aborted", "deadlineMs": 250 },
+      "expected": {
+        "err": {
+          "tag": "cancelled",
+          "message": "caller-aborted",
+          "deadlineMs": 250,
+          "retry": "caller-owned"
+        }
+      }
+    },
+    {
+      "name": "awaited-ifc-order",
+      "category": "async-ordering",
+      "facts": [
+        { "sequence": 2, "kind": "handler", "resource": "api", "event": "http.request" },
+        { "sequence": 1, "kind": "resource", "name": "api" }
+      ],
+      "expected": { "ok": ["resource:api", "handler:api:http.request"] }
+    },
+    {
+      "name": "missing-resource-before-handler",
+      "category": "ifc-side-effects",
+      "facts": [
+        { "sequence": 1, "kind": "handler", "resource": "api", "event": "http.request" }
+      ],
+      "expectedError": "IfC order violation: handler api observed before resource declaration"
+    }
+  ]
+}

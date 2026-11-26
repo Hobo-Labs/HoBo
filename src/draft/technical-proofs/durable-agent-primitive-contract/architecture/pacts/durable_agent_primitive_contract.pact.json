@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DurableAgentPrimitiveContractConsumer"
+  },
+  "provider": {
+    "name": "DurableAgentPrimitiveContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Durable agent primitive boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/durable-agent-primitive-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.durable_agent_primitive_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

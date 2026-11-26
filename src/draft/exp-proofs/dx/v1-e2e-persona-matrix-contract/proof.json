@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-e2e-persona-matrix-contract",
+  "experienceType": "dx",
+  "title": "V1 E2E Persona Matrix Contract",
+  "linear": "HOBO-500",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

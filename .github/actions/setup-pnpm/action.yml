@@ -1,0 +1,12 @@
+name: Setup pnpm (user-local Corepack)
+description: Enable Corepack shims in $HOME/.local/bin for non-root self-hosted runners.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.local/bin"
+        corepack enable --install-directory "$HOME/.local/bin"
+        corepack prepare pnpm@10.33.4 --activate
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"

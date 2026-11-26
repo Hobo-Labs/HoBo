@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-event-body-upcaster-gate",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

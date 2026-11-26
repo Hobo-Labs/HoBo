@@ -1,0 +1,11 @@
+{
+  "id": "01HQEVENT0000000000000001",
+  "type": "deployment.Planned",
+  "v": 1,
+  "streamId": "deployment:01HQDEPLOY00000001",
+  "seq": 0,
+  "ts": "2026-07-01T12:00:00.000Z",
+  "tenant": "tenant-alpha",
+  "correlationId": "corr-deploy-01",
+  "causationId": "cause-command-01"
+}

@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package hobo.dx_result_refusal_proof_envelopes.v1;
+
+message DxResultRefusalProof {
+  string issue = 1;
+  string phase = 2;
+  Audience audience = 3;
+  repeated string mocked_boundaries = 4;
+  repeated string references = 5;
+  repeated DxResultEnvelope envelopes = 6;
+}
+
+message Audience {
+  repeated string personas = 1;
+  repeated string accessibility_needs = 2;
+  repeated string success_criteria = 3;
+}
+
+message DxResultEnvelope {
+  string kind = 1;
+  string outcome = 2;
+  string human_copy = 3;
+  string code = 4;
+  string remediation = 5;
+  string proof_mode = 6;
+  string fixture_id = 7;
+  string trace_id = 8;
+  string correlation_id = 9;
+  string redaction_class = 10;
+  repeated string accessibility_notes = 11;
+  repeated string copy_notes = 12;
+}
+
+message SurfaceExample {
+  string surface = 1;
+  string kind = 2;
+  string code = 3;
+  string proof_mode = 4;
+  string fixture_id = 5;
+  string trace_id = 6;
+  string correlation_id = 7;
+  string redaction_class = 8;
+}
+
+message DeterministicFixtureSet {
+  string schema = 1;
+  string issue = 2;
+  repeated FixtureRecord happy_paths = 3;
+  repeated FixtureRecord fail_closed_paths = 4;
+  string stable_digest = 5;
+}
+
+message FixtureRecord {
+  string kind = 1;
+  string code = 2;
+  string proof_mode = 3;
+  string fixture_id = 4;
+  string trace_id = 5;
+  string correlation_id = 6;
+  string redaction_class = 7;
+}
+
+message ClaimClassification {
+  bool allowed = 1;
+  string reason = 2;
+  string route = 3;
+}

@@ -1,0 +1,32 @@
+{
+  "consumer": {
+    "name": "V1VibeGapClosureReferenceApp"
+  },
+  "provider": {
+    "name": "VibeScopeGuardBoundary"
+  },
+  "interactions": [
+    {
+      "description": "reject scope creep outside DX-first artifact proof coordination",
+      "request": {
+        "method": "POST",
+        "path": "/hobo-539/scope-guard",
+        "body": {
+          "request": "Implement the production CLI/API/SDK/UI and publish launch claims."
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "decision": "reject",
+          "reason": "DX-first artifact-proof backlog only"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

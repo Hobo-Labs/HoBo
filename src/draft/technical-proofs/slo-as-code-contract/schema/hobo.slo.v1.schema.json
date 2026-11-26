@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hobo.dev/hobo.slo.v1.schema.json",
+  "title": "HoBo SLO-as-code contract",
+  "type": "object",
+  "required": ["schema", "apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "schema": { "const": "hobo.slo/v1" },
+    "apiVersion": { "const": "openslo/v1" },
+    "kind": { "const": "SLO" },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["service", "indicator", "timeWindow", "budgetingMethod", "objectives"],
+      "properties": {
+        "service": { "type": "string", "minLength": 1 },
+        "indicator": { "$ref": "#/$defs/indicator" },
+        "timeWindow": {
+          "type": "object",
+          "required": ["duration", "isRolling"],
+          "properties": {
+            "duration": { "type": "string", "pattern": "^[1-9][0-9]*(s|m|h|d|w|M|Q|Y)$" },
+            "isRolling": { "type": "boolean" }
+          }
+        },
+        "budgetingMethod": { "enum": ["Occurrences", "Timeslices", "RatioTimeslices"] },
+        "objectives": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["displayName", "target"],
+            "properties": {
+              "displayName": { "type": "string", "minLength": 1 },
+              "target": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          }
+        },
+        "burnRateThresholds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "threshold", "lookbackWindow", "samplingInterval"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "threshold": { "type": "number", "exclusiveMinimum": 0 },
+              "lookbackWindow": { "type": "string", "pattern": "^[1-9][0-9]*(s|m|h|d|w)$" },
+              "samplingInterval": { "type": "string", "pattern": "^[1-9][0-9]*(s|m|h|d|w)$" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "indicator": {
+      "type": "object",
+      "required": ["ratioMetric"],
+      "properties": {
+        "ratioMetric": {
+          "type": "object",
+          "required": ["counter", "good", "total"],
+          "properties": {
+            "counter": { "type": "boolean" },
+            "good": { "$ref": "#/$defs/telemetryQuery" },
+            "total": { "$ref": "#/$defs/telemetryQuery" }
+          }
+        }
+      }
+    },
+    "telemetryQuery": {
+      "type": "object",
+      "required": ["telemetry"],
+      "properties": {
+        "telemetry": {
+          "type": "object",
+          "required": ["query"],
+          "properties": {
+            "query": { "type": "string", "minLength": 1 },
+            "unit": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

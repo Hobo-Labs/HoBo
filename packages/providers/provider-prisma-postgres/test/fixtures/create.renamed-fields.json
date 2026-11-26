@@ -1,0 +1,9 @@
+{
+	"success": true,
+	"connection_string": "postgresql://fake_user_000000:REDACTED@db.prisma.io:5432/postgres",
+	"claim_url": "https://create-db.prisma.io/claim?projectID=proj_fake000000000000",
+	"deletion_date": "2026-08-09T13:00:00.000Z",
+	"region": "us-east-1",
+	"name": "renamed",
+	"project_id": "proj_fake000000000000"
+}

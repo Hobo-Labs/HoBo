@@ -1,0 +1,23 @@
+{
+  "consumer": { "name": "ReplayService" },
+  "provider": { "name": "ReplayMetering" },
+  "interactions": [
+    {
+      "description": "record ingest bytes metering event",
+      "request": {
+        "method": "POST",
+        "path": "/replay/metering/record",
+        "body": {
+          "kind": "ingest-bytes",
+          "sessionId": "sess-1",
+          "bytes": 2048
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": { "ok": true, "lastKind": "ingest-bytes" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

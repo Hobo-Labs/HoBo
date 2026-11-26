@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/generation-certify-stage-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the generation pipeline certify stage contract.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

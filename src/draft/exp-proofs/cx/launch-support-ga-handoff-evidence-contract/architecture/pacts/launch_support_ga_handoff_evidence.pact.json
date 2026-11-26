@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "LaunchSupportGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSupportGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch support GA handoff boundary returns accepted M4 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/launch-support-ga-handoff-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.launch-support-ga-handoff-evidence/2026-06-30",
+          "issue": "HOBO-481",
+          "phase": "M4",
+          "milestone": "M4 GA handoff"
+        }
+      }
+    },
+    {
+      "description": "Launch support GA handoff boundary rejects unsupported public support claims",
+      "request": {
+        "method": "POST",
+        "path": "/launch-support-ga-handoff-evidence/claims"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "unsupported public support claim"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "consumer": {
+    "name": "SdkIdiomConformanceGateConsumer"
+  },
+  "provider": {
+    "name": "SdkIdiomConformanceGateBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Sdk Idiom Conformance Gate boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/sdk-idiom-conformance-gate/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.sdk_idiom_conformance_gate/v1",
+          "requiredLanes": [
+            "golden-ir-lowering-equivalence",
+            "semantics-annex",
+            "resilience-semantics-annex",
+            "thin-idiom-layer",
+            "authorship-neutral-gate"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

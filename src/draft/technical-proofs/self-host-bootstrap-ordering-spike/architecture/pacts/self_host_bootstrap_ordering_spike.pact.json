@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SelfHostBootstrapOrderingSpikeConsumer"
+  },
+  "provider": {
+    "name": "SelfHostBootstrapOrderingSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Self Host Bootstrap Ordering Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/self-host-bootstrap-ordering-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.self_host_bootstrap_ordering_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

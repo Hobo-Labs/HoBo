@@ -1,0 +1,63 @@
+{
+  "id": "agent.validation.replay-equality",
+  "version": 1,
+  "kind": "concept",
+  "maturity": "stable",
+  "title": "Replay equality",
+  "intent": "replay equals live",
+  "description": "replay equals live",
+  "aliases": [
+    "replay"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "artifact:agent",
+      "weight": 1
+    },
+    {
+      "id": "property:durable",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": false,
+      "default": "resource",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "validation:replay"
+  ],
+  "requires": [],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

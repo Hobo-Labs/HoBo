@@ -1,0 +1,28 @@
+{
+  "consumer": { "name": "CrossCloudJunctionMtlsContract" },
+  "provider": { "name": "JunctionConnectivityPlanner" },
+  "interactions": [
+    {
+      "description": "plans cross-cloud bind with tier annotation and SVID-keyed mTLS lane",
+      "request": { "method": "POST", "path": "/junction/cross-cloud/plan" },
+      "response": {
+        "status": 200,
+        "body": {
+          "outcome": "deployable",
+          "tier": 3,
+          "transport": "mtls",
+          "sharedStateWrites": []
+        }
+      }
+    },
+    {
+      "description": "refuses policy-ceiling violation before cross-cloud call",
+      "request": { "method": "POST", "path": "/junction/cross-cloud/invoke" },
+      "response": {
+        "status": 403,
+        "body": { "ok": false, "code": "connectivity.policy.inconsistent-allow" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

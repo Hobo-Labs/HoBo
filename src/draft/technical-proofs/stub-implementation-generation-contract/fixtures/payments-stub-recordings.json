@@ -1,0 +1,25 @@
+{
+  "schema": "hobo.stub.recordings/v1",
+  "port": "hobo:service/payments@0.1.0",
+  "stubId": "stub-payments-fixture",
+  "recordings": [
+    {
+      "id": "trace:payments-charge-happy-path",
+      "type": "link.Called",
+      "method": "charge",
+      "inputDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outputDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "input": { "amountCents": 1999, "currency": "USD", "customerId": "cust_demo" },
+      "output": { "status": "ok", "chargeId": "ch_demo_001" }
+    },
+    {
+      "id": "trace:payments-refund-happy-path",
+      "type": "link.Called",
+      "method": "refund",
+      "inputDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "outputDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "input": { "chargeId": "ch_demo_001", "amountCents": 500 },
+      "output": { "status": "ok", "refundId": "rf_demo_001" }
+    }
+  ]
+}

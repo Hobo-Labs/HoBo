@@ -1,0 +1,131 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "ConnectivityHost" },
+	"interactions": [
+		{
+			"description": "resolve hierarchical local named endpoint",
+			"request": {
+				"method": "GET",
+				"path": "/named-endpoints/local?resource=web&app=myapp&env=local"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"url": "https://web.myapp.local.hobo.localhost",
+					"mode": "local"
+				}
+			}
+		},
+		{
+			"description": "resolve overlay named endpoint omitting prod env",
+			"request": {
+				"method": "GET",
+				"path": "/named-endpoints/overlay?resource=web&app=myapp&env=prod"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"url": "https://web.myapp.hobo.test",
+					"mode": "overlay"
+				}
+			}
+		},
+		{
+			"description": "resolve multi-tenant overlay name",
+			"request": {
+				"method": "GET",
+				"path": "/named-endpoints/overlay?resource=web&app=myapp&env=dev&tenant=acme"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"url": "https://web.myapp.dev.acme.hobo.test",
+					"mode": "overlay"
+				}
+			}
+		},
+		{
+			"description": "policy evaluate junction join same tenant tag-acl",
+			"request": {
+				"method": "POST",
+				"path": "/policy/evaluate",
+				"body": {
+					"engine": "tag-acl",
+					"action": "junction.join",
+					"subjectTenant": "acme",
+					"resourceTenant": "acme",
+					"subjectTags": ["role:junction", "env:development"],
+					"resourceTags": ["env:development"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "effect": "allow" }
+			}
+		},
+		{
+			"description": "policy evaluate cross-tenant deny",
+			"request": {
+				"method": "POST",
+				"path": "/policy/evaluate",
+				"body": {
+					"engine": "opa",
+					"action": "read",
+					"subjectTenant": "acme",
+					"resourceTenant": "other"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "effect": "deny" }
+			}
+		},
+		{
+			"description": "dns reconcile entrypoint to funnel gateway",
+			"request": {
+				"method": "POST",
+				"path": "/dns/reconcile",
+				"body": {
+					"tenantId": "acme",
+					"hostname": "web.myapp.hobo.example.com",
+					"gatewayHostname": "funnel.ts.net"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "applied": true }
+			}
+		},
+		{
+			"description": "dns reconcile rejects raw overlay IP",
+			"request": {
+				"method": "POST",
+				"path": "/dns/reconcile",
+				"body": {
+					"tenantId": "acme",
+					"hostname": "web.myapp.hobo.example.com",
+					"gatewayHostname": "100.64.0.1"
+				}
+			},
+			"response": {
+				"status": 400,
+				"body": {
+					"error": { "code": "DNS_RECONCILE_FAILED" }
+				}
+			}
+		},
+		{
+			"description": "metering events endpoint is available",
+			"request": {
+				"method": "GET",
+				"path": "/metering/events"
+			},
+			"response": {
+				"status": 200
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

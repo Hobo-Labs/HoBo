@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "s3-07-agent-guardrails-contract",
+  "title": "S3-07 Agent Guardrails Contract POC",
+  "linear": "HOBO-633",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-policy-ir-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

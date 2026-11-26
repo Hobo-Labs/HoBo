@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/draft-new-scaffold-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/scaffold.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

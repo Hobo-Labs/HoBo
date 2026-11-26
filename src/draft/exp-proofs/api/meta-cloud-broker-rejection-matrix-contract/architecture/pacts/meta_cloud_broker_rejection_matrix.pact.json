@@ -1,0 +1,70 @@
+{
+  "consumer": {
+    "name": "MetaCloudBrokerRejectionMatrixConsumer"
+  },
+  "provider": {
+    "name": "MetaCloudBrokerRejectionMatrix"
+  },
+  "interactions": [
+    {
+      "description": "Broker returns a signed stale-catalog rejection without optimistic Yard planning",
+      "request": {
+        "method": "POST",
+        "path": "/meta-cloud-broker/rejection-matrix",
+        "body": {
+          "manifestDigest": "sha256:manifest-orders-prod",
+          "environmentDigest": "sha256:broker-env-prod",
+          "catalogSnapshotDigest": "sha256:catalog-prod",
+          "fixture": "stale-catalog"
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "schema": "hobo.resolution-rejection/v1",
+          "reason": {
+            "code": "catalog.stale",
+            "supportSafe": true
+          },
+          "fallbackAttempted": false,
+          "yardPlanningAllowed": false,
+          "partialReceiptEmitted": false
+        }
+      }
+    },
+    {
+      "description": "Broker returns signed mapping and capability rejections with support-safe evidence",
+      "request": {
+        "method": "POST",
+        "path": "/meta-cloud-broker/rejection-matrix",
+        "body": {
+          "manifestDigest": "sha256:manifest-orders-prod",
+          "environmentDigest": "sha256:broker-env-prod",
+          "catalogSnapshotDigest": "sha256:catalog-prod",
+          "fixture": "all-adversarial-cases"
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "schema": "hobo.broker-rejection-matrix/v1",
+          "issue": "HOBO-528",
+          "rejectionCodes": [
+            "catalog.stale",
+            "mapping.incompatible",
+            "mapping.ambiguous",
+            "mapping.missing",
+            "capability.unsupported"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

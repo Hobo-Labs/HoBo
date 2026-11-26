@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/draft-convex-swaghaus-deploy-adapter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  },
+  "dependencies": {
+    "@hobo/provider-convex": "workspace:*"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-s3-05-allow-triple-effects-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

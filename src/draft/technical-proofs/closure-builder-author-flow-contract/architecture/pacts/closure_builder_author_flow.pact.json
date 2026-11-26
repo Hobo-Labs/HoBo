@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "closure-builder-sdk-author-flow-consumer"
+  },
+  "provider": {
+    "name": "closure-builder-author-flow-contract"
+  },
+  "interactions": [
+    {
+      "description": "publish the v1 closure-builder authoring corpus to SDK conformance",
+      "request": {
+        "method": "POST",
+        "path": "/closure-builder/v1/author-flow-corpus"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "suite": "@hobo/conformance/sdk/closure-builder-author-flow",
+          "corpusPath": "src/draft/technical-proofs/closure-builder-author-flow-contract/src/closure-builder-author-flow.ts#buildClosureBuilderAuthorFlow",
+          "manifestSchema": "hobo.manifest/v1",
+          "bindle": "snapshop",
+          "aliases": {
+            "api": "res_api_0001",
+            "cache": "res_cache_0001",
+            "orders": "res_queue_0001"
+          },
+          "relationships": [
+            {
+              "from": "res_api_0001",
+              "to": "res_cache_0001",
+              "verb": "dependsOn"
+            },
+            {
+              "from": "res_api_0001",
+              "to": "res_queue_0001",
+              "verb": "dependsOn"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

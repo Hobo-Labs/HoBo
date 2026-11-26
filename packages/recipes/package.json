@@ -1,0 +1,42 @@
+{
+	"name": "@hobo/recipes",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo deployment recipes: versioned data-driven solution recipes, a pure deterministic recipe compiler that resolves Junction/Yard/Camp/resource/binding topology under hard trust gates, and the canonical pre-provision DeploymentOffer whose acceptance binds to the offer, topology, and catalog digests.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/bindings": "workspace:*",
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/claims": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
+		"@hobo/trust": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@hobo/redaction-test-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:deep": "vitest run --config vitest.deep.config.ts",
+		"test:unit": "vitest run test/"
+	}
+}

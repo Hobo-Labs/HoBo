@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package hobo.enterprise_deployment_hardening_scope.v1;
+
+message EnterpriseDeploymentHardeningScope {
+  string issue = 1;
+  string project = 2;
+  EnterpriseHardeningGateDecision state = 3;
+  string goal = 4;
+  repeated EnterpriseDeploymentHardeningPersona personas = 5;
+  repeated EnterpriseDeploymentPosture deployment_postures = 6;
+  repeated EnterpriseHardeningBoundary operating_boundaries = 7;
+  repeated EnterpriseHardeningEvidence m1_evidence = 8;
+  repeated string scope_in = 9;
+  repeated string scope_out = 10;
+}
+
+message EnterpriseDeploymentHardeningPersona {
+  string id = 1;
+  string need = 2;
+}
+
+message EnterpriseDeploymentPosture {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message EnterpriseHardeningBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message EnterpriseHardeningEvidence {
+  string id = 1;
+  string owner = 2;
+  string minimum_proof = 3;
+}
+
+enum EnterpriseHardeningGateDecision {
+  ENTERPRISE_HARDENING_GATE_DECISION_UNSPECIFIED = 0;
+  SCOPE_DRAFT = 1;
+  SCOPE_ACCEPTED = 2;
+  FOLLOW_UP_BLOCKED = 3;
+}

@@ -1,0 +1,84 @@
+{
+  "consumer": {
+    "name": "@hobo/dispatcher"
+  },
+  "provider": {
+    "name": "RunnerDepotBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "register a build with the Depot BuildService (Connect RPC, JSON encoding)",
+      "request": {
+        "method": "POST",
+        "path": "/depot.build.v1.BuildService/CreateBuild",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "project_id": "hobo-builds"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "build_id": "bld_01",
+          "build_token": "expiring-per-build-token"
+        }
+      }
+    },
+    {
+      "description": "secretless posture: broker-minted short-lived Depot project tokens, no static tokens",
+      "request": {
+        "method": "GET",
+        "path": "/providers/runner-depot/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "oidc-trust-exchange",
+          "tokenAudience": "api.depot.dev",
+          "exchange": "hobo:brokered-depot-project-token",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "an identical second build demonstrates the shared-cache speedup as recorded facts",
+      "request": {
+        "method": "POST",
+        "path": "/providers/runner-depot/build/checkout-api"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "image": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          },
+          "facts": [
+            {
+              "type": "build.CacheHitObserved",
+              "cacheLane": "depot-shared-cache",
+              "cacheHitRatio": 0,
+              "meteredUnits": 10,
+              "source": "observed-executor"
+            },
+            {
+              "type": "build.CacheHitObserved",
+              "cacheLane": "depot-shared-cache",
+              "cacheHitRatio": 0.9,
+              "meteredUnits": 1,
+              "source": "observed-executor"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

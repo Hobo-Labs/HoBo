@@ -1,0 +1,8 @@
+{
+  "name": "control-plane-action-taxonomy-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

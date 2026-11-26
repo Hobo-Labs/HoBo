@@ -1,0 +1,61 @@
+{
+  "id": "connector.acquire-token",
+  "version": 1,
+  "kind": "concept",
+  "maturity": "stable",
+  "title": "Acquire token",
+  "intent": "short-lived Connection token",
+  "description": "short-lived Connection token",
+  "aliases": [
+    "token"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "constraint:no-local-secret",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": false,
+      "default": "resource",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "connector:token"
+  ],
+  "requires": [
+    "connector"
+  ],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

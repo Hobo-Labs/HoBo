@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "SdkCodegenWorkspace" },
+  "interactions": [
+    {
+      "description": "check generated SDK artifacts without mutating on drift",
+      "providerStates": [{ "name": "generated artifacts match manifest hash" }],
+      "request": { "method": "POST", "path": "/codegen/check", "body": { "manifestHash": "sha256:sdk-authoring-reference-001" } },
+      "response": { "status": 200, "body": { "status": "clean", "generatedFiles": 5 } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

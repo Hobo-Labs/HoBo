@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+message RuntimeRunStarted {
+  string run_id = 1;
+  string workflow = 2;
+}
+
+message RuntimeStepCompleted {
+  string run_id = 1;
+  string step_key = 2;
+  string idempotency_key = 3;
+}
+
+message RuntimeSagaCompensated {
+  string saga_name = 1;
+  string trigger = 2;
+}
+
+message HoboRuntimeTsPrimitivesRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string catalog_event_types = 3;
+}

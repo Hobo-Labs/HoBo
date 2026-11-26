@@ -1,0 +1,11 @@
+{
+	"id": "swaghaus",
+	"title": "Swaghaus",
+	"blurb": "JamesCowling/swaghaus via b.web(convexApp(root)) + official convex-backend OCI + WorkOS external — real Convex deploy (fail-closed without deploy key / WorkOS).",
+	"tags": ["convex", "workos", "reactive", "vite"],
+	"needs": ["http", "data"],
+	"ui": "saas",
+	"deployKind": "local-bridge",
+	"entry": "app.ts",
+	"sourcePath": "examples/try-site/apps/swaghaus/app.ts"
+}

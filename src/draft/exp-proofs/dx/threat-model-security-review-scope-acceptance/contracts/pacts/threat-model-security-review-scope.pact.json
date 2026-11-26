@@ -1,0 +1,67 @@
+{
+  "consumer": {
+    "name": "SecurityVerificationGate"
+  },
+  "provider": {
+    "name": "ThreatModelSecurityReviewScopeRecord"
+  },
+  "interactions": [
+    {
+      "description": "accepted M0 scope exposes threat-review intake and review gates",
+      "providerState": "HOBO-451 M0 scope is accepted",
+      "request": {
+        "method": "GET",
+        "path": "/threat-model-security-review/scope/HOBO-451"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-451",
+          "phase": "M0",
+          "state": "SCOPE_ACCEPTED",
+          "boundaries": ["service", "ux", "security", "support"],
+          "intakeFields": [
+            "asset-surface",
+            "threat-scenario",
+            "trust-boundary",
+            "exploitability",
+            "customer-impact",
+            "credential-or-data-risk",
+            "evidence-link",
+            "fix-verification-plan"
+          ],
+          "reviewGates": [
+            "beta-threat-intake",
+            "release-candidate-security-review",
+            "ga-security-signoff",
+            "fix-verification-rerun",
+            "support-and-disclosure-handoff"
+          ]
+        }
+      }
+    },
+    {
+      "description": "follow-up work is blocked before M0 acceptance",
+      "providerState": "HOBO-451 M0 scope is not accepted",
+      "request": {
+        "method": "POST",
+        "path": "/threat-model-security-review/follow-up",
+        "body": {
+          "phase": "M1"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "THREAT_REVIEW_M0_REQUIRED",
+          "issue": "HOBO-451"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

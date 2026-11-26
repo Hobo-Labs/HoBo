@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "governance-plane-boundary" },
+  "interactions": [
+    {
+      "description": "four governance-plane evidence items",
+      "request": { "method": "GET", "path": "/governance/evidence" },
+      "response": { "status": 200, "body": { "ok": true, "items": [] } }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "governance-plane",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

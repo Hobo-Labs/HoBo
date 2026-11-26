@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/saga-credit-reconciliation-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

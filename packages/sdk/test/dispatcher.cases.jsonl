@@ -1,0 +1,4 @@
+# dispatcher() — wraps the engine registry; the objective is translated, not passed through.
+{"method":"dispatcher","name":"refuses an unknown objective","input":[{"objective":"max-speed"},[{"schema":"hobo.sdk/v1.runner","kind":"github","providerId":"runner.github","category":"runner"}]],"throwsSubset":{"name":"SdkDeclarationError"}}
+{"method":"dispatcher","name":"refuses an empty fleet","input":[{"objective":"min-cost"},[]],"throwsSubset":{"name":"SdkDeclarationError"}}
+{"method":"dispatcher","name":"refuses candidates not authored with runner.*","input":[{"objective":"min-cost"},[{"providerId":"rogue"}]],"throwsSubset":{"name":"SdkDeclarationError"}}

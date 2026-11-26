@@ -1,0 +1,31 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "api-gateway" } },
+          { "key": "hobo.station", "value": { "stringValue": "station-local" } },
+          { "key": "hobo.yard", "value": { "stringValue": "yard-edge" } },
+          { "key": "hobo.camp", "value": { "stringValue": "camp-gateway" } },
+          { "key": "hobo.primitive", "value": { "stringValue": "bindle" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "example" },
+          "spans": [
+            {
+              "traceId": "dd5bb2a1d4f04e6a9b3c5d7e8f003344",
+              "spanId": "cc30000000000003",
+              "name": "POST /orders (call orders-api)",
+              "kind": 3,
+              "startTimeUnixNano": "1700000000000000000",
+              "endTimeUnixNano": "1700000008000000000",
+              "status": { "code": 1 }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

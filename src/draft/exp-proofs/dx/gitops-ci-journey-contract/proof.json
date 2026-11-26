@@ -1,0 +1,25 @@
+{
+  "layer": "exp",
+  "slug": "gitops-ci-journey-contract",
+  "experienceType": "dx",
+  "title": "GitOps CI Journey Contract POC",
+  "linear": "HOBO-208",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-down-lifecycle-contract",
+      "src/draft/technical-proofs/hobo-plan-preview-contract",
+      "src/draft/technical-proofs/hobo-up-convergence-contract",
+      "src/draft/technical-proofs/oidc-federation-sts-contract",
+      "src/draft/technical-proofs/preview-ephemeral-environments-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

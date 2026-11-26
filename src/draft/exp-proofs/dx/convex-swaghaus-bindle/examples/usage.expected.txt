@@ -1,0 +1,6 @@
+plan app=app framework=convex root=examples/convex-swaghaus
+topology backend:data auth:external web:web
+env CONVEX_DEPLOY_KEY=env VITE_CONVEX_URL=data VITE_WORKOS_CLIENT_ID=external VITE_WORKOS_REDIRECT_URI=external WORKOS_CLIENT_ID=external
+refused-pin field=web.annotations[]
+refused-secret reason=secret material never rides Bindle config
+convex-swaghaus-bindle:ok

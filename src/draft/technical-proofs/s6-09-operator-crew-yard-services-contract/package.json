@@ -1,0 +1,10 @@
+{
+  "name": "@hobo/s6-09-operator-crew-yard-services-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/operator-crew-yard-services.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

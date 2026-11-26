@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "S5StageGateForgeDrill" },
+  "provider": { "name": "S5StageGateForgeExtensibilityPackage" },
+  "interactions": [
+    {
+      "description": "package boundary exposes stage gate drill with architecture evidence",
+      "providerState": "forge drill simulation is runnable",
+      "contents": {
+        "epic": "s5-stage-gate-forge-extensibility",
+        "contractsCovered": 4
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

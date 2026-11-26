@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ContractEnginePortContractConsumer"
+  },
+  "provider": {
+    "name": "ContractEnginePortContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Contract Engine Port Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/contract-engine-port-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.contract_engine_port_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

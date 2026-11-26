@@ -1,0 +1,14 @@
+{
+  "iteration": 2,
+  "runId": "20260731-ax-exp-nav",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsPrev": { "metric_total_delta": 0, "metric_max_delta": 0 },
+  "implementableFindingsRemaining": 0,
+  "reverify": {
+    "classificationExit": 0,
+    "bindings": "4/4",
+    "liveDemoted": true,
+    "priorDoctor": 0
+  }
+}

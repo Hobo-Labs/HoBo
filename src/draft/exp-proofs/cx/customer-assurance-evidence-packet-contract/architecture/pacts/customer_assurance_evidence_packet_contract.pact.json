@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ComplianceEvidencePackConsumer"
+  },
+  "provider": {
+    "name": "CustomerAssuranceEvidencePacketContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Customer assurance boundary returns accepted M0 packet evidence",
+      "request": {
+        "method": "GET",
+        "path": "/customer-assurance-evidence-packet/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.customer_assurance_evidence_packet_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

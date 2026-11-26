@@ -1,0 +1,1214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-bdd:schema:run-report:1",
+  "title": "ai-bdd run report",
+  "description": "The report.json written by `ai-bdd run` (.ai-bdd/report/report.json), schemaVersion 1.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "description": "Also the name of the run directory under .ai-bdd/runs/."
+    },
+    "startedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "description": "ISO 8601 timestamp, UTC with milliseconds (Date.prototype.toISOString())."
+    },
+    "finishedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "description": "ISO 8601 timestamp, UTC with milliseconds (Date.prototype.toISOString())."
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "frozen": {
+          "type": "boolean"
+        },
+        "strict": {
+          "type": "boolean"
+        },
+        "audit": {
+          "type": "boolean"
+        },
+        "noAgent": {
+          "type": "boolean"
+        },
+        "updateRecordings": {
+          "type": "boolean"
+        },
+        "recordingsMode": {
+          "type": "string",
+          "enum": [
+            "read-write",
+            "read-only",
+            "off"
+          ]
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "frozen",
+        "strict",
+        "audit",
+        "noAgent",
+        "updateRecordings",
+        "recordingsMode",
+        "workers"
+      ],
+      "additionalProperties": false
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ScenarioResult"
+      }
+    },
+    "totals": {
+      "type": "object",
+      "properties": {
+        "passed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "healed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inconclusive": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "error": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "passed",
+        "failed",
+        "healed",
+        "blocked",
+        "skipped",
+        "inconclusive",
+        "error"
+      ],
+      "additionalProperties": false,
+      "description": "Scenario count per status; every status is present."
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "modelCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "byPurpose": {
+          "type": "object",
+          "properties": {
+            "extract": {
+              "$ref": "#/$defs/Usage"
+            },
+            "act": {
+              "$ref": "#/$defs/Usage"
+            },
+            "checkgen": {
+              "$ref": "#/$defs/Usage"
+            },
+            "judge": {
+              "$ref": "#/$defs/Usage"
+            }
+          },
+          "required": [
+            "extract",
+            "act",
+            "checkgen",
+            "judge"
+          ],
+          "additionalProperties": false
+        },
+        "estimatedCostUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "modelCalls",
+        "inputTokens",
+        "outputTokens",
+        "byPurpose"
+      ],
+      "additionalProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "docs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "docUri": {
+                "type": "string"
+              },
+              "chunks": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "covered": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "uncovered": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notTestable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "docUri",
+              "chunks",
+              "covered",
+              "uncovered",
+              "notTestable"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "docs"
+      ],
+      "additionalProperties": false
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    },
+    "exitCode": {
+      "type": "number",
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "The process exit code of `ai-bdd run`: 0 passed, 1 scenario failed, inconclusive or blocked, 2 usage or config, 3 infrastructure, 4 frozen violation."
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "runId",
+    "startedAt",
+    "finishedAt",
+    "options",
+    "scenarios",
+    "totals",
+    "usage",
+    "coverage",
+    "warnings",
+    "exitCode"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "ScenarioResult": {
+      "type": "object",
+      "properties": {
+        "scenarioId": {
+          "type": "string"
+        },
+        "featureId": {
+          "type": "string"
+        },
+        "docUri": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "characterize",
+            "replay",
+            "mixed"
+          ]
+        },
+        "review": {
+          "type": "string",
+          "enum": [
+            "unreviewed",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepResult"
+          }
+        },
+        "recording": {
+          "type": "string",
+          "enum": [
+            "created",
+            "updated",
+            "unchanged",
+            "discarded",
+            "none"
+          ]
+        },
+        "confirm": {
+          "type": "object",
+          "properties": {
+            "runs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "reclassified": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "failed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "runs",
+            "reclassified",
+            "failed"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorPayload"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "scenarioId",
+        "featureId",
+        "docUri",
+        "title",
+        "driver",
+        "status",
+        "mode",
+        "review",
+        "steps",
+        "recording",
+        "usage",
+        "durationMs"
+      ],
+      "additionalProperties": false
+    },
+    "Status": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "healed",
+        "blocked",
+        "skipped",
+        "inconclusive",
+        "error"
+      ],
+      "description": "Outcome of a step or a scenario. `healed` counts as passed unless the run was strict."
+    },
+    "StepResult": {
+      "type": "object",
+      "properties": {
+        "stepKey": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "given",
+            "when",
+            "then"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "path": {
+          "type": "string",
+          "enum": [
+            "fixture",
+            "replay",
+            "heal",
+            "agent",
+            "check",
+            "judge",
+            "check+judge",
+            "none"
+          ]
+        },
+        "determinism": {
+          "type": "string",
+          "enum": [
+            "deterministic",
+            "fuzzy",
+            "n/a"
+          ]
+        },
+        "fuzzyReasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "directive",
+              "subjective",
+              "volatile-content",
+              "check-not-discriminative",
+              "check-generation-failed",
+              "confirm-replay-failed",
+              "confirm-check-failed",
+              "coordinate-action",
+              "no-observable-effect",
+              "heal-threshold",
+              "agent-only-driver",
+              "secret-in-recording",
+              "unsettled-baseline"
+            ]
+          }
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorPayload"
+        },
+        "check": {
+          "$ref": "#/$defs/CheckEvaluation"
+        },
+        "judge": {
+          "$ref": "#/$defs/JudgeVerdict"
+        },
+        "actions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChunkRef"
+          }
+        }
+      },
+      "required": [
+        "stepKey",
+        "kind",
+        "text",
+        "status",
+        "path",
+        "determinism",
+        "fuzzyReasons",
+        "actions",
+        "usage",
+        "durationMs",
+        "evidence",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "ErrorPayload": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "additionalProperties": false
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "USAGE",
+        "CONFIG_INVALID",
+        "CONFIG_NOT_FOUND",
+        "CONFIG_TS_UNSUPPORTED",
+        "SECRET_MISSING",
+        "SECRET_TOO_SHORT",
+        "DOC_READ_FAILED",
+        "DOC_CHUNK_TOO_LARGE",
+        "DIRECTIVE_INVALID",
+        "DIRECTIVE_UNKNOWN_KEY",
+        "EXTRACT_MODEL_OUTPUT_INVALID",
+        "EXTRACT_UNGROUNDED",
+        "EXTRACT_QUOTE_NOT_FOUND",
+        "EXTRACT_FIXTURE_INVALID",
+        "EXTRACT_SECTION_FAILED",
+        "PLAN_STALE",
+        "PLAN_CORRUPT",
+        "PLAN_SCHEMA_UNSUPPORTED",
+        "PLAN_PINNED_STALE",
+        "PLAN_CONTEXT_CHANGED",
+        "SCENARIO_NOT_FOUND",
+        "FIXTURE_REQUIRED",
+        "FIXTURE_FAILED",
+        "ACT_BUDGET_EXHAUSTED",
+        "ACT_BLOCKED",
+        "ACT_TARGET_AMBIGUOUS",
+        "ACT_NO_AGENT",
+        "REPLAY_DIVERGED",
+        "CHARACTERIZATION_UNSTABLE",
+        "CHECK_FAILED",
+        "CHECK_NOT_DISCRIMINATIVE",
+        "CHECK_LINT_FAILED",
+        "CHECK_GENERATION_FAILED",
+        "CHECK_JUDGE_DISAGREEMENT",
+        "JUDGE_FAILED",
+        "JUDGE_INCONCLUSIVE",
+        "JUDGE_SAME_AS_ACTOR",
+        "SCREEN_NOT_SETTLED",
+        "DRIVER_UNAVAILABLE",
+        "DRIVER_ERROR",
+        "STALE_REF",
+        "TARGET_NOT_FOUND",
+        "POLICY_DENIED",
+        "PIXEL_TAINTED",
+        "SESSION_LIMIT",
+        "VERB_UNSUPPORTED",
+        "MODEL_UNAVAILABLE",
+        "MODEL_OUTPUT_INVALID",
+        "MODEL_NO_RULE",
+        "RECORDING_CORRUPT",
+        "RECORDING_READ_ONLY",
+        "EVIDENCE_CORRUPT",
+        "NOT_IMPLEMENTED",
+        "INTERNAL",
+        "ABORTED"
+      ],
+      "description": "See docs/errors.md."
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      ]
+    },
+    "CheckEvaluation": {
+      "type": "object",
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "predicate": {
+                "$ref": "#/$defs/Predicate"
+              },
+              "satisfied": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "string",
+                    "const": "unknown"
+                  }
+                ]
+              },
+              "actual": {
+                "$ref": "#/$defs/JsonValue"
+              }
+            },
+            "required": [
+              "predicate",
+              "satisfied"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "passed",
+        "results"
+      ],
+      "additionalProperties": false,
+      "description": "A recorded check, evaluated: each predicate with the value that was observed."
+    },
+    "Predicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "exists"
+            },
+            "query": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nameMatch": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "contains"
+                  ]
+                },
+                "testId": {
+                  "type": "string"
+                },
+                "within": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "negate": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op",
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "count"
+            },
+            "query": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nameMatch": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "contains"
+                  ]
+                },
+                "testId": {
+                  "type": "string"
+                },
+                "within": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "cmp": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "gte",
+                "lte"
+              ]
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "op",
+            "query",
+            "cmp",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "text"
+            },
+            "query": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nameMatch": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "contains"
+                  ]
+                },
+                "testId": {
+                  "type": "string"
+                },
+                "within": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "match": {
+              "type": "string",
+              "enum": [
+                "equals",
+                "contains"
+              ]
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "literal": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "literal"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "param": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "param"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "query",
+            "match",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "state"
+            },
+            "query": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nameMatch": {
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "contains"
+                  ]
+                },
+                "testId": {
+                  "type": "string"
+                },
+                "within": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "checked",
+                "disabled",
+                "expanded",
+                "selected",
+                "pressed",
+                "focused",
+                "busy",
+                "invalid"
+              ]
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op",
+            "query",
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "route"
+            },
+            "match": {
+              "type": "string",
+              "enum": [
+                "equals",
+                "prefix"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "match",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "JudgeVerdict": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "spread": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "probability": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "holds",
+                  "fails",
+                  "cannot_tell"
+                ]
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "observed": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "probability",
+              "verdict",
+              "explanation",
+              "observed"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "band",
+            "spread"
+          ]
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "promptVersion": {
+          "type": "string"
+        },
+        "cached": {
+          "type": "boolean"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "verdict",
+        "score",
+        "spread",
+        "samples",
+        "modelId",
+        "promptVersion",
+        "cached",
+        "usage"
+      ],
+      "additionalProperties": false
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "modelCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "modelCalls",
+        "inputTokens",
+        "outputTokens"
+      ],
+      "additionalProperties": false,
+      "description": "Model calls and tokens spent. Replay runs report zero."
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "screenshot",
+            "observation",
+            "act-transcript",
+            "action-log",
+            "judge-request",
+            "judge-response",
+            "checkgen",
+            "extract-request",
+            "extract-response",
+            "report"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "sha256",
+        "path",
+        "kind",
+        "bytes"
+      ],
+      "additionalProperties": false,
+      "description": "A content-addressed file under the run directory (verify-run recomputes the hashes)."
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "64 lowercase hex characters"
+    },
+    "ChunkRef": {
+      "type": "object",
+      "properties": {
+        "chunkId": {
+          "type": "string"
+        },
+        "hash": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "relation": {
+          "type": "string",
+          "enum": [
+            "source",
+            "context"
+          ]
+        },
+        "quote": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunkId",
+        "hash",
+        "relation"
+      ],
+      "additionalProperties": false
+    },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/SourceRange"
+        },
+        "details": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "SourceRange": {
+      "type": "object",
+      "properties": {
+        "startLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "startColumn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endColumn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn"
+      ],
+      "additionalProperties": false,
+      "description": "1-based lines and columns; endColumn is exclusive."
+    }
+  }
+}

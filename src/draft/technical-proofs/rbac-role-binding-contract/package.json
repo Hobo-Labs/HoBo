@@ -1,0 +1,9 @@
+{
+  "name": "rbac-role-binding-contract",
+  "private": true,
+  "type": "module",
+  "types": "./src/rbac-role-binding.d.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

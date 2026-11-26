@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package hobo.runner.depot.v1;
+
+// Wire records for the Depot execution-host adapter (@hobo/runner-depot,
+// HOBO-720). CUE constraints in runner_depot.cue bound every type declared
+// here; the runtime parses untrusted manifest documents into derived parsed
+// types before use.
+
+message DepotCapabilityRecord {
+  string port = 1;
+  string interface = 2;
+  string version = 3;
+  string stability = 4;
+  repeated string features = 5;
+}
+
+message DepotCostFactRecord {
+  string sku = 1;
+  string unit = 2;
+  string marginal_price = 3;
+  uint64 free_tier_included = 4;
+  string declared_cache_hit_rate = 5;
+  string source_type = 6;
+  string source_digest = 7;
+}
+
+// Secretless posture: broker-minted short-lived Depot project tokens via the
+// OIDC trust exchange (HOBO-110); no static Depot tokens.
+message DepotAuthPostureRecord {
+  string schema = 1;
+  string mode = 2;
+  string token_audience = 3;
+  string exchange = 4;
+  bool static_secrets = 5;
+}
+
+// A build registered with the Depot BuildService (CreateBuild).
+message DepotBuildHandleRecord {
+  string build_id = 1;
+  string depot_build_id = 2;
+  string project_id = 3;
+}
+
+// The past-tense observed cache outcome per build: the shared cache changes
+// the metered work of the IDENTICAL build, which is what CreditLedgerView
+// ranking must capture.
+message CacheHitObservedRecord {
+  string build_id = 1;
+  string depot_build_id = 2;
+  string provider_id = 3;
+  string cache_lane = 4;
+  string cache_hit_ratio = 5;
+  string metered_units = 6;
+  string source = 7;
+}

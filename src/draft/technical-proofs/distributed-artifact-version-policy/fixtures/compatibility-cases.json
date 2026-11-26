@@ -1,0 +1,51 @@
+[
+  {
+    "name": "stable patch inside caret range is compatible",
+    "installed": "1.2.4",
+    "requested": "^1.2.0",
+    "tier": "stable",
+    "verdict": "compatible"
+  },
+  {
+    "name": "stable minor inside caret range is compatible",
+    "installed": "1.3.0",
+    "requested": "^1.2.0",
+    "tier": "stable",
+    "verdict": "compatible"
+  },
+  {
+    "name": "stable version inside bounded range is compatible",
+    "installed": "1.4.0",
+    "requested": ">=1.2.0 <2.0.0",
+    "tier": "stable",
+    "verdict": "compatible"
+  },
+  {
+    "name": "stable major bump outside caret range is incompatible",
+    "installed": "2.0.0",
+    "requested": "^1.2.0",
+    "tier": "stable",
+    "verdict": "incompatible"
+  },
+  {
+    "name": "preview minor bump is may-break and requires upcaster",
+    "installed": "1.3.0",
+    "requested": "^1.2.0",
+    "tier": "preview",
+    "verdict": "upcaster-required"
+  },
+  {
+    "name": "experimental patch bump is may-break and requires upcaster",
+    "installed": "1.2.1",
+    "requested": "~1.2.0",
+    "tier": "experimental",
+    "verdict": "upcaster-required"
+  },
+  {
+    "name": "deprecated exact pin remains selectable before deprecation expiry",
+    "installed": "1.2.0",
+    "requested": "1.2.0",
+    "tier": "deprecated",
+    "verdict": "compatible-with-warning"
+  }
+]

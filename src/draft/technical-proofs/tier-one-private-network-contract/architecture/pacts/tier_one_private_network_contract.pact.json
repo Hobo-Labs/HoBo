@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TierOnePrivateNetworkContractConsumer"
+  },
+  "provider": {
+    "name": "TierOnePrivateNetworkContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Tier One Private Network Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/tier-one-private-network-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.tier_one_private_network_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

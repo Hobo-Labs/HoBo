@@ -1,0 +1,32 @@
+{
+  "featureId": "agent-tooling-setup",
+  "scenarioSlug": "agent-tooling-progressive-setup-works-for-product-agent-operator",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T13:53:21.052Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 1107,
+    "sha256": "06ca91e6d4518d916acb97507611f71afb4e7f560059da61b5799b74b413a056"
+  },
+  "frames": [],
+  "repro": {
+    "command": "pnpm run doctor",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

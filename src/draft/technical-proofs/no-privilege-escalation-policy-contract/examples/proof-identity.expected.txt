@@ -1,0 +1,3 @@
+slug: no-privilege-escalation-policy-contract
+layer: technical
+proof-identity: ok

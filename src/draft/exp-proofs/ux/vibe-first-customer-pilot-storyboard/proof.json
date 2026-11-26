@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-first-customer-pilot-storyboard",
+  "experienceType": "ux",
+  "title": "Vibe First-Customer Pilot Storyboard",
+  "linear": "HOBO-549",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

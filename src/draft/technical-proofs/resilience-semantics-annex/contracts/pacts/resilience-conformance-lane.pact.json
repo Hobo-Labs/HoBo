@@ -1,0 +1,113 @@
+{
+  "consumer": { "name": "SdkResilienceConformanceLane" },
+  "provider": { "name": "ResilienceSemanticsAnnex" },
+  "interactions": [
+    {
+      "description": "transient failures retry on the declared schedule then succeed",
+      "providerStates": [
+        { "name": "transient-retry-schedule fixture is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/resilience/case",
+        "body": { "name": "transient-retry-schedule" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "name": "transient-retry-schedule",
+          "status": "passed",
+          "seed": "hobo-resilience-retry-v1"
+        }
+      }
+    },
+    {
+      "description": "a policy denial never retries and ends terminally",
+      "providerStates": [
+        { "name": "denial-never-retries fixture is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/resilience/case",
+        "body": { "name": "denial-never-retries" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "name": "denial-never-retries", "status": "passed" }
+      }
+    },
+    {
+      "description": "replay re-runs no effects (effect counters do not increment)",
+      "providerStates": [
+        { "name": "replay-no-effect-rerun fixture is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/resilience/case",
+        "body": { "name": "replay-no-effect-rerun" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "name": "replay-no-effect-rerun", "status": "passed" }
+      }
+    },
+    {
+      "description": "lifecycle transition tables reject impossible transitions",
+      "providerStates": [
+        { "name": "lifecycle-transition-table fixture is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/resilience/case",
+        "body": { "name": "lifecycle-transition-table" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "name": "lifecycle-transition-table", "status": "passed" }
+      }
+    },
+    {
+      "description": "child work that outlives a parent carries an explicit spawn contract",
+      "providerStates": [
+        { "name": "child-lifecycle-requires-spawn-contract fixture is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/resilience/case",
+        "body": { "name": "child-lifecycle-requires-spawn-contract" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "name": "child-lifecycle-requires-spawn-contract", "status": "passed" }
+      }
+    },
+    {
+      "description": "local diagnostics render replay-derived resilience outcomes",
+      "providerStates": [
+        { "name": "HOBO-520 local diagnostics are published" }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/resilience/diagnostics"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "command": "npm.cmd --prefix src\\draft\\resilience-semantics-annex run diagnostics",
+          "source": "replay-derived-persisted-facts",
+          "scenarios": [
+            { "outcome": "transient-retry" },
+            { "outcome": "policy-denied" },
+            { "outcome": "caller-cancelled" },
+            { "outcome": "deadline-expired" }
+          ],
+          "guarantees": {
+            "requiresEffectOrXState": false,
+            "authoritativeState": "persisted-facts-only"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

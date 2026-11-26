@@ -1,0 +1,44 @@
+{
+  "consumer": {
+    "name": "PortabilityConformanceLaneConsumer"
+  },
+  "provider": {
+    "name": "PortabilityConformanceLaneBoundary"
+  },
+  "interactions": [
+    {
+      "description": "NFR-001 portability lane returns pass evidence for multi-cloud-shop",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/nfr-001/portability-lane"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.conformance.nfr001-portability-lane/v1",
+          "fixture": "examples/multi-cloud-shop"
+        }
+      }
+    },
+    {
+      "description": "NFR-020 boundary lint denies agnostic sdk to provider import",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/nfr-020/boundary-lint"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "schema": "hobo.conformance.nfr020-boundary-lint/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

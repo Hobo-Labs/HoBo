@@ -1,0 +1,80 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderLakebedBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for the four honestly-scoped Lakebed ports",
+      "request": {
+        "method": "POST",
+        "path": "/providers/lakebed/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "secretless posture: broker-minted short-lived deploy tokens, no static vendor tokens",
+      "request": {
+        "method": "GET",
+        "path": "/providers/lakebed/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "svid-federation",
+          "tokenAudience": "lakebed.deploy",
+          "exchange": "hobo:brokered-deploy-token",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "realize a compute ResourcePlan into a lakebed-deploy driver program (a Driver, not IaC)",
+      "request": {
+        "method": "POST",
+        "path": "/providers/lakebed/realize",
+        "body": {
+          "name": "api",
+          "port": "compute",
+          "provider": "lakebed"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "driver": {
+            "apiVersion": "hobo.driver-program/v1",
+            "kind": "driver-program",
+            "driver": "lakebed-deploy",
+            "resources": [
+              {
+                "name": "api",
+                "type": "lakebed:capsule",
+                "provider": "lakebed"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

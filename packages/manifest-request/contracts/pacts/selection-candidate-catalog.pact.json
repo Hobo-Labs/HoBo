@@ -1,0 +1,467 @@
+{
+	"consumer": {
+		"name": "hobo-planner"
+	},
+	"provider": {
+		"name": "hobo-selection-candidate-catalog"
+	},
+	"interactions": [
+		{
+			"description": "a provider's catalog row crosses the boundary and comes back in canonical form",
+			"request": {
+				"method": "POST",
+				"path": "/catalog/hobo.selection-candidate/v1",
+				"body": {
+					"definitionId": "neon.claimable-postgres/v1",
+					"providerId": "neon",
+					"implementsProfiles": [
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1",
+							"realization": "native",
+							"conformanceRef": "hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08",
+							"conformance": "pass"
+						}
+					],
+					"runtimeModels": [
+						"wasm",
+						"oci",
+						"vm_iaas",
+						"paas",
+						"serverless_faas"
+					],
+					"structuredCapabilities": {
+						"postgresWireProtocol": true,
+						"tls": true,
+						"transactions": true,
+						"constraints": true,
+						"jsonDocuments": true,
+						"preparedStatements": true,
+						"pooling": true,
+						"serverVersion": ">=17",
+						"maxStorageBytes": 104857600,
+						"maxTransferBytes": 1073741824,
+						"region": "aws-us-east-2",
+						"bootstrap": "public-anonymous-claimable",
+						"claimBoundary": "resource",
+						"expirySource": "provider-reported",
+						"logicalReplicationOptIn": true,
+						"branches": false
+					},
+					"producesBindingProfiles": [
+						"binding.postgresql/v1",
+						"binding.neon-serverless/v1"
+					],
+					"migrationProfiles": [
+						"migration.postgres.pg-dump/v1",
+						"migration.postgres.logical-copy/v1"
+					],
+					"providerClass": "verified-emerging",
+					"evidenceExpiresAtMs": 1793923200000,
+					"evidenceSignatureValid": true,
+					"creatorAuthorityAfterClaim": "rotatable",
+					"claimAtomicity": "single-resource",
+					"claimActionCount": 2,
+					"continuity": {
+						"endpoint": "preserved",
+						"data": "preserved",
+						"credentials": "retained"
+					},
+					"supportsExport": true,
+					"supportsRotation": true,
+					"supportsRevocation": true,
+					"sponsorExposureMinorUnits": 0,
+					"hasRegisteredDriver": true,
+					"secretCustodyAvailable": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.selection-candidate/v1",
+					"accepted": true,
+					"canonical": "{\"schema_version\":\"hobo.selection-candidate/v1\",\"definition_id\":\"neon.claimable-postgres/v1\",\"provider_id\":\"neon\",\"implements_profiles\":[{\"profile_id\":\"data.postgres/v1\",\"version_range\":\">=1\",\"realization\":\"native\",\"conformance_ref\":\"hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08\",\"conformance\":\"pass\"}],\"runtime_models\":[\"oci\",\"paas\",\"serverless_faas\",\"vm_iaas\",\"wasm\"],\"structured_capabilities\":{\"bootstrap\":\"public-anonymous-claimable\",\"branches\":false,\"claimBoundary\":\"resource\",\"constraints\":true,\"expirySource\":\"provider-reported\",\"jsonDocuments\":true,\"logicalReplicationOptIn\":true,\"maxStorageBytes\":104857600,\"maxTransferBytes\":1073741824,\"pooling\":true,\"postgresWireProtocol\":true,\"preparedStatements\":true,\"region\":\"aws-us-east-2\",\"serverVersion\":\">=17\",\"tls\":true,\"transactions\":true},\"produces_binding_profiles\":[\"binding.neon-serverless/v1\",\"binding.postgresql/v1\"],\"migration_profiles\":[\"migration.postgres.logical-copy/v1\",\"migration.postgres.pg-dump/v1\"],\"provider_class\":\"verified-emerging\",\"evidence_expires_at_ms\":1793923200000,\"evidence_signature_valid\":true,\"creator_authority_after_claim\":\"rotatable\",\"claim_atomicity\":\"single-resource\",\"claim_action_count\":2,\"continuity\":{\"endpoint\":\"preserved\",\"data\":\"preserved\",\"credentials\":\"retained\"},\"supports_export\":true,\"supports_rotation\":true,\"supports_revocation\":true,\"sponsor_exposure_minor_units\":0,\"has_registered_driver\":true,\"secret_custody_available\":true}"
+				}
+			}
+		},
+		{
+			"description": "a connectivity-only row that implements no profile at all is admitted",
+			"request": {
+				"method": "POST",
+				"path": "/catalog/hobo.selection-candidate/v1",
+				"body": {
+					"definitionId": "cloudflare.temporary-hyperdrive/v1",
+					"providerId": "cloudflare",
+					"implementsProfiles": [],
+					"runtimeModels": [
+						"serverless_faas",
+						"wasm"
+					],
+					"structuredCapabilities": {
+						"connectivityOnly": true,
+						"maxConfigurations": 2,
+						"maxConnections": 10
+					},
+					"producesBindingProfiles": [
+						"binding.postgresql/v1"
+					],
+					"migrationProfiles": [],
+					"providerClass": "established",
+					"evidenceExpiresAtMs": 1802044800000,
+					"evidenceSignatureValid": true,
+					"creatorAuthorityAfterClaim": "reauthorization-required",
+					"claimAtomicity": "provider-bundled",
+					"claimActionCount": 1,
+					"continuity": {
+						"endpoint": "preserved",
+						"data": "not-applicable",
+						"credentials": "revoked"
+					},
+					"supportsExport": false,
+					"supportsRotation": true,
+					"supportsRevocation": true,
+					"sponsorExposureMinorUnits": 0,
+					"hasRegisteredDriver": true,
+					"secretCustodyAvailable": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.selection-candidate/v1",
+					"accepted": true,
+					"canonical": "{\"schema_version\":\"hobo.selection-candidate/v1\",\"definition_id\":\"cloudflare.temporary-hyperdrive/v1\",\"provider_id\":\"cloudflare\",\"implements_profiles\":[],\"runtime_models\":[\"serverless_faas\",\"wasm\"],\"structured_capabilities\":{\"connectivityOnly\":true,\"maxConfigurations\":2,\"maxConnections\":10},\"produces_binding_profiles\":[\"binding.postgresql/v1\"],\"migration_profiles\":[],\"provider_class\":\"established\",\"evidence_expires_at_ms\":1802044800000,\"evidence_signature_valid\":true,\"creator_authority_after_claim\":\"reauthorization-required\",\"claim_atomicity\":\"provider-bundled\",\"claim_action_count\":1,\"continuity\":{\"endpoint\":\"preserved\",\"data\":\"not-applicable\",\"credentials\":\"revoked\"},\"supports_export\":false,\"supports_rotation\":true,\"supports_revocation\":true,\"sponsor_exposure_minor_units\":0,\"has_registered_driver\":true,\"secret_custody_available\":true}"
+				}
+			}
+		},
+		{
+			"description": "a null evidence expiry is refused rather than read as absent",
+			"request": {
+				"method": "POST",
+				"path": "/catalog/hobo.selection-candidate/v1",
+				"body": {
+					"definitionId": "neon.claimable-postgres/v1",
+					"providerId": "neon",
+					"implementsProfiles": [
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1",
+							"realization": "native",
+							"conformanceRef": "hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08",
+							"conformance": "pass"
+						}
+					],
+					"runtimeModels": [
+						"wasm",
+						"oci",
+						"vm_iaas",
+						"paas",
+						"serverless_faas"
+					],
+					"structuredCapabilities": {
+						"postgresWireProtocol": true,
+						"tls": true,
+						"transactions": true,
+						"constraints": true,
+						"jsonDocuments": true,
+						"preparedStatements": true,
+						"pooling": true,
+						"serverVersion": ">=17",
+						"maxStorageBytes": 104857600,
+						"maxTransferBytes": 1073741824,
+						"region": "aws-us-east-2",
+						"bootstrap": "public-anonymous-claimable",
+						"claimBoundary": "resource",
+						"expirySource": "provider-reported",
+						"logicalReplicationOptIn": true,
+						"branches": false
+					},
+					"producesBindingProfiles": [
+						"binding.postgresql/v1",
+						"binding.neon-serverless/v1"
+					],
+					"migrationProfiles": [
+						"migration.postgres.pg-dump/v1",
+						"migration.postgres.logical-copy/v1"
+					],
+					"providerClass": "verified-emerging",
+					"evidenceExpiresAtMs": null,
+					"evidenceSignatureValid": true,
+					"creatorAuthorityAfterClaim": "rotatable",
+					"claimAtomicity": "single-resource",
+					"claimActionCount": 2,
+					"continuity": {
+						"endpoint": "preserved",
+						"data": "preserved",
+						"credentials": "retained"
+					},
+					"supportsExport": true,
+					"supportsRotation": true,
+					"supportsRevocation": true,
+					"sponsorExposureMinorUnits": 0,
+					"hasRegisteredDriver": true,
+					"secretCustodyAvailable": true
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.selection-candidate/v1",
+					"accepted": false,
+					"code": "INVALID_SELECTION_CANDIDATE",
+					"path": "evidenceExpiresAtMs",
+					"message": "invalid selection candidate at evidenceExpiresAtMs: must be absent rather than null; absence is the 'no live evidence' fact and null is a second spelling of it"
+				}
+			}
+		},
+		{
+			"description": "a row carrying a fact this schema does not model is refused, not truncated",
+			"request": {
+				"method": "POST",
+				"path": "/catalog/hobo.selection-candidate/v1",
+				"body": {
+					"definitionId": "neon.claimable-postgres/v1",
+					"providerId": "neon",
+					"implementsProfiles": [
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1",
+							"realization": "native",
+							"conformanceRef": "hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08",
+							"conformance": "pass"
+						}
+					],
+					"runtimeModels": [
+						"wasm",
+						"oci",
+						"vm_iaas",
+						"paas",
+						"serverless_faas"
+					],
+					"structuredCapabilities": {
+						"postgresWireProtocol": true,
+						"tls": true,
+						"transactions": true,
+						"constraints": true,
+						"jsonDocuments": true,
+						"preparedStatements": true,
+						"pooling": true,
+						"serverVersion": ">=17",
+						"maxStorageBytes": 104857600,
+						"maxTransferBytes": 1073741824,
+						"region": "aws-us-east-2",
+						"bootstrap": "public-anonymous-claimable",
+						"claimBoundary": "resource",
+						"expirySource": "provider-reported",
+						"logicalReplicationOptIn": true,
+						"branches": false
+					},
+					"producesBindingProfiles": [
+						"binding.postgresql/v1",
+						"binding.neon-serverless/v1"
+					],
+					"migrationProfiles": [
+						"migration.postgres.pg-dump/v1",
+						"migration.postgres.logical-copy/v1"
+					],
+					"providerClass": "verified-emerging",
+					"evidenceExpiresAtMs": 1793923200000,
+					"evidenceSignatureValid": true,
+					"creatorAuthorityAfterClaim": "rotatable",
+					"claimAtomicity": "single-resource",
+					"claimActionCount": 2,
+					"continuity": {
+						"endpoint": "preserved",
+						"data": "preserved",
+						"credentials": "retained"
+					},
+					"supportsExport": true,
+					"supportsRotation": true,
+					"supportsRevocation": true,
+					"sponsorExposureMinorUnits": 0,
+					"hasRegisteredDriver": true,
+					"secretCustodyAvailable": true,
+					"monthlyCostMinorUnits": 500
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.selection-candidate/v1",
+					"accepted": false,
+					"code": "INVALID_SELECTION_CANDIDATE",
+					"path": "selectionCandidate",
+					"message": "invalid selection candidate at selectionCandidate: unknown field(s) \"monthlyCostMinorUnits\"; a fact selection cannot read is a fact no digest covers"
+				}
+			}
+		},
+		{
+			"description": "two claims for the same profile are refused, because position would decide between them",
+			"request": {
+				"method": "POST",
+				"path": "/catalog/hobo.selection-candidate/v1",
+				"body": {
+					"definitionId": "neon.claimable-postgres/v1",
+					"providerId": "neon",
+					"implementsProfiles": [
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1",
+							"realization": "native",
+							"conformanceRef": "hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08",
+							"conformance": "pass"
+						},
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1",
+							"realization": "pack",
+							"conformanceRef": "hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08",
+							"conformance": "pass"
+						}
+					],
+					"runtimeModels": [
+						"wasm",
+						"oci",
+						"vm_iaas",
+						"paas",
+						"serverless_faas"
+					],
+					"structuredCapabilities": {
+						"postgresWireProtocol": true,
+						"tls": true,
+						"transactions": true,
+						"constraints": true,
+						"jsonDocuments": true,
+						"preparedStatements": true,
+						"pooling": true,
+						"serverVersion": ">=17",
+						"maxStorageBytes": 104857600,
+						"maxTransferBytes": 1073741824,
+						"region": "aws-us-east-2",
+						"bootstrap": "public-anonymous-claimable",
+						"claimBoundary": "resource",
+						"expirySource": "provider-reported",
+						"logicalReplicationOptIn": true,
+						"branches": false
+					},
+					"producesBindingProfiles": [
+						"binding.postgresql/v1",
+						"binding.neon-serverless/v1"
+					],
+					"migrationProfiles": [
+						"migration.postgres.pg-dump/v1",
+						"migration.postgres.logical-copy/v1"
+					],
+					"providerClass": "verified-emerging",
+					"evidenceExpiresAtMs": 1793923200000,
+					"evidenceSignatureValid": true,
+					"creatorAuthorityAfterClaim": "rotatable",
+					"claimAtomicity": "single-resource",
+					"claimActionCount": 2,
+					"continuity": {
+						"endpoint": "preserved",
+						"data": "preserved",
+						"credentials": "retained"
+					},
+					"supportsExport": true,
+					"supportsRotation": true,
+					"supportsRevocation": true,
+					"sponsorExposureMinorUnits": 0,
+					"hasRegisteredDriver": true,
+					"secretCustodyAvailable": true
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.selection-candidate/v1",
+					"accepted": false,
+					"code": "INVALID_SELECTION_CANDIDATE",
+					"path": "implementsProfiles",
+					"message": "invalid selection candidate at implementsProfiles: must not repeat \"data.postgres/v1\""
+				}
+			}
+		},
+		{
+			"description": "an index-shaped capability key is refused, because JavaScript would hoist it out of canonical order",
+			"request": {
+				"method": "POST",
+				"path": "/catalog/hobo.selection-candidate/v1",
+				"body": {
+					"definitionId": "neon.claimable-postgres/v1",
+					"providerId": "neon",
+					"implementsProfiles": [
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1",
+							"realization": "native",
+							"conformanceRef": "hobo.conformance/data.postgres/v1#neon.claimable-postgres@2026-08-08",
+							"conformance": "pass"
+						}
+					],
+					"runtimeModels": [
+						"wasm",
+						"oci",
+						"vm_iaas",
+						"paas",
+						"serverless_faas"
+					],
+					"structuredCapabilities": {
+						"0": true,
+						"postgresWireProtocol": true,
+						"tls": true,
+						"transactions": true,
+						"constraints": true,
+						"jsonDocuments": true,
+						"preparedStatements": true,
+						"pooling": true,
+						"serverVersion": ">=17",
+						"maxStorageBytes": 104857600,
+						"maxTransferBytes": 1073741824,
+						"region": "aws-us-east-2",
+						"bootstrap": "public-anonymous-claimable",
+						"claimBoundary": "resource",
+						"expirySource": "provider-reported",
+						"logicalReplicationOptIn": true,
+						"branches": false
+					},
+					"producesBindingProfiles": [
+						"binding.postgresql/v1",
+						"binding.neon-serverless/v1"
+					],
+					"migrationProfiles": [
+						"migration.postgres.pg-dump/v1",
+						"migration.postgres.logical-copy/v1"
+					],
+					"providerClass": "verified-emerging",
+					"evidenceExpiresAtMs": 1793923200000,
+					"evidenceSignatureValid": true,
+					"creatorAuthorityAfterClaim": "rotatable",
+					"claimAtomicity": "single-resource",
+					"claimActionCount": 2,
+					"continuity": {
+						"endpoint": "preserved",
+						"data": "preserved",
+						"credentials": "retained"
+					},
+					"supportsExport": true,
+					"supportsRotation": true,
+					"supportsRevocation": true,
+					"sponsorExposureMinorUnits": 0,
+					"hasRegisteredDriver": true,
+					"secretCustodyAvailable": true
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.selection-candidate/v1",
+					"accepted": false,
+					"code": "INVALID_SELECTION_CANDIDATE",
+					"path": "structuredCapabilities.0",
+					"message": "invalid selection candidate at structuredCapabilities.0: key must match ^[A-Za-z][A-Za-z0-9_.-]*$"
+				}
+			}
+		}
+	]
+}

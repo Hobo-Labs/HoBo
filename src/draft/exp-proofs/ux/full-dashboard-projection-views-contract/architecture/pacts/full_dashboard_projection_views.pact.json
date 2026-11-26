@@ -1,0 +1,68 @@
+{
+  "consumer": {
+    "name": "@hobo/draft-full-dashboard-projection-views-contract"
+  },
+  "provider": {
+    "name": "@hobo/draft-full-dashboard-projection-views-fixture-boundary"
+  },
+  "interactions": [
+    {
+      "description": "HOBO-662 full dashboard projection views render multi-cloud-shop fixture",
+      "request": {
+        "method": "GET",
+        "path": "/draft/full-dashboard-projection-views"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-662",
+          "fixture": "examples/multi-cloud-shop",
+          "projectionOnly": true,
+          "views": [
+            "deployments-timeline",
+            "topology-graph",
+            "run-inspector",
+            "registry-browser",
+            "agent-activity-credential-audit",
+            "cost-finops",
+            "drift",
+            "plan-preview",
+            "policy-gate-approvals",
+            "promote-rollback",
+            "live-tail"
+          ],
+          "interactions": [
+            "plan-preview",
+            "policy-gate-approval",
+            "promote",
+            "rollback",
+            "live-tail",
+            "time-travel-scrubber",
+            "replay-diff"
+          ],
+          "designRefs": [
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/archive/requirements/requirements.md#nfr-016"
+          ],
+          "epicFixtureRefs": [
+            "src/draft/epic-proofs/cli-mcp-developer-experience",
+            "src/draft/epic-proofs/reliability-observability-cost-finops"
+          ],
+          "audits": {
+            "wcag": "WCAG-2.1-AA",
+            "pseudoLocalization": {
+              "expansionFactor": 2,
+              "direction": "rtl"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

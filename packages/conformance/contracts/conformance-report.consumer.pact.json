@@ -1,0 +1,63 @@
+{
+  "consumer": {
+    "name": "ConformanceReportConsumer"
+  },
+  "provider": {
+    "name": "ConformancePortSuiteHarness"
+  },
+  "interactions": [
+    {
+      "description": "CI gate consumes a listed port-suite report",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/report",
+        "body": {
+          "schema": "hobo.conformance.port-suite-report/v1",
+          "claim": {
+            "status": "listed"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.conformance.port-suite-report/v1",
+          "ok": true,
+          "claim": {
+            "status": "listed",
+            "failureCodes": []
+          }
+        }
+      }
+    },
+    {
+      "description": "CI gate consumes a blocked port-suite report with failure codes",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/report",
+        "body": {
+          "schema": "hobo.conformance.port-suite-report/v1",
+          "claim": {
+            "status": "blocked"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.conformance.port-suite-report/v1",
+          "ok": false,
+          "claim": {
+            "status": "blocked",
+            "failureCodes": ["adapter.output-mismatch"]
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

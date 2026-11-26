@@ -1,0 +1,9 @@
+{
+  "name": "@hobo-draft/preview-ephemeral-environments-contract",
+  "private": true,
+  "type": "module",
+  "exports": "./src/preview-environments.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

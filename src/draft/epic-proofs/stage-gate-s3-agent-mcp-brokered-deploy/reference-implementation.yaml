@@ -1,0 +1,8 @@
+issue_id: "HOBO-636"
+slug: "stage-gate-s3-agent-mcp-brokered-deploy"
+journey: "J2"
+status: "in-review"
+linear_url: "https://linear.app/quickdeploy-ai/issue/HOBO-636/s3-10-stage-gate-s3-agent-deploys-via-mcp-with-brokered-tokens-only"
+reference_impl_root: "src/draft/epic-proofs/stage-gate-s3-agent-mcp-brokered-deploy"
+simulation_command: "pnpm --prefix src/draft/epic-proofs/stage-gate-s3-agent-mcp-brokered-deploy run simulate"
+last_updated: "2026-07-01T23:59:00Z"

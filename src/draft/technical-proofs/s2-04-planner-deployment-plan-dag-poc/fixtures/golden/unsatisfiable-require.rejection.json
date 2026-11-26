@@ -1,0 +1,6 @@
+{
+  "reason": "capability.require.unsatisfied resourceType=service missing=containerService.http2",
+  "rejection": {
+    "code": "capability.require.unsatisfied"
+  }
+}

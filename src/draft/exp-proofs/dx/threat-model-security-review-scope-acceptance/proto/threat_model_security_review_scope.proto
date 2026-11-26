@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package hobo.threat_model_security_review_scope.v1;
+
+message ThreatModelSecurityReviewScope {
+  string issue = 1;
+  string project = 2;
+  ThreatReviewState state = 3;
+  string goal = 4;
+  repeated ThreatReviewPersona personas = 5;
+  repeated ThreatReviewBoundary operating_boundaries = 6;
+  repeated ThreatReviewIntakeField intake_fields = 7;
+  repeated ThreatReviewGate review_gates = 8;
+  repeated string scope_in = 9;
+  repeated string scope_out = 10;
+}
+
+message ThreatReviewPersona {
+  string id = 1;
+  string need = 2;
+}
+
+message ThreatReviewBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message ThreatReviewIntakeField {
+  string id = 1;
+  string owner = 2;
+  string minimum_proof = 3;
+}
+
+message ThreatReviewGate {
+  string id = 1;
+  string owner = 2;
+  string minimum_proof = 3;
+}
+
+enum ThreatReviewState {
+  THREAT_REVIEW_STATE_UNSPECIFIED = 0;
+  THREAT_REVIEW_STATE_SCOPE_DRAFT = 1;
+  THREAT_REVIEW_STATE_SCOPE_ACCEPTED = 2;
+  THREAT_REVIEW_STATE_FOLLOW_UP_BLOCKED = 3;
+}

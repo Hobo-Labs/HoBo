@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/auth/consumer-contract.v1.json",
+  "title": "HoBo hobo:auth consumer-driven contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["port", "subject", "sessionOverrides", "grantedCapabilities", "canDeployGate"],
+  "properties": {
+    "port": {
+      "const": "hobo:auth"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "idClaim", "requiredClaims", "requiredRoles", "requiredScopes", "tenancy"],
+      "properties": {
+        "kind": {
+          "const": "user"
+        },
+        "idClaim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredClaims": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["type"],
+                "properties": {
+                  "type": {
+                    "const": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["enum"],
+                "properties": {
+                  "enum": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "uniqueItems": true
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "requiredRoles": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "requiredScopes": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "tenancy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platformTenant", "appTenantClaim", "defaultAppTenant"],
+          "properties": {
+            "platformTenant": {
+              "type": "string",
+              "minLength": 1
+            },
+            "appTenantClaim": {
+              "type": "string",
+              "minLength": 1
+            },
+            "defaultAppTenant": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "sessionOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roles", "tenants"],
+      "properties": {
+        "roles": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "tenants": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "claims": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/stringSet"
+          }
+        }
+      }
+    },
+    "grantedCapabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["port", "resource", "actions"],
+        "properties": {
+          "port": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resource": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actions": {
+            "$ref": "#/$defs/stringSet"
+          }
+        }
+      }
+    },
+    "canDeployGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureIdpSuite"],
+      "properties": {
+        "fixtureIdpSuite": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stringSet": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

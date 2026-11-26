@@ -1,0 +1,14 @@
+{
+  "runId": "20260730-smoke",
+  "experiences": [
+    "dx",
+    "ax"
+  ],
+  "personas": [
+    "developer",
+    "agent-operator"
+  ],
+  "surfaces": [],
+  "hostAgent": "cross-agent",
+  "createdAt": "2026-07-31T02:49:28.516Z"
+}

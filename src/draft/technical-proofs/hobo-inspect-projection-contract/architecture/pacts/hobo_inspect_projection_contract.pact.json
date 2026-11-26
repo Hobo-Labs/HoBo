@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboInspectProjectionContractConsumer"
+  },
+  "provider": {
+    "name": "HoboInspectProjectionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Inspect Projection Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-inspect-projection-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_inspect_projection_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

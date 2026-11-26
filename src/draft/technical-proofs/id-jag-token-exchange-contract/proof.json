@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "id-jag-token-exchange-contract",
+  "title": "HOBO-54 ID-JAG Token-Exchange Contract",
+  "linear": "HOBO-54",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-auth-json-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/ai-native-agent-auth.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

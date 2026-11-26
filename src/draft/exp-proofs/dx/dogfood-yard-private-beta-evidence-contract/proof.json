@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dogfood-yard-private-beta-evidence-contract",
+  "experienceType": "dx",
+  "title": "Dogfood Yard Private Beta Evidence Contract",
+  "linear": "HOBO-462",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

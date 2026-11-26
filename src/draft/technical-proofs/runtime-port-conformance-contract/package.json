@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/runtime-port-conformance-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

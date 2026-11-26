@@ -1,0 +1,56 @@
+{
+  "consumer": {
+    "name": "RuntimeLocalLinkTable"
+  },
+  "provider": {
+    "name": "CapabilityProviderExport"
+  },
+  "interactions": [
+    {
+      "description": "granted get operation routes through the link table with success envelope",
+      "request": {
+        "method": "POST",
+        "path": "/capability/call",
+        "body": {
+          "componentId": "api",
+          "importInterface": "wasi:keyvalue",
+          "operation": "get",
+          "payload": { "key": "todo-1" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "result": { "value": "stored:todo-1" }
+        }
+      }
+    },
+    {
+      "description": "ungranted set operation refused with error envelope carrying denial code",
+      "request": {
+        "method": "POST",
+        "path": "/capability/call",
+        "body": {
+          "componentId": "api",
+          "importInterface": "wasi:keyvalue",
+          "operation": "set",
+          "payload": { "key": "todo-1", "value": "mutate" }
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "ok": false,
+          "code": "capability.operation-not-granted"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "capability-grant-gate",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

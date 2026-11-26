@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.draft.vibe_troubleshooting_decision_trees.v1;
+
+message VibeTroubleshootingDecisionTrees {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated string proof_modes = 6;
+  repeated TroubleshootingDecisionCase cases = 7;
+  repeated string scope_out = 8;
+}
+
+message TroubleshootingDecisionCase {
+  string case_id = 1;
+  string path_state = 2;
+  string symptom = 3;
+  repeated string diagnostic_evidence = 4;
+  string owner = 5;
+  string safe_next_action = 6;
+  string customer_safe_wording = 7;
+  string escalation_route = 8;
+  string proof_mode = 9;
+  repeated string quickstart_fixture_refs = 10;
+  repeated string accessibility_notes = 11;
+  RedactionEvidence redaction = 12;
+}
+
+message RedactionEvidence {
+  bool redacted = 1;
+  repeated string visible_fields = 2;
+  repeated string withheld_fields = 3;
+}

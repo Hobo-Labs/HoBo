@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-accessibility-usability-launch-baseline-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

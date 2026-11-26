@@ -1,0 +1,123 @@
+{
+  "issue": "HOBO-271",
+  "decisionAdr": "ADR-0097",
+  "draft": {
+    "pinnedVersion": "draft-ietf-oauth-identity-assertion-authz-grant-04",
+    "datatrackerUrl": "https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/",
+    "lastChecked": "2026-06-26",
+    "reviewTriggers": [
+      "Datatracker publishes a newer draft revision",
+      "MCP authorization extension changes the ID-JAG profile requirements",
+      "IANA token or grant-profile registrations change",
+      "RFC 9700 or OAuth security BCP guidance changes sender-constrained token handling",
+      "A target authorization server advertises an incompatible grant profile"
+    ],
+    "requiredRevalidation": [
+      "diff the draft against the pinned version",
+      "update HOBO-48 auth.json pin and HOBO-54 wire vectors in the same review",
+      "add or amend adversarial vectors before accepting the new pin",
+      "keep older pins unservable for new Bindles unless an upcaster or compatibility note exists"
+    ]
+  },
+  "threats": [
+    {
+      "id": "stage1-assertion-theft-replay",
+      "priority": 1,
+      "stage": "stage-1-token-exchange",
+      "vector": "An attacker steals or replays the user identity assertion used to request an ID-JAG.",
+      "mitigation": "Broker accepts only authenticated, attested HoBo clients, binds nonce and jti, keeps the assertion short lived, and prefers sender-constrained proof when the target profile advertises it.",
+      "controls": ["broker-client-auth", "nonce-jti-replay-cache", "short-ttl", "sender-constrained-preferred"],
+      "failClosed": true,
+      "handoff": ["HOBO-54", "HOBO-250", "HOBO-255"],
+      "requiredRegression": "stolen assertion replay cannot mint a second ID-JAG"
+    },
+    {
+      "id": "stage2-audience-resource-confusion",
+      "priority": 2,
+      "stage": "stage-2-redemption",
+      "vector": "An ID-JAG minted for target A is redeemed at target B or for a different resource indicator.",
+      "mitigation": "Audience, issuer, resource indicator, client id, and grant profile are all exact-match inputs; mismatches reject instead of narrowing silently.",
+      "controls": ["audience-exact-match", "resource-indicator-match", "client-id-mapping", "grant-profile-match"],
+      "failClosed": true,
+      "handoff": ["HOBO-54", "HOBO-250"],
+      "requiredRegression": "audience or resource mismatch returns invalid_grant"
+    },
+    {
+      "id": "idp-compromise-blast-radius",
+      "priority": 3,
+      "stage": "issuer-trust",
+      "vector": "A trusted IdP or tenant-scoped issuer is compromised and can sign apparently valid assertions.",
+      "mitigation": "Trust is tenant-bound and revocable, deny-ceiling policy still caps targets and scopes, grants are short lived, and CredentialAudit supports issuer disablement and forensic replay.",
+      "controls": ["tenant-bound-issuer", "issuer-disablement", "deny-ceiling", "credential-audit"],
+      "failClosed": true,
+      "handoff": ["HOBO-250", "HOBO-255", "HOBO-162"],
+      "requiredRegression": "disabled or wrong-tenant issuer cannot mint or redeem XAA credentials"
+    },
+    {
+      "id": "scope-upgrade-at-redemption",
+      "priority": 4,
+      "stage": "scope-policy",
+      "vector": "The requesting app or target AS attempts to widen the redeemed access token beyond inferred usage or policy.",
+      "mitigation": "Requested scope is the intersection of advertised scope, usage-inferred allow, explicit .allow narrowing, and deny-ceiling policy; the target must narrow or reject, never widen.",
+      "controls": ["inferred-scope-subset", "allow-narrowing", "deny-ceiling", "resource-server-narrow-or-reject"],
+      "failClosed": true,
+      "handoff": ["HOBO-83", "HOBO-250", "HOBO-255"],
+      "requiredRegression": "redeemed access token scope cannot exceed manifest allow"
+    },
+    {
+      "id": "draft-version-skew",
+      "priority": 5,
+      "stage": "version-negotiation",
+      "vector": "HoBo and the target AS implement different ID-JAG draft revisions or grant-profile semantics.",
+      "mitigation": "auth.json and the wire contract pin one draft string; target metadata must advertise compatible profile support; a newer draft requires a vector-diff review before the pin changes.",
+      "controls": ["draft-version-pin", "metadata-match", "conformance-vector-diff", "pin-bump-review"],
+      "failClosed": true,
+      "handoff": ["HOBO-54", "HOBO-250"],
+      "requiredRegression": "unsupported or mismatched draft version yields hold or invalid_grant"
+    },
+    {
+      "id": "fallback-downgrade-to-obo",
+      "priority": 6,
+      "stage": "fallback-selection",
+      "vector": "An attacker or stale manifest forces downgrade from oauth2-xaa to oauth2-obo even though XAA is available.",
+      "mitigation": "Capability discovery prefers oauth2-xaa, mandatory policy may require XAA, fallback is explicit and audited, and downgrade is allowed only when the target does not advertise compatible XAA.",
+      "controls": ["capability-discovery", "mandatory-xaa-policy", "fallback-explicitness", "credential-audit"],
+      "failClosed": true,
+      "handoff": ["HOBO-43", "HOBO-250", "HOBO-255"],
+      "requiredRegression": "target advertising XAA cannot be reached through forced oauth2-obo fallback"
+    },
+    {
+      "id": "actor-token-confusion",
+      "priority": 7,
+      "stage": "actor-delegation-extension",
+      "vector": "A request combines a valid subject token with an unrelated or less-trusted actor token to overstate the actor's authority.",
+      "mitigation": "HoBo rejects actor_token in XAA until a supported profile defines processing; future support must bind actor token, subject, tenant, and policy in one conformance vector.",
+      "controls": ["unsupported-actor-token-reject", "future-profile-required", "tenant-subject-actor-binding"],
+      "failClosed": true,
+      "handoff": ["HOBO-250", "HOBO-255"],
+      "requiredRegression": "unexpected actor_token fails closed"
+    },
+    {
+      "id": "pop-dpop-downgrade",
+      "priority": 8,
+      "stage": "sender-constrained-token",
+      "vector": "A DPoP or cnf sender-constrained ID-JAG is silently downgraded to bearer semantics or redeemed with the wrong key.",
+      "mitigation": "When sender-constrained mode is required, HoBo inspects cnf.jkt, requires a matching DPoP proof, and rejects missing or mismatched proof rather than treating the assertion as bearer.",
+      "controls": ["cnf-inspection", "dpop-proof-match", "downgrade-reject", "sender-constrained-required-policy"],
+      "failClosed": true,
+      "handoff": ["HOBO-54", "HOBO-250"],
+      "requiredRegression": "cnf-present assertion without matching DPoP proof returns invalid_grant"
+    },
+    {
+      "id": "refresh-token-subject-broadening",
+      "priority": 9,
+      "stage": "subject-token-refresh",
+      "vector": "A refresh token used as subject_token silently expands authorization context or survives longer than the user/app delegation intended.",
+      "mitigation": "HoBo defaults to identity assertions or OBO SVIDs; refresh-token subject use requires explicit target support, same client binding, same or narrower scopes, and policy approval.",
+      "controls": ["refresh-token-opt-in", "same-client-binding", "scope-narrowing-only", "policy-approval"],
+      "failClosed": true,
+      "handoff": ["HOBO-54", "HOBO-250", "HOBO-255"],
+      "requiredRegression": "refresh-token subject cannot widen audience or scopes"
+    }
+  ]
+}

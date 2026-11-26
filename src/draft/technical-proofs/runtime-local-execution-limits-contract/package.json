@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/runtime-local-execution-limits-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for runtime-local component-host fuel, epoch, and resource-limit interruption from HOBO-400.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

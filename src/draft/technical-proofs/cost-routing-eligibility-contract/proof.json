@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "cost-routing-eligibility-contract",
+  "title": "Cost-Routing Eligibility Contract",
+  "linear": "HOBO-155",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

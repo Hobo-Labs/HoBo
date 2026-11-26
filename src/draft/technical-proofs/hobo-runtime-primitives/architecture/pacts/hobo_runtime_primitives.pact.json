@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboRuntimePrimitivesConsumer"
+  },
+  "provider": {
+    "name": "HoboRuntimePrimitivesBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Runtime Primitives boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-runtime-primitives/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_runtime_primitives/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

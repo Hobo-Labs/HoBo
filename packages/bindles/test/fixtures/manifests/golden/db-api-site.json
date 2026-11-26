@@ -1,0 +1,37 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "1.0.0"
+  },
+  "resources": {
+    "db": {
+      "type": "data.v1",
+      "port": "hobo:data",
+      "paradigm": "relational",
+      "allow": ["query"]
+    },
+    "api": {
+      "type": "component.v1",
+      "image": "oci://registry.example.com/api@sha256:abc123",
+      "runtime": "wasm",
+      "exports": ["wasi:http/incoming-handler"],
+      "links": [{ "import": "hobo:data", "to": "db" }],
+      "endpoints": {
+        "http": { "scheme": "http", "targetPort": 8080, "external": true }
+      },
+      "env": {
+        "LOG_LEVEL": "info",
+        "SERVICE_REF": "${resources.data.postgres#db.outputs.url}"
+      },
+      "annotations": {
+        "scaling": { "min": 1, "max": 10 },
+        "with": { "aws.fargate": { "cpu": 512 } }
+      }
+    },
+    "site": {
+      "type": "website.v1",
+      "bind": ["api"]
+    }
+  }
+}

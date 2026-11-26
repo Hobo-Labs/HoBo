@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/champion-challenger-promotion-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for champion/challenger shadow promotion with region-scoped persisted code mutation.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

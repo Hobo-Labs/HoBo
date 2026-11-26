@@ -1,0 +1,32 @@
+{
+  "accountId": "tenant",
+  "installationId": 5,
+  "repository": "widget/repo",
+  "repositoryId": 42,
+  "defaultBranch": "main",
+  "baseSha": "1111111111111111111111111111111111111111",
+  "baseTreeSha": "2222222222222222222222222222222222222222",
+  "installBranch": "hobo-ci-install-5bf70ffee2d03ced5a5b",
+  "bridgeRef": "hobo-ci-bridge-5bf70ffee2d03ced5a5b",
+  "bridgeWorkflow": "hobo-ci-host.yml",
+  "runnerGroupId": 1,
+  "dispatcherActorId": 77,
+  "trustedRefs": [
+    "refs/heads/main"
+  ],
+  "trustedRepositoryAcknowledged": true,
+  "files": [
+    {
+      "path": ".github/workflows/hobo-ci-host.yml",
+      "content": "name: HoBo CI host\njobs:\n  host:\n    env:\n      HOBO_CI_RELAY_URL: \"https://ci.hobo.test\"\n    run: node --experimental-strip-types .hobo-ci/bootstrap.mts\n",
+      "sha256": "265df864e2e36dcbfdb574a391ef7d9eae409447dd8092be7cb5aeb75df5193f"
+    },
+    {
+      "path": ".hobo-ci/bootstrap.mts",
+      "content": "export async function bootstrap() { return \"fixture\"; }\n",
+      "sha256": "1d94e71f4598d3be960edd284d0db2082a6636b466cf87c87d60548b0a8d7d5c"
+    }
+  ],
+  "relayUrl": "https://ci.hobo.test",
+  "planDigest": "1972b314c1a23659a333b0c901d3e32124fa44905ca7eeb3f1d0fd1062df03fd"
+}

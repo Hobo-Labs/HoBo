@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "VscodeExtensionContractConsumer"
+  },
+  "provider": {
+    "name": "VscodeExtensionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vscode Extension Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vscode-extension-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.vscode_extension_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

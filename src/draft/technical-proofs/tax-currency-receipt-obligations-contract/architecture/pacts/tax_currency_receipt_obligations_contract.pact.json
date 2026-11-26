@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TaxCurrencyReceiptObligationsContractConsumer"
+  },
+  "provider": {
+    "name": "TaxCurrencyReceiptObligationsContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Tax Currency Receipt Obligations Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/tax-currency-receipt-obligations-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.tax_currency_receipt_obligations_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-demo-golden-path-contract",
+  "experienceType": "dx",
+  "title": "Launch Demo Golden Path Contract",
+  "linear": "HOBO-488",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

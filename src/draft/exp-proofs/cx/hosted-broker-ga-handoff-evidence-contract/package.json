@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/hosted-broker-ga-handoff-evidence-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

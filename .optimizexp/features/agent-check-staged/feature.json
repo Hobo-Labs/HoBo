@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "agent-check-staged",
+  "title": "Staged agent checks",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [
+    "developer"
+  ],
+  "interfaces": [
+    "cli"
+  ],
+  "driver": "cli",
+  "surfaces": [
+    "pnpm run agent:check -- --staged --explain"
+  ],
+  "tags": [
+    "@optimizexp",
+    "@dx"
+  ],
+  "bindings": {
+    "steps": "steps/bindings.steps.ts",
+    "implementations": "steps/implementations.ts",
+    "tests": "test/agent-check-staged.bindings.test.ts"
+  },
+  "implementationStatus": "wired",
+  "primaryCommand": "pnpm run agent:check -- --staged --explain"
+}

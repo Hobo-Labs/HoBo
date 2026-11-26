@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GitopsCiJourneyContractConsumer"
+  },
+  "provider": {
+    "name": "GitopsCiJourneyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Gitops Ci Journey Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/gitops-ci-journey-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.gitops_ci_journey_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

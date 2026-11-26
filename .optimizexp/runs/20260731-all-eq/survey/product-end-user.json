@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "kind": "persona-survey",
+  "runId": "20260731-all-eq",
+  "persona": "product-end-user",
+  "experiences": [
+    "ux"
+  ],
+  "surfaces": [
+    "pnpm run docs:site-nav"
+  ],
+  "featureIds": [
+    "public-site-first-impression"
+  ],
+  "polledAt": "2026-07-31T15:39:56.130Z",
+  "primaryPhaseStop": "metrics-zero",
+  "answers": [
+    {
+      "id": "q_excitement",
+      "prompt": "excitement",
+      "score": 3,
+      "text": "Nav missing-count 0 is reassuring for IA integrity."
+    },
+    {
+      "id": "q_ease",
+      "prompt": "ease",
+      "score": 4,
+      "text": "Happy path is one command/exit 0."
+    },
+    {
+      "id": "q_optimal",
+      "prompt": "optimal",
+      "score": 3,
+      "text": "Measured surface is nav integrity, not live first paint — optional browser capture later (L/external)."
+    },
+    {
+      "id": "q_delight",
+      "prompt": "delight",
+      "text": "Nav missing-count 0 is reassuring for IA integrity."
+    },
+    {
+      "id": "q_friction_feel",
+      "prompt": "friction",
+      "text": "Cannot feel visual delight from CLI nav check alone."
+    },
+    {
+      "id": "q_one_change",
+      "prompt": "one change",
+      "text": "Measured surface is nav integrity, not live first paint — optional browser capture later (L/external)."
+    },
+    {
+      "id": "q_never",
+      "prompt": "never",
+      "text": "Never auto-install key tools or send embeddings without consent."
+    },
+    {
+      "id": "q_recommend",
+      "prompt": "recommend",
+      "recommend": "mixed",
+      "text": "Good offline proxy; not a substitute for visual first impression."
+    }
+  ],
+  "positive": {
+    "excitement": 3,
+    "easeOfUse": 4,
+    "perceivedOptimality": 3,
+    "total": 10,
+    "min": 3,
+    "gapTotal": 5,
+    "gapMax": 2
+  },
+  "cognitive": {
+    "featureSprawl": 0,
+    "visualClutter": 0,
+    "interactiveClutter": 0,
+    "choiceOverload": 0,
+    "informationDensity": 1,
+    "noveltyTax": 0,
+    "contextSwitchTax": 0,
+    "workingMemoryLoad": 0,
+    "interruptionFragility": 0,
+    "total": 1,
+    "max": 1,
+    "breaches": []
+  },
+  "featureRequests": [
+    {
+      "id": "fr-public-site-optional-web-capture",
+      "title": "Optional web-driver evidence for public-site-first-impression",
+      "problem": "CLI nav check cannot score visual excitement.",
+      "desiredOutcome": "Optional Playwright capture of site home when browser available.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-end-user",
+      "featureIds": [
+        "public-site-first-impression"
+      ],
+      "surfaces": [
+        "pnpm run docs:site-nav"
+      ],
+      "impactOn": {
+        "excitement": 2,
+        "easeOfUse": 0,
+        "perceivedOptimality": 1
+      },
+      "effortHint": "L",
+      "antiGoals": [],
+      "smallestExperiment": "Wire feature driver web with degraded CLI fallback (L)."
+    }
+  ],
+  "evidenceRefs": [
+    ".optimizexp/features/public-site-first-impression/evidence/"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+	"params": {},
+	"expectFiles": [
+		"src/.gitkeep",
+		"src/_generated/.gitkeep",
+		"contracts/.gitkeep",
+		"data-models/.gitkeep",
+		"test/.gitkeep"
+	]
+}

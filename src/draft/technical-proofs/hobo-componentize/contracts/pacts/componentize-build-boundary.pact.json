@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "ComponentizeConsumer" },
+  "provider": { "name": "ComponentizeBuildBoundary" },
+  "interactions": [
+    {
+      "description": "build hello-bindle as a deterministic wasm component and OCI descriptor",
+      "request": { "method": "POST", "path": "/componentize/hello-bindle" },
+      "response": {
+        "status": 200,
+        "body": {
+          "validation": { "passed": true },
+          "smoke": { "exitCode": 0 },
+          "oci": { "mediaType": "application/vnd.oci.image.manifest.v1+json" }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

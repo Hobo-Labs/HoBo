@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "UpgradeRollbackDryRunConsumer"
+  },
+  "provider": {
+    "name": "UpgradeMigrationDryRunBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Upgrade dry-run boundary returns a non-mutating report",
+      "request": {
+        "method": "POST",
+        "path": "/upgrade-migration/dry-run"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.upgrade-rollback-dry-run/v1",
+          "status": "passed",
+          "mutationCommands": []
+        }
+      }
+    },
+    {
+      "description": "Upgrade dry-run boundary rejects live execution intent",
+      "request": {
+        "method": "POST",
+        "path": "/upgrade-migration/dry-run",
+        "body": {
+          "requestedAction": "execute-live-migration"
+        }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "error": "dry-run contract does not execute live migration, rollback, or provider mutation"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "meta-cloud-broker-rejection-matrix-contract",
+  "experienceType": "api",
+  "title": "Meta-cloud Broker Rejection Matrix Contract",
+  "linear": "HOBO-528",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

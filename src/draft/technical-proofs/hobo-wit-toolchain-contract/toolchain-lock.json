@@ -1,0 +1,58 @@
+{
+  "schema": "hobo.wit-toolchain-lock/v1",
+  "package": "hobo:sdk@0.1.0",
+  "scripts": {
+    "witGen": "pnpm wit:gen",
+    "witCheck": "pnpm wit:check"
+  },
+  "canonicalGenerator": {
+    "name": "@bytecodealliance/jco",
+    "version": "1.24.3",
+    "role": "canonical-ts-bindings"
+  },
+  "smokeGenerators": [
+    {
+      "name": "wit-bindgen-cli",
+      "version": "0.58.0",
+      "role": "compatibility-smoke"
+    }
+  ],
+  "compatFloor": {
+    "wasmtime": "46.0.1",
+    "componentizeJs": "0.21.0",
+    "wrpc": "0.17.0",
+    "wasmCloud": "2.4.0",
+    "policy": "../../../../docs/design/adr/07-portability-extensibility.md#adr-0024",
+    "baselineDecision": "../../../../docs/design/adr/01-architecture-core.md#adr-0085"
+  },
+  "witDeps": [
+    {
+      "interface": "wasi:clocks/wall-clock@0.2.0",
+      "version": "0.2.0",
+      "stability": "preview",
+      "path": "wit/deps/wasi-clocks-wall-clock.wit",
+      "digest": "sha256:c8b0c82c23b0acd770b7fd2a53ca9e32779c046d544795fc17b74c6117c55911"
+    },
+    {
+      "interface": "wasi:io/streams@0.2.0",
+      "version": "0.2.0",
+      "stability": "preview",
+      "path": "wit/deps/wasi-io-streams.wit",
+      "digest": "sha256:567802dc4220ca08b06074ad8fbc1be2b4de6219505fbeaf96f5f8be27d792a1"
+    },
+    {
+      "interface": "wasi:random/random@0.2.0",
+      "version": "0.2.0",
+      "stability": "preview",
+      "path": "wit/deps/wasi-random-random.wit",
+      "digest": "sha256:ecc02ee5ca27548a97da1fd87e880c354ec188c2e258d752566c5df3edee9e83"
+    }
+  ],
+  "guards": [
+    "canonical-generator-is-jco",
+    "wit-bindgen-is-smoke-only",
+    "vendored-wit-deps-match-lock",
+    "wit-gen-byte-identical",
+    "trivial-guest-imports-generated-world"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+	"id": "trail.step",
+	"tier": 2,
+	"kind": "trail",
+	"description": "Trail step that composes a named migration recipe.",
+	"tags": [
+		"trail",
+		"migration",
+		"step"
+	],
+	"queries": [
+		"trail step",
+		"migration recipe",
+		"hobo trail"
+	],
+	"requires": [],
+	"provides": [
+		"trail.step"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/trail.ts",
+			"from": "body/trail.ts.tpl"
+		}
+	]
+}

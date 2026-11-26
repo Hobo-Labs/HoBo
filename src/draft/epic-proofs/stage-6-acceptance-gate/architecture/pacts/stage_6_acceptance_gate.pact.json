@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "Stage6AcceptanceGateConsumer"
+  },
+  "provider": {
+    "name": "Stage6AcceptanceGateBoundary"
+  },
+  "interactions": [
+    {
+      "description": "HOBO-665 Stage-6 acceptance drill returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/stage-6-acceptance-gate/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.stage_6_acceptance_gate/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

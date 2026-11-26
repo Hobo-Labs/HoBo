@@ -1,0 +1,9 @@
+{
+  "resourceRef": "hobo://resource/prisma-postgres/FAKEresource000000",
+  "marketplaceProvider": "prisma",
+  "ownerAccountRef": "team_FAKEclaiminguser000000",
+  "resourceReachable": true,
+  "evidenceRef": "evidence://prisma-postgres/ownership/FAKE000000",
+  "endpointHost": "db.example.invalid",
+  "note": "HoBo-side probe result. No credential material: ownership is a reference fact."
+}

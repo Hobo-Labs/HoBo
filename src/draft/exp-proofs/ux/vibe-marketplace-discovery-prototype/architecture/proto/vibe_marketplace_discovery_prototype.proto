@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package hobo.draft.exp_proofs.vibe_marketplace_discovery_prototype.v1;
+
+message VibeMarketplaceDiscoveryPrototype {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated MarketplaceDiscoverySourceIssue source_issues = 6;
+  repeated MarketplaceDiscoveryCatalogFixture catalog = 7;
+  repeated MarketplaceDiscoveryPath paths = 8;
+  repeated string accessibility_notes = 9;
+  repeated string scope_out = 10;
+}
+
+message MarketplaceDiscoverySourceIssue {
+  string issue = 1;
+  string package_path = 2;
+  string proof_path = 3;
+}
+
+message MarketplaceDiscoveryMockupSource {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string surface = 3;
+}
+
+message MarketplaceDiscoveryTrustCopySource {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string copy_state = 3;
+}
+
+message MarketplaceDiscoveryQuickstartRef {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+}
+
+message MarketplaceDiscoveryCatalogFixture {
+  string fixture_id = 1;
+  string listing_state = 2;
+  string display_label = 3;
+  MarketplaceDiscoveryMockupSource source_mockup = 4;
+  MarketplaceDiscoveryTrustCopySource source_trust_copy = 5;
+  MarketplaceDiscoveryQuickstartRef quickstart_ref = 6;
+  string trust_evidence = 7;
+  string org_catalog_decision = 8;
+  string support_route = 9;
+  string installability_outcome = 10;
+  string proof_mode = 11;
+  string customer_safe_message = 12;
+  string safe_next_action = 13;
+}
+
+message MarketplaceDiscoveryPath {
+  string kind = 1;
+  repeated string fixture_ids = 2;
+  repeated string proof_modes = 3;
+  string expected_user_signal = 4;
+  string support_handoff = 5;
+}

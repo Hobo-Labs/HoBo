@@ -1,0 +1,37 @@
+{
+  "consumer": {
+    "name": "HoboHostedControlClient"
+  },
+  "provider": {
+    "name": "HoboHostedControl"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "legacy full-state write is rejected",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "body": {}
+      },
+      "response": {
+        "status": 410
+      }
+    },
+    {
+      "description": "policy-only principal cannot publish observed usage",
+      "request": {
+        "method": "POST",
+        "path": "/v2/accounts/self/observations",
+        "body": {}
+      },
+      "response": {
+        "status": 403
+      }
+    }
+  ]
+}

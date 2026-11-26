@@ -1,0 +1,62 @@
+{
+  "consumer": {
+    "name": "HOBO-558 CLI error refusal examples"
+  },
+  "provider": {
+    "name": "HoBo design proof registry"
+  },
+  "interactions": [
+    {
+      "description": "records customer-safe CLI, JSON, and MCP refusal examples without production handler scope",
+      "providerState": "HOBO-558 proof package is parsed",
+      "request": {
+        "method": "GET",
+        "path": "/design/proofs/cli-error-refusal-examples",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-558",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/dx/cli-error-refusal-examples",
+          "proofNote": "docs/design/proofs/cli-error-refusal-examples/README.md",
+          "requiredOperations": ["doctor", "plan", "up", "inspect", "logs", "mcp-action"],
+          "acceptedFixtureCorpus": "HOBO-572",
+          "acceptedFixturePrefix": "dx.lifecycle.",
+          "requiredCases": [
+            "missing-dependency",
+            "credential-auth-failure",
+            "policy-denial",
+            "contract-incompatibility",
+            "stale-projection",
+            "unknown-evidence",
+            "non-reactive-sink",
+            "provider-capability-partial-none",
+            "destructive-migration-blocked",
+            "support-bundle-handoff"
+          ],
+          "outputs": ["terminal", "json", "mcp"],
+          "proofModes": ["reference-fixture", "simulated-transcript"],
+          "fixtureProofModes": ["reference fixture"],
+          "scopeOut": [
+            "production error handler implementation",
+            "live auth or provider checks",
+            "support ticket automation",
+            "dashboard copy before CLI/API/SDK envelopes are accepted"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

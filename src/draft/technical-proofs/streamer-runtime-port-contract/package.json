@@ -1,0 +1,16 @@
+{
+  "name": "@hobo/draft-streamer-runtime-port-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./src/streamer-runtime-port.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/streamer-runtime-port.d.mts",
+      "default": "./src/streamer-runtime-port.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

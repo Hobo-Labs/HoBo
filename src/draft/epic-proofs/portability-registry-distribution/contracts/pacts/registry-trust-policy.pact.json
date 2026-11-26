@@ -1,0 +1,17 @@
+{
+  "consumer": { "name": "PortabilityRegistryReferenceApp" },
+  "provider": { "name": "RegistryTrustPolicyGate" },
+  "interactions": [
+    {
+      "description": "allows only installed, pre-approved, trusted listings and blocks yanked listings",
+      "providerState": "prod pre-approved catalog and critical yank policy are active",
+      "contents": {
+        "install": { "availableToMatching": true, "selectedByMatching": false },
+        "catalogDecision": { "effect": "allow" },
+        "trustDecision": { "effect": "allow" },
+        "yankDecision": { "decision": "hard-fail", "reason": "listing.yanked" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

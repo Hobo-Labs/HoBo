@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "generation-safety-gate-contract",
+  "title": "Generation Safety Gate Contract POC",
+  "linear": "HOBO-355",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/generation-pipeline-io-contract",
+      "src/draft/technical-proofs/no-egress-generation-sandbox-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-559 clickable first-run walkthrough.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibeClickableFirstRunProofMode {
+  VIBE_CLICKABLE_FIRST_RUN_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_CLICKABLE_FIRST_RUN_PROOF_MODE_LIVE = 1;
+  VIBE_CLICKABLE_FIRST_RUN_PROOF_MODE_SIMULATED = 2;
+  VIBE_CLICKABLE_FIRST_RUN_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_CLICKABLE_FIRST_RUN_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibeClickableFirstRunConsumedActivationRail {
+  string source_issue = 1;
+  string package_path = 2;
+  string proof_path = 3;
+  repeated string stages = 4;
+}
+
+message VibeClickableFirstRunConsumedWorkspaceProjectStates {
+  string source_issue = 1;
+  string package_path = 2;
+  string proof_path = 3;
+  repeated string states = 4;
+}
+
+message VibeClickableFirstRunSnapshopFixtureRef {
+  string fixture_id = 1;
+  string snapshop_context = 2;
+  string quickstart_fixture_id = 3;
+}
+
+message VibeClickableFirstRunWalkthroughStep {
+  string stage = 1;
+  string activation_rail_stage = 2;
+  string workspace_project_state = 3;
+  string title = 4;
+  string persona = 5;
+  string clickable_action = 6;
+  VibeClickableFirstRunSnapshopFixtureRef snapshop_fixture = 7;
+  VibeClickableFirstRunProofMode proof_mode = 8;
+  string docs_handoff = 9;
+  string support_handoff = 10;
+  string accessibility_note = 11;
+}
+
+message VibeClickableFirstRunScenarioPath {
+  string id = 1;
+  repeated string stage_ids = 2;
+  string narrative = 3;
+  string safe_outcome = 4;
+}
+
+message VibeClickableFirstRunHandoffRoute {
+  string surface = 1;
+  string trigger = 2;
+  string owner = 3;
+  string evidence_anchor = 4;
+  string customer_safe_message = 5;
+}
+
+message VibeClickableFirstRunSupportHandoffEvidence {
+  string severity = 1;
+  string redaction_state = 2;
+  string evidence_link = 3;
+  string next_update_condition = 4;
+}
+
+message VibeClickableFirstRunWalkthroughRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  VibeClickableFirstRunConsumedActivationRail consumed_activation_rail = 6;
+  VibeClickableFirstRunConsumedWorkspaceProjectStates consumed_workspace_project_states = 7;
+  repeated VibeClickableFirstRunWalkthroughStep steps = 8;
+  repeated VibeClickableFirstRunScenarioPath scenario_paths = 9;
+  repeated VibeClickableFirstRunHandoffRoute handoff_routes = 10;
+  VibeClickableFirstRunSupportHandoffEvidence support_handoff_evidence = 11;
+  repeated string accessibility_notes = 12;
+  repeated string scope_out = 13;
+}

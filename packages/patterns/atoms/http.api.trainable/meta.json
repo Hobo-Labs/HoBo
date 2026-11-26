@@ -1,0 +1,17 @@
+{
+	"id": "http.api.trainable",
+	"tier": 1,
+	"kind": "http",
+	"description": "Trainable HTTP greeting with a working baseline.",
+	"tags": ["http", "api", "trainable", "use training"],
+	"queries": ["use training greeting", "trainable hello", "trainable api"],
+	"requires": [],
+	"provides": ["http.handler.api", "http.trainable"],
+	"params": {
+		"required": ["name"],
+		"properties": {
+			"name": { "type": "string", "minLength": 1 }
+		}
+	},
+	"files": [{ "path": "src/api.ts", "from": "body/api.ts.tpl" }]
+}

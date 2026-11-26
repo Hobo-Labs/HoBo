@@ -1,0 +1,8 @@
+{
+  "user": "node",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "install": "bash .cursor/install.sh"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/draft-token-broker-exchange-contract",
+  "private": true,
+  "type": "module",
+  "description": "HOBO-629 draft POC: SVID to resource-scoped provider token exchange via OIDC federation.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

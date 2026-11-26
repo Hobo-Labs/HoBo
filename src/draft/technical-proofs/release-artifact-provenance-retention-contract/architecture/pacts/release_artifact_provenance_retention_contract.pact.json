@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ReleaseArtifactProvenanceRetentionContractConsumer"
+  },
+  "provider": {
+    "name": "ReleaseArtifactProvenanceRetentionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Release Artifact Provenance Retention Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/release-artifact-provenance-retention-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.release_artifact_provenance_retention_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

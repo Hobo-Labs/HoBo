@@ -1,0 +1,732 @@
+{
+  "coverage": {
+    "docs": [
+      {
+        "chunks": 12,
+        "covered": 7,
+        "docUri": "docs/billing.md",
+        "notTestable": [
+          "docs/billing.md#billing/performance/p1"
+        ],
+        "uncovered": [
+          "docs/billing.md#billing/p1",
+          "docs/billing.md#billing/downgrading/p4"
+        ]
+      },
+      {
+        "chunks": 3,
+        "covered": 1,
+        "docUri": "docs/release-notes.md",
+        "notTestable": [],
+        "uncovered": [
+          "docs/release-notes.md#release-notes/reading-the-release-notes/p2",
+          "docs/release-notes.md#release-notes/reading-the-release-notes/p3"
+        ]
+      },
+      {
+        "chunks": 1,
+        "covered": 1,
+        "docUri": "docs/reports.md",
+        "notTestable": [],
+        "uncovered": []
+      }
+    ]
+  },
+  "exitCode": 0,
+  "finishedAt": "2026-10-13T01:14:14.375Z",
+  "options": {
+    "audit": false,
+    "frozen": true,
+    "noAgent": true,
+    "recordingsMode": "read-write",
+    "strict": false,
+    "updateRecordings": false,
+    "workers": 4
+  },
+  "runId": "01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+  "scenarios": [
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 902,
+      "featureId": "docs-billing--upgrade-to-pro",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--upgrade-to-pro/upgrade-from-free-to-pro",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 252,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p2",
+              "hash": "27defd08b4ebc967451eadf7c77540e561bb7656d0d4dd603738323653572114",
+              "quote": "Clicking the upgrade button opens a confirmation dialog",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "when:e44de6cea56f",
+          "text": "the customer clicks the upgrade button",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Confirm upgrade",
+                    "role": "dialog"
+                  }
+                },
+                "satisfied": true
+              },
+              {
+                "actual": {
+                  "matches": 1,
+                  "text": "You will be charged a prorated amount of $12.50 today."
+                },
+                "predicate": {
+                  "match": "contains",
+                  "op": "text",
+                  "query": {
+                    "role": "paragraph",
+                    "within": {
+                      "name": "Confirm upgrade",
+                      "role": "dialog"
+                    }
+                  },
+                  "value": {
+                    "literal": "$12.50"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 125,
+          "evidence": [
+            {
+              "bytes": 667,
+              "kind": "observation",
+              "path": "artifacts/e88761294eb96f937486825c7d36ad6b768f6cc335e954e37035b8d492dee42a.json",
+              "sha256": "e88761294eb96f937486825c7d36ad6b768f6cc335e954e37035b8d492dee42a"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p2",
+              "hash": "27defd08b4ebc967451eadf7c77540e561bb7656d0d4dd603738323653572114",
+              "quote": "The confirmation dialog shows the prorated charge",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:a1356eec4635",
+          "text": "the confirmation dialog shows the prorated charge",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 247,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "After the customer confirms",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "when:73becadc3ca3",
+          "text": "the customer confirms the upgrade",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Plan: Pro",
+                    "role": "status",
+                    "within": {
+                      "name": "Plan",
+                      "role": "region"
+                    }
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 133,
+          "evidence": [
+            {
+              "bytes": 554,
+              "kind": "observation",
+              "path": "artifacts/00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d.json",
+              "sha256": "00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "the plan changes to Pro",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:e46127ec0d01",
+          "text": "the plan changes to Pro",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Next invoice: $12.50 (prorated)",
+                    "role": "paragraph",
+                    "within": {
+                      "name": "Invoice preview",
+                      "role": "region"
+                    }
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 5,
+          "evidence": [
+            {
+              "bytes": 554,
+              "kind": "observation",
+              "path": "artifacts/00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d.json",
+              "sha256": "00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "the invoice preview shows the prorated amount",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:26efce026b9e",
+          "text": "the invoice preview shows the prorated amount",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Upgraded to Pro",
+                    "role": "status"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 2,
+          "evidence": [
+            {
+              "bytes": 554,
+              "kind": "observation",
+              "path": "artifacts/00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d.json",
+              "sha256": "00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "A confirmation message appears once the upgrade is complete",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:c02e3af7c428",
+          "text": "an upgrade confirmation message appears",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Upgrade from Free to Pro",
+      "usage": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    },
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 151,
+      "featureId": "docs-billing--upgrade-to-pro",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--upgrade-to-pro/upgrade-button-is-visible-on-the-free-plan",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Upgrade to Pro",
+                    "role": "button",
+                    "within": {
+                      "name": "Plan",
+                      "role": "region"
+                    }
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 12,
+          "evidence": [
+            {
+              "bytes": 508,
+              "kind": "observation",
+              "path": "artifacts/aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde.json",
+              "sha256": "aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p1",
+              "hash": "71973978acb0387668ad56df6556b2d500fb46aaf32d30ff38d7e5b3b6e550ea",
+              "quote": "The upgrade button is visible while the account is on the Free plan",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:b8bacca78888",
+          "text": "the upgrade button is visible",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Upgrade button is visible on the Free plan",
+      "usage": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    },
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 645,
+      "featureId": "docs-billing--friendly-confirmation-messages",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--friendly-confirmation-messages/friendly-confirmation-after-upgrading",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 2,
+          "determinism": "deterministic",
+          "durationMs": 362,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [],
+          "status": "passed",
+          "stepKey": "when:005b61cae827",
+          "text": "the customer upgrades to Pro",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "determinism": "fuzzy",
+          "durationMs": 142,
+          "evidence": [
+            {
+              "bytes": 554,
+              "kind": "observation",
+              "path": "artifacts/00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d.json",
+              "sha256": "00ea122868d0f0d705b99a003a37b5eb84828890a0e53215e4a082853e37e96d"
+            },
+            {
+              "bytes": 100,
+              "kind": "screenshot",
+              "path": "artifacts/02d59329cfc8ab43e968e178d9d3f23e1ec8c88b042cbd79893c0512fb29076c.png",
+              "sha256": "02d59329cfc8ab43e968e178d9d3f23e1ec8c88b042cbd79893c0512fb29076c"
+            }
+          ],
+          "fuzzyReasons": [
+            "subjective"
+          ],
+          "judge": {
+            "cached": true,
+            "modelId": "fake:judge",
+            "promptVersion": "judge-v1",
+            "samples": [
+              {
+                "explanation": "The criterion holds in the AFTER observation.",
+                "observed": "Upgraded to Pro",
+                "probability": 0.95,
+                "verdict": "holds"
+              },
+              {
+                "explanation": "The AFTER observation satisfies the criterion.",
+                "observed": "Upgraded to Pro",
+                "probability": 0.92,
+                "verdict": "holds"
+              },
+              {
+                "explanation": "The expected content is present after the action.",
+                "observed": "Upgraded to Pro",
+                "probability": 0.9,
+                "verdict": "holds"
+              }
+            ],
+            "score": 0.923333333333,
+            "spread": 0.05,
+            "usage": {
+              "inputTokens": 0,
+              "modelCalls": 0,
+              "outputTokens": 0
+            },
+            "verdict": "pass"
+          },
+          "kind": "then",
+          "path": "judge",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/tone/p1",
+              "hash": "3da61380eb4ff37af20d676349e46b2d78cff4fab9f23fbfebd9b33c554f9faf",
+              "quote": "Confirmation messages should feel friendly",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:fb24b4440be0",
+          "text": "the confirmation message feels friendly",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Friendly confirmation after upgrading",
+      "usage": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    },
+    {
+      "docUri": "docs/release-notes.md",
+      "driver": "fake",
+      "durationMs": 515,
+      "featureId": "docs-release-notes--open-the-release-notes",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-release-notes--open-the-release-notes/open-the-release-notes",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 249,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [
+            {
+              "chunkId": "docs/release-notes.md#release-notes/reading-the-release-notes/p1",
+              "hash": "d4df2cb1f37f4e01e0fb09c128247e67f4dd2137dbf62c4e7b0217ae688c0eb8",
+              "quote": "open the release notes from the primary navigation",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "when:1777d7c11a01",
+          "text": "the customer opens the release notes from the navigation",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Release notes",
+                    "role": "heading"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 124,
+          "evidence": [
+            {
+              "bytes": 551,
+              "kind": "observation",
+              "path": "artifacts/90b0b743fa288347bd5e5d6ea3d6de40ec01b66c90d638872ca1b9b198e77b1a.json",
+              "sha256": "90b0b743fa288347bd5e5d6ea3d6de40ec01b66c90d638872ca1b9b198e77b1a"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/release-notes.md#release-notes/reading-the-release-notes/p1",
+              "hash": "d4df2cb1f37f4e01e0fb09c128247e67f4dd2137dbf62c4e7b0217ae688c0eb8",
+              "quote": "The release notes page shows the heading Release notes at the top",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:5fae5d7d31c4",
+          "text": "the heading Release notes is shown",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Open the release notes",
+      "usage": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    },
+    {
+      "docUri": "docs/reports.md",
+      "driver": "fake",
+      "durationMs": 3242,
+      "featureId": "docs-reports--report-loading",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-reports--report-loading/report-page-finishes-loading",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Report ready",
+                    "role": "heading"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 1,
+          "evidence": [
+            {
+              "bytes": 354,
+              "kind": "observation",
+              "path": "artifacts/17acfab09bb11eec1eee0848916d43b5eb279e9585833a7ff06fe1400f5d529a.json",
+              "sha256": "17acfab09bb11eec1eee0848916d43b5eb279e9585833a7ff06fe1400f5d529a"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/reports.md#reports/report-page/p1",
+              "hash": "ad897e3f1f6226f5500d279d2aec8f14d3b25f3a50c1839b6fb74789bed76430",
+              "quote": "once the data is ready the page shows the heading Report ready",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:9eae4e766c45",
+          "text": "the report is ready",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Report page finishes loading",
+      "usage": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "startedAt": "2026-10-13T01:14:10.915Z",
+  "totals": {
+    "blocked": 0,
+    "error": 0,
+    "failed": 0,
+    "healed": 0,
+    "inconclusive": 0,
+    "passed": 5,
+    "skipped": 0
+  },
+  "usage": {
+    "byPurpose": {
+      "act": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      },
+      "checkgen": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      },
+      "extract": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      },
+      "judge": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    },
+    "inputTokens": 0,
+    "modelCalls": 0,
+    "outputTokens": 0
+  },
+  "warnings": []
+}

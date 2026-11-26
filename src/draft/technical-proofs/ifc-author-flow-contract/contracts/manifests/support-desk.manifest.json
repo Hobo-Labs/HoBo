@@ -1,0 +1,161 @@
+{
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "46.0.1"
+  },
+  "connectors": {
+    "asana": {
+      "allow": [
+        "tasks:write"
+      ],
+      "audience": "https://app.asana.com",
+      "observedScopes": [
+        "tasks:write"
+      ],
+      "onBehalfOf": "user",
+      "requestedScopeSource": "usage-inferred",
+      "type": "connector.v1",
+      "usageContract": {
+        "compareObservedUsage": false,
+        "usageExceedsDeclaredAllow": false
+      },
+      "via": "oauth"
+    }
+  },
+  "resources": {
+    "api": {
+      "bindings": {
+        "config": {
+          "clientType": "SecretClient",
+          "port": "wasi:config",
+          "resource": "config"
+        },
+        "jobs": {
+          "clientType": "QueueClient",
+          "port": "hobo:queue",
+          "resource": "jobs"
+        },
+        "todos": {
+          "clientType": "KvClient",
+          "port": "wasi:keyvalue",
+          "resource": "todos"
+        },
+        "uploads": {
+          "clientType": "BucketClient",
+          "port": "wasi:blobstore",
+          "resource": "uploads"
+        }
+      },
+      "collection": {
+        "stableId": "api:api"
+      },
+      "exports": [
+        "wasi:http/incoming-handler"
+      ],
+      "kind": "api",
+      "links": [
+        {
+          "import": "wasi:keyvalue",
+          "to": "todos"
+        },
+        {
+          "import": "wasi:blobstore",
+          "to": "uploads"
+        },
+        {
+          "import": "hobo:queue",
+          "to": "jobs"
+        },
+        {
+          "import": "wasi:config",
+          "to": "config"
+        }
+      ],
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/todos"
+        },
+        {
+          "method": "GET",
+          "path": "/todos/:id"
+        }
+      ],
+      "runtime": "wasm",
+      "type": "component.v1"
+    },
+    "config": {
+      "allow": [
+        "access"
+      ],
+      "collection": {
+        "stableId": "secret:config"
+      },
+      "kind": "secret",
+      "port": "wasi:config",
+      "type": "data.v1",
+      "usage": {
+        "inferred": [
+          "access"
+        ],
+        "source": "run-to-collect"
+      }
+    },
+    "jobs": {
+      "allow": [
+        "enqueue"
+      ],
+      "collection": {
+        "stableId": "queue:jobs"
+      },
+      "kind": "queue",
+      "port": "hobo:queue",
+      "type": "data.v1",
+      "usage": {
+        "inferred": [
+          "enqueue"
+        ],
+        "source": "run-to-collect"
+      }
+    },
+    "todos": {
+      "allow": [
+        "get",
+        "set"
+      ],
+      "collection": {
+        "stableId": "kv:todos"
+      },
+      "kind": "kv",
+      "port": "wasi:keyvalue",
+      "type": "data.v1",
+      "usage": {
+        "inferred": [
+          "get",
+          "set"
+        ],
+        "source": "run-to-collect"
+      }
+    },
+    "uploads": {
+      "allow": [
+        "read",
+        "write"
+      ],
+      "collection": {
+        "stableId": "bucket:uploads"
+      },
+      "kind": "bucket",
+      "port": "wasi:blobstore",
+      "type": "data.v1",
+      "usage": {
+        "inferred": [
+          "read",
+          "write"
+        ],
+        "source": "run-to-collect"
+      }
+    }
+  },
+  "schema": "hobo.manifest/v1"
+}

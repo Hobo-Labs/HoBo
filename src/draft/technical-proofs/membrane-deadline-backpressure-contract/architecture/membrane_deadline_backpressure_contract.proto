@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum FailureClass {
+  FAILURE_CLASS_UNSPECIFIED = 0;
+  FAILURE_CLASS_TRANSIENT = 1;
+  FAILURE_CLASS_DURABLE_RECOVERABLE = 2;
+  FAILURE_CLASS_PARTIAL_FAILURE = 3;
+  FAILURE_CLASS_POISON = 4;
+  FAILURE_CLASS_DRIFT = 5;
+  FAILURE_CLASS_SPLIT_BRAIN = 6;
+}
+
+message Deadline {
+  string source = 1;
+  int64 started_at_ms = 2;
+  int64 expires_at_ms = 3;
+  int64 remaining_at_dispatch_ms = 4;
+}
+
+message FailureClassification {
+  FailureClass class = 1;
+  string reason = 2;
+  bool requires_idempotency_decision = 3;
+}
+
+message FailureClassified {
+  string source_event_id = 1;
+  FailureClassification classification = 2;
+}
+
+message LinkCalled {
+  string component_id = 1;
+  string import_interface = 2;
+  string provider_id = 3;
+  string operation = 4;
+  Deadline deadline = 5;
+  string outcome = 6;
+  FailureClass failure_class = 7;
+  string cancellation = 8;
+}
+
+message LinkRejected {
+  string provider_id = 1;
+  string operation = 2;
+  int32 in_flight = 3;
+  int32 max_in_flight = 4;
+  FailureClass failure_class = 5;
+}
+
+message LinkFailed {
+  string provider_id = 1;
+  string operation = 2;
+  string membrane = 3;
+  FailureClass failure_class = 4;
+  string idempotency_key = 5;
+}
+
+message MembraneDeadlineBackpressureContractRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string evidence = 3;
+}

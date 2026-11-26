@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "V1ReleaseNotesDogfoodAlphaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "V1ReleaseNotesDogfoodAlphaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "V1 Release Notes Dogfood Alpha Evidence boundary returns its accepted M1 gate",
+      "request": {
+        "method": "GET",
+        "path": "/v1-release-notes-dogfood-alpha/gate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.v1.release-notes-dogfood-alpha/2026-06-30",
+          "issue": "HOBO-459",
+          "acceptanceState": "accepted-with-risk"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

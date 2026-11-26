@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "audit-explorer-m0-scope-consumer"
+  },
+  "provider": {
+    "name": "audit-explorer-scope-contract-provider"
+  },
+  "interactions": [
+    {
+      "description": "read Audit Explorer M0 scope contract",
+      "request": {
+        "method": "GET",
+        "path": "/audit-explorer-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-427",
+          "phase": "M0",
+          "boundaries": ["service", "ux", "security", "support"],
+          "queryFilterAxes": ["tenant", "project"],
+          "followUpAllowedAfter": "M0 accepted"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

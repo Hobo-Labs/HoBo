@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/yard-domain-validation-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the Yard-level domain resource and validation checks from HOBO-142.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

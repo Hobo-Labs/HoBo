@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OperatorCrewYardServicesConsumer"
+  },
+  "provider": {
+    "name": "OperatorCrewYardServicesBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Operator Crew Yard Services boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/operator-crew-yard-services/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.operator_crew_yard_services/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

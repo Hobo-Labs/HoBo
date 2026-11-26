@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CapabilitySpecContractConsumer"
+  },
+  "provider": {
+    "name": "CapabilitySpecContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Capability Spec Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/capability-spec-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.capability_spec_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+	"consumer": { "name": "HoboCompositionRoot" },
+	"provider": { "name": "RuntimeOciHost" },
+	"interactions": [
+		{
+			"description": "ensure oci host via kubectl transport",
+			"request": {
+				"method": "POST",
+				"path": "/runtime-host/ensure",
+				"body": { "kind": "oci", "hoboHome": "/tmp/hobo-home" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "oci",
+					"ready": true,
+					"mode": "kubectl",
+					"isolateBoundary": "kubernetes_oci"
+				}
+			}
+		},
+		{
+			"description": "serve private component returns mesh handler isolation metadata",
+			"request": {
+				"method": "POST",
+				"path": "/runtime-host/serve-private",
+				"body": {
+					"kind": "oci",
+					"resourceName": "api",
+					"hasWasmPath": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "oci",
+					"isolateBoundary": "kubernetes_oci",
+					"privateSandboxes": 1,
+					"client": "kubectl"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

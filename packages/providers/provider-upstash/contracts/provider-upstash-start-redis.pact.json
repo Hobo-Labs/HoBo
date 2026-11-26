@@ -1,0 +1,78 @@
+{
+  "consumer": {
+    "name": "@hobo/provider-upstash"
+  },
+  "provider": {
+    "name": "UpstashStartRedisBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "source": {
+      "url": "https://upstash.com/start-redis",
+      "checkedAt": "2026-08-08"
+    }
+  },
+  "interactions": [
+    {
+      "description": "create a temporary Redis database with a caller-generated UUIDv4 idempotency key",
+      "request": {
+        "method": "POST",
+        "path": "/start-redis",
+        "headers": {
+          "Idempotency-Key": "fa1cefa1-ce00-4000-8000-000000000001",
+          "Accept": "text/markdown"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/markdown"
+        },
+        "body": "# Your Redis is ready\n\n**Database ID:** fa1cefa1-ce00-4000-8000-000000000001\n**Endpoint:** https://fake-mallard-000000.upstash.io\n**Token:** FAKE-upstash-rest-token-DO-NOT-USE-0000\n**Metrics:** https://upstash.com/start-redis/metrics/fa1cefa1-ce00-4000-8000-000000000001\n**Expires:** 2026-08-11 (3 days from creation).\n\nhttps://upstash.com/start-redis/console/fa1cefa1-ce00-4000-8000-000000000001\n"
+      }
+    },
+    {
+      "description": "re-POSTing the same idempotency key returns the same database rather than creating a second one",
+      "request": {
+        "method": "POST",
+        "path": "/start-redis",
+        "headers": {
+          "Idempotency-Key": "fa1cefa1-ce00-4000-8000-000000000001",
+          "Accept": "text/markdown"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/markdown"
+        },
+        "matchingRules": {
+          "body": {
+            "$.databaseId": {
+              "matchers": [
+                {
+                  "match": "equality"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "rate-limited creation maps to PROVIDER_RATE_LIMITED",
+      "request": {
+        "method": "POST",
+        "path": "/start-redis"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Retry-After": "30"
+        }
+      }
+    }
+  ]
+}

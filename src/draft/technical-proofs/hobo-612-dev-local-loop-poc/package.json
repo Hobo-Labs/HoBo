@@ -1,0 +1,14 @@
+{
+  "name": "@hobo-draft/hobo-612-dev-local-loop-poc",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "S1-22 draft POC for hobo dev offline local loop — promotes to packages/cli/ (HOBO-612).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./dev-session": "./src/dev-session.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

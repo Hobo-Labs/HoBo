@@ -1,0 +1,7 @@
+schema: hobo.alert-routing/v1
+grouping: deliveries=1 alerts=2 groupKey=sloName=checkout-api
+events: alert.Fired -> alert.Fired -> alert.Grouped -> alert.Routed
+silence: deliveries=0 replay status=silenced reason=silence-maintenance
+inhibition: delivered=1 muted reason=root-cause-critical-suppresses-warning
+receiver failure: pending=1 routed status=retry-scheduled
+CONTRACT HELD: group, silence, inhibit, and retry — all replayable from events

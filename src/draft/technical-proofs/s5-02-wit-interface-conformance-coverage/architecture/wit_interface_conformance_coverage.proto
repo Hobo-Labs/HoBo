@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+message WitInterfaceCoverageRow {
+  string wit = 1;
+  string port = 2;
+  string suite_id = 3;
+  bool suite_backed = 4;
+}
+
+message WitCoverageGap {
+  string wit = 1;
+  string reason = 2;
+}
+
+message WitCoverageReport {
+  string schema = 1;
+  string catalog_source = 2;
+  string generated_at = 3;
+  repeated WitInterfaceCoverageRow interfaces = 4;
+  uint32 suite_backed_count = 5;
+  uint32 total_interfaces = 6;
+  double coverage_percent = 7;
+  repeated WitCoverageGap gaps = 8;
+  bool complete = 9;
+}
+
+message RegistryPublishGateDecision {
+  string schema = 1;
+  string provider_id = 2;
+  string status = 3;
+  repeated string claimed_interfaces = 4;
+  repeated string blocking_reasons = 5;
+}

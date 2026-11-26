@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package hobo.domain.ticket.v1;
+
+message TicketOpened {
+  string ticket_id = 1;
+  string summary = 2;
+  uint32 priority = 3;
+  string requester_email = 4;
+}

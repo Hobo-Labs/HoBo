@@ -1,0 +1,20 @@
+{
+  "layer": "technical",
+  "slug": "adopt-in-place-contract",
+  "title": "Adopt-in-Place Contract",
+  "linear": "HOBO-369",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/portability-report-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

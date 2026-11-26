@@ -1,0 +1,245 @@
+syntax = "proto3";
+
+package hobo.broker.v1;
+
+// Wire contracts for the HoBo Broker: the policy-governed authority that
+// brokers Bindle/Camp/Yard/Junction placements across providers and wraps
+// the policy, contract, billing, delivery, and connector planes behind one
+// resolve/deliver/scale surface. CUE invariants live in broker.cue.
+
+// One placement policy maintained by the broker for one topology scope kind.
+message PlacementPolicy {
+  string id = 1;
+  // bindle | camp | yard | junction
+  string scope_kind = 2;
+  // min-cost | pinned
+  string objective = 3;
+  string pinned_provider_id = 4;
+  repeated string allowed_providers = 5;
+  repeated string denied_providers = 6;
+  repeated string allowed_regions = 7;
+  // Junction-governance lockdown: placement requires an explicit Camp.
+  bool require_explicit_camps = 8;
+}
+
+// Billing enforcement plane inputs: budget, per-resolution spend cap, quota.
+message BillingPolicy {
+  string quota = 1;
+  uint32 quota_used = 2;
+  uint32 quota_limit = 3;
+  double budget_usd = 4;
+  double spend_cap_usd = 5;
+  bool budget_unlimited = 6;
+  bool spend_cap_unlimited = 7;
+}
+
+// A @hobo/cd-gitops publisher the delivery plane routes through.
+message DeliveryPublisher {
+  // Publisher target: argo-cd | flux.
+  string target = 1;
+  // GitOps repository the publisher commits to, when the policy names one.
+  string repository = 2;
+}
+
+// Delivery plane configuration (ADR-0182 D14). Neutral: every receipt is
+// delivered through @hobo/cd by a reconciler mode; the broker names no GitOps
+// engine, cluster or namespace.
+message DeliveryPolicy {
+  // Deprecated: argo | in-proc. Read only when reconciler_mode is empty, and
+  // then only to map it (argo -> publisher argo-cd, in-proc -> conductor).
+  string engine = 1 [deprecated = true];
+  // auto | manual
+  string sync_mode = 2;
+  bool prune = 3;
+  // Deprecated: mapped to publisher.repository for a legacy argo engine.
+  string gitops_repo = 4 [deprecated = true];
+  // Deprecated: never read.
+  string destination_namespace = 5 [deprecated = true];
+  // conductor | agent | publisher
+  string reconciler_mode = 6;
+  // Required exactly when reconciler_mode is publisher.
+  DeliveryPublisher publisher = 7;
+}
+
+message ConnectorConfig {
+  string id = 1;
+  string kind = 2;
+  string display_name = 3;
+  map<string, string> settings = 4;
+  // Reference into the token broker / secret store — never a raw credential.
+  string credential_ref = 5;
+  bool enabled = 6;
+}
+
+// The full policy state the broker maintains and enforces.
+message BrokerPolicySet {
+  string schema_version = 1;
+  string broker_id = 2;
+  repeated PlacementPolicy placement_policies = 3;
+  BillingPolicy billing = 4;
+  DeliveryPolicy delivery = 5;
+  repeated string required_connector_kinds = 6;
+}
+
+// The topology scope a brokering request resolves within.
+message TopologyScope {
+  string bindle_id = 1;
+  string camp_id = 2;
+  string yard_id = 3;
+  string junction_id = 4;
+}
+
+// One resource the request needs placed on some provider capability.
+message ResourceRequirement {
+  string resource_id = 1;
+  string port = 2;
+  repeated string features = 3;
+  string region = 4;
+}
+
+// A brokering request: place these requirements for this scope.
+message BrokerRequest {
+  string schema_version = 1;
+  string request_id = 2;
+  TopologyScope scope = 3;
+  repeated ResourceRequirement requirements = 4;
+  double spend_estimate_usd = 5;
+  // Anonymous/claimable resolution inputs (ADR-0151). Absent on a request
+  // from an authenticated owner deploying into an owned Yard.
+  GuestResolutionInput guest = 6;
+}
+
+// What an anonymous or pre-claim caller brings to resolution. Everything here
+// is an input the Broker must weigh, never a secret it must hold.
+message GuestResolutionInput {
+  string recipe_id = 1;
+  string topology_digest = 2;
+  // Digest of the offer the human accepted, and of the consent record.
+  string offer_digest = 3;
+  string consent_digest = 4;
+  // Bootstrap class the caller is entitled to (public-anonymous, sponsor, …).
+  string bootstrap_class = 5;
+  // Ceiling the sponsor is willing to expose, in minor units.
+  int64 sponsor_cost_cap_minor_units = 6;
+  // Maximum human ownership actions the caller will accept.
+  uint32 max_claim_actions = 7;
+}
+
+// One per-resource placement the broker decided.
+message PlacementDecision {
+  string resource_id = 1;
+  string provider_id = 2;
+  string definition_id = 3;
+  string region = 4;
+  string sku = 5;
+  string unit = 6;
+  string marginal_price = 7;
+}
+
+// The receipt for an accepted resolution: content-addressed against the
+// provider catalog and the policy set that produced it.
+message ResolutionReceipt {
+  string schema_version = 1;
+  string request_id = 2;
+  string broker_id = 3;
+  string catalog_hash = 4;
+  string policy_hash = 5;
+  string placement_policy_id = 6;
+  repeated PlacementDecision placements = 7;
+  // Station occupancy pins (ADR-0131); Conductor does not own durable state.
+  string station_id = 8;
+  string rail_hash = 9;
+  // Anonymous/claimable evidence (ADR-0151). Absent for an owned deployment.
+  GuestResolutionEvidence guest = 10;
+}
+
+// The claim-relevant facts a receipt must pin so a deployment's ownership
+// story is reconstructable later. Bearer material never appears here — only
+// references, digests, counts, and deadlines.
+message GuestResolutionEvidence {
+  string recipe_id = 1;
+  string topology_digest = 2;
+  string offer_digest = 3;
+  string consent_digest = 4;
+  string guest_lease_id = 5;
+  string lease_expires_at = 6;
+  string claim_bundle_id = 7;
+  // single-resource | provider-bundled | best-effort-saga
+  string claim_atomicity = 8;
+  uint32 claim_action_count = 9;
+  string earliest_claim_deadline = 10;
+  repeated GuestPlacementEvidence placements = 11;
+  repeated string trust_evidence_refs = 12;
+  repeated string conformance_refs = 13;
+  // What the human was told HoBo or a provider would receive.
+  repeated string source_disclosures = 14;
+  repeated string credential_custody = 15;
+  // Any native→pack or native→bridge widening the offer disclosed.
+  repeated string widening_disclosures = 16;
+  int64 sponsor_cost_cap_minor_units = 17;
+  string cleanup_policy = 18;
+}
+
+// Per-placement realization facts, so a receipt distinguishes a
+// provider-native product from a pack HoBo deployed on generic compute.
+message GuestPlacementEvidence {
+  string resource_id = 1;
+  string definition_id = 2;
+  // native | pack | bridge
+  string realization = 3;
+  string runtime_model = 4;
+  repeated string capability_profile_refs = 5;
+  repeated string binding_profile_refs = 6;
+  string connectivity_ref = 7;
+  string bootstrap_class = 8;
+  string claim_mode = 9;
+  string creator_authority_after_claim = 10;
+}
+
+// One machine-readable reason a resolution was rejected, named by the
+// enforcement plane that produced it.
+message RejectionReason {
+  // policy | contracts | billing | placement | connectors
+  string plane = 1;
+  string code = 2;
+  string message = 3;
+}
+
+// The structured rejection for a refused resolution.
+message ResolutionRejection {
+  string schema_version = 1;
+  string request_id = 2;
+  string broker_id = 3;
+  string policy_hash = 4;
+  repeated RejectionReason reasons = 5;
+  string station_id = 6;
+  string rail_hash = 7;
+}
+
+// Approved broker input state a resolution validates against: which providers
+// may be used and which catalog snapshot the decision must be made over.
+// Publication proposes; approval is a separate admin fact.
+message BrokerEnvironment {
+  string environment_id = 1;
+  repeated string approved_providers = 2;
+  string catalog_hash = 3;
+  bool approved = 4;
+  string approved_by = 5;
+}
+
+// Detached Ed25519 signature over a receipt/rejection's canonical JSON form,
+// so consumers verify resolution evidence byte-for-byte (receipt integrity).
+message ResolutionSignature {
+  string algorithm = 1;
+  string public_key_pem = 2;
+  string signature = 3;
+  string payload_digest = 4;
+}
+
+// A spin-up/spin-down directive for an already-placed resource.
+message ScaleDirective {
+  string resource_id = 1;
+  // up | down | zero
+  string direction = 2;
+  uint32 replicas = 3;
+}

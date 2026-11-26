@@ -1,0 +1,101 @@
+# HoBo full operations reference
+
+Canonical CLI verbs:
+- hobo up: Realize the current object graph
+- hobo down: Tear down what up realized
+- hobo dev: Run against runtime-local
+- hobo new: Scaffold a runnable SDK program
+- hobo login: Obtain a dev SVID through OIDC
+- hobo claim: Bind an anonymous deployment to an account
+- hobo plan: Dry-run the up decision
+- hobo verify: Run the unified Gatekeeper preflight
+- hobo can-deploy: Diagnose producer/consumer compatibility
+- hobo inspect: Render projections and time-travel views
+- hobo logs: Live-tail Camp runtime streams
+- hobo doctor: Report environment and portability hazards
+- hobo codegen: Regenerate checked-in generated clients
+- hobo build: Compile services to wasm components
+- hobo collect: Run resource collection and print manifest IR
+- hobo stub: Run with a contract-backed stub
+- hobo drift: Report drift and governed remediation paths
+- hobo add: Install a provider or listing
+- hobo registry: Administer registry artifacts
+- hobo import: Adopt existing estate in place
+- hobo generate: Request provider generation
+- hobo sandbox: Run a contract-backed isolated lane
+- hobo test: Alias for the sandbox test lane
+- hobo attest: Produce signed external evidence exports
+- hobo erase: Request crypto-shred erasure
+- hobo derivative: Manage derived HoBo implementations
+- hobo runbook: Execute or replay incident runbooks
+
+MCP tools:
+- list_bindles (read): Discover Bindles visible to the current principal.
+- get_bindle (read): Return one Bindle topology by id.
+- plan (read): Dry-run hobo plan through the shared CLI call path.
+- deploy (write): Converge a topology through hobo up.
+- promote (write): Promote by converging a target Camp through hobo up.
+- rollback (write): Rollback by invoking hobo up --rollback.
+- destroy (write): Tear down a topology through hobo down.
+- inspect_run (read): Read RunView or DeploymentView projection data.
+- tail_logs (read): Stream runtime log progress for a run or resource.
+- search_registry (read): Find providers or listings by capability.
+- request_token (write): Broker a scoped provider token through the token-broker seam.
+- get_drift (read): Read drift status for a Camp or resource.
+- heal (write): Request governed drift reconciliation.
+- dev (write): Run hobo dev through the shared CLI call path.
+- new (write): Scaffold a new HoBo program through hobo new.
+- login (write): Start the hobo login identity flow.
+- claim (write): Bind an anonymous deployment through hobo claim.
+- verify (read): Run hobo verify through the shared CLI call path.
+- can_deploy (read): Run hobo can-deploy compatibility checks.
+- doctor (read): Run hobo doctor diagnostics.
+- codegen (write): Run hobo codegen through the shared CLI call path.
+- build (write): Run hobo build through the shared CLI call path.
+- collect (read): Run hobo collect through the shared CLI call path.
+- stub (write): Run hobo stub through the shared CLI call path.
+- add (write): Install a provider or listing through hobo add.
+- import (write): Adopt an existing estate through hobo import.
+- generate (write): Request provider generation through hobo generate.
+- sandbox (write): Run a contract-backed isolated lane through hobo sandbox.
+- test (write): Run the sandbox test lane through hobo test.
+- attest (write): Produce signed evidence exports through hobo attest.
+- erase (write): Request crypto-shred erasure through hobo erase.
+- derivative (write): Manage derived HoBo implementations through hobo derivative.
+- runbook (write): Execute or replay runbooks through hobo runbook.
+
+Routes:
+- deploy: hobo up -> MCP deploy (write)
+- up: hobo up -> MCP deploy (write)
+- down: hobo down -> MCP destroy (write)
+- dev: hobo dev -> MCP dev (write)
+- new: hobo new -> MCP new (write)
+- login: hobo login -> MCP login (write)
+- claim: hobo claim -> MCP claim (write)
+- plan: hobo plan -> MCP plan (read)
+- verify: hobo verify -> MCP verify (read)
+- can-deploy: hobo can-deploy -> MCP can_deploy (read)
+- inspect: hobo inspect -> MCP inspect_run (read)
+- logs: hobo logs -> MCP tail_logs (read)
+- doctor: hobo doctor -> MCP doctor (read)
+- codegen: hobo codegen -> MCP codegen (write)
+- build: hobo build -> MCP build (write)
+- collect: hobo collect -> MCP collect (read)
+- stub: hobo stub -> MCP stub (write)
+- drift: hobo drift -> MCP get_drift (read)
+- add: hobo add -> MCP add (write)
+- registry: hobo registry -> MCP search_registry (read)
+- import: hobo import -> MCP import (write)
+- generate: hobo generate -> MCP generate (write)
+- sandbox: hobo sandbox -> MCP sandbox (write)
+- test: hobo test -> MCP test (write)
+- attest: hobo attest -> MCP attest (write)
+- erase: hobo erase -> MCP erase (write)
+- derivative: hobo derivative -> MCP derivative (write)
+- runbook: hobo runbook -> MCP runbook (write)
+- list_bindles: MCP list_bindles (read)
+- get_bindle: MCP get_bindle (read)
+- promote: hobo up -> MCP promote (write)
+- rollback: hobo up --rollback -> MCP rollback (write)
+- request_token: MCP request_token (write)
+- heal: hobo drift -> MCP heal (write)

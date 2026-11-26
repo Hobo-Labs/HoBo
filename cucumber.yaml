@@ -1,0 +1,33 @@
+# Cucumber configuration for the repo-wide `test:behavior` lane.
+# Feature suites live inside epic proofs and project rollups; step definitions
+# are TypeScript, loaded through tsx (the lane invokes cucumber with
+# `node --import tsx`). Boundaries stay mocked from Pact/protobuf/CUE fixtures —
+# no live services (see src/draft/AGENTS.md).
+default:
+  paths:
+    - "src/draft/epic-proofs/*/features/**/*.feature"
+    - "src/draft/projects/*/features/**/*.feature"
+    - "features/fleet/*.feature"
+    - "features/control-yard-core-loop.feature"
+    - "features/hobo-ci-parity/*.feature"
+  import:
+    - "src/draft/epic-proofs/*/features/steps/**/*.ts"
+    - "src/draft/projects/*/features/steps/**/*.ts"
+    - "features/steps/**/*.ts"
+    - "features/hobo-ci-parity/steps/**/*.ts"
+  tags: "not @pending and not @met-differently"
+  publishQuiet: true
+
+# Live acceptance, never part of `test:behavior`: the examples-console feature
+# boots `astro dev`, drives chromium, and stamps a real Cloudflare Temporary
+# Accounts station on workers.dev (it refuses a mocked URL). Run it by hand:
+#   node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.yaml --profile live
+live: &live-cloudflare
+  paths:
+    - "features/examples-console-cloudflare-station.feature"
+  import:
+    - "features/steps/examples-console-cloudflare-station.steps.ts"
+  publishQuiet: true
+
+# Alias retained for the hosting acceptance instructions.
+live-cloudflare: *live-cloudflare

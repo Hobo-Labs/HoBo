@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "rbac-role-binding-contract",
+  "title": "RBAC Role Binding Contract",
+  "linear": "HOBO-158",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-action-taxonomy-contract",
+      "src/draft/technical-proofs/hobo-principal-ref-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

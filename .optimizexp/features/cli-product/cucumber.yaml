@@ -1,0 +1,17 @@
+# Scoped Cucumber profile for the real-product-CLI experience features.
+# Deliberately separate from .optimizexp/cucumber.yaml: that global profile
+# has failed to load before (a broken step expression in a project-local
+# feature) and auto-loading
+# the root cucumber.yaml would pull in src/draft epic proofs instead.
+# Run:
+#   node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js \
+#     --config .optimizexp/features/cli-product/cucumber.yaml
+default:
+  paths:
+    - ".optimizexp/features/cli-product/*.feature"
+    - ".optimizexp/features/cli-help-and-doctor/*.feature"
+  import:
+    - ".optimizexp/features/cli-product/steps/**/*.ts"
+    - ".optimizexp/features/cli-help-and-doctor/steps/**/*.ts"
+  publishQuiet: true
+  failFast: false

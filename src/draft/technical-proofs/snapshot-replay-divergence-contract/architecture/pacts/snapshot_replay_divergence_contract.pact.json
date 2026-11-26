@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SnapshotReplayDivergenceContractConsumer"
+  },
+  "provider": {
+    "name": "SnapshotReplayDivergenceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Snapshot Replay Divergence Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/snapshot-replay-divergence-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.snapshot_replay_divergence_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+package hobo.runtime.authoring.v1;
+
+// Records emitted by the S1-14 durable authoring surface (actors, workflow/step,
+// agent, ctx). The event payloads themselves reuse @hobo/core EventEnvelope; the
+// messages below are the authoring-specific facts the surface journals.
+
+// A journaled workflow step outcome (`run.StepCompleted`): its result is
+// memoized so replay short-circuits the step after a host restart.
+message WorkflowRunJournalRecord {
+  string run_id = 1;
+  string step_name = 2;
+  uint32 step_index = 3;
+  string status = 4; // scheduled | completed | failed
+}
+
+// A single-writer actor activation: the ActorHost lease + fence token that make
+// the grain exactly-one-writer.
+message ActorActivationRecord {
+  string type_name = 1;
+  string actor_key = 2;
+  string holder_id = 3;
+  uint64 fence_token = 4;
+}
+
+// An agent tool invocation lowered onto a journaled step, gated by the
+// deny-by-default capability membrane.
+message AgentToolCallRecord {
+  string agent_name = 1;
+  string tool_name = 2;
+  string capability = 3; // e.g. tool:search
+}
+
+// The declared capability grant a ctx is scoped to; anything outside it is
+// denied.
+message CapabilityGrantRecord {
+  string subject = 1;
+  repeated string capabilities = 2;
+}

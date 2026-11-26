@@ -1,0 +1,42 @@
+{
+	"consumer": {
+		"name": "cli-mcp-developer-experience-reference"
+	},
+	"provider": {
+		"name": "hobo-cli-command-registry"
+	},
+	"interactions": [
+		{
+			"description": "canonical CLI verbs are exposed and parity mapped to MCP tools",
+			"request": {
+				"operation": "listCommands"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"requiredCommands": ["new", "dev", "plan", "up", "inspect", "logs", "doctor", "ci"],
+					"parity": "ok"
+				}
+			}
+		},
+		{
+			"description": "plan preview is read-only",
+			"request": {
+				"operation": "hobo plan",
+				"camp": "prod"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"exitCode": 0,
+					"sideEffectEvents": []
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

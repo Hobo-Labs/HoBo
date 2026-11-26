@@ -1,0 +1,14 @@
+syntax = "proto3";
+package hobo.ci.vercel.v1;
+
+// `hobo-ci:<env>:worker-health:<deployment>:<component>` in the relay's cache
+// (ADR-0179 phase 5), in place of a `hobo_ci_worker_health` row: the last
+// success and failure of the repair tick or one repair scanner, as epoch
+// milliseconds (0 = none). Kept for a day; a missing key reads as "starting".
+// Constrained by worker-health/worker_health.cue.
+message RelayWorkerHealth {
+  // `repair`, `repair-deliveries` or `repair-queued`.
+  string component = 1;
+  double success_at_ms = 2;
+  double failure_at_ms = 3;
+}

@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package hobo.conformance.provider_lifecycle.v1;
+
+// The provider scratch-harness records (ADR-0159): what a provider was asked to
+// reconcile, what exists in the in-memory scratch world afterwards, and which
+// named lifecycle cases the provider failed.
+//
+// The invariants that matter live in the sibling CUE: a scratch instance always
+// names both its instance id and the logical id it satisfies (that pair is what
+// makes replace-vs-update decidable), a failure always names the case and a
+// non-empty reason (a nameless failure cannot be acted on), and a passing run is
+// exactly a run with no failures — there is no partial credit.
+
+message ScratchDesiredRecord {
+  string resource_type = 1;
+  string logical_id = 2;
+  // Canonical JSON of the desired properties map; unknown value shapes have no
+  // proto3 equivalent and are never dropped to make them fit.
+  string properties_json = 3;
+  // Canonical JSON of the fields that cannot change in place.
+  string stables_json = 4;
+}
+
+message ScratchResourceRecord {
+  string id = 1;
+  string resource_type = 2;
+  string logical_id = 3;
+  // False for a pre-seeded foreign resource until the provider adopts it.
+  bool owned = 4;
+  string outputs_json = 5;
+  string stables_json = 6;
+}
+
+message ProviderLifecycleFailureRecord {
+  string name = 1;
+  string error = 2;
+}
+
+message ProviderLifecycleResultRecord {
+  string suite_id = 1;
+  uint32 passed = 2;
+  repeated ProviderLifecycleFailureRecord failed = 3;
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AvailabilityViewContractConsumer"
+  },
+  "provider": {
+    "name": "AvailabilityViewContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Availability View Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/availability-view-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.availability_view_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

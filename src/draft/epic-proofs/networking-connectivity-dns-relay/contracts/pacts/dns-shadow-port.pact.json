@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "DnsShadowPort" },
+  "interactions": [
+    {
+      "description": "stages DNS records without mutating the live zone",
+      "request": { "method": "PUT", "path": "/dns/shadow/api.hobo.example" },
+      "response": { "status": 200, "body": { "zone": "shadow", "liveZoneWrites": 0 } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

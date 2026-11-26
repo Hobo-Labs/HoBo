@@ -1,0 +1,34 @@
+{
+	"name": "@hobo/stage-gate",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"bin": {
+		"hobo-stage-gate": "./dist/cli.js"
+	},
+	"files": ["LICENSE", "dist"],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"devDependencies": {
+		"@hobo/componentize": "workspace:*",
+		"@types/node": "^22.19.11",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+		"lint": "biome check .",
+		"test": "vitest run --no-isolate --exclude test/record-cue.test.ts",
+		"test:schema": "vitest run test/record-cue.test.ts --no-isolate",
+		"test:contract:consumer": "vitest run contracts/consumer --no-isolate",
+		"test:real": "vitest run test/acceptance-real.test.ts --no-isolate"
+	}
+}

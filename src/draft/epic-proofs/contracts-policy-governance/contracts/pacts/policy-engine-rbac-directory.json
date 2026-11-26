@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "Built-in Policy Engine"
+  },
+  "provider": {
+    "name": "RBAC Directory"
+  },
+  "interactions": [
+    {
+      "description": "resolve deployer role grants before policy evaluation",
+      "providerStates": [
+        {
+          "name": "deployer principal is bound to deployer role"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/rbac/resolve-subject",
+        "body": {
+          "principal": {
+            "kind": "agent",
+            "id": "like:principal-id"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "kind": "agent",
+          "id": "like:principal-id",
+          "roles": [
+            "deployer"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Policy Engine to RBAC Directory",
+    "status": "consumer_tested",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

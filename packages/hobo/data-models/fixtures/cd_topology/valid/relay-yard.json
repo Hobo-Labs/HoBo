@@ -1,0 +1,22 @@
+{
+	"kind": "yard",
+	"contract": "hobo.topology-objects/v1",
+	"name": "hobo-ci-relay",
+	"providerId": "vercel",
+	"regions": ["iad1"],
+	"labels": {},
+	"camps": [
+		{
+			"kind": "camp",
+			"id": "hobo-ci-relay/preview",
+			"envType": "preview",
+			"labels": {}
+		},
+		{
+			"kind": "camp",
+			"id": "hobo-ci-relay/production",
+			"envType": "production",
+			"labels": {}
+		}
+	]
+}

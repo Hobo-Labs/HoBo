@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package hobo.trails.v1;
+
+// Trail definition + run contracts (architecture-guard evidence).
+
+message TrailStepRecord {
+  string id = 1;
+  string kind = 2;
+  string description = 3;
+  repeated string depends_on = 4;
+  string recipe_id = 5;
+  bool progressive = 6;
+}
+
+message TrailDefinitionRecord {
+  string schema_version = 1;
+  string id = 2;
+  string version = 3;
+  string description = 4;
+  repeated string targets = 5;
+  repeated string recipe_list = 6;
+  string content_hash = 7;
+}
+
+message TrailRunRecord {
+  string run_id = 1;
+  string trail_id = 2;
+  string trail_version = 3;
+  string tenant = 4;
+  string target = 5;
+  string state = 6;
+  uint32 percent = 7;
+  bool identity_linked = 8;
+  bool junction_ok = 9;
+  bool dual_ok = 10;
+}
+
+message CanTrailResultRecord {
+  string schema_version = 1;
+  bool ok = 2;
+  string dimension = 3;
+  string summary = 4;
+  string trail_id = 5;
+  string trail_version = 6;
+  bool identity_continuous = 7;
+  bool bindle_config_required = 8;
+  bool continuous_default = 9;
+  bool dry_run = 10;
+  string rollback_posture = 11;
+}
+
+message TrailHistoryEntryRecord {
+  string schema_version = 1;
+  string trail_id = 2;
+  string trail_version = 3;
+  string step_id = 4;
+  string target = 5;
+  string tenant = 6;
+  string checksum = 7;
+  string applied_at = 8;
+  string status = 9;
+}
+
+message TrailEventRecord {
+  string id = 1;
+  string type = 2;
+  string schema_version = 3;
+  string tenant = 4;
+  uint64 seq = 5;
+  string time = 6;
+  string retention = 7;
+}

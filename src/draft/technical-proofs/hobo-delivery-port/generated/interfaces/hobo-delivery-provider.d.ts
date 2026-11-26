@@ -1,0 +1,11 @@
+/** @module Interface hobo:delivery/provider@0.1.0 **/
+export function start(request: StartRolloutRequest): RolloutCommandResult;
+export function step(command: RolloutCommand): RolloutCommandResult;
+export function promote(command: RolloutCommand): RolloutCommandResult;
+export function rollback(command: RolloutCommand): RolloutCommandResult;
+export function abort(command: RolloutCommand): RolloutCommandResult;
+export function status(rolloutId: string): RolloutStatus;
+export type RolloutCommand = import('./hobo-delivery-types.js').RolloutCommand;
+export type RolloutCommandResult = import('./hobo-delivery-types.js').RolloutCommandResult;
+export type RolloutStatus = import('./hobo-delivery-types.js').RolloutStatus;
+export type StartRolloutRequest = import('./hobo-delivery-types.js').StartRolloutRequest;

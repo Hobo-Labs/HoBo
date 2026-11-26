@@ -1,0 +1,39 @@
+{
+	"consumer": { "name": "@hobo/runtime" },
+	"provider": { "name": "RuntimeDaprBoundary" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	},
+	"interactions": [
+		{
+			"description": "ensure dapr runtime host with simulated fidelity offline",
+			"request": {
+				"method": "POST",
+				"path": "/runtime-host/ensure",
+				"body": { "kind": "dapr", "mode": "self-hosted" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "dapr",
+					"ready": true,
+					"placementMode": "dapr",
+					"secretless": true,
+					"defaultOverridden": false
+				}
+			}
+		},
+		{
+			"description": "actor host single-writer acquire under dapr placement",
+			"request": {
+				"method": "POST",
+				"path": "/actors/acquire",
+				"body": { "key": "Cart/1", "holderId": "w1" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "placement": "dapr", "singleWriter": true, "fencing": true }
+			}
+		}
+	]
+}

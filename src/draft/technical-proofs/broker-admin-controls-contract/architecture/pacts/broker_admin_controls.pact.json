@@ -1,0 +1,132 @@
+{
+  "consumer": {
+    "name": "AdminConsoleBrokerControls"
+  },
+  "provider": {
+    "name": "MetaCloudBrokerAdminBoundary"
+  },
+  "interactions": [
+    {
+      "description": "record a broker environment proposal with audit evidence",
+      "request": {
+        "method": "POST",
+        "path": "/broker-admin/environments/proposals",
+        "headers": {
+          "content-type": "application/json",
+          "x-hobo-command": "BrokerAdminControlCommand"
+        },
+        "body": {
+          "kind": "propose-environment",
+          "actorId": "broker-admin-alice",
+          "targetEnvironmentId": "broker-env-prod",
+          "proposalId": "proposal-prod-2026-06-30",
+          "auditEvidenceId": "audit-proposal-1",
+          "requestedChanges": ["allow-provider:azure-eastus"]
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "event": "BrokerEnvironmentProposalRecorded",
+          "proposalId": "proposal-prod-2026-06-30",
+          "auditEvidenceIds": ["audit-proposal-1"]
+        }
+      }
+    },
+    {
+      "description": "approve a broker environment proposal as a new snapshot",
+      "request": {
+        "method": "POST",
+        "path": "/broker-admin/environments/proposals/proposal-prod-2026-06-30/approval",
+        "headers": {
+          "content-type": "application/json",
+          "x-hobo-command": "BrokerAdminControlCommand"
+        },
+        "body": {
+          "kind": "approve-environment",
+          "actorId": "broker-admin-bob",
+          "targetEnvironmentId": "broker-env-prod",
+          "proposalId": "proposal-prod-2026-06-30",
+          "auditEvidenceId": "audit-approval-1",
+          "reviewerEvidenceIds": ["security-review-1", "support-boundary-1"]
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "event": "BrokerEnvironmentSnapshotApproved",
+          "environmentId": "broker-env-prod",
+          "environmentVersion": 1
+        }
+      }
+    },
+    {
+      "description": "refuse an admin attempt to mutate an issued resolution receipt",
+      "request": {
+        "method": "PATCH",
+        "path": "/broker-admin/receipts/receipt-123",
+        "headers": {
+          "content-type": "application/json",
+          "x-hobo-command": "BrokerAdminControlCommand"
+        },
+        "body": {
+          "kind": "mutate-receipt",
+          "actorId": "broker-admin-alice",
+          "targetEnvironmentId": "broker-env-prod",
+          "receiptId": "receipt-123",
+          "auditEvidenceId": "audit-mutate-1"
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "reason": "admin-controls-cannot-mutate-issued-receipts"
+        }
+      }
+    },
+    {
+      "description": "refuse approval without audit evidence",
+      "request": {
+        "method": "POST",
+        "path": "/broker-admin/environments/proposals/proposal-prod-2026-06-30/approval",
+        "headers": {
+          "content-type": "application/json",
+          "x-hobo-command": "BrokerAdminControlCommand"
+        },
+        "body": {
+          "kind": "approve-environment",
+          "actorId": "broker-admin-bob",
+          "targetEnvironmentId": "broker-env-prod",
+          "proposalId": "proposal-prod-2026-06-30"
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "reason": "approval-requires-audit-evidence"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-527",
+      "boundary": "admin-controls-to-meta-cloud-broker"
+    }
+  }
+}

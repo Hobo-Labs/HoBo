@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "LaunchSitePrivateBetaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSitePrivateBetaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Site Private Beta Evidence boundary returns the accepted evidence gate",
+      "request": {
+        "method": "GET",
+        "path": "/launch-site-private-beta-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.launch-site.private-beta-evidence/2026-06-30",
+          "issue": "HOBO-465",
+          "phase": "M2"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

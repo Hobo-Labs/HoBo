@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "disaster-recovery-failover-contract",
+  "title": "HOBO-302 Disaster Recovery Failover Contract",
+  "linear": "HOBO-302",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/gated-autonomous-remediation-contract",
+      "src/draft/technical-proofs/incident-aggregate-contract",
+      "src/draft/technical-proofs/runbook-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

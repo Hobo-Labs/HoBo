@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "canary-rollback-boundary" },
+  "interactions": [
+    {
+      "description": "canary health regression triggers auto-rollback",
+      "request": { "method": "POST", "path": "/canary/evaluate-rollback" },
+      "response": { "status": 200, "body": { "ok": true, "status": "pass" } }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "canary-rollback",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

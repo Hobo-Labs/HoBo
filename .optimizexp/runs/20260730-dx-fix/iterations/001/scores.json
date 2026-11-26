@@ -1,0 +1,36 @@
+{
+  "iteration": 1,
+  "runId": "20260730-dx-fix",
+  "scoredAt": "2026-07-30T19:11:00.000Z",
+  "source": "outcome judged after reduce experiments F-1/F-2/F-3",
+  "metric_total": 9,
+  "metric_max": 2,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "outcomeId": "2026-07-30T19:10:10Z-1003",
+      "harms": 0, "friction": 2, "uncertainty": 1, "total": 3, "max": 2,
+      "matchedExpectation": true
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "outcomeId": "2026-07-30T19:10:30Z-1006",
+      "harms": 0, "friction": 2, "uncertainty": 1, "total": 3, "max": 2,
+      "matchedExpectation": true
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "outcomeId": "2026-07-30T19:10:50Z-1009",
+      "harms": 0, "friction": 2, "uncertainty": 1, "total": 3, "max": 2,
+      "matchedExpectation": true
+    }
+  ],
+  "vsBaseline": {
+    "metric_total_delta": -11,
+    "metric_max_delta": -2,
+    "note": "Preflight + offline doctor + capture pipefail"
+  }
+}

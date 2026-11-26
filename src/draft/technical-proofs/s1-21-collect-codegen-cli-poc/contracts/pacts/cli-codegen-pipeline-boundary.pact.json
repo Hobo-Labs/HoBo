@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "@hobo/cli"
+  },
+  "provider": {
+    "name": "@hobo/codegen-pipeline"
+  },
+  "interactions": [
+    {
+      "description": "CLI codegen invokes pipeline with project root and guest language",
+      "request": {
+        "method": "POST",
+        "path": "/codegen/generate",
+        "body": {
+          "projectRoot": ".",
+          "guestLanguage": "ts"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "artifacts": [
+            {
+              "path": ".hobo/generated/codegen-manifest.json"
+            },
+            {
+              "path": "src/_generated/bindings.d.ts"
+            }
+          ],
+          "layout": [".hobo/generated", "src/_generated"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

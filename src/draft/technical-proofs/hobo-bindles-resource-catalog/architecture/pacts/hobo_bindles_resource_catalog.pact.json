@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboBindlesResourceCatalogConsumer"
+  },
+  "provider": {
+    "name": "HoboBindlesResourceCatalogBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Bindles Resource Catalog boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-bindles-resource-catalog/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_bindles_resource_catalog/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

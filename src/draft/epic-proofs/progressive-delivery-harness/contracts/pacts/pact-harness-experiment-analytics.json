@@ -1,0 +1,27 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-experiment-analytics-provider" },
+  "interactions": [
+    {
+      "description": "analyze powered checkout-v2 experiment",
+      "providerStates": [{ "name": "powered scheduled look has no guardrail regression" }],
+      "request": {
+        "method": "POST",
+        "path": "/experiments/checkout-v2-conversion/analyze",
+        "body": {}
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "verdict": "ship",
+          "reason": "powered",
+          "sampleSize": 1200
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "experiment-analytics",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

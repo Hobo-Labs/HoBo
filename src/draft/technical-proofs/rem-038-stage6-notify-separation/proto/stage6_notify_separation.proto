@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package hobo.draft.rem038;
+
+message Stage6LaneSeparationRecord {
+  bool notify_lane_separate = 1;
+  bool governance_lane_separate = 2;
+  bool scope_in_seven_lanes = 3;
+}

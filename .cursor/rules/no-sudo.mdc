@@ -1,0 +1,17 @@
+---
+description: No sudo; Examples Temporary is browser-only (no CLI setup)
+alwaysApply: true
+---
+
+# No sudo
+
+- Never run `sudo`. Never ask the user to run sudo.
+- Never suggest apt/system packages that need root.
+- No Docker daemon install.
+
+# Examples Temporary = browser-only
+
+- App runs in client's browser. **No CLI setup for anything** (not docker, wrangler, openpouch, crane).
+- Ship = browser → same-origin API → remote HTTPS provisioners. Local CLI push/deploy is not a product path.
+- Prefer anon HTTP APIs the site ship can call with zero project keys.
+- Host is aarch64 if agent tooling needed for research only — never as user setup.

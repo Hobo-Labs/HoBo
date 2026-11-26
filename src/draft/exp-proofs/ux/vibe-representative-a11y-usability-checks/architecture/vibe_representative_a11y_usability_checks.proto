@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package hobo.draft.vibe.representative_a11y.v1;
+
+message VibeRepresentativeA11yUsabilityChecks {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated string source_issues = 6;
+  repeated RepresentativeQuickstartFixtureReference quickstart_fixture_refs = 7;
+  repeated RepresentativeCheckDefinition check_definitions = 8;
+  repeated RepresentativeArtifactChecks artifact_checks = 9;
+  repeated RepresentativeScenario scenarios = 10;
+  repeated string proof_mode_labels = 11;
+  repeated string scope_out = 12;
+}
+
+message RepresentativeCheckDefinition {
+  string id = 1;
+  string label = 2;
+  string evidence_kind = 3;
+  string proves = 4;
+}
+
+message RepresentativeCheckEvidence {
+  string check_id = 1;
+  string expected_evidence = 2;
+  string severity = 3;
+  string owner_route = 4;
+  string accepted_risk_path = 5;
+  string launch_readiness_impact = 6;
+}
+
+message RepresentativeArtifactChecks {
+  string artifact = 1;
+  string title = 2;
+  string owner_route = 3;
+  string accepted_risk_path = 4;
+  string checklist_source_issue = 5;
+  string quickstart_fixture_id = 6;
+  repeated RepresentativeCheckEvidence checks = 7;
+  repeated string proof_mode_labels = 8;
+  string accessibility_note = 9;
+}
+
+message RepresentativeQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  string consuming_artifact = 4;
+  string representative_use = 5;
+}
+
+message RepresentativeScenario {
+  string id = 1;
+  repeated string artifact_refs = 2;
+  repeated string required_evidence = 3;
+  string safe_outcome = 4;
+}

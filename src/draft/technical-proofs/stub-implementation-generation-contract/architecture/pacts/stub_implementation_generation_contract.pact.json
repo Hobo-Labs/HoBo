@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "StubImplementationGenerationContractConsumer"
+  },
+  "provider": {
+    "name": "StubImplementationGenerationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Stub implementation generation boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/stub-implementation-generation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.stub_implementation_generation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

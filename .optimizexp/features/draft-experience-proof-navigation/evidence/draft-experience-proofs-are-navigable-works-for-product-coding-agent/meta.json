@@ -1,0 +1,37 @@
+{
+  "featureId": "draft-experience-proof-navigation",
+  "scenarioSlug": "draft-experience-proofs-are-navigable-works-for-product-coding-agent",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent",
+    "role-developers",
+    "role-devsecops",
+    "role-finops",
+    "role-platform-engineers",
+    "role-sre"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T14:08:04.565Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 2604,
+    "sha256": "87c89274d5f854e1d38709d9b96380dd10e34c85731edbc2cbbf08f2fbd45728"
+  },
+  "frames": [],
+  "repro": {
+    "command": "bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "agent-mcp-client"
+  },
+  "provider": {
+    "name": "hobo-svid-bound-mcp-server"
+  },
+  "interactions": [
+    {
+      "description": "SVID-scoped agent can call plan",
+      "request": {
+        "tool": "plan",
+        "input": {
+          "camp": "prod"
+        }
+      },
+      "response": {
+        "status": "ok",
+        "body": {
+          "ok": true,
+          "tool": "plan"
+        }
+      }
+    },
+    {
+      "description": "missing deploy scope is denied",
+      "request": {
+        "tool": "deploy",
+        "input": {
+          "camp": "prod"
+        }
+      },
+      "response": {
+        "status": "denied",
+        "body": {
+          "ok": false,
+          "code": "MCP_SCOPE_DENIED"
+        }
+      }
+    }
+  ]
+}

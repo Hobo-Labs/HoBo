@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package hobo.training_pipeline.v1;
+
+// The gated-promotion decision for a training candidate (ADR-0025 / ADR-0125,
+// generated-stack.md Plan 23). A candidate promotes only through the same
+// three-lens gate as any generation-pipeline impl: conformance (hard
+// contract) green AND eval thresholds met AND policy allows, over a
+// champion/challenger comparison with a min-samples floor.
+
+enum PromotionOutcome {
+  PROMOTION_OUTCOME_UNSPECIFIED = 0;
+  PROMOTION_OUTCOME_PROMOTE = 1;
+  PROMOTION_OUTCOME_REFUSE = 2;
+}
+
+// A live-eval / held-out / adversarial rubric score over recorded traffic.
+message EvalResult {
+  string rubric_ref = 1;
+  map<string, double> scores = 2;
+  uint32 sample_count = 3;
+  string source = 4;
+}
+
+message PromotionThresholds {
+  map<string, double> metric_floors = 1;
+  uint32 min_samples = 2;
+}
+
+// The four-lens gate result (Contract/Eval/Policy; Trace rides the event log).
+message LensFlags {
+  bool conformance = 1;
+  bool eval = 2;
+  bool policy = 3;
+}
+
+message ChampionChallenger {
+  string champion_id = 1;
+  string challenger_id = 2;
+}
+
+message PromotionDecision {
+  string candidate_id = 1;
+  PromotionOutcome outcome = 2;
+  LensFlags passed = 3;
+  repeated string failures = 4;
+  ChampionChallenger champion_challenger = 5;
+}

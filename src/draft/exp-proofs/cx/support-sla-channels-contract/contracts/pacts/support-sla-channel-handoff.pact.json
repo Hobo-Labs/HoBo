@@ -1,0 +1,61 @@
+{
+  "consumer": {
+    "name": "support-workflow-sla-channel-reader"
+  },
+  "provider": {
+    "name": "support-sla-channels-contract"
+  },
+  "interactions": [
+    {
+      "description": "read accepted support SLA channel coverage",
+      "providerState": "HOBO-496 M0 support SLA scope has accepted channel evidence",
+      "request": {
+        "method": "GET",
+        "path": "/support/sla-channels/v1"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-496",
+          "phase": "M0",
+          "channels": [
+            {
+              "id": "support-ticket",
+              "availability": "business-hours",
+              "customerVisible": true
+            },
+            {
+              "id": "status-page",
+              "availability": "incident-only",
+              "customerVisible": true
+            }
+          ],
+          "responseTargets": [
+            {
+              "severity": "sev1",
+              "supportHours": "24x7 launch watch",
+              "internalTarget": "15 minutes",
+              "betaPromise": "30 minutes",
+              "handoffRule": "Incident Communications owns customer update cadence."
+            }
+          ],
+          "publicationGate": {
+            "mode": "ga-customer-commitment",
+            "businessOwnerApproved": false,
+            "evidenceAccepted": true,
+            "allowed": false,
+            "reason": "GA contractual SLA publication requires business-owner approval."
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

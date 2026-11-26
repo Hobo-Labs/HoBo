@@ -1,0 +1,59 @@
+{
+  "runId": "20260731-all-exp",
+  "experiences": [
+    "ux",
+    "dx",
+    "ax"
+  ],
+  "projects": [
+    "all"
+  ],
+  "allProjects": true,
+  "personas": [
+    "product-app-developer",
+    "product-coding-agent",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-end-user",
+    "product-designer",
+    "junior-typescript-developer"
+  ],
+  "features": [
+    "agent-check-staged",
+    "agent-tooling-setup",
+    "cli-help-and-doctor",
+    "design-system-contract",
+    "draft-experience-proof-navigation",
+    "narrow-local-validation",
+    "public-site-first-impression"
+  ],
+  "surfaces": [
+    "pnpm run doctor",
+    "bash scripts/setup-agent-tools.sh --help",
+    "pnpm run design:lint",
+    "pnpm run docs:site-nav",
+    "pnpm run agent:check -- --staged",
+    "bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'",
+    "pnpm run skills:mirror-check"
+  ],
+  "reportOnly": false,
+  "autoInitRan": false,
+  "needsInit": false,
+  "passes": null,
+  "passesLabel": "infinite",
+  "cyclesCompleted": 1,
+  "passesCompleted": 2,
+  "stopPolicy": "infinite-until-zero-or-irreducible",
+  "outerCycles": "passes",
+  "hostAgent": "grok",
+  "priorRuns": [
+    "20260731-dx-plateau",
+    "20260731-ax-continue",
+    "20260731-ax-exp-nav",
+    "20260731-ax-cli-wire"
+  ],
+  "createdAt": "2026-07-31T15:00:30.208Z",
+  "completedAt": "2026-07-31T15:05:00.000Z",
+  "lastImplementableFindings": 0,
+  "stopReason": "irreducible"
+}

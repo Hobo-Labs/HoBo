@@ -1,0 +1,530 @@
+{
+  "consumer": {
+    "name": "workspace-onboarding-state-consumer"
+  },
+  "provider": {
+    "name": "vibe-workspace-project-states"
+  },
+  "interactions": [
+    {
+      "description": "reads HOBO-541 workspace/project state fixtures",
+      "providerStates": [
+        {
+          "name": "HOBO-541 state fixture is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/ux/vibe-workspace-project-states"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-541",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-workspace-project-states",
+          "proofNote": "docs/design/proofs/vibe-workspace-project-states/README.md",
+          "designRefs": [
+            "docs/design/workspace-onboarding-ux.md",
+            "docs/design/outcome-activation-rail.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "scopeOut": [
+            "account service implementation",
+            "auth or billing flows",
+            "production dashboard UI",
+            "live provider calls",
+            "customer data",
+            "launch claims without evidence"
+          ],
+          "modeNotes": [
+            {
+              "proofMode": "reference fixture",
+              "label": "Reference fixture",
+              "meaning": "The state is rendered from checked-in fixture evidence and not from a tenant runtime."
+            },
+            {
+              "proofMode": "simulated",
+              "label": "Simulated",
+              "meaning": "The next action is shown against mocked service boundaries and deterministic fixture state."
+            },
+            {
+              "proofMode": "live",
+              "label": "Live evidence required",
+              "meaning": "A future surface may show this label only after accepted live evidence exists elsewhere."
+            },
+            {
+              "proofMode": "scope-out",
+              "label": "Scope-out",
+              "meaning": "The state names a boundary this proof must not implement or claim as shipped."
+            }
+          ],
+          "fixtures": [
+            {
+              "id": "vwp-empty-v1",
+              "state": "empty",
+              "workspace": {
+                "id": "wsp-snapshop",
+                "name": "Snapshop Workspace",
+                "summary": "Workspace exists with no project and no provider prerequisite yet."
+              },
+              "project": {
+                "id": "prj-snapshop-empty",
+                "name": "Snapshop API",
+                "summary": "No project has been created."
+              },
+              "providerReadiness": {
+                "status": "not-required",
+                "owner": "none",
+                "detail": "Provider setup is not requested until a project fixture is selected."
+              },
+              "blockerOwner": "none",
+              "safeNextAction": {
+                "label": "Create a project from the snapshot fixture",
+                "owner": "app developer",
+                "evidenceRequired": "resource lifecycle define fixture",
+                "destructive": false,
+                "opensLiveProvider": false
+              },
+              "evidenceLink": {
+                "label": "resource lifecycle define fixture",
+                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
+                "fixtureId": "vwp-empty-v1",
+                "freshness": "current",
+                "proofMode": "reference fixture"
+              },
+              "proofMode": "reference fixture",
+              "pathCoverage": ["accessibility notes"],
+              "missingPrerequisiteBehavior": {
+                "ifMissing": "No workspace project fixture is selected.",
+                "userSees": "An empty state with a single safe project-start action and no deploy claims.",
+                "systemDoesNot": "Infer provider readiness, create accounts, or run live setup."
+              },
+              "supportHandoff": {
+                "required": false,
+                "route": "workspace-onboarding-reference",
+                "redaction": "fixture ids, owner role, and state category only; no customer data",
+                "note": "Support can confirm this is an empty fixture state, not a failure."
+              },
+              "accessibilityNotes": [
+                "Primary status is text, not color-only state.",
+                "Safe next action remains keyboard reachable and has owner/evidence context."
+              ],
+              "wireframe": {
+                "surface": "workspace-project-overview",
+                "caption": "Empty workspace shows project-start action and proof-mode label.",
+                "regions": [
+                  "primary-status",
+                  "workspace-summary",
+                  "project-summary",
+                  "provider-readiness",
+                  "evidence-link",
+                  "safe-next-action",
+                  "support-handoff"
+                ],
+                "primaryStatus": "No project yet",
+                "secondaryDetail": "Start from a fixture before any provider readiness appears."
+              },
+              "claimPolicy": {
+                "safeClaims": ["The empty state can point to a project fixture without claiming runtime setup."],
+                "forbiddenClaims": [
+                  "Production dashboard is implemented.",
+                  "Live provider call succeeded.",
+                  "Customer tenant is active.",
+                  "Launch claim is approved."
+                ]
+              }
+            },
+            {
+              "id": "vwp-ready-v1",
+              "state": "ready",
+              "workspace": {
+                "id": "wsp-snapshop",
+                "name": "Snapshop Workspace",
+                "summary": "Workspace and project have enough fixture evidence to preview a plan."
+              },
+              "project": {
+                "id": "prj-snapshop-ready",
+                "name": "Snapshop API",
+                "summary": "Project has manifest and safe plan fixtures."
+              },
+              "providerReadiness": {
+                "status": "ready",
+                "owner": "platform engineer",
+                "detail": "Provider readiness is simulated by accepted plan and Gatekeeper fixtures."
+              },
+              "blockerOwner": "none",
+              "safeNextAction": {
+                "label": "Review the simulated plan preview",
+                "owner": "app developer",
+                "evidenceRequired": "plan preview fixture",
+                "destructive": false,
+                "opensLiveProvider": false
+              },
+              "evidenceLink": {
+                "label": "plan preview fixture",
+                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#acceptance-evidence",
+                "fixtureId": "vwp-ready-v1",
+                "freshness": "current",
+                "proofMode": "simulated"
+              },
+              "proofMode": "simulated",
+              "pathCoverage": ["happy path", "accessibility notes"],
+              "missingPrerequisiteBehavior": {
+                "ifMissing": "Plan fixture is absent.",
+                "userSees": "Ready state downgrades to blocked with the missing fixture named.",
+                "systemDoesNot": "Treat missing planner evidence as deployable."
+              },
+              "supportHandoff": {
+                "required": false,
+                "route": "plan-preview-reference",
+                "redaction": "fixture ids, owner role, and state category only; no customer data",
+                "note": "Support sees fixture id and proof mode, but no customer data."
+              },
+              "accessibilityNotes": [
+                "Primary status is text, not color-only state.",
+                "Safe next action remains keyboard reachable and has owner/evidence context."
+              ],
+              "wireframe": {
+                "surface": "workspace-project-overview",
+                "caption": "Ready project shows plan review as the safe next action.",
+                "regions": [
+                  "primary-status",
+                  "workspace-summary",
+                  "project-summary",
+                  "provider-readiness",
+                  "evidence-link",
+                  "safe-next-action",
+                  "support-handoff"
+                ],
+                "primaryStatus": "Ready to review",
+                "secondaryDetail": "Provider readiness is simulated and fixture-backed."
+              },
+              "claimPolicy": {
+                "safeClaims": ["The ready state proves a mocked plan preview path, not a live deploy."],
+                "forbiddenClaims": [
+                  "Production dashboard is implemented.",
+                  "Live provider call succeeded.",
+                  "Customer tenant is active.",
+                  "Launch claim is approved."
+                ]
+              }
+            },
+            {
+              "id": "vwp-blocked-v1",
+              "state": "blocked",
+              "workspace": {
+                "id": "wsp-snapshop",
+                "name": "Snapshop Workspace",
+                "summary": "Workspace has a project, but provider readiness is blocked by owner action."
+              },
+              "project": {
+                "id": "prj-snapshop-blocked",
+                "name": "Snapshop API",
+                "summary": "Project has a plan fixture that cannot proceed until approval evidence exists."
+              },
+              "providerReadiness": {
+                "status": "missing-prerequisite",
+                "owner": "platform engineer",
+                "detail": "Provider approval fixture is missing and must be owned outside the onboarding surface."
+              },
+              "blockerOwner": "platform engineer",
+              "safeNextAction": {
+                "label": "Request provider approval evidence",
+                "owner": "team admin",
+                "evidenceRequired": "provider approval or Gatekeeper refusal fixture",
+                "destructive": false,
+                "opensLiveProvider": false
+              },
+              "evidenceLink": {
+                "label": "provider approval or Gatekeeper refusal fixture",
+                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#acceptance-evidence",
+                "fixtureId": "vwp-blocked-v1",
+                "freshness": "current",
+                "proofMode": "reference fixture"
+              },
+              "proofMode": "reference fixture",
+              "pathCoverage": ["blocked path", "support handoff", "accessibility notes"],
+              "missingPrerequisiteBehavior": {
+                "ifMissing": "Provider approval evidence is absent.",
+                "userSees": "Blocked state names the owner and the safe request action.",
+                "systemDoesNot": "Hide the blocker or offer a deploy button."
+              },
+              "supportHandoff": {
+                "required": true,
+                "route": "provider-readiness-owner-route",
+                "redaction": "fixture ids, owner role, and state category only; no customer data",
+                "note": "Support routes to the platform engineer with the missing approval fixture id."
+              },
+              "accessibilityNotes": [
+                "Primary status is text, not color-only state.",
+                "Safe next action remains keyboard reachable and has owner/evidence context."
+              ],
+              "wireframe": {
+                "surface": "workspace-project-overview",
+                "caption": "Blocked project names owner, missing evidence, and support-safe handoff.",
+                "regions": [
+                  "primary-status",
+                  "workspace-summary",
+                  "project-summary",
+                  "provider-readiness",
+                  "evidence-link",
+                  "safe-next-action",
+                  "support-handoff"
+                ],
+                "primaryStatus": "Provider readiness blocked",
+                "secondaryDetail": "Approval evidence is missing; deploy actions stay hidden."
+              },
+              "claimPolicy": {
+                "safeClaims": ["The blocked state names owner and evidence without bypassing policy."],
+                "forbiddenClaims": [
+                  "Production dashboard is implemented.",
+                  "Live provider call succeeded.",
+                  "Customer tenant is active.",
+                  "Launch claim is approved."
+                ]
+              }
+            },
+            {
+              "id": "vwp-recovering-v1",
+              "state": "recovering",
+              "workspace": {
+                "id": "wsp-snapshop",
+                "name": "Snapshop Workspace",
+                "summary": "Workspace is returning from a failed or stale state using recovery fixtures."
+              },
+              "project": {
+                "id": "prj-snapshop-recovering",
+                "name": "Snapshop API",
+                "summary": "Project has a recovery preview fixture and a support route."
+              },
+              "providerReadiness": {
+                "status": "recovering",
+                "owner": "support operator",
+                "detail": "Recovery is shown from snapshot and rollback preview evidence only."
+              },
+              "blockerOwner": "support operator",
+              "safeNextAction": {
+                "label": "Open the recovery preview handoff",
+                "owner": "support operator",
+                "evidenceRequired": "snapshot or rollback preview fixture",
+                "destructive": false,
+                "opensLiveProvider": false
+              },
+              "evidenceLink": {
+                "label": "snapshot or rollback preview fixture",
+                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
+                "fixtureId": "vwp-recovering-v1",
+                "freshness": "stale",
+                "proofMode": "reference fixture"
+              },
+              "proofMode": "simulated",
+              "pathCoverage": ["stale/unknown evidence path", "support handoff", "accessibility notes"],
+              "missingPrerequisiteBehavior": {
+                "ifMissing": "Recovery preview fixture is stale or missing.",
+                "userSees": "Recovering state labels evidence freshness before suggesting handoff.",
+                "systemDoesNot": "Claim restoration or mutate live resources."
+              },
+              "supportHandoff": {
+                "required": true,
+                "route": "recovery-preview-handoff",
+                "redaction": "fixture ids, owner role, and state category only; no customer data",
+                "note": "Support receives fixture id, freshness label, and redacted project state."
+              },
+              "accessibilityNotes": [
+                "Primary status is text, not color-only state.",
+                "Safe next action remains keyboard reachable and has owner/evidence context."
+              ],
+              "wireframe": {
+                "surface": "workspace-project-overview",
+                "caption": "Recovering state foregrounds stale evidence and support handoff.",
+                "regions": [
+                  "primary-status",
+                  "workspace-summary",
+                  "project-summary",
+                  "provider-readiness",
+                  "evidence-link",
+                  "safe-next-action",
+                  "support-handoff"
+                ],
+                "primaryStatus": "Recovery preview available",
+                "secondaryDetail": "Evidence is stale; handoff before any success claim."
+              },
+              "claimPolicy": {
+                "safeClaims": ["The recovery state shows a preview path and never claims live restore."],
+                "forbiddenClaims": [
+                  "Production dashboard is implemented.",
+                  "Live provider call succeeded.",
+                  "Customer tenant is active.",
+                  "Launch claim is approved."
+                ]
+              }
+            },
+            {
+              "id": "vwp-failed-v1",
+              "state": "failed",
+              "workspace": {
+                "id": "wsp-snapshop",
+                "name": "Snapshop Workspace",
+                "summary": "Workspace/project state has no trusted current evidence."
+              },
+              "project": {
+                "id": "prj-snapshop-failed",
+                "name": "Snapshop API",
+                "summary": "Project cannot show success because evidence is unknown."
+              },
+              "providerReadiness": {
+                "status": "failed",
+                "owner": "support operator",
+                "detail": "Evidence is unknown; support must inspect redacted fixture context."
+              },
+              "blockerOwner": "support operator",
+              "safeNextAction": {
+                "label": "Open a redacted support bundle",
+                "owner": "support operator",
+                "evidenceRequired": "unknown-evidence support bundle fixture",
+                "destructive": false,
+                "opensLiveProvider": false
+              },
+              "evidenceLink": {
+                "label": "unknown-evidence support bundle fixture",
+                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#acceptance-evidence",
+                "fixtureId": "vwp-failed-v1",
+                "freshness": "unknown",
+                "proofMode": "scope-out"
+              },
+              "proofMode": "scope-out",
+              "pathCoverage": ["stale/unknown evidence path", "support handoff", "accessibility notes"],
+              "missingPrerequisiteBehavior": {
+                "ifMissing": "Evidence link is unknown.",
+                "userSees": "Failed state refuses success wording and provides support-safe next action.",
+                "systemDoesNot": "Show green status, launch copy, or live diagnostics."
+              },
+              "supportHandoff": {
+                "required": true,
+                "route": "unknown-evidence-redacted-bundle",
+                "redaction": "fixture ids, owner role, and state category only; no customer data",
+                "note": "Support receives no customer data; only fixture ids and failure category."
+              },
+              "accessibilityNotes": [
+                "Primary status is text, not color-only state.",
+                "Safe next action remains keyboard reachable and has owner/evidence context."
+              ],
+              "wireframe": {
+                "surface": "workspace-project-overview",
+                "caption": "Failed state is explicit, redacted, and action-oriented.",
+                "regions": [
+                  "primary-status",
+                  "workspace-summary",
+                  "project-summary",
+                  "provider-readiness",
+                  "evidence-link",
+                  "safe-next-action",
+                  "support-handoff"
+                ],
+                "primaryStatus": "Evidence unavailable",
+                "secondaryDetail": "No success claim until evidence is refreshed."
+              },
+              "claimPolicy": {
+                "safeClaims": ["The failed state is a refusal surface, not a launch or uptime claim."],
+                "forbiddenClaims": [
+                  "Production dashboard is implemented.",
+                  "Live provider call succeeded.",
+                  "Customer tenant is active.",
+                  "Launch claim is approved."
+                ]
+              }
+            },
+            {
+              "id": "vwp-value-proven-v1",
+              "state": "value-proven",
+              "workspace": {
+                "id": "wsp-snapshop",
+                "name": "Snapshop Workspace",
+                "summary": "Workspace has accepted evidence that a user-visible outcome was reached."
+              },
+              "project": {
+                "id": "prj-snapshop-value-proven",
+                "name": "Snapshop API",
+                "summary": "Project shows value proof linked to accepted fixture evidence."
+              },
+              "providerReadiness": {
+                "status": "value-proven",
+                "owner": "app developer",
+                "detail": "Value proof is tied to accepted quickstart evidence; future live proof is separately gated."
+              },
+              "blockerOwner": "none",
+              "safeNextAction": {
+                "label": "Share the accepted value proof link",
+                "owner": "app developer",
+                "evidenceRequired": "accepted value evidence link",
+                "destructive": false,
+                "opensLiveProvider": false
+              },
+              "evidenceLink": {
+                "label": "accepted value evidence link",
+                "href": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#verification",
+                "fixtureId": "vwp-value-proven-v1",
+                "freshness": "future-live-gated",
+                "proofMode": "live"
+              },
+              "proofMode": "reference fixture",
+              "pathCoverage": ["happy path", "accessibility notes"],
+              "missingPrerequisiteBehavior": {
+                "ifMissing": "Accepted value evidence is missing.",
+                "userSees": "Value state downgrades to ready or recovering until evidence is linked.",
+                "systemDoesNot": "Create launch copy or imply live customer success."
+              },
+              "supportHandoff": {
+                "required": false,
+                "route": "value-evidence-reference",
+                "redaction": "fixture ids, owner role, and state category only; no customer data",
+                "note": "Support can cite the evidence link; live verification remains out of this proof."
+              },
+              "accessibilityNotes": [
+                "Primary status is text, not color-only state.",
+                "Safe next action remains keyboard reachable and has owner/evidence context."
+              ],
+              "wireframe": {
+                "surface": "workspace-project-overview",
+                "caption": "Value-proven state shows accepted evidence and no unsupported launch claim.",
+                "regions": [
+                  "primary-status",
+                  "workspace-summary",
+                  "project-summary",
+                  "provider-readiness",
+                  "evidence-link",
+                  "safe-next-action",
+                  "support-handoff"
+                ],
+                "primaryStatus": "Value evidence linked",
+                "secondaryDetail": "Live label is gated by accepted evidence outside this fixture."
+              },
+              "claimPolicy": {
+                "safeClaims": ["The value-proven state stays inside accepted evidence boundaries."],
+                "forbiddenClaims": [
+                  "Production dashboard is implemented.",
+                  "Live provider call succeeded.",
+                  "Customer tenant is active.",
+                  "Launch claim is approved."
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-541",
+      "proof": "docs/design/proofs/vibe-workspace-project-states/README.md"
+    }
+  }
+}

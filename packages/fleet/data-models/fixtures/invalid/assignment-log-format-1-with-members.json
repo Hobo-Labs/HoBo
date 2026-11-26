@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "entries": [
+    {
+      "epoch": "1",
+      "active": "primary",
+      "reason": "bootstrap",
+      "decidedBy": "fleet-tick",
+      "members": [
+        "primary",
+        "standby"
+      ]
+    }
+  ]
+}

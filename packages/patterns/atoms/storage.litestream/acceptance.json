@@ -1,0 +1,16 @@
+{
+	"params": {
+		"name": "corpus-db"
+	},
+	"expectFiles": [
+		"src/storage.ts"
+	],
+	"expectContains": {
+		"src/storage.ts": [
+			"openStore",
+			"startReplication",
+			"syncReplica",
+			"restoreStore"
+		]
+	}
+}

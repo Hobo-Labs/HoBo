@@ -1,0 +1,633 @@
+{
+	"schema": "hobo.site.recipe-terms/v1",
+	"recipes": [
+		{
+			"recipeId": "recipe.cloudflare-neon-upstash.polyglot-saas/v1",
+			"displayName": "Polyglot SaaS",
+			"description": "Three providers, three claims. Advanced on purpose: it must never outrank a single-provider recipe that already satisfies the request.",
+			"providerIds": [
+				"cloudflare",
+				"neon",
+				"upstash"
+			],
+			"primitives": [
+				"api",
+				"data",
+				"kv"
+			],
+			"claimActionCount": 3,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "polling",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"delete",
+				"retain-until-provider-expiry"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "api",
+					"primitive": "api",
+					"capabilityRef": "api",
+					"profileId": "api.http/v1",
+					"productDefinitionId": "cloudflare.temporary-workers-api/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "account-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				},
+				{
+					"placementId": "board",
+					"primitive": "kv",
+					"capabilityRef": "board",
+					"profileId": "kv.redis-compatible/v1",
+					"productDefinitionId": "upstash.temporary-redis/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				},
+				{
+					"placementId": "db",
+					"primitive": "data",
+					"capabilityRef": "db",
+					"profileId": "data.postgres/v1",
+					"productDefinitionId": "neon.claimable-postgres/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+			"displayName": "Portable SQL API",
+			"description": "A Cloudflare Worker in front of a resource-only Neon Yard. Hyperdrive is the preferred connectivity implementation with the Neon serverless driver as a tested fallback.",
+			"providerIds": [
+				"cloudflare",
+				"neon"
+			],
+			"primitives": [
+				"api",
+				"data"
+			],
+			"claimActionCount": 2,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"delete",
+				"retain-until-provider-expiry"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "api",
+					"primitive": "api",
+					"capabilityRef": "api",
+					"profileId": "api.http/v1",
+					"productDefinitionId": "cloudflare.temporary-workers-api/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "account-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				},
+				{
+					"placementId": "db",
+					"primitive": "data",
+					"capabilityRef": "db",
+					"profileId": "data.postgres/v1",
+					"productDefinitionId": "neon.claimable-postgres/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.cloudflare-upstash.live-leaderboard/v1",
+			"displayName": "Live leaderboard",
+			"description": "A Cloudflare Worker with an Upstash Redis leaderboard reached over the REST transport. Client updates are polled, not pushed.",
+			"providerIds": [
+				"cloudflare",
+				"upstash"
+			],
+			"primitives": [
+				"api",
+				"kv"
+			],
+			"claimActionCount": 2,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "polling",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"delete",
+				"retain-until-provider-expiry"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "api",
+					"primitive": "api",
+					"capabilityRef": "api",
+					"profileId": "api.http/v1",
+					"productDefinitionId": "cloudflare.temporary-workers-api/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "account-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				},
+				{
+					"placementId": "board",
+					"primitive": "kv",
+					"capabilityRef": "board",
+					"profileId": "kv.redis-compatible/v1",
+					"productDefinitionId": "upstash.temporary-redis/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.cloudflare.claimable-generated-report/v1",
+			"displayName": "Claimable generated report (Cloudflare)",
+			"description": "The same provider-neutral static report resolved onto Cloudflare Pages. Identical semantics, different provider boundary.",
+			"providerIds": [
+				"cloudflare"
+			],
+			"primitives": [
+				"web"
+			],
+			"claimActionCount": 1,
+			"earliestClaimDeadlineMs": 3600000,
+			"claimKind": "provider-native",
+			"persistence": "ephemeral",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"delete"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "report",
+					"primitive": "web",
+					"capabilityRef": "site",
+					"profileId": "web.static/v1",
+					"productDefinitionId": "cloudflare.temporary-workers-web/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "account-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 3600000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.cloudflare.claimable-webhook-inbox/v1",
+			"displayName": "Claimable webhook inbox",
+			"description": "One Cloudflare Yard, one Camp, one account claim. The KV log rides the same account claim rather than adding a second ownership boundary.",
+			"providerIds": [
+				"cloudflare"
+			],
+			"primitives": [
+				"kv",
+				"webhook"
+			],
+			"claimActionCount": 1,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"delete"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "inbox",
+					"primitive": "webhook",
+					"capabilityRef": "inbox",
+					"profileId": "webhook.inbound-http/v1",
+					"productDefinitionId": "cloudflare.temporary-workers-api/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "account-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				},
+				{
+					"placementId": "log",
+					"primitive": "kv",
+					"capabilityRef": "log",
+					"profileId": "kv.key-value/v1",
+					"productDefinitionId": "cloudflare.temporary-kv/v1",
+					"runtimeModel": null,
+					"claimMode": "none",
+					"claimActionCount": 0,
+					"claimDeadlineMsFromStart": null,
+					"creatorAuthorityAfterClaim": "absent"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.convex-cloud.sponsored-transfer/v1",
+			"displayName": "Convex Cloud sponsored transfer",
+			"description": "Convex Cloud provisioned inside a sponsored account and transferred afterwards. The sponsor step is a disclosed migration, never an invisible one.",
+			"providerIds": [
+				"convex"
+			],
+			"primitives": [
+				"data"
+			],
+			"claimActionCount": 2,
+			"earliestClaimDeadlineMs": 259200000,
+			"claimKind": "sponsor-migration",
+			"persistence": "persistent",
+			"realtime": "websocket",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "sponsored",
+			"bootstrapClasses": [
+				"sponsor"
+			],
+			"cleanupPolicies": [
+				"transfer"
+			],
+			"sponsoredCostCapMinorUnits": 1000,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer",
+				"sponsor.cost-cap",
+				"sponsor.migration"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "backend",
+					"primitive": "data",
+					"capabilityRef": "backend",
+					"profileId": "data.convex/v1",
+					"productDefinitionId": "convex.cloud-sponsored-transfer/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "project-transfer",
+					"claimActionCount": 2,
+					"claimDeadlineMsFromStart": 259200000,
+					"creatorAuthorityAfterClaim": "reauthorization-required"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.convex.local-accountless-preview/v1",
+			"displayName": "Convex local accountless preview",
+			"description": "A local Convex backend with no account and therefore no claim. State is ephemeral by construction; nothing survives the preview.",
+			"providerIds": [
+				"convex"
+			],
+			"primitives": [
+				"data"
+			],
+			"claimActionCount": 0,
+			"earliestClaimDeadlineMs": null,
+			"claimKind": "provider-native",
+			"persistence": "ephemeral",
+			"realtime": "websocket",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"local"
+			],
+			"cleanupPolicies": [
+				"delete"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "backend",
+					"primitive": "data",
+					"capabilityRef": "backend",
+					"profileId": "data.convex/v1",
+					"productDefinitionId": "convex.local-accountless/v1",
+					"runtimeModel": "oci",
+					"claimMode": "none",
+					"claimActionCount": 0,
+					"claimDeadlineMsFromStart": null,
+					"creatorAuthorityAfterClaim": "absent"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.convex.selfhosted-strong-claim/v1",
+			"displayName": "Convex self-hosted strong claim",
+			"description": "A self-hosted Convex backend handed over by credential exchange. The creator retains no authority afterwards, which is what makes the claim strong.",
+			"providerIds": [
+				"convex"
+			],
+			"primitives": [
+				"data"
+			],
+			"claimActionCount": 1,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "websocket",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"self-hosted-hobo"
+			],
+			"cleanupPolicies": [
+				"transfer"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "backend",
+					"primitive": "data",
+					"capabilityRef": "backend",
+					"profileId": "data.convex/v1",
+					"productDefinitionId": "convex.selfhosted-oci/v1",
+					"runtimeModel": "oci",
+					"claimMode": "credential-exchange",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "absent"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
+			"displayName": "Claimable SQL sandbox (Neon)",
+			"description": "A single resource-only neon Yard holding one claimable Postgres database. Same provider-neutral requirement as its sibling recipe, different product.",
+			"providerIds": [
+				"neon"
+			],
+			"primitives": [
+				"data"
+			],
+			"claimActionCount": 1,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"retain-until-provider-expiry"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "not-applicable",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "sandbox",
+					"primitive": "data",
+					"capabilityRef": "db",
+					"profileId": "data.postgres/v1",
+					"productDefinitionId": "neon.claimable-postgres/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.netlify.claimable-generated-report/v1",
+			"displayName": "Claimable generated report (Netlify)",
+			"description": "A static generated report on Netlify with a one-hour claim deadline. Nothing is stored beyond the published assets.",
+			"providerIds": [
+				"netlify"
+			],
+			"primitives": [
+				"web"
+			],
+			"claimActionCount": 1,
+			"earliestClaimDeadlineMs": 3600000,
+			"claimKind": "provider-native",
+			"persistence": "ephemeral",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"delete"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "report",
+					"primitive": "web",
+					"capabilityRef": "site",
+					"profileId": "web.static/v1",
+					"productDefinitionId": "netlify.anonymous-static-site/v1",
+					"runtimeModel": "paas",
+					"claimMode": "site-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 3600000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",
+			"displayName": "Claimable SQL sandbox (Prisma)",
+			"description": "A single resource-only prisma Yard holding one claimable Postgres database. Same provider-neutral requirement as its sibling recipe, different product.",
+			"providerIds": [
+				"prisma"
+			],
+			"primitives": [
+				"data"
+			],
+			"claimActionCount": 1,
+			"earliestClaimDeadlineMs": 86400000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "public-anonymous",
+			"bootstrapClasses": [
+				"anonymous-claimable"
+			],
+			"cleanupPolicies": [
+				"retain-until-provider-expiry"
+			],
+			"sponsoredCostCapMinorUnits": 0,
+			"sourceDisclosure": "not-applicable",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "sandbox",
+					"primitive": "data",
+					"capabilityRef": "db",
+					"profileId": "data.postgres/v1",
+					"productDefinitionId": "prisma.claimable-postgres/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 86400000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				}
+			]
+		},
+		{
+			"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
+			"displayName": "Claimable issue tracker",
+			"description": "A sponsored Vercel Yard for the app and a resource-only Prisma Yard for the database. No empty Camp is invented to host the managed Postgres. Each provider bundles its own claim, but the deployment spans two of them, so the offer summarises atomicity as a best-effort saga rather than one bundled claim.",
+			"providerIds": [
+				"prisma",
+				"vercel"
+			],
+			"primitives": [
+				"api",
+				"data"
+			],
+			"claimActionCount": 2,
+			"earliestClaimDeadlineMs": 172800000,
+			"claimKind": "provider-native",
+			"persistence": "persistent",
+			"realtime": "none",
+			"credentialCustody": "secret-ref",
+			"bootstrapFunding": "sponsored",
+			"bootstrapClasses": [
+				"anonymous-claimable",
+				"sponsor"
+			],
+			"cleanupPolicies": [
+				"retain-until-provider-expiry",
+				"transfer"
+			],
+			"sponsoredCostCapMinorUnits": 500,
+			"sourceDisclosure": "public-source",
+			"requiredConsents": [
+				"claim.deadline-understood",
+				"claim.ownership-transfer",
+				"sponsor.cost-cap"
+			],
+			"offerTtlMs": 900000,
+			"placements": [
+				{
+					"placementId": "db",
+					"primitive": "data",
+					"capabilityRef": "db",
+					"profileId": "data.postgres/v1",
+					"productDefinitionId": "prisma.claimable-postgres/v1",
+					"runtimeModel": null,
+					"claimMode": "resource-claim",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 172800000,
+					"creatorAuthorityAfterClaim": "rotatable"
+				},
+				{
+					"placementId": "web",
+					"primitive": "api",
+					"capabilityRef": "api",
+					"profileId": "api.http/v1",
+					"productDefinitionId": "vercel.sponsored-api/v1",
+					"runtimeModel": "serverless_faas",
+					"claimMode": "project-transfer",
+					"claimActionCount": 1,
+					"claimDeadlineMsFromStart": 172800000,
+					"creatorAuthorityAfterClaim": "reauthorization-required"
+				}
+			]
+		}
+	]
+}

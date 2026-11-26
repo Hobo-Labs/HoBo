@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "NonTsIdiomRoundtripSpikeConsumer"
+  },
+  "provider": {
+    "name": "NonTsIdiomRoundtripSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Non Ts Idiom Roundtrip Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/non-ts-idiom-roundtrip-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.non_ts_idiom_roundtrip_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

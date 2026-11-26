@@ -1,0 +1,25 @@
+{
+  "consumer": { "name": "HoboCollector" },
+  "provider": { "name": "BindleManifestCompiler" },
+  "interactions": [
+    {
+      "description": "run-to-collect the hello-bindle emits a manifest IR hash-equal to the static compile",
+      "request": {
+        "operation": "collectBindleManifest",
+        "bindleId": "hello-bindle",
+        "componentHost": { "kind": "wasmtime", "version": "46.0.1" },
+        "resources": [
+          { "factory": "data", "name": "db", "paradigm": "relational" },
+          { "factory": "service", "name": "api", "bind": ["db"] }
+        ]
+      },
+      "response": {
+        "manifestHash": "sha256:36e76ae9121acab7d954bf7c243267bff14f2caf2fa2874aa42e2468e7a57157",
+        "resources": ["api", "db"],
+        "binds": ["api.db"],
+        "events": ["bindle.ResourcesCollected", "bindle.ManifestProduced"]
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

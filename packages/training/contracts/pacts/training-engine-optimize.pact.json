@@ -1,0 +1,68 @@
+{
+	"consumer": {
+		"name": "hobo-training-pipeline"
+	},
+	"provider": {
+		"name": "hobo-builtin-training-engine"
+	},
+	"interactions": [
+		{
+			"description": "the training pipeline asks the built-in engine to optimize a generated region from recorded trajectories",
+			"providerState": "the engine is configured with seed 7",
+			"request": {
+				"method": "POST",
+				"path": "/hobo:training-engine/optimize",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"requestId": "req-1",
+					"generatedRegion": {
+						"regionId": "region-1",
+						"artifactRef": "app/src/summarize.ts",
+						"startOffset": 10,
+						"endOffset": 90,
+						"owner": "training-engine"
+					},
+					"rubric": {
+						"id": "rubric-1",
+						"objective": "Summarize the ticket faithfully."
+					},
+					"contract": {
+						"ref": "contracts/summarize",
+						"method": "summarize",
+						"allowedRegionId": "region-1"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"id": "opto-0a1b2c3d4e5f6071",
+					"engineId": "hobo-builtin-opto",
+					"provenance": {
+						"trajectoryHashes": [
+							"sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+						],
+						"rubricRef": "rubric-1",
+						"contractRef": "contracts/summarize"
+					},
+					"artifact": {
+						"engineId": "hobo-builtin-opto",
+						"engineVersion": "0.1.0",
+						"methodRef": "contracts/summarize#summarize",
+						"programJson": "{\"instructions\":\"Objective: Summarize the ticket faithfully.\",\"demos\":[],\"enginePayloadJson\":\"{}\"}"
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

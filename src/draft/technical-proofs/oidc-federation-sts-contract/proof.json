@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "oidc-federation-sts-contract",
+  "title": "HoBo OIDC Federation STS Contract POC",
+  "linear": "HOBO-110",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/identity-event-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md",
+      "docs/design/ai-native-agent-auth.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

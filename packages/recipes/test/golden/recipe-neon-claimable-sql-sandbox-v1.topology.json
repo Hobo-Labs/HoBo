@@ -1,0 +1,87 @@
+{
+	"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
+	"topologyDigest": "sha256:fd40788bcc973418fcfb33c4383396b5089a96b9305973e2d9f0ee8ad909e04c",
+	"resolutionDigest": "sha256:2bdf99e2693e4b4a734d715e75ccdfd2ce3dd657a2670ac34fad7d5fadc335aa",
+	"topology": {
+		"schemaVersion": "hobo.resolved-topology/v1",
+		"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
+		"junctionRef": "junction/recipe-neon-claimable-sql-sandbox-v1",
+		"yards": [
+			{
+				"yardId": "data",
+				"yardRef": "junction/recipe-neon-claimable-sql-sandbox-v1/data",
+				"providerId": "neon",
+				"resourceOnly": true,
+				"sponsored": false,
+				"regions": [],
+				"camps": [],
+				"resources": [
+					{
+						"resourceRef": "junction/recipe-neon-claimable-sql-sandbox-v1/data/sandbox",
+						"placementId": "sandbox",
+						"capabilityRef": "db",
+						"primitive": "data",
+						"satisfiesProfileId": "data.postgres/v1",
+						"productDefinitionId": "neon.claimable-postgres/v1",
+						"realization": "native",
+						"producesBindingProfiles": [
+							"binding.neon-serverless/v1",
+							"binding.postgresql/v1"
+						]
+					}
+				]
+			}
+		],
+		"bindings": []
+	},
+	"claims": {
+		"actionCount": 1,
+		"providerCount": 1,
+		"atomicity": "single-resource",
+		"earliestDeadlineMs": 1700086400000,
+		"items": [
+			{
+				"claimId": "claim/sandbox",
+				"subjectRef": "junction/recipe-neon-claimable-sql-sandbox-v1/data/sandbox",
+				"subjectKind": "resource",
+				"providerId": "neon",
+				"mode": "resource-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "rotatable",
+				"postClaimActions": [
+					"rotate-binding"
+				]
+			}
+		]
+	},
+	"guestLeases": [
+		{
+			"leaseId": "lease/data",
+			"yardId": "data",
+			"subjectRef": "junction/recipe-neon-claimable-sql-sandbox-v1/data",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "retain-until-provider-expiry",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		}
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [
+			"sandbox"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": [
+			"migration.postgres-dump/v1"
+		]
+	},
+	"widenings": [],
+	"trustEvidenceRefs": [
+		"neon.claimable-postgres/v1#sha256:2b1d404bd632371e23b7e98d52ee236c6b96585a6a473e154e9f9728f2588ac6"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/neon.claimable-postgres/v1/data.postgres/v1"
+	],
+	"sponsoredCostMinorUnits": 0
+}

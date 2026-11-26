@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-vibe-launch-asset-refresh-plan",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

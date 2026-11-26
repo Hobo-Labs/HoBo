@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package hobo.componentize.v1;
+
+message ToolchainPin {
+  string jco = 1;
+  string componentize_js = 2;
+  string wasm_tools = 3;
+  string wasmtime = 4;
+}
+
+message SourceFileDigest {
+  string path = 1;
+  string digest = 2;
+}
+
+message ComponentizeSpec {
+  string name = 1;
+  string source_root = 2;
+  string entrypoint = 3;
+  string wit_dir = 4;
+  string world_name = 5;
+  string source_date_epoch = 6;
+  ToolchainPin toolchain = 7;
+}
+
+message WasmComponentArtifact {
+  string path = 1;
+  string media_type = 2;
+  string digest = 3;
+  bytes bytes = 4;
+  string wit_world = 5;
+}
+
+message OciDescriptorRecord {
+  string artifact_type = 1;
+  string manifest_json = 2;
+  string manifest_digest = 3;
+}
+
+message SmokeReport {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string command = 3;
+}
+
+message ValidationReport {
+  bool passed = 1;
+  string command = 2;
+  string format = 3;
+}
+
+message ComponentBuildRequested {
+  string request_id = 1;
+  ComponentizeSpec spec = 2;
+}
+
+message ComponentBuilt {
+  string request_id = 1;
+  string component_digest = 2;
+  string oci_manifest_digest = 3;
+  ToolchainPin toolchain = 4;
+  repeated SourceFileDigest source_digests = 5;
+}

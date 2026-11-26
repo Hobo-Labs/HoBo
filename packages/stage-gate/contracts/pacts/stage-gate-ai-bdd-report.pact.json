@@ -1,0 +1,404 @@
+{
+	"consumer": {
+		"name": "@hobo/stage-gate"
+	},
+	"provider": {
+		"name": "ai-bdd"
+	},
+	"interactions": [
+		{
+			"description": "compile --check with plans that describe the docs exits 0 and writes nothing",
+			"request": {
+				"method": "POST",
+				"path": "/compile",
+				"body": {
+					"argv": [
+						"compile",
+						"--check"
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"exitCode": 0
+				}
+			}
+		},
+		{
+			"description": "compile --check with a new, stale or orphaned plan is a frozen violation: exit 4",
+			"request": {
+				"method": "POST",
+				"path": "/compile",
+				"body": {
+					"argv": [
+						"compile",
+						"--check"
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"exitCode": 4,
+					"output": "PLAN_STALE"
+				}
+			}
+		},
+		{
+			"description": "a replay-only run in which every scenario passed exits 0 and writes a RunReport v1",
+			"request": {
+				"method": "POST",
+				"path": "/run",
+				"body": {
+					"argv": [
+						"run",
+						"--frozen",
+						"--no-agent",
+						"--reporter",
+						"json,junit"
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"exitCode": 0,
+					"reportWritten": true,
+					"stdoutRunLine": "Run: .ai-bdd/runs/01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+					"report": {
+						"schemaVersion": 1,
+						"runId": "01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+						"startedAt": "2026-10-13T01:14:10.915Z",
+						"options": {
+							"frozen": true,
+							"noAgent": true,
+							"updateRecordings": false
+						},
+						"scenarios": [
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							}
+						],
+						"totals": {
+							"passed": 5,
+							"failed": 0,
+							"healed": 0,
+							"blocked": 0,
+							"skipped": 0,
+							"inconclusive": 0,
+							"error": 0
+						},
+						"usage": {
+							"modelCalls": 0,
+							"inputTokens": 0,
+							"outputTokens": 0,
+							"byPurpose": {
+								"extract": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"act": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"checkgen": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"judge": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								}
+							}
+						},
+						"exitCode": 0
+					}
+				}
+			}
+		},
+		{
+			"description": "a replay-only run in which a scenario failed exits 1 and writes its report",
+			"request": {
+				"method": "POST",
+				"path": "/run",
+				"body": {
+					"argv": [
+						"run",
+						"--frozen",
+						"--no-agent",
+						"--reporter",
+						"json,junit"
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"exitCode": 1,
+					"reportWritten": true,
+					"stdoutRunLine": "Run: .ai-bdd/runs/01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+					"report": {
+						"schemaVersion": 1,
+						"runId": "01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+						"startedAt": "2026-10-13T01:14:10.915Z",
+						"options": {
+							"frozen": true,
+							"noAgent": true,
+							"updateRecordings": false
+						},
+						"scenarios": [
+							{
+								"status": "failed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							}
+						],
+						"totals": {
+							"passed": 4,
+							"failed": 1,
+							"healed": 0,
+							"blocked": 0,
+							"skipped": 0,
+							"inconclusive": 0,
+							"error": 0
+						},
+						"usage": {
+							"modelCalls": 0,
+							"inputTokens": 0,
+							"outputTokens": 0,
+							"byPurpose": {
+								"extract": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"act": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"checkgen": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"judge": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								}
+							}
+						},
+						"exitCode": 1
+					}
+				}
+			}
+		},
+		{
+			"description": "a usage or config error exits 2 and writes no report (an earlier one may remain)",
+			"request": {
+				"method": "POST",
+				"path": "/run",
+				"body": {
+					"argv": [
+						"run",
+						"--frozen",
+						"--no-agent",
+						"--reporter",
+						"json,junit"
+					]
+				}
+			},
+			"response": {
+				"status": 400,
+				"body": {
+					"exitCode": 2,
+					"reportWritten": false
+				}
+			}
+		},
+		{
+			"description": "infrastructure (a driver or model unavailable, a scenario ended error) exits 3",
+			"request": {
+				"method": "POST",
+				"path": "/run",
+				"body": {
+					"argv": [
+						"run",
+						"--frozen",
+						"--no-agent",
+						"--reporter",
+						"json,junit"
+					]
+				}
+			},
+			"response": {
+				"status": 424,
+				"body": {
+					"exitCode": 3,
+					"reportWritten": true,
+					"stdoutRunLine": "Run: .ai-bdd/runs/01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+					"report": {
+						"schemaVersion": 1,
+						"runId": "01a132d2-fe9a-7d3a-a7d8-157d681d6417",
+						"startedAt": "2026-10-13T01:14:10.915Z",
+						"options": {
+							"frozen": true,
+							"noAgent": true,
+							"updateRecordings": false
+						},
+						"scenarios": [
+							{
+								"status": "error"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							},
+							{
+								"status": "passed"
+							}
+						],
+						"totals": {
+							"passed": 4,
+							"failed": 0,
+							"healed": 0,
+							"blocked": 0,
+							"skipped": 0,
+							"inconclusive": 0,
+							"error": 1
+						},
+						"usage": {
+							"modelCalls": 0,
+							"inputTokens": 0,
+							"outputTokens": 0,
+							"byPurpose": {
+								"extract": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"act": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"checkgen": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								},
+								"judge": {
+									"modelCalls": 0,
+									"inputTokens": 0,
+									"outputTokens": 0
+								}
+							}
+						},
+						"exitCode": 3
+					}
+				}
+			}
+		},
+		{
+			"description": "a stale plan under --frozen is a frozen violation: exit 4 and no report (an earlier one may remain)",
+			"request": {
+				"method": "POST",
+				"path": "/run",
+				"body": {
+					"argv": [
+						"run",
+						"--frozen",
+						"--no-agent",
+						"--reporter",
+						"json,junit"
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"exitCode": 4,
+					"reportWritten": false
+				}
+			}
+		},
+		{
+			"description": "verify-run of an intact run directory exits 0 and prints OK",
+			"request": {
+				"method": "POST",
+				"path": "/verify-run",
+				"body": {
+					"argv": [
+						"verify-run",
+						".ai-bdd/runs/01a132d2-fe9a-7d3a-a7d8-157d681d6417"
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"exitCode": 0,
+					"output": "OK"
+				}
+			}
+		},
+		{
+			"description": "verify-run of a run whose evidence changed exits 1 and lists what differs",
+			"request": {
+				"method": "POST",
+				"path": "/verify-run",
+				"body": {
+					"argv": [
+						"verify-run",
+						".ai-bdd/runs/01a132d2-fe9a-7d3a-a7d8-157d681d6417"
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"exitCode": 1,
+					"output": "modified"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ControlPlaneActionTaxonomyContractConsumer"
+  },
+  "provider": {
+    "name": "ControlPlaneActionTaxonomyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Control Plane Action Taxonomy Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/control-plane-action-taxonomy-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.control_plane_action_taxonomy_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

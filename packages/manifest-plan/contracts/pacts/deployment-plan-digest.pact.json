@@ -1,0 +1,299 @@
+{
+	"consumer": {
+		"name": "hobo-deployment-driver"
+	},
+	"provider": {
+		"name": "hobo-planner"
+	},
+	"interactions": [
+		{
+			"description": "the committed golden plan re-hashes to the digest @hobo/cloud pins",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": {
+						"schema": "hobo.deployment-plan/v1",
+						"objective": "min-cost",
+						"dependencyOrder": [
+							"assets",
+							"sessions",
+							"service"
+						],
+						"resources": [
+							{
+								"name": "assets",
+								"port": "objectStore",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "service",
+								"port": "compute",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [
+									"assets",
+									"sessions"
+								],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "sessions",
+								"port": "kv",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"body": {
+					"planHash": "sha256:30eb585558f0614fac037fa5ada935eaad03e86f35c39110af21b2c58bdaf5b6"
+				}
+			}
+		},
+		{
+			"description": "the current golden plan includes the selected product in its digest",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": {
+						"schema": "hobo.deployment-plan/v1",
+						"objective": "min-cost",
+						"dependencyOrder": [
+							"assets",
+							"sessions",
+							"service"
+						],
+						"resources": [
+							{
+								"name": "assets",
+								"port": "objectStore",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "service",
+								"port": "compute",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [
+									"assets",
+									"sessions"
+								],
+								"strategy": "rolling-update",
+								"region": "ENAM",
+								"productId": "cloudflare.workers/v1"
+							},
+							{
+								"name": "sessions",
+								"port": "kv",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"body": {
+					"planHash": "sha256:0e1bbf78ae6b765d8a4cd5cb41c5b9c5eadc43e32ea4fedec97cf87a7deef915"
+				}
+			}
+		},
+		{
+			"description": "a plan whose optional node fields are all absent",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": {
+						"schema": "hobo.deployment-plan/v1",
+						"objective": "min-cost",
+						"dependencyOrder": [
+							"network",
+							"database",
+							"cache",
+							"api",
+							"web"
+						],
+						"resources": [
+							{
+								"name": "network",
+								"port": "network",
+								"provider": "@hobo/provider-local",
+								"deps": []
+							},
+							{
+								"name": "database",
+								"port": "database",
+								"provider": "@hobo/provider-local",
+								"deps": [
+									"network"
+								]
+							},
+							{
+								"name": "cache",
+								"port": "cache",
+								"provider": "@hobo/provider-local",
+								"deps": [
+									"network"
+								]
+							},
+							{
+								"name": "api",
+								"port": "compute",
+								"provider": "@hobo/provider-local",
+								"deps": [
+									"database",
+									"cache"
+								]
+							},
+							{
+								"name": "web",
+								"port": "compute",
+								"provider": "@hobo/provider-local",
+								"deps": [
+									"api"
+								]
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"body": {
+					"planHash": "sha256:6012432813829d6ffc013426b9792365f85ad2260c14c3f22276625a597f3421"
+				}
+			}
+		},
+		{
+			"description": "a Yard-bound node carries non-string realization parameters into the digest",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": {
+						"schema": "hobo.deployment-plan/v1",
+						"objective": "min-cost",
+						"dependencyOrder": [
+							"assets",
+							"sessions",
+							"service"
+						],
+						"resources": [
+							{
+								"name": "assets",
+								"port": "objectStore",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "service",
+								"port": "compute",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [
+									"assets",
+									"sessions"
+								],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "sessions",
+								"port": "kv",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM",
+								"deploymentId": "d-2",
+								"productId": "cloudflare.kv/v1",
+								"realizationParameters": {
+									"ttlSeconds": 3600,
+									"tier": "standard"
+								},
+								"nonPortableRows": [
+									"kv/cloudflare.kv/v1"
+								]
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"body": {
+					"planHash": "sha256:a8f5ba15285d9a9da0d11c9d7d0aa9e9e9701cc6e697f5e3f2242e68c872ee1e"
+				}
+			}
+		},
+		{
+			"description": "a realization parameter whose key reads as a credential is refused, not hashed",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": {
+						"schema": "hobo.deployment-plan/v1",
+						"objective": "min-cost",
+						"dependencyOrder": [
+							"assets",
+							"sessions",
+							"service"
+						],
+						"resources": [
+							{
+								"name": "assets",
+								"port": "objectStore",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "service",
+								"port": "compute",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [
+									"assets",
+									"sessions"
+								],
+								"strategy": "rolling-update",
+								"region": "ENAM"
+							},
+							{
+								"name": "sessions",
+								"port": "kv",
+								"provider": "@hobo/provider-cloudflare",
+								"deps": [],
+								"strategy": "rolling-update",
+								"region": "ENAM",
+								"realizationParameters": {
+									"apiToken": "locator"
+								}
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"body": {
+					"error": "INVALID_RESOURCE_PLAN",
+					"path": "plan.resources[2].realizationParameters.apiToken"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"boundaryId": "deployment-plan-digest"
+	}
+}

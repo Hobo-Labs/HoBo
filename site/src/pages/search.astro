@@ -1,0 +1,98 @@
+---
+import Base from "../layouts/Base.astro";
+import { nav } from "../nav";
+import { href } from "../lib/url";
+import { docsSearchEntries } from "../lib/docs-search";
+
+const entries = docsSearchEntries(nav);
+---
+
+<Base
+	title="Search · HoBo docs"
+	description="Find a HoBo docs page by title."
+>
+	<section class="hero ink-world">
+		<div class="container">
+			<h1>Search the docs</h1>
+			<p class="hero-sub">
+				Titles and section labels from this site. No analytics. On GitHub Pages
+				this index ships with the static build.
+			</p>
+			<label class="docs-search-label" for="docs-search">
+				Find a page
+				<input
+					id="docs-search"
+					type="search"
+					placeholder="getting started, bindle, camp…"
+					autocomplete="off"
+				/>
+			</label>
+			<ul id="docs-search-results" class="docs-search-results">
+				{
+					entries.map((entry) => (
+						<li data-search-hay={entry.haystack}>
+							<a href={href(entry.slug)}>{entry.label}</a>
+							<span>{entry.group}</span>
+						</li>
+					))
+				}
+			</ul>
+		</div>
+	</section>
+</Base>
+
+<script>
+	const input = document.getElementById("docs-search");
+	const results = document.getElementById("docs-search-results");
+	if (input instanceof HTMLInputElement && results) {
+		const apply = () => {
+			const q = input.value.trim().toLowerCase();
+			for (const item of results.querySelectorAll<HTMLLIElement>("li")) {
+				const hay = item.dataset.searchHay ?? "";
+				item.hidden = q.length > 0 && !hay.includes(q);
+			}
+		};
+		const params = new URLSearchParams(window.location.search);
+		const initial = params.get("q");
+		if (initial) {
+			input.value = initial;
+		}
+		input.addEventListener("input", apply);
+		apply();
+	}
+</script>
+
+<style>
+	.docs-search-label {
+		display: grid;
+		gap: 0.4rem;
+		max-width: 36rem;
+		margin: 1.25rem 0 1rem;
+		font-weight: 650;
+	}
+	.docs-search-label input {
+		font: inherit;
+		padding: 0.55rem 0.7rem;
+		border: 2px solid var(--ink);
+		box-shadow: 3px 3px 0 var(--ink);
+		background: var(--paper);
+		color: var(--ink);
+	}
+	.docs-search-results {
+		list-style: none;
+		padding: 0;
+		margin: 0 0 3rem;
+		max-width: 36rem;
+	}
+	.docs-search-results li {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.45rem 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+	}
+	.docs-search-results span {
+		color: var(--text-mute);
+		font-size: 0.85em;
+	}
+</style>

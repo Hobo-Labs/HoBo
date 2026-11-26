@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "vibe-pilot-first-proof-walkthrough",
+  "experienceType": "ux",
+  "title": "Vibe Pilot First-Proof Walkthrough",
+  "linear": "HOBO-563",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

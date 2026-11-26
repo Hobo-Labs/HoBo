@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-support-release-candidate-evidence-contract",
+  "experienceType": "cx",
+  "title": "Launch Support Release Candidate Evidence",
+  "linear": "HOBO-474",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

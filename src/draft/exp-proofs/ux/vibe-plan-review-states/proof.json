@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-plan-review-states",
+  "experienceType": "ux",
+  "title": "Vibe Plan Review States",
+  "linear": "HOBO-542",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

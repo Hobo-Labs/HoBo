@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-performance-capacity-envelope-contract",
+  "experienceType": "dx",
+  "title": "Launch Performance Capacity Envelope Contract POC",
+  "linear": "HOBO-502",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

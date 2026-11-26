@@ -1,0 +1,54 @@
+{
+  "revision": 1,
+  "configuration": {
+    "accounts": [
+      {
+        "id": "example",
+        "budgetMicros": 0,
+        "spentMicros": 0,
+        "maxRuntimeMinutes": 30,
+        "startupMinutes": 5,
+        "offers": [
+          {
+            "id": "github",
+            "provider": "github",
+            "providerAccountId": "replace-owned-github-account",
+            "enabled": false,
+            "runsOn": "ubuntu-24.04",
+            "freeMinutes": 0,
+            "priceMicrosPerMinute": 10000,
+            "budgetMicros": 0,
+            "spentMicros": 0,
+            "concurrency": 1,
+            "observedAt": "2000-01-01T00:00:00Z",
+            "validUntil": "2000-01-02T00:00:00Z",
+            "sourceUrl": "https://example.invalid/replace-with-account-usage-evidence",
+            "bridgeAcknowledged": false
+          }
+        ]
+      }
+    ],
+    "connections": [
+      {
+        "accountId": "example",
+        "repository": "example/repository",
+        "repositoryId": 1,
+        "installationId": 1,
+        "bridgeWorkflow": "hobo-ci-host.yml",
+        "bridgeRef": "hobo-ci-v1",
+        "bridgeSha": "0000000000000000000000000000000000000000",
+        "dispatcherActorId": 1,
+        "runnerGroupId": 1,
+        "allowedEvents": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "allowedRefs": [
+          "refs/heads/main"
+        ],
+        "trustedRepositoryAcknowledged": true
+      }
+    ]
+  },
+  "updatedAt": "2026-10-27T12:00:00Z"
+}

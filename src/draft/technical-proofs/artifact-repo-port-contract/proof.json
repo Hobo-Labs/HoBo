@@ -1,0 +1,18 @@
+{
+  "layer": "technical",
+  "slug": "artifact-repo-port-contract",
+  "title": "hobo:artifact-repo Port Contract POC",
+  "linear": "HOBO-347",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

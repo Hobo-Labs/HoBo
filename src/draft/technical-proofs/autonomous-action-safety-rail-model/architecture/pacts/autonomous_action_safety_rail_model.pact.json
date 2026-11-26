@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AutonomousActionSafetyRailModelConsumer"
+  },
+  "provider": {
+    "name": "AutonomousActionSafetyRailModelBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Autonomous Action Safety Rail Model boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/autonomous-action-safety-rail-model/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.autonomous_action_safety_rail_model/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

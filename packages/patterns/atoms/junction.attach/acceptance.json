@@ -1,0 +1,14 @@
+{
+	"params": {
+		"name": "edge"
+	},
+	"expectFiles": [
+		"src/junction.ts"
+	],
+	"expectContains": {
+		"src/junction.ts": [
+			"junction:edge",
+			"yard:edge"
+		]
+	}
+}

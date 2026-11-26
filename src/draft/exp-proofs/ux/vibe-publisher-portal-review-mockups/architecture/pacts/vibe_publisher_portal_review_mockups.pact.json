@@ -1,0 +1,261 @@
+{
+  "consumer": {
+    "name": "VibePublisherPortalReviewMockupsConsumer"
+  },
+  "provider": {
+    "name": "VibePublisherPortalReviewMockupsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe Publisher Portal Review Mockups boundary returns accepted HOBO-548 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-publisher-portal-review-mockups/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-548",
+          "phase": "M1",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-publisher-portal-review-mockups",
+          "proofPath": "docs/design/proofs/vibe-publisher-portal-review-mockups/README.md",
+          "designRefs": [
+            "docs/design/publisher-portal.md",
+            "docs/design/capability-review-approval.md",
+            "docs/design/marketplace-publisher-trust-evidence.md",
+            "docs/design/marketplace-payout-hooks.md",
+            "docs/design/org-catalogs.md",
+            "docs/design/launch-support-escalation.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-define-object-graph-v1",
+              "proofMode": "reference-fixture",
+              "publisherUse": "publisher submission mockups reuse the accepted object graph fixture as artifact source evidence"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "proofMode": "simulated",
+              "publisherUse": "evidence upload states reuse the accepted collect fixture without claiming Registry storage or live upload"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "publisherUse": "stale evidence and rejection remediation copy reuse the accepted quickstart stale-evidence fixture"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "live",
+              "publisherUse": "yank remediation can point to accepted recovery proof labels while avoiding runtime migration automation"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "publisherUse": "scope-out quickstart claims stay visible as launch, payout, and customer-data limitations"
+            }
+          ],
+          "personas": [
+            "publisher owner",
+            "publisher maintainer",
+            "marketplace operator",
+            "security reviewer",
+            "support operator",
+            "release owner"
+          ],
+          "mockups": [
+            {
+              "id": "mockup-submission-draft",
+              "state": "submission-draft",
+              "title": "Publisher submission draft with owner, maintainer, artifact, and evidence checklist",
+              "personas": ["publisher owner", "publisher maintainer", "marketplace operator", "release owner"],
+              "questionsAnswered": [
+                "Which publisher identity, maintainer role, artifact, and support contact are present before review begins?",
+                "Which missing evidence blocks review without creating a live onboarding service?"
+              ],
+              "fixtureIds": ["ppm-submission-draft-provider-pack"]
+            },
+            {
+              "id": "mockup-evidence-upload",
+              "state": "evidence-upload",
+              "title": "Evidence upload status for provenance, SBOM, conformance, warnings, and support notes",
+              "personas": ["publisher maintainer", "security reviewer", "marketplace operator"],
+              "questionsAnswered": [
+                "Which evidence item is uploaded, missing, stale, or blocked and who owns the next review action?",
+                "How does the mockup show missing evidence without invoking scanners or registry storage?"
+              ],
+              "fixtureIds": ["ppm-evidence-upload-missing-sbom"]
+            },
+            {
+              "id": "mockup-review-status",
+              "state": "review-status",
+              "title": "Review status projection for ready, limited, installable, rejected, yanked, and escalated states",
+              "personas": ["marketplace operator", "security reviewer", "publisher owner", "support operator"],
+              "questionsAnswered": [
+                "Which review outcome is visible and which evidence source justifies any installability wording?",
+                "Where does support route questions when approval, rejection, or escalation changes?"
+              ],
+              "fixtureIds": ["ppm-review-approved-installable"]
+            },
+            {
+              "id": "mockup-rejection-remediation",
+              "state": "rejection-remediation",
+              "title": "Rejected listing remediation with reason, resubmission checklist, and owner route",
+              "personas": ["publisher owner", "publisher maintainer", "security reviewer", "support operator"],
+              "questionsAnswered": [
+                "Which remediation steps are safe to show to the publisher and which remain internal review evidence?",
+                "How is a rejected package prevented from becoming customer-visible or installable?"
+              ],
+              "fixtureIds": ["ppm-rejected-remediation-copy"]
+            },
+            {
+              "id": "mockup-resubmission",
+              "state": "resubmission",
+              "title": "Resubmission path that preserves prior rejection context and new evidence links",
+              "personas": ["publisher maintainer", "marketplace operator", "security reviewer"],
+              "questionsAnswered": [
+                "Which previous rejection context carries forward and which new evidence resets review readiness?",
+                "Does resubmission stay as a mockup contract rather than a workflow engine?"
+              ],
+              "fixtureIds": ["ppm-evidence-upload-missing-sbom", "ppm-review-approved-installable"]
+            },
+            {
+              "id": "mockup-yank-remediation",
+              "state": "yank-remediation",
+              "title": "Yanked listing remediation, customer-safe migration guidance, and support owner",
+              "personas": ["marketplace operator", "support operator", "publisher owner", "release owner"],
+              "questionsAnswered": [
+                "Which customer-visible copy explains the yank without promising runtime migration automation?",
+                "Which owner accepts support guidance, catalog state, and replacement listing evidence?"
+              ],
+              "fixtureIds": ["ppm-yanked-migration-guidance"]
+            },
+            {
+              "id": "mockup-payout-support-handoff",
+              "state": "payout-support-handoff",
+              "title": "Payout-readiness and unsupported-state handoff without money movement or provider setup",
+              "personas": ["publisher owner", "marketplace operator", "support operator", "release owner"],
+              "questionsAnswered": [
+                "Which payout-adjacent state is visible and which commercial owner must accept the limitation?",
+                "How is support wording kept customer-safe without implementing payout or support tooling?"
+              ],
+              "fixtureIds": ["ppm-payout-blocked-unsupported-jurisdiction"]
+            }
+          ],
+          "fixtures": [
+            {
+              "id": "ppm-submission-draft-provider-pack",
+              "artifactMetadata": "signed capability package artifact with digest, version, source, and publisher org id",
+              "evidenceState": "complete identity and artifact evidence ready for review",
+              "reviewOutcome": "ready for review by marketplace operator",
+              "payoutReadinessHandoff": "not eligible until trust review and commercial owner handoff are accepted",
+              "supportWording": "customer-safe submission summary names owner route and no installability claim",
+              "customerVisibleLimitation": "limited visibility until review evidence is accepted",
+              "proofMode": "live"
+            },
+            {
+              "id": "ppm-evidence-upload-missing-sbom",
+              "artifactMetadata": "capability bundle upload with provenance but missing SBOM and vulnerability notice",
+              "evidenceState": "evidence-required because security evidence is missing",
+              "reviewOutcome": "limited beta review cannot proceed to installable",
+              "payoutReadinessHandoff": "blocked by security reviewer owner handoff",
+              "supportWording": "support can say required evidence is missing without exposing scanner details",
+              "customerVisibleLimitation": "blocked from installable claims until evidence is complete",
+              "proofMode": "simulated"
+            },
+            {
+              "id": "ppm-review-approved-installable",
+              "artifactMetadata": "resource pack artifact, conformance report, capability spec, and immutable version pin",
+              "evidenceState": "complete review evidence with catalog approval",
+              "reviewOutcome": "approved installable with required provenance and security review",
+              "payoutReadinessHandoff": "handoff to Marketplace Payout Hooks owner for eligibility review",
+              "supportWording": "customer-safe support note links review owner and accepted evidence source",
+              "customerVisibleLimitation": "limited to accepted catalog scopes and proof-mode wording",
+              "proofMode": "reference fixture"
+            },
+            {
+              "id": "ppm-rejected-remediation-copy",
+              "artifactMetadata": "publisher package with unsupported permission request and stale provenance",
+              "evidenceState": "rejected stale evidence with remediation required",
+              "reviewOutcome": "rejected by security reviewer with resubmission guidance",
+              "payoutReadinessHandoff": "not eligible while rejection remains unresolved",
+              "supportWording": "customer-safe remediation guidance routes to publisher owner and support operator",
+              "customerVisibleLimitation": "not installable and not customer-visible as approved",
+              "proofMode": "scope-out"
+            },
+            {
+              "id": "ppm-yanked-migration-guidance",
+              "artifactMetadata": "previously accepted package now yanked with replacement version and audit link",
+              "evidenceState": "yanked evidence retained for audit and migration support",
+              "reviewOutcome": "yanked from new selection with support escalation owner",
+              "payoutReadinessHandoff": "blocked owner handoff until catalog and payout status are reconciled",
+              "supportWording": "customer-safe yank wording points to migration guidance and support owner",
+              "customerVisibleLimitation": "blocked for new installs; existing users receive migration guidance",
+              "proofMode": "simulated"
+            },
+            {
+              "id": "ppm-payout-blocked-unsupported-jurisdiction",
+              "artifactMetadata": "publisher profile and listing artifact accepted for review but payout facts incomplete",
+              "evidenceState": "complete listing evidence but payout handoff unsupported",
+              "reviewOutcome": "escalated for release owner because customer-visible payout copy is unsupported",
+              "payoutReadinessHandoff": "blocked by unsupported jurisdiction owner route",
+              "supportWording": "support limitation wording avoids payout promise and names commercial owner",
+              "customerVisibleLimitation": "unsupported payout claim remains hidden from customer-facing surfaces",
+              "proofMode": "reference fixture"
+            }
+          ],
+          "scenarioPaths": [
+            {
+              "id": "happy-path",
+              "narrative": "Publisher submits complete artifact and evidence, review marks it installable, and payout stays a separate handoff.",
+              "fixtureIds": ["ppm-submission-draft-provider-pack", "ppm-review-approved-installable"],
+              "safeOutcome": "listing can show accepted review evidence while payout and support execution remain external handoffs"
+            },
+            {
+              "id": "blocked-path",
+              "narrative": "Missing SBOM or vulnerability evidence blocks installability and keeps publisher copy in remediation state.",
+              "fixtureIds": ["ppm-evidence-upload-missing-sbom", "ppm-rejected-remediation-copy"],
+              "safeOutcome": "publisher receives customer-safe remediation guidance instead of approval or storefront visibility"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "narrative": "Stale provenance or unknown catalog approval yields rejected or yanked copy and no launch claim.",
+              "fixtureIds": ["ppm-rejected-remediation-copy", "ppm-yanked-migration-guidance"],
+              "safeOutcome": "portal surfaces owner route, limitation, and migration guidance without proofless claims"
+            },
+            {
+              "id": "support-handoff",
+              "narrative": "Yanked or payout-blocked states route to support and commercial owners with approved limitation wording.",
+              "fixtureIds": ["ppm-yanked-migration-guidance", "ppm-payout-blocked-unsupported-jurisdiction"],
+              "safeOutcome": "support can explain the state without customer data, support tooling, or payout execution"
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order follows submission, evidence, review outcome, remediation, yank guidance, payout handoff, and support route.",
+            "Screen reader labels include publisher role, listing state, evidence state, review outcome, proof mode, and owner route.",
+            "Contrast is not the only state signal; blocked, rejected, yanked, unsupported, and scope-out states use explicit text.",
+            "Motion is optional; upload, review, and yank transitions must respect reduced-motion preferences."
+          ],
+          "scopeOut": [
+            "No publisher onboarding service.",
+            "No artifact hosting, Registry storage, package hosting, or signing runtime.",
+            "No payout provider, tax collection, bank account, settlement, or money movement implementation.",
+            "No security scanner, conformance runner, approval service, or policy engine implementation.",
+            "No production publisher portal UI, storefront, support queue, or support automation.",
+            "No customer-data access or launch claim without evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

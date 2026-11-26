@@ -1,0 +1,86 @@
+{
+	"consumer": {
+		"name": "hobo-sdk-authoring"
+	},
+	"provider": {
+		"name": "hobo-control-plane"
+	},
+	"interactions": [
+		{
+			"description": "a frozen waiver declaration submitted for governed approval",
+			"request": {
+				"method": "POST",
+				"path": "/v1/declarations",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"schema": "hobo.sdk/v1.waiver",
+					"decision_id": "pol_7f31",
+					"reason": "EU capacity incident; temporary US failover, approved by IR.",
+					"approver": "role:security-admin",
+					"expires": "2026-07-01T00:00:00Z"
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"accepted": true,
+					"fact": {
+						"type": "policy.WaiverRequested",
+						"data": {
+							"decisionId": "pol_7f31",
+							"approver": "role:security-admin",
+							"expires": "2026-07-01T00:00:00Z"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "a frozen chaos-experiment declaration submitted for a fork-lane run",
+			"request": {
+				"method": "POST",
+				"path": "/v1/declarations",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"schema": "hobo.sdk/v1.chaos",
+					"name": "db-failover-holds-checkout-slo",
+					"steady_state": "slo:checkout.latency",
+					"inject": {
+						"fault": "provider-degraded",
+						"target": "db@prod-azure"
+					},
+					"blast_radius": "1 camp",
+					"abort_if": "slo:photos.availability < 99.9%"
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"accepted": true,
+					"fact": {
+						"type": "chaos.ExperimentDeclared",
+						"data": {
+							"name": "db-failover-holds-checkout-slo",
+							"blastRadius": "1 camp"
+						}
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

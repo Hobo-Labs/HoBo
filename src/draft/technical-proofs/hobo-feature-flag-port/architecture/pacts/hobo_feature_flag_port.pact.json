@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboFeatureFlagPortConsumer"
+  },
+  "provider": {
+    "name": "HoboFeatureFlagPortBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Feature Flag Port boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-feature-flag-port/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_feature_flag_port/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

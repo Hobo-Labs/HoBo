@@ -1,0 +1,8 @@
+{
+  "name": "cli-mcp-parity-resource-lifecycle-contracts",
+  "description": "MCP tool fixture for cli-mcp-parity-resource-lifecycle-contracts",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

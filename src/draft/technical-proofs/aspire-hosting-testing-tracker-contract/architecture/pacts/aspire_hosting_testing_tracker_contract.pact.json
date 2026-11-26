@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AspireHostingTestingTrackerContractConsumer"
+  },
+  "provider": {
+    "name": "AspireHostingTestingTrackerContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Aspire.Hosting.Testing tracker boundary returns its evaluation verdict",
+      "request": {
+        "method": "GET",
+        "path": "/aspire-hosting-testing-tracker-contract/evaluate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.aspire_hosting_testing_tracker_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

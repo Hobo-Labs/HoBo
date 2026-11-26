@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "IdentityMtlsDataPath" },
+  "interactions": [
+    {
+      "description": "authorizes an SVID-keyed data-path handshake",
+      "request": { "method": "POST", "path": "/identity/mtls/handshake" },
+      "response": { "status": 200, "body": { "ok": true, "transport": "mtls" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ConnectorAuthoringContractConsumer"
+  },
+  "provider": {
+    "name": "ConnectorAuthoringContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Connector Authoring Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/connector-authoring-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.connector_authoring_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

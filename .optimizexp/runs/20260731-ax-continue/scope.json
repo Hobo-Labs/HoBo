@@ -1,0 +1,32 @@
+{
+  "runId": "20260731-ax-continue",
+  "experiences": [
+    "ax"
+  ],
+  "projects": [
+    "all"
+  ],
+  "personas": [
+    "product-coding-agent",
+    "product-agent-operator"
+  ],
+  "features": [
+    "agent-tooling-setup"
+  ],
+  "surfaces": [
+    "bash scripts/setup-agent-tools.sh --help",
+    "bash scripts/setup-agent-tools.sh --common-only --no-gbrain --no-skillopt",
+    "bash scripts/agent-mcp-gbrain.sh",
+    "bash scripts/agent-mcp-serena.sh",
+    "bash scripts/agent-mcp-headroom.sh",
+    "pnpm run skills:mirror-check"
+  ],
+  "reportOnly": false,
+  "stopPolicy": "true-plateau-only",
+  "hostAgent": "grok",
+  "createdAt": "2026-07-31T13:41:54.000Z",
+  "priorRun": "20260731-ax-review",
+  "passesCompleted": 2,
+  "lastImplementableFindings": 0,
+  "stopReason": "plateau"
+}

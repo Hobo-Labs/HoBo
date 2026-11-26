@@ -1,0 +1,35 @@
+{
+  "iteration": 1,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 3,
+      "evidence": [
+        "2026-07-31T03:58:00-outcome"
+      ]
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 2,
+      "evidence": [
+        "2026-07-31T03:58:10-outcome"
+      ]
+    },
+    {
+      "persona": "product-platform-engineer",
+      "surface": "repo bootstrap / node_modules",
+      "harms": 0,
+      "friction": 3,
+      "uncertainty": 2,
+      "notes": "Shared tsx bootstrap means all gates fail closed the same way; good for consistency, bad for progressive disclosure without install."
+    }
+  ],
+  "metric_total": 18,
+  "metric_max": 4
+}

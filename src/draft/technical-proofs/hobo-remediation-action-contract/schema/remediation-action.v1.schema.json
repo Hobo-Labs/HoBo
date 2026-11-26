@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/remediation-action.v1.schema.json",
+  "title": "RemediationAction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "target",
+    "blastRadius",
+    "idempotencyKey",
+    "conformanceState"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Known or future remediation action kind. Unknown kinds fail closed at effect classification."
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["resource", "camp", "region"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "blastRadius": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "reversible", "estimatedImpact"],
+      "properties": {
+        "scope": { "enum": ["resource", "camp", "region"] },
+        "reversible": { "type": "boolean" },
+        "compensationPath": { "type": "string", "minLength": 1 },
+        "estimatedImpact": { "enum": ["low", "medium", "high"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "reversible": { "const": true } } },
+          "then": { "required": ["compensationPath"] }
+        }
+      ]
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1,
+      "default": "unknown"
+    },
+    "idempotencyKey": { "type": "string", "minLength": 1 },
+    "conformanceState": { "enum": ["green", "unknown", "failing"] }
+  }
+}

@@ -1,0 +1,6 @@
+clean: ok=true findings=0 deployGateRequired=true
+preview: code=capability.stability.preview severity=warning
+missing: code=capability.require.unsatisfied severity=error
+stale: codes=catalog.snapshot.stale
+rendered lines: 1
+CONTRACT HELD: author-time findings advise; deploy-time PlanRejected stays authoritative

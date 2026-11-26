@@ -1,0 +1,232 @@
+{
+  "consumer": {
+    "name": "HoboStationsCiBudgetRouting"
+  },
+  "provider": {
+    "name": "HoboCiAccountControlApi"
+  },
+  "interactions": [
+    {
+      "description": "read account policy before applying a tenant budget crossing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer station-ci-budget-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "revision": 1,
+          "account": {
+            "id": "account-a",
+            "budgetMicros": 1000000,
+            "spentMicros": 100,
+            "maxRuntimeMinutes": 1,
+            "startupMinutes": 1,
+            "offers": [
+              {
+                "id": "github",
+                "provider": "github",
+                "providerAccountId": "github-owned",
+                "runsOn": "github-native",
+                "freeMinutes": 20,
+                "priceMicrosPerMinute": 100,
+                "budgetMicros": 1000000,
+                "spentMicros": 20,
+                "concurrency": 2,
+                "observedAt": "2026-10-27T10:00:00Z",
+                "validUntil": "2026-10-28T12:00:00Z",
+                "sourceUrl": "https://provider.example/usage",
+                "bridgeAcknowledged": true,
+                "enabled": true
+              },
+              {
+                "id": "depot",
+                "provider": "depot",
+                "providerAccountId": "depot-owned",
+                "runsOn": "depot-native",
+                "freeMinutes": 20,
+                "priceMicrosPerMinute": 100,
+                "budgetMicros": 1000000,
+                "spentMicros": 20,
+                "concurrency": 2,
+                "observedAt": "2026-10-27T10:00:00Z",
+                "validUntil": "2026-10-28T12:00:00Z",
+                "sourceUrl": "https://provider.example/usage",
+                "bridgeAcknowledged": true
+              },
+              {
+                "id": "k8",
+                "provider": "kubernetes",
+                "providerAccountId": "kubernetes-owned",
+                "runsOn": "k8-native",
+                "freeMinutes": 20,
+                "priceMicrosPerMinute": 100,
+                "budgetMicros": 1000000,
+                "spentMicros": 20,
+                "concurrency": 2,
+                "observedAt": "2026-10-27T10:00:00Z",
+                "validUntil": "2026-10-28T12:00:00Z",
+                "sourceUrl": "https://provider.example/usage",
+                "bridgeAcknowledged": true
+              }
+            ]
+          },
+          "updatedAt": "2026-10-27T12:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "compare-and-swap eligibility and durable threshold ordering without changing usage snapshots",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer station-ci-budget-token-with-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "id": "account-a",
+          "budgetMicros": 1000000,
+          "spentMicros": 100,
+          "maxRuntimeMinutes": 1,
+          "startupMinutes": 1,
+          "offers": [
+            {
+              "id": "github",
+              "provider": "github",
+              "providerAccountId": "github-owned",
+              "runsOn": "github-native",
+              "freeMinutes": 20,
+              "priceMicrosPerMinute": 100,
+              "budgetMicros": 1000000,
+              "spentMicros": 20,
+              "concurrency": 2,
+              "observedAt": "2026-10-27T10:00:00Z",
+              "validUntil": "2026-10-28T12:00:00Z",
+              "sourceUrl": "https://provider.example/usage",
+              "bridgeAcknowledged": true
+            },
+            {
+              "id": "depot",
+              "provider": "depot",
+              "providerAccountId": "depot-owned",
+              "runsOn": "depot-native",
+              "freeMinutes": 20,
+              "priceMicrosPerMinute": 100,
+              "budgetMicros": 1000000,
+              "spentMicros": 20,
+              "concurrency": 2,
+              "observedAt": "2026-10-27T10:00:00Z",
+              "validUntil": "2026-10-28T12:00:00Z",
+              "sourceUrl": "https://provider.example/usage",
+              "bridgeAcknowledged": true,
+              "enabled": true
+            },
+            {
+              "id": "k8",
+              "provider": "kubernetes",
+              "providerAccountId": "kubernetes-owned",
+              "runsOn": "k8-native",
+              "freeMinutes": 20,
+              "priceMicrosPerMinute": 100,
+              "budgetMicros": 1000000,
+              "spentMicros": 20,
+              "concurrency": 2,
+              "observedAt": "2026-10-27T10:00:00Z",
+              "validUntil": "2026-10-28T12:00:00Z",
+              "sourceUrl": "https://provider.example/usage",
+              "bridgeAcknowledged": true
+            }
+          ],
+          "routingSignalCycles": {
+            "broker:tenant-a:0.8": 1
+          },
+          "routingSignalCrossed": {
+            "broker:tenant-a:0.8": true
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "revision": 2,
+          "account": {
+            "id": "account-a",
+            "budgetMicros": 1000000,
+            "spentMicros": 100,
+            "maxRuntimeMinutes": 1,
+            "startupMinutes": 1,
+            "offers": [
+              {
+                "id": "github",
+                "provider": "github",
+                "providerAccountId": "github-owned",
+                "runsOn": "github-native",
+                "freeMinutes": 20,
+                "priceMicrosPerMinute": 100,
+                "budgetMicros": 1000000,
+                "spentMicros": 20,
+                "concurrency": 2,
+                "observedAt": "2026-10-27T10:00:00Z",
+                "validUntil": "2026-10-28T12:00:00Z",
+                "sourceUrl": "https://provider.example/usage",
+                "bridgeAcknowledged": true
+              },
+              {
+                "id": "depot",
+                "provider": "depot",
+                "providerAccountId": "depot-owned",
+                "runsOn": "depot-native",
+                "freeMinutes": 20,
+                "priceMicrosPerMinute": 100,
+                "budgetMicros": 1000000,
+                "spentMicros": 20,
+                "concurrency": 2,
+                "observedAt": "2026-10-27T10:00:00Z",
+                "validUntil": "2026-10-28T12:00:00Z",
+                "sourceUrl": "https://provider.example/usage",
+                "bridgeAcknowledged": true,
+                "enabled": true
+              },
+              {
+                "id": "k8",
+                "provider": "kubernetes",
+                "providerAccountId": "kubernetes-owned",
+                "runsOn": "k8-native",
+                "freeMinutes": 20,
+                "priceMicrosPerMinute": 100,
+                "budgetMicros": 1000000,
+                "spentMicros": 20,
+                "concurrency": 2,
+                "observedAt": "2026-10-27T10:00:00Z",
+                "validUntil": "2026-10-28T12:00:00Z",
+                "sourceUrl": "https://provider.example/usage",
+                "bridgeAcknowledged": true
+              }
+            ],
+            "routingSignalCycles": {
+              "broker:tenant-a:0.8": 1
+            },
+            "routingSignalCrossed": {
+              "broker:tenant-a:0.8": true
+            }
+          },
+          "updatedAt": "2026-10-27T12:00:01Z"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "verification": {
+      "kind": "hand-authored account policy HTTP contract exercised by the shipped relay client and Station bridge",
+      "liveProviderVerified": false
+    }
+  }
+}

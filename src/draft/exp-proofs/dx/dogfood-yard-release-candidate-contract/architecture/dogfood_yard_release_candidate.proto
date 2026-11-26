@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package hobo.draft.dogfood_yard_release_candidate.v1;
+
+message EvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  string status = 5;
+  string acceptance_bullet = 6;
+}
+
+message Blocker {
+  string id = 1;
+  string owner_project = 2;
+  string state = 3;
+  string evidence_source = 4;
+  string mitigation = 5;
+}
+
+message AcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message ReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message FollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string disposition = 4;
+  string reason = 5;
+}
+
+message InitiativeStatus {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message OperationalClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message DogfoodYardReleaseCandidateEvidence {
+  string schema = 1;
+  string issue = 2;
+  string project = 3;
+  string phase = 4;
+  string milestone = 5;
+  repeated EvidenceItem evidence = 6;
+  repeated Blocker blockers = 7;
+  repeated AcceptedRisk accepted_risks = 8;
+  repeated ReleaseCutlineDependency release_cutline_dependencies = 9;
+  repeated FollowUp follow_ups = 10;
+  InitiativeStatus initiative_status = 11;
+  repeated string scope_out = 12;
+  repeated OperationalClaimGuard operational_claim_guards = 13;
+}

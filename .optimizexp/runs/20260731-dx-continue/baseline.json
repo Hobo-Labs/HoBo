@@ -1,0 +1,18 @@
+{
+  "runId": "20260731-dx-continue",
+  "source": "prior 20260730-dx-fix judged + current NO_NM env",
+  "scoredAt": "2026-07-31T12:00:00.000Z",
+  "metric_total": 9,
+  "metric_max": 2,
+  "cells": [
+    { "persona": "product-app-developer", "surface": "pnpm run agent:check -- --staged", "harms": 0, "friction": 2, "uncertainty": 1 },
+    { "persona": "product-app-developer", "surface": "pnpm run doctor", "harms": 0, "friction": 2, "uncertainty": 1 },
+    { "persona": "junior-typescript-developer", "surface": "pnpm run agent:check -- --staged", "harms": 0, "friction": 2, "uncertainty": 1 }
+  ],
+  "openImplementableFindings": [
+    "Run pnpm install to unlock happy-path agent:check",
+    "Strip pnpm -- from preflight passthrough",
+    "README/setup install-first one-liner for cold clone",
+    "Reduce pnpm ELIFECYCLE noise after intentional preflight fail (if feasible)"
+  ]
+}

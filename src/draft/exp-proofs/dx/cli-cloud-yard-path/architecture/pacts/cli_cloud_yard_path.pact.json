@@ -1,0 +1,189 @@
+{
+  "consumer": {
+    "name": "CliCloudYardPathConsumer"
+  },
+  "provider": {
+    "name": "YardGatewayBoundary"
+  },
+  "interactions": [
+    {
+      "description": "dev SVID login through Yard Gateway",
+      "request": {
+        "method": "POST",
+        "path": "/v1/auth/login",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "mode": "dev-svid-stub",
+          "bindle": "examples/hello-bindle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "svid": "svid-dev-hello-bindle",
+          "scopes": ["deploy:write", "projection:read", "logs:read"],
+          "proofMode": "reference-fixture"
+        }
+      }
+    },
+    {
+      "description": "plan preview with warnings through Gateway",
+      "request": {
+        "method": "POST",
+        "path": "/v1/commands/plan",
+        "headers": {
+          "Authorization": "Bearer svid-dev-hello-bindle",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "bindle": "examples/hello-bindle",
+          "camp": "local-yard",
+          "fixtureId": "dx.lifecycle.hello-bindle.v1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "deploymentPlanId": "deployment-plan.hello-bindle.v1",
+          "warnings": [
+            {
+              "code": "plan.cross-camp-hop",
+              "message": "hello-bindle routes through a cross-camp hop in the reference fixture."
+            }
+          ],
+          "status": "success"
+        }
+      }
+    },
+    {
+      "description": "deploy command lands through Gateway",
+      "request": {
+        "method": "POST",
+        "path": "/v1/commands/deploy",
+        "headers": {
+          "Authorization": "Bearer svid-dev-hello-bindle"
+        },
+        "body": {
+          "deploymentPlanId": "deployment-plan.hello-bindle.v1",
+          "bindle": "examples/hello-bindle"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "deploymentId": "deploy-hello-bindle-001",
+          "deploymentSetId": "deployment-set.hello-bindle.v1",
+          "status": "success"
+        }
+      }
+    },
+    {
+      "description": "inspect deploy projection through Gateway read API",
+      "request": {
+        "method": "GET",
+        "path": "/v1/projections/deploy/deploy-hello-bindle-001",
+        "headers": {
+          "Authorization": "Bearer svid-dev-hello-bindle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "deploymentId": "deploy-hello-bindle-001",
+          "projectionSeq": 42,
+          "state": "ready",
+          "status": "success"
+        }
+      }
+    },
+    {
+      "description": "destroy command tears down deployment through Gateway",
+      "request": {
+        "method": "POST",
+        "path": "/v1/commands/destroy",
+        "headers": {
+          "Authorization": "Bearer svid-dev-hello-bindle",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "deploymentId": "deploy-hello-bindle-001",
+          "bindle": "examples/hello-bindle"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "deploymentId": "deploy-hello-bindle-001",
+          "status": "success"
+        }
+      }
+    },
+    {
+      "description": "logs stream returns stdout and event lines through Gateway",
+      "request": {
+        "method": "GET",
+        "path": "/v1/streams/logs/deploy-hello-bindle-001",
+        "headers": {
+          "Authorization": "Bearer svid-dev-hello-bindle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "stream": "stdout",
+              "message": "hello-bindle service ready on local-yard",
+              "timestamp": "2026-07-01T12:00:00.000Z"
+            },
+            {
+              "stream": "event",
+              "message": "resource.api.provisioned deployment-set.hello-bindle.v1",
+              "timestamp": "2026-07-01T12:00:01.000Z"
+            }
+          ],
+          "status": "success"
+        }
+      }
+    },
+    {
+      "description": "blocked deploy returns actionable error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/v1/commands/deploy",
+        "headers": {
+          "Authorization": "Bearer svid-dev-hello-bindle"
+        },
+        "body": {
+          "deploymentPlanId": "deployment-plan.gatekeeper-denied",
+          "bindle": "examples/hello-bindle"
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "status": "blocked",
+          "error": {
+            "code": "gatekeeper.denied",
+            "cause": "Gatekeeper denied deploy because policy pack spend-limit blocked provider dispatch.",
+            "remediation": [
+              "Run hobo plan --json and review the Gatekeeper decision id in the output.",
+              "Request a policy waiver or deploy to a camp inside the allowed spend envelope."
+            ],
+            "correlationId": "corr-hobo-625-gatekeeper-denied"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

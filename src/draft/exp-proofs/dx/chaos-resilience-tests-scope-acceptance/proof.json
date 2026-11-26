@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "chaos-resilience-tests-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Chaos & Resilience Tests Scope Acceptance",
+  "linear": "HOBO-439",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

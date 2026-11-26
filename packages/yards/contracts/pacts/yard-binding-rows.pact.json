@@ -1,0 +1,93 @@
+{
+  "consumer": {
+    "name": "@hobo/cloud"
+  },
+  "provider": {
+    "name": "@hobo/yards"
+  },
+  "interactions": [
+    {
+      "description": "yard planning shape carries canonicalized binding rows sorted by (profile, productId, connectivityId)",
+      "request": {
+        "method": "POST",
+        "path": "/yards/bindings/parse",
+        "body": {
+          "name": "aws-prod",
+          "provider": "aws",
+          "bindings": [
+            { "profile": "web.static/v1", "productId": "aws:s3-website" },
+            { "profile": "data.relational/v1", "productId": "aws:rds-postgres" }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "providerId": "aws",
+          "bindings": [
+            {
+              "contract": "hobo.yard-binding/v1",
+              "profile": "data.relational/v1",
+              "productId": "aws:rds-postgres",
+              "require": [],
+              "properties": {}
+            },
+            {
+              "contract": "hobo.yard-binding/v1",
+              "profile": "web.static/v1",
+              "productId": "aws:s3-website",
+              "require": [],
+              "properties": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "refusal: a row that constrains neither productId nor connectivityId is rejected, never silently kept",
+      "request": {
+        "method": "POST",
+        "path": "/yards/bindings/parse",
+        "body": {
+          "name": "aws-prod",
+          "provider": "aws",
+          "bindings": [{ "profile": "kv.key-value/v1" }]
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "YARD_BINDING_EMPTY_CONSTRAINT",
+          "profile": "kv.key-value/v1"
+        }
+      }
+    },
+    {
+      "description": "refusal: a duplicate (profile, productId, connectivityId) triple is rejected because rows are a set",
+      "request": {
+        "method": "POST",
+        "path": "/yards/bindings/parse",
+        "body": {
+          "name": "aws-prod",
+          "provider": "aws",
+          "bindings": [
+            { "profile": "data.relational/v1", "productId": "aws:rds-postgres" },
+            { "profile": "data.relational/v1", "productId": "aws:rds-postgres" }
+          ]
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "YARD_BINDING_DUPLICATE",
+          "profile": "data.relational/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

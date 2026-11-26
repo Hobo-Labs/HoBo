@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package hobo.adapter_hono.v1;
+
+// Evidence record for the Hono framework adapter boundary.
+// The adapter maps a Hono app to HoBo's framework-free fetch entrypoint.
+message HonoAdapterBoundary {
+  string package_name = 1; // @hobo/adapter-hono
+  string framework = 2; // hono
+  string entrypoint_shape = 3; // () => (Request) => Response | Promise<Response>
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "YardDomainValidationContractConsumer"
+  },
+  "provider": {
+    "name": "YardDomainValidationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Yard Domain Validation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/yard-domain-validation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.yard_domain_validation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

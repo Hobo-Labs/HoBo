@@ -1,0 +1,29 @@
+{
+  "layer": "technical",
+  "slug": "resource-definitions-matching-packs-contract",
+  "title": "HOBO-641 Resource Definitions + Matching + Resource Packs Contract",
+  "linear": "HOBO-641",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-event-schema-contract",
+      "src/draft/technical-proofs/matching-engine-skeleton-contract",
+      "src/draft/technical-proofs/resource-definition-driver-contract",
+      "src/draft/technical-proofs/resource-pack-distribution-contract",
+      "src/draft/technical-proofs/signed-artifact-publish-install-contract"
+    ],
+    "epicProofs": [
+      "src/draft/epic-proofs/control-plane-planner-matching-orchestrator"
+    ],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/platform-engineering.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

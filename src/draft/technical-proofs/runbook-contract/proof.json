@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "runbook-contract",
+  "title": "Runbook Contract POC",
+  "linear": "HOBO-260",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-remediation-action-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

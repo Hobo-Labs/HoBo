@@ -1,0 +1,6 @@
+staging status=rolled-back applied=false canaryGate=regression
+regression test source=trace-checkout-500 permanent=true
+replay status=rolled-back retained=regression:trace-checkout-500
+prod status=needs-approval approvalReason=production-or-high-risk-live-fix canaryStarted=false
+prod replay needsApproval=true policy=require-approval
+EPIC HELD: canary regressions auto-roll back with permanent regression tests; prod fixes gate on humans

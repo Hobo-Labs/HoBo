@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/epic-reference-portability-registry-distribution",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node simulation/run-simulation.ts"
+  }
+}

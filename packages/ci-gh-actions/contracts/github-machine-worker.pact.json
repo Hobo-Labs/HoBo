@@ -1,0 +1,479 @@
+{
+  "consumer": {
+    "name": "HoboCiMachineWorker"
+  },
+  "provider": {
+    "name": "GithubActionsRestApi"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "evidence": "Hand-authored consumer expectations of the requests `hobo ci machine connect` sends with the owner's own token, from GitHub's REST reference (docs.github.com/en/rest/users/users, docs.github.com/en/rest/repos/repos, docs.github.com/en/rest/actions/workflow-runs, docs.github.com/en/rest/actions/workflow-jobs and docs.github.com/en/rest/actions/self-hosted-runners, read 2026-11-17); mocked transport only; no provider verification or captured traffic. The bearer value is a fixture string, not a credential."
+  },
+  "interactions": [
+    {
+      "description": "identify the signed-in user who owns the machine",
+      "providerStates": [
+        {
+          "name": "octo/app is private, run 7 has job 70 queued for hobo-machine-m-7f3a, and the signed-in user is its admin"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/user",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "id": 42,
+          "login": "octocat",
+          "type": "User"
+        }
+      }
+    },
+    {
+      "description": "refuse a token GitHub does not accept",
+      "providerStates": [
+        {
+          "name": "the token is revoked"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/user",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Bad credentials",
+          "documentation_url": "https://docs.github.com/rest"
+        }
+      }
+    },
+    {
+      "description": "read whether the repository is private",
+      "providerStates": [
+        {
+          "name": "octo/app is private, run 7 has job 70 queued for hobo-machine-m-7f3a, and the signed-in user is its admin"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "id": 1,
+          "full_name": "octo/app",
+          "private": true
+        }
+      }
+    },
+    {
+      "description": "list the repository's queued runs",
+      "providerStates": [
+        {
+          "name": "octo/app is private, run 7 has job 70 queued for hobo-machine-m-7f3a, and the signed-in user is its admin"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": "status=queued&per_page=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 1,
+          "workflow_runs": [
+            {
+              "id": 7,
+              "status": "queued",
+              "repository": {
+                "id": 1,
+                "full_name": "octo/app"
+              },
+              "head_repository": {
+                "id": 1,
+                "full_name": "octo/app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list the repository's runs in progress",
+      "providerStates": [
+        {
+          "name": "octo/app is private, run 7 has job 70 queued for hobo-machine-m-7f3a, and the signed-in user is its admin"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": "status=in_progress&per_page=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 0,
+          "workflow_runs": []
+        }
+      }
+    },
+    {
+      "description": "list a queued run's latest jobs",
+      "providerStates": [
+        {
+          "name": "octo/app is private, run 7 has job 70 queued for hobo-machine-m-7f3a, and the signed-in user is its admin"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs/7/jobs",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": "filter=latest&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 2,
+          "jobs": [
+            {
+              "id": 70,
+              "run_id": 7,
+              "status": "queued",
+              "labels": [
+                "hobo-machine-m-7f3a"
+              ]
+            },
+            {
+              "id": 71,
+              "run_id": 7,
+              "status": "queued",
+              "labels": [
+                "ubuntu-24.04"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "read a private repository with a fork pull request queued",
+      "providerStates": [
+        {
+          "name": "octo/app is private, and run 8 is a pull request from a fork whose job 80 is queued for hobo-machine-m-7f3a"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "id": 1,
+          "full_name": "octo/app",
+          "private": true
+        }
+      }
+    },
+    {
+      "description": "list the queued fork pull request run",
+      "providerStates": [
+        {
+          "name": "octo/app is private, and run 8 is a pull request from a fork whose job 80 is queued for hobo-machine-m-7f3a"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": "status=queued&per_page=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 1,
+          "workflow_runs": [
+            {
+              "id": 8,
+              "status": "queued",
+              "repository": {
+                "id": 1,
+                "full_name": "octo/app"
+              },
+              "head_repository": {
+                "id": 2,
+                "full_name": "fork/app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list no runs in progress beside the fork run",
+      "providerStates": [
+        {
+          "name": "octo/app is private, and run 8 is a pull request from a fork whose job 80 is queued for hobo-machine-m-7f3a"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": "status=in_progress&per_page=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 0,
+          "workflow_runs": []
+        }
+      }
+    },
+    {
+      "description": "list the fork run's latest jobs",
+      "providerStates": [
+        {
+          "name": "octo/app is private, and run 8 is a pull request from a fork whose job 80 is queued for hobo-machine-m-7f3a"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/actions/runs/8/jobs",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": "filter=latest&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "total_count": 1,
+          "jobs": [
+            {
+              "id": 80,
+              "run_id": 8,
+              "status": "queued",
+              "labels": [
+                "hobo-machine-m-7f3a"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "make a one-job runner with the machine's label",
+      "providerStates": [
+        {
+          "name": "octo/app is private, run 7 has job 70 queued for hobo-machine-m-7f3a, and the signed-in user is its admin"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/octo/app/actions/runners/generate-jitconfig",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "hobo-machine-m-7f3a-70",
+          "runner_group_id": 1,
+          "labels": [
+            "hobo-machine-m-7f3a"
+          ],
+          "work_folder": "_work"
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "runner": {
+            "id": 99,
+            "name": "hobo-machine-m-7f3a-70",
+            "os": "unknown",
+            "status": "offline",
+            "busy": false,
+            "labels": [
+              {
+                "id": 0,
+                "name": "hobo-machine-m-7f3a",
+                "type": "custom"
+              }
+            ]
+          },
+          "encoded_jit_config": "eyJydW5uZXIiOiJmaXh0dXJlIn0="
+        }
+      }
+    },
+    {
+      "description": "refuse a one-job runner to a user without admin rights",
+      "providerStates": [
+        {
+          "name": "the signed-in user is not an admin of octo/app"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/octo/app/actions/runners/generate-jitconfig",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "hobo-machine-m-7f3a-70",
+          "runner_group_id": 1,
+          "labels": [
+            "hobo-machine-m-7f3a"
+          ],
+          "work_folder": "_work"
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Resource not accessible by integration",
+          "documentation_url": "https://docs.github.com/rest"
+        }
+      }
+    },
+    {
+      "description": "remove a one-job runner that is still registered",
+      "providerStates": [
+        {
+          "name": "the one-job runner 99 on octo/app is still registered"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/repos/octo/app/actions/runners/99",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "answer 404 for a one-job runner GitHub already removed",
+      "providerStates": [
+        {
+          "name": "GitHub already removed the one-job runner 99 after its job"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/repos/octo/app/actions/runners/99",
+        "headers": {
+          "Authorization": "Bearer gho_pact_fixture",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "message": "Not Found",
+          "documentation_url": "https://docs.github.com/rest"
+        }
+      }
+    }
+  ]
+}

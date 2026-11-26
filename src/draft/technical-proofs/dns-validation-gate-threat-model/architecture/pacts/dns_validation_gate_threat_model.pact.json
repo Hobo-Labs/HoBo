@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DnsValidationGateThreatModelConsumer"
+  },
+  "provider": {
+    "name": "DnsValidationGateThreatModelBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Dns Validation Gate Threat Model boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/dns-validation-gate-threat-model/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.dns_validation_gate_threat_model/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

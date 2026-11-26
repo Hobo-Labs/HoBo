@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package hobo.draft.resource_lifecycle_quickstart_examples.v1;
+
+message ResourceLifecycleQuickstartExamples {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated string scope_out = 6;
+  repeated string safe_claims = 7;
+  repeated ResourceLifecycleQuickstartModeNote mode_notes = 8;
+  repeated ResourceLifecycleQuickstartStep steps = 9;
+  repeated ResourceLifecycleQuickstartHandoff handoffs = 10;
+}
+
+message ResourceLifecycleQuickstartModeNote {
+  string proof_mode = 1;
+  string meaning = 2;
+  string docs_label = 3;
+}
+
+message ResourceLifecycleQuickstartStep {
+  string phase = 1;
+  string title = 2;
+  string intent = 3;
+  ResourceLifecycleQuickstartSnippets snippets = 4;
+}
+
+message ResourceLifecycleQuickstartSnippets {
+  ResourceLifecycleQuickstartSnippet sdk = 1;
+  ResourceLifecycleQuickstartSnippet cli = 2;
+  ResourceLifecycleQuickstartSnippet api = 3;
+  ResourceLifecycleQuickstartSnippet mcp = 4;
+}
+
+message ResourceLifecycleQuickstartSnippet {
+  string id = 1;
+  string channel = 2;
+  string text = 3;
+  string fixture_id = 4;
+  string proof_mode = 5;
+  string safe_claim = 6;
+}
+
+message ResourceLifecycleQuickstartHandoff {
+  string consumer = 1;
+  string use = 2;
+  repeated string fixture_ids = 3;
+  string handoff_note = 4;
+  repeated string must_not_claim = 5;
+}

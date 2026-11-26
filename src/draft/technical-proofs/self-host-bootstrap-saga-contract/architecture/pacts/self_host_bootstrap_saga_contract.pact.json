@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SelfHostBootstrapSagaContractConsumer"
+  },
+  "provider": {
+    "name": "SelfHostBootstrapSagaContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Self Host Bootstrap Saga Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/self-host-bootstrap-saga-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.self_host_bootstrap_saga_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

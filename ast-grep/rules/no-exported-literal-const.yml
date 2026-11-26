@@ -1,0 +1,13 @@
+id: no-exported-literal-const
+language: TypeScript
+severity: warning
+message: >-
+  Exported string-literal constants are usually schema ids or enum
+  vocabularies that belong in generated proto code (technical-standards.md,
+  minimal public surface); keep them module-private, or mark the declaration
+  with a public-contract comment when the constant itself is the contract.
+rule:
+  pattern: export const $NAME = $VALUE
+constraints:
+  VALUE:
+    kind: string

@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/epic-reference-s1-10-conformance-trust-boundary",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

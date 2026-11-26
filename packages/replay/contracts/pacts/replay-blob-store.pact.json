@@ -1,0 +1,26 @@
+{
+  "consumer": { "name": "ReplayIngest" },
+  "provider": { "name": "ReplayBlobStore" },
+  "interactions": [
+    {
+      "description": "put content-addressed rrweb chunk",
+      "request": {
+        "method": "POST",
+        "path": "/replay/blobs",
+        "body": {
+          "sessionId": "sess-1",
+          "seq": 0,
+          "events": [{ "type": 2, "timestamp": 1, "data": { "tagName": "div" } }]
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "ok": true,
+          "schemaVersion": "hobo.replay/v1"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

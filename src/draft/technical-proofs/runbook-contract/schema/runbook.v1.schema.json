@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/runbook.v1.schema.json",
+  "title": "Runbook",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "on", "diagnose", "fix", "signature"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "on": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "alert": { "type": "string", "minLength": 1 },
+        "sloBurn": { "type": "string", "minLength": 1 },
+        "drift": { "type": "string", "minLength": 1 },
+        "incidentSeverity": { "type": "string", "minLength": 1 },
+        "severity": { "type": "string", "minLength": 1 }
+      }
+    },
+    "diagnose": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "fix": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/runbookFix" }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signedBy", "digest", "signature"],
+      "properties": {
+        "signedBy": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "signature": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "runbookFix": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["when", "gate", "action"],
+      "properties": {
+        "when": { "type": "string", "minLength": 1 },
+        "gate": {
+          "type": "string",
+          "enum": ["auto", "canary-with-auto-rollback", "require-approval"]
+        },
+        "action": {
+          "description": "A HOBO-251 RemediationAction object.",
+          "type": "object"
+        }
+      }
+    },
+    "runbookEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "streamId", "runbookId", "correlationId", "payload"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": [
+            "runbook.Defined",
+            "runbook.Triggered",
+            "runbook.StepCompleted",
+            "runbook.Completed",
+            "runbook.Failed"
+          ]
+        },
+        "streamId": { "type": "string", "pattern": "^runbook:.+" },
+        "runbookId": { "type": "string", "minLength": 1 },
+        "correlationId": { "type": "string", "minLength": 1 },
+        "causationId": { "type": "string", "minLength": 1 },
+        "payload": { "type": "object" }
+      }
+    }
+  }
+}

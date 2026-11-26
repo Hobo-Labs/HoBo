@@ -1,0 +1,50 @@
+{
+  "consumer": { "name": "PublicStatusPageProjection" },
+  "provider": { "name": "IncidentCommunicationEventStore" },
+  "interactions": [
+    {
+      "description": "projects an opened incident into a customer-safe public component status",
+      "request": {
+        "type": "message",
+        "body": {
+          "event": "IncidentOpened",
+          "incident_id": "INC-1042",
+          "affected_components": ["control-plane-api"],
+          "current_status": "investigating",
+          "next_update_condition": "scope or affected component changes"
+        }
+      },
+      "response": {
+        "body": {
+          "component": "control-plane-api",
+          "public_status": "investigating",
+          "redaction_gate": "passed"
+        }
+      }
+    },
+    {
+      "description": "projects a resolution into public incident history",
+      "request": {
+        "type": "message",
+        "body": {
+          "event": "IncidentResolved",
+          "incident_id": "INC-1042",
+          "resolution_summary": "mitigation applied and recovery confirmed",
+          "followup_owner": "reliability-observability-cost"
+        }
+      },
+      "response": {
+        "body": {
+          "component": "control-plane-api",
+          "public_status": "resolved",
+          "history_entry": "published"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "issue": "HOBO-497",
+    "phase": "M0"
+  }
+}

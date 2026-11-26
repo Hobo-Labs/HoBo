@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ChoreographySagaEngineContractConsumer"
+  },
+  "provider": {
+    "name": "ChoreographySagaEngineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Choreography Saga Engine Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/choreography-saga-engine-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.choreography_saga_engine_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

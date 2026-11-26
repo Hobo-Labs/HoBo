@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "GenerationReferenceApp"
+  },
+  "provider": {
+    "name": "HumanApprovalSafetyGate"
+  },
+  "interactions": [
+    {
+      "description": "require meaningful human approval for production or high-risk generated changes",
+      "providerStates": [
+        {
+          "name": "candidate targets production or high-trust resources"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/generation/approval-decisions",
+        "body": {
+          "environment": "prod",
+          "riskClass": "high",
+          "actor": "agent"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "effect": "require-approval",
+          "selfApprovalAllowed": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

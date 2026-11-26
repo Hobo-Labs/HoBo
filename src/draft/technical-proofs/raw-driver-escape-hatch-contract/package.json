@@ -1,0 +1,14 @@
+{
+  "name": "@hobo-draft/raw-driver-escape-hatch-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/raw-driver-escape-hatch.d.mts",
+      "default": "./src/raw-driver-escape-hatch.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root . && tsc -p tsconfig.typecheck.json"
+  }
+}

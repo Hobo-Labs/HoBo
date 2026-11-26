@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "runtime-local-component-host",
+  "title": "Runtime-Local Component Host POC",
+  "linear": "HOBO-17",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

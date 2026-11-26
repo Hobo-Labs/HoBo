@@ -1,0 +1,15 @@
+{
+  "iteration": 0,
+  "cells": [
+    {
+      "persona": "junior-typescript-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "harms": 0,
+      "friction": 2,
+      "uncertainty": 1,
+      "notes": "predicted before probe"
+    }
+  ],
+  "metric_total": 3,
+  "metric_max": 2
+}

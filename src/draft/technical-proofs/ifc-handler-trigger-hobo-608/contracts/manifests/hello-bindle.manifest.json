@@ -1,0 +1,52 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "46.0.1"
+  },
+  "resources": {
+    "api": {
+      "type": "component.v1",
+      "kind": "api",
+      "runtime": "wasm",
+      "exports": [
+        "wasi:http/incoming-handler"
+      ],
+      "collection": {
+        "stableId": "api:api"
+      }
+    },
+    "tick": {
+      "type": "data.v1",
+      "kind": "schedule",
+      "port": "hobo:scheduler",
+      "allow": [],
+      "usage": {
+        "inferred": [],
+        "source": "handler-trigger-contract"
+      },
+      "collection": {
+        "stableId": "schedule:tick"
+      }
+    }
+  },
+  "triggerEdges": [
+    {
+      "id": "api.GET./hello",
+      "kind": "http.route",
+      "resource": "api",
+      "method": "GET",
+      "path": "/hello",
+      "exportInterface": "wasi:http/incoming-handler",
+      "handler": "helloHandler"
+    },
+    {
+      "id": "tick.every.5s",
+      "kind": "schedule.every",
+      "resource": "tick",
+      "every": "5s",
+      "exportInterface": "hobo:trigger/scheduled-run",
+      "handler": "tickHandler"
+    }
+  ]
+}

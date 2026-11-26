@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "trust-tier-policy-contract",
+  "title": "HOBO-385 Trust Tier Policy Contract",
+  "linear": "HOBO-385",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

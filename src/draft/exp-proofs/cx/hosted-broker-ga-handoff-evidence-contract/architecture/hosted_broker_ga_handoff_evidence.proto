@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package hobo.draft.hosted_broker_ga_handoff;
+
+// Architecture-guard evidence: protobuf data shapes the Hosted Broker GA
+// Handoff Evidence draft package owns. This is a design-time contract artifact.
+
+message HostedBrokerGaHandoffEvidence {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone_gate = 4;
+  repeated EvidenceItem required_evidence = 5;
+  repeated DogfoodReadinessLink dogfood_readiness_links = 6;
+  repeated CompatibilityWindow compatibility_windows = 7;
+  repeated string rollback_restore_limits = 8;
+  repeated string release_and_support_docs = 9;
+  repeated string accepted_risks = 10;
+  repeated MissingEvidence missing_evidence = 11;
+  repeated FollowUpIssue follow_up_issues = 12;
+  bool parent_status_updated = 13;
+}
+
+message EvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string proof_source = 3;
+  string proves = 4;
+  string status = 5;
+}
+
+message DogfoodReadinessLink {
+  string artifact = 1;
+  string owner_project = 2;
+  string source_evidence_id = 3;
+  string deploy_readiness_use = 4;
+  string ga_boundary = 5;
+}
+
+message CompatibilityWindow {
+  string id = 1;
+  string owner_project = 2;
+  string current_version = 3;
+  string compatibility_rule = 4;
+}
+
+message MissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+  string launch_disposition = 4;
+}
+
+message FollowUpIssue {
+  string id = 1;
+  string owner_project = 2;
+  string missing_evidence_id = 3;
+  string allowed_reason = 4;
+}

@@ -1,0 +1,11 @@
+{
+  "consumer": "examples-ship",
+  "provider": "provider-convex",
+  "interactions": [
+    {
+      "description": "mock deploy returns convex.cloud URL",
+      "request": { "mock": true },
+      "response": { "ok": true, "mocked": true }
+    }
+  ]
+}

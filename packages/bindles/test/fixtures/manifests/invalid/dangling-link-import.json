@@ -1,0 +1,18 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "1.0.0"
+  },
+  "resources": {
+    "db": {
+      "type": "data.v1",
+      "port": "hobo:data"
+    },
+    "api": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "links": [{ "import": "hobo:queue", "to": "db" }]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DistributedArtifactVersionPolicyConsumer"
+  },
+  "provider": {
+    "name": "DistributedArtifactVersionPolicyBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Distributed Artifact Version Policy boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/distributed-artifact-version-policy/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.distributed_artifact_version_policy/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

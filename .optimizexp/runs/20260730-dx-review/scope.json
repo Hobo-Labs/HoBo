@@ -1,0 +1,39 @@
+{
+  "runId": "20260730-dx-review",
+  "experiences": [
+    "dx"
+  ],
+  "projects": [
+    "all"
+  ],
+  "personaResolution": "experience intersection (dx), focused critical path",
+  "personas": [
+    "product-app-developer",
+    "product-platform-engineer",
+    "developer",
+    "junior-typescript-developer"
+  ],
+  "features": [
+    "narrow-local-validation",
+    "cli-help-and-doctor",
+    "agent-check-staged"
+  ],
+  "surfaces": [
+    "pnpm run agent:check -- --staged",
+    "pnpm run doctor",
+    "pnpm run agent:check -- --staged (developer persona)"
+  ],
+  "generatedPersonas": [],
+  "generatedFeatures": [],
+  "maxIterations": 1,
+  "minIterations": 1,
+  "noPlateauStop": false,
+  "iterationsCompleted": 1,
+  "iterationMeaning": "persona-scenario-review-passes",
+  "hostAgent": "grok",
+  "autoInitRan": false,
+  "needsInit": false,
+  "priorBusLessons": 5,
+  "mode": "report-only",
+  "stoppedReason": "cap"
+}

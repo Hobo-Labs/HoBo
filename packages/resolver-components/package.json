@@ -1,0 +1,38 @@
+{
+  "name": "@hobo/resolver-components",
+  "version": "0.0.1",
+  "description": "Out-of-tree hobo:resolver WASM components behind the existing ResourceResolver seam: signed bundles verified through @hobo/registry, host-mediated wasi:http egress under a declared allowlist and SSRF rules, host-side credential injection with a secret scanner, deterministic fuel/memory/time limits, a conformance kit and two reference components",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": { "access": "public" },
+  "files": [
+    "LICENSE",
+    "dist",
+    "wit"
+  ],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./conformance": { "types": "./dist/conformance/index.d.ts", "default": "./dist/conformance/index.js" },
+    "./components": { "types": "./dist/components/index.d.ts", "default": "./dist/components/index.js" },
+    "./guest": { "types": "./dist/guest/index.d.ts", "default": "./dist/guest/index.js" },
+    "./build": { "types": "./dist/build/index.d.ts", "default": "./dist/build/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@hobo/cd": "workspace:*",
+    "@hobo/componentize": "workspace:*",
+    "@hobo/core": "workspace:*",
+    "@hobo/registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@hobo/identity": "workspace:*",
+    "@hobo/runtime-local": "workspace:*",
+    "@types/node": ">=24.0.0"
+  }
+}

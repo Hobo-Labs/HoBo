@@ -1,0 +1,10 @@
+issued: status=issued source=identity-acme-dns01
+certRef: cert://identity/shop-com-order-shop-com-0001
+subjectNames: *.shop.com,shop.com
+event types: domain.ValidationStarted -> domain.Validated -> domain.CertIssued
+shadow zone: _acme-challenge.shop.com TXT camps=2 liveZone=empty
+secret check: no static key material on any surface (privateKeyRef only)
+rotation: status=rotated event=domain.CertRotated
+rotation refs: old=cert://identity/shop-com-old new=cert://identity/shop-com-order-shop-com-0002
+rotation (far from expiry): status=not-due events=0
+CONTRACT HELD: shadow-staged DNS-01, secretless events, windowed rotation

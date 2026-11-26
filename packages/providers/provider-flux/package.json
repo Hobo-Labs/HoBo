@@ -1,0 +1,31 @@
+{
+	"name": "@hobo/provider-flux",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo Flux CloudProvider. Orbit is the Git-to-Flux deploy mode, not a separate provider or actor runtime.",
+	"type": "module",
+	"private": true,
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": ">=24.0.0"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	}
+}

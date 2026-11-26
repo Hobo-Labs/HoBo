@@ -1,0 +1,20 @@
+{
+  "consumer": { "name": "hobo-sdk-runbook-executor" },
+  "provider": { "name": "hobo-core-eventstore" },
+  "messages": [
+    {
+      "description": "verified remediation becomes a durable execution fact after observing the real postcondition",
+      "contents": {
+        "type": "runbook.RemediationCompleted",
+        "data": {
+          "executionId": "incident-1",
+          "kind": "runbook",
+          "step": "recover-api:0:failover",
+          "status": "verified",
+          "detail": { "evidence": { "active": "secondary" } }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

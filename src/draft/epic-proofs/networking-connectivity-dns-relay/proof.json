@@ -1,0 +1,43 @@
+{
+  "layer": "epic",
+  "slug": "networking-connectivity-dns-relay",
+  "title": "Networking, Connectivity, DNS & Relay Reference Implementation",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/acme-dns01-cert-issuance-contract",
+      "src/draft/technical-proofs/connectivity-cost-feedback-contract",
+      "src/draft/technical-proofs/connectivity-policy-enforcement-contract",
+      "src/draft/technical-proofs/connectivity-tier-ir-contract",
+      "src/draft/technical-proofs/cost-routing-eligibility-contract",
+      "src/draft/technical-proofs/cross-camp-routing-policy-contract",
+      "src/draft/technical-proofs/dns-validation-rebinding-guard-contract",
+      "src/draft/technical-proofs/dns-validation-gate-threat-model",
+      "src/draft/technical-proofs/domain-validation-gate-contract",
+      "src/draft/technical-proofs/domain-event-body-contract",
+      "src/draft/technical-proofs/gateway-realization-contract",
+      "src/draft/technical-proofs/hobo-dns-port-contract",
+      "src/draft/technical-proofs/hobo-gateway-port",
+      "src/draft/technical-proofs/hobo-relay-contract",
+      "src/draft/technical-proofs/internal-ca-private-acme-contract",
+      "src/draft/technical-proofs/internal-service-discovery-contract",
+      "src/draft/technical-proofs/junction-connectivity-plan-contract",
+      "src/draft/technical-proofs/junction-federated-domain-contract",
+      "src/draft/technical-proofs/mtls-data-path-contract",
+      "src/draft/technical-proofs/split-horizon-partition-connectivity-contract",
+      "src/draft/technical-proofs/topology-override-conflict-contract",
+      "src/draft/technical-proofs/yard-topology-manifest-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/api/per-app-tenant-routing-contract"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

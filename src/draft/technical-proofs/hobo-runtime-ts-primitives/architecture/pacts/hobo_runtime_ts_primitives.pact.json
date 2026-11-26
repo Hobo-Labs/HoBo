@@ -1,0 +1,21 @@
+{
+  "consumer": { "name": "@hobo/runtime-draft-poc" },
+  "provider": { "name": "@hobo/runtime-local-draft-mocks" },
+  "interactions": [
+    {
+      "description": "append run.Started to event store",
+      "request": { "method": "POST", "path": "/streams/run:run-1/events", "body": { "type": "run.Started" } },
+      "response": { "status": 200, "body": { "appended": [{ "type": "run.Started", "seq": 1 }] } }
+    },
+    {
+      "description": "stale actor lease rejected before append",
+      "request": {
+        "method": "POST",
+        "path": "/actors/cart:1/append",
+        "headers": { "fence-token": "1" },
+        "body": { "type": "AddItem" }
+      },
+      "response": { "status": 409, "body": { "error": "StaleFenceError" } }
+    }
+  ]
+}

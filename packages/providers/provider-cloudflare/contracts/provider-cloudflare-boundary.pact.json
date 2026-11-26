@@ -1,0 +1,48 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderCloudflareBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for initial web/service, kv, objectStore ports",
+      "request": {
+        "method": "POST",
+        "path": "/providers/cloudflare/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "realize hello-bindle resources through Cloudflare provider",
+      "request": {
+        "method": "POST",
+        "path": "/providers/cloudflare/realize/hello-bindle"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "resourceIds": ["service", "assets", "sessions"]
+        }
+      }
+    }
+  ]
+}

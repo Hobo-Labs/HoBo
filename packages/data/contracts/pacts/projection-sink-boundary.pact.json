@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "DataPlaneProjectionEngine" },
+  "provider": { "name": "ProjectionSinkBoundary" },
+  "interactions": [
+    {
+      "description": "upsert materialized order and emit change-feed fact",
+      "request": {
+        "method": "PUT",
+        "path": "/projection-sinks/orders/order:1001",
+        "body": { "totalCents": 4200, "tenant": "tenant-a" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "eventType": "data.Changed", "sourceSeq": { "order:1001": 1 } }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

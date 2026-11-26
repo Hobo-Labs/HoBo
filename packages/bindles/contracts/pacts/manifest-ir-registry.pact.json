@@ -1,0 +1,91 @@
+{
+  "consumer": {
+    "name": "BindlesManifestEmitter"
+  },
+  "provider": {
+    "name": "ManifestIrRegistry"
+  },
+  "interactions": [
+    {
+      "description": "register parsed hobo.manifest/v1 deployment IR",
+      "request": {
+        "method": "POST",
+        "path": "/manifests",
+        "body": {
+          "schema": "hobo.manifest/v1",
+          "manifest": {
+            "componentHost": {
+              "kind": "wasmtime",
+              "version": "1.0.0"
+            },
+            "resources": {
+              "api": {
+                "annotations": {
+                  "scaling": {
+                    "max": 10,
+                    "min": 1
+                  },
+                  "with": {
+                    "aws.fargate": {
+                      "cpu": 512
+                    }
+                  }
+                },
+                "endpoints": {
+                  "http": {
+                    "external": true,
+                    "scheme": "http",
+                    "targetPort": 8080
+                  }
+                },
+                "env": {
+                  "LOG_LEVEL": "info",
+                  "SERVICE_REF": "${resources.data.postgres#db.outputs.url}"
+                },
+                "exports": [
+                  "wasi:http/incoming-handler"
+                ],
+                "image": "oci://registry.example.com/api@sha256:abc123",
+                "links": [
+                  {
+                    "import": "hobo:data",
+                    "to": "db"
+                  }
+                ],
+                "runtime": "wasm",
+                "type": "component.v1"
+              },
+              "db": {
+                "allow": [
+                  "query"
+                ],
+                "paradigm": "relational",
+                "port": "hobo:data",
+                "type": "data.v1"
+              },
+              "site": {
+                "bind": [
+                  "api"
+                ],
+                "type": "website.v1"
+              }
+            },
+            "schema": "hobo.manifest/v1"
+          }
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "schema": "hobo.manifest/v1",
+          "hash": "sha256:bbf75754c8871cc4f3892cd17c94b80253cfb08c2f664db6427f5eb619ffef0e"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

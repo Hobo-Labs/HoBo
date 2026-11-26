@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "container-fallback-wiring-parity-contract",
+  "title": "Container Fallback Wiring Parity Contract",
+  "linear": "HOBO-643",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/bind-reference-wiring-contract",
+      "src/draft/technical-proofs/hobo-manifest-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

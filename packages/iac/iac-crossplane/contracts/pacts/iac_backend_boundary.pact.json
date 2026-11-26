@@ -1,0 +1,55 @@
+{
+  "consumer": {
+    "name": "IacBackendConformanceConsumer"
+  },
+  "provider": {
+    "name": "IacCrossplaneBackendBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Crossplane IaC backend satisfies the @hobo/conformance/iac-backend suite for the fixture program",
+      "request": {
+        "method": "POST",
+        "path": "/iac-crossplane/conformance",
+        "body": {
+          "adapter": "@hobo/iac-crossplane",
+          "program": "fixture"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "suite": "@hobo/conformance/iac-backend",
+          "provider": "crossplane",
+          "passed": true,
+          "assertions": [
+            "preview-diff",
+            "apply-outputs",
+            "binding-outputs",
+            "refresh-clean",
+            "destroy-clean"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Crossplane IaC backend reports its id and composite-resource-claim model",
+      "request": {
+        "method": "GET",
+        "path": "/iac-crossplane/identity"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "@hobo/iac-crossplane",
+          "model": "composite-resource-claim"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

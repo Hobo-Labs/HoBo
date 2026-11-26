@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "plan-diff-viewer-scope-acceptance",
+  "experienceType": "ux",
+  "title": "Plan/Diff Viewer Scope Acceptance POC",
+  "linear": "HOBO-411",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

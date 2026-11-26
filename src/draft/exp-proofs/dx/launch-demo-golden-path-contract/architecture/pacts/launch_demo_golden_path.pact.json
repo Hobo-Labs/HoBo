@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "LaunchDemoGoldenPathConsumer"
+  },
+  "provider": {
+    "name": "LaunchDemoGoldenPathBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Demo Golden Path boundary returns the accepted proof checklist",
+      "request": {
+        "method": "GET",
+        "path": "/launch-demo-golden-path/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.launch-demo-golden-path/2026-06-29",
+          "issue": "HOBO-488"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

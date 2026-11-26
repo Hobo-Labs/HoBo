@@ -1,0 +1,16 @@
+{
+  "consumer": { "name": "S5StageGateForgeDrill" },
+  "provider": { "name": "LiveFixAutoRollbackGate" },
+  "interactions": [
+    {
+      "description": "simulated SLO regression auto-rolls back and retains regression test",
+      "providerState": "low-risk canary fix with failing SLO gate",
+      "contents": {
+        "status": "rolled-back",
+        "regressionTestRetained": true,
+        "autoRollback": true
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,7 @@
+heal: status=applied class=drift drift=drift.RemediationRouted
+propose: status=proposed drift=drift.DiffProposed crew=policy.Decided,crew.ActionProposed
+ignore: status=ignored drift=drift.Ignored
+replay(heal): status=applied resource=api
+replay(propose): status=proposed resource=billing-db
+replay(ignore): status=ignored resource=legacy-cache
+CONTRACT HELD: heal auto-resyncs gated, propose never writes, ignore records, replay agrees

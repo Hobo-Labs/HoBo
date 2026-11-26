@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PartialRealizeRollbackContractConsumer"
+  },
+  "provider": {
+    "name": "PartialRealizeRollbackContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Partial Realize Rollback Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/partial-realize-rollback-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.partial_realize_rollback_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

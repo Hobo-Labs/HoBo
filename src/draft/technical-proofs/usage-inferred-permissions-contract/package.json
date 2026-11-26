@@ -1,0 +1,9 @@
+{
+  "name": "@hobo-draft/usage-inferred-permissions-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  },
+  "description": "POC for HOBO-70 usage-inferred permissions and narrow-only .allow() contract markers."
+}

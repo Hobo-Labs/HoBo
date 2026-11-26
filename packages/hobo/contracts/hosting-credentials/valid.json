@@ -1,0 +1,25 @@
+{
+  "claims": {
+    "schemaVersion": "hobo.hosting-credential-scope/v1",
+    "attestationId": "proof-1",
+    "issuerId": "hosting-issuer",
+    "keyId": "key-1",
+    "binding": {
+      "tenantId": "tenant",
+      "providerId": "aws",
+      "providerAccountId": "account",
+      "credentialRef": "vault://hosting/aws",
+      "credentialVersion": "version-1",
+      "nativeAccountRef": "aws:123456789012",
+      "evidenceRef": "inventory://enrollment/account",
+      "observedAtMs": 1000,
+      "validUntilMs": 10000,
+      "credentialDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "operationId": "prepare-1",
+    "challengeId": "challenge-1",
+    "issuedAtMs": 2000,
+    "expiresAtMs": 9000
+  },
+  "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}

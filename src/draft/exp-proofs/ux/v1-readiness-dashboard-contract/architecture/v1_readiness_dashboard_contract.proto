@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the V1 Readiness Dashboard
+// Contract draft package reasons about. Documents the records/objects this
+// package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+enum V1ReadinessDashboardEmptyStateColor {
+  EMPTY_STATE_COLOR_UNSPECIFIED = 0;
+  EMPTY_STATE_COLOR_GREEN = 1;
+  EMPTY_STATE_COLOR_YELLOW = 2;
+  EMPTY_STATE_COLOR_RED = 3;
+  EMPTY_STATE_COLOR_GRAY = 4;
+}
+
+message V1ReadinessDashboardField {
+  string name = 1;
+  string label = 2;
+  string source_of_truth = 3;
+  string update_cadence = 4;
+  string owner_project = 5;
+  string empty_state_label = 6;
+  V1ReadinessDashboardEmptyStateColor empty_state_color = 7;
+  string launch_meaning = 8;
+}
+
+message V1ReadinessDashboardContractRecord {
+  string issue = 1;
+  string schema = 2;
+  repeated V1ReadinessDashboardField fields = 3;
+  repeated string scope_out = 4;
+}

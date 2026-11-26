@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ResourceGarbageCollectionScopeAcceptanceConsumer"
+  },
+  "provider": {
+    "name": "ResourceGarbageCollectionScopeAcceptanceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Resource Garbage Collection Scope Acceptance boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/resource-garbage-collection-scope-acceptance/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.resource_garbage_collection_scope_acceptance/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

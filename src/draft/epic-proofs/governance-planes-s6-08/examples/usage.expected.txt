@@ -1,0 +1,6 @@
+notify ok=true port=hobo:notify consentRef=consent:alice-notify recipient=user:alice
+residency deployable=false effect=deny erasedSubject=alice logEvents=2
+guardrail effect=block policy=deny
+registry installed=true listing=listing-certified discovered=1
+rollup allGreen=true items=4
+EPIC HELD: all four Stage-6 governance evidence items are green over mocked boundaries

@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "registry-dependency-confusion-guard-contract",
+  "title": "Registry Dependency-Confusion Guard Contract",
+  "linear": "HOBO-391",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/distributed-artifact-resolver-contract",
+      "src/draft/technical-proofs/hobo-add-install-verification-contract",
+      "src/draft/technical-proofs/mirror-digest-selection-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

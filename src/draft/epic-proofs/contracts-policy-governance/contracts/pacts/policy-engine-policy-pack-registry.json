@@ -1,0 +1,41 @@
+{
+  "consumer": {
+    "name": "Built-in Policy Engine"
+  },
+  "provider": {
+    "name": "Policy Pack Registry"
+  },
+  "interactions": [
+    {
+      "description": "load signed policy packs for target yard and camp",
+      "providerStates": [
+        {
+          "name": "signed governance policy pack is trusted"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/policy-packs",
+        "query": {
+          "target": "yard-prod"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "packVersions": "like:policy-pack-version-list",
+          "policyPacks": "like:composition-policy-packs"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Policy Engine to Policy Pack Registry",
+    "status": "consumer_tested",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

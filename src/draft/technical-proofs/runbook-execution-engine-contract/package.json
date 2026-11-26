@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/runbook-execution-engine-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/runbook-execution-engine.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboPackageNamespaceMapConsumer"
+  },
+  "provider": {
+    "name": "HoboPackageNamespaceMapBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Package Namespace Map boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-package-namespace-map/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_package_namespace_map/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

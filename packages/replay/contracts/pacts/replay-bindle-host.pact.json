@@ -1,0 +1,27 @@
+{
+  "consumer": { "name": "BindleWebHost" },
+  "provider": { "name": "ReplayHttpSurface" },
+  "interactions": [
+    {
+      "description": "inject session replay bootstrap into bindle HTML response",
+      "request": {
+        "method": "POST",
+        "path": "/replay/bindle/wrap-html",
+        "body": {
+          "html": "<html><body>storefront</body></html>",
+          "bindleName": "shop",
+          "resourceName": "web"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "injected": true,
+          "pathPrefix": "/__hobo/replay"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

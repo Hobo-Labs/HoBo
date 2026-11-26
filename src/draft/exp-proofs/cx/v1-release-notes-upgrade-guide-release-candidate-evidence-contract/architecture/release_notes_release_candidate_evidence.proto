@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Release Notes Release
+// Candidate Evidence draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum ReleaseNotesReleaseCandidateEvidenceStatus {
+  RELEASE_NOTES_RELEASE_CANDIDATE_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  RELEASE_NOTES_RELEASE_CANDIDATE_EVIDENCE_STATUS_ACCEPTED = 1;
+  RELEASE_NOTES_RELEASE_CANDIDATE_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  RELEASE_NOTES_RELEASE_CANDIDATE_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum ReleaseNotesReleaseCandidateBlockerState {
+  RELEASE_NOTES_RELEASE_CANDIDATE_BLOCKER_STATE_UNSPECIFIED = 0;
+  RELEASE_NOTES_RELEASE_CANDIDATE_BLOCKER_STATE_BLOCKED = 1;
+  RELEASE_NOTES_RELEASE_CANDIDATE_BLOCKER_STATE_ACCEPTED_RISK = 2;
+  RELEASE_NOTES_RELEASE_CANDIDATE_BLOCKER_STATE_CLEARED = 3;
+}
+
+message ReleaseNotesReleaseCandidateEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  ReleaseNotesReleaseCandidateEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message ReleaseNotesReleaseCandidateBlocker {
+  string id = 1;
+  string owner_project = 2;
+  ReleaseNotesReleaseCandidateBlockerState state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message ReleaseNotesReleaseCandidateAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message ReleaseNotesReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message ReleaseNotesReleaseCandidateFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message ReleaseNotesInitiativeStatusGate {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message ReleaseNotesPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message ReleaseNotesReleaseCandidateEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated ReleaseNotesReleaseCandidateEvidenceItem evidence = 5;
+  repeated ReleaseNotesReleaseCandidateBlocker blockers = 6;
+  repeated ReleaseNotesReleaseCandidateAcceptedRisk accepted_risks = 7;
+  repeated ReleaseNotesReleaseCutlineDependency release_cutline_dependencies = 8;
+  repeated ReleaseNotesReleaseCandidateFollowUp follow_ups = 9;
+  ReleaseNotesInitiativeStatusGate initiative_status = 10;
+  repeated string scope_out = 11;
+  repeated ReleaseNotesPublicClaimGuard public_claim_guards = 12;
+}

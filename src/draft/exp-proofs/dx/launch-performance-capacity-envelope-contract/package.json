@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-launch-performance-capacity-envelope-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

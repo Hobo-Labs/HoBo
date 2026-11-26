@@ -1,0 +1,10 @@
+# Wasp OpenSaaS client on Cloudflare Workers (Temporary Accounts anonymous path).
+# Deploy: unset CLOUDFLARE_* tokens, then `npx wrangler@4.102 deploy --temporary`
+name = "hobo-opensaas-client"
+main = "./worker.js"
+compatibility_date = "2024-11-01"
+
+[assets]
+directory = "./.wasp/out/web-app/build"
+binding = "ASSETS"
+not_found_handling = "single-page-application"

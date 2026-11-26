@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Drift Reconciliation
+// Scope Contract draft package reasons about. Documents the records/objects
+// this package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+enum DriftReconciliationState {
+  DRIFT_RECONCILIATION_STATE_UNSPECIFIED = 0;
+  DRIFT_RECONCILIATION_STATE_DETECTED = 1;
+  DRIFT_RECONCILIATION_STATE_CLASSIFIED = 2;
+  DRIFT_RECONCILIATION_STATE_SOURCE_OF_TRUTH_PINNED = 3;
+  DRIFT_RECONCILIATION_STATE_PROPOSED = 4;
+  DRIFT_RECONCILIATION_STATE_RECONCILING = 5;
+  DRIFT_RECONCILIATION_STATE_IGNORED = 6;
+  DRIFT_RECONCILIATION_STATE_ESCALATED = 7;
+  DRIFT_RECONCILIATION_STATE_RESOLVED = 8;
+}
+
+message DriftReconciliationScopeRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string drift_classes = 3;
+  repeated string reconciliation_states = 4;
+  repeated string required_evidence = 5;
+  repeated string m1_evidence = 6;
+}

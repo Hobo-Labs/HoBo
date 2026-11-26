@@ -1,0 +1,1836 @@
+{
+  "commands": [
+    {
+      "command": "hobo up",
+      "mcp": "deploy",
+      "name": "up",
+      "role": "lifecycle",
+      "summary": "Realize the current object graph"
+    },
+    {
+      "command": "hobo down",
+      "mcp": "destroy",
+      "name": "down",
+      "role": "lifecycle",
+      "summary": "Tear down what up realized"
+    },
+    {
+      "command": "hobo dev",
+      "mcp": "dev",
+      "name": "dev",
+      "role": "local loop",
+      "summary": "Run against runtime-local"
+    },
+    {
+      "command": "hobo new",
+      "mcp": "new",
+      "name": "new",
+      "role": "local loop",
+      "summary": "Scaffold a runnable SDK program"
+    },
+    {
+      "command": "hobo login",
+      "mcp": "login",
+      "name": "login",
+      "role": "identity",
+      "summary": "Obtain a dev SVID through OIDC"
+    },
+    {
+      "command": "hobo claim",
+      "mcp": "claim",
+      "name": "claim",
+      "role": "identity",
+      "summary": "Bind an anonymous deployment to an account"
+    },
+    {
+      "command": "hobo plan",
+      "mcp": "plan",
+      "name": "plan",
+      "role": "read-only",
+      "summary": "Dry-run the up decision"
+    },
+    {
+      "command": "hobo verify",
+      "mcp": "verify",
+      "name": "verify",
+      "role": "read-only",
+      "summary": "Run the unified Gatekeeper preflight"
+    },
+    {
+      "command": "hobo can-deploy",
+      "mcp": "can_deploy",
+      "name": "can-deploy",
+      "role": "read-only",
+      "summary": "Diagnose producer/consumer compatibility"
+    },
+    {
+      "command": "hobo inspect",
+      "mcp": "inspect_run",
+      "name": "inspect",
+      "role": "read-only",
+      "summary": "Render projections and time-travel views"
+    },
+    {
+      "command": "hobo logs",
+      "mcp": "tail_logs",
+      "name": "logs",
+      "role": "read-only",
+      "summary": "Live-tail Camp runtime streams"
+    },
+    {
+      "command": "hobo doctor",
+      "mcp": "doctor",
+      "name": "doctor",
+      "role": "diagnostics",
+      "summary": "Report environment and portability hazards"
+    },
+    {
+      "command": "hobo codegen",
+      "mcp": "codegen",
+      "name": "codegen",
+      "role": "authoring",
+      "summary": "Regenerate checked-in generated clients"
+    },
+    {
+      "command": "hobo build",
+      "mcp": "build",
+      "name": "build",
+      "role": "authoring",
+      "summary": "Compile services to wasm components"
+    },
+    {
+      "command": "hobo collect",
+      "mcp": "collect",
+      "name": "collect",
+      "role": "authoring",
+      "summary": "Run resource collection and print manifest IR"
+    },
+    {
+      "command": "hobo stub",
+      "mcp": "stub",
+      "name": "stub",
+      "role": "authoring",
+      "summary": "Run with a contract-backed stub"
+    },
+    {
+      "command": "hobo drift",
+      "mcp": "get_drift",
+      "name": "drift",
+      "role": "diagnostics",
+      "summary": "Report drift and governed remediation paths"
+    },
+    {
+      "command": "hobo add",
+      "mcp": "add",
+      "name": "add",
+      "role": "distribution",
+      "summary": "Install a provider or listing"
+    },
+    {
+      "command": "hobo registry",
+      "mcp": "search_registry",
+      "name": "registry",
+      "role": "distribution",
+      "summary": "Administer registry artifacts"
+    },
+    {
+      "command": "hobo import",
+      "mcp": "import",
+      "name": "import",
+      "role": "migration",
+      "summary": "Adopt existing estate in place"
+    },
+    {
+      "command": "hobo generate",
+      "mcp": "generate",
+      "name": "generate",
+      "role": "generation",
+      "summary": "Request provider generation"
+    },
+    {
+      "command": "hobo sandbox",
+      "mcp": "sandbox",
+      "name": "sandbox",
+      "role": "test loop",
+      "summary": "Run a contract-backed isolated lane"
+    },
+    {
+      "command": "hobo test",
+      "mcp": "test",
+      "name": "test",
+      "role": "test loop",
+      "summary": "Alias for the sandbox test lane"
+    },
+    {
+      "command": "hobo attest",
+      "mcp": "attest",
+      "name": "attest",
+      "role": "governance",
+      "summary": "Produce signed external evidence exports"
+    },
+    {
+      "command": "hobo erase",
+      "mcp": "erase",
+      "name": "erase",
+      "role": "governance",
+      "summary": "Request crypto-shred erasure"
+    },
+    {
+      "command": "hobo derivative",
+      "mcp": "derivative",
+      "name": "derivative",
+      "role": "extensibility",
+      "summary": "Manage derived HoBo implementations"
+    },
+    {
+      "command": "hobo runbook",
+      "mcp": "runbook",
+      "name": "runbook",
+      "role": "SRE",
+      "summary": "Execute or replay incident runbooks"
+    }
+  ],
+  "generatedBy": "HOBO-176 operations-manifest contract",
+  "routes": [
+    {
+      "access": "write",
+      "cli": "hobo up",
+      "intent": "deploy",
+      "mcp": "deploy"
+    },
+    {
+      "access": "write",
+      "cli": "hobo up",
+      "intent": "up",
+      "mcp": "deploy"
+    },
+    {
+      "access": "write",
+      "cli": "hobo down",
+      "intent": "down",
+      "mcp": "destroy"
+    },
+    {
+      "access": "write",
+      "cli": "hobo dev",
+      "intent": "dev",
+      "mcp": "dev"
+    },
+    {
+      "access": "write",
+      "cli": "hobo new",
+      "intent": "new",
+      "mcp": "new"
+    },
+    {
+      "access": "write",
+      "cli": "hobo login",
+      "intent": "login",
+      "mcp": "login"
+    },
+    {
+      "access": "write",
+      "cli": "hobo claim",
+      "intent": "claim",
+      "mcp": "claim"
+    },
+    {
+      "access": "read",
+      "cli": "hobo plan",
+      "intent": "plan",
+      "mcp": "plan"
+    },
+    {
+      "access": "read",
+      "cli": "hobo verify",
+      "intent": "verify",
+      "mcp": "verify"
+    },
+    {
+      "access": "read",
+      "cli": "hobo can-deploy",
+      "intent": "can-deploy",
+      "mcp": "can_deploy"
+    },
+    {
+      "access": "read",
+      "cli": "hobo inspect",
+      "intent": "inspect",
+      "mcp": "inspect_run"
+    },
+    {
+      "access": "read",
+      "cli": "hobo logs",
+      "intent": "logs",
+      "mcp": "tail_logs"
+    },
+    {
+      "access": "read",
+      "cli": "hobo doctor",
+      "intent": "doctor",
+      "mcp": "doctor"
+    },
+    {
+      "access": "write",
+      "cli": "hobo codegen",
+      "intent": "codegen",
+      "mcp": "codegen"
+    },
+    {
+      "access": "write",
+      "cli": "hobo build",
+      "intent": "build",
+      "mcp": "build"
+    },
+    {
+      "access": "read",
+      "cli": "hobo collect",
+      "intent": "collect",
+      "mcp": "collect"
+    },
+    {
+      "access": "write",
+      "cli": "hobo stub",
+      "intent": "stub",
+      "mcp": "stub"
+    },
+    {
+      "access": "read",
+      "cli": "hobo drift",
+      "intent": "drift",
+      "mcp": "get_drift"
+    },
+    {
+      "access": "write",
+      "cli": "hobo add",
+      "intent": "add",
+      "mcp": "add"
+    },
+    {
+      "access": "read",
+      "cli": "hobo registry",
+      "intent": "registry",
+      "mcp": "search_registry"
+    },
+    {
+      "access": "write",
+      "cli": "hobo import",
+      "intent": "import",
+      "mcp": "import"
+    },
+    {
+      "access": "write",
+      "cli": "hobo generate",
+      "intent": "generate",
+      "mcp": "generate"
+    },
+    {
+      "access": "write",
+      "cli": "hobo sandbox",
+      "intent": "sandbox",
+      "mcp": "sandbox"
+    },
+    {
+      "access": "write",
+      "cli": "hobo test",
+      "intent": "test",
+      "mcp": "test"
+    },
+    {
+      "access": "write",
+      "cli": "hobo attest",
+      "intent": "attest",
+      "mcp": "attest"
+    },
+    {
+      "access": "write",
+      "cli": "hobo erase",
+      "intent": "erase",
+      "mcp": "erase"
+    },
+    {
+      "access": "write",
+      "cli": "hobo derivative",
+      "intent": "derivative",
+      "mcp": "derivative"
+    },
+    {
+      "access": "write",
+      "cli": "hobo runbook",
+      "intent": "runbook",
+      "mcp": "runbook"
+    },
+    {
+      "access": "read",
+      "cli": null,
+      "intent": "list_bindles",
+      "mcp": "list_bindles"
+    },
+    {
+      "access": "read",
+      "cli": null,
+      "intent": "get_bindle",
+      "mcp": "get_bindle"
+    },
+    {
+      "access": "write",
+      "cli": "hobo up",
+      "intent": "promote",
+      "mcp": "promote"
+    },
+    {
+      "access": "write",
+      "cli": "hobo up --rollback",
+      "intent": "rollback",
+      "mcp": "rollback"
+    },
+    {
+      "access": "write",
+      "cli": null,
+      "intent": "request_token",
+      "mcp": "request_token"
+    },
+    {
+      "access": "write",
+      "cli": "hobo drift",
+      "intent": "heal",
+      "mcp": "heal"
+    }
+  ],
+  "schema": "hobo.operations.docs/v1",
+  "tools": [
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": null,
+      "description": "Discover Bindles visible to the current principal.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "list_bindles",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "bindles": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": null,
+      "description": "Return one Bindle topology by id.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "bindleId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bindleId"
+        ],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "get_bindle",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "bindleId": {
+            "type": "string"
+          },
+          "topology": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "plan",
+      "description": "Dry-run hobo plan through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "plan",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "up",
+      "description": "Converge a topology through hobo up.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "deploy",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "up",
+      "description": "Promote by converging a target Camp through hobo up.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "promote",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [
+        "--rollback"
+      ],
+      "cliVerb": "up",
+      "description": "Rollback by invoking hobo up --rollback.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "rollback",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "down",
+      "description": "Tear down a topology through hobo down.",
+      "destructive": true,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "destroy",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "inspect",
+      "description": "Read RunView or DeploymentView projection data.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "runId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId"
+        ],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "inspect_run",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "timeline": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "logs",
+      "description": "Stream runtime log progress for a run or resource.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "runId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId"
+        ],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "tail_logs",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "complete": {
+            "type": "boolean"
+          },
+          "runId": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": true
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "registry",
+      "description": "Find providers or listings by capability.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "capability": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability"
+        ],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "search_registry",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": null,
+      "description": "Broker a scoped provider token through the token-broker seam.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "object"
+          },
+          "svidScope": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "requestId",
+          "provider",
+          "scope",
+          "svidScope"
+        ],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "request_token",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "credential": {
+            "type": "object"
+          },
+          "events": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "drift",
+      "description": "Read drift status for a Camp or resource.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "get_drift",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "drift": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "drift",
+      "description": "Request governed drift reconciliation.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "heal",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "dev",
+      "description": "Run hobo dev through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "dev",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "new",
+      "description": "Scaffold a new HoBo program through hobo new.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "new",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "login",
+      "description": "Start the hobo login identity flow.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "login",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "claim",
+      "description": "Bind an anonymous deployment through hobo claim.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "claim",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "verify",
+      "description": "Run hobo verify through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "verify",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "can-deploy",
+      "description": "Run hobo can-deploy compatibility checks.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "can_deploy",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "doctor",
+      "description": "Run hobo doctor diagnostics.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "doctor",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "codegen",
+      "description": "Run hobo codegen through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "codegen",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "build",
+      "description": "Run hobo build through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "build",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "read",
+      "cliArgs": [],
+      "cliVerb": "collect",
+      "description": "Run hobo collect through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "collect",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": true,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "stub",
+      "description": "Run hobo stub through the shared CLI call path.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "stub",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "add",
+      "description": "Install a provider or listing through hobo add.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "add",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "import",
+      "description": "Adopt an existing estate through hobo import.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "import",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "generate",
+      "description": "Request provider generation through hobo generate.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "generate",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "sandbox",
+      "description": "Run a contract-backed isolated lane through hobo sandbox.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "sandbox",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "test",
+      "description": "Run the sandbox test lane through hobo test.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "test",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "attest",
+      "description": "Produce signed evidence exports through hobo attest.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "attest",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "erase",
+      "description": "Request crypto-shred erasure through hobo erase.",
+      "destructive": true,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "erase",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "derivative",
+      "description": "Manage derived HoBo implementations through hobo derivative.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "derivative",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    },
+    {
+      "access": "write",
+      "cliArgs": [],
+      "cliVerb": "runbook",
+      "description": "Execute or replay runbooks through hobo runbook.",
+      "destructive": false,
+      "inputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "camp": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "metadataComplete": true,
+      "metadataWarnings": [],
+      "name": "runbook",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cli": {
+            "type": "object"
+          },
+          "data": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "readOnly": false,
+      "streaming": false
+    }
+  ]
+}

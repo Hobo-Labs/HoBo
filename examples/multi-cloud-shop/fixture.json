@@ -1,0 +1,19 @@
+{
+  "id": "multi-cloud-shop",
+  "mode": "simulate",
+  "deploy": {
+    "command": "simulate-deploy",
+    "camp": "sandbox-ci"
+  },
+  "teardown": {
+    "command": "simulate-teardown",
+    "camp": "sandbox-ci"
+  },
+  "assertions": {
+    "liveUrl": {
+      "scheme": "https",
+      "expectHttp2xx": true,
+      "fixtureId": "multi-cloud-shop"
+    }
+  }
+}

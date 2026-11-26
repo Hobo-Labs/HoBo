@@ -1,0 +1,14 @@
+syntax = "proto3";
+package hobo.provider.vercel.v1;
+
+// A temporary adapter must supply native ownership and expiry observations.
+// An account-backed CLI result cannot satisfy this contract.
+message VercelAnonymousDeploymentEvidenceRecord {
+  string project_name = 1;
+  string deployment_id = 2;
+  string station_url = 3;
+  string claim_url = 4;
+  optional bool anonymous = 5;
+  optional string expires_at = 6;
+  optional string expiry_source = 7;
+}

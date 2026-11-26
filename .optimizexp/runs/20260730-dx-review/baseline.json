@@ -1,0 +1,48 @@
+{
+  "runId": "20260730-dx-review",
+  "source": "prior outcomes + current environment (no node_modules)",
+  "scoredAt": "2026-07-30T18:00:00.000Z",
+  "metric_total": 20,
+  "metric_max": 4,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "featureId": "narrow-local-validation",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 3,
+      "source": "2026-07-31T03:58:00-outcome"
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "featureId": "cli-help-and-doctor",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 2,
+      "source": "2026-07-31T03:58:10-outcome"
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "featureId": "agent-check-staged",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 3,
+      "source": "2026-07-31T03:28:20Z-0003"
+    },
+    {
+      "persona": "product-platform-engineer",
+      "surface": "shared missing-tsx failure mode",
+      "harms": 0,
+      "friction": 3,
+      "uncertainty": 2,
+      "source": "prior dx-review findings F-1"
+    }
+  ],
+  "notes": [
+    "Environment still has NO node_modules — re-probe expected to match prior failures.",
+    "This run corrects optimistic expects using bus lessons (correctedFrom)."
+  ]
+}

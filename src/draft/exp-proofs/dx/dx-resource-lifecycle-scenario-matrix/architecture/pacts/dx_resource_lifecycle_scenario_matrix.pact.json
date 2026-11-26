@@ -1,0 +1,170 @@
+{
+  "consumer": {
+    "name": "dx-resource-lifecycle-proof-consumer"
+  },
+  "provider": {
+    "name": "dx-resource-lifecycle-scenario-matrix"
+  },
+  "interactions": [
+    {
+      "description": "reads the canonical resource lifecycle DX scenario matrix",
+      "providerStates": [
+        {
+          "name": "HOBO-567 matrix fixture is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-567",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/dx/dx-resource-lifecycle-scenario-matrix",
+          "proofNote": "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
+          "designRefs": [
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/cli-spec.md",
+            "docs/design/control-plane.md#plan-04"
+          ],
+          "designTerms": [
+            "hobo up",
+            "hobo plan",
+            "hobo collect",
+            "hobo inspect",
+            "hobo logs",
+            "hobo doctor",
+            "hobo import terraform",
+            "DeploymentPlan",
+            "Deployment Set",
+            "Delta",
+            "Gatekeeper",
+            "ResourceActor",
+            "migration.*"
+          ],
+          "scopeOut": [
+            "production CLI/API/SDK implementation",
+            "live providers",
+            "real credentials",
+            "customer data",
+            "visual mockups that invent resource behavior before the matrix exists"
+          ],
+          "journeys": [
+            {
+              "id": "app-developer-resource-deploy",
+              "role": "app-developer",
+              "intent": "Deploy, inspect, and hand off a resource-backed app without hidden provider details.",
+              "commands": ["hobo collect ./src", "hobo plan --camp preview", "hobo up --camp preview"],
+              "sdkCalls": ["bindle('./src').collect()", "camp('preview').plan()", "camp('preview').up()"],
+              "apiCalls": ["POST /bindles/collect", "POST /plans", "POST /deployment-sets"],
+              "mcpTools": ["hobo_collect", "hobo_plan", "hobo_up"],
+              "expectedArtifacts": ["DeploymentPlan", "Gatekeeper decision", "ResourceActor event timeline"],
+              "proofMode": "command-transcript",
+              "fixtureRequirements": ["golden app fixture", "blocked Gatekeeper fixture"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo collect", "hobo plan", "hobo up", "DeploymentPlan", "Gatekeeper", "ResourceActor"]
+            },
+            {
+              "id": "platform-engineer-provider-defaults",
+              "role": "platform-engineer",
+              "intent": "Set provider defaults and inspect deployment-set compatibility without leaking live credentials.",
+              "commands": ["hobo plan ./platform --camp prod", "hobo up ./platform --camp prod", "hobo doctor --camp prod"],
+              "sdkCalls": ["yard('prod').defaults()", "providerCatalog.match()", "deploymentSet.current()"],
+              "apiCalls": ["POST /platform/plans", "POST /provider-matches", "GET /deployment-sets/current"],
+              "mcpTools": ["hobo_plan_platform", "hobo_up_platform", "hobo_doctor"],
+              "expectedArtifacts": ["provider match report", "Deployment Set", "Delta"],
+              "proofMode": "contract-fixture",
+              "fixtureRequirements": ["provider catalog fixture", "Deployment Set and Delta snapshots"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo plan", "hobo up", "hobo doctor", "Deployment Set", "Delta", "Gatekeeper", "ResourceActor"]
+            },
+            {
+              "id": "gitops-plan-apply-promotion",
+              "role": "gitops",
+              "intent": "Plan and apply resource changes from CI with auditable previews, promotion, and rollback.",
+              "commands": ["hobo plan --camp pr-42 --json", "hobo up --camp pr-42 --json", "hobo up --camp prod --rollback deployment-set:previous"],
+              "sdkCalls": ["workflow.previewCamp('pr-42')", "workflow.promoteDeploymentSet(previousSet, nextSet)", "workflow.rollbackDeploymentSet(previousSet)"],
+              "apiCalls": ["POST /ci/plans", "POST /ci/applies", "POST /deployment-sets/{setId}/rollback"],
+              "mcpTools": ["hobo_plan_ci", "hobo_up_ci", "hobo_rollback"],
+              "expectedArtifacts": ["PR plan comment", "Deployment Set promotion receipt", "rollback Delta"],
+              "proofMode": "contract-fixture",
+              "fixtureRequirements": ["CI environment fixture", "stale plan fixture"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo plan", "hobo up", "DeploymentPlan", "Deployment Set", "Delta", "Gatekeeper"]
+            },
+            {
+              "id": "secops-policy-gate",
+              "role": "secops",
+              "intent": "Review deployability, evidence, and policy decisions before sensitive resource changes proceed.",
+              "commands": ["hobo can-deploy --target prod", "hobo verify --target prod", "hobo doctor --policy-pack platform"],
+              "sdkCalls": ["policyPack('platform').allow(resourceChange)", "connector('compliance').attest(evidence)", "gatekeeper.evaluate(plan)"],
+              "apiCalls": ["POST /gatekeeper/can-deploy", "POST /policy/decisions", "GET /attestations/{subjectId}"],
+              "mcpTools": ["hobo_can_deploy", "hobo_verify", "hobo_policy_decision"],
+              "expectedArtifacts": ["policy.Decided event", "compat.GateFailed event", "redacted evidence packet"],
+              "proofMode": "support-safe-evidence",
+              "fixtureRequirements": ["accepted and rejected Gatekeeper decisions", "redacted policy evidence fixture"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo up", "hobo doctor", "Gatekeeper", "DeploymentPlan", "Delta"]
+            },
+            {
+              "id": "devops-self-hosted-platform",
+              "role": "devops",
+              "intent": "Operate self-hosted HoBo resources, restore state, and hand off runner health without secrets.",
+              "commands": ["hobo up ./platform --seed", "hobo inspect topology --camp prod", "hobo logs --follow runner"],
+              "sdkCalls": ["executionHost('self-hosted')", "runnerPool('prod').restore(seedLog)", "stateStore.snapshots().latest()"],
+              "apiCalls": ["POST /platform/seed", "GET /topology/current", "POST /state/restore"],
+              "mcpTools": ["hobo_seed_platform", "hobo_inspect_topology", "hobo_tail_runner_logs"],
+              "expectedArtifacts": ["identity.SeedTokenUsed event", "topology projection", "restore receipt"],
+              "proofMode": "projection-snapshot",
+              "fixtureRequirements": ["seed run fixture", "stale topology projection fixture"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo up", "hobo inspect", "hobo logs", "hobo doctor", "ResourceActor"]
+            },
+            {
+              "id": "sre-incident-and-rollback",
+              "role": "sre",
+              "intent": "Diagnose resource incidents from projections, events, logs, and rollback-safe runbooks.",
+              "commands": ["hobo inspect run --last --camp prod", "hobo inspect resource api --timeline", "hobo up --camp prod --rollback deployment-set:previous"],
+              "sdkCalls": ["runbook('api-latency').replay(snapshot)", "slo('checkout').observe(resourceProjection)", "crew('oncall').handoff(packet)"],
+              "apiCalls": ["GET /incidents/{incidentId}/timeline", "GET /projections/resource/{resourceId}", "POST /runbooks/{runbookId}/replay"],
+              "mcpTools": ["hobo_inspect_incident", "hobo_inspect_resource", "hobo_runbook_replay"],
+              "expectedArtifacts": ["incident timeline", "ResourceActor history", "rollback Deployment Set receipt"],
+              "proofMode": "projection-snapshot",
+              "fixtureRequirements": ["lagged projection fixture labeled stale", "rollback receipt fixture"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo inspect", "hobo logs", "hobo up", "Deployment Set", "ResourceActor"]
+            },
+            {
+              "id": "agent-mcp-resource-caller",
+              "role": "agent-mcp-caller",
+              "intent": "Let agents inspect, plan, and request resource work through MCP without receiving hidden authority.",
+              "commands": ["hobo plan --json", "hobo up --json --dry-run", "hobo import terraform ./infra --dry-run"],
+              "sdkCalls": ["agentSession('codex').plan(resourceRequest)", "agentSession('codex').requestApproval(delta)", "agentSession('codex').readProjection(resourceId)"],
+              "apiCalls": ["POST /mcp/tools/hobo_plan", "POST /mcp/tools/hobo_up", "POST /mcp/tools/hobo_import_terraform"],
+              "mcpTools": ["hobo_plan", "hobo_up", "hobo_import_terraform"],
+              "expectedArtifacts": ["MCP tool transcript", "dry-run DeploymentPlan", "migration.* event preview"],
+              "proofMode": "command-transcript",
+              "fixtureRequirements": ["MCP caller fixture with explicit authority boundary", "dry-run import fixture"],
+              "scenarioPaths": ["happy-path", "blocked-path", "stale-or-unknown-evidence", "migration-or-rollback", "support-handoff"],
+              "designTerms": ["hobo plan", "hobo up", "hobo inspect", "hobo import terraform", "DeploymentPlan", "Gatekeeper", "migration.*"]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-567",
+      "proof": "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md"
+    }
+  }
+}

@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package hobo.cli.dev.v1;
+
+// S1-22 / HOBO-612: hobo dev local loop records and dev.* event family.
+// Design-time contract; runtime types derive from these shapes.
+
+enum FidelityLabel {
+  FIDELITY_LABEL_UNSPECIFIED = 0;
+  FIDELITY_LABEL_REAL = 1;
+  FIDELITY_LABEL_SIMULATED = 2;
+  FIDELITY_LABEL_MOCKED = 3;
+  FIDELITY_LABEL_CAMP_ONLY = 4;
+}
+
+message DevSessionRecord {
+  string session_id = 1;
+  uint32 port = 2;
+  string local_url = 3;
+  uint32 boot_ms = 4;
+  uint32 cold_boot_budget_ms = 5;
+  bool cloud_account_required = 6;
+  string runtime = 7;
+  map<string, FidelityLabel> fidelity_labels = 8;
+}
+
+message DevStateSnapshot {
+  string schema_version = 1;
+  uint32 run_count = 2;
+  uint32 handler_generation = 3;
+  string last_reloaded = 4;
+  uint32 event_sequence = 5;
+}
+
+message DevSessionStarted {
+  string session_id = 1;
+  uint32 port = 2;
+  uint32 boot_ms = 3;
+}
+
+message DevRequestServed {
+  string path = 1;
+  uint32 status = 2;
+  uint32 run_count = 3;
+}
+
+message DevHandlerReloaded {
+  string path = 1;
+  uint32 handler_generation = 2;
+}
+
+message DevReloadFailed {
+  string path = 1;
+  string code = 2;
+  string message = 3;
+}
+
+message DevCodegenRan {
+  repeated string changed_sources = 1;
+  repeated string written_paths = 2;
+}
+
+message DevSessionStopped {
+  string session_id = 1;
+}

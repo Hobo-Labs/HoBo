@@ -1,0 +1,26 @@
+{
+  "layer": "epic",
+  "slug": "mapping-styles-planner-resolution",
+  "title": "Mapping Styles + Planner Resolution (HOBO-640)",
+  "linear": "HOBO-640",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/camp-mapping-sugar-compiler",
+      "src/draft/technical-proofs/capability-negotiation-contract",
+      "src/draft/technical-proofs/control-plane-event-schema-contract",
+      "src/draft/technical-proofs/provider-options-pattern-contract",
+      "src/draft/technical-proofs/resource-definition-driver-contract",
+      "src/draft/technical-proofs/topology-objects-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

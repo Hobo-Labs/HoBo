@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProviderLocalZeroInfraConsumer"
+  },
+  "provider": {
+    "name": "ProviderLocalZeroInfraBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Provider Local Zero Infra boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/provider-local-zero-infra/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.provider_local_zero_infra/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

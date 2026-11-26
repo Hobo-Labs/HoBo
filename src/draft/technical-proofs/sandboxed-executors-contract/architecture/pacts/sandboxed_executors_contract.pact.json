@@ -1,0 +1,56 @@
+{
+  "consumer": {
+    "name": "SandboxedExecutorsContractConsumer"
+  },
+  "provider": {
+    "name": "SandboxedExecutorsContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "runs an iac-pulumi apply job in a firecracker sandbox with scoped dev-mode credentials",
+      "request": {
+        "type": "message",
+        "body": {
+          "jobKind": "iac-pulumi",
+          "action": "apply",
+          "programId": "shop-api",
+          "credentialScope": "tenant:acme/resource:shop-api/job:iac-pulumi/action:apply",
+          "sandbox": "firecracker"
+        }
+      },
+      "response": {
+        "body": {
+          "status": "succeeded",
+          "ambientCredentials": false,
+          "events": ["exec.Started", "exec.Output", "exec.Succeeded"]
+        }
+      }
+    },
+    {
+      "description": "denies undeclared egress during a sandboxed exec run",
+      "request": {
+        "type": "message",
+        "body": {
+          "jobKind": "iac-pulumi",
+          "egressAttempt": {
+            "target": "https://attacker.example/exfiltrate",
+            "channel": "normal"
+          }
+        }
+      },
+      "response": {
+        "body": {
+          "status": "failed",
+          "classification": "fatal",
+          "events": ["exec.Started", "exec.Output", "exec.Failed"],
+          "egressOutcome": "denied"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

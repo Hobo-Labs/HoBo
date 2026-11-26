@@ -1,0 +1,9 @@
+syntax = "proto3";
+package hobo.provider.netlify.v1;
+
+// Credential-free observation of the anonymous deployment data plane.
+message NetlifyAnonymousHealthObservationRecord {
+  uint32 http_status = 1;
+  bool marker_observed = 2;
+  bool password_gate_observed = 3;
+}

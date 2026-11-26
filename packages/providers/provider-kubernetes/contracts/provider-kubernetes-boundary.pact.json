@@ -1,0 +1,106 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderKubernetesBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for the one Kubernetes equivalence-class port",
+      "request": {
+        "method": "POST",
+        "path": "/providers/kubernetes/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "projected ServiceAccount token posture: no static secrets in the package",
+      "request": {
+        "method": "GET",
+        "path": "/providers/kubernetes/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "svid-federation",
+          "exchange": "kubernetes:BoundServiceAccountToken",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "realize a compute ResourcePlan into a pulumi IacProgram with a kubernetes:deployment resource",
+      "request": {
+        "method": "POST",
+        "path": "/providers/kubernetes/realize",
+        "body": {
+          "name": "api",
+          "port": "compute",
+          "provider": "kubernetes"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "iac": {
+            "apiVersion": "hobo.iac-program/v1",
+            "kind": "iac-program",
+            "provider": "pulumi",
+            "resources": [
+              {
+                "name": "api",
+                "type": "kubernetes:deployment",
+                "provider": "kubernetes"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "reconcile a Deployment twice: one create call, one stable physicalId",
+      "request": {
+        "method": "POST",
+        "path": "/providers/kubernetes/resolve",
+        "body": {
+          "productId": "kubernetes.deployment/v1",
+          "logicalId": "api",
+          "desired": {
+            "namespace": "shop",
+            "spec": {
+              "replicas": 2
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contract": "hobo.resource-resolver/v1",
+          "action": "create",
+          "createCalls": 1,
+          "reconcileTwiceAction": "noop",
+          "physicalId": "shop/api"
+        }
+      }
+    }
+  ]
+}

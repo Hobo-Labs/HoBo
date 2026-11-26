@@ -1,0 +1,338 @@
+# HoBo — full agent operations surface
+
+> Generated from @hobo/cli CANONICAL_VERBS + the derived MCP tool surface (single source of truth). Deterministic; do not edit by hand. Regenerate with @hobo/cli's generateAgentDocs; the drift gate fails CI if this file is stale.
+
+Schema: hobo.agent-docs/v1
+Generator: @hobo/cli/agent-docs
+Product: hobo
+
+## Global flags
+- `--json`
+- `--camp <camp>`
+- `--cwd <path>`
+- `--verbose`
+- `-q`
+- `--help`
+
+## Capabilities
+
+### up
+- Role: lifecycle
+- Summary: Realize the current object graph
+- CLI: `hobo up`
+- MCP tool: `up`
+- Capability: { port: hobo:mcp, resource: tool:up, verb: call }
+
+### down
+- Role: lifecycle
+- Summary: Tear down what up realized
+- CLI: `hobo down`
+- MCP tool: `down`
+- Capability: { port: hobo:mcp, resource: tool:down, verb: call }
+
+### dev
+- Role: local loop
+- Summary: Run against runtime-local
+- CLI: `hobo dev`
+- MCP tool: `dev`
+- Capability: { port: hobo:mcp, resource: tool:dev, verb: call }
+
+### new
+- Role: local loop
+- Summary: Scaffold a runnable SDK program
+- CLI: `hobo new`
+- MCP tool: `new`
+- Capability: { port: hobo:mcp, resource: tool:new, verb: call }
+
+### login
+- Role: identity
+- Summary: Obtain a dev SVID through OIDC
+- CLI: `hobo login`
+- MCP tool: `login`
+- Capability: { port: hobo:mcp, resource: tool:login, verb: call }
+
+### connection
+- Role: identity
+- Summary: Manage durable Connections (create/authorize/list/get/revoke/rotate)
+- CLI: `hobo connection`
+- MCP tool: `connection`
+- Capability: { port: hobo:mcp, resource: tool:connection, verb: call }
+
+### identity
+- Role: identity
+- Summary: Inspect migration identity (status/inspect) or manage auth.md agents (agent discover/register/status/claim/poll/token/rotate/revoke)
+- CLI: `hobo identity`
+- MCP tool: `identity`
+- Capability: { port: hobo:mcp, resource: tool:identity, verb: call }
+
+### trails
+- Role: migration
+- Summary: Observe Trails status/plan/inspect (continuous migration; identity hands-off)
+- CLI: `hobo trails`
+- MCP tool: `trails`
+- Capability: { port: hobo:mcp, resource: tool:trails, verb: call }
+
+### access
+- Role: identity
+- Summary: Request elevated/cross-env access or break-glass (short-lived capability; audited)
+- CLI: `hobo access`
+- MCP tool: `access`
+- Capability: { port: hobo:mcp, resource: tool:access, verb: call }
+
+### feature
+- Role: delivery
+- Summary: OpenFeature flags / canary / experiment status (list|eval|set|kill)
+- CLI: `hobo feature`
+- MCP tool: `feature`
+- Capability: { port: hobo:mcp, resource: tool:feature, verb: call }
+
+### deploy
+- Role: delivery
+- Summary: Attested continuous delivery status/logs/rollback (secret-free)
+- CLI: `hobo deploy`
+- MCP tool: `deploy`
+- Capability: { port: hobo:mcp, resource: tool:deploy, verb: call }
+
+### ci
+- Role: delivery
+- Summary: Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project
+- CLI: `hobo ci`
+- MCP tool: `ci`
+- Capability: { port: hobo:mcp, resource: tool:ci, verb: call }
+
+### cd
+- Role: delivery
+- Summary: Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy
+- CLI: `hobo cd`
+- MCP tool: `cd`
+- Capability: { port: hobo:mcp, resource: tool:cd, verb: call }
+
+### fleet
+- Role: control plane
+- Summary: Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)
+- CLI: `hobo fleet`
+- MCP tool: `fleet`
+- Capability: { port: hobo:mcp, resource: tool:fleet, verb: call }
+
+### incident
+- Role: delivery
+- Summary: CD failure disposition: A2H handoff or sandboxed self-heal
+- CLI: `hobo incident`
+- MCP tool: `incident`
+- Capability: { port: hobo:mcp, resource: tool:incident, verb: call }
+
+### claim
+- Role: identity
+- Summary: Bind an anonymous deployment to an account
+- CLI: `hobo claim`
+- MCP tool: `claim`
+- Capability: { port: hobo:mcp, resource: tool:claim, verb: call }
+
+### recipes
+- Role: read-only
+- Summary: List and inspect deployment recipes and their claim terms
+- CLI: `hobo recipes`
+- MCP tool: `recipes`
+- Capability: { port: hobo:mcp, resource: tool:recipes, verb: call }
+
+### offer
+- Role: read-only
+- Summary: Compile a deployment offer and its consent requirements
+- CLI: `hobo offer`
+- MCP tool: `offer`
+- Capability: { port: hobo:mcp, resource: tool:offer, verb: call }
+
+### plan
+- Role: read-only
+- Summary: Dry-run the up decision
+- CLI: `hobo plan`
+- MCP tool: `plan`
+- Capability: { port: hobo:mcp, resource: tool:plan, verb: call }
+
+### verify
+- Role: read-only
+- Summary: Run the unified Gatekeeper preflight
+- CLI: `hobo verify`
+- MCP tool: `verify`
+- Capability: { port: hobo:mcp, resource: tool:verify, verb: call }
+
+### can-deploy
+- Role: read-only
+- Summary: Diagnose producer/consumer compatibility
+- CLI: `hobo can-deploy`
+- MCP tool: `can-deploy`
+- Capability: { port: hobo:mcp, resource: tool:can-deploy, verb: call }
+
+### inspect
+- Role: read-only
+- Summary: Render projections and time-travel views
+- CLI: `hobo inspect`
+- MCP tool: `inspect`
+- Capability: { port: hobo:mcp, resource: tool:inspect, verb: call }
+
+### logs
+- Role: read-only
+- Summary: Live-tail Camp runtime streams
+- CLI: `hobo logs`
+- MCP tool: `logs`
+- Capability: { port: hobo:mcp, resource: tool:logs, verb: call }
+
+### doctor
+- Role: diagnostics
+- Summary: Report environment and portability hazards
+- CLI: `hobo doctor`
+- MCP tool: `doctor`
+- Capability: { port: hobo:mcp, resource: tool:doctor, verb: call }
+
+### messaging
+- Role: diagnostics
+- Summary: Inspect messaging capability and delivery-guarantee readiness
+- CLI: `hobo messaging`
+- MCP tool: `messaging`
+- Capability: { port: hobo:mcp, resource: tool:messaging, verb: call }
+
+### codegen
+- Role: authoring
+- Summary: Regenerate checked-in generated clients
+- CLI: `hobo codegen`
+- MCP tool: `codegen`
+- Capability: { port: hobo:mcp, resource: tool:codegen, verb: call }
+
+### build
+- Role: authoring
+- Summary: Compile services to wasm components
+- CLI: `hobo build`
+- MCP tool: `build`
+- Capability: { port: hobo:mcp, resource: tool:build, verb: call }
+
+### collect
+- Role: authoring
+- Summary: Run resource collection and print manifest IR
+- CLI: `hobo collect`
+- MCP tool: `collect`
+- Capability: { port: hobo:mcp, resource: tool:collect, verb: call }
+
+### stub
+- Role: authoring
+- Summary: Run with a contract-backed stub
+- CLI: `hobo stub`
+- MCP tool: `stub`
+- Capability: { port: hobo:mcp, resource: tool:stub, verb: call }
+
+### drift
+- Role: diagnostics
+- Summary: Report drift and governed remediation paths
+- CLI: `hobo drift`
+- MCP tool: `drift`
+- Capability: { port: hobo:mcp, resource: tool:drift, verb: call }
+
+### add
+- Role: distribution
+- Summary: Install a provider or listing
+- CLI: `hobo add`
+- MCP tool: `add`
+- Capability: { port: hobo:mcp, resource: tool:add, verb: call }
+
+### registry
+- Role: distribution
+- Summary: Administer registry artifacts
+- CLI: `hobo registry`
+- MCP tool: `registry`
+- Capability: { port: hobo:mcp, resource: tool:registry, verb: call }
+
+### import
+- Role: migration
+- Summary: Adopt existing estate in place
+- CLI: `hobo import`
+- MCP tool: `import`
+- Capability: { port: hobo:mcp, resource: tool:import, verb: call }
+
+### generate
+- Role: generation
+- Summary: Request provider generation
+- CLI: `hobo generate`
+- MCP tool: `generate`
+- Capability: { port: hobo:mcp, resource: tool:generate, verb: call }
+
+### sandbox
+- Role: test loop
+- Summary: Run a contract-backed isolated lane
+- CLI: `hobo sandbox`
+- MCP tool: `sandbox`
+- Capability: { port: hobo:mcp, resource: tool:sandbox, verb: call }
+
+### test
+- Role: test loop
+- Summary: Alias for the sandbox test lane
+- CLI: `hobo test`
+- MCP tool: `test`
+- Capability: { port: hobo:mcp, resource: tool:test, verb: call }
+
+### attest
+- Role: governance
+- Summary: Produce signed external evidence exports
+- CLI: `hobo attest`
+- MCP tool: `attest`
+- Capability: { port: hobo:mcp, resource: tool:attest, verb: call }
+
+### erase
+- Role: governance
+- Summary: Request crypto-shred erasure
+- CLI: `hobo erase`
+- MCP tool: `erase`
+- Capability: { port: hobo:mcp, resource: tool:erase, verb: call }
+
+### broker
+- Role: governance
+- Summary: Resolve placements through the broker (the Conductor)
+- CLI: `hobo broker`
+- MCP tool: `broker`
+- Capability: { port: hobo:mcp, resource: tool:broker, verb: call }
+
+### yard
+- Role: control plane
+- Summary: Install and inspect the default bare-metal Yard
+- CLI: `hobo yard`
+- MCP tool: `yard`
+- Capability: { port: hobo:mcp, resource: tool:yard, verb: call }
+
+### station
+- Role: control plane
+- Summary: Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb
+- CLI: `hobo station`
+- MCP tool: `station`
+- Capability: { port: hobo:mcp, resource: tool:station, verb: call }
+
+### serve
+- Role: control plane
+- Summary: Local control-plane HTTP+SSE for the Yard game UI
+- CLI: `hobo serve`
+- MCP tool: `serve`
+- Capability: { port: hobo:mcp, resource: tool:serve, verb: call }
+
+### replay
+- Role: observability
+- Summary: Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay)
+- CLI: `hobo replay`
+- MCP tool: `replay`
+- Capability: { port: hobo:mcp, resource: tool:replay, verb: call }
+
+### derivative
+- Role: extensibility
+- Summary: Manage derived HoBo implementations
+- CLI: `hobo derivative`
+- MCP tool: `derivative`
+- Capability: { port: hobo:mcp, resource: tool:derivative, verb: call }
+
+### runbook
+- Role: SRE
+- Summary: Execute or replay incident runbooks
+- CLI: `hobo runbook`
+- MCP tool: `runbook`
+- Capability: { port: hobo:mcp, resource: tool:runbook, verb: call }
+
+## Authorization model
+- Agents are first-class principals: each carries a short-lived SVID whose scope grants specific tool capabilities (least-privilege, deny-by-default).
+- A tool call is authorized iff the SVID scope carries the tool's capability triple; otherwise it fails closed with MCP_SCOPE_DENIED and an audited decision.
+- Prompt-injected instructions inside tool inputs or outputs are recorded but powerless — they can never widen the agent's authorized tool set (ADR-0023 item 3).
+- Per-principal / per-tenant rate limits + quotas apply backpressure at the tool-call boundary: a flooding principal is throttled with a typed MCP_RATE_LIMITED result while other principals are unaffected (NFR-019).

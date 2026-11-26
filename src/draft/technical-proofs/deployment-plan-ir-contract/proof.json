@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "deployment-plan-ir-contract",
+  "title": "DeploymentPlan IR contract POC",
+  "linear": "HOBO-41",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

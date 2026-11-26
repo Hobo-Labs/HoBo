@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "UiGenerationCitationContractConsumer"
+  },
+  "provider": {
+    "name": "UiGenerationCitationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "UI generation citation contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/ui-generation-citation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.ui_generation_citation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "artifact": "sample:orders-rust-component.wasm",
+  "package": "hobo:sdk@0.1.0",
+  "world": "sdk",
+  "imports": [
+    {
+      "interface": "hobo:sdk/resource-catalog@0.1.0",
+      "functions": [
+        "declare-resource(kind: resource-kind, name: string)",
+        "bind-resource(from: string, to: string)",
+        "allow-resource(name: string, verbs: list<string>, provenance: allow-provenance)"
+      ]
+    },
+    {
+      "interface": "hobo:sdk/provider-options@0.1.0",
+      "functions": [
+        "annotate-provider-option(name: string, provider: string, option: string, value: option-json)"
+      ]
+    },
+    {
+      "interface": "hobo:sdk/handlers@0.1.0",
+      "functions": [
+        "attach-handler(resource: string, event: string, export-name: string)"
+      ]
+    },
+    {
+      "interface": "hobo:sdk/runtime@0.1.0",
+      "functions": [
+        "declare-step(name: string, signature: string)"
+      ]
+    }
+  ],
+  "exports": [
+    {
+      "interface": "orders:api/handler@0.1.0",
+      "functions": [
+        "handle-request(request: http-request) -> result<http-response, handler-error>"
+      ]
+    }
+  ],
+  "surfaceSha256": "sample-hobo-398-reviewed-surface"
+}

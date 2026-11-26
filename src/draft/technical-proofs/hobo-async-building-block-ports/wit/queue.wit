@@ -1,0 +1,72 @@
+package hobo:queue@0.1.0;
+
+/// stability: experimental
+interface queue {
+  enum queue-error-code {
+    invalid-argument,
+    not-found,
+    lease-lost,
+    deadline-exceeded,
+    provider-error,
+  }
+
+  record queue-error {
+    code: queue-error-code,
+    message: option<string>,
+    retryable: bool,
+  }
+
+  record message-attribute {
+    key: string,
+    value: string,
+  }
+
+  record queue-message {
+    idempotency-key: string,
+    body: list<u8>,
+    attributes: list<message-attribute>,
+    available-at-ms: option<u64>,
+  }
+
+  record enqueue-result {
+    message-id: string,
+    idempotency-key: string,
+  }
+
+  record dequeue-request {
+    max-messages: u32,
+    visibility-timeout-ms: u64,
+  }
+
+  record leased-message {
+    message-id: string,
+    lease-id: string,
+    idempotency-key: string,
+    body: list<u8>,
+    attributes: list<message-attribute>,
+    lease-expires-at-ms: u64,
+    delivery-attempt: u32,
+  }
+
+  enqueue: func(message: queue-message) -> result<enqueue-result, queue-error>;
+
+  dequeue: func(request: dequeue-request) -> result<list<leased-message>, queue-error>;
+
+  complete: func(message-id: string, lease-id: string) -> result<_, queue-error>;
+
+  extend-lease: func(
+    message-id: string,
+    lease-id: string,
+    visibility-timeout-ms: u64,
+  ) -> result<leased-message, queue-error>;
+
+  release: func(message-id: string, lease-id: string) -> result<_, queue-error>;
+}
+
+world queue-guest {
+  import queue;
+}
+
+world queue-provider {
+  export queue;
+}

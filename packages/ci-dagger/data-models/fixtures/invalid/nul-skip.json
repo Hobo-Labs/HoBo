@@ -1,0 +1,5 @@
+{
+  "cliVersion": "1.0.0-beta.21",
+  "workspace": ".",
+  "skip": ["dag://go/a\u0000b"]
+}

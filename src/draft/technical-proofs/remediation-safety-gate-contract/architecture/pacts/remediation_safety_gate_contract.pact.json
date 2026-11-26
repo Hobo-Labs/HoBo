@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RemediationSafetyGateContractConsumer"
+  },
+  "provider": {
+    "name": "RemediationSafetyGateContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Remediation Safety Gate Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/remediation-safety-gate-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.remediation_safety_gate_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

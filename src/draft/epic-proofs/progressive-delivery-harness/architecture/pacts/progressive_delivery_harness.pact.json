@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProgressiveDeliveryHarnessConsumer"
+  },
+  "provider": {
+    "name": "ProgressiveDeliveryHarnessBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Progressive Delivery Harness boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/progressive-delivery-harness/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.progressive_delivery_harness/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/x509-svid-mtls-contract",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

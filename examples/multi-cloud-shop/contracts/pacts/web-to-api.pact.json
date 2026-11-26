@@ -1,0 +1,34 @@
+{
+  "consumer": {
+    "name": "multi-cloud-shop-web"
+  },
+  "provider": {
+    "name": "multi-cloud-shop-api"
+  },
+  "interactions": [
+    {
+      "description": "storefront fetches the product catalog",
+      "request": {
+        "method": "GET",
+        "path": "/products"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "products": [
+            { "sku": "mug-01", "name": "HoBo camp mug", "priceCents": 1400 },
+            { "sku": "tee-02", "name": "HoBo bindle tee", "priceCents": 2200 }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

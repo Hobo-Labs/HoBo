@@ -1,0 +1,26 @@
+{
+  "fixtureSet": "reliability-observability-cost-finops/v1",
+  "epic": "b36b40c8-059f-4d29-8aa1-0a80c852761a",
+  "description": "Deterministic inputs for the Reliability, Observability & Cost reference simulation. Providers are mocked in memory.",
+  "personas": [
+    "SRE on-call",
+    "FinOps lead",
+    "Incident commander"
+  ],
+  "scenarios": [
+    "SRE sees a deploy SLO burn, preserved trace context, and rollback obligation.",
+    "FinOps lead sees metered spend, credit headroom, quota degradation, and runaway-spend halt.",
+    "Incident commander sees partial deploy failure classified and compensated with replay evidence.",
+    "SRE sees Golden Suite plus chaos evidence folded into degraded reliability status."
+  ],
+  "mockedBoundaries": [
+    "TelemetryBoundaryExport",
+    "TraceContextQueue",
+    "SloPolicyGate",
+    "MeteringCreditLedger",
+    "BudgetQuotaPolicyGate",
+    "SagaCompensationBoundary",
+    "GoldenChaosBoundary",
+    "ReliabilityStatusRollup"
+  ]
+}

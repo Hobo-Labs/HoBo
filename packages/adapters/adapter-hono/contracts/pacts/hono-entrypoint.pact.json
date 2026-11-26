@@ -1,0 +1,22 @@
+{
+	"consumer": { "name": "hobo-bindle-hono-app" },
+	"provider": { "name": "@hobo/adapter-hono" },
+	"interactions": [
+		{
+			"description": "honoEntrypoint returns a thunk whose fetch handles GET /hello",
+			"request": {
+				"method": "GET",
+				"path": "/hello",
+				"query": { "name": "Adapter" }
+			},
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json" },
+				"body": { "ok": true, "name": "Adapter" }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" }
+	}
+}

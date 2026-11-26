@@ -1,0 +1,1 @@
+native-kafka path: published=2 consumed=2

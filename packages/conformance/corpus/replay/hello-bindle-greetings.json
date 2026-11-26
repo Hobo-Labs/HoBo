@@ -1,0 +1,74 @@
+{
+	"id": "hello-bindle-greetings",
+	"description": "hello-bindle greeting read model recorded under seeded Clock + ULID",
+	"seed": "hobo.s1-16.hello-bindle",
+	"requiresUpcaster": false,
+	"events": [
+		{
+			"id": "01KDVDNA00NPF4ABNT68R2E8VY",
+			"streamId": "greeting:HoBo",
+			"seq": 1,
+			"type": "greeting.Requested",
+			"v": 1,
+			"ts": "2026-01-01T00:00:00.000Z",
+			"data": {
+				"name": "HoBo"
+			}
+		},
+		{
+			"id": "01KDVDNAZ8VKNKH8M37722T6GQ",
+			"streamId": "greeting:HoBo",
+			"seq": 2,
+			"type": "greeting.Served",
+			"v": 2,
+			"ts": "2026-01-01T00:00:01.000Z",
+			"data": {
+				"name": "HoBo",
+				"message": "hello, HoBo"
+			}
+		},
+		{
+			"id": "01KDVDNBYG8GXXQCJ5F09MKWRA",
+			"streamId": "greeting:world",
+			"seq": 1,
+			"type": "greeting.Requested",
+			"v": 1,
+			"ts": "2026-01-01T00:00:02.000Z",
+			"data": {
+				"name": "world"
+			}
+		},
+		{
+			"id": "01KDVDNCXR0W3K0M1RHYFQHJPK",
+			"streamId": "greeting:world",
+			"seq": 2,
+			"type": "greeting.Served",
+			"v": 2,
+			"ts": "2026-01-01T00:00:03.000Z",
+			"data": {
+				"name": "world",
+				"message": "hello, world"
+			}
+		}
+	],
+	"expected": {
+		"state": {
+			"served": [
+				{
+					"name": "HoBo",
+					"message": "hello, HoBo"
+				},
+				{
+					"name": "world",
+					"message": "hello, world"
+				}
+			],
+			"count": 2,
+			"seq": {
+				"greeting:HoBo": 2,
+				"greeting:world": 2
+			}
+		},
+		"stateDigest": "af125d202f65a526f014cbaa54224eba9804eadce62d2d16517c648863347281"
+	}
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "legal-privacy-terms-dogfood-alpha-evidence",
+  "title": "Legal Privacy Terms Dogfood Alpha Evidence",
+  "linear": "HOBO-457",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

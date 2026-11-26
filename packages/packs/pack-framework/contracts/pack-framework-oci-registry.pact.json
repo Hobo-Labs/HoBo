@@ -1,0 +1,131 @@
+{
+	"consumer": {
+		"name": "@hobo/pack-framework"
+	},
+	"provider": {
+		"name": "OciDistributionRegistry"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"sourceRefs": [
+			{
+				"url": "https://github.com/opencontainers/distribution-spec/blob/main/spec.md",
+				"checkedAt": "2026-08-08",
+				"note": "Manifest pull by digest is GET /v2/<name>/manifests/<reference>; a successful response MUST carry the Docker-Content-Digest header, and where the reference is a digest the client SHOULD verify the returned manifest against it (spec text read 2026-08-08)"
+			},
+			{
+				"url": "https://github.com/opencontainers/image-spec/blob/main/image-index.md",
+				"checkedAt": "2026-08-08",
+				"note": "The platform object (os/architecture/variant) this package's PackArchitecture strings mirror"
+			}
+		],
+		"note": "Digest-only resolution. There is deliberately no interaction that resolves a tag: the framework cannot construct that request path. Every digest in this file is a synthetic fixture value, not a real published image digest."
+	},
+	"interactions": [
+		{
+			"description": "resolve a pinned image manifest by digest",
+			"request": {
+				"method": "GET",
+				"path": "/v2/library/postgres/manifests/sha256:aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+				"headers": {
+					"Accept": "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/vnd.oci.image.manifest.v1+json",
+					"Docker-Content-Digest": "sha256:aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+				},
+				"body": {
+					"schemaVersion": 2,
+					"mediaType": "application/vnd.oci.image.manifest.v1+json",
+					"config": {
+						"mediaType": "application/vnd.oci.image.config.v1+json",
+						"digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+						"size": 7023
+					},
+					"layers": [
+						{
+							"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+							"digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+							"size": 31000000
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "a registry that answers with a different content digest than requested, which the pack must reject rather than run",
+			"request": {
+				"method": "GET",
+				"path": "/v2/library/postgres/manifests/sha256:aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+				"headers": {
+					"Accept": "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/vnd.oci.image.manifest.v1+json",
+					"Docker-Content-Digest": "sha256:00000000000000000000000000000000000000000000000000000000deadbeef"
+				},
+				"body": {
+					"schemaVersion": 2,
+					"mediaType": "application/vnd.oci.image.manifest.v1+json",
+					"config": {
+						"mediaType": "application/vnd.oci.image.config.v1+json",
+						"digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+						"size": 7023
+					},
+					"layers": []
+				}
+			}
+		},
+		{
+			"description": "an unknown digest is a hard failure; there is no tag to fall back to",
+			"request": {
+				"method": "GET",
+				"path": "/v2/library/postgres/manifests/sha256:00000000000000000000000000000000000000000000000000000000000000ff"
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"errors": [
+						{
+							"code": "MANIFEST_UNKNOWN",
+							"message": "manifest unknown"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "an anonymous pull that the registry refuses",
+			"request": {
+				"method": "GET",
+				"path": "/v2/library/postgres/manifests/sha256:aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"Content-Type": "application/json",
+					"WWW-Authenticate": "Bearer realm=\"https://auth.example.test/token\",service=\"registry.example.test\""
+				},
+				"body": {
+					"errors": [
+						{
+							"code": "UNAUTHORIZED",
+							"message": "authentication required"
+						}
+					]
+				}
+			}
+		}
+	]
+}

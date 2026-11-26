@@ -1,0 +1,249 @@
+[
+  {
+    "name": "initial install selects highest compatible stable candidate",
+    "mode": "install",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "catalog": [
+      { "name": "provider.aws", "version": "1.2.1", "tier": "stable", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      { "name": "provider.aws", "version": "1.3.0", "tier": "stable", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      { "name": "provider.aws", "version": "2.0.0", "tier": "stable", "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+    ],
+    "expected": {
+      "ok": true,
+      "pins": [
+        { "name": "provider.aws", "version": "1.3.0", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ]
+    }
+  },
+  {
+    "name": "ordinary plan preserves an existing immutable manifest pin",
+    "mode": "plan",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "currentPins": [
+      { "name": "provider.aws", "version": "1.2.1", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    ],
+    "catalog": [
+      { "name": "provider.aws", "version": "1.2.1", "tier": "stable", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      { "name": "provider.aws", "version": "1.3.0", "tier": "stable", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    ],
+    "expected": {
+      "ok": true,
+      "pins": [
+        { "name": "provider.aws", "version": "1.2.1", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ]
+    }
+  },
+  {
+    "name": "explicit upgrade mode moves to the highest compatible stable candidate",
+    "mode": "upgrade",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "currentPins": [
+      { "name": "provider.aws", "version": "1.2.1", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    ],
+    "catalog": [
+      { "name": "provider.aws", "version": "1.2.1", "tier": "stable", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      { "name": "provider.aws", "version": "1.3.0", "tier": "stable", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    ],
+    "expected": {
+      "ok": true,
+      "pins": [
+        { "name": "provider.aws", "version": "1.3.0", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ]
+    }
+  },
+  {
+    "name": "diamond dependency with compatible intersection chooses highest inside intersection",
+    "mode": "install",
+    "requests": [
+      { "name": "pack.alpha", "range": "1.0.0" },
+      { "name": "pack.beta", "range": "1.0.0" }
+    ],
+    "catalog": [
+      {
+        "name": "pack.alpha",
+        "version": "1.0.0",
+        "tier": "stable",
+        "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dependencies": [{ "name": "port.shared", "range": "^1.2.0" }]
+      },
+      {
+        "name": "pack.beta",
+        "version": "1.0.0",
+        "tier": "stable",
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "dependencies": [{ "name": "port.shared", "range": ">=1.3.0 <2.0.0" }]
+      },
+      { "name": "port.shared", "version": "1.2.9", "tier": "stable", "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
+      { "name": "port.shared", "version": "1.4.0", "tier": "stable", "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+    ],
+    "expected": {
+      "ok": true,
+      "pins": [
+        { "name": "pack.alpha", "version": "1.0.0", "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+        { "name": "pack.beta", "version": "1.0.0", "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+        { "name": "port.shared", "version": "1.4.0", "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+      ]
+    }
+  },
+  {
+    "name": "diamond dependency with incompatible ranges returns deterministic conflict",
+    "mode": "install",
+    "requests": [
+      { "name": "pack.alpha", "range": "1.0.0" },
+      { "name": "pack.beta", "range": "1.0.0" }
+    ],
+    "catalog": [
+      {
+        "name": "pack.alpha",
+        "version": "1.0.0",
+        "tier": "stable",
+        "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dependencies": [{ "name": "port.shared", "range": "^1.2.0" }]
+      },
+      {
+        "name": "pack.beta",
+        "version": "1.0.0",
+        "tier": "stable",
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "dependencies": [{ "name": "port.shared", "range": "^2.0.0" }]
+      },
+      { "name": "port.shared", "version": "1.4.0", "tier": "stable", "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+      { "name": "port.shared", "version": "2.0.1", "tier": "stable", "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222" }
+    ],
+    "expected": {
+      "ok": false,
+      "error": {
+        "code": "dependency-conflict",
+        "name": "port.shared",
+        "constraints": [
+          "pack.alpha@1.0.0 -> port.shared ^1.2.0",
+          "pack.beta@1.0.0 -> port.shared ^2.0.0"
+        ]
+      }
+    }
+  },
+  {
+    "name": "preview bump selected by upgrade requires an explicit upcaster",
+    "mode": "upgrade",
+    "requests": [
+      { "name": "wasi.websocket", "range": "^0.2.0" }
+    ],
+    "currentPins": [
+      { "name": "wasi.websocket", "version": "0.2.0", "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333" }
+    ],
+    "catalog": [
+      { "name": "wasi.websocket", "version": "0.2.0", "tier": "preview", "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333" },
+      { "name": "wasi.websocket", "version": "0.2.1", "tier": "preview", "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444" }
+    ],
+    "expected": {
+      "ok": false,
+      "error": {
+        "code": "upcaster-required",
+        "name": "wasi.websocket",
+        "from": "0.2.0",
+        "to": "0.2.1"
+      }
+    }
+  },
+  {
+    "name": "lockfile hint cannot override the manifest pin identity",
+    "mode": "plan",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "currentPins": [
+      { "name": "provider.aws", "version": "1.2.1", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    ],
+    "lockPins": [
+      { "name": "provider.aws", "version": "1.3.0", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    ],
+    "catalog": [
+      { "name": "provider.aws", "version": "1.2.1", "tier": "stable", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      { "name": "provider.aws", "version": "1.3.0", "tier": "stable", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    ],
+    "expected": {
+      "ok": false,
+      "error": {
+        "code": "lock-mismatch",
+        "name": "provider.aws",
+        "manifest": "1.2.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "lock": "1.3.0@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  {
+    "name": "floating install prefers a non-deprecated candidate over a newer deprecated candidate",
+    "mode": "install",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "catalog": [
+      {
+        "name": "provider.aws",
+        "version": "1.3.0",
+        "tier": "deprecated",
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "deprecationExpiresAt": "2026-12-01T00:00:00Z"
+      },
+      { "name": "provider.aws", "version": "1.2.9", "tier": "stable", "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666" }
+    ],
+    "expected": {
+      "ok": true,
+      "pins": [
+        { "name": "provider.aws", "version": "1.2.9", "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666" }
+      ]
+    }
+  },
+  {
+    "name": "expired deprecated candidate cannot satisfy a redeploy",
+    "mode": "install",
+    "now": "2026-06-25T00:00:00Z",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "catalog": [
+      {
+        "name": "provider.aws",
+        "version": "1.2.9",
+        "tier": "deprecated",
+        "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "deprecationExpiresAt": "2026-06-01T00:00:00Z"
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "error": {
+        "code": "dependency-conflict",
+        "name": "provider.aws",
+        "constraints": [
+          "provider.aws ^1.2.0"
+        ]
+      }
+    }
+  },
+  {
+    "name": "catalog order is irrelevant to the resolved digest set",
+    "mode": "install",
+    "requests": [
+      { "name": "provider.aws", "range": "^1.2.0" }
+    ],
+    "catalog": [
+      { "name": "provider.aws", "version": "1.3.0", "tier": "stable", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      { "name": "provider.aws", "version": "2.0.0", "tier": "stable", "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+      { "name": "provider.aws", "version": "1.2.1", "tier": "stable", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    ],
+    "shuffleCatalog": true,
+    "expected": {
+      "ok": true,
+      "pins": [
+        { "name": "provider.aws", "version": "1.3.0", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ]
+    }
+  }
+]

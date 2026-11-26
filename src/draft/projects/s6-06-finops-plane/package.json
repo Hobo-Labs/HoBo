@@ -1,0 +1,9 @@
+{
+  "name": "@hobo-draft/s6-06-finops-plane",
+  "private": true,
+  "type": "module",
+  "description": "S6-06 draft POC for FinOps plane — plan estimates, budget gates, showback (HOBO-661).",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

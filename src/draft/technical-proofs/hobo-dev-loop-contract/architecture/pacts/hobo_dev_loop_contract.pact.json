@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboDevLoopContractConsumer"
+  },
+  "provider": {
+    "name": "HoboDevLoopContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Dev Loop Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-dev-loop-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_dev_loop_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

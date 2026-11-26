@@ -1,0 +1,50 @@
+{
+  "runId": "20260731-all-eq",
+  "experiences": ["ux", "dx", "ax"],
+  "projects": ["all"],
+  "allProjects": true,
+  "personas": [
+    "product-app-developer",
+    "product-coding-agent",
+    "product-designer",
+    "product-end-user"
+  ],
+  "features": [
+    "agent-check-staged",
+    "agent-tooling-setup",
+    "cli-help-and-doctor",
+    "design-system-contract",
+    "draft-experience-proof-navigation",
+    "narrow-local-validation",
+    "public-site-first-impression"
+  ],
+  "reportOnly": false,
+  "autoInitRan": false,
+  "needsInit": false,
+  "passes": null,
+  "passesLabel": "infinite",
+  "delightPasses": null,
+  "delightPassesLabel": "infinite",
+  "cyclesCompleted": 1,
+  "delightCyclesCompleted": 1,
+  "passesCompleted": 2,
+  "stopPolicy": "infinite-until-pareto-equilibrium",
+  "regime": "delight_maximize",
+  "surveyCompleted": true,
+  "harmFloor": { "metric_total": 0, "metric_max": 0 },
+  "delightAtStop": { "delight_min": 3, "gap_max": 2, "delight_total": 48 },
+  "equilibrium": {
+    "kind": "pareto",
+    "implementableHarmRemaining": 0,
+    "implementableUpliftRemaining": 0,
+    "residualL": [
+      "fr-agent-check-multi-gate-wait",
+      "fr-public-site-optional-web-capture"
+    ],
+    "reason": "No S/M harm or uplift remaining; residual only L-effort; harm flat at 0; cognitive breaches none"
+  },
+  "hostAgent": "grok",
+  "createdAt": "2026-07-31T15:38:42.717Z",
+  "completedAt": "2026-07-31T15:45:00.000Z",
+  "stopReason": "pareto-equilibrium"
+}

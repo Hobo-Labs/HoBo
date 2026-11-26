@@ -1,0 +1,11 @@
+{
+  "integration": "dagger",
+  "status": "implemented",
+  "executionAvailable": false,
+  "targetSdk": "@dagger.io/dagger",
+  "targetDocumentation": "https://docs.dagger.io/",
+  "pendingGates": [
+    "Bind a customer-owned engine and authoritative budget reservations before hosted execution.",
+    "Verify provider shutdown acknowledgments and invoice reconciliation with PACT evidence."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "bindle": "hello-bindle",
+  "componentId": "api",
+  "declarations": [
+    {
+      "resourceId": "todos",
+      "port": "wasi:keyvalue",
+      "factory": "kv",
+      "verbs": ["get"]
+    }
+  ],
+  "triple": {
+    "iam": {
+      "policyId": "hello-bindle-todos-get",
+      "subject": "component:api",
+      "actions": ["dynamodb:BatchGetItem", "dynamodb:GetItem"],
+      "resourcePattern": "arn:aws:dynamodb:*:*:table/hello-bindle-todos"
+    },
+    "linkTable": {
+      "componentId": "api",
+      "import": "wasi:keyvalue",
+      "to": "todos",
+      "allowedVerbs": ["get"],
+      "denyByDefault": true
+    },
+    "tokenScopeCeiling": {
+      "resource": "todos",
+      "port": "wasi:keyvalue",
+      "verbs": ["get"]
+    }
+  }
+}

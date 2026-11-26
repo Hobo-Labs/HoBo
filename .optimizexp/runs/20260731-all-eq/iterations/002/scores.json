@@ -1,0 +1,65 @@
+{
+  "runId": "20260731-all-eq",
+  "iteration": 2,
+  "regime": "delight_maximize",
+  "phase": "post-uplift-survey",
+  "scoredAt": "2026-07-31T15:44:00.000Z",
+  "metric_total": 0,
+  "metric_max": 0,
+  "delight_total": 48,
+  "delight_min": 3,
+  "gap_max": 2,
+  "implementableHarmRemaining": 0,
+  "implementableUpliftRemaining": 0,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "excitement": 3,
+      "easeOfUse": 5,
+      "perceivedOptimality": 4,
+      "delight_total": 12,
+      "gapMax": 2
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "setup --help / doctor",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "excitement": 4,
+      "easeOfUse": 5,
+      "perceivedOptimality": 4,
+      "delight_total": 13,
+      "gapMax": 1
+    },
+    {
+      "persona": "product-designer",
+      "surface": "design:lint",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "excitement": 4,
+      "easeOfUse": 5,
+      "perceivedOptimality": 4,
+      "delight_total": 13,
+      "gapMax": 1
+    },
+    {
+      "persona": "product-end-user",
+      "surface": "docs:site-nav",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "excitement": 3,
+      "easeOfUse": 4,
+      "perceivedOptimality": 3,
+      "delight_total": 10,
+      "gapMax": 2,
+      "note": "CLI nav proxy limits visual excitement (L web capture residual)"
+    }
+  ]
+}

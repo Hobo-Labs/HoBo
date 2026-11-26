@@ -1,0 +1,39 @@
+{
+	"name": "@hobo/sdk",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/cloud": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/contracts": "workspace:*",
+		"@hobo/dispatcher": "workspace:*",
+		"@bufbuild/protobuf": "2.12.1",
+		"esbuild": "^0.25.0"
+	},
+	"devDependencies": {
+		"typescript": "^6.0.3",
+		"@hobo/contract-harness": "workspace:*",
+		"vitest": "^4.1.9",
+		"@hobo/runtime-local": "workspace:*",
+		"@hobo/runner-github": "workspace:*"
+	},
+	"description": "HoBo operator SDK: executable runbooks, scoped waivers, reversible chaos experiments, provider generation, and local or explicitly configured remote runners."
+}

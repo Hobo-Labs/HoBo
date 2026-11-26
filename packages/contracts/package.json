@@ -1,0 +1,34 @@
+{
+	"name": "@hobo/contracts",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/policy": "workspace:*"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*"
+	}
+}

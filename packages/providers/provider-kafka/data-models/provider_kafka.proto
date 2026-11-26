@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package hobo.provider.kafka.v1;
+
+// Kafka capability provider wire records (ADR-0138).
+// Credentials are secretless refs only — never plaintext material.
+
+enum KafkaClusterKind {
+  KAFKA_CLUSTER_KIND_UNSPECIFIED = 0;
+  KAFKA_CLUSTER_KIND_SELF_HOSTED = 1;
+  KAFKA_CLUSTER_KIND_REDPANDA = 2;
+  KAFKA_CLUSTER_KIND_MSK = 3;
+  KAFKA_CLUSTER_KIND_CONFLUENT = 4;
+  KAFKA_CLUSTER_KIND_AZURE_EVENT_HUBS = 5;
+  KAFKA_CLUSTER_KIND_LOCAL_EMULATOR = 6;
+}
+
+message KafkaClusterSpec {
+  string name = 1;
+  string tenant_id = 2;
+  KafkaClusterKind kind = 3;
+  repeated string bootstrap_servers = 4;
+  // Secretless credential binding (fromBinding / secretRef / federation).
+  string credential_binding_ref = 5;
+  bool transactional = 6;
+  bool idempotent_producer = 7;
+  string schema_registry_ref = 8;
+  map<string, string> labels = 9;
+}
+
+message KafkaTopicResource {
+  string name = 1;
+  string cluster = 2;
+  string tenant_id = 3;
+  uint32 partitions = 4;
+  uint32 replication_factor = 5;
+  string delivery_guarantee = 6;
+  string dead_letter_topic = 7;
+  string schema_ref = 8;
+}
+
+message KafkaResourceDefinition {
+  string api_version = 1; // hobo.kafka/v1
+  string kind = 2; // KafkaCluster | KafkaTopic
+  string name = 3;
+  string tenant_id = 4;
+  string body_json = 5;
+}
+
+message KafkaDoctorReport {
+  bool redpanda_available = 1;
+  bool brokers_reachable = 2;
+  string fidelity = 3; // simulated | live
+  repeated string notes = 4;
+  repeated string remediation = 5;
+}

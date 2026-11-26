@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "hobo.ci.ado/v1",
+  "pool": "hobo-local",
+  "demands": [
+    "Agent.OS -equals Linux"
+  ],
+  "pipelinePath": "packages/ci-ado/examples/pipeline.json",
+  "artifactPrefix": "hobo"
+}

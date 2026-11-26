@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboAsyncBuildingBlockPortsConsumer"
+  },
+  "provider": {
+    "name": "HoboAsyncBuildingBlockPortsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Async Building Block Ports boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-async-building-block-ports/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_async_building_block_ports/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProviderAzureFullConsumer"
+  },
+  "provider": {
+    "name": "ProviderAzureFullBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Provider Azure Full boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/provider-azure-full/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.provider_azure_full/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

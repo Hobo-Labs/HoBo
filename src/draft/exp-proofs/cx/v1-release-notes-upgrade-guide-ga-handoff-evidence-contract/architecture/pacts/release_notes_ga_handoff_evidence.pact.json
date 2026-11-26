@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "ReleaseNotesGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "ReleaseNotesGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Release notes GA handoff boundary returns accepted evidence",
+      "request": {
+        "method": "GET",
+        "path": "/release-notes-ga-handoff/evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.release-notes-ga-handoff-evidence/2026-06-30",
+          "issue": "HOBO-480",
+          "phase": "M4",
+          "milestone": "M4 GA handoff"
+        }
+      }
+    },
+    {
+      "description": "Release notes GA handoff boundary rejects unsupported publication claims",
+      "request": {
+        "method": "POST",
+        "path": "/release-notes-ga-handoff/public-claim"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "unsupported public release-note claim"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

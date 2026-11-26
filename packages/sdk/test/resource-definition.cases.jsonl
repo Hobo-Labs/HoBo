@@ -1,0 +1,5 @@
+# satisfies() — the capability verdict the planner reads.
+{"method":"satisfies","name":"port alone is a full match","input":[{"port":"database"}],"expect":{"kind":"full"}}
+{"method":"satisfies","name":"every requested feature present","input":[{"port":"database","features":["postgres","ha"]}],"expect":{"kind":"full"}}
+{"method":"satisfies","name":"names what is missing rather than just failing","input":[{"port":"database","features":["mysql"]}],"expect":{"kind":"partial","missing":["mysql"]}}
+{"method":"satisfies","name":"a different port is no match at all","input":[{"port":"kv"}],"expect":{"kind":"none"}}

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/core/capability-manifest-bundle.v1.json",
+  "title": "HoBo Capability Manifest Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["index", "capabilities", "auth", "cost"],
+  "properties": {
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "issuer", "manifestDigest", "signature", "files"],
+      "properties": {
+        "schemaVersion": { "const": "hobo.core/v1" },
+        "issuer": { "type": "string", "format": "uri" },
+        "manifestDigest": { "$ref": "#/$defs/sha256" },
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alg", "keyId", "digest"],
+          "properties": {
+            "alg": { "const": "HOBO-FIXTURE-SHA256" },
+            "keyId": { "type": "string", "minLength": 1 },
+            "digest": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": { "enum": ["capabilities.json", "auth.json", "cost.json"] },
+          "uniqueItems": true,
+          "minItems": 3
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ports", "regions", "equivalenceClasses"],
+      "properties": {
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/capabilityPort" }
+        },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "equivalenceClasses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["issuer", "flows", "scopeModel", "resourceIndicators", "tokenLifetimeSec", "audit"]
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "unitPrices"],
+      "properties": {
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "unitPrices": { "type": "object", "minProperties": 1 },
+        "freeTier": { "type": "array" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "capabilityPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "kinds", "stability"],
+      "properties": {
+        "port": { "type": "string", "minLength": 1 },
+        "kinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "stability": { "enum": ["stable", "preview", "experimental"] }
+      }
+    }
+  }
+}

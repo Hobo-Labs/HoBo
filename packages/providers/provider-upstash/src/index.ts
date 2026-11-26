@@ -1,0 +1,175 @@
+export {
+	type BuildBindingInput,
+	buildUpstashCapabilityBinding,
+	restEndpointRef,
+	UPSTASH_BINDING_PROFILE,
+} from "./binding.js";
+export {
+	createUpstashBlobCredentials,
+	UpstashBlobCredentialError,
+	type UpstashBlobCredentialOptions,
+	upstashBlobFailureDomains,
+} from "./blob-credentials.js";
+export {
+	assertUpstashBlobImmutableJournalWiring,
+	createUpstashBlobImmutableJournalReplica,
+	UpstashBlobImmutableJournalError,
+	type UpstashBlobImmutableJournalIdentity,
+	type UpstashBlobImmutableJournalOptions,
+	type UpstashBlobJournalCharge,
+	type UpstashBlobJournalMintCharge,
+	upstashBlobImmutableJournalIdentity,
+} from "./blob-immutable-journal.js";
+export {
+	assertUpstashBlobJournalTransport,
+	createUpstashBlobJournalTransport,
+	type UpstashBlobJournalTransportScope,
+} from "./blob-journal-transport.js";
+export {
+	estimateUpstashBlobLiability,
+	type UpstashMeteredRates,
+} from "./blob-pricing.js";
+export {
+	type CreateDatabaseInput,
+	type CreateDatabaseOutcome,
+	createInMemoryIdempotencyStore,
+	createUpstashClient,
+	type IdempotencyRecord,
+	type IdempotencyState,
+	type IdempotencyStore,
+	UPSTASH_START_REDIS_URL,
+	type UpstashClient,
+	type UpstashClientOptions,
+} from "./client.js";
+export {
+	compileUpstashTemporaryRedis,
+	type UpstashCompiledPlan,
+	type UpstashPlannedRequest,
+	type UpstashResourceSpec,
+} from "./compile.js";
+
+export {
+	depositSecret,
+	resolveSecret,
+	type SecretCustodyPort,
+	type SecretCustodyScope,
+	type SecretPurpose,
+	type SecretResolverPort,
+} from "./custody.js";
+export {
+	createUpstashResourceDefinition,
+	createUpstashResourceSemantics,
+	createUpstashTemporaryRedisCandidate,
+	type PlacementConstraint,
+	type ProviderSourceRef,
+	RESOURCE_DEFINITION_VNEXT_SCHEMA,
+	type RemediationHint,
+	UPSTASH_ALIAS_DEFINITION_ID,
+	UPSTASH_BINDING_PROFILE_REFS,
+	UPSTASH_BOOTSTRAP_STRATEGY_REF,
+	UPSTASH_CLAIM_ACTION_COUNT,
+	UPSTASH_CLAIM_STRATEGY_REF,
+	UPSTASH_COMPILER_REF,
+	UPSTASH_CONFORMANCE_REF,
+	UPSTASH_DEFINITION_ID,
+	UPSTASH_DEFINITION_IDS,
+	UPSTASH_EVIDENCE_CHECKED_AT,
+	UPSTASH_EXECUTOR_REF,
+	UPSTASH_PERMISSION_PROFILE_REF,
+	UPSTASH_PROFILE_IMPLEMENTATIONS,
+	UPSTASH_PROVIDER_ID,
+	UPSTASH_RESOURCE_DEFINITION,
+	UPSTASH_RESOURCE_SEMANTICS,
+	UPSTASH_SOURCE_REFS,
+	UPSTASH_STRUCTURED_CAPABILITIES,
+	UPSTASH_TEMPORARY_REDIS_CANDIDATE,
+	UPSTASH_TRUST_EVIDENCE_REF,
+	UPSTASH_UNCLAIMED_LIMITS,
+	type UpstashCandidateOverrides,
+	type UpstashResourceDefinition,
+	type UpstashResourceSemantics,
+} from "./definition.js";
+export {
+	type ClaimAttestation,
+	type ClaimVerification,
+	createUpstashTemporaryRedisDriver,
+	type DestroyOutcome,
+	manualTeardownGuidance,
+	type ObserveInput,
+	type OwnershipSignal,
+	type OwnershipVerification,
+	type ProvisionInput,
+	type RedisProbePort,
+	type RotationAttestation,
+	type UpstashClaimAction,
+	type UpstashClaimActionKind,
+	type UpstashClaimPlan,
+	type UpstashClaimState,
+	type UpstashDriverOptions,
+	type UpstashTemporaryRedis,
+	type UpstashTemporaryRedisDriver,
+} from "./driver.js";
+export {
+	createUpstashEphemeralState,
+	resolveUpstashRestEnv,
+	UPSTASH_REST_ENV_PAIRS,
+	type UpstashEphemeralStateOptions,
+	type UpstashRestEnv,
+	type UpstashRestEnvPair,
+} from "./ephemeral-state.js";
+export {
+	isProviderError,
+	PROVIDER_ERROR_CODES,
+	type ProviderErrorCode,
+	type ProviderErrorDetail,
+	type ProviderErrorOptions,
+	providerErrorForStatus,
+	redactProviderText,
+	UpstashProviderError,
+} from "./errors.js";
+export {
+	assertNoCredentialMaterial,
+	type CredentialScanHit,
+	type PublicSerializationOptions,
+	scanForCredentialMaterial,
+	toProviderFacts,
+	toProvisionReceipt,
+	type UpstashProviderFact,
+	type UpstashProvisionReceipt,
+} from "./receipt.js";
+export { createUpstashTemporaryRedisResolver } from "./resolver.js";
+export {
+	createUpstashRestExecutor,
+	parseRestReply,
+	type UpstashRestExecutorOptions,
+} from "./rest-executor.js";
+export {
+	describeStartRedisDatabase,
+	EXPECTED_FIELD_LABELS,
+	EXPECTED_HEADING,
+	type ExpectedFieldLabel,
+	MAX_LINE_LENGTH,
+	MAX_PAYLOAD_BYTES,
+	MAX_PAYLOAD_LINES,
+	parseStartRedisMetrics,
+	parseStartRedisResponse,
+	type StartRedisDatabase,
+	type StartRedisMetrics,
+	type StartRedisSummary,
+	UPSTASH_START_REDIS_CONTRACT,
+	UPSTASH_START_REDIS_NATIVE_CONTRACT,
+} from "./start-redis.js";
+export {
+	assertAllowedEndpoint,
+	createFetchTransport,
+	createGuardedTransport,
+	type TransportMethod,
+	type TransportPolicy,
+	type TransportRequest,
+	type TransportResponse,
+	UPSTASH_CONTROL_PLANE_HOST,
+	UPSTASH_CONTROL_PLANE_POLICY,
+	UPSTASH_DATA_PLANE_HOST_SUFFIX,
+	UPSTASH_DATA_PLANE_POLICY,
+	type UpstashTransport,
+} from "./transport.js";

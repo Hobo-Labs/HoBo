@@ -1,0 +1,1 @@
+{"service":"checkout","tenantId":"tenant-a","stationId":"station:prod","incumbentBackendId":"a","revision":1,"swapTimesMs":[1000],"pendingPlanId":"plan:checkout:r2","pendingBackendId":"b","pendingPercent":50,"pendingPhase":"ramp","pendingStartedAtMs":1000,"pendingPlanJson":"{\"planId\":\"plan:checkout:r2\"}"}

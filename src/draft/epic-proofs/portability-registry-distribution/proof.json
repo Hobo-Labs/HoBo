@@ -1,0 +1,35 @@
+{
+  "layer": "epic",
+  "slug": "portability-registry-distribution",
+  "title": "Portability, Registry & Distribution Reference Implementation",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/capability-indexed-discovery-contract",
+      "src/draft/technical-proofs/curated-catalog-policy-contract",
+      "src/draft/technical-proofs/distributed-artifact-resolver-contract",
+      "src/draft/technical-proofs/distributed-artifact-version-policy",
+      "src/draft/technical-proofs/hobo-add-install-verification-contract",
+      "src/draft/technical-proofs/listing-lifecycle-yank-contract",
+      "src/draft/technical-proofs/mirror-digest-selection-contract",
+      "src/draft/technical-proofs/offline-import-integrity-contract",
+      "src/draft/technical-proofs/registry-artifact-descriptor-contract",
+      "src/draft/technical-proofs/registry-dependency-confusion-guard-contract",
+      "src/draft/technical-proofs/registry-publish-flow-contract",
+      "src/draft/technical-proofs/signed-artifact-publish-install-contract",
+      "src/draft/technical-proofs/signed-offline-bundle-contract",
+      "src/draft/technical-proofs/trust-tier-policy-contract",
+      "src/draft/technical-proofs/portability-swap-equivalent-contract",
+      "src/draft/technical-proofs/registry-import-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

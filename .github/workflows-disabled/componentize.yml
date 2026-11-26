@@ -1,0 +1,54 @@
+name: componentize
+
+on:
+  push:
+    paths:
+      - "src/draft/technical-proofs/hobo-componentize/**"
+      - ".github/workflows/componentize.yml"
+  pull_request:
+    paths:
+      - "src/draft/technical-proofs/hobo-componentize/**"
+      - ".github/workflows/componentize.yml"
+
+jobs:
+  componentize:
+    # Hosted Actions runners are disabled until explicitly re-enabled.
+    if: ${{ false }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        # Linux leg follows the routed runner variable (last-resort capable);
+        # the Windows leg has no routed pool and stays GitHub-hosted.
+        os:
+          - ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable pnpm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned wasm-tools (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.235.0/wasm-tools-1.235.0-x86_64-linux.tar.gz" -o wasm-tools.tgz
+          tar -xzf wasm-tools.tgz
+          echo "$PWD/wasm-tools-1.235.0-x86_64-linux" >> "$GITHUB_PATH"
+      - name: Install pinned wasm-tools (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.235.0/wasm-tools-1.235.0-x86_64-windows.zip" -OutFile wasm-tools.zip
+          Expand-Archive wasm-tools.zip -DestinationPath .
+          echo "$PWD/wasm-tools-1.235.0-x86_64-windows" >> $env:GITHUB_PATH
+      - name: Package tests
+        run: pnpm --prefix src/draft/technical-proofs/hobo-componentize test
+      - name: Build hello-bindle twice and compare digests
+        run: node --import tsx src/draft/technical-proofs/hobo-componentize/scripts/double-build-check.mts
+      - name: wasm-tools validate
+        run: wasm-tools validate /tmp/hobo-componentize/hello-bindle.component.wasm

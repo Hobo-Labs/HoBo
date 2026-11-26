@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+package hobo.provider.kubernetes.v1;
+
+// Design-time contract artifacts for @hobo/provider-kubernetes: the records
+// this package exchanges with a Kubernetes API server when it places a
+// workload on a cluster — the parsed placement request, the objects the
+// apiserver hands back, the provision receipt assembled from them, and the
+// outcome of tearing the namespace down again.
+//
+// Not compiled at runtime. The TypeScript parsers in src/placement.ts and
+// src/api.ts are the executable view and must stay reconciled with these
+// shapes; data-models/provider_kubernetes.cue carries the invariants both
+// sides enforce.
+
+// Rollout state, derived by this package from the Deployment's own generation
+// and replica counters. Kubernetes has no single "phase" field on a
+// Deployment — it has conditions and counters that disagree during a rollout —
+// so the derivation lives here and the states are ours.
+enum KubernetesRolloutPhase {
+  KUBERNETES_ROLLOUT_PHASE_UNSPECIFIED = 0;
+  // Accepted by the apiserver, not yet observed by the deployment controller.
+  KUBERNETES_ROLLOUT_PHASE_PENDING = 1;
+  // Observed, replicas still converging.
+  KUBERNETES_ROLLOUT_PHASE_PROGRESSING = 2;
+  // Observed generation current and every desired replica available.
+  KUBERNETES_ROLLOUT_PHASE_AVAILABLE = 3;
+  // ProgressDeadlineExceeded or ReplicaFailure reported by the controller.
+  KUBERNETES_ROLLOUT_PHASE_FAILED = 4;
+}
+
+// The apiserver's own Namespace lifecycle vocabulary, verbatim.
+enum KubernetesNamespacePhase {
+  KUBERNETES_NAMESPACE_PHASE_UNSPECIFIED = 0;
+  KUBERNETES_NAMESPACE_PHASE_ACTIVE = 1;
+  KUBERNETES_NAMESPACE_PHASE_TERMINATING = 2;
+}
+
+// What this package can honestly say about a teardown it asked for. A
+// namespace DELETE is accepted asynchronously: the apiserver answers
+// Terminating, and finalizers decide when the objects actually go away.
+enum KubernetesCleanupState {
+  KUBERNETES_CLEANUP_STATE_UNSPECIFIED = 0;
+  // DELETE accepted; namespace observed Terminating. Not yet gone.
+  KUBERNETES_CLEANUP_STATE_DELETING = 1;
+  // Namespace observed absent (404) after the delete.
+  KUBERNETES_CLEANUP_STATE_DELETED = 2;
+  // Deliberately kept — an adopted namespace this package did not create.
+  KUBERNETES_CLEANUP_STATE_RETAINED = 3;
+}
+
+// A cpu/memory pair, in the two units this package normalizes to at the parse
+// boundary. Kubernetes quantities are a suffix language ("100m", "512Mi",
+// "1.5", "1e3"); comparing them as strings is how a limit ends up below its
+// request, so they are integers by the time any code compares them.
+message KubernetesResourceQuantity {
+  uint32 cpu_millicores = 1;
+  uint64 memory_bytes = 2;
+}
+
+// One workload placement, refined from the untrusted `.with(kubernetes.*)`
+// option bag before any manifest is rendered.
+message KubernetesPlacementRequest {
+  string workload_name = 1;      // DNS-1123 label
+  string namespace = 2;          // DNS-1123 label
+  string image_ref = 3;          // repository plus tag or digest
+  uint32 replicas = 4;
+  uint32 container_port = 5;
+  KubernetesResourceQuantity requests = 6;
+  KubernetesResourceQuantity limits = 7;
+  map<string, string> labels = 8;
+}
+
+// A Namespace object as returned by POST /api/v1/namespaces or
+// GET /api/v1/namespaces/{name}.
+message KubernetesNamespaceRecord {
+  string name = 1;
+  string uid = 2;
+  string resource_version = 3;
+  KubernetesNamespacePhase phase = 4;
+  int64 created_at_ms = 5;
+  // True when this package created the namespace rather than adopting one
+  // the operator already had. Only a created namespace is ever deleted.
+  bool created_by_hobo = 6;
+}
+
+// A Deployment object, reduced to the fields a rollout decision depends on.
+message KubernetesDeploymentRecord {
+  string name = 1;
+  string namespace = 2;
+  string uid = 3;
+  string resource_version = 4;
+  int64 generation = 5;
+  int64 observed_generation = 6;
+  uint32 desired_replicas = 7;
+  uint32 updated_replicas = 8;
+  uint32 ready_replicas = 9;
+  uint32 available_replicas = 10;
+  KubernetesRolloutPhase phase = 11;
+  // Populated only for the FAILED phase; the controller's condition reason
+  // (ProgressDeadlineExceeded, ReplicaFailure, ...).
+  string failure_reason = 12;
+}
+
+// A ClusterIP Service fronting the deployment. No LoadBalancer: this provider
+// does not provision cloud load balancers, and claiming otherwise would be a
+// fabricated capability.
+message KubernetesServiceRecord {
+  string name = 1;
+  string namespace = 2;
+  string cluster_ip = 3;
+  uint32 port = 4;
+  uint32 target_port = 5;
+  string cluster_dns_name = 6; // <name>.<namespace>.svc.cluster.local
+}
+
+message KubernetesProvisionReceipt {
+  string schema_version = 1;
+  string provider_id = 2;
+  string resource_class = 3;
+  KubernetesPlacementRequest placement = 4;
+  KubernetesNamespaceRecord namespace = 5;
+  KubernetesDeploymentRecord deployment = 6;
+  KubernetesServiceRecord service = 7;
+  // In-cluster address only. This provider never asserts external reachability
+  // it did not create.
+  string endpoint_url = 8;
+  bool adopted = 9;
+}
+
+message KubernetesCleanupOutcome {
+  string namespace = 1;
+  KubernetesCleanupState state = 2;
+  int64 observed_at_ms = 3;
+  // Required whenever state is RETAINED; empty otherwise.
+  string retained_reason = 4;
+}
+
+// The apiserver's error envelope (`kind: "Status"`), which is what every
+// non-2xx body is. Parsed rather than string-matched so a 409 on namespace
+// create can be told apart from a 409 on a stale resourceVersion.
+message KubernetesApiStatus {
+  string kind = 1;    // always "Status"
+  string status = 2;  // "Failure"
+  string reason = 3;  // AlreadyExists, Forbidden, Conflict, NotFound, ...
+  string message = 4;
+  uint32 code = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Provider-parity records (cross-cloud equivalence, manifest, Yard catalog,
+// realized IaC program, resolver outcome). These are the records this package
+// exchanges with the HoBo control plane rather than with an apiserver;
+// constraints for each live in provider_kubernetes.cue.
+// ---------------------------------------------------------------------------
+
+message EquivalenceMapping {
+  string class = 1;
+  string port = 2;
+  string resource_class = 3;
+  string provider_service = 4;
+  repeated string features = 5;
+}
+
+message CapabilityManifestIndex {
+  string schema = 1;
+  string provider_id = 2;
+  string manifest_schema = 3;
+}
+
+message CostFact {
+  string port = 1;
+  string sku = 2;
+  string unit = 3;
+  string marginal_price = 4;
+  uint64 free_tier_included = 5;
+}
+
+// Projected ServiceAccount token posture: no static keys in this package.
+message AuthPosture {
+  string schema = 1;
+  string mode = 2;
+  string token_audience = 3;
+  string exchange = 4;
+  bool static_secrets = 5;
+}
+
+message RealizedIacResource {
+  string name = 1;
+  string type = 2;
+  string provider = 3;
+  repeated string outputs = 4;
+}
+
+message RealizedIacProgram {
+  string api_version = 1;
+  string kind = 2;
+  string provider = 3;
+  string deployment_id = 4;
+  string stack = 5;
+  repeated RealizedIacResource resources = 6;
+}
+
+// One allocatable row of the default Yard catalog.
+message YardBindingRow {
+  string profile = 1;
+  string product_id = 2;
+  string connectivity_id = 3;
+}
+
+// The outcome shape a ResourceResolver in this package returns.
+message ResolvedResource {
+  string product_id = 1;
+  string action = 2;
+  string physical_id = 3;
+  repeated string diagnostics = 4;
+}

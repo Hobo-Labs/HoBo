@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package hobo.connector_firecrawl.v1;
+
+// Wire shape of the Firecrawl connector declaration (#1052): the opaque
+// symbol's registered definition. Design-time contract artifact — the
+// package ships no runtime and no Firecrawl SDK dependency.
+
+message ConnectorAuthRecord {
+  string protocol = 1; // auth.md
+  string discovery = 2;
+}
+
+message ConnectorDefinitionRecord {
+  string kind = 1; // connector-definition
+  string id = 2;
+  string origin = 3;
+  string audience = 4;
+  ConnectorAuthRecord auth = 5;
+  repeated string capabilities = 6; // search | scrape | map | extract
+}

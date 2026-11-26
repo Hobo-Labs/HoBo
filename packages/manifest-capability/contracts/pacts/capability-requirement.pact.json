@@ -1,0 +1,239 @@
+{
+	"consumer": {
+		"name": "hobo-planner"
+	},
+	"provider": {
+		"name": "hobo-capability-manifest"
+	},
+	"interactions": [
+		{
+			"description": "a PostgreSQL requirement crosses the boundary as its canonical wire form",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": [
+						{
+							"profileId": "data.postgres/v1",
+							"versionRange": ">=1"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": true,
+					"wire": "{\"required_profiles\":[{\"profile_id\":\"data.postgres/v1\",\"version_range\":\">=1\"}],\"preferred_profiles\":[],\"prohibited_profiles\":[],\"runtime\":{\"allowed\":[],\"preferred\":[]},\"realization\":{\"native\":true,\"pack\":true,\"bridge\":true},\"features\":[],\"guarantees\":[],\"portability\":{\"require_standard_binding\":false,\"require_export_profile\":false,\"required_migration_profiles\":[]}}"
+				}
+			}
+		},
+		{
+			"description": "an omitted versionRange arrives as the profile's own major, not as absent",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": [
+						{
+							"profileId": "data.relational/v1"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": true,
+					"wire": "{\"required_profiles\":[{\"profile_id\":\"data.relational/v1\",\"version_range\":\">=1\"}],\"preferred_profiles\":[],\"prohibited_profiles\":[],\"runtime\":{\"allowed\":[],\"preferred\":[]},\"realization\":{\"native\":true,\"pack\":true,\"bridge\":true},\"features\":[],\"guarantees\":[],\"portability\":{\"require_standard_binding\":false,\"require_export_profile\":false,\"required_migration_profiles\":[]}}"
+				}
+			}
+		},
+		{
+			"description": "a byte threshold crosses as a decimal string, because int64 has no JSON number",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": [
+						{
+							"profileId": "data.postgres/v1"
+						}
+					],
+					"features": [
+						{
+							"key": "maxStorageBytes",
+							"operator": "at-least",
+							"value": 1000000000,
+							"necessity": "required"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": true,
+					"wire": "{\"required_profiles\":[{\"profile_id\":\"data.postgres/v1\",\"version_range\":\">=1\"}],\"preferred_profiles\":[],\"prohibited_profiles\":[],\"runtime\":{\"allowed\":[],\"preferred\":[]},\"realization\":{\"native\":true,\"pack\":true,\"bridge\":true},\"features\":[{\"key\":\"maxStorageBytes\",\"operator\":\"at-least\",\"value\":{\"int_value\":\"1000000000\"},\"necessity\":\"required\"}],\"guarantees\":[],\"portability\":{\"require_standard_binding\":false,\"require_export_profile\":false,\"required_migration_profiles\":[]}}"
+				}
+			}
+		},
+		{
+			"description": "a portability ask carries its migration profiles rather than defaulting them away",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": [
+						{
+							"profileId": "data.postgres/v1"
+						}
+					],
+					"portability": {
+						"requiredMigrationProfiles": [
+							"migration.postgres.logical-copy/v1"
+						]
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": true,
+					"wire": "{\"required_profiles\":[{\"profile_id\":\"data.postgres/v1\",\"version_range\":\">=1\"}],\"preferred_profiles\":[],\"prohibited_profiles\":[],\"runtime\":{\"allowed\":[],\"preferred\":[]},\"realization\":{\"native\":true,\"pack\":true,\"bridge\":true},\"features\":[],\"guarantees\":[],\"portability\":{\"require_standard_binding\":false,\"require_export_profile\":false,\"required_migration_profiles\":[\"migration.postgres.logical-copy/v1\"]}}"
+				}
+			}
+		},
+		{
+			"description": "a requirement that names no profile is refused rather than matching everything",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": []
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": false,
+					"code": "INVALID_CAPABILITY_REQUIREMENT",
+					"message": "a capability requirement must name at least one required profile"
+				}
+			}
+		},
+		{
+			"description": "a requirement that names a provider is refused before it can reach selection",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": [
+						{
+							"profileId": "data.postgres/v1"
+						}
+					],
+					"providerId": "neon"
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": false,
+					"code": "INVALID_CAPABILITY_REQUIREMENT",
+					"message": "capability requirements must stay provider-neutral; remove providerId"
+				}
+			}
+		},
+		{
+			"description": "a profile that is both required and prohibited is refused as unsatisfiable",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1",
+				"body": {
+					"requiredProfiles": [
+						{
+							"profileId": "data.postgres/v1"
+						}
+					],
+					"prohibitedProfiles": [
+						{
+							"profileId": "data.postgres/v1"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": false,
+					"code": "INVALID_CAPABILITY_REQUIREMENT",
+					"message": "data.postgres/v1 is both required and prohibited"
+				}
+			}
+		},
+		{
+			"description": "a threshold the wire can carry but JavaScript cannot represent exactly is refused on decode",
+			"request": {
+				"method": "POST",
+				"path": "/manifests/hobo.capability-requirement/v1/decode",
+				"body": {
+					"required_profiles": [
+						{
+							"profile_id": "data.postgres/v1",
+							"version_range": ">=1"
+						}
+					],
+					"preferred_profiles": [],
+					"prohibited_profiles": [],
+					"runtime": {
+						"allowed": [],
+						"preferred": []
+					},
+					"realization": {
+						"native": true,
+						"pack": true,
+						"bridge": true
+					},
+					"features": [
+						{
+							"key": "maxStorageBytes",
+							"operator": "at-least",
+							"value": {
+								"int_value": "9007199254740993"
+							},
+							"necessity": "required"
+						}
+					],
+					"guarantees": [],
+					"portability": {
+						"require_standard_binding": false,
+						"require_export_profile": false,
+						"required_migration_profiles": []
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"schema": "hobo.capability-requirement/v1",
+					"accepted": false,
+					"code": "INVALID_CAPABILITY_WIRE",
+					"message": "features[0].value.int_value 9007199254740993 is outside the range a JavaScript number represents exactly; decoding it would silently change the threshold"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "2.0.0"
+		}
+	}
+}

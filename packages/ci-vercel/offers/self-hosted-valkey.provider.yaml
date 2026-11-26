@@ -1,0 +1,43 @@
+# A self-hosted Valkey as the hosted relay's cache (ADR-0179 amendment,
+# phase 5). Lowered into the @hobo/pricing catalog by
+# scripts/generate-offers.mts. No provider cost: the host's own cost is
+# outside this catalog.
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: self-hosted-valkey
+  displayName: Self-hosted Valkey
+  description: Valkey on infrastructure the owner runs, bound over RESP with VALKEY_URL.
+
+capabilities:
+  regions: [self-hosted]
+  mappings:
+    - id: kv/valkey
+      port: kv
+      resourceClass: valkey
+      providerService: self-hosted.valkey
+      features: [ttl, atomicIncrement, atomicCompareAndSet]
+      profiles: [kv.valkey/v1, kv.ephemeral-state/v1]
+      stability: stable
+      products: [valkey]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://valkey.io
+    checkedAt: 2026-11-11
+    note: Zero provider cost; the host is paid for elsewhere.
+  billables:
+    - id: commands
+      category: service
+      unit: command
+  products:
+    - id: valkey
+      kind: service
+      plans:
+        - id: self-hosted
+          charges:
+            - id: commands
+              metered: { billable: commands, unitPrice: "0" }

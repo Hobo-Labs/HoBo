@@ -1,0 +1,37 @@
+syntax = "proto3";
+package hobo.ci.v1;
+
+// Legacy mirror of the two CI records consumed by the moved sandbox translator.
+// Keep these field numbers and types identical to packages/ci/data-models/ci.proto.
+message SandboxAllowance {
+  double cpu_vcpu_ms = 1;
+  double memory_mb_ms = 2;
+  double egress_bytes = 3;
+  double creations = 4;
+  double proxy_bytes = 5;
+  double proxy_sessions = 6;
+  double proxy_control_calls = 7;
+}
+message SandboxPricing {
+  uint32 vcpus = 1;
+  uint32 memory_mb = 2;
+  double cpu_micros_per_vcpu_hour = 3;
+  double memory_micros_per_gb_hour = 4;
+  double creation_micros = 5;
+  double egress_micros_per_gb = 6;
+  double max_egress_bytes = 7;
+  double proxy_micros_per_gb = 8;
+  double proxy_fixed_micros = 9;
+  double network_headroom_bytes = 10;
+  double bootstrap_fixed_micros = 11;
+  bool proxy_vm_required = 12;
+  uint32 proxy_vm_vcpus = 13;
+  uint32 proxy_vm_memory_mb = 14;
+  double proxy_vm_extra_ms = 15;
+  double proxy_vm_network_bytes = 16;
+  double proxy_vm_network_headroom_bytes = 17;
+  string region = 18;
+  double proxy_control_max_calls = 19;
+  double proxy_control_call_micros = 20;
+  string plan = 21;
+}

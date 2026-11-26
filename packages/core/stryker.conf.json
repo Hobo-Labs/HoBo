@@ -1,0 +1,34 @@
+{
+  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing scoped to the parse boundaries that guard credentials, transport reach, and canonical ordering. Line coverage proves a test executed a line; mutation score proves a test would NOTICE if that line changed. These three modules are where a silently-passing test is most dangerous, so they are the ones held to a mutation threshold. Scoped deliberately: mutating all 1670 statements of @hobo/core would take far longer than a developer will wait, and a gate nobody runs is not a gate.",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "/home/user/HoBo/vitest.config.ts",
+    "dir": "/home/user/HoBo/packages/core"
+  },
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "src/ports/capability-slot.ts",
+    "src/ports/resource-resolver.ts",
+    "src/ports/http-transport.ts"
+  ],
+  "reporters": [
+    "clear-text",
+    "progress"
+  ],
+  "clearTextReporter": {
+    "maxTestsToLog": 0
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 60
+  },
+  "timeoutMS": 20000,
+  "concurrency": 4,
+  "plugins": [
+    "/home/user/HoBo/packages/core/node_modules/@stryker-mutator/vitest-runner/dist/src/index.js"
+  ],
+  "_baseline": "Measured 2026-08-17 before property tests landed: overall 64.22% (capability-slot 77.63, resource-resolver 64.64, http-transport 51.61). break is set at 60 to hold the line already achieved rather than fail from day one; raise it as the score improves. A threshold nobody can pass gets deleted, not met."
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "support-debug-tools-scope-contract",
+  "experienceType": "cx",
+  "title": "Support & Debug Tools Scope POC",
+  "linear": "HOBO-426",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

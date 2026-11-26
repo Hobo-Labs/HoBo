@@ -1,0 +1,270 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",
+  "defaultEnvironment": "ci",
+  "agent": {
+    "mode": "apply",
+    "engines": [
+      { "id": "primary", "kind": "harness", "model": "claude-code" },
+      { "id": "fallback", "kind": "anthropic", "model": "claude-sonnet-5-5", "credential": "env:ANTHROPIC_API_KEY" }
+    ],
+    "queue": { "label": "hobo-queue", "maxDepth": 50, "maxBatchSize": 20, "maxWaitMinutes": 240, "priorityLabels": ["hotfix"] },
+    "resolution": { "maxConflictedFiles": 25, "maxConflictRegions": 100 }
+  },
+  "runnerRouting": {
+    "pin": "auto",
+    "queue": { "maxWaitSeconds": 120, "maxQueued": 4 },
+    "labels": {
+      "fleet": "hobo",
+      "trunk": "hobo-trunk",
+      "local": "hobo-local-host",
+      "github": "ubuntu-24.04",
+      "box": "hobo-box"
+    },
+    "localRunner": false,
+    "boxRunner": false,
+    "mainWorkspaceParallelCap": 4,
+    "mainGate": { "reuseMergeQueue": true },
+    "mergeGroup": { "reusePrFabric": true },
+    "verdict": {
+      "minFreeRunners": 1,
+      "enterMs": 60000,
+      "exitMs": 30000,
+      "stallMs": 600000
+    },
+    "box": {
+      "slots": 2,
+      "trunkSlots": 1,
+      "trunkLend": 0,
+      "prCapWithTrunk": 1,
+      "mergeGroupLeases": 1,
+      "capacityVolatilityMb": 1024,
+      "trunkHeadroomFleetDeferMs": 45000,
+      "jobAdmission": "pull"
+    },
+    "externalPools": [
+      {
+        "labels": ["hobo-agent37"],
+        "runnerNamePrefix": "hobo-a37-",
+        "maxRunners": 4
+      }
+    ],
+    "retiredVariables": [
+      "HOBO_CI_FLEET_ROUTES",
+      "HOBO_CI_FLEET_CAPACITY",
+      "HOBO_CI_ROUTE",
+      "HOBO_CI_LOCAL_RUNNER",
+      "HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
+      "HOBO_CI_ROUTE_MAX_QUEUED",
+      "HOBO_CI_TRUNK_RUNNER",
+      "HOBO_CI_BOX_RUNNER",
+      "HOBO_CI_MAIN_REUSE_MERGE_QUEUE"
+    ]
+  },
+  "turboCache": { "api": "" },
+  "selection": {
+    "forkPullRequestEnvironment": "ci",
+    "rules": [
+      {
+        "environment": "ci",
+        "match": { "branch": "main" }
+      },
+      {
+        "environment": "production",
+        "match": { "refPrefix": "refs/tags/" }
+      }
+    ]
+  },
+  "integrations": [
+    {
+      "id": "blacksmith",
+      "provider": "blacksmith",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["blacksmith-2vcpu-ubuntu-2404"],
+      "auth": { "method": "github-app" }
+    },
+    {
+      "id": "depot",
+      "provider": "depot",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["depot-ubuntu-24.04"],
+      "auth": { "method": "github-app" }
+    },
+    {
+      "id": "jog",
+      "provider": "jog",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["jog"],
+      "auth": { "method": "github-app" }
+    },
+    {
+      "id": "boat",
+      "provider": "boat",
+      "enabled": false,
+      "organization": "Hobo-Labs",
+      "runsOn": ["boat"],
+      "auth": { "method": "device" }
+    }
+  ],
+  "environments": {
+    "local": {
+      "relayOrigin": "http://127.0.0.1:8787",
+      "allowInsecureLoopback": true,
+      "jobAdmission": "pull",
+      "engines": ["gh-actions"],
+      "policy": {
+        "accountId": "local-dev",
+        "tenantId": "local-dev",
+        "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+        "providers": [
+          {
+            "id": "local-github",
+            "kind": "local",
+            "connectionRef": "local-github",
+            "runsOn": "hobo-local-host"
+          }
+        ],
+        "budget": {
+          "scope": "ci-account",
+          "currency": "USD",
+          "period": "manual",
+          "timeZone": "UTC",
+          "limitMicros": 1000000
+        },
+        "routing": {
+          "strategy": "lowest-total-incremental-cost",
+          "noEligibleProvider": "queue",
+          "unknownAllocation": "zero"
+        },
+        "thresholds": []
+      }
+    },
+    "ci": {
+      "relayOrigin": "https://hobo-ci.vercel.app",
+      "githubWebhookOrigin": "https://hobo-ci.vercel.app",
+      "jobAdmission": "push",
+      "engines": ["gh-actions"],
+      "policy": {
+        "accountId": "hobo-labs",
+        "tenantId": "hobo-labs",
+        "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+        "providers": [
+          {
+            "id": "vercel-sandbox",
+            "kind": "vercel",
+            "connectionRef": "vercel-sandbox",
+            "runsOn": "sandbox",
+            "location": "vercel"
+          },
+          {
+            "id": "oracle-free-isolated",
+            "kind": "hobo-box-worker",
+            "connectionRef": "oracle-free-vm",
+            "runsOn": "hobo-isolated-worker"
+          },
+          {
+            "id": "github-hosted",
+            "kind": "github",
+            "connectionRef": "github-hosted",
+            "runsOn": "ubuntu-24.04",
+            "enabled": false
+          },
+          {
+            "id": "hostinger-arc",
+            "kind": "kubernetes",
+            "connectionRef": "hostinger-arc",
+            "runsOn": "hobo-arc",
+            "enabled": false,
+            "scaleSet": {
+              "name": "hobo-arc",
+              "namespace": "arc-runners",
+              "minRunners": 0,
+              "maxRunners": 4
+            }
+          },
+          {
+            "id": "agent37-runners",
+            "kind": "agent37",
+            "connectionRef": "agent37-ci",
+            "runsOn": "hobo-agent37",
+            "enabled": true,
+            "pool": {
+              "minBoxes": 0,
+              "maxBoxes": 4,
+              "type": "vm",
+              "size": { "cpu": 2, "memory": 4, "disk": 20 },
+              "region": "us",
+              "template": "agent37-ubuntu@1",
+              "idleTtlSeconds": 600,
+              "jobTimeoutSeconds": 1800,
+              "labels": ["hobo-agent37"],
+              "network": {
+                "allow": [
+                  "github.com",
+                  "api.github.com",
+                  "codeload.github.com",
+                  "objects.githubusercontent.com",
+                  "pkg-containers.githubusercontent.com",
+                  "*.actions.githubusercontent.com",
+                  "ghcr.io",
+                  "registry.npmjs.org"
+                ]
+              },
+              "budget": {
+                "limitMicros": 2000000,
+                "period": "month",
+                "maxCreatesPerHour": 60
+              }
+            }
+          }
+        ],
+        "budget": {
+          "scope": "ci-account",
+          "currency": "USD",
+          "period": "manual",
+          "timeZone": "UTC",
+          "limitMicros": 5000000
+        },
+        "routing": {
+          "strategy": "lowest-total-incremental-cost",
+          "noEligibleProvider": "queue",
+          "unknownAllocation": "zero"
+        },
+        "thresholds": []
+      }
+    },
+    "production": {
+      "relayOrigin": "https://hobo-ci.vercel.app",
+      "jobAdmission": "push",
+      "policy": {
+        "accountId": "hobo-labs-release",
+        "tenantId": "hobo-labs",
+        "pool": { "label": "hobo", "os": "linux", "architecture": "x64" },
+        "providers": [
+          {
+            "id": "vercel-sandbox",
+            "kind": "vercel",
+            "connectionRef": "vercel-sandbox",
+            "runsOn": "sandbox",
+            "location": "vercel"
+          }
+        ],
+        "budget": {
+          "scope": "ci-account",
+          "currency": "USD",
+          "period": "manual",
+          "timeZone": "UTC",
+          "limitMicros": 10000000
+        },
+        "routing": {
+          "strategy": "lowest-total-incremental-cost",
+          "noEligibleProvider": "queue",
+          "unknownAllocation": "zero"
+        },
+        "thresholds": []
+      }
+    }
+  }
+}

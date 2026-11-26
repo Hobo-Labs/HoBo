@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "ManifestIrRegistry" },
+  "interactions": [
+    {
+      "description": "register deterministic hobo manifest IR",
+      "providerStates": [{ "name": "manifest schema v1 accepted" }],
+      "request": { "method": "POST", "path": "/manifests", "body": { "schema": "hobo.manifest/v1" } },
+      "response": { "status": 201, "body": { "contentHash": "sha256:sdk-authoring-reference-001", "upcasted": false } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

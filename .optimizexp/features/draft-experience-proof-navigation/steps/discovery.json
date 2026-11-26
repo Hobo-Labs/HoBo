@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "featureId": "draft-experience-proof-navigation",
+  "bindings": [
+    {
+      "kind": "package-script",
+      "id": "script:draft:experiences",
+      "scriptName": "draft:experiences",
+      "command": "pnpm run draft:experiences",
+      "confidence": "high",
+      "reason": "Lists experience proof packages by audience."
+    }
+  ]
+}

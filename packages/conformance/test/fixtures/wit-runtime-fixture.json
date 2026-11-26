@@ -1,0 +1,133 @@
+{
+  "epic": {
+    "id": "19527db6-5b34-42e1-bf70-e8b61bd95fdf",
+    "title": "WIT & Component-Model Runtime (the membrane)",
+    "slug": "wit-component-model-runtime-membrane"
+  },
+  "scenarios": {
+    "runtimeLocalCheckout": {
+      "id": "runtimeLocalCheckout",
+      "persona": "app-developer",
+      "verticalSlice": "runtime-local-durable-workflow",
+      "boundaryIds": [
+        "wit-contract-registry",
+        "component-host-lifecycle",
+        "runtime-eventstore",
+        "actor-host",
+        "queue-clock",
+        "streamer-websocket",
+        "conformance-upgrade-gate"
+      ],
+      "inputs": {
+        "wit": {
+          "package": "hobo:runtime@0.1.0",
+          "digest": "sha256:wit-runtime-local"
+        },
+        "component": {
+          "componentId": "checkout-workflow",
+          "host": "runtime-local"
+        },
+        "queue": {
+          "messageId": "msg-001",
+          "dedupKey": "checkout-001"
+        },
+        "actor": {
+          "actorId": "cart-42",
+          "fence": 7
+        },
+        "eventStore": {
+          "stream": "checkout-42",
+          "seq": 11
+        },
+        "streamer": {
+          "streamId": "checkout-progress",
+          "frame": "payment-authorized"
+        },
+        "clock": {
+          "timerId": "retry-payment",
+          "firedAt": "2026-06-29T02:41:18Z"
+        },
+        "conformance": {
+          "suite": "runtime-port",
+          "status": "passed"
+        }
+      }
+    },
+    "crossHostMembrane": {
+      "id": "crossHostMembrane",
+      "persona": "platform-operator",
+      "verticalSlice": "portable-wrpc-membrane",
+      "boundaryIds": [
+        "wit-contract-registry",
+        "wrpc-link-transport",
+        "runtime-eventstore"
+      ],
+      "inputs": {
+        "wit": {
+          "package": "hobo:provider@0.9.0",
+          "requiredWireFloor": "0.9.0"
+        },
+        "deadlineMs": 250,
+        "maxInFlight": 64
+      }
+    },
+    "sdkConformance": {
+      "id": "sdkConformance",
+      "persona": "sdk-maintainer",
+      "verticalSlice": "sdk-and-capability-parity",
+      "boundaryIds": [
+        "wit-contract-registry",
+        "streamer-websocket",
+        "capability-grant-gate",
+        "conformance-upgrade-gate"
+      ],
+      "inputs": {
+        "wit": {
+          "package": "hobo:sdk@0.1.0",
+          "digest": "sha256:hobo-sdk"
+        },
+        "goldenIr": {
+          "language": "typescript",
+          "report": "matched"
+        },
+        "semanticsAnnex": {
+          "vector": "cancel-after-side-effect",
+          "report": "failed"
+        },
+        "websocket": {
+          "topic": "deployment-status",
+          "tenantGuard": "passed"
+        }
+      }
+    },
+    "hostUpgrade": {
+      "id": "hostUpgrade",
+      "persona": "runtime-operator",
+      "verticalSlice": "host-portability-and-upgrade",
+      "boundaryIds": [
+        "component-host-lifecycle",
+        "conformance-upgrade-gate"
+      ],
+      "inputs": {
+        "conformance": {
+          "host": "wasmtime-18",
+          "suite": "component-host",
+          "status": "passed"
+        },
+        "adapter": {
+          "adapter": "oci-component-host",
+          "status": "certified"
+        },
+        "upcaster": {
+          "from": "0.9.0",
+          "to": "1.0.0",
+          "status": "accepted"
+        },
+        "manifest": {
+          "component": "checkout-workflow",
+          "newPin": "sha256:component-host-v1"
+        }
+      }
+    }
+  }
+}

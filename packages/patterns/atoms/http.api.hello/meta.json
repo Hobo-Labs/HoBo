@@ -1,0 +1,31 @@
+{
+	"id": "http.api.hello",
+	"tier": 1,
+	"kind": "http",
+	"description": "Hono GET /hello JSON greeting used by the hello-world Bindle.",
+	"tags": [
+		"http",
+		"api",
+		"hono",
+		"hello"
+	],
+	"queries": [
+		"hello api",
+		"greeting endpoint",
+		"GET hello"
+	],
+	"requires": [],
+	"provides": [
+		"http.handler.api"
+	],
+	"params": {
+		"required": [],
+		"properties": {}
+	},
+	"files": [
+		{
+			"path": "src/api.ts",
+			"from": "body/api.ts.tpl"
+		}
+	]
+}

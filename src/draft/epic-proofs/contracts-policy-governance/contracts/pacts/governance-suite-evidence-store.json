@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "Governance Conformance Suite"
+  },
+  "provider": {
+    "name": "Audit Log/Event Projection"
+  },
+  "interactions": [
+    {
+      "description": "replay Gatekeeper and policy evidence into governance conformance",
+      "providerStates": [
+        {
+          "name": "evidence store contains gate and policy decision events"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/evidence/replay",
+        "query": {
+          "deploymentId": "deployment:checkout-prod"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "events": "like:governance-event-log",
+          "matchesRecordedDecision": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Governance Suite to Evidence Store",
+    "status": "mocked_provider_unavailable",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

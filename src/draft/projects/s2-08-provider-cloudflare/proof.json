@@ -1,0 +1,24 @@
+{
+  "layer": "project",
+  "slug": "s2-08-provider-cloudflare",
+  "title": "S2-08 @hobo/provider-cloudflare draft POC (HOBO-623)",
+  "linear": "HOBO-623",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-realize-emission-contract",
+      "src/draft/technical-proofs/provider-capability-conformance-suites",
+      "src/draft/technical-proofs/provider-cloudflare-contract"
+    ],
+    "epicProofs": [
+      "src/draft/epic-proofs/providers-iac-build-adapters"
+    ],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,52 @@
+{
+  "consumer": { "name": "PerformanceLoadTestsFollowUpPlanner" },
+  "provider": { "name": "PerformanceLoadTestsM0ScopeAcceptanceGate" },
+  "interactions": [
+    {
+      "description": "reject follow-up issue creation while M0 scope is not yet accepted",
+      "providerStates": [
+        { "name": "HOBO-440 M0 scope record exists but is not accepted" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/performance-load-tests/follow-up",
+        "body": { "phase": "M1", "m0Accepted": false }
+      },
+      "response": {
+        "status": 200,
+        "body": { "allowed": false, "reason": "M0 scope not accepted" }
+      }
+    },
+    {
+      "description": "allow M1 follow-up issue creation once M0 scope is accepted",
+      "providerStates": [
+        { "name": "HOBO-440 M0 scope record is accepted" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/performance-load-tests/follow-up",
+        "body": { "phase": "M1", "m0Accepted": true }
+      },
+      "response": {
+        "status": 200,
+        "body": { "allowed": true }
+      }
+    },
+    {
+      "description": "route an unknown performance evidence gap to its owning project",
+      "providerStates": [
+        { "name": "HOBO-440 evidence gap classifier is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/performance-load-tests/evidence-gap",
+        "body": { "gap": "slo burn rate threshold missing" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "owner": "Reliability, Observability & Cost" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

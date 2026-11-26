@@ -1,0 +1,8 @@
+# defineResource — the walkthrough §2.4 shape: a prod-only HA Postgres golden path.
+# `with:` stands in for azure.flexiblePostgres({ ha: true }), a provider realization
+# carrying its definition id.
+{"method":"defineResource","name":"is a frozen @hobo/cloud ResourceDefinition","input":[{"type":"database","engine":"postgres","class":"ha","with":{"providerId":"azure","definitionId":"azure.flexiblePostgres","properties":{"ha":true},"cost":{"sku":"flexible-postgres-ha","unit":"month","marginalPrice":"220"}},"match":{"envType":"production"}}],"subset":{"schema":"hobo.sdk/v1.resource-definition","id":"azure.flexiblePostgres","providerId":"azure","port":"database","features":["postgres","ha"],"cost":{"marginalPrice":"220"}}}
+{"method":"defineResource","name":"match keys + features become specificity, outscoring a {} default","input":[{"type":"database","engine":"postgres","class":"ha","with":{"providerId":"azure","definitionId":"azure.flexiblePostgres","properties":{"ha":true},"cost":{"sku":"flexible-postgres-ha","unit":"month","marginalPrice":"220"}},"match":{"envType":"production"}}],"subset":{"specificity":3,"match":{"envType":"production"}}}
+{"method":"defineResource","name":"infers providerId from a dotted definitionId","input":[{"type":"kv","with":{"definitionId":"azure.cosmos","properties":{"consistency":"session"}}}],"subset":{"providerId":"azure","properties":{"consistency":"session"}}}
+{"method":"defineResource","name":"refuses a realization with no provider identity","input":[{"type":"database","with":{}}],"throwsSubset":{"name":"SdkDeclarationError"}}
+{"method":"defineResource","name":"refuses a missing capability type","input":[{"type":"","with":{"providerId":"azure"}}],"throwsSubset":{"name":"SdkDeclarationError"}}

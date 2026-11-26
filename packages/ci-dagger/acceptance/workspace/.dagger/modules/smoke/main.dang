@@ -1,0 +1,43 @@
+"""
+Real native Dagger checks for the HoBo CLI acceptance lane.
+"""
+type Smoke {
+  source: Directory!
+  mode: String!
+
+  new(ws: Workspace!, mode: String! = "default") {
+    self.source = ws.directory(".")
+    self.mode = mode
+    self
+  }
+
+  pub passing: Void @check {
+    container.from("alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1")
+      .withDirectory("/work", source)
+      .withWorkdir("/work")
+      .withExec(["sh", "-ec", "test \"$(cat input.txt)\" = 'hobo acceptance'; printf 'HOBO_DAGGER_PASS\\n'"])
+      .sync
+    null
+  }
+
+  pub failing: Void @check {
+    container.from("alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1")
+      .withExec(["sh", "-c", "printf 'HOBO_DAGGER_FAIL\\n'; exit 23"])
+      .sync
+    null
+  }
+
+  pub slow: Void @check {
+    container.from("alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1")
+      .withExec(["sh", "-c", "printf 'HOBO_DAGGER_SLOW\\n'; sleep 60"])
+      .sync
+    null
+  }
+
+  pub overlay: Void @check {
+    if (mode != "ci") {
+      raise "expected the ci environment overlay"
+    }
+    null
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "LaunchSupportDogfoodAlphaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSupportDogfoodAlphaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Support Dogfood/Alpha Evidence boundary returns its recorded M1 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/launch-support-dogfood-alpha-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.launch_support_dogfood_alpha_evidence/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "consumer": { "name": "@hobo/auth-md" },
+  "provider": { "name": "AuthMdProtectedResource" },
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "boundary": "agent-principal discovery + anonymous registration",
+    "note": "Refs only. No assertion, claim token, access token, or key value appears in this contract."
+  },
+  "interactions": [
+    {
+      "description": "publishes OAuth Protected Resource Metadata as the machine-authoritative discovery document",
+      "providerStates": [
+        { "name": "the resource advertises anonymous agent registration" }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/.well-known/oauth-protected-resource",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "resource": "https://api.example.test/",
+          "authorization_servers": ["https://auth.example.test/"],
+          "scopes_supported": ["repo:read", "issues:write"],
+          "bearer_methods_supported": ["header"],
+          "anonymous_registration_endpoint": "https://api.example.test/agent/register",
+          "auth_md_url": "https://api.example.test/auth.md"
+        }
+      }
+    },
+    {
+      "description": "registers an anonymous agent bound to session, tenant/project, audience, and exact service",
+      "providerStates": [
+        { "name": "the resource advertises anonymous agent registration" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/agent/register",
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "resource": "https://api.example.test/",
+          "audience": "https://api.example.test/",
+          "session_id": "session-1",
+          "tenant_id": "tenant-acme",
+          "project_id": "project-bo",
+          "service": "https://api.example.test/",
+          "requested_scopes": ["repo:read"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "registration_ref": "reg_01H8XABCDEF",
+          "granted_scopes": ["repo:read"],
+          "private_key": "fixture-agent-key-not-a-real-credential",
+          "issued_at": "2026-08-08T12:00:00.000Z",
+          "expires_at": "2026-08-08T13:00:00.000Z",
+          "claim_endpoint": "https://api.example.test/agent/claim"
+        }
+      }
+    },
+    {
+      "description": "refuses registration when the metadata advertises no anonymous registration endpoint",
+      "providerStates": [
+        { "name": "the resource does not advertise anonymous agent registration" }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/.well-known/oauth-protected-resource",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "resource": "https://api.example.test/",
+          "authorization_servers": ["https://auth.example.test/"],
+          "scopes_supported": ["repo:read"],
+          "bearer_methods_supported": ["header"]
+        }
+      }
+    }
+  ]
+}

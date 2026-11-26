@@ -1,0 +1,14 @@
+{
+  "name": "@hobo-draft/cost-routing-eligibility-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for cost-routing eligibility checks from HOBO-155.",
+  "main": "./src/cost-routing-eligibility.ts",
+  "exports": {
+    ".": "./src/cost-routing-eligibility.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

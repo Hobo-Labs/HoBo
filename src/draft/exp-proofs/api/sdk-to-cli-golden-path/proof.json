@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "sdk-to-cli-golden-path",
+  "experienceType": "api",
+  "title": "SDK-to-CLI Golden Path",
+  "linear": "HOBO-576",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

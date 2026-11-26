@@ -1,0 +1,3 @@
+slug: flag-ruleset-sync-contract
+layer: technical
+proof-identity: ok

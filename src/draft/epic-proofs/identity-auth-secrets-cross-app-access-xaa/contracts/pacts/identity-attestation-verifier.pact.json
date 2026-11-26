@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "WorkloadAttestationVerifier" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "verifies host-signed workload measurement before SVID issuance",
+      "providerStates": [{ "name": "known tenant-a workload measurement exists" }],
+      "request": {
+        "method": "POST",
+        "path": "/attestations/verify",
+        "headers": { "content-type": "application/json" },
+        "body": { "runId": "run-2026-06-29-orders", "imageDigest": "sha256:component-orders-api", "callerTenant": "tenant-b" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "verdict": "attested", "tenant": "tenant-a", "bindle": "orders-api", "resource": "orders-api" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,162 @@
+{
+	"consumer": {
+		"name": "@hobo/trails"
+	},
+	"provider": {
+		"name": "@hobo/adapter-drizzle"
+	},
+	"interactions": [
+		{
+			"description": "ingesting a Drizzle schema module returns the canonical IR alongside its impedance findings",
+			"request": {
+				"method": "POST",
+				"path": "/schema-diff/ingest",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"dialect": "postgres",
+					"moduleExports": ["users", "activeUsersView"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"schema": {
+						"contract": "hobo.schema-ir/v1",
+						"dialect": "postgres",
+						"tables": [
+							{
+								"name": "users",
+								"columns": [
+									{
+										"name": "email",
+										"type": "varchar(320)",
+										"nullable": false,
+										"primaryKey": false,
+										"unique": true
+									},
+									{
+										"name": "id",
+										"type": "serial",
+										"nullable": false,
+										"primaryKey": true,
+										"unique": false
+									}
+								],
+								"indexes": [
+									{
+										"name": "users_email_idx",
+										"columns": ["email"],
+										"unique": true
+									}
+								]
+							}
+						]
+					},
+					"impedance": [
+						{
+							"code": "DRIZZLE_VIEW_UNREAD",
+							"detail": "Export \"activeUsersView\" is a Drizzle view; the canonical schema IR models tables only."
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "diffing two IRs returns a forward-only plan stamped with the engine id and pinned version",
+			"request": {
+				"method": "POST",
+				"path": "/schema-diff/diff",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"currentRef": "hobo.schema-ir/v1#empty",
+					"desiredRef": "hobo.schema-ir/v1#users"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"contract": "hobo.migration-plan/v1",
+					"engineId": "drizzle-kit",
+					"engineVersion": "0.31.1",
+					"steps": [
+						{
+							"phase": "expand",
+							"kind": "create-table",
+							"table": "users",
+							"destructive": false
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "REFUSAL: SQL emission without the drizzle-kit toolchain fails closed with remediation instead of approximating SQL",
+			"request": {
+				"method": "POST",
+				"path": "/schema-diff/emit-sql",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"toolchainPresent": false,
+					"planDigest": "sha256:plan-under-test"
+				}
+			},
+			"response": {
+				"status": 503,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "refused",
+					"code": "TOOLCHAIN_UNAVAILABLE",
+					"message": "SQL emission requires the drizzle-kit toolchain, which is not present.",
+					"remediation": "Install drizzle-kit in the deploying environment, then construct the engine with `createDrizzleDiffEngine({ toolchainPresent: true, emitSql })`."
+				}
+			}
+		},
+		{
+			"description": "REFUSAL: an emitter that covers only part of the plan is rejected rather than half-applied",
+			"request": {
+				"method": "POST",
+				"path": "/schema-diff/emit-sql",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"toolchainPresent": true,
+					"planDigest": "sha256:plan-under-test",
+					"emittedStepCount": 1,
+					"planStepCount": 3
+				}
+			},
+			"response": {
+				"status": 500,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"status": "refused",
+					"code": "SQL_EMISSION_INCOMPLETE",
+					"message": "The drizzle-kit emitter returned no SQL for 2 plan step(s).",
+					"remediation": "Regenerate the SQL with a drizzle-kit version that understands every step kind in the plan, or narrow the plan before emitting."
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ForgeSigningRegistryCertificationContractConsumer"
+  },
+  "provider": {
+    "name": "ForgeSigningRegistryCertificationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Forge signing registry certification boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/s5-05-forge-signing-registry-certification-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s5_05_forge_signing_registry_certification_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

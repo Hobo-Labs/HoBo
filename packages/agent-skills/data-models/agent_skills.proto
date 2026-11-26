@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hobo.agent_skills.v1;
+
+// Wire shapes for the distributable agent-skills bundle: the manifest a Registry listing serves so any agent harness can
+// discover the skills tree. Design-time contract artifacts.
+
+message SkillManifestEntry {
+  string name = 1;
+  string description = 2;
+  string entry = 3; // bundle-relative path to SKILL.md
+}
+
+message SkillsManifest {
+  string schema = 1; // hobo.agent-skills-manifest/v1
+  repeated SkillManifestEntry skills = 2;
+}

@@ -1,0 +1,48 @@
+{
+  "consumer": { "name": "yard-world-client" },
+  "provider": { "name": "hobo-control-api" },
+  "interactions": [
+    {
+      "description": "GET /state returns a yard-world snapshot",
+      "request": { "method": "GET", "path": "/state" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json; charset=utf-8" },
+        "body": {
+          "tick": 0,
+          "stations": {},
+          "yards": {},
+          "camps": {},
+          "junctions": {},
+          "characters": {}
+        }
+      }
+    },
+    {
+      "description": "POST /v1/traces accepts an OTLP/JSON trace",
+      "request": {
+        "method": "POST",
+        "path": "/v1/traces",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "resourceSpans": [] }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json; charset=utf-8" },
+        "body": { "accepted": 0 }
+      }
+    },
+    {
+      "description": "GET /events opens an SSE stream with a snapshot first",
+      "request": { "method": "GET", "path": "/events" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "text/event-stream" }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "2.0.0" },
+    "note": "Fixture pinning the intended serving boundary. This package ships no server; the hosting service (control-api) owns the HTTP boundary and this pact until a PACT runner is wired."
+  }
+}

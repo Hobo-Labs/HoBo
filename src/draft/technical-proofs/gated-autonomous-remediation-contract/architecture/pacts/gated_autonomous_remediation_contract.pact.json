@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GatedAutonomousRemediationContractConsumer"
+  },
+  "provider": {
+    "name": "GatedAutonomousRemediationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Gated Autonomous Remediation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/gated-autonomous-remediation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.gated_autonomous_remediation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

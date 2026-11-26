@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "component-host-oci-floor-contract",
+  "title": "Component Host OCI Floor POC",
+  "linear": "HOBO-28",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/runtime-local-component-host"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

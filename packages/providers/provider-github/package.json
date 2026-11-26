@@ -1,0 +1,28 @@
+{
+	"name": "@hobo/provider-github",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@bufbuild/protobuf": "2.12.1"
+	},
+	"description": "HoBo GitHub Pages realizer: publishes a static-site tree Freight to a Pages site through the GitHub REST API only, as a compare-and-swap commit to the publishing branch (Git Data API) or a Pages deployment, and reports convergence only once the Pages build for that content is observed built."
+}

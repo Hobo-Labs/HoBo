@@ -1,0 +1,78 @@
+{
+  "consumer": {
+    "name": "@hobo/connector-acp"
+  },
+  "provider": {
+    "name": "SweGrokBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "the scripted fixture-repo SWE task (edit + test) completes governed end to end",
+      "request": {
+        "method": "POST",
+        "path": "/agents/grok/tasks/fix-math",
+        "body": {
+          "instruction": "fix the math bug and run the tests",
+          "workspace": "/workspace/fixture-repo"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "report": {
+            "schema": "hobo.swe-task-report/v1",
+            "taskId": "fix-math",
+            "stopReason": "end_turn",
+            "edits": ["workspace:write edit src/math.ts"],
+            "refusals": [],
+            "completed": true
+          },
+          "sandboxReport": {
+            "schema": "hobo.sandbox-access-report/v1",
+            "outOfScopeAccess": [],
+            "clean": true
+          }
+        }
+      }
+    },
+    {
+      "description": "denied capability surfaces as a structured refusal visible to the agent",
+      "request": {
+        "method": "POST",
+        "path": "/agents/grok/sessions/sess-grok-1/permissions/t-x",
+        "body": {
+          "action": "token:mint deploy-key"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "deny",
+          "actionClass": "token",
+          "refusalPrefix": "hobo.policy-refusal/v1:"
+        }
+      }
+    },
+    {
+      "description": "vendor credentials are brokered — the bridge launch env carries exactly one injected key",
+      "request": {
+        "method": "GET",
+        "path": "/agents/grok/launch"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "command": "grok-acp",
+          "args": [],
+          "credentialEnv": "XAI_API_KEY",
+          "staticSecrets": false
+        }
+      }
+    }
+  ]
+}

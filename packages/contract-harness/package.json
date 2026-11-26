@@ -1,0 +1,30 @@
+{
+	"name": "@hobo/contract-harness",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist",
+		"data-models"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	}
+}

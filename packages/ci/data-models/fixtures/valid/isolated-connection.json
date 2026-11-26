@@ -1,0 +1,13 @@
+{
+  "accountId": "example",
+  "repository": "example/repository",
+  "repositoryId": 1,
+  "installationId": 1,
+  "runnerGroupId": 1,
+  "allowedEvents": [],
+  "allowedRefs": [],
+  "trustedRepositoryAcknowledged": true,
+  "publicRepositoryAcknowledged": true,
+  "acceptAllMatchingRepositoryJobs": true,
+  "isolatedOnly": true
+}

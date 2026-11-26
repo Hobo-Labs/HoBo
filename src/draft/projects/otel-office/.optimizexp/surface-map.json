@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "projectId": "otel-office",
+  "scannedAt": "2026-11-17T18:35:43.844Z",
+  "productName": "@hobo-draft/otel-office",
+  "packageDir": "src/draft/projects/otel-office",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/otel-office/package.json: no package bin is declared"
+  },
+  "binaries": [],
+  "binAssessments": [],
+  "defaultEntry": null,
+  "nonInteractiveHelp": null,
+  "commands": [],
+  "interactiveSurfaces": [],
+  "requiredJourneys": [
+    "happy-critical-path"
+  ],
+  "probes": []
+}

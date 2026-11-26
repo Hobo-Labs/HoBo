@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "WebsocketStreamerFanoutContractConsumer"
+  },
+  "provider": {
+    "name": "WebsocketStreamerFanoutContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Websocket Streamer Fanout Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/websocket-streamer-fanout-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.websocket_streamer_fanout_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

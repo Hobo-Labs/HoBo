@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/autonomous-drift-remediation-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for governed SRE remediation of resource drift signals.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

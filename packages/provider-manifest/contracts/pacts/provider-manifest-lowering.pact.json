@@ -1,0 +1,256 @@
+{
+  "consumer": {
+    "name": "hobo-registry-provider-ingest"
+  },
+  "provider": {
+    "name": "hobo-provider-manifest"
+  },
+  "interactions": [
+    {
+      "description": "lowers a data-only provider manifest to capability documents and a pricing catalog",
+      "request": {
+        "method": "POST",
+        "path": "/provider-manifest/v1/lower",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "schema": "hobo.provider-manifest/v1",
+          "provider": {
+            "id": "tiny-llm",
+            "displayName": "Tiny LLM"
+          },
+          "auth": {
+            "issuer": "https://auth.tiny-llm.example.com",
+            "flows": [
+              {
+                "id": "oauth",
+                "scopes": [
+                  {
+                    "name": "inference:invoke"
+                  }
+                ],
+                "oauth2": {
+                  "grant": "authorization-code",
+                  "authorizationEndpoint": "https://auth.tiny-llm.example.com/authorize",
+                  "tokenEndpoint": "https://auth.tiny-llm.example.com/token"
+                }
+              },
+              {
+                "id": "agents",
+                "authMd": {
+                  "resource": "https://api.tiny-llm.example.com",
+                  "anonymousRegistration": true
+                }
+              }
+            ]
+          },
+          "capabilities": {
+            "regions": [
+              "global"
+            ],
+            "mappings": [
+              {
+                "id": "ai/chat",
+                "port": "inference",
+                "resourceClass": "chat",
+                "providerService": "tiny.chat",
+                "products": [
+                  "chat"
+                ]
+              }
+            ]
+          },
+          "billing": {
+            "currency": "USD",
+            "version": "1",
+            "effectiveFrom": "2026-11-01T00:00:00Z",
+            "source": {
+              "url": "https://tiny-llm.example.com/pricing",
+              "checkedAt": "2026-11-10"
+            },
+            "billables": [
+              {
+                "id": "tokens",
+                "category": "ai",
+                "unit": "token"
+              }
+            ],
+            "products": [
+              {
+                "id": "chat",
+                "kind": "ai",
+                "plans": [
+                  {
+                    "id": "metered",
+                    "charges": [
+                      {
+                        "id": "tokens",
+                        "metered": {
+                          "billable": "tokens",
+                          "package": {
+                            "per": "1000000",
+                            "amount": "2.00"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "providerId": "tiny-llm",
+          "auth": {
+            "schema": "hobo.provider-auth/v1",
+            "staticSecrets": false,
+            "flows": [
+              {
+                "id": "agents",
+                "type": "auth-md",
+                "protectedResourceMetadataUrl": "https://api.tiny-llm.example.com/.well-known/oauth-protected-resource",
+                "authMdUrl": "https://api.tiny-llm.example.com/auth.md"
+              },
+              {
+                "id": "oauth",
+                "type": "oauth2-authorization-code",
+                "pkce": "S256",
+                "scopes": [
+                  "inference:invoke"
+                ]
+              }
+            ]
+          },
+          "capabilities": {
+            "schema": "hobo.capabilities/v1",
+            "capabilities": [
+              {
+                "port": "inference",
+                "interface": "hobo:inference/chat",
+                "providerService": "tiny.chat",
+                "productId": "tiny-llm/chat",
+                "regions": [
+                  "global"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "schema": "hobo.cost/v1",
+            "currency": "USD",
+            "facts": [
+              {
+                "port": "inference",
+                "sku": "tiny-llm/chat",
+                "unit": "token",
+                "marginalPrice": "0.000002",
+                "pricingStatus": "estimate"
+              }
+            ]
+          },
+          "pricingCatalog": {
+            "schema": "hobo.pricing.catalog/v1",
+            "products": [
+              {
+                "id": "tiny-llm/chat",
+                "providerId": "tiny-llm"
+              }
+            ],
+            "rateCards": [
+              {
+                "id": "tiny-llm/chat/metered@1",
+                "currency": "USD",
+                "charges": [
+                  {
+                    "base": {
+                      "id": "tokens"
+                    },
+                    "usage": {
+                      "dimension": "tokens",
+                      "perUnit": {
+                        "decimal": "0.000002",
+                        "currency": "USD"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "unrated": []
+        }
+      }
+    },
+    {
+      "description": "refuses a manifest whose prices carry no source with a typed issue list",
+      "request": {
+        "method": "POST",
+        "path": "/provider-manifest/v1/lower",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "schema": "hobo.provider-manifest/v1",
+          "provider": {
+            "id": "tiny-llm",
+            "displayName": "Tiny LLM"
+          },
+          "billing": {
+            "currency": "USD",
+            "version": "1",
+            "effectiveFrom": "2026-11-01T00:00:00Z",
+            "billables": [
+              {
+                "id": "tokens",
+                "category": "ai",
+                "unit": "token"
+              }
+            ],
+            "products": [
+              {
+                "id": "chat",
+                "kind": "ai",
+                "plans": [
+                  {
+                    "id": "metered",
+                    "charges": [
+                      {
+                        "id": "tokens",
+                        "metered": {
+                          "billable": "tokens",
+                          "unitPrice": "0.000002"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issues": [
+            {
+              "path": "billing.source",
+              "message": "is required: prices carry a source and a date"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

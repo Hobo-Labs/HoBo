@@ -1,0 +1,47 @@
+{
+	"id": "arch.konsistent-layout",
+	"tier": 0,
+	"kind": "architecture",
+	"description": "Konsistent package directories: src, test, contracts, data-models, src/_generated.",
+	"tags": [
+		"konsistent",
+		"layout",
+		"architecture",
+		"package skeleton"
+	],
+	"queries": [
+		"konsistent layout",
+		"package skeleton directories",
+		"src _generated"
+	],
+	"requires": [],
+	"provides": [
+		"arch.konsistent"
+	],
+	"params": {
+		"required": [],
+		"properties": {}
+	},
+	"files": [
+		{
+			"path": "src/.gitkeep",
+			"from": "body/src.gitkeep"
+		},
+		{
+			"path": "test/.gitkeep",
+			"from": "body/test.gitkeep"
+		},
+		{
+			"path": "contracts/.gitkeep",
+			"from": "body/contracts.gitkeep"
+		},
+		{
+			"path": "data-models/.gitkeep",
+			"from": "body/data-models.gitkeep"
+		},
+		{
+			"path": "src/_generated/.gitkeep",
+			"from": "body/generated.gitkeep"
+		}
+	]
+}

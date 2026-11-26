@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-550 support workflow mockup fixture.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibeSupportWorkflowProofMode {
+  VIBE_SUPPORT_WORKFLOW_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_SUPPORT_WORKFLOW_PROOF_MODE_LIVE = 1;
+  VIBE_SUPPORT_WORKFLOW_PROOF_MODE_SIMULATED = 2;
+  VIBE_SUPPORT_WORKFLOW_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_SUPPORT_WORKFLOW_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibeSupportWorkflowMockup {
+  string id = 1;
+  string state = 2;
+  string title = 3;
+  repeated string personas = 4;
+  repeated string questions_answered = 5;
+  repeated string fixture_ids = 6;
+}
+
+message VibeSupportWorkflowFixture {
+  string id = 1;
+  string requester = 2;
+  string customer_safe_summary = 3;
+  string severity = 4;
+  string affected_surface = 5;
+  string owner_route = 6;
+  repeated string evidence_links = 7;
+  string redaction_state = 8;
+  string next_update_condition = 9;
+  VibeSupportWorkflowProofMode proof_mode = 10;
+}
+
+message VibeSupportWorkflowScenarioPath {
+  string id = 1;
+  string narrative = 2;
+  repeated string fixture_ids = 3;
+  string safe_outcome = 4;
+}
+
+message VibeSupportWorkflowQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  string support_use = 4;
+}
+
+message VibeSupportWorkflowMockupsRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated VibeSupportWorkflowQuickstartFixtureReference quickstart_fixture_refs = 6;
+  repeated string personas = 7;
+  repeated VibeSupportWorkflowMockup mockups = 8;
+  repeated VibeSupportWorkflowFixture fixtures = 9;
+  repeated VibeSupportWorkflowScenarioPath scenario_paths = 10;
+  repeated string accessibility_notes = 11;
+  repeated string scope_out = 12;
+}

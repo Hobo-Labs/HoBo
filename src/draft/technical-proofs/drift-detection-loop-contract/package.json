@@ -1,0 +1,12 @@
+{
+  "name": "@hobo/draft-drift-detection-loop-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/drift-detection-loop.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

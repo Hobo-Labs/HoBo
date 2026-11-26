@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package hobo.draft.cli_deploy_transcript_prototype.v1;
+
+message CliDeployTranscriptPrototype {
+  string schema = 1;
+  string issue = 2;
+  repeated CliDeployScenario scenarios = 3;
+  repeated string scope_out = 4;
+}
+
+message CliDeployScenario {
+  string id = 1;
+  string title = 2;
+  string actor = 3;
+  string outcome = 4;
+  string reason = 5;
+  string deployment_plan_id = 6;
+  string deployment_set_id = 7;
+  string delta_id = 8;
+  string gatekeeper_decision_id = 9;
+  string gatekeeper_explanation = 10;
+  string resource_actor_event_id = 11;
+  string projection_id = 12;
+  string log_fixture_id = 13;
+  string value_proof = 14;
+  string proof_mode = 15;
+  string support_wording = 16;
+  string accessibility_note = 17;
+  bool mcp_equivalent = 18;
+  repeated DeployFixtureReference fixtures = 19;
+}
+
+message DeployFixtureReference {
+  string kind = 1;
+  string id = 2;
+  string source = 3;
+}
+
+message McpToolResult {
+  string operation = 1;
+  string status = 2;
+  string reason = 3;
+  string plan_id = 4;
+  string deployment_set_id = 5;
+  string delta_id = 6;
+  string gatekeeper_decision_id = 7;
+  string gatekeeper_explanation = 8;
+  repeated string fixture_ids = 9;
+  string proof_mode = 10;
+  string value_proof = 11;
+  string customer_safe_summary = 12;
+}
+
+message ScopeCreepDenial {
+  string decision = 1;
+  string reason = 2;
+  string request = 3;
+}
+
+message EvaluationSummary {
+  bool ok = 1;
+  uint32 successful_deploys = 2;
+  repeated string blocked_reasons = 3;
+  repeated string errors = 4;
+}

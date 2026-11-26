@@ -1,0 +1,13 @@
+{
+	"params": {},
+	"expectFiles": [
+		"src/api.ts"
+	],
+	"expectContains": {
+		"src/api.ts": [
+			"Hono",
+			"/hello",
+			"GREETING_PREFIX"
+		]
+	}
+}

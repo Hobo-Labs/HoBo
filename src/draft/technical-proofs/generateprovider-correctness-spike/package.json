@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/generateprovider-correctness-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike harness for generateProvider correctness, determinism, and certification.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

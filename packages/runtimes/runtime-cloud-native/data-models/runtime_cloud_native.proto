@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package hobo.runtime_cloud_native.v1;
+
+message CloudNativeIsolationInfo {
+  string isolate_boundary = 1; // "cloud_native"
+  uint32 private_sandboxes = 2;
+  string provider_id = 3;
+}
+
+message CloudNativeRegistry {
+  repeated string provider_ids = 1;
+  string default_provider = 2;
+}

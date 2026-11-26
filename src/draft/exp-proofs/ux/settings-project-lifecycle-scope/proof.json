@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "settings-project-lifecycle-scope",
+  "experienceType": "ux",
+  "title": "Settings & Project Lifecycle Scope POC",
+  "linear": "HOBO-412",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

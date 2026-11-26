@@ -1,0 +1,51 @@
+{
+	"name": "@hobo/cli",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo CLI shell with canonical verbs (up, down, dev, new, plan, doctor, codegen, build, inspect, logs, verify, sandbox, test, and more) and offline project scaffolds.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./argv": {
+			"types": "./dist/argv.d.ts",
+			"default": "./dist/argv.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/bindles": "workspace:*",
+		"@hobo/cd": "workspace:*",
+		"@hobo/cloud": "workspace:*",
+		"@hobo/componentize": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/patterns": "workspace:*",
+		"esbuild": "^0.25.0",
+		"ts-autocode-grounding": "workspace:*",
+		"ts-autocode-training": "workspace:*",
+		"typescript": "^5.9.3"
+	},
+	"devDependencies": {
+		"@hobo/broker": "workspace:*",
+		"@hobo/data": "workspace:*",
+		"@hobo/provider-cloudflare": "workspace:*",
+		"@hobo/runtime": "workspace:*",
+		"@hobo/runtime-local": "workspace:*",
+		"@types/node": "^22.15.29"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"test": "pnpm run build && vitest run"
+	}
+}

@@ -1,0 +1,38 @@
+{
+  "featureId": "narrow-local-validation",
+  "scenarioSlug": "primary-path-works-for-developer",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent",
+    "role-developers",
+    "role-devsecops",
+    "role-finops",
+    "role-platform-engineers",
+    "role-sre"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T20:13:11.872Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 526,
+    "sha256": "2c56b0559ad10fbfd081de4ac1d72211f3ad63038ba7738bc5ad21573de17ac3"
+  },
+  "frames": [],
+  "repro": {
+    "command": "pnpm run agent:check -- --staged 2>&1 | head -40",
+    "cwd": ".",
+    "via": "capture-evidence"
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

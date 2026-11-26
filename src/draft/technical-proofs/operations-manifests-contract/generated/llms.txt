@@ -1,0 +1,16 @@
+# HoBo operations surface
+
+Use these machine-readable operations manifests before scraping human docs.
+
+Primary routes:
+- deploy: hobo up (MCP deploy)
+- plan: hobo plan (MCP plan)
+- inspect: hobo inspect (MCP inspect_run)
+- logs: hobo logs (MCP tail_logs)
+- doctor: hobo doctor (MCP doctor)
+- search registry: hobo registry (MCP search_registry)
+
+Manifests:
+- /llms.txt: concise operations index
+- /llms-full.txt: full CLI and MCP reference
+- /docs.json: structured schema hobo.operations.docs/v1

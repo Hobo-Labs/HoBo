@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dogfood-yard-m1-evidence-contract",
+  "experienceType": "dx",
+  "title": "Dogfood Yard M1 Evidence Contract",
+  "linear": "HOBO-455",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

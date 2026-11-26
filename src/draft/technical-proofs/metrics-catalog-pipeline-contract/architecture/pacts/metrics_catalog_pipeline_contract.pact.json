@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MetricsCatalogPipelineContractConsumer"
+  },
+  "provider": {
+    "name": "MetricsCatalogPipelineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Metrics Catalog Pipeline Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/metrics-catalog-pipeline-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.metrics_catalog_pipeline_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/capability-profiles",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo capability implementation profiles: the provider-neutral semantic layer between Bindle primitives and hosted products (open versioned profile IDs, acyclic refinement graph, requirement parsing, hard-gate compatibility).",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/manifest-capability": "workspace:*",
+		"@hobo/manifest-request": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

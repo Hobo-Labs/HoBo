@@ -1,0 +1,16 @@
+{
+  "name": "@hobo/draft-matching-engine-skeleton-contract",
+  "private": true,
+  "type": "module",
+  "main": "./src/matching-engine.ts",
+  "types": "./src/matching-engine.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/matching-engine.d.mts",
+      "import": "./src/matching-engine.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

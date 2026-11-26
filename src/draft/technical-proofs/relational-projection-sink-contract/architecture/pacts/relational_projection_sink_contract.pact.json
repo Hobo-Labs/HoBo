@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RelationalProjectionSinkContractConsumer"
+  },
+  "provider": {
+    "name": "RelationalProjectionSinkContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Relational Projection Sink Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/relational-projection-sink-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.relational_projection_sink_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

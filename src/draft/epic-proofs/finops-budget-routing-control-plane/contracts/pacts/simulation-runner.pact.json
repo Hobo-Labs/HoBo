@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "SimulationRunner"
+  },
+  "interactions": [
+    {
+      "description": "render DX, OpsX, and FinX views from one decision graph",
+      "request": {
+        "method": "POST",
+        "path": "/simulations/run"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "decisionGraphIds": ["decision-graph:approved-route"],
+          "surfaceViews": ["dx", "opsx", "finx"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

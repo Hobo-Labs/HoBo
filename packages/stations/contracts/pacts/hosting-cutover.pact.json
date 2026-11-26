@@ -1,0 +1,11 @@
+{
+  "consumer": {"name": "HoboHostingTransitionSupervisor"},
+  "provider": {"name": "StationRoutingCutover"},
+  "metadata": {"contractKind": "library-call", "effects": "noRollback", "mutationMaxAttempts": 1},
+  "interactions": [
+    {"description":"verified weighted cutover", "request":{"operation":"executeRoutingCutover","input":{"fault":"none","minHealthyBackends":1}},"response":{"ok":true,"refused":false,"rolledBack":false,"recoveryPending":false}},
+    {"description":"final topology violates availability", "request":{"operation":"executeRoutingCutover","input":{"fault":"none","minHealthyBackends":2}},"response":{"ok":false,"refused":true,"rolledBack":false,"recoveryPending":false}},
+    {"description":"lost mutation response remains uncertain", "request":{"operation":"executeRoutingCutover","input":{"fault":"apply-response-lost","minHealthyBackends":1}},"response":{"ok":false,"refused":false,"rolledBack":false,"recoveryPending":true}},
+    {"description":"failed restoration is not claimed as rollback", "request":{"operation":"executeRoutingCutover","input":{"fault":"restore-unrealized","minHealthyBackends":1}},"response":{"ok":false,"refused":false,"rolledBack":false,"recoveryPending":true}}
+  ]
+}

@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package hobo.draft.exp_proofs.vibe_snapshop_launch_demo_storyboard.v1;
+
+message VibeSnapshopLaunchDemoStoryboard {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated string proof_modes = 6;
+  repeated SnapshopQuickstartFixtureReference quickstart_fixture_refs = 7;
+  repeated SnapshopStoryboardStep storyboard_steps = 8;
+  repeated SnapshopAssetMapEntry asset_map = 9;
+  repeated SnapshopScenarioPath scenario_paths = 10;
+  repeated string accessibility_notes = 11;
+  repeated string scope_out = 12;
+}
+
+message SnapshopQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  string consuming_step = 4;
+  string storyboard_use = 5;
+}
+
+message SnapshopStoryboardStep {
+  string id = 1;
+  string title = 2;
+  string command_or_surface = 3;
+  string proof_mode = 4;
+  string fixture_id = 5;
+  string evidence_object = 6;
+  string owner = 7;
+  string safe_claim = 8;
+  string support_docs_handoff = 9;
+}
+
+message SnapshopAssetMapEntry {
+  string kind = 1;
+  string source = 2;
+  string owner = 3;
+  string proof_mode = 4;
+  string refresh_trigger = 5;
+  string validation_route = 6;
+  string stale_downgrade = 7;
+}
+
+message SnapshopScenarioPath {
+  string id = 1;
+  string narrative = 2;
+  repeated string step_ids = 3;
+  repeated string asset_kinds = 4;
+  repeated string proof_mode_labels = 5;
+  string accessibility_note = 6;
+  string support_handoff = 7;
+  string safe_outcome = 8;
+}

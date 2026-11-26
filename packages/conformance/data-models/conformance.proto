@@ -1,0 +1,25 @@
+syntax = "proto3";
+package hobo.conformance.v1;
+
+message WorkspaceEdgeRecord {
+  string from_path = 1;
+  string to_path = 2;
+}
+
+message BoundaryViolationRecord {
+  // One of: core-imports-hobo | adapter-imports-adapter |
+  // adapter-imports-non-core | outward-dependency | workspace-cycle |
+  // unknown-package | orchestrator-imports-engine |
+  // orchestrator-imports-engine-storage | engine-imports-engine.
+  // The closed list is #BoundaryRule in conformance.cue.
+  string rule = 1;
+  string from_path = 2;
+  string to_path = 3;
+  string effect = 4;
+}
+
+message WorkspaceSkeletonValidatedEvent {
+  string workspace_rev = 1;
+  repeated WorkspaceEdgeRecord edges = 2;
+  repeated BoundaryViolationRecord violations = 3;
+}

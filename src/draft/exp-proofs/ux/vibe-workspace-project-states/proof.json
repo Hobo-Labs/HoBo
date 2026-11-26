@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-workspace-project-states",
+  "experienceType": "ux",
+  "title": "Vibe workspace/project states",
+  "linear": "HOBO-541",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

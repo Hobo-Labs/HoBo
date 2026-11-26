@@ -1,0 +1,76 @@
+{
+  "consumer": {
+    "name": "YardReceiptVerifier"
+  },
+  "provider": {
+    "name": "MetaCloudBrokerReceiptAuthority"
+  },
+  "interactions": [
+    {
+      "description": "Yard accepts a current signed broker receipt for the expected tenant, environment, manifest, and broker snapshot",
+      "request": {
+        "method": "POST",
+        "path": "/yard/receipt-integrity/verify",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "receiptId": "receipt-shop-prod-001",
+          "tenantId": "tenant-alpha",
+          "environmentId": "prod-us",
+          "manifestDigest": "sha256:manifest-shop-prod",
+          "brokerSnapshotDigest": "sha256:broker-snapshot-prod-001"
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "kind": "accepted",
+          "authority": "meta-cloud-broker",
+          "gatekeeperBoundary": "policy-after-receipt",
+          "debugEvidence": {
+            "supportSafe": true
+          }
+        }
+      }
+    },
+    {
+      "description": "Yard refuses replayed, tampered, downgraded, expired, or cross-boundary receipt reuse without returning partial receipt material",
+      "request": {
+        "method": "POST",
+        "path": "/yard/receipt-integrity/verify",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "receiptId": "receipt-shop-prod-001",
+          "tenantId": "tenant-beta"
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "kind": "rejected",
+          "reason": {
+            "code": "receipt-tenant-mismatch",
+            "supportSafe": true
+          },
+          "debugEvidence": {
+            "supportSafe": true
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

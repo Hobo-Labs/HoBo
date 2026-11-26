@@ -1,0 +1,6 @@
+{
+	"provenance": "Sanitized anonymous Cloudflare native GET script capture, 2026-10-30; account and credential headers excluded.",
+	"contentType": "multipart/form-data; boundary=3549eafda884060b05c25e945e11cade268cdde32b6c7802fad49a3da71e",
+	"body": "--3549eafda884060b05c25e945e11cade268cdde32b6c7802fad49a3da71e\r\nContent-Disposition: form-data; name=\"worker.js\"\r\n\r\nexport default { async fetch() { return new Response(\"hobo-native-budget-proof-SANITIZED\", { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } }); } };\n\r\n--3549eafda884060b05c25e945e11cade268cdde32b6c7802fad49a3da71e--\r\n",
+	"expectedSource": "export default { async fetch() { return new Response(\"hobo-native-budget-proof-SANITIZED\", { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } }); } };\n"
+}

@@ -1,0 +1,86 @@
+{
+	"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",
+	"topologyDigest": "sha256:848f2638d620dc45ab2da061e393874c54f2af47e76f21b93473c4109800f897",
+	"resolutionDigest": "sha256:f5d08c918d87ae5039cc6242499b988b5d56c7753889dcf3ee393a2f822a8f7b",
+	"topology": {
+		"schemaVersion": "hobo.resolved-topology/v1",
+		"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",
+		"junctionRef": "junction/recipe-prisma-claimable-sql-sandbox-v1",
+		"yards": [
+			{
+				"yardId": "data",
+				"yardRef": "junction/recipe-prisma-claimable-sql-sandbox-v1/data",
+				"providerId": "prisma",
+				"resourceOnly": true,
+				"sponsored": false,
+				"regions": [],
+				"camps": [],
+				"resources": [
+					{
+						"resourceRef": "junction/recipe-prisma-claimable-sql-sandbox-v1/data/sandbox",
+						"placementId": "sandbox",
+						"capabilityRef": "db",
+						"primitive": "data",
+						"satisfiesProfileId": "data.postgres/v1",
+						"productDefinitionId": "prisma.claimable-postgres/v1",
+						"realization": "native",
+						"producesBindingProfiles": [
+							"binding.postgresql/v1"
+						]
+					}
+				]
+			}
+		],
+		"bindings": []
+	},
+	"claims": {
+		"actionCount": 1,
+		"providerCount": 1,
+		"atomicity": "single-resource",
+		"earliestDeadlineMs": 1700086400000,
+		"items": [
+			{
+				"claimId": "claim/sandbox",
+				"subjectRef": "junction/recipe-prisma-claimable-sql-sandbox-v1/data/sandbox",
+				"subjectKind": "resource",
+				"providerId": "prisma",
+				"mode": "resource-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "rotatable",
+				"postClaimActions": [
+					"rotate-binding"
+				]
+			}
+		]
+	},
+	"guestLeases": [
+		{
+			"leaseId": "lease/data",
+			"yardId": "data",
+			"subjectRef": "junction/recipe-prisma-claimable-sql-sandbox-v1/data",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "retain-until-provider-expiry",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		}
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [
+			"sandbox"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": [
+			"migration.postgres-dump/v1"
+		]
+	},
+	"widenings": [],
+	"trustEvidenceRefs": [
+		"prisma.claimable-postgres/v1#sha256:93cbe8050c229d00c2b73f09c86dd9a8431155898238dfaea9864028f691e386"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/prisma.claimable-postgres/v1/data.postgres/v1"
+	],
+	"sponsoredCostMinorUnits": 0
+}

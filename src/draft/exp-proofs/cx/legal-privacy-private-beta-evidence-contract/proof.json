@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "legal-privacy-private-beta-evidence-contract",
+  "experienceType": "cx",
+  "title": "Legal Privacy Private Beta Evidence Contract",
+  "linear": "HOBO-464",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

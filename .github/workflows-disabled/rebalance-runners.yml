@@ -1,0 +1,86 @@
+name: HoBo Runner Rebalance
+
+# Dogfoods examples/ci-runner-balancing: rebalances the routed runner
+# variable (HOBO_RUNNER_LINUX_SMALL) across registered providers by
+# usage/budget then billable cost — free credits before realtime billing.
+# Plan mode always runs; apply mode needs a VARS_ADMIN_TOKEN secret (PAT
+# with repository Variables write) because the workflow GITHUB_TOKEN cannot
+# manage Actions variables. Design record:
+# docs/design/ci-runner-balancing-example.md
+
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "plan (decide only) or apply (patch variables)"
+        type: choice
+        options: [plan, apply]
+        default: plan
+      runs_on:
+        description: "runner label for the controller (hobo-last-resort when hosted runners are blocked)"
+        type: string
+        default: ubuntu-latest
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: rebalance-runners
+  cancel-in-progress: false
+
+jobs:
+  rebalance:
+    # Hosted Actions runners are disabled until explicitly re-enabled.
+    if: ${{ false }}
+    # Deliberately independent of the routed variable it manages, or a bad
+    # flip could strand it: hosted by default, dispatchable onto the
+    # last-resort label (a host-runner started from the requesting machine)
+    # when GitHub-hosted runners themselves are blocked.
+    runs-on: ${{ inputs.runs_on || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable pnpm
+        run: corepack enable pnpm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Rebalance runner routing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VARS_ADMIN_TOKEN: ${{ secrets.VARS_ADMIN_TOKEN }}
+          HOBO_RB_REPO: ${{ github.repository }}
+          HOBO_RB_OWNER_KIND: ${{ vars.HOBO_RB_OWNER_KIND || 'user' }}
+          HOBO_RB_PINS: ${{ vars.HOBO_RB_PINS }}
+          HOBO_RB_STATE_DIR: .hobo-rb-state
+          REQUESTED_MODE: ${{ inputs.mode || 'plan' }}
+          HAS_VARS_ADMIN: ${{ secrets.VARS_ADMIN_TOKEN != '' }}
+        run: |
+          MODE="$REQUESTED_MODE"
+          # Scheduled passes apply automatically once the operator has
+          # configured a variables-write token; they stay plan-only before.
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$HAS_VARS_ADMIN" = "true" ]; then
+            MODE=apply
+          fi
+          if [ "$MODE" = "apply" ] && [ "$HAS_VARS_ADMIN" != "true" ]; then
+            echo "::warning::apply requested without VARS_ADMIN_TOKEN; downgrading to plan"
+            MODE=plan
+          fi
+          echo "rebalance mode: $MODE"
+          node --import tsx examples/ci-runner-balancing/src/bin/rebalance.ts --mode "$MODE"
+      - name: Upload ledger evidence (event store + plan snapshot)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-rebalance-state
+          path: .hobo-rb-state
+          if-no-files-found: ignore
+          retention-days: 14

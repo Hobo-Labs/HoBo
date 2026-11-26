@@ -1,0 +1,12 @@
+envelope parsed: type=identity.Issued seq=7 actor=agent:agent:release
+envelope record frozen: true
+cloudevent: source=hobo://tenant-acme/identity/svid-agent-1 subject=identity/svid-agent-1
+cloudevent round-trip lossless: true
+rejected: code=HOBO_CORE_ENVELOPE_PARSE path=streamId expected=non-empty string
+rejected: code=HOBO_CORE_ENVELOPE_PARSE path=actor.kind expected=user | agent | service | system
+port descriptor: port/cache -> hobo:data/cache@1.0.0 (preview)
+non-WIT interface ref rejected: true
+container: resolve ok, duplicate registration rejected
+manifest bundle: issuer=https://acme-cloud.example.com ports=compute,database flows=oidc-federation,api-key
+rejected: code=HOBO_CORE_MANIFEST_PARSE path=auth.issuer expected=match index.issuer
+CONTRACT HELD: core parses-not-validates envelopes, ports, and manifests into frozen typed records

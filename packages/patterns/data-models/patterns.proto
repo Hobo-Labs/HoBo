@@ -1,0 +1,327 @@
+syntax = "proto3";
+
+package hobo.patterns.v1;
+
+enum PatternKind {
+  PATTERN_KIND_UNSPECIFIED = 0;
+  PATTERN_KIND_CONCEPT = 1;
+  PATTERN_KIND_STARTER = 2;
+  PATTERN_KIND_GUIDANCE = 3;
+  PATTERN_KIND_TRANSFORM = 4;
+}
+
+enum PatternMaturity {
+  PATTERN_MATURITY_UNSPECIFIED = 0;
+  PATTERN_MATURITY_STABLE = 1;
+  PATTERN_MATURITY_PARTIAL = 2;
+  PATTERN_MATURITY_EXPERIMENTAL = 3;
+  PATTERN_MATURITY_LEGACY = 4;
+  PATTERN_MATURITY_DEPRECATED = 5;
+}
+
+enum RenderingKind {
+  RENDERING_KIND_UNSPECIFIED = 0;
+  RENDERING_KIND_SNIPPET = 1;
+  RENDERING_KIND_FILE = 2;
+  RENDERING_KIND_PROJECT = 3;
+  RENDERING_KIND_MARKDOWN = 4;
+  RENDERING_KIND_VSCODE_SNIPPET = 5;
+  RENDERING_KIND_STRUCTURAL_EFFECTS = 6;
+}
+
+enum ParameterKind {
+  PARAMETER_KIND_UNSPECIFIED = 0;
+  PARAMETER_KIND_TYPESCRIPT_IDENTIFIER = 1;
+  PARAMETER_KIND_TYPESCRIPT_STRING = 2;
+  PARAMETER_KIND_JSON_STRING = 3;
+  PARAMETER_KIND_PACKAGE_NAME = 4;
+  PARAMETER_KIND_RELATIVE_PATH = 5;
+  PARAMETER_KIND_PROFILE_ID = 6;
+  PARAMETER_KIND_RESOURCE_NAME = 7;
+  PARAMETER_KIND_INTEGER = 8;
+  PARAMETER_KIND_BOOLEAN = 9;
+  PARAMETER_KIND_LITERAL_CHOICE = 10;
+}
+
+enum SearchChannel {
+  SEARCH_CHANNEL_UNSPECIFIED = 0;
+  SEARCH_CHANNEL_EXACT_ID = 1;
+  SEARCH_CHANNEL_EXACT_ALIAS = 2;
+  SEARCH_CHANNEL_EXACT_SYMBOL = 3;
+  SEARCH_CHANNEL_SYMBOLIC_FEATURE = 4;
+  SEARCH_CHANNEL_FTS5 = 5;
+  SEARCH_CHANNEL_ONTOLOGY_VECTOR = 6;
+  SEARCH_CHANNEL_OPTIONAL_DENSE = 7;
+  SEARCH_CHANNEL_COMPATIBILITY = 8;
+  SEARCH_CHANNEL_COMPOSITION = 9;
+}
+
+enum SearchDecision {
+  SEARCH_DECISION_UNSPECIFIED = 0;
+  SEARCH_DECISION_SELECTED = 1;
+  SEARCH_DECISION_CANDIDATES = 2;
+  SEARCH_DECISION_ABSTAINED = 3;
+  SEARCH_DECISION_NOT_FOUND = 4;
+  SEARCH_DECISION_INCOMPATIBLE = 5;
+}
+
+enum WritePolicy {
+  WRITE_POLICY_UNSPECIFIED = 0;
+  WRITE_POLICY_STDOUT_ONLY = 1;
+  WRITE_POLICY_CREATE_ONLY = 2;
+  WRITE_POLICY_FAIL_IF_EXISTS = 3;
+  WRITE_POLICY_MERGE_GITIGNORE = 4;
+  WRITE_POLICY_STRUCTURAL_EDIT = 5;
+  WRITE_POLICY_REPLACE_GENERATED_REGION = 6;
+}
+
+enum ValidationKind {
+  VALIDATION_KIND_UNSPECIFIED = 0;
+  VALIDATION_KIND_SCHEMA = 1;
+  VALIDATION_KIND_CUE = 2;
+  VALIDATION_KIND_RENDER = 3;
+  VALIDATION_KIND_PARSE = 4;
+  VALIDATION_KIND_FORMAT = 5;
+  VALIDATION_KIND_TYPECHECK = 6;
+  VALIDATION_KIND_SEMANTIC = 7;
+  VALIDATION_KIND_PACT = 8;
+  VALIDATION_KIND_PACKAGE = 9;
+  VALIDATION_KIND_SECURITY = 10;
+  VALIDATION_KIND_IDEMPOTENCE = 11;
+}
+
+enum EffectKind {
+  EFFECT_KIND_UNSPECIFIED = 0;
+  EFFECT_KIND_ENSURE_IMPORT = 1;
+  EFFECT_KIND_DECLARE_RESOURCE = 2;
+  EFFECT_KIND_DECLARE_CONNECTOR = 3;
+  EFFECT_KIND_ADD_DEPENDENCY = 4;
+  EFFECT_KIND_ADD_ALLOWANCE = 5;
+  EFFECT_KIND_ADD_ANNOTATION = 6;
+  EFFECT_KIND_ADD_RETURN_PROPERTY = 7;
+  EFFECT_KIND_CREATE_FILE = 8;
+  EFFECT_KIND_CREATE_PROJECT_FILE = 9;
+  EFFECT_KIND_EMIT_GUIDANCE = 10;
+}
+
+enum ReceiptStatus {
+  RECEIPT_STATUS_UNSPECIFIED = 0;
+  RECEIPT_STATUS_ACCEPTED = 1;
+  RECEIPT_STATUS_REJECTED = 2;
+  RECEIPT_STATUS_AMBIGUOUS = 3;
+  RECEIPT_STATUS_FAILED = 4;
+}
+
+message OntologyFeature {
+  string id = 1;
+  double weight = 2;
+}
+
+message PatternParameter {
+  string name = 1;
+  ParameterKind kind = 2;
+  bool required = 3;
+  string default_wire = 4;
+  repeated string choices = 5;
+  string description = 6;
+  string constraint = 7;
+  bool affects_path = 8;
+  bool display_in_receipt = 9;
+}
+
+message PatternProvenance {
+  string source_path = 1;
+  string source_commit = 2;
+  string source_symbol = 3;
+  string rationale = 4;
+}
+
+message PatternRendering {
+  string pattern_id = 1;
+  uint32 pattern_version = 2;
+  string rendering_id = 3;
+  RenderingKind kind = 4;
+  string language = 5;
+  string target_context = 6;
+  string source_path = 7;
+  WritePolicy write_policy = 8;
+  repeated string output_files = 9;
+  repeated string required_parameters = 10;
+  string content_digest = 11;
+  repeated string effect_ids = 12;
+  bool is_default = 13;
+}
+
+message StructuralEffect {
+  string id = 1;
+  EffectKind kind = 2;
+  string target = 3;
+  string payload = 4;
+}
+
+message ValidationObligation {
+  ValidationKind kind = 1;
+  string detail = 2;
+}
+
+message PatternManifest {
+  string id = 1;
+  uint32 version = 2;
+  PatternKind kind = 3;
+  PatternMaturity maturity = 4;
+  string title = 5;
+  string intent = 6;
+  string description = 7;
+  repeated string aliases = 8;
+  repeated string api_symbols = 9;
+  repeated OntologyFeature features = 10;
+  repeated string contexts = 11;
+  repeated string languages = 12;
+  repeated RenderingKind output_kinds = 13;
+  repeated PatternParameter parameters = 14;
+  repeated string provides = 15;
+  repeated string requires = 16;
+  repeated string conflicts = 17;
+  repeated StructuralEffect effects = 18;
+  repeated PatternRendering renderings = 19;
+  repeated string package_constraints = 20;
+  repeated PatternProvenance provenance = 21;
+  repeated string limitations = 22;
+  repeated ValidationObligation validations = 23;
+  string replacement_id = 24;
+  repeated string legacy_aliases = 25;
+  string content_digest = 26;
+}
+
+message PatternSearchRequest {
+  string query = 1;
+  string exact_id = 2;
+  repeated PatternKind kind_filter = 3;
+  repeated PatternMaturity maturity_filter = 4;
+  string language_filter = 5;
+  string context_filter = 6;
+  RenderingKind rendering_filter = 7;
+  uint32 max_results = 8;
+  bool allow_dense = 9;
+  bool auto_select = 10;
+  bool allow_composition = 11;
+}
+
+message ChannelScore {
+  SearchChannel channel = 1;
+  uint32 rank = 2;
+  double score = 3;
+}
+
+message PatternSearchCandidate {
+  string pattern_id = 1;
+  uint32 pattern_version = 2;
+  uint32 fused_rank = 3;
+  repeated ChannelScore channels = 4;
+  repeated string matched_terms = 5;
+  repeated string matched_features = 6;
+  repeated string missing_features = 7;
+  repeated string conflicts = 8;
+  string explanation = 9;
+  bool selectable = 10;
+}
+
+message PatternSearchReceipt {
+  string request_digest = 1;
+  string catalog_digest = 2;
+  string vocabulary_digest = 3;
+  string encoder_id = 4;
+  string encoder_digest = 5;
+  string index_digest = 6;
+  repeated SearchChannel channels_executed = 7;
+  repeated SearchChannel channels_unavailable = 8;
+  repeated PatternSearchCandidate candidates = 9;
+  SearchDecision decision = 10;
+  string reason_code = 11;
+  string selected_id = 12;
+  uint32 selected_version = 13;
+  double threshold = 14;
+  double margin = 15;
+  uint32 elapsed_ms = 16;
+  uint32 llm_calls = 17;
+  uint32 llm_input_tokens = 18;
+  uint32 llm_output_tokens = 19;
+  ReceiptStatus status = 20;
+}
+
+message VirtualFile {
+  string path = 1;
+  string digest = 2;
+  string contents = 3;
+}
+
+message PatternRenderReceipt {
+  string pattern_id = 1;
+  uint32 pattern_version = 2;
+  string rendering_id = 3;
+  repeated VirtualFile files = 4;
+  string snippet_digest = 5;
+  string catalog_digest = 6;
+  string vocabulary_digest = 7;
+  string encoder_id = 8;
+  string replay_digest = 9;
+  uint32 llm_calls = 10;
+  uint32 llm_input_tokens = 11;
+  uint32 llm_output_tokens = 12;
+  ReceiptStatus status = 13;
+  string reason_code = 14;
+}
+
+message PatternCompositionReceipt {
+  repeated string requested_features = 1;
+  repeated string chosen_ids = 2;
+  repeated string rejected_ids = 3;
+  repeated string unsatisfied = 4;
+  repeated string conflicts = 5;
+  repeated string effect_order = 6;
+  string output_digest = 7;
+  SearchDecision decision = 8;
+  string reason_code = 9;
+  uint32 llm_calls = 10;
+  uint32 llm_input_tokens = 11;
+  uint32 llm_output_tokens = 12;
+  ReceiptStatus status = 13;
+}
+
+message PatternApplicationPlan {
+  string isolation_run_id = 1;
+  string source_root = 2;
+  string target_path = 3;
+  repeated string expected_preimage = 4;
+  repeated StructuralEffect effects = 5;
+  bool promotion_required = 6;
+}
+
+message PatternApplicationReceipt {
+  string isolation_run_id = 1;
+  repeated string changed_files = 2;
+  repeated string postimage = 3;
+  bool idempotent = 4;
+  bool promotion_required = 5;
+  string promotion_ref = 6;
+  uint32 llm_calls = 7;
+  uint32 llm_input_tokens = 8;
+  uint32 llm_output_tokens = 9;
+  ReceiptStatus status = 10;
+  string reason_code = 11;
+}
+
+message PatternEvalCase {
+  string id = 1;
+  string query = 2;
+  repeated string expected_ids = 3;
+  bool expect_abstain = 4;
+}
+
+message PatternEvalReport {
+  uint32 cases = 1;
+  double recall_at_1 = 2;
+  double recall_at_3 = 3;
+  double abstain_precision = 4;
+  uint32 elapsed_ms = 5;
+}

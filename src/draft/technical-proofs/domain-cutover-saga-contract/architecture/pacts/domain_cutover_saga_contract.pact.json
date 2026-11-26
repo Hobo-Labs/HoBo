@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DomainCutoverSagaContractConsumer"
+  },
+  "provider": {
+    "name": "DomainCutoverSagaContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Domain Cutover Saga Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/domain-cutover-saga-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.domain_cutover_saga_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

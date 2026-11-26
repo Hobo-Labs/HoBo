@@ -1,0 +1,114 @@
+{
+	"consumer": {
+		"name": "HoboBrokerGatePlaneConsumer"
+	},
+	"provider": {
+		"name": "OpaRegoDecisionBoundary"
+	},
+	"interactions": [
+		{
+			"description": "The broker queries the Rego decision and an allow flows through",
+			"request": {
+				"method": "POST",
+				"path": "/v1/data/hobo/broker/decision",
+				"body": {
+					"input": {
+						"request": {
+							"subject": { "kind": "service", "id": "broker:yard-1" },
+							"action": "hobo:broker:resolve",
+							"resource": { "kind": "bindle", "id": "bindle:checkout" },
+							"phase": "plan"
+						},
+						"costQuota": {
+							"quota": "deployments/day",
+							"used": 2,
+							"limit": 20
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"result": {
+						"effect": "allow",
+						"reasons": [],
+						"policyIds": ["hobo.rego/placement-allow"]
+					}
+				}
+			}
+		},
+		{
+			"description": "A Rego deny lowers onto a policy-plane rejection reason",
+			"request": {
+				"method": "POST",
+				"path": "/v1/data/hobo/broker/decision",
+				"body": {
+					"input": {
+						"request": {
+							"subject": { "kind": "service", "id": "broker:yard-1" },
+							"action": "hobo:broker:resolve",
+							"resource": { "kind": "bindle", "id": "bindle:frozen" },
+							"phase": "plan"
+						},
+						"costQuota": {
+							"quota": "deployments/day",
+							"used": 2,
+							"limit": 20
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"result": {
+						"effect": "deny",
+						"reasons": [
+							{
+								"code": "policy-denied",
+								"message": "bindle:frozen deploys are frozen by change freeze CF-42",
+								"plane": "policy"
+							}
+						],
+						"policyIds": ["hobo.rego/change-freeze"]
+					}
+				}
+			}
+		},
+		{
+			"description": "An unreachable OPA fails closed to deny",
+			"request": {
+				"method": "POST",
+				"path": "/v1/data/hobo/broker/decision",
+				"body": {
+					"input": {
+						"request": {
+							"subject": { "kind": "service", "id": "broker:yard-1" },
+							"action": "hobo:broker:resolve",
+							"resource": { "kind": "bindle", "id": "bindle:checkout" },
+							"phase": "plan"
+						},
+						"costQuota": {
+							"quota": "deployments/day",
+							"used": 2,
+							"limit": 20
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 503,
+				"body": {
+					"expectedBrokerEffect": "deny",
+					"expectedReasonCode": "policy-engine-unavailable"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

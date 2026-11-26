@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ConnectorRuntimeBrokerContractConsumer"
+  },
+  "provider": {
+    "name": "ConnectorRuntimeBrokerContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Connector Runtime Broker Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/connector-runtime-broker-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.connector_runtime_broker_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

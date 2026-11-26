@@ -1,0 +1,85 @@
+{
+	"gate_id": "release",
+	"status": "passed",
+	"repo_commit": "d6ed0a0c92c99a4d9e28272dfd1c060dce881971",
+	"ci_run_url": "",
+	"started_at": "2026-10-17T05:04:11.596Z",
+	"finished_at": "2026-10-17T05:04:15.874Z",
+	"checks": [
+		{
+			"check_id": "acceptance-plans-fresh",
+			"command": [
+				"node",
+				"--import",
+				"tsx",
+				"packages/stage-gate/scripts/check-acceptance.mts",
+				"plans-fresh"
+			],
+			"exit_code": 0,
+			"status": "passed",
+			"evidence": {
+				"outcome": "passed",
+				"step": "plans-fresh",
+				"command": "ai-bdd compile --check",
+				"exit_code": "0"
+			}
+		},
+		{
+			"check_id": "acceptance-replay",
+			"command": [
+				"node",
+				"--import",
+				"tsx",
+				"packages/stage-gate/scripts/check-acceptance.mts",
+				"replay"
+			],
+			"exit_code": 0,
+			"status": "passed",
+			"evidence": {
+				"outcome": "passed",
+				"step": "replay",
+				"exit_code": "0",
+				"run_id": "c7b9647e-a455-490b-a645-38fc66ef3bc8",
+				"report_digest": "sha256:6954592f51e527c3cb708c9633437875ea773f1a4e5b4edc37ad91da93d47139",
+				"scenarios_total": "5",
+				"scenarios_passed": "5",
+				"scenarios_healed": "0",
+				"scenarios_failed": "0",
+				"scenarios_inconclusive": "0",
+				"scenarios_blocked": "0",
+				"scenarios_error": "0",
+				"scenarios_skipped": "0",
+				"fuzzy_steps": "1",
+				"model_calls": "0",
+				"frozen": "true",
+				"no_agent": "true",
+				"report_exit_code": "0",
+				"report_started_at": "2026-10-17T05:04:14.536Z"
+			}
+		},
+		{
+			"check_id": "acceptance-evidence-intact",
+			"command": [
+				"node",
+				"--import",
+				"tsx",
+				"packages/stage-gate/scripts/check-acceptance.mts",
+				"evidence-intact"
+			],
+			"exit_code": 0,
+			"status": "passed",
+			"evidence": {}
+		}
+	],
+	"artifact": {
+		"digest_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		"byte_length": 0,
+		"media_type": "application/octet-stream"
+	},
+	"signature": {
+		"verified": false,
+		"signer_identity": "",
+		"provenance_tier": "",
+		"conformance_report_digest": ""
+	}
+}

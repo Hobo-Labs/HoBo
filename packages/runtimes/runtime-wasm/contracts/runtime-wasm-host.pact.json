@@ -1,0 +1,25 @@
+{
+	"consumer": { "name": "hobo-composition-root" },
+	"provider": { "name": "runtime-wasm-host" },
+	"interactions": [
+		{
+			"description": "ensure wasm toolchain under HOBO_HOME",
+			"request": {
+				"method": "POST",
+				"path": "/runtime-host/ensure",
+				"body": { "kind": "wasm", "hoboHome": "/tmp/hobo-home" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "wasm",
+					"ready": true,
+					"isolateBoundary": "wasmtime_process"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

@@ -1,0 +1,60 @@
+{
+  "consumer": {
+    "name": "LegalPrivacyReleaseCandidateEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LegalPrivacyReleaseCandidateEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Legal privacy release-candidate boundary returns accepted M3 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/legal-privacy-release-candidate-evidence-contract/evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.legal_privacy_release_candidate_evidence/v1",
+          "issue": "HOBO-471",
+          "phase": "M3",
+          "milestoneGate": "M3 Release candidate"
+        }
+      }
+    },
+    {
+      "description": "Legal privacy release-candidate boundary rejects unsupported public claims",
+      "request": {
+        "method": "POST",
+        "path": "/legal-privacy-release-candidate-evidence-contract/claims"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "unsupported public claim"
+        }
+      }
+    },
+    {
+      "description": "Legal privacy release-candidate boundary rejects speculative follow-ups",
+      "request": {
+        "method": "POST",
+        "path": "/legal-privacy-release-candidate-evidence-contract/follow-ups"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "follow-up is allowed only for missing evidence"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

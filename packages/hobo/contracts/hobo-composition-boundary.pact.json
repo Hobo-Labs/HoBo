@@ -1,0 +1,32 @@
+{
+  "consumer": {
+    "name": "@hobo/hobo"
+  },
+  "provider": {
+    "name": "HoboComposedCliBoundary"
+  },
+  "interactions": [
+    {
+      "description": "The composed hobo CLI drives the default local/mocked runtime through collect -> plan -> up -> down without falling back to shell stubs",
+      "request": {
+        "method": "POST",
+        "path": "/hobo/compose/deploy"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.composition-boundary/v1",
+          "lane": "local-mocked",
+          "stubbed": false,
+          "verbs": ["collect", "plan", "up", "down", "dev"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

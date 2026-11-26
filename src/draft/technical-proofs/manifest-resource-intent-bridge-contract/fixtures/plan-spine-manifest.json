@@ -1,0 +1,25 @@
+{
+  "schema": "hobo.manifest/v1",
+  "resources": {
+    "db": {
+      "type": "data.v1",
+      "port": "hobo:data",
+      "paradigm": "relational",
+      "allow": ["query"],
+      "annotations": {
+        "with": {
+          "aws.rds": { "instanceClass": "db.t3.small", "region": "us-east-1" }
+        }
+      }
+    },
+    "api": {
+      "type": "component.v1",
+      "port": "wasi:http/incoming-handler",
+      "links": [{ "import": "hobo:data", "to": "db" }],
+      "bind": ["db"],
+      "annotations": {
+        "scaling": { "min": 1, "max": 10 }
+      }
+    }
+  }
+}

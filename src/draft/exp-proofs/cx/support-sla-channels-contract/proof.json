@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "support-sla-channels-contract",
+  "experienceType": "cx",
+  "title": "Support SLA Channels Contract",
+  "linear": "HOBO-496",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

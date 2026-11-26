@@ -1,0 +1,65 @@
+{
+  "id": "bindle.guidance.provider-neutral",
+  "version": 1,
+  "kind": "guidance",
+  "maturity": "stable",
+  "title": "provider-neutral guidance",
+  "intent": "provider pins belong on the Yard",
+  "description": "provider pins belong on the Yard",
+  "aliases": [
+    "provider neutral",
+    "no provider pin"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "constraint:provider-neutral",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": false,
+      "default": "resource",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "guidance:provider-neutral"
+  ],
+  "requires": [],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    },
+    {
+      "id": "markdown",
+      "kind": "markdown",
+      "path": "body/guide.md.tpl"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

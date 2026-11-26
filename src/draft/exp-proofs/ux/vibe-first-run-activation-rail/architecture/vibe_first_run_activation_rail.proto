@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package hobo.draft.vibe_first_run_activation_rail.v1;
+
+message VibeFirstRunActivationRail {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated string scope_out = 6;
+  repeated ActivationRailWireframe wireframes = 7;
+  repeated ActivationRailState state_model = 8;
+  repeated ActivationRailOutcome outcomes = 9;
+  repeated ActivationRailProofModeLegend proof_mode_legend = 10;
+}
+
+message ActivationRailWireframe {
+  string entry_point = 1;
+  string primary_question = 2;
+  repeated string visible_states = 3;
+  string next_action = 4;
+  repeated string accessibility_notes = 5;
+}
+
+message ActivationRailState {
+  string stage = 1;
+  string entry_condition = 2;
+  string exit_condition = 3;
+  string owner = 4;
+  string evidence_object = 5;
+  string missing_prerequisite_behavior = 6;
+  string proof_mode = 7;
+  repeated string quickstart_fixture_ids = 8;
+}
+
+message ActivationRailOutcome {
+  string kind = 1;
+  string title = 2;
+  string user_message = 3;
+  string owner = 4;
+  string proof_mode = 5;
+  repeated string quickstart_fixture_ids = 6;
+}
+
+message ActivationRailProofModeLegend {
+  string proof_mode = 1;
+  string label = 2;
+  string meaning = 3;
+}

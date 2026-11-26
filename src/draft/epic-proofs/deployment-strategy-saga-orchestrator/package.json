@@ -1,0 +1,9 @@
+{
+  "name": "@hobo-draft/deployment-strategy-saga-orchestrator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "simulate": "node --import tsx simulation/run-simulation.ts",
+    "test": "vitest run --root ."
+  }
+}

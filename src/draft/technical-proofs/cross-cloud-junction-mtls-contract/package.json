@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/cross-cloud-junction-mtls-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-642 cross-cloud Junction federation, connectivity tiers, and SVID-keyed mTLS.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Deployment Dashboard
+// Topology Scope Contract reasons about. This is a design-time contract
+// artifact, not runtime-compiled production code.
+
+enum DeploymentDashboardTopologyScopeEvidenceKind {
+  DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE_EVIDENCE_KIND_DESIGN_DOC = 1;
+  DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE_EVIDENCE_KIND_FIXTURE = 3;
+  DEPLOYMENT_DASHBOARD_TOPOLOGY_SCOPE_EVIDENCE_KIND_TRACEABILITY = 4;
+}
+
+message DeploymentDashboardTopologySurface {
+  string id = 1;
+  string source = 2;
+  repeated string consumes = 3;
+  string proves = 4;
+  bool owns_runtime_implementation = 5;
+}
+
+message DeploymentDashboardTopologyEvidenceRequirement {
+  string id = 1;
+  string owner = 2;
+  DeploymentDashboardTopologyScopeEvidenceKind mode = 3;
+  string source = 4;
+  string proves = 5;
+}
+
+message DeploymentDashboardTopologyBoundarySet {
+  repeated string service = 1;
+  repeated string ux = 2;
+  repeated string security = 3;
+  repeated string support = 4;
+}
+
+message DeploymentDashboardTopologyScopeRecord {
+  string issue = 1;
+  string phase = 2;
+  string project = 3;
+  string user_business_goal = 4;
+  repeated string primary_personas = 5;
+  repeated string owning_initiatives = 6;
+  repeated string design_refs = 7;
+  repeated string adr_refs = 8;
+  repeated string scope_in = 9;
+  repeated string scope_out = 10;
+  repeated string non_goals = 11;
+  DeploymentDashboardTopologyBoundarySet boundaries = 12;
+  repeated DeploymentDashboardTopologySurface surface_taxonomy = 13;
+  repeated DeploymentDashboardTopologyEvidenceRequirement m1_evidence = 14;
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OrganizationWorkspaceModelContractConsumer"
+  },
+  "provider": {
+    "name": "OrganizationWorkspaceModelContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Organization Workspace Model Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/organization-workspace-model-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.organization_workspace_model_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

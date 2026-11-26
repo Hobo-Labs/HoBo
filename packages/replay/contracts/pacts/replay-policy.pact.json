@@ -1,0 +1,43 @@
+{
+  "consumer": { "name": "ReplayTracker" },
+  "provider": { "name": "ReplayPolicy" },
+  "interactions": [
+    {
+      "description": "local default enables recording",
+      "request": {
+        "method": "POST",
+        "path": "/replay/policy/evaluate",
+        "body": { "isolationClass": "local-dev", "env": {} }
+      },
+      "response": {
+        "status": 200,
+        "body": { "enabled": true, "reason": "local-default-on" }
+      }
+    },
+    {
+      "description": "HOBO_REPLAY=0 kill switch disables recording",
+      "request": {
+        "method": "POST",
+        "path": "/replay/policy/evaluate",
+        "body": { "env": { "HOBO_REPLAY": "0" } }
+      },
+      "response": {
+        "status": 200,
+        "body": { "enabled": false, "reason": "env-kill" }
+      }
+    },
+    {
+      "description": "production default off without flag",
+      "request": {
+        "method": "POST",
+        "path": "/replay/policy/evaluate",
+        "body": { "isolationClass": "production" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "enabled": false, "reason": "production-default-off" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

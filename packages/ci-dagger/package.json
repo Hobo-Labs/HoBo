@@ -1,0 +1,35 @@
+{
+  "name": "@hobo/ci-dagger",
+  "version": "0.0.1",
+  "description": "HoBo CI native Dagger checks on local/self-hosted engines and portable SDK pipelines",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./checks": {
+      "types": "./dist/checks.d.ts",
+      "default": "./dist/checks.js"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "checks": "node dist/check-cli.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:acceptance": "node --import tsx acceptance/run.ts",
+    "pretest:acceptance": "node --experimental-strip-types ../../scripts/ensure-built.mts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@hobo/ci": "workspace:*",
+    "@dagger.io/dagger": "0.21.11"
+  }
+}

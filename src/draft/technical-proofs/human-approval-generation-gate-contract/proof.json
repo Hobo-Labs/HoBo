@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "human-approval-generation-gate-contract",
+  "title": "Human Approval Generation Gate Contract",
+  "linear": "HOBO-360",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

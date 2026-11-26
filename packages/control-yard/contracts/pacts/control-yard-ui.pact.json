@@ -1,0 +1,49 @@
+{
+	"consumer": { "name": "control-yard-phaser-ui" },
+	"provider": { "name": "@hobo/control-api" },
+	"interactions": [
+		{
+			"description": "yard UI loads snapshot to drive zones",
+			"request": {
+				"method": "GET",
+				"path": "/v1/yard/snapshot",
+				"query": { "stationId": "station:local" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"data": {
+						"occupancy": { "stationId": "station:local", "status": "open" },
+						"occupyMode": "occupying",
+						"metering": { "trafficRate": 0.4 }
+					}
+				}
+			}
+		},
+		{
+			"description": "OpenUI sheet confirm creates connection",
+			"request": {
+				"method": "POST",
+				"path": "/v1/connection/create",
+				"body": {
+					"provider": "asana",
+					"alias": "work",
+					"stationId": "station:local"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"data": {
+						"connection": { "status": "pending", "stationId": "station:local" }
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

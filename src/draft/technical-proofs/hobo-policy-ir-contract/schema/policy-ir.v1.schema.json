@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/policy-ir.v1.schema.json",
+  "title": "HoBo Policy IR v1",
+  "type": "object",
+  "required": ["schemaVersion", "subject", "action", "resource", "phase", "context"],
+  "properties": {
+    "schemaVersion": { "const": "hobo.policy-ir/v1" },
+    "subject": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["user", "service", "agent", "system"] },
+        "id": { "type": "string", "minLength": 1 },
+        "roles": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "scopes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "delegatedBy": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "object",
+              "required": ["kind", "id"],
+              "properties": {
+                "kind": { "enum": ["user", "service", "agent", "system"] },
+                "id": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "action": { "type": "string", "minLength": 1 },
+    "resource": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "phase": {
+      "enum": ["author", "local", "test", "plan", "apply", "runtime", "observe", "train", "promote", "repair"]
+    },
+    "context": { "type": "object" },
+    "inputHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "required": ["schemaVersion", "effect", "reason", "violations", "mutations", "approvals", "obligations", "evidence"],
+      "properties": {
+        "schemaVersion": { "const": "hobo.policy-ir/v1" },
+        "effect": {
+          "enum": ["allow", "allow-degraded", "deny", "warn", "mutate", "require-approval"]
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "violations": { "type": "array" },
+        "mutations": { "type": "array" },
+        "approvals": { "type": "array" },
+        "obligations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": true
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": ["policyIds", "inputHash", "engine"],
+          "properties": {
+            "policyIds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "inputHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "engine": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

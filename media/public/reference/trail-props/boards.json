@@ -1,0 +1,43 @@
+{
+	"boards": [
+		{
+			"file": "props-a.png",
+			"cols": 3,
+			"rows": 2,
+			"names": [
+				"milestone",
+				"company-gate",
+				"shack",
+				"trunk",
+				"tent",
+				"water-tower"
+			]
+		},
+		{
+			"file": "props-b.png",
+			"cols": 3,
+			"rows": 2,
+			"names": [
+				"switch-stand",
+				"handcar",
+				"barrier",
+				"radio-mast",
+				"lighthouse",
+				"cottage"
+			]
+		},
+		{
+			"file": "props-c.png",
+			"cols": 3,
+			"rows": 2,
+			"names": [
+				"toolbox",
+				"drafting-table",
+				"padlock-post",
+				"switchboard",
+				"rooftops",
+				"arch"
+			]
+		}
+	]
+}

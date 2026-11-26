@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "LegalPrivacyPrivateBetaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LegalPrivacyPrivateBetaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Legal privacy private beta boundary returns accepted M2 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/legal-privacy-private-beta-evidence-contract/evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.legal_privacy_private_beta_evidence/v1",
+          "issue": "HOBO-464",
+          "phase": "M2",
+          "milestoneGate": "M2 Private beta proof"
+        }
+      }
+    },
+    {
+      "description": "Legal privacy private beta boundary rejects unsupported public claims",
+      "request": {
+        "method": "POST",
+        "path": "/legal-privacy-private-beta-evidence-contract/claims"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "unsupported public claim"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

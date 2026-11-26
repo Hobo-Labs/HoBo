@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package hobo.draft.dapr_parity_anchor_audit.v1;
+
+message DaprParityAnchorAudit {
+  string issue = 1;
+  string target_doc = 2;
+  repeated DaprParityRow rows = 3;
+}
+
+message DaprParityRow {
+  string feature = 1;
+  string status = 2;
+  repeated string design_anchors = 3;
+  string notes = 4;
+}

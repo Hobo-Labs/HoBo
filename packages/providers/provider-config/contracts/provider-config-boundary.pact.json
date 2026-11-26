@@ -1,0 +1,25 @@
+{
+  "consumer": { "name": "@hobo/runtime-local" },
+  "provider": { "name": "@hobo/provider-config" },
+  "interactions": [
+    {
+      "description": "get returns value-ref and sensitivity without ambient secret material",
+      "request": {
+        "method": "GET",
+        "path": "/config/store/get",
+        "query": { "key": "LOG_LEVEL" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "key": "LOG_LEVEL",
+          "value-ref": "camp://LOG_LEVEL",
+          "sensitivity": "public"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

@@ -1,0 +1,38 @@
+{
+	"id": "station.init",
+	"tier": 2,
+	"kind": "station",
+	"description": "Operator-owned Station occupancy under HOBO_HOME with station().",
+	"tags": [
+		"station",
+		"stationId",
+		"occupancy",
+		"HOBO_HOME"
+	],
+	"queries": [
+		"init a station",
+		"station occupancy",
+		"self host station"
+	],
+	"requires": [],
+	"provides": [
+		"station.occupancy"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/station.ts",
+			"from": "body/station.ts.tpl"
+		}
+	]
+}

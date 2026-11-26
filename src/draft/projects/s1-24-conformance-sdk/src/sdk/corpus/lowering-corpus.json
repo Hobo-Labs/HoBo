@@ -1,0 +1,129 @@
+[
+  {
+    "name": "orders-handler",
+    "program": {
+      "bindle": "orders",
+      "resources": [
+        { "kind": "service", "name": "api" },
+        { "kind": "kv", "name": "orders" }
+      ],
+      "handlers": [
+        { "resource": "api", "event": "http.request", "exportName": "handle" }
+      ]
+    },
+    "expectedWitCalls": [
+      {
+        "interface": "hobo:sdk/resource-catalog",
+        "function": "declare-resource",
+        "args": { "kind": "kv", "name": "orders" }
+      },
+      {
+        "interface": "hobo:sdk/resource-catalog",
+        "function": "declare-resource",
+        "args": { "kind": "service", "name": "api" }
+      },
+      {
+        "interface": "hobo:sdk/handlers",
+        "function": "attach-handler",
+        "args": { "resource": "api", "event": "http.request", "exportName": "handle" }
+      }
+    ],
+    "expectedManifest": {
+      "schema": "hobo.manifest/v1",
+      "bindle": "orders",
+      "resources": [
+        { "kind": "kv", "name": "orders" },
+        { "kind": "service", "name": "api" }
+      ],
+      "handlers": [
+        { "resource": "api", "event": "http.request", "exportName": "handle" }
+      ]
+    }
+  },
+  {
+    "name": "bindle-closure",
+    "program": {
+      "bindle": "shop",
+      "resources": [
+        { "kind": "kv", "name": "state" },
+        { "kind": "api", "name": "api" }
+      ]
+    },
+    "expectedWitCalls": [
+      {
+        "interface": "hobo:sdk/resource-catalog",
+        "function": "declare-resource",
+        "args": { "kind": "api", "name": "api" }
+      },
+      {
+        "interface": "hobo:sdk/resource-catalog",
+        "function": "declare-resource",
+        "args": { "kind": "kv", "name": "state" }
+      }
+    ],
+    "expectedManifest": {
+      "schema": "hobo.manifest/v1",
+      "bindle": "shop",
+      "resources": [
+        { "kind": "api", "name": "api" },
+        { "kind": "kv", "name": "state" }
+      ]
+    }
+  },
+  {
+    "name": "allow-narrowing",
+    "program": {
+      "bindle": "todos",
+      "resources": [{ "kind": "kv", "name": "todos" }]
+    },
+    "expectedWitCalls": [
+      {
+        "interface": "hobo:sdk/resource-catalog",
+        "function": "declare-resource",
+        "args": { "kind": "kv", "name": "todos" }
+      },
+      {
+        "interface": "hobo:sdk/resource-catalog",
+        "function": "allow-resource",
+        "args": {
+          "name": "todos",
+          "verbs": ["get", "set"],
+          "provenance": "declared-narrow-or-equal"
+        }
+      }
+    ],
+    "expectedManifest": {
+      "schema": "hobo.manifest/v1",
+      "bindle": "todos",
+      "resources": [
+        {
+          "kind": "kv",
+          "name": "todos",
+          "allow": [
+            { "provenance": "declared-narrow-or-equal", "verb": "get" },
+            { "provenance": "declared-narrow-or-equal", "verb": "set" }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "secret-ref",
+    "program": {
+      "bindle": "app",
+      "resources": [{ "kind": "secret-ref", "name": "DATABASE_URL" }]
+    },
+    "expectedWitCalls": [
+      {
+        "interface": "hobo:sdk/config",
+        "function": "secret-ref",
+        "args": { "ref": "DATABASE_URL" }
+      }
+    ],
+    "expectedManifest": {
+      "schema": "hobo.manifest/v1",
+      "bindle": "app",
+      "resources": [{ "kind": "secret-ref", "name": "DATABASE_URL" }]
+    }
+  }
+]

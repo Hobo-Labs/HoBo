@@ -1,0 +1,167 @@
+{
+	"consumer": { "name": "hobo-pack-postgres-oci" },
+	"provider": { "name": "hobo-yard-container-executor" },
+	"interactions": [
+		{
+			"description": "a deployment is accepted only with a digest-pinned image and a bound data volume",
+			"request": {
+				"method": "POST",
+				"path": "/yard/containers",
+				"body": {
+					"resourceRef": "resource:yard-1/pg-1",
+					"packId": "pack.postgres.oci/v1",
+					"image": "docker.io/library/postgres@sha256:b6a16ed0eb96e2c362811f7eeb951eac8b459e7b40be4149ea5444aa7c65569b",
+					"architecture": "linux/amd64",
+					"env": {
+						"POSTGRES_DB": "appdb",
+						"POSTGRES_USER": "appowner",
+						"POSTGRES_PASSWORD_FILE": "/run/secrets/postgres-superuser",
+						"PGDATA": "/var/lib/postgresql/18/docker"
+					},
+					"secretFiles": [
+						{
+							"path": "/run/secrets/postgres-superuser",
+							"secretRef": "hobo-secret://tenant-1/postgres/pg-1-superuser",
+							"mode": 256
+						}
+					],
+					"volumeMounts": [
+						{ "name": "pgdata", "path": "/var/lib/postgresql", "volumeId": "vol-pg-1" }
+					],
+					"ports": [{ "name": "sql", "containerPort": 5432, "protocol": "tcp" }]
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"resourceRef": "resource:yard-1/pg-1",
+					"containerId": "ctr-pg-1",
+					"imageDigest": "sha256:b6a16ed0eb96e2c362811f7eeb951eac8b459e7b40be4149ea5444aa7c65569b",
+					"realization": "pack",
+					"providerClaimable": false
+				}
+			}
+		},
+		{
+			"description": "a deployment without persistence is refused rather than defaulted to ephemeral storage",
+			"request": {
+				"method": "POST",
+				"path": "/yard/containers",
+				"body": {
+					"resourceRef": "resource:yard-1/pg-2",
+					"packId": "pack.postgres.oci/v1",
+					"image": "docker.io/library/postgres@sha256:b6a16ed0eb96e2c362811f7eeb951eac8b459e7b40be4149ea5444aa7c65569b",
+					"architecture": "linux/amd64",
+					"volumeMounts": []
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_PERSISTENCE_REQUIRED",
+					"message": "pack.postgres.oci/v1 requires a durable volume for /var/lib/postgresql"
+				}
+			}
+		},
+		{
+			"description": "readiness is probed with pg_isready as an argv array, not a shell string",
+			"request": {
+				"method": "POST",
+				"path": "/yard/containers/ctr-pg-1/probe",
+				"body": {
+					"probe": "readiness",
+					"argv": ["pg_isready", "--username", "appowner", "--dbname", "appdb"],
+					"timeoutMs": 5000
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "ready": true, "exitCode": 0 }
+			}
+		},
+		{
+			"description": "a backup runs as argv with the credential delivered through the environment, never in argv",
+			"request": {
+				"method": "POST",
+				"path": "/yard/containers/ctr-pg-1/exec",
+				"body": {
+					"operationId": "postgres.backup.pg-dump",
+					"argv": [
+						"pg_dump",
+						"--format",
+						"custom",
+						"--no-password",
+						"--host",
+						"pg-1.yard-1.hobo.test",
+						"--port",
+						"5432",
+						"--username",
+						"appowner",
+						"--dbname",
+						"appdb",
+						"--file",
+						"/var/backups/appdb.dump"
+					],
+					"env": { "PGCONNECT_TIMEOUT": "10" },
+					"secretEnv": {
+						"PGPASSWORD": "hobo-secret://tenant-1/postgres/pg-1-superuser"
+					},
+					"timeoutMs": 900000
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"operationId": "postgres.backup.pg-dump",
+					"exitCode": 0,
+					"artifactPath": "/var/backups/appdb.dump"
+				}
+			}
+		},
+		{
+			"description": "an exec request carrying a credential inside argv is rejected before the process is spawned",
+			"request": {
+				"method": "POST",
+				"path": "/yard/containers/ctr-pg-1/exec",
+				"body": {
+					"operationId": "postgres.backup.pg-dump",
+					"argv": [
+						"pg_dump",
+						"--dbname",
+						"postgresql://appowner:hunter2@pg-1.yard-1.hobo.test:5432/appdb"
+					],
+					"timeoutMs": 900000
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_ARGV_UNSAFE",
+					"message": "argv element carries credential material"
+				}
+			}
+		},
+		{
+			"description": "the produced binding carries locators and reports the digest it was produced from",
+			"request": {
+				"method": "GET",
+				"path": "/yard/containers/ctr-pg-1/binding",
+				"query": { "bindingProfileRef": "binding.postgresql/v1" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"bindingProfileRef": "binding.postgresql/v1",
+					"capabilityProfileRef": "data.postgres/v1",
+					"host": "pg-1.yard-1.hobo.test",
+					"port": 5432,
+					"database": "appdb",
+					"role": "appowner",
+					"tls": false,
+					"credentialSecretRef": "hobo-secret://tenant-1/postgres/pg-1-superuser",
+					"imageDigest": "sha256:b6a16ed0eb96e2c362811f7eeb951eac8b459e7b40be4149ea5444aa7c65569b"
+				}
+			}
+		}
+	]
+}

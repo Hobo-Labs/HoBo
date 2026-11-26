@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "V1ReleaseNotesUpgradeGuideContractConsumer"
+  },
+  "provider": {
+    "name": "V1ReleaseNotesUpgradeGuideContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "V1 Release Notes Upgrade Guide Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-release-notes-upgrade-guide-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_release_notes_upgrade_guide_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

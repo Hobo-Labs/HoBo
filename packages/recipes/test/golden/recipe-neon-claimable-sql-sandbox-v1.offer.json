@@ -1,0 +1,88 @@
+{
+	"schemaVersion": "hobo.deployment-offer/v1",
+	"offerId": "offer/b49719d325bc013fd43659670bf4a6fbe6765b1061463608e5b3fe65840a41f2",
+	"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
+	"deploymentRef": "junction/recipe-neon-claimable-sql-sandbox-v1",
+	"topologyDigest": "sha256:fd40788bcc973418fcfb33c4383396b5089a96b9305973e2d9f0ee8ad909e04c",
+	"resolutionDigest": "sha256:2bdf99e2693e4b4a734d715e75ccdfd2ce3dd657a2670ac34fad7d5fadc335aa",
+	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
+	"profileRegistryDigest": "sha256:5c876e208189e2d5d7a0762708c5f59fe1ba2b7c0bb79665a79aa5eebbb029d4",
+	"placements": [
+		{
+			"placementId": "sandbox",
+			"yardId": "data",
+			"providerId": "neon",
+			"primitive": "data",
+			"capabilityRef": "db",
+			"satisfiesProfileId": "data.postgres/v1",
+			"productDefinitionId": "neon.claimable-postgres/v1",
+			"realization": "native"
+		}
+	],
+	"providers": [
+		{
+			"providerId": "neon",
+			"sponsored": false,
+			"resourceOnly": true
+		}
+	],
+	"claimSummary": {
+		"actionCount": 1,
+		"providerCount": 1,
+		"atomicity": "single-resource",
+		"earliestDeadlineMs": 1700086400000,
+		"items": [
+			{
+				"claimId": "claim/sandbox",
+				"subjectRef": "junction/recipe-neon-claimable-sql-sandbox-v1/data/sandbox",
+				"providerId": "neon",
+				"mode": "resource-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "rotatable"
+			}
+		]
+	},
+	"sourceDisclosure": "not-applicable",
+	"credentialCustody": "secret-ref",
+	"requiredConsents": [
+		"claim.deadline-understood",
+		"claim.ownership-transfer"
+	],
+	"sponsoredCostCapMinorUnits": 0,
+	"guestLeases": [
+		{
+			"leaseId": "lease/data",
+			"yardId": "data",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "retain-until-provider-expiry",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		}
+	],
+	"trustEvidenceRefs": [
+		"neon.claimable-postgres/v1#sha256:2b1d404bd632371e23b7e98d52ee236c6b96585a6a473e154e9f9728f2588ac6"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/neon.claimable-postgres/v1/data.postgres/v1"
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [
+			"sandbox"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": [
+			"migration.postgres-dump/v1"
+		]
+	},
+	"degradationNotices": [],
+	"issuedAtMs": 1700000000000,
+	"expiresAtMs": 1700000900000,
+	"signature": {
+		"algorithm": "test.detached-digest/v1",
+		"keyId": "test-key-1",
+		"payloadDigest": "sha256:33427ced3e577070b27b1afe6b3316507083f583ee14fee29c2d9b2c1958675c",
+		"signature": "sig:33427ced3e577070"
+	}
+}

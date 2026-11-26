@@ -1,0 +1,8 @@
+{
+  "name": "tutorials-walkthroughs-scope-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "beta-pilot-feedback-contract",
+  "experienceType": "cx",
+  "title": "Beta Pilot Feedback Contract",
+  "linear": "HOBO-404",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

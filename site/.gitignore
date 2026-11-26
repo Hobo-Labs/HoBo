@@ -1,0 +1,7 @@
+# Astro build output and generated types
+dist/
+.astro/
+node_modules/
+.hobo-anon-hosts/
+# Generated browser WIT runtime (large wasm) — built by examples:runtime / prebuild
+public/examples/runtime/

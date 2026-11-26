@@ -1,0 +1,65 @@
+{
+  "consumer": {
+    "name": "HoBoCiSandboxRunnerBootstrap"
+  },
+  "provider": {
+    "name": "VercelSandboxSession"
+  },
+  "interactions": [
+    {
+      "description": "create an ephemeral sandbox",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/sandboxes"
+      },
+      "response": {
+        "status": 200
+      }
+    },
+    {
+      "description": "upload an archive to the isolated session",
+      "request": {
+        "method": "POST",
+        "path": "/api/v2/sandboxes/sessions/session-fixture/fs/write"
+      },
+      "response": {
+        "status": 200
+      }
+    },
+    {
+      "description": "extract a verified runner archive",
+      "request": {
+        "method": "POST",
+        "path": "/api/v2/sandboxes/sessions/session-fixture/cmd"
+      },
+      "response": {
+        "status": 200
+      }
+    },
+    {
+      "description": "write the one-use JIT file",
+      "request": {
+        "method": "POST",
+        "path": "/api/v2/sandboxes/sessions/session-fixture/fs/write"
+      },
+      "response": {
+        "status": 200
+      }
+    },
+    {
+      "description": "start the detached runner",
+      "request": {
+        "method": "POST",
+        "path": "/api/v2/sandboxes/sessions/session-fixture/cmd"
+      },
+      "response": {
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

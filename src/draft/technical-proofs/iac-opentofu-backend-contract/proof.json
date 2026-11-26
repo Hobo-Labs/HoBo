@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "iac-opentofu-backend-contract",
+  "title": "@hobo/iac-opentofu backend contract",
+  "linear": "HOBO-186",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/iac-pulumi-backend-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,78 @@
+{
+	"consumer": {
+		"name": "hobo-registry-ingest"
+	},
+	"provider": {
+		"name": "bundle-manifest-source"
+	},
+	"interactions": [
+		{
+			"description": "an untrusted bundle manifest fetched for ingest",
+			"request": {
+				"method": "GET",
+				"path": "/.well-known/hobo-bundle/manifest.json",
+				"headers": {
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"schema": "hobo.registry.bundle-manifest/v1",
+					"name": "kv-cache",
+					"version": "1.0.0",
+					"provider": "cloudflare",
+					"capabilities": [
+						{
+							"port": "hobo:kv",
+							"features": ["ttl"]
+						}
+					],
+					"description": "KV cache bundle"
+				}
+			}
+		},
+		{
+			"description": "the SLSA-shaped provenance statement accompanying the bundle",
+			"request": {
+				"method": "GET",
+				"path": "/.well-known/hobo-bundle/provenance.json",
+				"headers": {
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"_type": "https://in-toto.io/Statement/v1",
+					"subject": [
+						{
+							"name": "kv-cache@1.0.0",
+							"digest": {
+								"sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+							}
+						}
+					],
+					"predicateType": "https://slsa.dev/provenance/v1",
+					"predicate": {
+						"builder": {
+							"id": "https://builder.example/hobo"
+						},
+						"buildType": "https://builder.example/hobo/bundle@v1"
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

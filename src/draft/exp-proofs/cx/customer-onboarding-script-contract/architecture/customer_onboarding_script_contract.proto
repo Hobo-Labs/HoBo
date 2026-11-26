@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Customer Onboarding Script Contract draft
+// package reasons about. Not compiled at runtime; this is a design-time contract artifact.
+
+enum CustomerOnboardingProofMode {
+  CUSTOMER_ONBOARDING_PROOF_MODE_UNSPECIFIED = 0;
+  CUSTOMER_ONBOARDING_PROOF_MODE_DESIGN_RECORD = 1;
+  CUSTOMER_ONBOARDING_PROOF_MODE_REFERENCE_FIXTURE = 2;
+  CUSTOMER_ONBOARDING_PROOF_MODE_SUPPORT_HANDOFF = 3;
+  CUSTOMER_ONBOARDING_PROOF_MODE_FEEDBACK_RECORD = 4;
+}
+
+message CustomerOnboardingScriptStage {
+  string id = 1;
+  string owner = 2;
+  string prompt = 3;
+  string expected_evidence = 4;
+  CustomerOnboardingProofMode proof_mode = 5;
+  string source = 6;
+}
+
+message CustomerOnboardingScriptRecord {
+  string issue = 1;
+  string goal = 2;
+  repeated CustomerOnboardingScriptStage stages = 3;
+  repeated string success_criteria = 4;
+}

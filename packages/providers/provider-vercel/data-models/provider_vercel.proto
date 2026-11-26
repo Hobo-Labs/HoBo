@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package hobo.provider.vercel.v1;
+
+// The records `vercel.sponsored-project-transfer/v1` (ADR-0151) exchanges: what
+// the Vercel REST boundary returns, what this package hands to the shared
+// `@hobo/claims` coordinator, and what a receipt is allowed to show.
+//
+// Legacy contract artifacts are reconciled against boundary proof fixtures.
+// This package opts into codegen; new runtime observations derive generated
+// records. CUE carries semantic invariants alongside these wire contracts.
+//
+// No field here can hold bearer material. The 24 hour transfer code and the
+// claim-deployment URL built from it appear only as custody locators
+// (`*_secret_ref`) or as a one-time action id.
+
+// Two ownership facts move in Vercel's single ceremony, and they are separate
+// subjects from the moment they exist.
+enum SponsoredClaimSubjectKind {
+  SPONSORED_CLAIM_SUBJECT_KIND_UNSPECIFIED = 0;
+  SPONSORED_CLAIM_SUBJECT_KIND_PROJECT = 1;
+  SPONSORED_CLAIM_SUBJECT_KIND_ASSOCIATED_RESOURCE = 2;
+}
+
+// What the effectful side observed. Observation is not verification: an item
+// only completes after an independent ownership read.
+enum SponsoredClaimObservedStatus {
+  SPONSORED_CLAIM_OBSERVED_STATUS_UNSPECIFIED = 0;
+  SPONSORED_CLAIM_OBSERVED_STATUS_PENDING = 1;
+  SPONSORED_CLAIM_OBSERVED_STATUS_CLAIMED = 2;
+  SPONSORED_CLAIM_OBSERVED_STATUS_EXPIRED = 3;
+}
+
+// A third-party fact with the page it came from and the date a human read it.
+// Ranking input, never billing input, and never an attestation by the vendor.
+message VerifiedSourceRef {
+  string url = 1;
+  string checked_on = 2; // UTC YYYY-MM-DD
+  string note = 3;
+}
+
+// How the sponsoring credential is confined while HoBo still owns the project.
+message SponsorIsolationRecord {
+  string boundary = 1;
+  string credential_scope = 2;
+  bool shared_with_other_tenants = 3; // always false
+}
+
+// The offer-time disclosure. `publicly_anonymous` is false because there is an
+// account and a payer before the claim, and the payer is HoBo.
+message SponsoredTransferBootstrapRecord {
+  string definition_id = 1;
+  string bootstrap_class = 2; // sponsor
+  bool publicly_anonymous = 3;
+  bool sponsor_backed = 4;
+  string initial_owner = 5;
+  string cost_bearer_before_claim = 6;
+  string cost_bearer_after_claim = 7;
+  uint64 sponsor_exposure_minor_units = 8;
+  SponsorIsolationRecord isolation = 9;
+  string offer_summary = 10;
+  uint32 human_claim_actions = 11;
+  repeated VerifiedSourceRef sources = 12;
+}
+
+// `POST /projects/{idOrName}/transfer-request` reduced to what may be stored.
+// The code itself stays in custody; this record names where it lives.
+message ProjectTransferCodeRecord {
+  string project_id = 1;
+  string code_secret_ref = 2;
+  string one_time_action_ref = 3;
+  uint64 issued_at_ms = 4;
+  uint64 expires_at_ms = 5;
+  uint64 ttl_ms = 6; // documented 24 hour window
+  string claim_host = 7; // vercel.com — the human ceremony, never called
+}
+
+// `GET /v9/projects/{idOrName}`. `account_id` is the post-transfer ownership
+// fact, and the only reason this read exists.
+message VercelProjectView {
+  string id = 1;
+  string name = 2;
+  string account_id = 3;
+}
+
+// One claim item as this strategy compiles it for the shared reducer.
+message SponsoredClaimItemRecord {
+  string id = 1;
+  string subject_ref = 2;
+  SponsoredClaimSubjectKind subject_kind = 3;
+  string provider_id = 4;
+  string claim_strategy_ref = 5;
+  string mode = 6; // project-transfer | resource-claim
+  string one_time_action_ref = 7;
+  uint64 deadline_at_ms = 8;
+  string verification_ref = 9;
+  repeated string post_claim_actions = 10;
+  string creator_authority_after_claim = 11;
+  string status = 12;
+}
+
+// One subject's observed outcome plus the independent verification result.
+message SubjectClaimOutcomeRecord {
+  string item_id = 1;
+  SponsoredClaimObservedStatus observed = 2;
+  bool verified = 3;
+  string evidence_ref = 4;
+  string rotated_binding_id = 5;
+  string revocation_evidence_ref = 6;
+}
+
+// The honest summary of one claim attempt. `atomic_success` is true only when
+// the shared reducer accepted `CompleteClaimBundle`.
+message SponsoredClaimReport {
+  string bundle_id = 1;
+  string bundle_status = 2;
+  string lifecycle = 3;
+  bool atomic_success = 4;
+  repeated string outstanding_item_ids = 5;
+  string failure_code = 6;
+}
+
+// Every token that existed before the claim, invalidated. A token that is
+// already gone counts as revoked.
+message SponsorAuthorityRevocationRecord {
+  string evidence_ref = 1;
+  repeated string revoked_token_ids = 2;
+  bool sponsor_principal_removed = 3;
+}
+
+// The rotated database binding. The credential is a reference; the value never
+// passes through this package.
+message RotatedAssociatedResourceBindingRecord {
+  string binding_id = 1;
+  string resource_ref = 2;
+  string capability_profile_ref = 3;
+  string binding_profile_ref = 4;
+  string credential_secret_ref = 5;
+  string host = 6;
+  uint32 port = 7;
+  string producer_evidence_ref = 8;
+  uint64 rotated_at_ms = 9;
+}
+
+// Vercel Drop kept explicitly apart from the sponsored strategy: a Drop project
+// must be claimed into a Vercel account to be retained, so it is claimable but
+// not a direct anonymous deployment.
+message VercelDropClassificationRecord {
+  string definition_id = 1;
+  string separate_from_definition_id = 2;
+  string bootstrap_class = 3; // anonymous-claimable
+  bool account_required_to_retain = 4;
+  bool direct_anonymous_deployment = 5;
+  string rationale = 6;
+  repeated VerifiedSourceRef sources = 7;
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GenerateproviderCorrectnessSpikeConsumer"
+  },
+  "provider": {
+    "name": "GenerateproviderCorrectnessSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Generateprovider Correctness Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/generateprovider-correctness-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.generateprovider_correctness_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

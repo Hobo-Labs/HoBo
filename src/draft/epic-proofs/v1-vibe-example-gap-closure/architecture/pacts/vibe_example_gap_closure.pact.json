@@ -1,0 +1,37 @@
+{
+  "consumer": {
+    "name": "V1VibeGapClosureReferenceApp"
+  },
+  "provider": {
+    "name": "VibeGapClosurePackageBoundary"
+  },
+  "interactions": [
+    {
+      "description": "evaluate HOBO-539 DX-first backlog closure",
+      "request": {
+        "method": "POST",
+        "path": "/vibe-gap-closure/evaluate",
+        "body": {
+          "parentIssue": "HOBO-539"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "childCount": 26,
+          "dxBackbone": {
+            "backboneIssue": "HOBO-566",
+            "childCount": 11,
+            "quickstartConsumers": 25
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

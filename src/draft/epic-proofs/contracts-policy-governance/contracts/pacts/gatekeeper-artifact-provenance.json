@@ -1,0 +1,44 @@
+{
+  "consumer": {
+    "name": "Gatekeeper Verify"
+  },
+  "provider": {
+    "name": "Artifact Provenance Verifier"
+  },
+  "interactions": [
+    {
+      "description": "verify artifact provenance before production promotion",
+      "providerStates": [
+        {
+          "name": "artifact provenance verifier is represented by deterministic fixture"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/provenance/verify",
+        "body": {
+          "artifact": {
+            "id": "bindle:checkout-api@2.4.0",
+            "digest": "like:sha256"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "signer": "like:key-id",
+          "trustPolicy": "like:policy-id"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Gatekeeper to Artifact Provenance Verifier",
+    "status": "mocked_provider_unavailable",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+	"consumer": { "name": "@hobo/runtime" },
+	"provider": { "name": "RuntimeRivetBoundary" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	},
+	"interactions": [
+		{
+			"description": "ensure rivet runtime host with local-sqlite fidelity offline",
+			"request": {
+				"method": "POST",
+				"path": "/runtime-host/ensure",
+				"body": { "kind": "rivet", "mode": "local" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"kind": "rivet",
+					"ready": true,
+					"placementMode": "rivet",
+					"fidelity": "local-sqlite",
+					"secretless": true
+				}
+			}
+		},
+		{
+			"description": "actor host single-writer acquire under rivet placement",
+			"request": {
+				"method": "POST",
+				"path": "/actors/acquire",
+				"body": { "key": "Cart/1", "holderId": "w1" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "placement": "rivet", "singleWriter": true, "fencing": true }
+			}
+		},
+		{
+			"description": "accepted command persists before acknowledgement",
+			"request": {
+				"method": "POST",
+				"path": "/actors/command",
+				"body": { "commandId": "cmd-1", "type": "addItem" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "status": "persisted", "durableBeforeAck": true }
+			}
+		}
+	]
+}

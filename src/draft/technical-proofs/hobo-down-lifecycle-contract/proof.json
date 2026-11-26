@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "hobo-down-lifecycle-contract",
+  "title": "HoBo Down Lifecycle Contract",
+  "linear": "HOBO-132",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

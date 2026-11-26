@@ -1,0 +1,37 @@
+{
+  "runId": "20260731-dx-continue",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [
+    "product-app-developer",
+    "junior-typescript-developer",
+    "product-platform-engineer"
+  ],
+  "surfaces": [
+    "pnpm run agent:check -- --staged",
+    "pnpm run doctor"
+  ],
+  "maxIterations": 3,
+  "minIterations": 2,
+  "noPlateauStop": false,
+  "reportOnly": false,
+  "iterationsCompleted": 3,
+  "iterationMeaning": "persona-scenario-review-and-reduce-passes",
+  "hostAgent": "grok",
+  "createdAt": "2026-07-31T12:38:37.587Z",
+  "projects": [
+    "all"
+  ],
+  "features": [
+    "narrow-local-validation",
+    "cli-help-and-doctor",
+    "agent-check-staged"
+  ],
+  "mode": "review-reduce-verify",
+  "priorRun": "20260730-dx-fix",
+  "lastImplementableFindings": 0,
+  "stoppedReason": "plateau",
+  "implementableFindingsRemaining": 0,
+  "passesCompleted": 3
+}

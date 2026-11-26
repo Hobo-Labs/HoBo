@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hobo.provider_agentv.v1;
+
+// The grade this provider produces per trajectory (ADR-0025 optional
+// provider; IMPL-003 live-eval slice): agentV graders score a stored agent
+// trace without re-running it, and the per-metric named scores become the
+// reward vector the optimization loop consumes (Microsoft-Trace-style
+// feedback). The overall score rides the core TrajectoryReward; this record
+// is the engine-side evidence of how it was computed.
+message AgentVGrade {
+  string case_id = 1;
+  double score = 2;
+  map<string, double> named_scores = 3;
+  bool pass = 4;
+  string reason = 5;
+}

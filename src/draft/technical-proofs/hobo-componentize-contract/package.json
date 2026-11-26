@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/componentize-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the HOBO-4 @hobo/componentize TS service to wasm component and OCI artifact contract.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

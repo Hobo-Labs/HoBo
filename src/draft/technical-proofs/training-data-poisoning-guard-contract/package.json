@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/training-data-poisoning-guard-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

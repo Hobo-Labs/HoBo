@@ -1,0 +1,43 @@
+{
+	"id": "bindle.web-api",
+	"tier": 1,
+	"kind": "bindle",
+	"description": "Private API plus public web Bindle topology with camp env and dependsOn.",
+	"tags": [
+		"bindle",
+		"api",
+		"web",
+		"hello",
+		"dependsOn"
+	],
+	"queries": [
+		"hello world bindle",
+		"api and web bindle",
+		"greeting bindle"
+	],
+	"requires": [
+		"bindle.env",
+		"http.handler.api",
+		"http.handler.web"
+	],
+	"provides": [
+		"bindle.topology.web-api"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/bindle.ts",
+			"from": "body/bindle.ts.tpl"
+		}
+	]
+}

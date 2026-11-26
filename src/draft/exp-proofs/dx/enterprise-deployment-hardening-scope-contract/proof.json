@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "enterprise-deployment-hardening-scope-contract",
+  "experienceType": "dx",
+  "title": "Enterprise Deployment Hardening Scope Contract",
+  "linear": "HOBO-453",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OpenfeatureProviderAdaptersContractConsumer"
+  },
+  "provider": {
+    "name": "OpenfeatureProviderAdaptersContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Openfeature Provider Adapters Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/openfeature-provider-adapters-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.openfeature_provider_adapters_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

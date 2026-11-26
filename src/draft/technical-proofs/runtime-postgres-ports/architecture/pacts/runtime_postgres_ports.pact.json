@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RuntimePostgresPortsConsumer"
+  },
+  "provider": {
+    "name": "RuntimePostgresPortsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Runtime Postgres ports boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/runtime-postgres-ports/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.runtime_postgres_ports/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

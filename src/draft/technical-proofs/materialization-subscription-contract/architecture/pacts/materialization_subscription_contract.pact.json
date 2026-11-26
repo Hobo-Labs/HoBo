@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MaterializationSubscriptionContractConsumer"
+  },
+  "provider": {
+    "name": "MaterializationSubscriptionContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Materialization Subscription Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/materialization-subscription-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.materialization_subscription_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

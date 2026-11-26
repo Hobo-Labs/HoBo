@@ -1,0 +1,41 @@
+{
+	"name": "@hobo/redaction-test-harness",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"description": "Test-only harness for code that reads hostile text: a CPU-time growth measure, a growth sweep that builds inputs from a pattern's own classes and literals, and a differential that holds a redactor to the one it replaced.",
+	"files": [
+		"LICENSE",
+		"dist",
+		"data-models"
+	],
+	"exports": {
+		"./linear-time": {
+			"types": "./dist/linear-time.d.ts",
+			"default": "./dist/linear-time.js"
+		},
+		"./linear-sweep": {
+			"types": "./dist/linear-sweep.d.ts",
+			"default": "./dist/linear-sweep.js"
+		},
+		"./redaction-differential": {
+			"types": "./dist/redaction-differential.d.ts",
+			"default": "./dist/redaction-differential.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"test": "vitest run",
+		"test:deep": "vitest run --config vitest.deep.config.ts"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	}
+}

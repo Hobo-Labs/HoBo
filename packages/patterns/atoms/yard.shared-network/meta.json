@@ -1,0 +1,20 @@
+{
+	"id": "yard.shared-network",
+	"tier": 2,
+	"kind": "yard",
+	"description": "One Yard is one network. First camp in a shared-network Yard.",
+	"tags": ["yard", "network", "camp", "colocate"],
+	"queries": ["same network", "bundle apps", "shared yard", "one yard"],
+	"requires": [],
+	"provides": ["yard.topology", "yard.network"],
+	"params": {
+		"required": ["name"],
+		"properties": {
+			"name": { "type": "string", "minLength": 1 },
+			"provider": { "type": "string", "default": "local" },
+			"campName": { "type": "string", "default": "web" },
+			"network": { "type": "string", "default": "shared" }
+		}
+	},
+	"files": [{ "path": "src/yard.ts", "from": "body/yard.ts.tpl" }]
+}

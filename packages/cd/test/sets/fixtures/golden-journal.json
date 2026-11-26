@@ -1,0 +1,121 @@
+{
+  "description": "Recorded spec stream cd-camp-prod-aws: a Set, an applied Delta, a rejected Delta, a policy binding and an empty (no-op) Delta. Pinned; folding it must always yield `expected`.",
+  "campId": "prod-aws",
+  "events": [
+    {
+      "type": "delta.Opened",
+      "data": {
+        "schemaVersion": "hobo.cd.delta/v1",
+        "deltaId": "delta-up-1",
+        "campId": "prod-aws",
+        "freightId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "changes": [
+          { "resource": "shop.api", "kind": "CHANGE_KIND_ADD", "provider": "aws", "afterHash": "sha256:aaaa000000000000000000000000000000000000000000000000000000000000" },
+          { "resource": "shop.db", "kind": "CHANGE_KIND_ADD", "provider": "aws", "afterHash": "sha256:bbbb000000000000000000000000000000000000000000000000000000000000" }
+        ],
+        "openedBy": "user:ops@example.test",
+        "openedAt": "2026-11-12T00:00:00.000Z",
+        "intent": "up"
+      }
+    },
+    {
+      "type": "delta.Applied",
+      "data": {
+        "deltaId": "delta-up-1",
+        "setId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gateDecisionId": "gate-1",
+        "decidedAt": "2026-11-12T00:00:01.000Z"
+      }
+    },
+    {
+      "type": "set.Created",
+      "data": {
+        "schemaVersion": "hobo.cd.set/v1",
+        "setId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tenant": "acme",
+        "environment": "production",
+        "campId": "prod-aws",
+        "freightId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "planHash": "sha256:cccc000000000000000000000000000000000000000000000000000000000000",
+        "contentHash": "sha256:dddd000000000000000000000000000000000000000000000000000000000000",
+        "gateDecisionId": "gate-1",
+        "origin": "SET_ORIGIN_UP",
+        "resolvedSetDigest": "sha256:eeee000000000000000000000000000000000000000000000000000000000000",
+        "resolvedSetBytes": "2048",
+        "createdAt": "2026-11-12T00:00:01.000Z"
+      }
+    },
+    {
+      "type": "delta.Opened",
+      "data": {
+        "schemaVersion": "hobo.cd.delta/v1",
+        "deltaId": "delta-promote-2",
+        "campId": "prod-aws",
+        "baseSetId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "freightId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "changes": [
+          { "resource": "shop.api", "kind": "CHANGE_KIND_UPDATE", "provider": "aws", "beforeHash": "sha256:aaaa000000000000000000000000000000000000000000000000000000000000", "afterHash": "sha256:aaaa111111111111111111111111111111111111111111111111111111111111" }
+        ],
+        "openedBy": "user:ops@example.test",
+        "openedAt": "2026-11-12T01:00:00.000Z",
+        "intent": "promote"
+      }
+    },
+    {
+      "type": "delta.Rejected",
+      "data": {
+        "deltaId": "delta-promote-2",
+        "reasons": [
+          { "code": "window-closed", "message": "freeze active", "remediation": "wait for the window or request an override", "subject": "prod-aws" }
+        ],
+        "decidedAt": "2026-11-12T01:00:02.000Z"
+      }
+    },
+    {
+      "type": "policy.BindingChanged",
+      "data": {
+        "campId": "prod-aws",
+        "enforcedRailDigest": "sha256:9999000000000000000000000000000000000000000000000000000000000000",
+        "candidateRailDigest": "sha256:8888000000000000000000000000000000000000000000000000000000000000",
+        "freightId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "promotionId": "promo-rail-1",
+        "boundAt": "2026-11-12T02:00:00.000Z"
+      }
+    },
+    {
+      "type": "delta.Opened",
+      "data": {
+        "schemaVersion": "hobo.cd.delta/v1",
+        "deltaId": "delta-config-3",
+        "campId": "prod-aws",
+        "baseSetId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "openedBy": "user:ops@example.test",
+        "openedAt": "2026-11-12T03:00:00.000Z",
+        "intent": "config"
+      }
+    },
+    {
+      "type": "delta.Applied",
+      "data": {
+        "deltaId": "delta-config-3",
+        "setId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "gateDecisionId": "gate-3",
+        "decidedAt": "2026-11-12T03:00:01.000Z"
+      }
+    }
+  ],
+  "expected": {
+    "currentSetId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "history": ["set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+    "deltas": {
+      "delta-up-1": "applied",
+      "delta-promote-2": "rejected",
+      "delta-config-3": "applied"
+    },
+    "openDeltaId": null,
+    "enforcedRailDigest": "sha256:9999000000000000000000000000000000000000000000000000000000000000",
+    "candidateRailDigest": "sha256:8888000000000000000000000000000000000000000000000000000000000000",
+    "resolvedSetBytes": "2048",
+    "origin": "SET_ORIGIN_UP"
+  }
+}

@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Launch Support Private
+// Beta Evidence draft package reasons about. Not compiled at runtime; this is a
+// design-time contract artifact.
+
+enum LaunchSupportPrivateBetaEvidenceStatus {
+  LAUNCH_SUPPORT_PRIVATE_BETA_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_PRIVATE_BETA_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SUPPORT_PRIVATE_BETA_EVIDENCE_STATUS_MISSING_FOLLOW_UP = 2;
+}
+
+enum LaunchSupportPrivateBetaBlockerCategory {
+  LAUNCH_SUPPORT_PRIVATE_BETA_BLOCKER_CATEGORY_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_PRIVATE_BETA_BLOCKER_CATEGORY_LAUNCH_LIMITATION = 1;
+  LAUNCH_SUPPORT_PRIVATE_BETA_BLOCKER_CATEGORY_SECURITY_GATE = 2;
+  LAUNCH_SUPPORT_PRIVATE_BETA_BLOCKER_CATEGORY_LAUNCH_BLOCKER = 3;
+}
+
+message LaunchSupportPrivateBetaEvidenceRecord {
+  string id = 1;
+  string owner_project = 2;
+  string evidence_source = 3;
+  string proves = 4;
+  LaunchSupportPrivateBetaEvidenceStatus status = 5;
+}
+
+message LaunchSupportPrivateBetaBlockerRecord {
+  string id = 1;
+  LaunchSupportPrivateBetaBlockerCategory category = 2;
+  string owner_project = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+  string launch_risk = 6;
+}
+
+message LaunchSupportPrivateBetaAcceptedRisk {
+  string id = 1;
+  string owner_role = 2;
+  string mitigation = 3;
+  string follow_up_or_launch_note = 4;
+  string revisit_date = 5;
+  string evidence_id = 6;
+}
+
+message LaunchSupportPrivateBetaDependency {
+  string owner_project = 1;
+  string consumes_evidence_id = 2;
+  string cutline_impact = 3;
+}
+
+message LaunchSupportPrivateBetaFollowUp {
+  string id = 1;
+  string owner_project = 2;
+  string missing_evidence_id = 3;
+  string allowed_reason = 4;
+}
+
+message LaunchSupportPrivateBetaRecord {
+  string issue = 1;
+  string phase = 2;
+  string milestone_gate = 3;
+  repeated LaunchSupportPrivateBetaEvidenceRecord required_evidence = 4;
+  repeated LaunchSupportPrivateBetaBlockerRecord blockers = 5;
+  repeated LaunchSupportPrivateBetaAcceptedRisk accepted_risks = 6;
+  repeated LaunchSupportPrivateBetaDependency cross_project_dependencies = 7;
+  repeated LaunchSupportPrivateBetaFollowUp follow_up_issues = 8;
+  bool parent_status_updated = 9;
+  bool public_sla_promised = 10;
+  bool implements_support_runtime = 11;
+  bool uses_customer_data = 12;
+  bool implements_ticket_queue = 13;
+  bool publishes_status_page = 14;
+  bool approves_commercial_terms = 15;
+}

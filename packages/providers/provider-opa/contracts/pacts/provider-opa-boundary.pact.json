@@ -1,0 +1,70 @@
+{
+	"consumer": {
+		"name": "hobo-broker-gate-plane"
+	},
+	"provider": {
+		"name": "opa-data-api"
+	},
+	"interactions": [
+		{
+			"description": "a Policy IR decision request evaluated by the Rego decision document",
+			"request": {
+				"method": "POST",
+				"path": "/v1/data/hobo/broker/decision",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"input": {
+						"request": {
+							"subject": {
+								"kind": "user",
+								"id": "u1"
+							},
+							"action": "deploy",
+							"resource": {
+								"kind": "bindle",
+								"id": "b1"
+							},
+							"phase": "plan",
+							"context": {
+								"target": "prod"
+							}
+						},
+						"costQuota": {
+							"quota": "resources",
+							"used": 0,
+							"limit": 100
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"result": {
+						"effect": "deny",
+						"reasons": [
+							{
+								"plane": "policy",
+								"code": "prod-freeze",
+								"message": "prod deploys are frozen"
+							}
+						],
+						"policyIds": [
+							"hobo.policy.freeze/v1"
+						]
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

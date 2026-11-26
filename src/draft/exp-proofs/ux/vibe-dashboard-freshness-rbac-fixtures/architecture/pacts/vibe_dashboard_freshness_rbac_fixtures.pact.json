@@ -1,0 +1,404 @@
+{
+  "consumer": {
+    "name": "DeploymentDashboardTopologyFixtureConsumer"
+  },
+  "provider": {
+    "name": "DashboardFreshnessRbacFixtureProvider"
+  },
+  "interactions": [
+    {
+      "description": "dashboard freshness, tenant RBAC, redaction, and support handoff reference fixtures",
+      "providerStates": [
+        {
+          "name": "HOBO-545 reference fixture package is available"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/hobo-545/dashboard-freshness-rbac-fixtures"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-545",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures",
+          "proofNote": "docs/design/proofs/vibe-dashboard-freshness-rbac-fixtures/README.md",
+          "designRefs": [
+            "docs/design/deployment-dashboard-topology-explorer.md",
+            "docs/design/data-plane.md#plan-32",
+            "docs/design/adr/03-data-plane.md#adr-0050",
+            "docs/design/adr/02-identity-security.md#adr-0077"
+          ],
+          "proofModeLabels": [
+            "live",
+            "simulated",
+            "reference fixture",
+            "scope-out"
+          ],
+          "coveragePaths": [
+            {
+              "id": "happy-path",
+              "fixtureIds": ["hobo-545-dashboard-fresh"],
+              "accessibilityNote": "Screen reader labels announce fresh projection source, proof mode, and next action.",
+              "proofModeLabels": ["reference fixture"],
+              "safeOutcome": "Dashboard consumers can render current state without implying live provider proof."
+            },
+            {
+              "id": "blocked-path",
+              "fixtureIds": ["hobo-545-dashboard-redacted", "hobo-545-dashboard-unauthorized"],
+              "accessibilityNote": "Denied and redacted states use text labels and explicit hidden-field reasons, not color alone.",
+              "proofModeLabels": ["reference fixture", "scope-out"],
+              "safeOutcome": "Blocked states hand off correlation evidence without implementing authorization or redaction runtime."
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "fixtureIds": [
+                "hobo-545-dashboard-stale",
+                "hobo-545-dashboard-unavailable",
+                "hobo-545-dashboard-partial"
+              ],
+              "accessibilityNote": "Stale, unavailable, and partial cards expose freshness age and recovery action in text.",
+              "proofModeLabels": ["reference fixture", "simulated"],
+              "safeOutcome": "Unknown evidence stays labeled as fixture or simulated instead of becoming optimistic live status."
+            },
+            {
+              "id": "support-handoff",
+              "fixtureIds": ["hobo-545-dashboard-support-routed"],
+              "accessibilityNote": "Support handoff keeps keyboard-visible correlation id, owner actor, and safe next action.",
+              "proofModeLabels": ["reference fixture", "live"],
+              "safeOutcome": "Support routing shows a reference packet without creating a live ticket or SLA workflow."
+            }
+          ],
+          "accessibilityNotes": [
+            "Screen reader labels include projection source, freshness, tenant/RBAC disposition, owner actor, proof mode, and next action.",
+            "Color is never the only signal; stale, unavailable, redacted, unauthorized, partial, and scope-out states carry text labels.",
+            "Keyboard-visible support handoff content exposes correlation id, owner actor, customer-safe wording, and redacted evidence boundaries."
+          ],
+          "fixtures": [
+            {
+              "state": "fresh",
+              "fixtureId": "hobo-545-dashboard-fresh",
+              "projectionSource": "DeploymentView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "platform-operator",
+                "redactionState": "none"
+              },
+              "owner": {
+                "actor": "DeploymentProjectionActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/fresh",
+              "customerSafeWording": "Deployment projection is fresh at sequence 184. No customer payloads or provider credentials are included.",
+              "nextAction": "Render the current deployment status and keep the support handoff packet attached.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_fresh",
+              "status": "current",
+              "freshness": {
+                "projectionSequence": 184,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:20:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "project",
+                  "environment",
+                  "rbacRole",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret"
+                ]
+              }
+            },
+            {
+              "state": "stale",
+              "fixtureId": "hobo-545-dashboard-stale",
+              "projectionSource": "TopologyView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "platform-operator",
+                "redactionState": "none"
+              },
+              "owner": {
+                "actor": "TopologyProjectionActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/stale",
+              "customerSafeWording": "Topology projection is stale and waiting on replay. No customer payloads or provider credentials are included.",
+              "nextAction": "Show the stale badge, pin the last accepted sequence, and route replay evidence to support.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_stale",
+              "status": "stale",
+              "freshness": {
+                "projectionSequence": 181,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:12:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "project",
+                  "environment",
+                  "rbacRole",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret"
+                ]
+              }
+            },
+            {
+              "state": "unavailable",
+              "fixtureId": "hobo-545-dashboard-unavailable",
+              "projectionSource": "RunView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "platform-operator",
+                "redactionState": "none"
+              },
+              "owner": {
+                "actor": "RunProjectionActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/unavailable",
+              "customerSafeWording": "Run projection is unavailable while the read model recovers. No customer payloads or provider credentials are included.",
+              "nextAction": "Render the unavailable state with last-known-safe metadata and support owner route.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_unavailable",
+              "status": "not available",
+              "freshness": {
+                "projectionSequence": 0,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:18:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "project",
+                  "environment",
+                  "rbacRole",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret"
+                ]
+              }
+            },
+            {
+              "state": "redacted",
+              "fixtureId": "hobo-545-dashboard-redacted",
+              "projectionSource": "ProjectView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "platform-operator",
+                "redactionState": "masked"
+              },
+              "owner": {
+                "actor": "ProjectProjectionActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/redacted",
+              "customerSafeWording": "Project projection is redacted for this role. No customer payloads or provider credentials are included.",
+              "nextAction": "Show only tenant, project, environment, and correlation id while withholding payload fields.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_redacted",
+              "status": "redacted",
+              "freshness": {
+                "projectionSequence": 184,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:20:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "project",
+                  "environment",
+                  "rbacRole",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret",
+                  "topologyResourceAttributes",
+                  "deploymentLogExcerpt"
+                ]
+              }
+            },
+            {
+              "state": "unauthorized",
+              "fixtureId": "hobo-545-dashboard-unauthorized",
+              "projectionSource": "EnvironmentView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "support-viewer",
+                "redactionState": "denied"
+              },
+              "owner": {
+                "actor": "EnvironmentProjectionActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/unauthorized",
+              "customerSafeWording": "Environment projection is denied for this role. No customer payloads or provider credentials are included.",
+              "nextAction": "Render access-denied wording and hand off the correlation id to the owning support actor.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_unauthorized",
+              "status": "access denied",
+              "freshness": {
+                "projectionSequence": 184,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:20:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "environment",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret",
+                  "project",
+                  "deploymentStatus",
+                  "topologyResourceAttributes"
+                ]
+              }
+            },
+            {
+              "state": "partial",
+              "fixtureId": "hobo-545-dashboard-partial",
+              "projectionSource": "AvailabilityView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "platform-operator",
+                "redactionState": "none"
+              },
+              "owner": {
+                "actor": "AvailabilityProjectionActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/partial",
+              "customerSafeWording": "Dashboard projection is partial until replay completes. No customer payloads or provider credentials are included.",
+              "nextAction": "Render available cards, mark missing cards as partial, and keep the support packet visible.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_partial",
+              "status": "partial",
+              "freshness": {
+                "projectionSequence": 183,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:19:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "project",
+                  "environment",
+                  "rbacRole",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret"
+                ]
+              }
+            },
+            {
+              "state": "support-routed",
+              "fixtureId": "hobo-545-dashboard-support-routed",
+              "projectionSource": "SupportHandoffView",
+              "scope": {
+                "tenantFirst": true,
+                "tenant": "tenant-acme",
+                "project": "project-checkout",
+                "environment": "preview",
+                "rbacRole": "platform-operator",
+                "redactionState": "none"
+              },
+              "owner": {
+                "actor": "SupportHandoffActor",
+                "initiative": "Deployment Dashboard & Topology Explorer"
+              },
+              "evidenceLink": "proof://hobo-545/support-routed",
+              "customerSafeWording": "Support handoff is routed with redacted evidence only. No customer payloads or provider credentials are included.",
+              "nextAction": "Attach the redacted packet to support context without creating a live ticket or SLA workflow.",
+              "proofMode": "reference fixture",
+              "correlationId": "cor_hobo_545_support",
+              "status": "support routed",
+              "freshness": {
+                "projectionSequence": 184,
+                "maxAgeSeconds": 60,
+                "observedAt": "2026-07-01T15:20:00.000Z"
+              },
+              "redaction": {
+                "visibleFields": [
+                  "tenant",
+                  "project",
+                  "environment",
+                  "rbacRole",
+                  "correlationId"
+                ],
+                "withheldFields": [
+                  "rawProjectionPayload",
+                  "providerCredential",
+                  "customerSecret",
+                  "supportTicketBody",
+                  "customerContact"
+                ]
+              }
+            }
+          ],
+          "scopeOut": [
+            "production dashboard frontend",
+            "authorization engine",
+            "redaction runtime",
+            "projection/read-store runtime",
+            "live support tooling",
+            "launch claims"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-545",
+      "phase": "M1",
+      "proofMode": "reference fixture"
+    }
+  }
+}

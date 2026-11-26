@@ -1,0 +1,21 @@
+{
+  "seq": "fixture-last-resort",
+  "current": {
+    "HOBO_RUNNER_LINUX_SMALL": "ubuntu-latest"
+  },
+  "usage": [
+    {
+      "providerId": "github_hosted",
+      "spendUsd": 0,
+      "unitsUsed": 0,
+      "known": false,
+      "source": "github-billing-unreachable"
+    }
+  ],
+  "failures": [
+    {
+      "providerId": "github_hosted",
+      "reason": "The job was not started because recent account payments have failed or your spending limit needs to be increased."
+    }
+  ]
+}

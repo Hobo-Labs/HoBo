@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboDoctorContractConsumer"
+  },
+  "provider": {
+    "name": "HoboDoctorContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Doctor Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-doctor-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_doctor_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

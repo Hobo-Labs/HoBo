@@ -1,0 +1,68 @@
+{
+  "consumer": {
+    "name": "hobo-runtime-sdk"
+  },
+  "provider": {
+    "name": "@hobo/runtime-local"
+  },
+  "interactions": [
+    {
+      "description": "queue enqueue dedupes by idempotency key",
+      "request": {
+        "method": "POST",
+        "path": "/queue/jobs/enqueue",
+        "body": {
+          "idempotencyKey": "job-1",
+          "body": { "task": "send" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": "msg-1",
+          "idempotencyKey": "job-1",
+          "deduped": false
+        }
+      }
+    },
+    {
+      "description": "queue lease lost error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/queue/messages/msg-1/complete",
+        "body": {
+          "leaseId": "lease-wrong"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "QUEUE_LEASE_LOST",
+          "messageId": "msg-1"
+        }
+      }
+    },
+    {
+      "description": "clock nondeterministic replay rejection",
+      "request": {
+        "method": "POST",
+        "path": "/clock/replay",
+        "body": {
+          "seed": "wrong-seed",
+          "trace": []
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "CLOCK_NONDETERMINISTIC"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

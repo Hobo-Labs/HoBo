@@ -1,0 +1,44 @@
+package hobo:sdk@0.1.0;
+
+/// Runtime primitive namespace. Function contents are filled by runtime slices.
+interface workflow {
+}
+
+/// Actor primitive namespace. Function contents are filled by runtime slices.
+interface actor {
+}
+
+/// Saga primitive namespace. Function contents are filled by runtime slices.
+interface saga {
+}
+
+/// Agent primitive namespace. Function contents are filled by runtime slices.
+interface agent {
+}
+
+/// Command primitive namespace. Function contents are filled by runtime slices.
+interface command {
+}
+
+/// Subscription primitive namespace. Function contents are filled by runtime slices.
+interface subscribe {
+}
+
+/// Capability-client namespace. Concrete capability ports are filled by port slices.
+interface capability {
+}
+
+/// Data-client namespace. Concrete data ports and records are filled by data-plane slices.
+interface data {
+}
+
+world sdk {
+  import workflow;
+  import actor;
+  import saga;
+  import agent;
+  import command;
+  import subscribe;
+  import capability;
+  import data;
+}

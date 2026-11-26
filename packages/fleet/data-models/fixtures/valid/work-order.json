@@ -1,0 +1,57 @@
+{
+  "orderId": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "offer": {
+    "workKey": "github:acme/app:run/123/job/456",
+    "workDigest": "5f2b8e0c9d1a4b3c7e6f8a9b0c1d2e3f",
+    "kind": "github-job",
+    "fleet": "ci",
+    "label": "hobo",
+    "needs": {
+      "memoryMb": 4096,
+      "diskMb": 20480,
+      "platform": {
+        "os": "linux",
+        "arch": "x64"
+      },
+      "labels": [
+        "hobo",
+        "linux-x64"
+      ],
+      "docker": true,
+      "minSandbox": "SANDBOX_TIER_S1_CONTAINER"
+    },
+    "trustClass": "TRUST_CLASS_ORG",
+    "author": "github:1234",
+    "origin": "WORK_ORIGIN_INTERNAL",
+    "repository": "acme/app",
+    "ref": "refs/heads/main",
+    "workflowDigest": "sha256:abababababababababababababababababababababababababababababababab",
+    "queuedAt": "2026-11-12T10:00:00.000Z",
+    "expiresAt": "2026-11-12T10:20:00.000Z",
+    "dispatcher": "dev_fedcba9876543210fedcba9876543210",
+    "residency": {
+      "classifications": [
+        "internal"
+      ],
+      "allowedJurisdictions": [
+        "eu"
+      ]
+    }
+  },
+  "memberId": "dev_0123456789abcdef0123456789abcdef",
+  "sandboxTier": "SANDBOX_TIER_S3_MICROVM",
+  "egressAllow": [
+    "github.com"
+  ],
+  "parameters": {
+    "runner_name": "box-a-1"
+  },
+  "secret": {
+    "recipientKeyId": "dev_0123456789abcdef0123456789abcdef#seal",
+    "ephemeralPublicKey": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4",
+    "nonce": "ByZFZIOiweD/Hj1c",
+    "ciphertext": "ByZFZIOiweD/Hj1ce5q52PcWNVRzkrHQ7w4tTGuKqcjnBiVEY4KhwA=="
+  },
+  "issuedAt": "2026-11-12T10:00:00.000Z",
+  "expiresAt": "2026-11-12T10:20:00.000Z"
+}

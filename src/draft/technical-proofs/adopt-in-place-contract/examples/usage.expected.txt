@@ -1,0 +1,9 @@
+import: status=imported legacy-db kind=adopted
+lifecycle: destroy=retain reconcile=drift-detect-only
+events: resource.Adopted
+reconcile legacy-db: action=refresh mode=drift-detect-only
+destroy: actions=api skipped=legacy-db,shared-vpc
+bindings: DATABASE_PASSWORD_REF,DATABASE_URL
+drift: resource=legacy-db changed=endpoint remediation=manual
+id collision: AdoptInPlaceError code=import-id-collision
+CONTRACT HELD: adopt-in-place retains, drift-detects, binds, and fails closed

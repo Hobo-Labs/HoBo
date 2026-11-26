@@ -1,0 +1,35 @@
+{
+  "consumer": { "name": "ReplayTracker" },
+  "provider": { "name": "ReplayPrivacy" },
+  "interactions": [
+    {
+      "description": "mask password values before persistence",
+      "request": {
+        "method": "POST",
+        "path": "/replay/privacy/mask",
+        "body": {
+          "events": [
+            {
+              "type": 3,
+              "timestamp": 1,
+              "data": {
+                "tagName": "input",
+                "type": "password",
+                "value": "hunter2"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "eventCount": 1,
+          "containsSensitivePlaintext": false
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

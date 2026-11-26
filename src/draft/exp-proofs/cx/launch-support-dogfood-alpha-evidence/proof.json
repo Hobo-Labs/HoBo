@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-support-dogfood-alpha-evidence",
+  "experienceType": "cx",
+  "title": "Launch Support Dogfood/Alpha Evidence",
+  "linear": "HOBO-460",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

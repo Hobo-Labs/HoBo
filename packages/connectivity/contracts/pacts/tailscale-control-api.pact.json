@@ -1,0 +1,75 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "TailscaleControlApi" },
+	"interactions": [
+		{
+			"description": "get dns preferences",
+			"request": {
+				"method": "GET",
+				"path": "/api/v2/tailnet/example.com/dns/preferences"
+			},
+			"response": {
+				"status": 200,
+				"body": { "magicDNS": true }
+			}
+		},
+		{
+			"description": "set dns preferences",
+			"request": {
+				"method": "POST",
+				"path": "/api/v2/tailnet/example.com/dns/preferences",
+				"body": { "magicDNS": true }
+			},
+			"response": {
+				"status": 200,
+				"body": { "magicDNS": true }
+			}
+		},
+		{
+			"description": "get split dns map",
+			"request": {
+				"method": "GET",
+				"path": "/api/v2/tailnet/example.com/dns/split-dns"
+			},
+			"response": {
+				"status": 200,
+				"body": { "hobo.test": ["100.100.100.100"] }
+			}
+		},
+		{
+			"description": "patch split dns map",
+			"request": {
+				"method": "PATCH",
+				"path": "/api/v2/tailnet/example.com/dns/split-dns",
+				"body": { "hobo.test": ["100.100.100.100"] }
+			},
+			"response": {
+				"status": 200,
+				"body": { "hobo.test": ["100.100.100.100"] }
+			}
+		},
+		{
+			"description": "list devices",
+			"request": {
+				"method": "GET",
+				"path": "/api/v2/tailnet/example.com/devices"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"devices": [
+						{
+							"id": "n1",
+							"name": "junction-1",
+							"addresses": ["100.64.0.2"],
+							"tags": ["tag:junction"]
+						}
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

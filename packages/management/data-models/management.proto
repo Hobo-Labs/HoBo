@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package hobo.management.v1;
+
+// Wire shapes for the shared management surface (control API + CLI + MCP).
+// Domain types are constructed in TypeScript via parse-don't-validate.
+
+message ManagementEnvelope {
+  bool ok = 1;
+  string code = 2;
+  string message = 3;
+  string status = 4;
+}
+
+message StationOccupancyView {
+  string station_id = 1;
+  string status = 2; // open | closed
+  string active_rail_hash = 3;
+  string bootstrap_rail_hash = 4;
+  bool bootstrap_active = 5;
+  uint32 connection_count = 6;
+  uint64 seq = 7;
+}
+
+message RailView {
+  string id = 1;
+  string name = 2;
+  string content_hash = 3;
+  string activation_status = 4; // draft | approved | active | retired
+  bool is_bootstrap = 5;
+  double quota_used = 6;
+  double quota_limit = 7;
+  double spend_cap_usd = 8;
+}
+
+message ConnectionPublicView {
+  string id = 1;
+  string alias = 2;
+  string provider = 3;
+  string flow = 4;
+  string status = 5; // pending | authorized | revoked | ...
+  string station_id = 6;
+  string tenant = 7;
+}
+
+message YardProjectionSnapshot {
+  StationOccupancyView occupancy = 1;
+  repeated RailView rails = 2;
+  repeated ConnectionPublicView connections = 3;
+  MeteringView metering = 4;
+  repeated ConnectorActivityView activity = 5;
+  DoctorView doctor = 6;
+  uint64 seq = 7;
+}
+
+message MeteringView {
+  double quota_used = 1;
+  double quota_limit = 2;
+  double spend_cap_usd = 3;
+  double budget_usd = 4;
+  double traffic_rate = 5;
+  // Provenance badge for traffic_rate: "synthetic" (derived from connection
+  // counts) | "otlp" (real metering signals).
+  string traffic_rate_source = 6;
+}
+
+message ConnectorActivityView {
+  string connector_kind = 1;
+  string status = 2; // offline | idle | working | error
+  string connection_id = 3;
+  // Provenance badge for status: "derived-static" (mapped from connection
+  // lifecycle) | "otlp" (live agent telemetry).
+  string status_source = 4;
+}
+
+// Deployment saga read-model envelope. DeploymentView row wire shapes are
+// owned by hobo.cloud.v1 (packages/cloud/data-models/cloud.proto) —
+// referenced, not duplicated; json_deployments carries the JSON-encoded rows.
+message DeploymentViewProjectionView {
+  bool available = 1; // false when no local cloud event source exists
+  string source = 2;  // "yard-eventstore" | "none"
+  repeated string yards = 3;
+  uint32 count = 4;
+  uint64 seq = 5;
+  string json_deployments = 6; // JSON-encoded DeploymentViewRow[]
+}
+
+// Credential audit read-model envelope. CredentialAuditRecord wire shapes are
+// owned by hobo.cloud.v1 (packages/cloud/data-models/cloud.proto) —
+// referenced, not duplicated; json_rows carries the JSON-encoded rows.
+message CredentialAuditProjectionView {
+  bool available = 1; // false when no local credential event source exists
+  repeated string sources = 2; // "connections-store" | "yard-eventstore"
+  uint32 count = 3;
+  uint64 seq = 4;
+  string json_rows = 5; // JSON-encoded CredentialAuditRecord[]
+}
+
+message DoctorView {
+  bool bootstrap_active = 1;
+  repeated string hazards = 2;
+  string hint = 3;
+}

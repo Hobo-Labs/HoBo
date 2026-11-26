@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "customer-onboarding-script-contract",
+  "experienceType": "cx",
+  "title": "Customer Onboarding Script Contract",
+  "linear": "HOBO-487",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

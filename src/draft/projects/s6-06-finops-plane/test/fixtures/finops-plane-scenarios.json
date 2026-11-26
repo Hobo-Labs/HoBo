@@ -1,0 +1,118 @@
+{
+  "id": "nfr-012-plan-vs-actual",
+  "description": "Plan estimate within ±20% of recorded actual spend (NFR-012 / FR-070)",
+  "costJson": {
+    "schemaVersion": "hobo.cost/v1",
+    "providerId": "fixture-azure",
+    "currency": "USD",
+    "regions": ["us-east-1"],
+    "unitPrices": {
+      "runtime-compute-seconds": 0.01,
+      "generation-runs": 1,
+      "egress-gb": {
+        "same_region": 0,
+        "cross_region": 0.02,
+        "internet": 0.09
+      }
+    },
+    "freeTier": {}
+  },
+  "plan": {
+    "regions": ["us-east-1"],
+    "assumptionDays": 30,
+    "resources": [
+      {
+        "id": "api",
+        "dimension": "runtime-compute-seconds",
+        "quantityPerMonth": 7200,
+        "region": "us-east-1"
+      },
+      {
+        "id": "batch",
+        "dimension": "generation-runs",
+        "quantityPerMonth": 12
+      }
+    ],
+    "egress": [
+      {
+        "id": "api-egress",
+        "dimension": "egress-gb",
+        "quantityPerMonth": 45,
+        "tier": "internet"
+      }
+    ]
+  },
+  "meteringEvents": [
+    {
+      "id": "usage-1",
+      "type": "meter.UsageRecorded",
+      "seq": 1,
+      "dimension": "runtime-compute-seconds",
+      "quantity": 7000,
+      "occurredAt": "2026-06-15T12:00:00.000Z",
+      "idempotencyKey": "usage-1",
+      "owner": {
+        "tenantId": "tenant-a",
+        "campId": "camp-prod",
+        "bindleId": "checkout",
+        "runId": "run-42",
+        "agentId": "agent-deploy",
+        "teamId": "team-platform"
+      }
+    },
+    {
+      "id": "usage-2",
+      "type": "meter.UsageRecorded",
+      "seq": 2,
+      "dimension": "generation-runs",
+      "quantity": 10,
+      "occurredAt": "2026-06-16T12:00:00.000Z",
+      "idempotencyKey": "usage-2",
+      "owner": {
+        "tenantId": "tenant-a",
+        "campId": "camp-prod",
+        "bindleId": "checkout",
+        "runId": "run-42",
+        "agentId": "agent-deploy",
+        "teamId": "team-platform"
+      }
+    },
+    {
+      "id": "usage-3",
+      "type": "meter.UsageRecorded",
+      "seq": 3,
+      "dimension": "egress-gb",
+      "quantity": 44.44,
+      "priceKey": "internet",
+      "occurredAt": "2026-06-17T12:00:00.000Z",
+      "idempotencyKey": "usage-3",
+      "owner": {
+        "tenantId": "tenant-a",
+        "campId": "camp-prod",
+        "bindleId": "checkout",
+        "runId": "run-42",
+        "agentId": "agent-deploy",
+        "teamId": "team-platform"
+      }
+    }
+  ],
+  "expectedActualUsd": 84,
+  "toleranceFraction": 0.2,
+  "budgetPolicy": {
+    "id": "camp-budget:tenant-a/camp-prod",
+    "scope": { "kind": "camp", "id": "tenant-a/camp-prod" },
+    "hardLimitUsd": 200,
+    "softLimitUsd": 150
+  },
+  "breachBudgetPolicy": {
+    "id": "camp-budget:tenant-a/camp-staging",
+    "scope": { "kind": "camp", "id": "tenant-a/camp-staging" },
+    "hardLimitUsd": 50
+  },
+  "displayNames": {
+    "tenants": { "tenant-a": "Tenant A" },
+    "camps": { "tenant-a/camp-prod": "Camp Prod" },
+    "bindles": { "tenant-a/camp-prod/checkout": "Checkout" },
+    "runs": { "tenant-a/camp-prod/checkout/run-42": "Run 42" }
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "consumer": {
+    "name": "closure-builder-manifest-lowering-consumer"
+  },
+  "provider": {
+    "name": "closure-builder-resource-handles-contract"
+  },
+  "interactions": [
+    {
+      "description": "collect anonymous closure-builder resources and dependsOn relationship",
+      "request": {
+        "method": "POST",
+        "path": "/closure-builder/v1/collect"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "bindleName": "shop",
+          "resources": [
+            {
+              "generatedId": "res_cache_0001",
+              "kind": "cache"
+            },
+            {
+              "generatedId": "res_api_0001",
+              "kind": "api",
+              "workload": {
+                "kind": "inert-workload-factory"
+              }
+            }
+          ],
+          "relationships": [
+            {
+              "from": "res_api_0001",
+              "to": "res_cache_0001",
+              "verb": "dependsOn"
+            }
+          ],
+          "identityDiagnostics": [
+            {
+              "alias": "cache",
+              "generatedId": "res_cache_0001",
+              "kind": "cache",
+              "ownerBindleId": "shop",
+              "physicalNameSeed": "shop:res_cache_0001"
+            },
+            {
+              "alias": "api",
+              "generatedId": "res_api_0001",
+              "kind": "api",
+              "ownerBindleId": "shop",
+              "physicalNameSeed": "shop:res_api_0001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "collect same-kind insertion with reviewed generated identity ledger",
+      "request": {
+        "method": "POST",
+        "path": "/closure-builder/v1/collect",
+        "body": {
+          "identityLedger": {
+            "bindleName": "shop",
+            "artifactOwner": "hobo-collector",
+            "updateFlow": "collector-proposes-review-accepts",
+            "reviewBoundary": "code-review",
+            "entries": [
+              {
+                "kind": "cache",
+                "occurrence": 1,
+                "generatedId": "res_cache_0002",
+                "identitySource": "hobo-generated",
+                "reviewState": "pending-new"
+              },
+              {
+                "kind": "cache",
+                "occurrence": 2,
+                "generatedId": "res_cache_0001",
+                "identitySource": "hobo-generated",
+                "reviewState": "accepted"
+              },
+              {
+                "kind": "api",
+                "occurrence": 1,
+                "generatedId": "res_api_0001",
+                "identitySource": "hobo-generated",
+                "reviewState": "accepted"
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "bindleName": "shop",
+          "resources": [
+            {
+              "generatedId": "res_cache_0002",
+              "kind": "cache"
+            },
+            {
+              "generatedId": "res_cache_0001",
+              "kind": "cache"
+            },
+            {
+              "generatedId": "res_api_0001",
+              "kind": "api",
+              "workload": {
+                "kind": "inert-workload-factory"
+              }
+            }
+          ],
+          "relationships": [
+            {
+              "from": "res_api_0001",
+              "to": "res_cache_0001",
+              "verb": "dependsOn"
+            }
+          ],
+          "identityDiagnostics": [
+            {
+              "alias": "insertedCache",
+              "generatedId": "res_cache_0002",
+              "kind": "cache",
+              "ownerBindleId": "shop",
+              "physicalNameSeed": "shop:res_cache_0002"
+            },
+            {
+              "alias": "renamedExistingCache",
+              "generatedId": "res_cache_0001",
+              "kind": "cache",
+              "ownerBindleId": "shop",
+              "physicalNameSeed": "shop:res_cache_0001"
+            },
+            {
+              "alias": "api",
+              "generatedId": "res_api_0001",
+              "kind": "api",
+              "ownerBindleId": "shop",
+              "physicalNameSeed": "shop:res_api_0001"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

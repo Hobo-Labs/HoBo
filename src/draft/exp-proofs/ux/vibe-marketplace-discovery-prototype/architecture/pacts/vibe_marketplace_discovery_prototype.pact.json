@@ -1,0 +1,282 @@
+{
+  "consumer": {
+    "name": "MarketplaceDiscoveryPrototypeConsumer"
+  },
+  "provider": {
+    "name": "MarketplaceDiscoveryPrototypeFixtureProvider"
+  },
+  "interactions": [
+    {
+      "description": "marketplace discovery and install-intent prototype fixture",
+      "providerStates": [
+        {
+          "name": "HOBO-562 marketplace discovery prototype is available"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/hobo-562/marketplace-discovery-prototype"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-562",
+          "phase": "M2",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-marketplace-discovery-prototype",
+          "proofNote": "docs/design/proofs/vibe-marketplace-discovery-prototype/README.md",
+          "designRefs": [
+            "docs/design/marketplace-ux.md",
+            "docs/design/org-catalogs.md",
+            "docs/design/capability-review-approval.md",
+            "docs/design/marketplace-publisher-trust-evidence.md",
+            "docs/design/support-workflow.md",
+            "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+            "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "sourceIssues": [
+            {
+              "issue": "HOBO-546",
+              "packagePath": "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
+              "proofPath": "docs/design/proofs/vibe-marketplace-installability-mockups/README.md"
+            },
+            {
+              "issue": "HOBO-547",
+              "packagePath": "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states",
+              "proofPath": "docs/design/proofs/vibe-marketplace-trust-copy-states/README.md"
+            },
+            {
+              "issue": "HOBO-577",
+              "packagePath": "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
+              "proofPath": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+            }
+          ],
+          "catalog": [
+            {
+              "fixtureId": "mdp-preview-only-v1",
+              "listingState": "preview-only",
+              "displayLabel": "Preview listing",
+              "sourceMockup": {
+                "sourceIssue": "HOBO-546",
+                "fixtureId": "hobo-546-marketplace-preview-only",
+                "surface": "browse"
+              },
+              "sourceTrustCopy": {
+                "sourceIssue": "HOBO-547",
+                "fixtureId": "mtc-preview-warning-v1",
+                "copyState": "preview-warning"
+              },
+              "quickstartRef": {
+                "sourceIssue": "HOBO-577",
+                "fixtureId": "rlq-collect-manifest-ir-v1",
+                "proofMode": "reference-fixture"
+              },
+              "trustEvidence": "Publisher identity exists but review, conformance, and org catalog evidence are incomplete.",
+              "orgCatalogDecision": "Not eligible for org catalog selection until review evidence is accepted.",
+              "supportRoute": "Marketplace Publisher Trust Evidence",
+              "installabilityOutcome": "Warning-only discovery; install intent is hidden.",
+              "proofMode": "reference fixture",
+              "customerSafeMessage": "Preview listing is visible for evaluation and cannot be presented as installable.",
+              "safeNextAction": "Open the evidence checklist before planning any use."
+            },
+            {
+              "fixtureId": "mdp-limited-beta-v1",
+              "listingState": "limited-beta",
+              "displayLabel": "Limited beta",
+              "sourceMockup": {
+                "sourceIssue": "HOBO-546",
+                "fixtureId": "hobo-546-marketplace-limited-beta",
+                "surface": "search"
+              },
+              "sourceTrustCopy": {
+                "sourceIssue": "HOBO-547",
+                "fixtureId": "mtc-preview-warning-v1",
+                "copyState": "preview-warning"
+              },
+              "quickstartRef": {
+                "sourceIssue": "HOBO-577",
+                "fixtureId": "rlq-plan-safe-preview-v1",
+                "proofMode": "simulated"
+              },
+              "trustEvidence": "Limited beta approval is visible but still bounded by missing-evidence language.",
+              "orgCatalogDecision": "Visible only to approved beta workspaces with policy pin and owner route.",
+              "supportRoute": "Capability Review & Approval",
+              "installabilityOutcome": "Install intent is scoped to beta fixtures and must keep missing-evidence copy.",
+              "proofMode": "simulated",
+              "customerSafeMessage": "Limited-beta listing is available only to allowed scopes with explicit limits.",
+              "safeNextAction": "Confirm beta workspace eligibility and owner route before showing install intent."
+            },
+            {
+              "fixtureId": "mdp-installable-v1",
+              "listingState": "installable",
+              "displayLabel": "Installable with evidence",
+              "sourceMockup": {
+                "sourceIssue": "HOBO-546",
+                "fixtureId": "hobo-546-marketplace-installable",
+                "surface": "installability-panel"
+              },
+              "sourceTrustCopy": {
+                "sourceIssue": "HOBO-547",
+                "fixtureId": "mtc-installable-evidence-v1",
+                "copyState": "installable-with-evidence"
+              },
+              "quickstartRef": {
+                "sourceIssue": "HOBO-577",
+                "fixtureId": "rlq-deploy-run-accepted-v1",
+                "proofMode": "live"
+              },
+              "trustEvidence": "Provenance, conformance, security review, org catalog, and policy evidence are linked.",
+              "orgCatalogDecision": "Approved for the recorded workspace with immutable version pin and support owner.",
+              "supportRoute": "Capability Review & Approval",
+              "installabilityOutcome": "Install intent may be shown because every required evidence field is present.",
+              "proofMode": "live",
+              "customerSafeMessage": "Listing is installable for the recorded workspace because required evidence is linked.",
+              "safeNextAction": "Show install intent with evidence links, owner route, and proof-mode chip."
+            },
+            {
+              "fixtureId": "mdp-policy-blocked-v1",
+              "listingState": "policy-blocked",
+              "displayLabel": "Blocked by policy",
+              "sourceMockup": {
+                "sourceIssue": "HOBO-546",
+                "fixtureId": "hobo-546-marketplace-policy-blocked",
+                "surface": "search"
+              },
+              "sourceTrustCopy": {
+                "sourceIssue": "HOBO-547",
+                "fixtureId": "mtc-policy-block-v1",
+                "copyState": "policy-block"
+              },
+              "quickstartRef": {
+                "sourceIssue": "HOBO-577",
+                "fixtureId": "rlq-plan-safe-preview-v1",
+                "proofMode": "simulated"
+              },
+              "trustEvidence": "Catalog or mandatory policy denies this scope even though listing metadata remains visible.",
+              "orgCatalogDecision": "Blocked for current workspace; no install intent or override is exposed.",
+              "supportRoute": "Org Catalogs",
+              "installabilityOutcome": "Install intent is suppressed and user sees the catalog/policy owner.",
+              "proofMode": "simulated",
+              "customerSafeMessage": "Listing is blocked for this org or workspace by catalog, policy, trust, or approval state.",
+              "safeNextAction": "Route the user to catalog owner evidence without granting override."
+            },
+            {
+              "fixtureId": "mdp-deprecated-v1",
+              "listingState": "deprecated",
+              "displayLabel": "Deprecated",
+              "sourceMockup": {
+                "sourceIssue": "HOBO-546",
+                "fixtureId": "hobo-546-marketplace-deprecated",
+                "surface": "listing-detail"
+              },
+              "sourceTrustCopy": {
+                "sourceIssue": "HOBO-547",
+                "fixtureId": "mtc-deprecated-guidance-v1",
+                "copyState": "deprecated-guidance"
+              },
+              "quickstartRef": {
+                "sourceIssue": "HOBO-577",
+                "fixtureId": "rlq-manage-stale-evidence-v1",
+                "proofMode": "reference-fixture"
+              },
+              "trustEvidence": "Deprecation notice and replacement evidence exist, but current installability is stale.",
+              "orgCatalogDecision": "Visible for existing-use and migration guidance; not a default new selection.",
+              "supportRoute": "Registry Distribution",
+              "installabilityOutcome": "Install intent becomes guidance-only with migration or replacement next action.",
+              "proofMode": "reference fixture",
+              "customerSafeMessage": "Deprecated listing remains visible only for existing-use and migration guidance.",
+              "safeNextAction": "Show replacement or migration guidance and preserve stale-evidence label."
+            },
+            {
+              "fixtureId": "mdp-yanked-v1",
+              "listingState": "yanked",
+              "displayLabel": "Yanked",
+              "sourceMockup": {
+                "sourceIssue": "HOBO-546",
+                "fixtureId": "hobo-546-marketplace-yanked",
+                "surface": "installability-panel"
+              },
+              "sourceTrustCopy": {
+                "sourceIssue": "HOBO-547",
+                "fixtureId": "mtc-yanked-support-route-v1",
+                "copyState": "yanked-support-route"
+              },
+              "quickstartRef": {
+                "sourceIssue": "HOBO-577",
+                "fixtureId": "rlq-recover-scope-out-v1",
+                "proofMode": "scope-out"
+              },
+              "trustEvidence": "Yank decision is recorded; production registry removal remains outside this proof.",
+              "orgCatalogDecision": "Removed from new selection and retained only for audit/support explanation.",
+              "supportRoute": "Support Workflow",
+              "installabilityOutcome": "Install intent is denied and the only visible route is support or migration.",
+              "proofMode": "scope-out",
+              "customerSafeMessage": "Yanked listing is unavailable for new use and routes to support or migration guidance.",
+              "safeNextAction": "Show customer-safe support route without creating live tickets."
+            }
+          ],
+          "paths": [
+            {
+              "kind": "happy-path",
+              "fixtureIds": ["mdp-installable-v1"],
+              "proofModes": ["live", "reference fixture"],
+              "expectedUserSignal": "Installable listing shows evidence, owner route, org-catalog approval, and proof mode.",
+              "supportHandoff": "Capability review owner remains visible for evidence questions."
+            },
+            {
+              "kind": "blocked-path",
+              "fixtureIds": ["mdp-policy-blocked-v1", "mdp-yanked-v1"],
+              "proofModes": ["simulated", "scope-out"],
+              "expectedUserSignal": "Blocked and yanked listings suppress install intent and expose owner routes.",
+              "supportHandoff": "Org Catalogs or Support Workflow receives a customer-safe handoff."
+            },
+            {
+              "kind": "stale-or-unknown-evidence",
+              "fixtureIds": ["mdp-preview-only-v1", "mdp-limited-beta-v1", "mdp-deprecated-v1"],
+              "proofModes": ["reference fixture", "simulated"],
+              "expectedUserSignal": "Preview, beta, and deprecated states keep missing or stale evidence visible.",
+              "supportHandoff": "Marketplace trust, capability review, or registry distribution owner remains named."
+            },
+            {
+              "kind": "support-handoff",
+              "fixtureIds": ["mdp-deprecated-v1", "mdp-yanked-v1"],
+              "proofModes": ["reference fixture", "scope-out"],
+              "expectedUserSignal": "Support handoff is visible without implying support automation exists.",
+              "supportHandoff": "Support Workflow receives redacted customer-safe context only."
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order reaches listing state, evidence, org-catalog decision, support route, proof mode, and safe action.",
+            "Screen reader text includes listing state, installability outcome, proof mode, and source fixture id.",
+            "Contrast and copy distinguish approved, preview, limited beta, policy-blocked, deprecated, and yanked states.",
+            "Responsive layout keeps support route, customer-safe message, and proof mode adjacent on narrow screens.",
+            "Reduced-motion variants preserve blocked and stale-evidence state changes without animation-only meaning."
+          ],
+          "scopeOut": [
+            "No live storefront, browse/search service, marketplace service, or production UI.",
+            "No Registry storage, registry resolver, package hosting, signing, or install-time verification.",
+            "No install runtime, install service, deploy runtime, or live provider action.",
+            "No ranking, recommendation, paid placement, monetization, payouts, or marketplace commerce policy.",
+            "No publisher workflow, publisher portal UI, evidence upload service, or maintainer workflow.",
+            "No policy engine, RBAC runtime, scanner integration, conformance runner, or approval service.",
+            "No support queue, support tooling, notification delivery, or live ticket creation.",
+            "No public launch publication or launch claims without evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-562",
+      "phase": "M2",
+      "proofMode": "reference fixture"
+    }
+  }
+}

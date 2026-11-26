@@ -1,0 +1,46 @@
+{
+	"id": "hello-bindle-greetings-upcast",
+	"description": "an evolved v1 greeting.Served body upcast to v2 (text -> message)",
+	"seed": "hobo.s1-16.hello-bindle",
+	"requiresUpcaster": true,
+	"events": [
+		{
+			"id": "01KDVDNA00D555BV27YVWYVAZ6",
+			"streamId": "greeting:legacy",
+			"seq": 1,
+			"type": "greeting.Requested",
+			"v": 1,
+			"ts": "2026-01-01T00:00:00.000Z",
+			"data": {
+				"name": "legacy"
+			}
+		},
+		{
+			"id": "01KDVDNAZ8V440SYX442R16DD7",
+			"streamId": "greeting:legacy",
+			"seq": 2,
+			"type": "greeting.Served",
+			"v": 1,
+			"ts": "2026-01-01T00:00:01.000Z",
+			"data": {
+				"name": "legacy",
+				"text": "hello, legacy"
+			}
+		}
+	],
+	"expected": {
+		"state": {
+			"served": [
+				{
+					"name": "legacy",
+					"message": "hello, legacy"
+				}
+			],
+			"count": 1,
+			"seq": {
+				"greeting:legacy": 2
+			}
+		},
+		"stateDigest": "b2059d98a2aaa0fd390ce5df252435d0b74371089da03b4f9fbf6d565850b13e"
+	}
+}

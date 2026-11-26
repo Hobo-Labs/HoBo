@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "ExternalAppAuthorizationServer" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "redeems an audience-bound ID-JAG assertion for a target token reference",
+      "providerStates": [{ "name": "asana trusts Yard ID-JAG issuer" }],
+      "request": {
+        "method": "POST",
+        "path": "/oauth/token",
+        "headers": { "content-type": "application/json" },
+        "body": { "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "audience": "asana", "scope": "tasks:write" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "access_token": "tokenref://target/asana/tasks-write/0", "token_type": "Bearer", "expires_in": 300, "scope": "tasks:write" }
+      }
+    }
+  ]
+}

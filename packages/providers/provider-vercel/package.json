@@ -1,0 +1,48 @@
+{
+	"name": "@hobo/provider-vercel",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./temporary-capability": {
+			"types": "./dist/temporary-capability.d.ts",
+			"default": "./dist/temporary-capability.js"
+		},
+		"./testing": {
+			"types": "./dist/testing.d.ts",
+			"default": "./dist/testing.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:deep": "vitest run --config vitest.deep.config.ts"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/bindings": "workspace:*",
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/claims": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*"
+	},
+	"devDependencies": {
+		"@emulators/core": "0.13.1",
+		"@emulators/vercel": "0.13.1",
+		"@hobo/redaction-test-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"description": "HoBo Vercel CloudProvider \u2014 equivalence, temporary/agent Environment Station contract, and the sponsor-backed vercel.sponsored-project-transfer/v1 claim strategy (project + associated marketplace resource)."
+}

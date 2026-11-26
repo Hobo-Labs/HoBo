@@ -1,0 +1,27 @@
+{
+  "layer": "exp",
+  "slug": "app-dev-journey-contract",
+  "experienceType": "dx",
+  "title": "App Developer Journey Contract POC",
+  "linear": "HOBO-198",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/anonymous-preview-path-contract",
+      "src/draft/technical-proofs/hobo-codegen-cli-contract",
+      "src/draft/technical-proofs/hobo-dev-loop-contract",
+      "src/draft/technical-proofs/hobo-new-scaffold-contract",
+      "src/draft/technical-proofs/hobo-up-convergence-contract",
+      "src/draft/technical-proofs/resource-collection-engine-contract",
+      "src/draft/technical-proofs/run-inspector-projection-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

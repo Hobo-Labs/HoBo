@@ -1,0 +1,42 @@
+package hobo:slo@0.1.0;
+
+interface types {
+  record telemetry-query {
+    query: string,
+    unit: option<string>,
+  }
+
+  record ratio-indicator {
+    good: telemetry-query,
+    total: telemetry-query,
+    counter: bool,
+  }
+
+  record time-window {
+    duration: string,
+    is-rolling: bool,
+  }
+
+  record objective {
+    display-name: string,
+    target: float64,
+  }
+
+  record burn-rate-threshold {
+    name: string,
+    threshold: float64,
+    lookback-window: string,
+    sampling-interval: string,
+  }
+
+  variant slo-event-kind {
+    declared,
+    budget-burned,
+    budget-exhausted,
+  }
+}
+
+world contract {
+  export validate-slo: func(definition-json: string) -> result<string, string>;
+  export validate-slo-event: func(envelope-json: string) -> result<string, string>;
+}

@@ -1,0 +1,74 @@
+package wasi:websocket@0.0.1-draft;
+
+/// stability: preview
+interface types {
+  use wasi:io/streams@0.2.0.{input-stream, output-stream};
+  use wasi:io/poll@0.2.0.{pollable};
+
+  variant message {
+    text(string),
+    binary(list<u8>),
+  }
+
+  record close-info {
+    code: u16,
+    reason: option<string>,
+  }
+
+  enum state {
+    connecting,
+    open,
+    closing,
+    closed,
+  }
+
+  enum error-code {
+    invalid-url,
+    refused,
+    protocol-error,
+    closed,
+    provider-error,
+  }
+
+  resource connection {
+    id: func() -> string;
+    state: func() -> state;
+    poll: func() -> pollable;
+    read-message: func() -> result<option<message>, error-code>;
+    write-message: func(msg: message) -> result<_, error-code>;
+    close: func(info: close-info) -> result<_, error-code>;
+  }
+
+  record accept-request {
+    path: string,
+    headers: list<tuple<string, string>>,
+    body: input-stream,
+  }
+
+  record accept-response {
+    connection: connection,
+    response: output-stream,
+  }
+
+  record connect-options {
+    headers: list<tuple<string, string>>,
+    subprotocols: list<string>,
+  }
+}
+
+interface incoming-handler {
+  use types.{accept-request, accept-response, error-code};
+
+  handle: func(request: accept-request) -> result<accept-response, error-code>;
+}
+
+interface outgoing {
+  use types.{connect-options, connection, error-code};
+
+  connect: func(url: string, opts: connect-options) -> result<connection, error-code>;
+}
+
+world websocket {
+  export incoming-handler;
+  import outgoing;
+}

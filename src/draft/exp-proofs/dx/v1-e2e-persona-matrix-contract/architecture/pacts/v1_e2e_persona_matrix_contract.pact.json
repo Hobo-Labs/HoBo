@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "V1E2ePersonaMatrixContractConsumer"
+  },
+  "provider": {
+    "name": "V1E2ePersonaMatrixContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "V1 E2e Persona Matrix Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/v1-e2e-persona-matrix-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.v1_e2e_persona_matrix_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

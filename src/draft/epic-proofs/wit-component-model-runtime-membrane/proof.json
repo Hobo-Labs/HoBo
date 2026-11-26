@@ -1,0 +1,22 @@
+{
+  "layer": "epic",
+  "slug": "wit-component-model-runtime-membrane",
+  "title": "WIT & Component-Model Runtime Membrane Reference Implementation",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/capability-enforcement-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/api/wrpc-wit-baseline-poc"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

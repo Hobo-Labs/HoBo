@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "incident-communications-scope-contract",
+  "experienceType": "cx",
+  "title": "Incident Communications Scope Contract",
+  "linear": "HOBO-450",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/incident-communications.md",
+      "docs/design/proofs/hobo-450-incident-communications/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

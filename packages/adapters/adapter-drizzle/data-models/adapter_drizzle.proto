@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package hobo.adapter_drizzle.v1;
+
+// Wire form of what the drizzle adapter reports about itself.
+//
+// Two invariants are load-bearing here. First, an ingestion record always
+// carries its impedance list: a consumer reading table_names without findings
+// would believe the module was fully understood, so the findings travel with
+// the schema rather than beside it. Second, an engine record carries the pinned
+// engine_version, because that version is hashed into the migration plan digest
+// — an upgrade must be visible in the artifact rather than silently altering
+// the SQL a later apply produces.
+
+// One construct the Drizzle module expressed that the canonical schema IR
+// cannot carry. Codes are a closed vocabulary; detail names the construct.
+message DrizzleImpedanceFindingRecord {
+  string code = 1;
+  string detail = 2;
+}
+
+// The outcome of ingesting one Drizzle schema module.
+message DrizzleSchemaIngestionRecord {
+  string contract = 1; // hobo.schema-ir/v1 — the IR contract that was produced
+  string dialect = 2; // postgres
+  repeated string table_names = 3; // sorted; the tables that reached the IR
+  repeated DrizzleImpedanceFindingRecord impedance = 4; // sorted by (code, detail)
+}
+
+// The schema-diff engine this adapter installs behind the core port.
+message DrizzleDiffEngineRecord {
+  string engine_id = 1; // drizzle-kit
+  string engine_version = 2; // pinned; participates in the plan digest
+  bool toolchain_present = 3;
+  bool sql_emission_available = 4; // toolchain_present AND an emitter is wired
+}
+
+// A fail-closed refusal from the adapter, as seen at its boundary.
+message DrizzleRefusalRecord {
+  string code = 1; // TOOLCHAIN_UNAVAILABLE | SQL_EMISSION_INCOMPLETE | ...
+  string message = 2;
+  string remediation = 3; // never empty — a refusal without a next step is a dead end
+}

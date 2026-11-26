@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "GenerationReferenceApp"
+  },
+  "provider": {
+    "name": "TrainingTrajectoryStore"
+  },
+  "interactions": [
+    {
+      "description": "append privacy-filtered OpenInference trajectory evidence",
+      "providerStates": [
+        {
+          "name": "training run and generated region are registered"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/training/trajectories",
+        "body": {
+          "method": "classifyTicket",
+          "redaction": "tokenized",
+          "rewardSlot": "pending-live-eval"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "captured": true,
+          "rawSensitivePayloadsStored": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

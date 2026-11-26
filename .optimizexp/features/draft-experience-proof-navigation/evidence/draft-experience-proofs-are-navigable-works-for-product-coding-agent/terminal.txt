@@ -1,0 +1,61 @@
+# OptimizeXP CLI evidence
+command: bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 29
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T14:08:04.564Z
+
+## stdout
+AGENTS.md
+_classification.md
+api
+ax
+cx
+dx
+ux
+# Experience-proof classification manifest
+
+> Drove the one-time reorganization of `src/draft/exp-proofs/` into experience-type subfolders
+> (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface), executed with
+> `git mv` by a one-off migration script (`migrate-exp-proofs.ts`, retired from `scripts/` after
+> the migration completed). Every package appears exactly once. After the move a
+> package lives at `src/draft/exp-proofs/<type>/<slug>/`.
+>
+> **Classification rules.** Prefix defaults: `vibe-*`→ux · `dx-*`/`cli-*`→dx · `sdk-*`→api ·
+> `beta-pilot-*`/`launch-support-*`/`support-*`/`customer-*`/`billing-*`/`incident-*`/`legal-privacy-*`/`launch-site-*`→cx.
+> Audience rule for evidence/scope packages: customer-facing evidence→cx, operator/developer-facing→dx.
+> Named rulings: ops journeys (`devops-*`/`sre-*`/`secops-*`)→dx · MCP surfaces→ax (MCP is the agent
+> surface) · admin consoles/explorers→ux · docs/tutorials/troubleshooting→dx · marketplace UX→ux but
+> publisher trust/payout→cx · domain-model/interface shape contracts→api.
+
+| Type | Count |
+|---|---|
+| dx | 58 |
+| ux | 37 |
+| cx | 50 |
+| ax | 3 |
+| api | 10 |
+
+## dx (58)
+
+| Package | Rationale |
+|---|---|
+| `adr-0064-ui-generation-citation-contract` | design-governance citation audit (internal docs engineering) |
+| `app-dev-journey-contract` | end-to-end app-developer journey |
+| `artifact-store-scope-contract` | internal platform artifact-store operations |
+| `backup-restore-launch-drill-contract` | operator drill evidence |
+| `backup-restore-scope-contract` | operator backup/restore workflow |
+| `bootstrap-installer-scope-contract` | installer developer experience |
+| `bootstrap-launch-smoke-matrix-contract` | install smoke matrix (developer/operator) |
+| `chaos-resilience-tests-scope-acceptance` | internal resilience-test infrastructure |
+| `cli-cloud-yard-path` | CLI developer surface |
+| `cli-deploy-transcript-prototype` | CLI developer surface |
+| `cli-error-refusal-examples` | CLI developer surface |
+| `cli-manage-inspect-logs-drift-prototype` | CLI developer surface |
+| `cli-migration-transcript-prototype` | CLI developer surface |
+
+
+## stderr
+(empty)

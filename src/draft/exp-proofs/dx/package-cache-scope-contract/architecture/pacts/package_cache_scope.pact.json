@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PackageCacheScopeConsumer"
+  },
+  "provider": {
+    "name": "PackageCacheScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Package Cache Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/package-cache-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.package_cache_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "seq": "fixture-bootstrap",
+  "current": {},
+  "usage": [
+    {
+      "providerId": "github_hosted",
+      "spendUsd": 0,
+      "unitsUsed": 0,
+      "known": true,
+      "source": "github-billing-usage"
+    }
+  ],
+  "failures": []
+}

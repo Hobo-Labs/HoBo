@@ -1,0 +1,14 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "1.0.0"
+  },
+  "resources": {
+    "db": {
+      "type": "data.v1",
+      "port": "hobo:data",
+      "allow": [42]
+    }
+  }
+}

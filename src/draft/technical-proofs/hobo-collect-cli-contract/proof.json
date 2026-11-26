@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "hobo-collect-cli-contract",
+  "title": "HOBO-160 collect CLI contract",
+  "linear": "HOBO-160",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/collection-coverage-gate-contract",
+      "src/draft/technical-proofs/resource-collection-engine-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

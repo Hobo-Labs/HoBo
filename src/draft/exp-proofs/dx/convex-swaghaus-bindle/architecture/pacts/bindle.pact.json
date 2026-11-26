@@ -1,0 +1,11 @@
+{
+  "consumer": "try-site-swaghaus",
+  "provider": "hobo-convex",
+  "interactions": [
+    {
+      "description": "convexApp root annotation",
+      "request": { "root": "examples/convex-swaghaus" },
+      "response": { "framework": "convex" }
+    }
+  ]
+}

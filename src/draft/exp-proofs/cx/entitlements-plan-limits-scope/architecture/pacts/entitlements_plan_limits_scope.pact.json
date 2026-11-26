@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "EntitlementsPlanLimitsScopeConsumer"
+  },
+  "provider": {
+    "name": "EntitlementsPlanLimitsScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Entitlements Plan Limits Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/entitlements-plan-limits-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.entitlements_plan_limits_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

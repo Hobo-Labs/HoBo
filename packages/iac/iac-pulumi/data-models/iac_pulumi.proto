@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package hobo.iac.pulumi.v1;
+
+// Wire records for the Pulumi Automation API adapter (@hobo/iac-pulumi). CUE
+// constraints in iac_pulumi.cue bound every type declared here; the runtime
+// parses untrusted input into the derived parsed domain program before use.
+
+enum IacChangeOp {
+  IAC_CHANGE_OP_UNSPECIFIED = 0;
+  IAC_CHANGE_OP_CREATE = 1;
+  IAC_CHANGE_OP_UPDATE = 2;
+  IAC_CHANGE_OP_DELETE = 3;
+}
+
+message IacResourceSpec {
+  string name = 1;
+  string type = 2;
+  string provider = 3;
+  repeated string outputs = 4;
+}
+
+message IacProgramSpec {
+  string api_version = 1;
+  string kind = 2;
+  string provider = 3;
+  string deployment_id = 4;
+  string stack = 5;
+  repeated IacResourceSpec resources = 6;
+  map<string, string> stack_outputs = 7;
+}
+
+message IacResourceChange {
+  IacChangeOp op = 1;
+  string resource = 2;
+  string stack_key = 3;
+  string reason = 4;
+}
+
+message IacPreviewDiff {
+  string kind = 1;
+  string provider = 2;
+  string model = 3;
+  repeated IacResourceChange changes = 4;
+  bool dirty = 5;
+}
+
+message IacDriftResource {
+  string name = 1;
+  string stack_key = 2;
+  string reason = 3;
+}
+
+message IacDriftReport {
+  string kind = 1;
+  string provider = 2;
+  string model = 3;
+  bool drifted = 4;
+  repeated IacDriftResource resources = 5;
+}
+
+message IacResourceOutput {
+  string id = 1;
+  string stack_key = 2;
+  string status = 3;
+  map<string, string> outputs = 4;
+}
+
+message IacApplyOutputs {
+  string kind = 1;
+  string provider = 2;
+  string model = 3;
+  map<string, IacResourceOutput> resources = 4;
+  map<string, string> stack_outputs = 5;
+  map<string, string> bindings = 6;
+}
+
+message IacStateBackendConfig {
+  string kind = 1;
+  string lock_holder = 2;
+}

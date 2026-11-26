@@ -1,0 +1,37 @@
+{
+	"name": "@hobo/fuzz",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"description": "OSS-Fuzz-style property oracles and harnesses for HoBo control-plane invariants. In-memory simulators only; no live clouds.",
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@hobo/bindles": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"pretest:property": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test:property": "vitest run test/property",
+		"test:fuzz": "vitest run test/harness test/api",
+		"test:fuzz:nightly": "node --import tsx src/nightly-cli.ts"
+	}
+}

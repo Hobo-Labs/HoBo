@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "StreamerWebsocketMock" },
+  "interactions": [
+    {
+      "description": "write bounded stream frames and fan out websocket updates without Yard data-path calls",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/streamer-websocket/fanout",
+        "body": {
+          "streamId": "checkout-progress",
+          "topic": "deployment-status",
+          "tenantGuard": "required"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "bounded": true,
+          "framesWritten": 1,
+          "yardDataPathUsed": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "streamer-websocket",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

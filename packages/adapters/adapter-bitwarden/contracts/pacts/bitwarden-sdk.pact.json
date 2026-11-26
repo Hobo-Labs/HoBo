@@ -1,0 +1,138 @@
+{
+	"consumer": {
+		"name": "HoboBitwardenAdapter"
+	},
+	"provider": {
+		"name": "BitwardenSecretsManagerSdk"
+	},
+	"interactions": [
+		{
+			"description": "secrets.list returns the organization's secret identifiers (keys and ids, no values)",
+			"providerState": "project 22222222-2222-4222-8222-222222222222 holds HOBO_CI_VALKEY_URL as secret 33333333-3333-4333-8333-333333333333",
+			"request": {
+				"method": "POST",
+				"path": "/sdk/secrets.list",
+				"body": {
+					"organizationId": "11111111-1111-4111-8111-111111111111"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"data": [
+						{
+							"id": "33333333-3333-4333-8333-333333333333",
+							"key": "HOBO_CI_VALKEY_URL",
+							"organizationId": "11111111-1111-4111-8111-111111111111"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "secrets.get returns the secret with its value and project",
+			"providerState": "project 22222222-2222-4222-8222-222222222222 holds HOBO_CI_VALKEY_URL as secret 33333333-3333-4333-8333-333333333333",
+			"request": {
+				"method": "POST",
+				"path": "/sdk/secrets.get",
+				"body": {
+					"id": "33333333-3333-4333-8333-333333333333"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "33333333-3333-4333-8333-333333333333",
+					"key": "HOBO_CI_VALKEY_URL",
+					"value": "fixture-value-1",
+					"note": "",
+					"organizationId": "11111111-1111-4111-8111-111111111111",
+					"projectId": "22222222-2222-4222-8222-222222222222",
+					"revisionDate": "2026-11-12T00:00:00.000Z"
+				}
+			}
+		},
+		{
+			"description": "secrets.create makes a secret in the bound project",
+			"providerState": "project 22222222-2222-4222-8222-222222222222 has no secret NEW_SECRET",
+			"request": {
+				"method": "POST",
+				"path": "/sdk/secrets.create",
+				"body": {
+					"organizationId": "11111111-1111-4111-8111-111111111111",
+					"key": "NEW_SECRET",
+					"value": "fixture-value-2",
+					"note": "",
+					"projectIds": [
+						"22222222-2222-4222-8222-222222222222"
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "44444444-4444-4444-8444-444444444444",
+					"key": "NEW_SECRET",
+					"value": "fixture-value-2",
+					"note": "",
+					"organizationId": "11111111-1111-4111-8111-111111111111",
+					"projectId": "22222222-2222-4222-8222-222222222222",
+					"revisionDate": "2026-11-12T00:00:01.000Z"
+				}
+			}
+		},
+		{
+			"description": "secrets.update replaces an existing secret's value",
+			"providerState": "project 22222222-2222-4222-8222-222222222222 holds HOBO_CI_VALKEY_URL as secret 33333333-3333-4333-8333-333333333333",
+			"request": {
+				"method": "POST",
+				"path": "/sdk/secrets.update",
+				"body": {
+					"organizationId": "11111111-1111-4111-8111-111111111111",
+					"id": "33333333-3333-4333-8333-333333333333",
+					"key": "HOBO_CI_VALKEY_URL",
+					"value": "fixture-value-3",
+					"note": "",
+					"projectIds": [
+						"22222222-2222-4222-8222-222222222222"
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "33333333-3333-4333-8333-333333333333",
+					"key": "HOBO_CI_VALKEY_URL",
+					"value": "fixture-value-3",
+					"note": "",
+					"organizationId": "11111111-1111-4111-8111-111111111111",
+					"projectId": "22222222-2222-4222-8222-222222222222",
+					"revisionDate": "2026-11-12T00:00:02.000Z"
+				}
+			}
+		},
+		{
+			"description": "secrets.get for a secret that does not exist is not found",
+			"providerState": "no secret 55555555-5555-4555-8555-555555555555",
+			"request": {
+				"method": "POST",
+				"path": "/sdk/secrets.get",
+				"body": {
+					"id": "55555555-5555-4555-8555-555555555555"
+				}
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"error": "secret not found"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"source": "@bitwarden/sdk-napi 1.0.0 BitwardenClient.secrets() (list, get, create, update), type declarations read 2026-11-12"
+	}
+}

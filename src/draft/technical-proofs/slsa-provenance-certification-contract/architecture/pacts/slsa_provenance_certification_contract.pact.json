@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SlsaProvenanceCertificationContractConsumer"
+  },
+  "provider": {
+    "name": "SlsaProvenanceCertificationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Slsa Provenance Certification Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/slsa-provenance-certification-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.slsa_provenance_certification_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

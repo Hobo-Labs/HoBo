@@ -1,0 +1,45 @@
+{
+  "consumer": {
+    "name": "HOBO-531-release-readiness-parent"
+  },
+  "provider": {
+    "name": "closure-builder-v1-finalization-contract"
+  },
+  "interactions": [
+    {
+      "description": "release readiness consumes accepted closure-builder v1 finalization evidence",
+      "request": {
+        "method": "GET",
+        "path": "/closure-builder/v1/finalization"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "parentIssue": "HOBO-531",
+          "authoringPackage": "@hobo/bindles",
+          "authoringModel": "closure-builder",
+          "canonicalDocPath": "docs/design/closure-builder-public-api.md",
+          "evidence": [
+            {
+              "issueId": "HOBO-532",
+              "linearStatus": "Done",
+              "proofPath": "src/draft/closure-builder-public-api-contract/README.md",
+              "designPath": "docs/design/closure-builder-public-api.md"
+            },
+            {
+              "issueId": "HOBO-537",
+              "linearStatus": "Done",
+              "proofPath": "src/draft/closure-builder-author-flow-contract/README.md",
+              "designPath": "docs/design/worked-example.md"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

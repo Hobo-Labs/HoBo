@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "local-dev-test-authoring-contract",
+  "title": "Local Dev/Test Authoring Contract",
+  "linear": "HOBO-392",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-bindles-resource-catalog"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

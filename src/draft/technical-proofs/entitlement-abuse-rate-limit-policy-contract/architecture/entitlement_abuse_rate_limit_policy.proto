@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Entitlement Abuse
+// Rate-Limit Policy draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum EntitlementAbusePolicyEvidenceKind {
+  ENTITLEMENT_ABUSE_POLICY_EVIDENCE_KIND_UNSPECIFIED = 0;
+  ENTITLEMENT_ABUSE_POLICY_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  ENTITLEMENT_ABUSE_POLICY_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  ENTITLEMENT_ABUSE_POLICY_EVIDENCE_KIND_AUDIT_FIXTURE = 3;
+  ENTITLEMENT_ABUSE_POLICY_EVIDENCE_KIND_SUPPORT_HANDOFF = 4;
+}
+
+message EntitlementAbusePolicyRecord {
+  string issue = 1;
+  string phase = 2;
+  repeated EntitlementLimitType limit_types = 3;
+  repeated RateLimitBehavior rate_limit_behaviors = 4;
+  repeated AbuseResponse response_matrix = 5;
+  repeated BoundaryOwner boundaries = 6;
+  repeated CustomerState customer_states = 7;
+  AppealPolicy appeal_policy = 8;
+  repeated SupportOverride support_overrides = 9;
+  repeated ScopeGuard scope_guards = 10;
+}
+
+message EntitlementLimitType {
+  string id = 1;
+  string owner = 2;
+}
+
+message RateLimitBehavior {
+  string id = 1;
+  bool customer_visible = 2;
+  string audit_event = 3;
+  string rule = 4;
+}
+
+message AbuseResponse {
+  string id = 1;
+  repeated string audit_evidence = 2;
+  string customer_communication = 3;
+  string recovery_path = 4;
+}
+
+message BoundaryOwner {
+  string id = 1;
+  string owner = 2;
+  string rule = 3;
+}
+
+message CustomerState {
+  string id = 1;
+  bool support_visible = 2;
+  bool recovery_required = 3;
+}
+
+message AppealPolicy {
+  string owner = 1;
+  repeated string required_fields = 2;
+  string rule = 3;
+}
+
+message SupportOverride {
+  string id = 1;
+  bool requires_audit = 2;
+  bool requires_ttl = 3;
+  string owner = 4;
+}
+
+message ScopeGuard {
+  string id = 1;
+  string forbidden_work = 2;
+  string owning_boundary = 3;
+}

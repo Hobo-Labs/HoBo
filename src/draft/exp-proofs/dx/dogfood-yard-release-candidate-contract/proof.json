@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dogfood-yard-release-candidate-contract",
+  "experienceType": "dx",
+  "title": "Dogfood Yard Release-Candidate Evidence Contract",
+  "linear": "HOBO-469",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

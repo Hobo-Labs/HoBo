@@ -1,0 +1,25 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "46.0.1"
+  },
+  "resources": {
+    "checkout-api": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "exports": ["wasi:http/incoming-handler"],
+      "planner": {
+        "resourceType": "service",
+        "resourceClass": "http",
+        "capabilityRequests": [
+          {
+            "port": "containerService",
+            "features": ["http2"],
+            "strictness": "require"
+          }
+        ]
+      }
+    }
+  }
+}

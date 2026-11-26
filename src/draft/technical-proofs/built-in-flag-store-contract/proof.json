@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "built-in-flag-store-contract",
+  "title": "Built-in Flag Store Contract",
+  "linear": "HOBO-319",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/flag-event-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

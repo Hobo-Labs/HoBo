@@ -1,0 +1,13 @@
+[
+  {"name":"swap-local","expectedProvider":"local","accountBudgetMicros":0,"offers":[{"provider":"local","freeMinutes":0,"priceMicros":0,"budgetMicros":0}]},
+  {"name":"swap-github","expectedProvider":"github","offers":[{"provider":"github","freeMinutes":10,"priceMicros":6000,"budgetMicros":1000000}]},
+  {"name":"swap-blacksmith","expectedProvider":"blacksmith","offers":[{"provider":"blacksmith","freeMinutes":10,"priceMicros":4000,"budgetMicros":1000000}]},
+  {"name":"swap-depot","expectedProvider":"depot","offers":[{"provider":"depot","freeMinutes":10,"priceMicros":2000,"budgetMicros":1000000}]},
+  {"name":"swap-warpbuild","expectedProvider":"warpbuild","offers":[{"provider":"warpbuild","freeMinutes":10,"priceMicros":1000,"budgetMicros":1000000}]},
+  {"name":"swap-kubernetes","expectedProvider":"kubernetes","offers":[{"provider":"kubernetes","freeMinutes":10,"priceMicros":3000,"budgetMicros":1000000}]},
+  {"name":"free-before-cheaper-paid","expectedProvider":"github","offers":[{"provider":"github","freeMinutes":10,"priceMicros":6000,"budgetMicros":1000000},{"provider":"warpbuild","freeMinutes":0,"priceMicros":1000,"budgetMicros":1000000}]},
+  {"name":"partial-free-before-cheaper-paid","expectedProvider":"github","offers":[{"provider":"github","freeMinutes":1,"priceMicros":6000,"budgetMicros":1000000},{"provider":"warpbuild","freeMinutes":0,"priceMicros":1000,"budgetMicros":1000000}]},
+  {"name":"cheapest-after-free-exhaustion","expectedProvider":"warpbuild","offers":[{"provider":"github","freeMinutes":0,"priceMicros":6000,"budgetMicros":1000000},{"provider":"blacksmith","freeMinutes":0,"priceMicros":4000,"budgetMicros":1000000},{"provider":"depot","freeMinutes":0,"priceMicros":2000,"budgetMicros":1000000},{"provider":"warpbuild","freeMinutes":0,"priceMicros":1000,"budgetMicros":1000000},{"provider":"kubernetes","freeMinutes":0,"priceMicros":3000,"budgetMicros":1000000}]},
+  {"name":"provider-budget-fallback","expectedProvider":"depot","offers":[{"provider":"warpbuild","freeMinutes":0,"priceMicros":1000,"budgetMicros":0},{"provider":"depot","freeMinutes":0,"priceMicros":2000,"budgetMicros":1000000}]},
+  {"name":"account-budget-refusal","expectedProvider":"","accountBudgetMicros":0,"offers":[{"provider":"warpbuild","freeMinutes":0,"priceMicros":1000,"budgetMicros":1000000}]}
+]

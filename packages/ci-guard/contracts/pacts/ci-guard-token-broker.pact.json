@@ -1,0 +1,46 @@
+{
+	"consumer": {
+		"name": "@hobo/ci-guard"
+	},
+	"provider": {
+		"name": "hobo-oidc-token-broker"
+	},
+	"interactions": [
+		{
+			"description": "exchange GitHub OIDC token for scoped sandbox-cloud grant",
+			"request": {
+				"method": "POST",
+				"path": "/oidc/token-exchange",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"audience": "hobo:sandbox-cloud",
+					"githubOidcToken": "github-actions-oidc-jwt",
+					"role": "hobo-ci-hello-bindle-e2e"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"accessToken": "scoped-short-lived-token",
+					"expiresInSeconds": 900,
+					"role": "hobo-ci-hello-bindle-e2e",
+					"allowedActions": [
+						"deployments:create",
+						"deployments:read",
+						"deployments:delete"
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

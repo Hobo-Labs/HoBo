@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PublisherPortalScopeContractConsumer"
+  },
+  "provider": {
+    "name": "PublisherPortalScopeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Publisher Portal Scope Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/publisher-portal-scope-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.publisher_portal_scope_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

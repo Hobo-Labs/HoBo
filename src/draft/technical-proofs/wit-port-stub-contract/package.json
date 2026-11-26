@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/wit-port-stub-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-651: stub() recording typed stubs behind any WIT port.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "otel-office",
+  "builtAt": "2026-11-17T18:35:43.860Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/otel-office/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "1ebeaee0f0f43e2ed7cb944bd3aba5b4576ed529ad3a656d65df45ffeec10b66",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

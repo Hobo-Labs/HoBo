@@ -1,0 +1,7 @@
+{
+  "cursor": "cursor-for-position-42",
+  "type": "ci.LeaseReserved",
+  "at": "2026-11-02T12:00:01.000Z",
+  "leaseId": "01234567-89ab-4cde-8fab-0123456789ab",
+  "detail": "{\"id\":\"01234567-89ab-4cde-8fab-0123456789ab\"}"
+}

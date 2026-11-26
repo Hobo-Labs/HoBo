@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/junction-federated-domain-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-163 Junction-federated cross-cloud custom domains.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

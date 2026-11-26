@@ -1,0 +1,17 @@
+{
+  "consumer": { "name": "HoBoCiAppRegistration" },
+  "provider": { "name": "GitHubAppRegistration" },
+  "interactions": [
+    {
+      "description": "convert a one-time app manifest code",
+      "request": { "method": "POST", "path": "/app-manifests/test-code/conversions" },
+      "response": { "status": 201, "body": { "id": 42, "pem": "test-private-key", "webhook_secret": "test-webhook", "client_id": "test-client", "client_secret": "test-client-secret" } }
+    },
+    {
+      "description": "verify the installed app identity",
+      "request": { "method": "GET", "path": "/app/installations/88" },
+      "response": { "status": 200, "body": { "id": 88, "app_id": 42, "suspended_at": null } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

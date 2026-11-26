@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package hobo.runtime_local.v1;
+
+import "event_envelope.proto";
+
+message AppendRequest {
+  string stream_id = 1;
+  repeated EventInput events = 2;
+  int64 expected_seq = 3;
+  PrincipalRef actor = 4;
+  string tenant = 5;
+  optional string project = 6;
+  optional string causation_id = 7;
+  optional string correlation_id = 8;
+  optional string lane = 9;
+  // Decimal string preserves full u64 fence across languages (do not use float).
+  optional string fence_token = 10;
+}
+
+message EventInput {
+  string type = 1;
+  int32 v = 2;
+  bytes data = 3;
+  map<string, string> meta = 4;
+}
+
+message AppendResult {
+  string stream_id = 1;
+  repeated EventEnvelope appended = 2;
+  repeated EventEnvelope deduped = 3;
+  optional string first_position = 4;
+  optional string last_position = 5;
+}
+
+message PositionedEvent {
+  string global_position = 1;
+  EventEnvelope event = 2;
+}
+
+message ReadAllRequest {
+  optional string after_position = 1;
+  optional uint32 limit = 2;
+  optional string stream_id = 3;
+  optional string type = 4;
+  optional string tenant = 5;
+  optional string lane = 6;
+}
+
+message DurableCommitRequest {
+  string stream_id = 1;
+  repeated EventInput events = 2;
+  AppendRequest append = 3;
+  repeated DurableEffect effects = 4;
+}
+
+message DurableEffect {
+  string kind = 1;
+  string idempotency_key = 2;
+  bytes payload = 3;
+}
+
+message DurableCommitResult {
+  AppendResult append = 1;
+  repeated DurableEffectReceipt effects = 2;
+}
+
+message DurableEffectReceipt {
+  string kind = 1;
+  string id = 2;
+  string idempotency_key = 3;
+  bool deduped = 4;
+}
+
+message SubscriptionCheckpoint {
+  string subscription_id = 1;
+  string partition_id = 2;
+  string position = 3;
+  string fence_token = 4;
+  string updated_at = 5;
+}
+
+message SnapshotRecord {
+  string stream_id = 1;
+  int64 seq = 2;
+  bytes state = 3;
+  string saved_at = 4;
+}
+
+message QuarantineFact {
+  int64 offending_seq = 1;
+  string offending_type = 2;
+  string reason = 3;
+}

@@ -1,0 +1,25 @@
+{
+  "consumer": { "name": "CollectionCoverageGateConsumer" },
+  "provider": { "name": "CollectionCoverageGate" },
+  "interactions": [
+    {
+      "description": "fail closed when dynamic resource name cannot be proven",
+      "request": {
+        "method": "POST",
+        "path": "/collection-coverage/evaluate",
+        "body": {
+          "sourceText": "import { bucket } from \"@hobo/bindles\";\nconst region = \"us\";\nbucket(`logs-${region}`);",
+          "observedResourceIds": []
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "reason": "collection.coverage.cannot-prove-resource-name"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

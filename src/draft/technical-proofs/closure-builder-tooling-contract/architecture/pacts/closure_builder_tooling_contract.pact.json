@@ -1,0 +1,69 @@
+{
+  "consumer": {
+    "name": "closure-builder-tooling-consumer"
+  },
+  "provider": {
+    "name": "closure-builder-tooling-contract"
+  },
+  "interactions": [
+    {
+      "description": "evaluate closure-builder tooling evidence for coverage collect codegen and scaffold",
+      "request": {
+        "method": "POST",
+        "path": "/closure-builder/v1/tooling-evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "manifest": {
+            "schema": "hobo.manifest/v1",
+            "name": "shop",
+            "resources": [
+              {
+                "alias": "cache",
+                "generatedId": "res_0001",
+                "kind": "cache"
+              },
+              {
+                "alias": "api",
+                "generatedId": "res_0002",
+                "kind": "api"
+              }
+            ],
+            "relationships": [
+              {
+                "from": "res_0002",
+                "to": "res_0001",
+                "verb": "dependsOn"
+              }
+            ]
+          },
+          "coverage": {
+            "status": "pass",
+            "observedResourceIds": ["res_0001", "res_0002"],
+            "diagnostics": []
+          },
+          "codegen": {
+            "aliases": [
+              {
+                "alias": "cache",
+                "generatedId": "res_0001",
+                "kind": "cache"
+              },
+              {
+                "alias": "api",
+                "generatedId": "res_0002",
+                "kind": "api"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

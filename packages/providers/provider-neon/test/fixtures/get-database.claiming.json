@@ -1,0 +1,10 @@
+{
+	"id": "01999999-0000-7000-8000-000000000001",
+	"status": "CLAIMING",
+	"neon_project_id": "fake-project-00000000",
+	"connection_string": "postgresql://neondb_owner:REDACTED@ep-fake-000000-pooler.c-2.us-east-2.aws.neon.tech/neondb?channel_binding=require&sslmode=require",
+	"claim_url": "https://neon.new/claim/01999999-0000-7000-8000-000000000001",
+	"expires_at": "2026-08-11T12:00:00.000Z",
+	"created_at": "2026-08-08T12:00:00.000Z",
+	"updated_at": "2026-08-08T13:00:00.000Z"
+}

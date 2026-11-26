@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "draft-experience-proof-navigation",
+  "title": "Find experience proof packages by audience",
+  "experiences": ["dx", "ax"],
+  "personas": ["product-coding-agent"],
+  "interfaces": ["cli"],
+  "driver": "cli",
+  "surfaces": ["pnpm run draft:experiences"],
+  "tags": ["@optimizexp", "@dx", "@ax"],
+  "bindings": {
+    "steps": "steps/bindings.steps.ts",
+    "implementations": "steps/implementations.ts",
+    "tests": "test/draft-experience-proof-navigation.bindings.test.ts"
+  },
+  "implementationStatus": "wired",
+  "primaryCommand": "pnpm run draft:experiences"
+}

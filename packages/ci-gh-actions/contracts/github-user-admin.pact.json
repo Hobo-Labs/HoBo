@@ -1,0 +1,9 @@
+{
+  "consumer": { "name": "HoBoCiInstallationOwnerVerifier" },
+  "provider": { "name": "GitHubUserApi" },
+  "interactions": [
+    { "description": "identify the authenticated GitHub user", "request": { "method": "GET", "path": "/user" }, "response": { "status": 200, "body": { "id": 7 } } },
+    { "description": "verify active organization administrator membership", "request": { "method": "GET", "path": "/user/memberships/orgs/test-org" }, "response": { "status": 200, "body": { "role": "admin", "state": "active" } } }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

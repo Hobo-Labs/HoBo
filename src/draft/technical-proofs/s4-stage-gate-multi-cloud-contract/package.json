@@ -1,0 +1,9 @@
+{
+  "name": "s4-stage-gate-multi-cloud-contract",
+  "private": true,
+  "type": "module",
+  "description": "HOBO-645 S4 stage gate drill: unedited Bindle on AWS+Azure, cross-cloud SVID mTLS, J3 camp-only provider switch, matching+pack resolution.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

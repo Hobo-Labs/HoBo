@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-465 launch
+// site private beta evidence contract. This is a design-time schema artifact,
+// not a runtime compilation target.
+
+enum LaunchSitePrivateBetaEvidenceStatus {
+  LAUNCH_SITE_PRIVATE_BETA_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SITE_PRIVATE_BETA_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SITE_PRIVATE_BETA_EVIDENCE_STATUS_MISSING = 2;
+  LAUNCH_SITE_PRIVATE_BETA_EVIDENCE_STATUS_PENDING = 3;
+}
+
+enum LaunchSitePrivateBetaProofMode {
+  LAUNCH_SITE_PRIVATE_BETA_PROOF_MODE_UNSPECIFIED = 0;
+  LAUNCH_SITE_PRIVATE_BETA_PROOF_MODE_DESIGN_RECORD = 1;
+  LAUNCH_SITE_PRIVATE_BETA_PROOF_MODE_MANUAL_REVIEW = 2;
+  LAUNCH_SITE_PRIVATE_BETA_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  LAUNCH_SITE_PRIVATE_BETA_PROOF_MODE_LIVE_RECORDING = 4;
+}
+
+message LaunchSitePrivateBetaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string evidence_source = 3;
+  string proves = 4;
+  LaunchSitePrivateBetaEvidenceStatus status = 5;
+}
+
+message LaunchSitePrivateBetaDemoAsset {
+  string kind = 1;
+  string owner_project = 2;
+  LaunchSitePrivateBetaProofMode proof_mode = 3;
+  string refresh_trigger = 4;
+  string source_evidence_id = 5;
+  bool private_beta_only = 6;
+}
+
+message LaunchSitePrivateBetaFollowUpIssue {
+  string id = 1;
+  string owner_project = 2;
+  string missing_evidence_id = 3;
+  string allowed_reason = 4;
+}
+
+message LaunchSitePrivateBetaBlocker {
+  string id = 1;
+  string category = 2;
+  string owner_project = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message LaunchSitePrivateBetaAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_note = 4;
+}
+
+message LaunchSitePrivateBetaCrossProjectDependency {
+  string owner_project = 1;
+  string dependency = 2;
+}
+
+message LaunchSitePrivateBetaMissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+}
+
+message LaunchSitePrivateBetaEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone_gate = 4;
+  repeated LaunchSitePrivateBetaEvidenceItem required_evidence = 5;
+  repeated LaunchSitePrivateBetaDemoAsset demo_assets = 6;
+  repeated LaunchSitePrivateBetaFollowUpIssue follow_up_issues = 7;
+  repeated LaunchSitePrivateBetaBlocker blockers = 8;
+  repeated LaunchSitePrivateBetaAcceptedRisk accepted_risks = 9;
+  repeated LaunchSitePrivateBetaCrossProjectDependency cross_project_dependencies = 10;
+  repeated LaunchSitePrivateBetaMissingEvidence missing_evidence = 11;
+  bool private_beta_publication_allowed = 12;
+  bool public_or_ga_promotion_allowed = 13;
+  bool parent_status_updated = 14;
+}

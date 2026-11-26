@@ -1,0 +1,31 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-hobo-event-stream" },
+  "interactions": [
+    {
+      "description": "append rollout started event to the Harness stream",
+      "providerStates": [{ "name": "event stream accepts rollout family events" }],
+      "request": {
+        "method": "POST",
+        "path": "/events",
+        "body": {
+          "eventType": "rollout.Started",
+          "body": {
+            "rolloutId": "rollout-checkout-v2"
+          }
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "accepted": true,
+          "eventType": "rollout.Started"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "event-stream",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

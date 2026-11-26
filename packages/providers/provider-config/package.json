@@ -1,0 +1,30 @@
+{
+  "name": "@hobo/provider-config",
+  "version": "0.0.1",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "description": "HoBo wasi:config/store capability provider — import-optional, memory offline, value-ref + sensitivity (ADR-0142). Not a residual vault.",
+  "files": [
+    "LICENSE",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": ">=24.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

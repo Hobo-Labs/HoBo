@@ -1,0 +1,14 @@
+{
+  "backend": "native-kafka",
+  "published": 2,
+  "consumed": 2,
+  "audit": [
+    "messaging.topic.created",
+    "messaging.published",
+    "messaging.published",
+    "messaging.consumed",
+    "messaging.consumed",
+    "messaging.acked",
+    "messaging.acked"
+  ]
+}

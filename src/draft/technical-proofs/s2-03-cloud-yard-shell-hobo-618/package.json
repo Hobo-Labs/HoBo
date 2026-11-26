@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/s2-03-cloud-yard-shell-hobo-618",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for @hobo/cloud Yard shell: Gateway, event store wiring, projection host (HOBO-618).",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

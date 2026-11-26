@@ -1,0 +1,20 @@
+# OptimizeXP CLI evidence
+command: pnpm run agent:check -- --staged 2>&1 | head -40
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 514
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T20:13:11.871Z
+
+## stdout
+
+> hobo-design@ agent:check /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --experimental-strip-types scripts/dx-preflight.mts agent:check -- --staged
+
+No changed files; skipping relevant checks.
+ok  agent:check — nothing to validate for this scope.
+
+
+## stderr
+(empty)

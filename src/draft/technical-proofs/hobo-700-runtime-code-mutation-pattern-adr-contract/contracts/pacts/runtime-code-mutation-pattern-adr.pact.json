@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "IntentAlignmentGapRemediation"
+  },
+  "provider": {
+    "name": "RuntimeCodeMutationPatternDoc"
+  },
+  "interactions": [
+    {
+      "description": "pattern doc exposes ADR-0048 link for persisted code mutation",
+      "providerState": "HOBO-700 pattern doc is linked to ADR-0048",
+      "request": {
+        "method": "GET",
+        "path": "/patterns/runtime-code-mutation-persistence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-700",
+          "adrLink": "../design/adr/03-data-plane.md#adr-0048",
+          "state": "LINKED"
+        }
+      }
+    },
+    {
+      "description": "stale forge/event-model links are rejected",
+      "providerState": "pattern doc retains stale cross-refs",
+      "request": {
+        "method": "GET",
+        "path": "/patterns/runtime-code-mutation-persistence"
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "PATTERN_DOC_STALE",
+          "issue": "HOBO-700"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

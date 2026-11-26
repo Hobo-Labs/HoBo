@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "HoboCiReadinessConsumer"
+  },
+  "provider": {
+    "name": "HoboCiDaggerSdk"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "evidence": "Hand-authored synchronous-message SDK contract; mocked consumer verification only; no vendor verification."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "read HoBo CI Dagger implemented SDK readiness",
+      "request": {
+        "contents": {
+          "operation": "getReadiness"
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "integration": "dagger",
+            "status": "implemented",
+            "executionAvailable": true,
+            "targetSdk": "@dagger.io/dagger",
+            "targetDocumentation": "https://docs.dagger.io/",
+            "pendingGates": [
+              "Bind a customer-owned engine and authoritative budget reservations before hosted execution.",
+              "Verify provider shutdown acknowledgments and invoice reconciliation with PACT evidence."
+            ]
+          },
+          "contentType": "application/json"
+        }
+      ]
+    }
+  ]
+}

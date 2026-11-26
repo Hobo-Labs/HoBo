@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "OCSFCollector" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "accepts redacted identity audit batch as OCSF records",
+      "providerStates": [{ "name": "collector accepts HoBo identity extension fields" }],
+      "request": {
+        "method": "POST",
+        "path": "/ocsf/identity",
+        "headers": { "content-type": "application/json" },
+        "body": { "records": [{ "class": "Authentication", "actor": "user_alice" }, { "class": "Authorization", "actor": "agent_scheduler" }] }
+      },
+      "response": {
+        "status": 202,
+        "headers": { "content-type": "application/json" },
+        "body": { "accepted": true, "containsPlaintextSecrets": false }
+      }
+    }
+  ]
+}

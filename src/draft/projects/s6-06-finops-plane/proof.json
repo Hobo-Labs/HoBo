@@ -1,0 +1,24 @@
+{
+  "layer": "project",
+  "slug": "s6-06-finops-plane",
+  "title": "S6-06 FinOps plane draft POC (HOBO-661)",
+  "linear": "HOBO-661",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/budget-quota-policy-contract",
+      "src/draft/technical-proofs/hobo-policy-ir-contract",
+      "src/draft/technical-proofs/metering-view-projection-contract",
+      "src/draft/technical-proofs/showback-attribution-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

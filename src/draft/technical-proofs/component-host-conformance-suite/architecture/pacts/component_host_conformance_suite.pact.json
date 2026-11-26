@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ComponentHostConformanceSuiteConsumer"
+  },
+  "provider": {
+    "name": "ComponentHostConformanceSuiteBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Component Host Conformance Suite boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/component-host-conformance-suite/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.component_host_conformance_suite/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

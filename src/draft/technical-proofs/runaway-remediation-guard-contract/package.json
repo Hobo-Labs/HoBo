@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/runaway-remediation-guard-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for event-sourced runaway SRE remediation containment.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

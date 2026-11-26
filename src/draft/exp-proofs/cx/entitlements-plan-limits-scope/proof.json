@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "entitlements-plan-limits-scope",
+  "experienceType": "cx",
+  "title": "Entitlements & Plan Limits Scope",
+  "linear": "HOBO-419",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/entitlements-plan-limits.md",
+      "docs/design/proofs/hobo-419-entitlements-plan-limits/README.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

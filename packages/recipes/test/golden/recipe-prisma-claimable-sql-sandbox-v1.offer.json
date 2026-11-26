@@ -1,0 +1,88 @@
+{
+	"schemaVersion": "hobo.deployment-offer/v1",
+	"offerId": "offer/a6e0197a82fedb11adabba47c6ed84813251425f7c733ef3fc3bdb41001ad7be",
+	"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",
+	"deploymentRef": "junction/recipe-prisma-claimable-sql-sandbox-v1",
+	"topologyDigest": "sha256:848f2638d620dc45ab2da061e393874c54f2af47e76f21b93473c4109800f897",
+	"resolutionDigest": "sha256:f5d08c918d87ae5039cc6242499b988b5d56c7753889dcf3ee393a2f822a8f7b",
+	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
+	"profileRegistryDigest": "sha256:5c876e208189e2d5d7a0762708c5f59fe1ba2b7c0bb79665a79aa5eebbb029d4",
+	"placements": [
+		{
+			"placementId": "sandbox",
+			"yardId": "data",
+			"providerId": "prisma",
+			"primitive": "data",
+			"capabilityRef": "db",
+			"satisfiesProfileId": "data.postgres/v1",
+			"productDefinitionId": "prisma.claimable-postgres/v1",
+			"realization": "native"
+		}
+	],
+	"providers": [
+		{
+			"providerId": "prisma",
+			"sponsored": false,
+			"resourceOnly": true
+		}
+	],
+	"claimSummary": {
+		"actionCount": 1,
+		"providerCount": 1,
+		"atomicity": "single-resource",
+		"earliestDeadlineMs": 1700086400000,
+		"items": [
+			{
+				"claimId": "claim/sandbox",
+				"subjectRef": "junction/recipe-prisma-claimable-sql-sandbox-v1/data/sandbox",
+				"providerId": "prisma",
+				"mode": "resource-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "rotatable"
+			}
+		]
+	},
+	"sourceDisclosure": "not-applicable",
+	"credentialCustody": "secret-ref",
+	"requiredConsents": [
+		"claim.deadline-understood",
+		"claim.ownership-transfer"
+	],
+	"sponsoredCostCapMinorUnits": 0,
+	"guestLeases": [
+		{
+			"leaseId": "lease/data",
+			"yardId": "data",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "retain-until-provider-expiry",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		}
+	],
+	"trustEvidenceRefs": [
+		"prisma.claimable-postgres/v1#sha256:93cbe8050c229d00c2b73f09c86dd9a8431155898238dfaea9864028f691e386"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/prisma.claimable-postgres/v1/data.postgres/v1"
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [
+			"sandbox"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": [
+			"migration.postgres-dump/v1"
+		]
+	},
+	"degradationNotices": [],
+	"issuedAtMs": 1700000000000,
+	"expiresAtMs": 1700000900000,
+	"signature": {
+		"algorithm": "test.detached-digest/v1",
+		"keyId": "test-key-1",
+		"payloadDigest": "sha256:29fd86f07d1b57397e18790505f5c1a1c808f6827cc86ad2594d69f524dc45ef",
+		"signature": "sig:29fd86f07d1b5739"
+	}
+}

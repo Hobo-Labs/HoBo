@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "CollectionCoverageGate" },
+  "interactions": [
+    {
+      "description": "reject unobserved resource declarations before deploy",
+      "providerStates": [{ "name": "static declarations include hidden branch resource" }],
+      "request": { "method": "POST", "path": "/coverage/evaluate", "body": { "observed": ["sync-api"], "declared": ["sync-api", "dead-letter-bucket"] } },
+      "response": { "status": 422, "body": { "ok": false, "reason": "collection.coverage.unobserved-resource" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,52 @@
+# Local realization of the OpenSaaS Bindle's Wasp webApp + Postgres OCI dep.
+# Bindle source of truth: examples/try-site/apps/opensaas/app.ts
+#   b.container({ image: "postgres:16-alpine" })  → db
+#   b.web(waspApp({ appRoot: "examples/wasp-opensaas/app" })) → web
+#
+# server/client below are Wasp build artifacts (wasp build), NOT Bindle
+# resources and NOT HoBo-owned images. Upstream:
+# https://github.com/wasp-lang/open-saas · https://docs.opensaas.sh/
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wasp
+      POSTGRES_PASSWORD: wasp
+      POSTGRES_DB: OpenSaaS
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wasp -d OpenSaaS"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build:
+      context: ./app
+      dockerfile: ../docker/Dockerfile.server
+    environment:
+      DATABASE_URL: postgresql://wasp:wasp@db:5432/OpenSaaS
+      WASP_WEB_CLIENT_URL: http://127.0.0.1:3000
+      WASP_SERVER_URL: http://127.0.0.1:3001
+      JWT_SECRET: hobo-local-opensaas-jwt-dev-only-change-me
+      PORT: "3001"
+      # Demo posture — no live Stripe/OAuth required for local bridge smoke.
+      ADMIN_EMAILS: admin@demo.hobo
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    build:
+      context: ./app
+      dockerfile: ../docker/Dockerfile.client
+      args:
+        REACT_APP_API_URL: http://127.0.0.1:3001
+    ports:
+      - "3000:80"
+    depends_on:
+      - server

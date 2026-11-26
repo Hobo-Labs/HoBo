@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "cost-signal-contract",
+  "title": "Cost Signal Contract POC",
+  "linear": "HOBO-236",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

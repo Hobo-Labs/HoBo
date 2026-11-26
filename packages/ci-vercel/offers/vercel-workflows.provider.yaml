@@ -1,0 +1,51 @@
+# Vercel Workflows on Vercel's managed World as the hosted relay's lease
+# lifecycle driver (ADR-0179 amendment, phase 4d). Lowered into the
+# @hobo/pricing catalog by scripts/generate-offers.mts.
+#
+# NOT YET AVAILABLE: the driver needs `workflow` 5.4.0 or later, pinnable
+# under the repository's two-week rule from 2026-11-18, and is not built
+# (phase 4d). The generator's driver table marks it unavailable until then,
+# so selection never picks it. Events only: data written, queue operations
+# and compute are not modelled. About 22 events a job (planned).
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: vercel-workflows
+  displayName: Vercel Workflows
+  homepage: https://vercel.com/docs/workflows
+  description: One durable run per job on Vercel's managed World.
+
+capabilities:
+  regions: [iad1]
+  mappings:
+    - id: lifecycle/workflows-managed
+      port: lifecycle
+      resourceClass: workflow-driver
+      providerService: vercel.workflows
+      features: [exactlyOnceStart, durableSleep]
+      profiles: [lifecycle.lease-driver/v1]
+      stability: preview
+      products: [workflows-managed]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://vercel.com/docs/workflows/pricing
+    checkedAt: 2026-11-11
+    note: Pro, events only ($20 per million).
+  billables:
+    - id: events
+      category: service
+      unit: event
+  products:
+    - id: workflows-managed
+      kind: service
+      plans:
+        - id: pro
+          charges:
+            - id: events
+              metered:
+                billable: events
+                package: { per: 1000000, amount: "20.00" }

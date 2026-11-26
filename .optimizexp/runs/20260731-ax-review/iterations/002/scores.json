@@ -1,0 +1,37 @@
+{
+  "iteration": 2,
+  "runId": "20260731-ax-review",
+  "scoredAt": "2026-07-31T13:34:00.000Z",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsPrev": {
+    "metric_total_delta": 0,
+    "metric_max_delta": 0
+  },
+  "cells": [
+    {
+      "persona": "product-agent-operator",
+      "surface": "setup --help + gbrain fail-closed + skills:mirror-check",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "setup --help",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    }
+  ],
+  "implementableFindingsRemaining": 0,
+  "reverify": {
+    "helpExit": 0,
+    "gbrainExit": 1,
+    "skillsMirror": "ok"
+  }
+}

@@ -1,0 +1,29 @@
+{
+	"schemaVersion": "hobo.try-example/v1",
+	"appPolicy": {
+		"preferLocal": false,
+		"redundancy": "none",
+		"maxReplicas": 1,
+		"resourcePool": ["local", "anonymous-remote"]
+	},
+	"deploymentPolicy": {},
+	"topology": {
+		"junction": {
+			"id": "junction:swaghaus",
+			"yardIds": [
+				"yard:cloudflare",
+				"yard:vercel",
+				"yard:netlify",
+				"yard:webernetes",
+				"yard:lakebed"
+			]
+		},
+		"allowedYardIds": [
+			"yard:cloudflare",
+			"yard:vercel",
+			"yard:netlify",
+			"yard:webernetes",
+			"yard:lakebed"
+		]
+	}
+}

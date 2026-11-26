@@ -1,0 +1,41 @@
+{
+	"id": "http.web.hello",
+	"tier": 1,
+	"kind": "http",
+	"description": "Public web that calls the private API via services__api__http__0.",
+	"tags": [
+		"http",
+		"web",
+		"hono",
+		"hello",
+		"discovery"
+	],
+	"queries": [
+		"hello web",
+		"services__api__http__0",
+		"greeting page"
+	],
+	"requires": [
+		"http.handler.api"
+	],
+	"provides": [
+		"http.handler.web"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/webapp.ts",
+			"from": "body/webapp.ts.tpl"
+		}
+	]
+}

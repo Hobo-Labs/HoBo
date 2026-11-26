@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "s5-02-wit-interface-conformance-coverage",
+  "title": "HOBO-647 Per-WIT-Interface Conformance Coverage POC",
+  "linear": "HOBO-647",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/conformance-port-suite-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

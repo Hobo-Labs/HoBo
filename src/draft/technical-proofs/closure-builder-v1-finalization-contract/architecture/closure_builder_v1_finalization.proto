@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package hobo.closurebuilder.finalization.v1;
+
+message ClosureBuilderV1FinalizationRecord {
+  string parent_issue = 1;
+  string authoring_package = 2;
+  string authoring_model = 3;
+  string canonical_doc_path = 4;
+  repeated ClosureBuilderEvidenceEntry evidence = 5;
+}
+
+message ClosureBuilderEvidenceEntry {
+  string issue_id = 1;
+  string linear_status = 2;
+  string proof_path = 3;
+  string design_path = 4;
+  string accepted_scope = 5;
+}
+
+message ClosureBuilderFinalizationEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string parent_issue = 3;
+  ClosureBuilderV1FinalizationRecord record = 4;
+}

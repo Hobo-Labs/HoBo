@@ -1,0 +1,145 @@
+{
+  "consumer": {
+    "name": "VibePlanAnnotationPseudocodeConsumer"
+  },
+  "provider": {
+    "name": "PlanDiffAnnotationBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Plan annotation boundary returns the parsed HOBO-543 annotation pseudocode contract",
+      "providerStates": [
+        {
+          "name": "HOBO-543 annotation fixture set is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/vibe-plan-annotation-pseudocode/contract"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "schema": "hobo.vibe-plan-annotation-pseudocode/v1",
+          "issue": "HOBO-543",
+          "phase": "M1",
+          "targetPackagePath": "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode",
+          "proofNotePath": "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md",
+          "designRefs": [
+            "docs/design/plan-diff-viewer.md",
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/control-plane.md#plan-04",
+            "docs/design/contracts-policy-flags.md#plan-29",
+            "docs/design/reliability-observability-cost.md#plan-05",
+            "docs/design/cli-spec.md",
+            "docs/design/adr/02-identity-security.md#adr-0015",
+            "docs/design/adr/01-architecture-core.md#adr-0033",
+            "docs/design/adr/02-identity-security.md#adr-0045"
+          ],
+          "annotations": [
+            {
+              "case": "policy denial",
+              "annotationInput": "GatekeeperDecision.deny(policy.pack:network.egress)",
+              "displayGroup": "policy",
+              "severity": "blocked",
+              "proofMode": "reference fixture",
+              "evidenceState": "blocked",
+              "missingEvidenceBehavior": "not applicable",
+              "supportOwnerRoute": "security-reviewer",
+              "supportSafeWording": "Blocked by policy before provider work. Support can cite the Gatekeeper decision without exposing policy internals.",
+              "accessibilityNote": "Terminal output uses the word blocked, a stable heading, and a remediation line rather than color alone.",
+              "fixtureId": "fixture.plan.annotation.policy-denial"
+            },
+            {
+              "case": "widened permission",
+              "annotationInput": "PermissionDelta widens storage.write from preview to prod",
+              "displayGroup": "policy",
+              "severity": "critical",
+              "proofMode": "reference fixture",
+              "evidenceState": "blocked",
+              "missingEvidenceBehavior": "not applicable",
+              "supportOwnerRoute": "platform-security-owner",
+              "supportSafeWording": "Permission widening needs an explicit approver route; customer-safe wording names the capability class only.",
+              "accessibilityNote": "Screen-reader order names the widened capability before the approval route and does not rely on icon-only emphasis.",
+              "fixtureId": "fixture.plan.annotation.widened-permission"
+            },
+            {
+              "case": "cost estimate",
+              "annotationInput": "CostEstimate monthlyUsd=42.10 source=reference-fixture",
+              "displayGroup": "cost",
+              "severity": "info",
+              "proofMode": "simulated",
+              "evidenceState": "happy",
+              "missingEvidenceBehavior": "show as unavailable",
+              "supportOwnerRoute": "finops-owner",
+              "supportSafeWording": "Cost is simulated from reference fixtures; support must not present it as billed or provider-quoted spend.",
+              "accessibilityNote": "Plain-text output labels this as simulated and keeps currency, source, and owner on separate lines.",
+              "fixtureId": "fixture.plan.annotation.cost-estimate"
+            },
+            {
+              "case": "capacity warning",
+              "annotationInput": "CapacitySignal limited-region-capacity for gpu.small in us-east",
+              "displayGroup": "capacity",
+              "severity": "warning",
+              "proofMode": "simulated",
+              "evidenceState": "blocked",
+              "missingEvidenceBehavior": "show as unavailable",
+              "supportOwnerRoute": "platform-capacity-owner",
+              "supportSafeWording": "Support-safe capacity wording routes to the platform-capacity owner and states that no live provider reservation is implied.",
+              "accessibilityNote": "Warning text is present without color dependency and includes the blocked region and next action.",
+              "fixtureId": "fixture.plan.annotation.capacity-warning"
+            },
+            {
+              "case": "stale SLO signal",
+              "annotationInput": "SloSignal checkout-latency p95 older than freshness bound",
+              "displayGroup": "readiness",
+              "severity": "warning",
+              "proofMode": "reference fixture",
+              "evidenceState": "stale/unknown",
+              "missingEvidenceBehavior": "show as stale/unknown",
+              "supportOwnerRoute": "sre-owner",
+              "supportSafeWording": "Support-safe SLO wording routes to the SRE owner and asks for refreshed evidence before readiness claims.",
+              "accessibilityNote": "Terminal output says stale or unknown evidence in text and places the refresh request before any success language.",
+              "fixtureId": "fixture.plan.annotation.stale-slo-signal"
+            },
+            {
+              "case": "missing approval",
+              "annotationInput": "ApprovalRef required but absent for destructive diff",
+              "displayGroup": "approval",
+              "severity": "blocked",
+              "proofMode": "scope-out",
+              "evidenceState": "blocked",
+              "missingEvidenceBehavior": "show as unavailable",
+              "supportOwnerRoute": "approval-owner",
+              "supportSafeWording": "Approval runtime is out of scope; the annotation names the missing approval and safe owner route only.",
+              "accessibilityNote": "Terminal-friendly wording uses a blocked heading, missing approval label, and owner route in stable order.",
+              "fixtureId": "fixture.plan.annotation.missing-approval"
+            }
+          ],
+          "contractFixtures": {
+            "protobuf": "architecture/vibe_plan_annotation_pseudocode.proto",
+            "cue": "architecture/vibe_plan_annotation_pseudocode.cue",
+            "pact": "architecture/pacts/vibe_plan_annotation_pseudocode.pact.json"
+          },
+          "scopeOut": [
+            "No policy engine, approval runtime, billing, quota enforcement, or provider cost API is implemented.",
+            "No live provider calls, cloud credentials, customer data, production UI, or launch claims are introduced.",
+            "No annotation may present stale, missing, or simulated evidence as live success."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-543",
+      "proof": "docs/design/proofs/vibe-plan-annotation-pseudocode/README.md"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package hobo.draft.supervision.v1;
+
+// Architecture-guard evidence for the HOBO-519 supervision child lifetime
+// contract. Not compiled at runtime; this is a design-time schema reference.
+
+enum SupervisionChildLifetimeEvidenceKind {
+  SUPERVISION_EVIDENCE_KIND_UNSPECIFIED = 0;
+  SUPERVISION_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  SUPERVISION_EVIDENCE_KIND_CONTRACT_TEST = 2;
+}
+
+message SupervisionFact {
+  string type = 1;
+  uint64 at_ms = 2;
+  string parent_id = 3;
+  string child_id = 4;
+  string reason = 5;
+}
+
+message SupervisionFixture {
+  string name = 1;
+  repeated string assertions = 2;
+  repeated SupervisionFact facts = 3;
+}
+
+message SupervisionCaseResult {
+  string name = 1;
+  string status = 2;
+  string code = 3;
+  repeated string proven_acceptance = 4;
+}
+
+message SupervisionReport {
+  string suite = 1;
+  string spec_version = 2;
+  string status = 3;
+  repeated SupervisionCaseResult cases = 4;
+}

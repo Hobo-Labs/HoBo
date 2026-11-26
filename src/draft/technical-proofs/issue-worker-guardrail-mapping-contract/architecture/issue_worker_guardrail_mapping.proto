@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hobo.automation.guardrail.v1;
+
+message IssueWorkerGuardrailMappingRecord {
+  string parent_issue = 1;
+  string automation_doc_path = 2;
+  repeated GuardrailMappingRow rows = 3;
+  repeated string authoritative_refs = 4;
+}
+
+message GuardrailMappingRow {
+  string platform_guardrail = 1;
+  string issue_worker_enforcement = 2;
+}
+
+message IssueWorkerGuardrailMappingEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string parent_issue = 3;
+  IssueWorkerGuardrailMappingRecord record = 4;
+}

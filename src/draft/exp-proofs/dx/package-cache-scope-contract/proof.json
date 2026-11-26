@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "package-cache-scope-contract",
+  "experienceType": "dx",
+  "title": "Package Cache Scope POC",
+  "linear": "HOBO-446",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

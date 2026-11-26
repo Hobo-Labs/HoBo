@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package hobo.policy.v1;
+
+message PolicySubject {
+  string kind = 1;
+  string id = 2;
+  repeated string roles = 3;
+  repeated string scopes = 4;
+  string delegated_by = 5;
+}
+
+message PolicyResource {
+  string kind = 1;
+  string id = 2;
+}
+
+message DecisionRequest {
+  string schema_version = 1;
+  PolicySubject subject = 2;
+  string action = 3;
+  PolicyResource resource = 4;
+  string phase = 5;
+  string input_hash = 6;
+}
+
+message DecisionEvidence {
+  repeated string policy_ids = 1;
+  string input_hash = 2;
+  string engine = 3;
+}
+
+message PolicyDecision {
+  string schema_version = 1;
+  string effect = 2;
+  string reason = 3;
+  DecisionEvidence evidence = 4;
+}
+
+message PolicyDecidedEvent {
+  string id = 1;
+  string type = 2;
+  DecisionRequest request = 3;
+  PolicyDecision decision = 4;
+}

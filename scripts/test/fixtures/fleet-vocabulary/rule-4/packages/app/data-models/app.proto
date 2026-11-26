@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package fixture.app;
+
+message MemberRecord {
+  string id = 1;
+}
+
+message ClaimSet {
+  string id = 1;
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "troubleshooting-guides-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Troubleshooting Guides Scope Acceptance POC",
+  "linear": "HOBO-437",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

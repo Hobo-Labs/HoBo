@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "cli-manage-inspect-logs-drift-prototype",
+  "experienceType": "dx",
+  "title": "CLI Manage Inspect Logs Drift Prototype",
+  "linear": "HOBO-574",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

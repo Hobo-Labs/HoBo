@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "tutorials-walkthroughs-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Tutorials & Walkthroughs Scope Acceptance POC",
+  "linear": "HOBO-436",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

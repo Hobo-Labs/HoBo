@@ -1,0 +1,25 @@
+{
+  "layer": "technical",
+  "slug": "connector-runtime-broker-contract",
+  "title": "Connector Runtime Broker Contract",
+  "linear": "HOBO-235",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/connector-authoring-contract",
+      "src/draft/technical-proofs/id-jag-token-exchange-contract",
+      "src/draft/technical-proofs/outbound-xaa-token-exchange-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/api/xaa-scope-inference-contract"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

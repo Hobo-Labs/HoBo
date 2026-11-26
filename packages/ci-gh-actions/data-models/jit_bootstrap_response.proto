@@ -1,0 +1,7 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// Single-use secret response. Never journal, cache or log its contents.
+message JitBootstrapResponse {
+  string encoded_jit_config = 1;
+}

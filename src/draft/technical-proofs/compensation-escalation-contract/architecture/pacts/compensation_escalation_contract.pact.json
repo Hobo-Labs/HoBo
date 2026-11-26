@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CompensationEscalationContractConsumer"
+  },
+  "provider": {
+    "name": "CompensationEscalationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Compensation Escalation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/compensation-escalation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.compensation_escalation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

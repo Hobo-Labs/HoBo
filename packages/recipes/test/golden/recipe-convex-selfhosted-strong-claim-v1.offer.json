@@ -1,0 +1,87 @@
+{
+	"schemaVersion": "hobo.deployment-offer/v1",
+	"offerId": "offer/487daee74b316e0d5cc07bff6555b6e91d1fab1175bd2268faf42229da3e5d85",
+	"recipeId": "recipe.convex.selfhosted-strong-claim/v1",
+	"deploymentRef": "junction/recipe-convex-selfhosted-strong-claim-v1",
+	"topologyDigest": "sha256:97f04a3349955ed5302b57f14a680d3525512c84e138008e414133d0596fac80",
+	"resolutionDigest": "sha256:be45f036034ad034c529f7e862f59a8a9ffb83e1c0e2034831779abbd7b3a10c",
+	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
+	"profileRegistryDigest": "sha256:5c876e208189e2d5d7a0762708c5f59fe1ba2b7c0bb79665a79aa5eebbb029d4",
+	"placements": [
+		{
+			"placementId": "backend",
+			"yardId": "self",
+			"campId": "app",
+			"providerId": "convex",
+			"primitive": "data",
+			"capabilityRef": "backend",
+			"satisfiesProfileId": "data.convex/v1",
+			"productDefinitionId": "convex.selfhosted-oci/v1",
+			"realization": "native"
+		}
+	],
+	"providers": [
+		{
+			"providerId": "convex",
+			"sponsored": false,
+			"resourceOnly": false
+		}
+	],
+	"claimSummary": {
+		"actionCount": 1,
+		"providerCount": 1,
+		"atomicity": "single-resource",
+		"earliestDeadlineMs": 1700086400000,
+		"items": [
+			{
+				"claimId": "claim/backend",
+				"subjectRef": "junction/recipe-convex-selfhosted-strong-claim-v1/self/backend",
+				"providerId": "convex",
+				"mode": "credential-exchange",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "absent"
+			}
+		]
+	},
+	"sourceDisclosure": "public-source",
+	"credentialCustody": "secret-ref",
+	"requiredConsents": [
+		"claim.deadline-understood",
+		"claim.ownership-transfer"
+	],
+	"sponsoredCostCapMinorUnits": 0,
+	"guestLeases": [
+		{
+			"leaseId": "lease/self",
+			"yardId": "self",
+			"bootstrapClass": "self-hosted-hobo",
+			"cleanupPolicy": "transfer",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		}
+	],
+	"trustEvidenceRefs": [
+		"convex.selfhosted-oci/v1#sha256:4d636b51ee6b2b768163786be76c114b42db92c1e3871cea4230a5d53378dc99"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/convex.selfhosted-oci/v1/data.convex/v1"
+	],
+	"portability": {
+		"providerCount": 1,
+		"exportSupportedPlacements": [
+			"backend"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": []
+	},
+	"degradationNotices": [],
+	"issuedAtMs": 1700000000000,
+	"expiresAtMs": 1700000900000,
+	"signature": {
+		"algorithm": "test.detached-digest/v1",
+		"keyId": "test-key-1",
+		"payloadDigest": "sha256:4be61ef29009d03b62844c94150c60a9103883747ab0e1e28eb70af584af46d7",
+		"signature": "sig:4be61ef29009d03b"
+	}
+}

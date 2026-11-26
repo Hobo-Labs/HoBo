@@ -1,0 +1,58 @@
+{
+  "consumer": {
+    "name": "HoboCiPortablePipeline"
+  },
+  "provider": {
+    "name": "BoundGithubActionsWorkspace"
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "execute argv pipeline and export a bounded artifact",
+      "request": {
+        "contents": {
+          "id": "contract",
+          "accountId": "account",
+          "timeoutSeconds": 5,
+          "steps": [
+            {
+              "id": "build",
+              "argv": [
+                "node",
+                "-e",
+                "require('node:fs').writeFileSync('artifact.txt','portable');process.stdout.write('built\\n')"
+              ]
+            }
+          ],
+          "artifactPaths": [
+            "artifact.txt"
+          ]
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "backend": "gh-actions",
+            "status": "succeeded",
+            "step": {
+              "id": "build",
+              "exitCode": 0,
+              "stdout": "built\n",
+              "stderr": ""
+            },
+            "artifact": {
+              "path": "artifact.txt",
+              "text": "portable",
+              "sha256": "01e782826ae5182220bd6158f883d01ceb1bce659dc020e7c511f802a9aa7737"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  }
+}

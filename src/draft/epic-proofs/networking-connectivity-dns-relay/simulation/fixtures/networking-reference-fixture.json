@@ -1,0 +1,503 @@
+{
+  "crossCloudBind": {
+    "edge": {
+      "edgeId": "orders.api->orders.db",
+      "source": {
+        "resourceId": "orders.api",
+        "provider": "aws",
+        "region": "us-east-1",
+        "yardId": "yard-aws-us"
+      },
+      "target": {
+        "resourceId": "orders.db",
+        "provider": "azure",
+        "region": "eastus",
+        "yardId": "yard-azure-eu"
+      },
+      "endpoints": {
+        "sourceLogicalName": "ctx.bindings.db",
+        "targetLogicalName": "orders.db"
+      },
+      "identity": {
+        "source": "spiffe://tenant-alpha/orders/api",
+        "target": "spiffe://tenant-alpha/orders/db"
+      },
+      "availableCapabilities": ["private-interconnect", "overlay-mesh", "public-mtls"],
+      "residency": { "tag": "us-only" },
+      "policy": { "maxTier": 3, "allowPublicMtls": false }
+    },
+    "mtlsHandshake": {
+      "schemaVersion": "hobo.mtls-data-path/v1",
+      "connectionId": "orders-api-to-db",
+      "tenant": "tenant-alpha",
+      "trustDomain": "tenant-alpha",
+      "sourceSvid": "spiffe://tenant-alpha/orders/api",
+      "peerCertificate": {
+        "spiffeId": "spiffe://tenant-alpha/orders/db",
+        "serialNumber": "cert-db-001",
+        "notBefore": "2026-06-29T02:55:00.000Z",
+        "notAfter": "2026-06-29T04:55:00.000Z",
+        "rotationEpoch": 3
+      },
+      "allowedPeers": ["spiffe://tenant-alpha/orders/db"],
+      "certMaterialRef": "identity://svid-cert/tenant-alpha/orders/api",
+      "minimumPeerRotationEpoch": 1,
+      "authz": {
+        "bindEdgeId": "orders.api->orders.db",
+        "verbs": ["connect", "query"]
+      },
+      "now": "2026-06-29T03:00:00.000Z"
+    },
+    "yards": [
+      {
+        "yard": {
+          "id": "yard-aws-us",
+          "provider": "aws",
+          "regions": ["us-east-1"],
+          "junctionId": "junction-networking-prod"
+        },
+        "providerZones": [
+          { "id": "zone-hobo-test", "domain": "hobo.test", "regions": ["us-east-1"] }
+        ],
+        "exposedEndpoints": [
+          {
+            "resourceId": "orders.api",
+            "logicalName": "orders.api",
+            "campId": "prod-us",
+            "provider": "aws",
+            "region": "us-east-1",
+            "dnsName": "orders-api.aws.internal",
+            "residencyTag": "us-only"
+          }
+        ],
+        "crossYardLinks": [
+          {
+            "id": "orders.api->orders.db",
+            "bindleId": "orders",
+            "source": {
+              "yardId": "yard-aws-us",
+              "resourceId": "orders.api",
+              "endpoint": "orders.api",
+              "residencyTag": "us-only"
+            },
+            "target": {
+              "yardId": "yard-azure-eu",
+              "resourceId": "orders.db",
+              "endpoint": "orders.db",
+              "residencyTag": "us-only"
+            },
+            "requiredTier": 3,
+            "dnsRules": [
+              {
+                "recordName": "orders-db.internal.hobo.test",
+                "type": "CNAME",
+                "targets": ["orders-db.azure.internal"]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "yard": {
+          "id": "yard-azure-eu",
+          "provider": "azure",
+          "regions": ["eastus"],
+          "junctionId": "junction-networking-prod"
+        },
+        "providerZones": [
+          { "id": "zone-hobo-test-azure", "domain": "hobo.test", "regions": ["eastus"] }
+        ],
+        "exposedEndpoints": [
+          {
+            "resourceId": "orders.db",
+            "logicalName": "orders.db",
+            "campId": "prod-eu",
+            "provider": "azure",
+            "region": "eastus",
+            "dnsName": "orders-db.azure.internal",
+            "residencyTag": "us-only"
+          }
+        ],
+        "crossYardLinks": [
+          {
+            "id": "orders.api->orders.db",
+            "bindleId": "orders",
+            "source": {
+              "yardId": "yard-aws-us",
+              "resourceId": "orders.api",
+              "endpoint": "orders.api",
+              "residencyTag": "us-only"
+            },
+            "target": {
+              "yardId": "yard-azure-eu",
+              "resourceId": "orders.db",
+              "endpoint": "orders.db",
+              "residencyTag": "us-only"
+            },
+            "requiredTier": 3,
+            "dnsRules": [
+              {
+                "recordName": "orders-db.internal.hobo.test",
+                "type": "CNAME",
+                "targets": ["orders-db.azure.internal"]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "discovery": {
+      "directory": {
+        "camp": "prod-us",
+        "tenant": "tenant-alpha",
+        "bindle": "orders",
+        "trustDomain": "tenant-alpha"
+      },
+      "resources": [
+        {
+          "name": "api",
+          "provider": "aws",
+          "region": "us-east-1",
+          "svid": "spiffe://tenant-alpha/orders/api",
+          "endpoint": { "host": "api.orders.internal", "address": "10.0.0.10", "port": 443 }
+        },
+        {
+          "name": "db",
+          "provider": "azure",
+          "region": "eastus",
+          "svid": "spiffe://tenant-alpha/orders/db",
+          "endpoint": { "host": "db.orders.internal", "address": "10.1.0.20", "port": 5432 },
+          "certificateNotBefore": "2026-06-29T02:55:00.000Z",
+          "certificateNotAfter": "2026-06-29T04:55:00.000Z",
+          "rotationEpoch": 3
+        }
+      ],
+      "binding": { "from": "api", "to": "db", "verbs": ["connect", "query"] },
+      "request": { "from": "api", "to": "db", "now": "2026-06-29T03:00:00.000Z" }
+    },
+    "costCatalog": {
+      "egressPerGbByTier": {
+        "3": { "default": 0.02 }
+      }
+    },
+    "latencyCatalog": {
+      "latencyMsP50ByTier": {
+        "3": { "default": 42 }
+      }
+    }
+  },
+  "domainPromotion": {
+    "domain": "api.hobo.example",
+    "camp": "prod-us",
+    "camps": ["prod-us", "prod-eu"],
+    "record": {
+      "name": "api.hobo.example",
+      "type": "A",
+      "ttl": 60,
+      "targets": [{ "camp": "prod-us", "value": "203.0.113.10" }],
+      "policy": {
+        "kind": "failover",
+        "targets": [
+          { "camp": "prod-us", "priority": 1 },
+          { "camp": "prod-eu", "priority": 2 }
+        ]
+      }
+    },
+    "validationFixtures": {
+      "multi-vantage-resolve": { "vantagePoints": ["1.1.1.1", "8.8.8.8", "9.9.9.9"], "expected": "203.0.113.10" },
+      "ttl-aware-propagation": { "waitedSeconds": 120, "ttlSeconds": 60 },
+      "acme-challenge": { "challengeName": "_acme-challenge.api.hobo.example" },
+      "endpoint-health": { "healthPath": "/healthz", "status": 200 }
+    },
+    "routingRequest": {
+      "domain": "api.hobo.example",
+      "recordName": "api.hobo.example",
+      "recordType": "A",
+      "ttl": 60,
+      "activeCamp": "prod-us",
+      "sustainedFailureThreshold": 3,
+      "healthSamples": [
+        { "camp": "prod-us", "healthy": true },
+        { "camp": "prod-eu", "healthy": true }
+      ],
+      "policy": {
+        "kind": "weighted",
+        "targets": [
+          { "camp": "prod-us", "weight": 90 },
+          { "camp": "prod-eu", "weight": 10 }
+        ]
+      },
+      "camps": [
+        { "camp": "prod-us", "value": "203.0.113.10", "validated": true, "healthy": true },
+        { "camp": "prod-eu", "value": "203.0.113.20", "validated": true, "healthy": true }
+      ]
+    },
+    "costRouting": {
+      "request": {
+        "domain": "api.hobo.example",
+        "recordName": "api.hobo.example",
+        "recordType": "A",
+        "ttl": 60,
+        "activeCamp": "prod-us",
+        "sustainedFailureThreshold": 3,
+        "healthSamples": [
+          { "camp": "prod-us", "healthy": true },
+          { "camp": "prod-eu", "healthy": true }
+        ],
+        "policy": {
+          "kind": "cost",
+          "targets": [
+            { "camp": "prod-us", "replicaClass": "pinned" },
+            { "camp": "prod-eu", "replicaClass": "active-active-eventual" }
+          ]
+        },
+        "camps": [
+          { "camp": "prod-us", "value": "203.0.113.10", "validated": true, "healthy": true },
+          { "camp": "prod-eu", "value": "203.0.113.20", "validated": true, "healthy": true }
+        ]
+      },
+      "resources": [
+        { "id": "orders-db", "writerMode": "single-writer", "homeCamp": "prod-us" }
+      ],
+      "costs": [
+        { "camp": "prod-us", "egressPerGbUsd": 0.02 },
+        { "camp": "prod-eu", "egressPerGbUsd": 0.01 }
+      ]
+    },
+    "junctionDomain": {
+      "junctionId": "junction-prod-domain",
+      "domain": "api.hobo.example",
+      "recordName": "api.hobo.example",
+      "ttl": 60,
+      "activeCamp": "prod-us",
+      "sustainedFailureThreshold": 3,
+      "healthSamples": [
+        { "camp": "prod-us", "healthy": true },
+        { "camp": "prod-eu", "healthy": true }
+      ],
+      "yards": [
+        {
+          "yardId": "yard-aws-us",
+          "camp": "prod-us",
+          "provider": "aws",
+          "region": "us-east-1",
+          "target": "203.0.113.10",
+          "healthy": true,
+          "residency": { "allowedRegions": ["us-east-1", "eastus"] }
+        },
+        {
+          "yardId": "yard-azure-eu",
+          "camp": "prod-eu",
+          "provider": "azure",
+          "region": "eastus",
+          "target": "203.0.113.20",
+          "healthy": true,
+          "residency": { "allowedRegions": ["us-east-1", "eastus"] }
+        }
+      ]
+    },
+    "rebinding": {
+      "change": {
+        "changeId": "change-rebind",
+        "domain": "api.hobo.example",
+        "fqdn": "api.hobo.example",
+        "expectedTargets": ["203.0.113.10"],
+        "expectedGatewayIdentity": "spiffe://tenant-alpha/gateway/api",
+        "expectedAcmeKeyThumbprint": "thumbprint-api-hobo-example",
+        "expectedCsrIdentifier": "csr-api-hobo-example",
+        "record": {
+          "name": "api.hobo.example",
+          "type": "A",
+          "ttl": 60,
+          "targets": [{ "camp": "prod-us", "value": "203.0.113.10" }]
+        }
+      },
+      "badEvidence": {
+        "resolutions": [
+          { "vantage": "cf-us", "targets": ["203.0.113.10"], "serial": "zone-1" },
+          { "vantage": "google-eu", "targets": ["198.51.100.99"], "serial": "zone-1" },
+          { "vantage": "quad9-apac", "targets": ["203.0.113.10"], "serial": "zone-1" }
+        ],
+        "ttl": { "previousTtlMs": 60000, "candidateTtlMs": 60000, "waitedMs": 120000, "stableSerialAcrossVantages": true },
+        "acme": {
+          "fqdn": "api.hobo.example",
+          "challengeName": "_acme-challenge.api.hobo.example",
+          "keyThumbprint": "thumbprint-api-hobo-example",
+          "expectedKeyThumbprint": "thumbprint-api-hobo-example",
+          "csrIdentifier": "csr-api-hobo-example",
+          "expectedCsrIdentifier": "csr-api-hobo-example"
+        },
+        "health": {
+          "probedHost": "api.hobo.example",
+          "candidateHost": "api.hobo.example",
+          "gatewayIdentity": "spiffe://tenant-alpha/gateway/api",
+          "expectedGatewayIdentity": "spiffe://tenant-alpha/gateway/api",
+          "status": 200
+        }
+      }
+    },
+    "splitHorizon": {
+      "fqdn": "api.hobo.example",
+      "recordType": "A",
+      "expectedTargets": ["203.0.113.10"],
+      "answersByVantage": [
+        { "id": "cf-us", "resolverNetwork": "cloudflare", "asn": 13335, "region": "us", "targets": ["203.0.113.10"] },
+        { "id": "google-eu", "resolverNetwork": "google", "asn": 15169, "region": "eu", "targets": ["198.51.100.99"] },
+        { "id": "quad9-apac", "resolverNetwork": "quad9", "asn": 19281, "region": "apac", "targets": ["203.0.113.10"] }
+      ]
+    }
+  },
+  "relay": {
+    "spec": {
+      "relayId": "relay-private-network",
+      "tenant": "tenant-alpha",
+      "yardSvid": "spiffe://tenant-alpha/hobo-yard/control-plane",
+      "relaySvid": "spiffe://tenant-alpha/hobo-relay/private-relay",
+      "transport": { "direction": "relay-to-yard", "protocol": "tcp", "port": 443 },
+      "targets": [
+        {
+          "targetId": "private-db",
+          "kind": "kubernetes-cluster",
+          "privateNetwork": "prod-a",
+          "allowedResourceIds": ["orders-db"]
+        }
+      ],
+      "mtls": {
+        "schemaVersion": "hobo.mtls-data-path/v1",
+        "connectionId": "relay-yard-attach",
+        "tenant": "tenant-alpha",
+        "trustDomain": "tenant-alpha",
+        "sourceSvid": "spiffe://tenant-alpha/hobo-yard/control-plane",
+        "peerCertificate": {
+          "spiffeId": "spiffe://tenant-alpha/hobo-relay/private-relay",
+          "serialNumber": "relay-cert-1",
+          "notBefore": "2026-06-29T02:55:00.000Z",
+          "notAfter": "2026-06-29T04:55:00.000Z",
+          "rotationEpoch": 2
+        },
+        "allowedPeers": ["spiffe://tenant-alpha/hobo-relay/private-relay"],
+        "certMaterialRef": "identity://svid-cert/tenant-alpha/hobo-yard",
+        "minimumPeerRotationEpoch": 1,
+        "authz": { "bindEdgeId": "yard->relay", "verbs": ["attach", "dispatch"] },
+        "now": "2026-06-29T03:00:00.000Z"
+      }
+    },
+    "work": {
+      "workId": "exec-apply-db",
+      "targetId": "private-db",
+      "resourceId": "orders-db",
+      "provider": "aws",
+      "credentialRef": "private-broker://private-db/scoped-token/orders-db/apply",
+      "outputs": { "endpoint": "postgres://orders-db.internal" }
+    },
+    "forwardProxyWork": {
+      "workId": "proxy-attempt",
+      "targetId": "private-db",
+      "resourceId": "forward-proxy",
+      "provider": "aws",
+      "credentialRef": "private-broker://private-db/scoped-token/proxy",
+      "outputs": {}
+    },
+    "credentialEgressWork": {
+      "workId": "credential-egress",
+      "targetId": "private-db",
+      "resourceId": "orders-db",
+      "provider": "aws",
+      "credentialRef": "private-broker://private-db/scoped-token/orders-db/apply",
+      "outputs": { "credentialRef": "private-broker://private-db/scoped-token/orders-db/apply" }
+    }
+  },
+  "tenantIngress": {
+    "routingTable": {
+      "applicationDomain": "hobo.example",
+      "trustedGatewayHosts": ["api.hobo.example"],
+      "wildcardCertificates": [
+        { "id": "cert-wildcard-hobo-example", "pattern": "*.hobo.example", "source": "acme-dns01", "status": "issued" }
+      ],
+      "tenants": [
+        {
+          "id": "tenant-alpha",
+          "subdomain": "alpha",
+          "pathPrefix": "/t/tenant-alpha",
+          "customDomains": [
+            {
+              "host": "api.alpha.example",
+              "resourceId": "domain:tenant-alpha/api-alpha-example",
+              "certificateRef": "cert://identity/api-alpha-example",
+              "tenantScoped": true,
+              "verified": true
+            }
+          ],
+          "placement": { "mode": "region-pooled", "camp": "prod-us", "region": "us-east-1" }
+        }
+      ]
+    },
+    "request": {
+      "scheme": "https",
+      "host": "alpha.hobo.example",
+      "path": "/api/orders",
+      "jwt": { "verified": true, "tenant": "tenant-alpha" }
+    },
+    "mismatchRequest": {
+      "scheme": "https",
+      "host": "alpha.hobo.example",
+      "path": "/api/orders",
+      "jwt": { "verified": true, "tenant": "tenant-beta" }
+    }
+  },
+  "negative": {
+    "topologyOverrides": [
+      {
+        "id": "override-public-shortcut",
+        "scope": "yard",
+        "scopeId": "yard-aws-us",
+        "kind": "connectivity-tier",
+        "edgeId": "orders.api->orders.db",
+        "requestedTier": 5,
+        "reason": "manual public shortcut",
+        "basis": { "topologySeq": 42 }
+      }
+    ],
+    "partitionRouting": {
+      "localYardId": "yard-aws-us",
+      "campYards": { "prod-us": "yard-aws-us", "prod-eu": "yard-azure-eu" },
+      "trust": {
+        "now": "2026-06-29T03:00:00.000Z",
+        "maxLeaseTtlMs": 300000,
+        "canConfirmWithRoot": false,
+        "trustEvents": [
+          {
+            "type": "junction.TrustGranted",
+            "sequence": 1,
+            "peerYardId": "yard-azure-eu",
+            "issuedAt": "2026-06-29T02:00:00.000Z",
+            "validUntil": "2026-06-29T02:10:00.000Z"
+          }
+        ]
+      },
+      "routingRequest": {
+        "domain": "api.hobo.example",
+        "recordName": "api.hobo.example",
+        "recordType": "A",
+        "ttl": 60,
+        "activeCamp": "prod-us",
+        "sustainedFailureThreshold": 1,
+        "healthSamples": [
+          { "camp": "prod-us", "healthy": false },
+          { "camp": "prod-eu", "healthy": true }
+        ],
+        "policy": {
+          "kind": "failover",
+          "targets": [
+            { "camp": "prod-us", "priority": 1 },
+            { "camp": "prod-eu", "priority": 2 }
+          ]
+        },
+        "camps": [
+          { "camp": "prod-us", "value": "203.0.113.10", "validated": true, "healthy": false },
+          { "camp": "prod-eu", "value": "203.0.113.20", "validated": true, "healthy": true }
+        ]
+      }
+    }
+  }
+}

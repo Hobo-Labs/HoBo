@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "runtime-port-conformance-contract",
+  "title": "Runtime Port Conformance Contract",
+  "linear": "HOBO-30",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/actor-host-runtime-port-contract",
+      "src/draft/technical-proofs/camp-eventstore-runtime-port-contract",
+      "src/draft/technical-proofs/queue-clock-runtime-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

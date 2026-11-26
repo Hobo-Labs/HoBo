@@ -1,0 +1,24 @@
+{
+	"schema": "hobo.manifest/v1",
+	"componentHost": {
+		"kind": "wasmtime",
+		"version": "1.0.0"
+	},
+	"resources": {
+		"service": {
+			"type": "component.v1",
+			"image": "oci://registry.example.com/hello-bindle@sha256:abc123",
+			"runtime": "wasm",
+			"exports": ["wasi:http/incoming-handler"],
+			"bind": ["sessions", "assets"]
+		},
+		"sessions": {
+			"type": "data.v1",
+			"port": "kv"
+		},
+		"assets": {
+			"type": "data.v1",
+			"port": "objectStore"
+		}
+	}
+}

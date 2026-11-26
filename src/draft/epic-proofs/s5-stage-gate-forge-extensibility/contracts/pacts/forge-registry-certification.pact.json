@@ -1,0 +1,18 @@
+{
+  "consumer": { "name": "S5StageGateForgeDrill" },
+  "provider": { "name": "ForgeRegistryCertification" },
+  "interactions": [
+    {
+      "description": "forge command yields signed provider with gen.PluginCertified and provenance",
+      "providerState": "reference backend URL ingested and certification loop green",
+      "contents": {
+        "forgeOutcome": "certified",
+        "registryEvent": "gen.PluginCertified",
+        "installVerified": true,
+        "availableToMatching": true,
+        "selectedByMatching": false
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

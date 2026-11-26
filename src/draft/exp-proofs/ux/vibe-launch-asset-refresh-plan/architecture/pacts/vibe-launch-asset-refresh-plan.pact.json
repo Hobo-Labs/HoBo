@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "launch-asset-refresh-plan-consumer"
+  },
+  "provider": {
+    "name": "launch-asset-refresh-plan-provider"
+  },
+  "interactions": [
+    {
+      "description": "accept a parsed launch asset refresh plan",
+      "providerState": "HOBO-556 refresh plan fixtures are available",
+      "request": {
+        "method": "POST",
+        "path": "/draft/vibe-launch-asset-refresh-plan"
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-556",
+          "accepted": true,
+          "assetKinds": [
+            "screenshots",
+            "recording-manifest",
+            "command-transcript",
+            "fixture-data",
+            "docs"
+          ],
+          "proofModes": [
+            "live",
+            "reference fixture",
+            "scope-out",
+            "simulated"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

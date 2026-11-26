@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "full-dashboard-projection-views-contract",
+  "experienceType": "ux",
+  "title": "Full Dashboard Projection Views Contract",
+  "linear": "HOBO-662",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/multi-cloud-shop-provider-e2e-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

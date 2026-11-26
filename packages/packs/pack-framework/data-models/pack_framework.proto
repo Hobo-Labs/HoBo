@@ -1,0 +1,169 @@
+syntax = "proto3";
+
+package hobo.packs.framework.v1;
+
+// The durable wire form of an implementation pack: what image digest runs on
+// which architecture, how readiness is proven, what storage is mandatory, what
+// configuration is accepted, and where the bytes came from.
+//
+// Every reference field here is a locator. Credential material appears in no
+// record below, and PackConfigFieldRecord describes the *shape* of a
+// configuration value rather than a value.
+
+message PackSourceRefRecord {
+  string url = 1;
+  // ISO date a human read the source. Never generated.
+  string checked_at = 2;
+  string note = 3;
+}
+
+message PackImageRecord {
+  // OCI platform string: os/arch[/variant].
+  string architecture = 1;
+  // Fully qualified <registry>/<path>, no tag.
+  string repository = 2;
+  // sha256:<64 hex>. A tag is not representable.
+  string digest = 3;
+  uint64 size_bytes = 4;
+}
+
+message PackPortRecord {
+  string name = 1;
+  uint32 container_port = 2;
+  string protocol = 3;
+  string exposure = 4;
+}
+
+message PackProbeRecord {
+  string kind = 1;
+  string port_name = 2;
+  // argv array for an exec probe. Never a shell string.
+  repeated string argv = 3;
+  string path = 4;
+  uint32 expect_status = 5;
+  uint32 initial_delay_ms = 6;
+  uint32 period_ms = 7;
+  uint32 timeout_ms = 8;
+  uint32 failure_threshold = 9;
+}
+
+message PackVolumeRecord {
+  string name = 1;
+  string mount_path = 2;
+  uint64 minimum_bytes = 3;
+  string access_mode = 4;
+  bool external_storage_allowed = 5;
+}
+
+message PackPersistenceRecord {
+  // "required" | "not-applicable"
+  string requirement = 1;
+  repeated PackVolumeRecord volumes = 2;
+  string rationale = 3;
+}
+
+message PackResourceBoundsRecord {
+  uint32 cpu_millicores_min = 1;
+  uint32 cpu_millicores_max = 2;
+  uint64 memory_bytes_min = 3;
+  uint64 memory_bytes_max = 4;
+  uint64 ephemeral_storage_bytes_min = 5;
+}
+
+message PackConfigFieldRecord {
+  string key = 1;
+  string kind = 2;
+  string necessity = 3;
+  string description = 4;
+  repeated string enum_values = 5;
+  int64 minimum = 6;
+  int64 maximum = 7;
+  string default_value = 8;
+}
+
+message PackOperationRecord {
+  string id = 1;
+  string kind = 2;
+  string profile_ref = 3;
+  string description = 4;
+  string credential_delivery = 5;
+  // Always false. An operation is an argv array handed to a process runner.
+  bool shell = 6;
+  string argv_builder_ref = 7;
+}
+
+message PackProvenanceRecord {
+  string builder = 1;
+  string build_type = 2;
+  string source_repository = 3;
+  string source_revision = 4;
+  string sbom_ref = 5;
+  repeated string attestation_refs = 6;
+  repeated PackSourceRefRecord source_refs = 7;
+}
+
+message PackSignatureRecord {
+  string algorithm = 1;
+  // Key identity, never key material.
+  string key_id = 2;
+  string value = 3;
+  string payload_digest = 4;
+  string signed_at = 5;
+}
+
+message PackConformanceRecord {
+  string suite_ref = 1;
+  string outcome = 2;
+  string evidence_checked_at = 3;
+  bool executed_against_container = 4;
+}
+
+message PackProfileClaimRecord {
+  string profile_id = 1;
+  string version_range = 2;
+  // Always "pack".
+  string realization = 3;
+  string conformance_ref = 4;
+  string conformance = 5;
+}
+
+message PackManifestRecord {
+  string schema_version = 1;
+  string pack_id = 2;
+  string pack_version = 3;
+  string display_name = 4;
+  string description = 5;
+  repeated string runtime_models = 6;
+  repeated PackProfileClaimRecord implements_profiles = 7;
+  repeated PackImageRecord images = 8;
+  repeated PackPortRecord ports = 9;
+  PackProbeRecord readiness_probe = 10;
+  PackProbeRecord liveness_probe = 11;
+  PackProbeRecord startup_probe = 12;
+  PackPersistenceRecord persistence = 13;
+  PackResourceBoundsRecord resource_bounds = 14;
+  repeated PackConfigFieldRecord config_schema = 15;
+  repeated string produces_binding_profiles = 16;
+  repeated PackOperationRecord operations = 17;
+  // "yard-owned" | "migrate-on-claim". Never a provider claim.
+  string ownership = 18;
+  PackProvenanceRecord provenance = 19;
+  PackConformanceRecord conformance = 20;
+  PackSignatureRecord signature = 21;
+}
+
+message PackConformanceStepResultRecord {
+  string case_id = 1;
+  uint32 step_index = 2;
+  bool ok = 3;
+  string detail = 4;
+}
+
+message PackConformanceReportRecord {
+  string pack_id = 1;
+  string pack_version = 2;
+  string architecture = 3;
+  string image_digest = 4;
+  string outcome = 5;
+  repeated PackConformanceStepResultRecord step_results = 6;
+}

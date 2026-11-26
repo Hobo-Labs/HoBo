@@ -1,0 +1,12 @@
+plan: status=ready route=hosted-anonymous-preview
+deployment: ownership=unowned claimable=true envType=ephemeral
+url: https://snapshop-nonce0123456789abcdef012345.preview.hobo.dev
+ttl: 24h expiresAt=2026-06-27T10:00:00.000Z
+events: anonymousPreview.Requested -> anonymousPreview.InferredCampApproved -> anonymousPreview.DeploymentRecorded -> anonymousPreview.TtlScheduled
+claim: hobo claim claim:anonymous-preview-001 preservesUrl=true
+ttl sweep: before=none after=teardown state=expired
+expiry events: anonymousPreview.TtlExpired -> anonymousPreview.TeardownRequested
+abuse cap: status=blocked code=anonymous.rate-limit url=null
+tenancy: ownRead=allow foreignWrite=deny code=anonymous.cross-tenant-denied
+nonce policy: short nonce rejected (>=128 bits required)
+CONTRACT HELD: anonymous preview is unowned, claimable, TTL-bound, and isolated

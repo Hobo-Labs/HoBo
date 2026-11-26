@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RepoViewEscapeHatchesContractConsumer"
+  },
+  "provider": {
+    "name": "RepoViewEscapeHatchesContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Repo View Escape Hatches Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/repo-view-escape-hatches-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.repo_view_escape_hatches_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

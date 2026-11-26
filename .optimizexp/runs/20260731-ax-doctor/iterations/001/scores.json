@@ -1,0 +1,9 @@
+{
+  "iteration": 1,
+  "runId": "20260731-ax-doctor",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsBaseline": { "metric_total_delta": -4, "metric_max_delta": -3 },
+  "implementableFindingsRemaining": 0,
+  "experimentsApplied": ["E-1"]
+}

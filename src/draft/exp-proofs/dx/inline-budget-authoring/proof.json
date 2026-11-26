@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "inline-budget-authoring",
+  "experienceType": "dx",
+  "title": "Inline budget authoring proof (HOBO-693)",
+  "linear": "HOBO-693",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/authoring-resources-wiring.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

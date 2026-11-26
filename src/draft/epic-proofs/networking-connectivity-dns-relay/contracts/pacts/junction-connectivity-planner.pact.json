@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "JunctionConnectivityPlanner" },
+  "interactions": [
+    {
+      "description": "emits mirrored per-Yard connectivity halves",
+      "request": { "method": "POST", "path": "/junction/connectivity/plan" },
+      "response": { "status": 200, "body": { "deliveryYards": ["yard-aws-us", "yard-azure-eu"] } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

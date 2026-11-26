@@ -1,0 +1,25 @@
+{
+  "layer": "exp",
+  "slug": "devops-canary-rollout-journey-contract",
+  "experienceType": "dx",
+  "title": "HOBO-224 DevOps Canary Rollout Journey Contract",
+  "linear": "HOBO-224",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/delivery-orchestrator-skeleton-contract",
+      "src/draft/technical-proofs/deployment-strategy-saga-templates-contract",
+      "src/draft/technical-proofs/hobo-inspect-projection-contract",
+      "src/draft/technical-proofs/hobo-up-convergence-contract",
+      "src/draft/technical-proofs/slo-promotion-gate-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

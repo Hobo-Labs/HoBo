@@ -1,0 +1,187 @@
+{
+  "consumer": {
+    "name": "VibeSupportCaseRedactedEvidenceConsumer"
+  },
+  "provider": {
+    "name": "VibeSupportCaseRedactedEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe Support Case Redacted Evidence boundary returns accepted HOBO-564 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-support-case-redacted-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-564",
+          "phase": "M2",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence",
+          "proofPath": "docs/design/proofs/vibe-support-case-redacted-evidence/README.md",
+          "designRefs": [
+            "docs/design/support-workflow.md",
+            "docs/design/support-sla-channels.md",
+            "docs/design/incident-communications.md",
+            "docs/design/launch-support-escalation.md",
+            "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "consumedSupportWorkflowMockupRefs": [
+            {
+              "sourceIssue": "HOBO-550",
+              "mockupId": "wf-received-intake",
+              "sourceProofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "supportCaseUse": "case prototype starts from accepted requester, channel, affected surface, and first customer-safe summary"
+            },
+            {
+              "sourceIssue": "HOBO-550",
+              "mockupId": "wf-classified-triage",
+              "sourceProofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "supportCaseUse": "severity and owner route are copied from the accepted triage mockup, not inferred from raw ticket text"
+            },
+            {
+              "sourceIssue": "HOBO-550",
+              "mockupId": "wf-evidence-linked",
+              "sourceProofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "supportCaseUse": "redacted logs, incident refs, admin context, docs, and proof package links remain explicit evidence pack fields"
+            },
+            {
+              "sourceIssue": "HOBO-550",
+              "mockupId": "wf-owner-routed",
+              "sourceProofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "supportCaseUse": "support case owner route preserves security, incident, release, docs, and support boundaries"
+            },
+            {
+              "sourceIssue": "HOBO-550",
+              "mockupId": "wf-customer-updated",
+              "sourceProofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "supportCaseUse": "customer update text is gated by redaction state and next update condition"
+            },
+            {
+              "sourceIssue": "HOBO-550",
+              "mockupId": "wf-closed",
+              "sourceProofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "supportCaseUse": "closure cites approved docs, follow-up owner, or unsupported-state explanation without building support runtime"
+            }
+          ],
+          "evidencePacks": [
+            {
+              "id": "scrp-happy-redacted-doc-answer",
+              "supportCaseState": "closure",
+              "customerSafeSummary": "customer-safe support case summary with redacted deploy log lines and approved docs answer",
+              "severity": "SEV3",
+              "ownerRoute": "Support Workflow / Docs Portal",
+              "consumedMockupIds": ["wf-received-intake", "wf-evidence-linked", "wf-customer-updated", "wf-closed"],
+              "redactedLogs": ["log://deploy/run-accepted/redacted-line-17", "log://deploy/run-accepted/redacted-line-42"],
+              "incidentRefs": ["incident://none-customer-impacting-confirmed"],
+              "supportRefs": ["support://case/sc-happy-doc-answer-v1"],
+              "adminContext": "workspace acme-prod, project launch-demo, environment preview; tenant ids redacted",
+              "docsSource": "docs/design/support-workflow.md#required-support-evidence",
+              "proofPackageLink": "src/draft/exp-proofs/ux/vibe-support-workflow-mockups/README.md",
+              "redactionState": "customer-safe",
+              "nextUpdateCondition": "when docs owner approves the final customer-safe answer",
+              "proofMode": "live"
+            },
+            {
+              "id": "scrp-incident-handoff-redacted-context",
+              "supportCaseState": "owner-route",
+              "customerSafeSummary": "redacted incident-adjacent context without responder-only notes or raw diagnostic payloads",
+              "severity": "SEV1",
+              "ownerRoute": "Incident Communications / Support Workflow",
+              "consumedMockupIds": ["wf-classified-triage", "wf-owner-routed", "wf-customer-updated"],
+              "redactedLogs": ["log://incident/candidate/redacted-slo-window"],
+              "incidentRefs": ["incident://candidate/inc-launch-window-17"],
+              "supportRefs": ["support://case/sc-incident-handoff-v1"],
+              "adminContext": "affected launch-demo project and environment only; no customer payloads or secrets",
+              "docsSource": "docs/design/incident-communications.md#communication-surfaces",
+              "proofPackageLink": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+              "redactionState": "internal-only",
+              "nextUpdateCondition": "after incident commander confirms customer-visible impact and approved wording",
+              "proofMode": "simulated"
+            },
+            {
+              "id": "scrp-stale-proof-limitation-update",
+              "supportCaseState": "customer-update",
+              "customerSafeSummary": "customer-safe stale evidence update that points to limitation wording instead of a launch claim",
+              "severity": "SEV3",
+              "ownerRoute": "V1 Release Program & Cutline",
+              "consumedMockupIds": ["wf-evidence-linked", "wf-customer-updated"],
+              "redactedLogs": ["log://plan-diff/stale-evidence/redacted-fixture-id"],
+              "incidentRefs": ["incident://not-open-stale-proof"],
+              "supportRefs": ["support://case/sc-stale-proof-v1"],
+              "adminContext": "workspace acme-prod, plan review snapshot, freshness state stale; customer identifiers redacted",
+              "docsSource": "docs/design/known-limitations-register.md",
+              "proofPackageLink": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids",
+              "redactionState": "customer-safe",
+              "nextUpdateCondition": "once release owner accepts limitation wording or refreshes the proof fixture",
+              "proofMode": "reference fixture"
+            },
+            {
+              "id": "scrp-security-blocked-raw-data-request",
+              "supportCaseState": "owner-route",
+              "customerSafeSummary": "customer-safe scope-out raw data request routed without raw disclosure or support impersonation",
+              "severity": "SEV0",
+              "ownerRoute": "Security Verification / Legal",
+              "consumedMockupIds": ["wf-owner-routed", "wf-customer-updated"],
+              "redactedLogs": ["log://withheld/requires-security-approval"],
+              "incidentRefs": ["incident://security-review/raw-data-request-withheld"],
+              "supportRefs": ["support://case/sc-security-blocked-v1"],
+              "adminContext": "raw tenant data request withheld; support can see route, not payload",
+              "docsSource": "docs/design/security-verification.md#customer-communication",
+              "proofPackageLink": "src/draft/exp-proofs/ux/vibe-support-case-redacted-evidence/README.md",
+              "redactionState": "requires-security-approval",
+              "nextUpdateCondition": "before any customer-visible evidence leaves security and legal review",
+              "proofMode": "scope-out"
+            }
+          ],
+          "scenarioPaths": [
+            {
+              "id": "happy-path",
+              "narrative": "A customer-safe support case links redacted deploy logs, approved docs, support references, and proof evidence before closure.",
+              "evidencePackIds": ["scrp-happy-redacted-doc-answer"],
+              "safeOutcome": "customer receives approved docs answer and redacted proof references without raw evidence exposure"
+            },
+            {
+              "id": "blocked-path",
+              "narrative": "A raw customer-data request is routed to security/legal and remains scope-out until approval exists.",
+              "evidencePackIds": ["scrp-security-blocked-raw-data-request"],
+              "safeOutcome": "support records the owner route and next update condition instead of granting data access"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "narrative": "A stale proof fixture produces limitation wording and a refresh owner instead of an unsupported readiness claim.",
+              "evidencePackIds": ["scrp-stale-proof-limitation-update"],
+              "safeOutcome": "support states stale evidence and routes refresh work before claiming launch readiness"
+            },
+            {
+              "id": "support-handoff",
+              "narrative": "Incident-adjacent context is handed to Incident Communications with redacted support references and customer-safe boundaries.",
+              "evidencePackIds": ["scrp-incident-handoff-redacted-context"],
+              "safeOutcome": "support handoff preserves incident owner routing, redaction state, and next customer update condition"
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order moves from case summary to severity, redaction state, evidence pack, owner route, and next update condition.",
+            "Screen reader labels announce proof mode, redaction state, owner route, and whether evidence is customer-safe or internal-only.",
+            "Contrast is paired with text labels for blocked, stale, internal-only, and scope-out evidence pack states.",
+            "Motion is optional; evidence pack expansion, route changes, and status transitions must respect reduced-motion preferences."
+          ],
+          "scopeOut": [
+            "No helpdesk integration or support queue automation.",
+            "No customer-data access, support impersonation, tenant browsing, or secret exposure.",
+            "No incident command ownership, runbook execution, on-call staffing, or notification dispatch.",
+            "No production support UI or support portal implementation.",
+            "No contractual SLA promise, paid support term, or public response-time guarantee.",
+            "No launch claim without evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

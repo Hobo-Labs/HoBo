@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "DataPlaneReactor" },
+  "provider": { "name": "SubscriptionGatewayBoundary" },
+  "interactions": [
+    {
+      "description": "push recomputed materialization at monotonic seq",
+      "request": {
+        "method": "POST",
+        "path": "/subscriptions/sub:tenant-a-orders/push",
+        "body": { "seq": { "order:1001": 1 }, "resultCount": 1 }
+      },
+      "response": {
+        "status": 202,
+        "body": { "accepted": true }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

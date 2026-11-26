@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package hobo.draft.replay.v1;
+
+message SeqVectorEntry {
+  string stream_id = 1;
+  uint64 seq = 2;
+}
+
+message ReplayReport {
+  string run_id = 1;
+  repeated SeqVectorEntry seq_vector = 2;
+  string read_set_hash = 3;
+  string state_digest = 4;
+  string mode = 5;
+  string seed = 6;
+}
+
+message ReplayDivergence {
+  string run_id = 1;
+  string live_state_digest = 2;
+  string replay_state_digest = 3;
+  repeated string live_order = 4;
+  repeated string replay_order = 5;
+  string first_divergent_event_key = 6;
+}
+
+message DeterministicReplayEngineRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string evidence = 3;
+}

@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the V1 Release Notes
+// Dogfood Alpha Evidence draft package reasons about. Documents the records
+// this package owns so the architecture guard has a language-neutral schema
+// reference. Not compiled at runtime; this is a design-time contract artifact.
+
+enum V1ReleaseNotesDogfoodAlphaEvidenceStatus {
+  EVIDENCE_STATUS_UNSPECIFIED = 0;
+  EVIDENCE_STATUS_ACCEPTED = 1;
+  EVIDENCE_STATUS_ACCEPTED_WITH_RISK = 2;
+  EVIDENCE_STATUS_MISSING = 3;
+}
+
+message V1ReleaseNotesDogfoodAlphaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source_evidence = 3;
+  repeated string release_note_sections = 4;
+  string cutline_category = 5;
+  V1ReleaseNotesDogfoodAlphaEvidenceStatus status = 6;
+}
+
+message V1ReleaseNotesDogfoodAlphaBlocker {
+  string id = 1;
+  string owner_project = 2;
+  string state = 3;
+  string accepted_risk_id = 4;
+  string mitigation = 5;
+}
+
+message V1ReleaseNotesDogfoodAlphaAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string launch_impact = 3;
+  string mitigation = 4;
+}
+
+message V1ReleaseNotesDogfoodAlphaFollowUp {
+  string evidence_id = 1;
+  string issue = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message V1ReleaseNotesDogfoodAlphaParentReadinessStatusUpdate {
+  string initiative = 1;
+  string status = 2;
+  string reason = 3;
+}
+
+message V1ReleaseNotesDogfoodAlphaGate {
+  string schema = 1;
+  string issue = 2;
+  string project = 3;
+  string phase = 4;
+  string milestone = 5;
+  repeated V1ReleaseNotesDogfoodAlphaEvidenceItem evidence = 6;
+  repeated V1ReleaseNotesDogfoodAlphaBlocker blockers = 7;
+  repeated V1ReleaseNotesDogfoodAlphaAcceptedRisk accepted_risks = 8;
+  repeated V1ReleaseNotesDogfoodAlphaFollowUp follow_ups = 9;
+  bool launch_risk_changed = 10;
+  V1ReleaseNotesDogfoodAlphaParentReadinessStatusUpdate parent_readiness_status_update = 11;
+}

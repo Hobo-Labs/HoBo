@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "yard-domain-validation-contract",
+  "title": "Yard domain validation contract POC",
+  "linear": "HOBO-142",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/domain-validation-gate-contract",
+      "src/draft/technical-proofs/gateway-realization-contract",
+      "src/draft/technical-proofs/hobo-dns-port-contract",
+      "src/draft/technical-proofs/hobo-gateway-port"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

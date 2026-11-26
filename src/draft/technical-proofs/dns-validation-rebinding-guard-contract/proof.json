@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "dns-validation-rebinding-guard-contract",
+  "title": "DNS Validation Rebinding Guard Contract",
+  "linear": "HOBO-193",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/07-portability-extensibility.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

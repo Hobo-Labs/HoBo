@@ -1,0 +1,8 @@
+{
+  "name": "flag-ruleset-sync-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

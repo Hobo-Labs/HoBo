@@ -1,0 +1,82 @@
+{
+  "consumer": { "name": "HoboCdVerificationEngine" },
+  "provider": { "name": "PrometheusHttpApi" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored HTTP contract for the Prometheus HTTP API v1 range query (https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries). Verified by test/verification/sources/pacts.test.ts: the source's request must match exactly and it must decode these responses into the listed samples."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "range query for the canary cohort, step aligned to a 10 minute window",
+      "providerStates": [{ "name": "series http_errors split by track" }],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/query_range",
+        "query": {
+          "query": ["sum by (track) (rate(http_errors_total[1m]))"],
+          "start": ["1794484800"],
+          "end": ["1794485400"],
+          "step": ["15s"]
+        },
+        "headers": { "accept": "application/json", "authorization": "Bearer prom-token" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "status": "success",
+          "data": {
+            "resultType": "matrix",
+            "result": [
+              { "metric": { "track": "baseline" }, "values": [[1794484800, "0.01"], [1794484815, "0.02"]] },
+              { "metric": { "track": "canary" }, "values": [[1794484800, "0.04"], [1794484815, "NaN"], [1794484830, "0.05"]] }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "range query with no matching series",
+      "providerStates": [{ "name": "no series for the query" }],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/query_range",
+        "query": {
+          "query": ["sum by (track) (rate(http_errors_total[1m]))"],
+          "start": ["1794484800"],
+          "end": ["1794485400"],
+          "step": ["15s"]
+        },
+        "headers": { "accept": "application/json", "authorization": "Bearer prom-token" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "status": "success", "data": { "resultType": "matrix", "result": [] } }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "range query rejected as a bad request",
+      "providerStates": [{ "name": "the PromQL does not parse" }],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/query_range",
+        "query": {
+          "query": ["sum by (track) (rate(http_errors_total[1m]))"],
+          "start": ["1794484800"],
+          "end": ["1794485400"],
+          "step": ["15s"]
+        },
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 400,
+        "headers": { "content-type": "application/json" },
+        "body": { "status": "error", "errorType": "bad_data", "error": "parse error" }
+      }
+    }
+  ]
+}

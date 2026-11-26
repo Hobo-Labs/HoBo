@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "forge-certification-loop-contract",
+  "title": "Forge Certification Loop Contract POC",
+  "linear": "HOBO-649",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/generation-pipeline-io-contract",
+      "src/draft/technical-proofs/no-egress-generation-sandbox-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

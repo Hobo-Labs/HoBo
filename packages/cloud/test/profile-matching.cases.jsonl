@@ -1,0 +1,19 @@
+# The profile graph decides, not the port name.
+{"method":"match","name":"resolves a Postgres requirement to a conformant Postgres product","input":[{"definitions":["d1","neon"]}],"subset":{"ok":true,"definitionId":"neon.claimable-postgres/v1"}}
+{"method":"match","name":"never lets D1 satisfy a PostgreSQL requirement","input":[{"definitions":["d1"]}],"subset":{"ok":false,"rejections":["PROFILE_INCOMPATIBLE"],"remediationCode":"capability.profile-unsatisfiable"}}
+{"method":"match","name":"satisfies a relational requirement through the refinement graph","input":[{"requirement":{"requiredProfiles":[{"profileId":"data.relational/v1","versionRange":">=1"}]},"definitions":["d1"]}],"subset":{"ok":true}}
+# Stale evidence fails closed rather than ranking lower.
+{"method":"match","name":"fails closed on stale evidence","input":[{"definitions":[{"id":"neon.stale/v1","providerId":"neon","semantics":{"evidenceExpiresAtMs":1786147199999}}]}],"subset":{"ok":false,"rejections":["EVIDENCE_STALE"]}}
+# Trust outranks cost: fewer human claim actions wins.
+{"method":"match","name":"prefers fewer human claim actions over the cheaper candidate","input":[{"definitions":[{"id":"prisma.claimable-postgres/v1","providerId":"prisma","semantics":{"claimActionCount":2,"claimAtomicity":"best-effort-saga"}},"neon"]}],"subset":{"ok":true,"ranking":["neon.claimable-postgres/v1"]}}
+{"method":"isOrderIndependent","name":"registration order decides neither ranking nor catalog hash","input":[{"definitions":["neon","d1"]}],"expect":true}
+# A conformance result is part of the catalog's identity.
+{"method":"catalogHashesDiffer","name":"a failed conformance changes the catalog hash","input":[["neon"],[{"id":"neon.claimable-postgres/v1","providerId":"neon","semantics":{"implementsProfiles":[{"profileId":"data.postgres/v1","versionRange":">=1","realization":"native","conformanceRef":"conformance.postgres/v1","conformance":"fail"}]}}]],"expect":true}
+{"method":"catalogHashesDiffer","name":"the same catalog hashes the same","input":[["neon"],["neon"]],"expect":false}
+# Bindle-declared requirements bridge into a capability requirement.
+{"method":"match","name":"bridges Bindle-declared requirements","input":[{"fromBindle":{"require":["data.postgres/v1"],"prefer":["data.vector.pgvector/v1"],"runtimes":["paas"],"labels":{}},"definitions":["d1","neon"]}],"subset":{"ok":true,"definitionId":"neon.claimable-postgres/v1"}}
+{"method":"bindleRequirement","name":"a bare port name is left to the legacy matcher rather than guessed","input":[{"require":["data"],"prefer":[],"runtimes":[],"labels":{}}],"expect":null}
+{"method":"bindleRequirement","name":"a profile id does produce a requirement","input":[{"require":["data.postgres/v1"],"prefer":[],"runtimes":[],"labels":{}}],"match":"data.postgres/v1"}
+# Semantics without an executor is a refusal, not a warning.
+{"method":"parseDefinition","name":"refuses a definition that declares semantics but names no executor","input":[{"id":"broken/v1","providerId":"nobody","semantics":{"executorRef":""}}],"throws":"names no executor"}
+{"method":"parseDefinition","name":"a complete definition parses","input":[{"id":"fine/v1","providerId":"somebody"}],"expect":"fine/v1"}

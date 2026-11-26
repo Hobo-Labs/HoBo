@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package hobo.examples.ci_runner_balancing.v1;
+
+// Records for the ci-runner-balancing reference example: a credit-aware
+// dispatcher that routes CI jobs across GitHub-hosted, self-hosted, and
+// third-party Actions runner providers by (a) reported usage vs. budget
+// envelope, then (b) declared billable cost — free credits before realtime
+// billing (ADR-0071 maximize-credits).
+
+// How a runner provider is operated. Third-party entries come from the
+// community registry at github.com/neysofu/awesome-github-actions-runners.
+enum ProviderKind {
+  PROVIDER_KIND_UNSPECIFIED = 0;
+  PROVIDER_KIND_GITHUB_HOSTED = 1;
+  PROVIDER_KIND_SELF_HOSTED = 2;
+  PROVIDER_KIND_MANAGED_THIRD_PARTY = 3;
+  PROVIDER_KIND_BYOC_THIRD_PARTY = 4;
+}
+
+// Provenance of cost facts. Declared facts are untrusted ranking input only
+// (execution-host-provider-contract): they influence ordering, never billing.
+enum CostTrust {
+  COST_TRUST_UNSPECIFIED = 0;
+  COST_TRUST_DECLARED_UNVERIFIED = 1;
+  COST_TRUST_PROVIDER_REPORTED = 2;
+  COST_TRUST_PLATFORM_METERED = 3;
+}
+
+enum DecisionKind {
+  DECISION_KIND_UNSPECIFIED = 0;
+  DECISION_KIND_FLIP = 1;
+  DECISION_KIND_NO_CHANGE = 2;
+  DECISION_KIND_PIN_SKIP = 3;
+  DECISION_KIND_FAIL_CLOSED = 4;
+  DECISION_KIND_NON_FUNGIBLE_HOLD = 5;
+}
+
+// Declared free-tier and rate-card facts for one provider.
+message ProviderCostFacts {
+  // Free units (see unit) granted per billing month; 0 when none.
+  double free_units_per_month = 1;
+  // Day of month the free tier resets (1-28); 0 when unknown.
+  uint32 free_tier_reset_day = 2;
+  // List price per billable unit once free headroom is exhausted.
+  double list_price_usd_per_unit = 3;
+  // Billable unit, e.g. "minute".
+  string unit = 4;
+  // Multiplier applied when consuming free units (GitHub: linux 1x,
+  // windows 2x, macos 10x).
+  double included_multiplier = 5;
+  CostTrust trust = 6;
+}
+
+// One runner provider the dispatcher may route to.
+message RunnerProviderProfile {
+  string id = 1;
+  string display_name = 2;
+  ProviderKind kind = 3;
+  // runs-on labels this provider serves (first entry is the canonical label).
+  repeated string runs_on_labels = 4;
+  ProviderCostFacts cost = 5;
+  string docs_url = 6;
+}
+
+// Month-to-date usage observed for one provider (billing API, provider API,
+// or operator-declared override). known=false means the read was unverified
+// and routing must stay honest about it.
+message UsageSnapshot {
+  string provider_id = 1;
+  double spend_usd = 2;
+  double units_used = 3;
+  bool known = 4;
+  string source = 5;
+}
+
+// Monthly budget envelope for one provider. The soft cap is the hysteresis
+// basis (flip-up at 90%, flip-back below 80%); reaching the hard cap blocks
+// the provider outright (fail-closed input).
+message BudgetEnvelope {
+  string provider_id = 1;
+  double soft_cap_usd = 2;
+  double hard_cap_usd = 3;
+}
+
+// Capability guard: a rung is eligible only while these routed variables
+// match (e.g. a provider's GitHub App is installed, a self-hosted pool is
+// online).
+message RungGuard {
+  string variable = 1;
+  repeated string values = 2;
+  bool exists = 3;
+}
+
+// One candidate runs-on value inside a track.
+message TrackRung {
+  string value = 1;
+  string provider_id = 2;
+  repeated RungGuard requires = 3;
+  // Non-empty marks a non-fungible rung: leaving it is a sharp capability
+  // downgrade the dispatcher must hold unless the operator opts in.
+  string sticky_reason = 4;
+  // Last-resort rungs (e.g. the machine that requested CI, registered as an
+  // ephemeral self-hosted runner) rank after every normal rung regardless of
+  // declared cost: the dispatcher fails over to them only when every normal
+  // rung is hard-blocked, guarded off, or over budget, and leaves them as
+  // soon as a normal rung recovers.
+  bool last_resort = 5;
+}
+
+// A routed resource: one GitHub Actions variable whose value is the runs-on
+// label CI jobs consume.
+message RunnerTrack {
+  string resource = 1;
+  string variable = 2;
+  repeated TrackRung rungs = 3;
+}
+
+// Evidence that a provider is failing for infrastructure/spending reasons
+// (classifier over failed-run annotations); saturates that provider
+// regardless of reported numbers.
+message HardBlockSignal {
+  string provider_id = 1;
+  string resource = 2;
+  string reason = 3;
+}
+
+// Per-provider row of the credit ledger materialized view.
+message CreditEntry {
+  string provider_id = 1;
+  // 0 while free headroom remains, list price after (ADR-0071).
+  double effective_marginal_cost_usd = 2;
+  double free_headroom_units = 3;
+  double spend_usd = 4;
+  double envelope_usd = 5;
+  bool usage_known = 6;
+  bool hard_blocked = 7;
+  double list_price_usd_per_unit = 8;
+}
+
+// The materialized view the dispatcher consumes; decisions pin seq so every
+// dispatch.Decided is replayable against the exact ledger it saw.
+message CreditLedgerView {
+  string seq = 1;
+  repeated CreditEntry entries = 2;
+}
+
+// Command that starts one rebalance pass.
+message RebalanceRequested {
+  string requested_by = 1;
+  // "plan" computes decisions only; "apply" also patches Actions variables.
+  string mode = 2;
+  string ledger_seq = 3;
+}
+
+// One dispatch.Decided record for one track.
+message DispatchDecision {
+  string resource = 1;
+  string variable = 2;
+  string from_value = 3;
+  string to_value = 4;
+  string provider_id = 5;
+  DecisionKind kind = 6;
+  string reason = 7;
+  bool usage_known = 8;
+  string ledger_seq = 9;
+  double spend_usd = 10;
+  double envelope_usd = 11;
+  // "up" moves off a saturated provider, "back" returns to a cheaper one.
+  string direction = 12;
+}
+
+// Snapshot the read store keeps for the current rebalance pass.
+message RebalancePlan {
+  string ledger_seq = 1;
+  repeated DispatchDecision decisions = 2;
+}

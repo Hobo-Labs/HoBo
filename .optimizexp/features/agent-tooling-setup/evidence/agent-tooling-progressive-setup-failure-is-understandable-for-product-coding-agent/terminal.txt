@@ -1,0 +1,22 @@
+# OptimizeXP CLI evidence
+command: bash scripts/agent-mcp-gbrain.sh; echo exit:$?
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 21
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T13:43:04.768Z
+
+## stdout
+exit:1
+
+
+## stderr
+gbrain MCP: binary not on PATH.
+
+Zero-key default (recommended): decline the gbrain MCP server in your agent UI, or never enable it.
+  bash scripts/setup-agent-tools.sh --common-only --no-gbrain
+
+To enable later: install Bun, re-run setup without --no-gbrain, then `gbrain init`.
+Keys + data egress: AUTH.md  |  .env.example  |  docs/agent-tooling.md
+

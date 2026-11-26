@@ -1,0 +1,44 @@
+{
+  "runId": "20260731-ax-review",
+  "scoredAt": "2026-07-31T13:32:00.000Z",
+  "metric_total": 9,
+  "metric_max": 3,
+  "cells": [
+    {
+      "persona": "product-agent-operator",
+      "surface": "bash scripts/setup-agent-tools.sh --help (pre-reduce: unknown option only)",
+      "harms": 0,
+      "friction": 3,
+      "uncertainty": 3,
+      "total": 6,
+      "max": 3,
+      "notes": "Pre-reduce: --help printed 'unknown option: --help' exit 2 with no usage; operator had to open script header comments."
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "gbrain MCP bare command",
+      "harms": 1,
+      "friction": 2,
+      "uncertainty": 3,
+      "total": 6,
+      "max": 3,
+      "notes": "Bare gbrain serve → host command-not-found; no AUTH remediation; risk of enabling key tool without egress awareness."
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "pnpm run skills:mirror-check",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "notes": "Already green; secondary gate only."
+    }
+  ],
+  "findingsPreview": [
+    "F-1 setup --help missing",
+    "F-2 gbrain MCP no fail-closed launcher",
+    "F-3 Done footer / MCP comments weak AUTH pointer",
+    "F-4 agent-tooling-setup primaryCommand only skills:mirror-check"
+  ]
+}

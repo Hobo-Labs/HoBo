@@ -1,0 +1,104 @@
+package hobo:policy-engine@0.1.0;
+
+interface types {
+  enum subject-kind {
+    user,
+    service,
+    agent,
+    system,
+  }
+
+  enum phase {
+    author,
+    local,
+    test,
+    plan,
+    apply,
+    runtime,
+    observe,
+    train,
+    promote,
+    repair,
+  }
+
+  enum effect {
+    allow,
+    allow-degraded,
+    deny,
+    warn,
+    mutate,
+    require-approval,
+  }
+
+  record subject-ref {
+    kind: subject-kind,
+    id: string,
+    roles: list<string>,
+    scopes: list<string>,
+    delegated-by: option<string>,
+  }
+
+  record resource-ref {
+    kind: string,
+    id: string,
+  }
+
+  record decision-request {
+    schema: string,
+    subject: subject-ref,
+    action: string,
+    resource: resource-ref,
+    phase: phase,
+    context-json: string,
+  }
+
+  record obligation {
+    kind: string,
+    reason: string,
+  }
+
+  record evidence {
+    engine: string,
+    input-hash: string,
+    policy-ids: list<string>,
+  }
+
+  record decision {
+    schema: string,
+    effect: effect,
+    reason: string,
+    violations: list<string>,
+    mutations: list<string>,
+    approvals: list<string>,
+    obligations: list<obligation>,
+    evidence: evidence,
+  }
+
+  record ruleset {
+    schema: string,
+    id: string,
+    version: string,
+    rules-json: string,
+  }
+
+  record compiled-ruleset {
+    ruleset-id: string,
+    version: string,
+  }
+
+  record policy-error {
+    code: string,
+    message: string,
+  }
+}
+
+interface policy-engine {
+  use types.{compiled-ruleset, decision, decision-request, policy-error, ruleset};
+
+  compile-ruleset: func(ruleset: ruleset) -> result<compiled-ruleset, policy-error>;
+  evaluate: func(request: decision-request, ruleset: ruleset) -> decision;
+}
+
+world policy-engine-provider {
+  export policy-engine;
+}

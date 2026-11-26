@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "CertificateAuthority" },
+  "interactions": [
+    {
+      "description": "issues DNS-01 certificates through identity-held key references",
+      "request": { "method": "POST", "path": "/certificates/dns-01" },
+      "response": { "status": 200, "body": { "status": "issued", "privateKeyRef": "keyref://*" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

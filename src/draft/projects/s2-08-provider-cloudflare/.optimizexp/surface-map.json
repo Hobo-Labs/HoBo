@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "projectId": "s2-08-provider-cloudflare",
+  "scannedAt": "2026-11-17T18:35:43.909Z",
+  "productName": "@hobo-draft/s2-08-provider-cloudflare",
+  "packageDir": "src/draft/projects/s2-08-provider-cloudflare",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/s2-08-provider-cloudflare/package.json: no package bin is declared"
+  },
+  "binaries": [],
+  "binAssessments": [],
+  "defaultEntry": null,
+  "nonInteractiveHelp": null,
+  "commands": [],
+  "interactiveSurfaces": [],
+  "requiredJourneys": [
+    "happy-critical-path"
+  ],
+  "probes": []
+}

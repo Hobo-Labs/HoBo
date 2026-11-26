@@ -1,0 +1,19 @@
+{
+	"name": "@hobo/example-firecrawl-research",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@hobo/bindles": "workspace:*",
+		"@hobo/connector-firecrawl": "workspace:*",
+		"@hobo/stations": "workspace:*",
+		"firecrawl": "^4.31.0"
+	}
+}

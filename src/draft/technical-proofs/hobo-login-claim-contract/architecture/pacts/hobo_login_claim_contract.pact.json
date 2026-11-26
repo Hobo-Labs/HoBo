@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboLoginClaimContractConsumer"
+  },
+  "provider": {
+    "name": "HoboLoginClaimContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Login Claim Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-login-claim-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_login_claim_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

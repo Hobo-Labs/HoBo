@@ -1,0 +1,53 @@
+{
+	"consumer": {
+		"name": "HoboCdCiSubscriptionDriver"
+	},
+	"provider": {
+		"name": "HoboCiEventLog"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Structural message contract over @hobo/ci events read through the frozen CiEventReader: `ci.PipelineResultObserved` whose `detail` is the Lease JSON (pipelineId, repository, headSha, result{id,status,artifacts[{path,sha256}]}). The driver reads only these fields; output bytes are read back through CiArtifactReader and must hash to sha256 (here the UTF-8 bytes `contract-wasm`). Verified by contracts/sources.consumer.test.ts."
+	},
+	"interactions": [
+		{
+			"type": "Asynchronous/Messages",
+			"description": "a passing pipeline result with one output",
+			"providerStates": [
+				{
+					"name": "pipeline web-build passed run run-42"
+				}
+			],
+			"contents": {
+				"cursor": "7",
+				"type": "ci.PipelineResultObserved",
+				"data": {
+					"type": "ci.PipelineResultObserved",
+					"accountId": "acct-1",
+					"leaseId": "lease-1",
+					"at": "2026-11-12T12:00:00Z",
+					"detail": "{\"id\":\"lease-1\",\"pipelineId\":\"web-build\",\"repository\":\"acme/web\",\"headSha\":\"dddddddddddddddddddddddddddddddddddddddd\",\"result\":{\"id\":\"run-42\",\"backend\":\"dagger\",\"status\":\"passed\",\"artifacts\":[{\"path\":\"dist/web.wasm\",\"sha256\":\"c328dbd3f06b36807768f673266c27443a4f74d544ad02459c5cf2180fa409db\"}]}}"
+				}
+			}
+		},
+		{
+			"type": "Asynchronous/Messages",
+			"description": "a failed pipeline result (never discovered)",
+			"providerStates": [
+				{
+					"name": "pipeline web-build failed run run-43"
+				}
+			],
+			"contents": {
+				"cursor": "8",
+				"type": "ci.PipelineResultObserved",
+				"data": {
+					"type": "ci.PipelineResultObserved",
+					"detail": "{\"id\":\"lease-1\",\"pipelineId\":\"web-build\",\"repository\":\"acme/web\",\"headSha\":\"dddddddddddddddddddddddddddddddddddddddd\",\"result\":{\"id\":\"run-43\",\"backend\":\"dagger\",\"status\":\"failed\",\"artifacts\":[{\"path\":\"dist/web.wasm\",\"sha256\":\"c328dbd3f06b36807768f673266c27443a4f74d544ad02459c5cf2180fa409db\"}]}}"
+				}
+			}
+		}
+	]
+}

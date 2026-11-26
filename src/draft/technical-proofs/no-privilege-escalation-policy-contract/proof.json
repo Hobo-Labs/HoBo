@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "no-privilege-escalation-policy-contract",
+  "title": "No Privilege Escalation Policy Contract",
+  "linear": "HOBO-209",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/deny-ceiling-algebra-poc",
+      "src/draft/technical-proofs/genesis-breakglass-contract",
+      "src/draft/technical-proofs/hobo-principal-ref-contract",
+      "src/draft/technical-proofs/rbac-role-binding-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

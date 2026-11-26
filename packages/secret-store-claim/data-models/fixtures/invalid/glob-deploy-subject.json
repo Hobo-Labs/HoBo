@@ -1,0 +1,12 @@
+{
+	"kind": "infisical-cloud-attach",
+	"endpoint": "https://app.infisical.com",
+	"projectId": "proj-2",
+	"environment": "prod",
+	"secretPath": "/hobo-ci-relay",
+	"relayIdentityId": "relay-identity",
+	"deployIdentityId": "deploy-identity",
+	"claimBundleId": "secret-store:hobo-ci-relay:connect-3",
+	"claimState": "claimed",
+	"deployOidcSubject": "repo:Hobo-Labs@*/HoBo@*:ref:refs/heads/main"
+}

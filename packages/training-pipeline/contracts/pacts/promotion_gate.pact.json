@@ -1,0 +1,81 @@
+{
+  "consumer": {
+    "name": "TrainingLoopConsumer"
+  },
+  "provider": {
+    "name": "PromotionGateProvider"
+  },
+  "interactions": [
+    {
+      "description": "a challenger that clears every lens is promoted over the champion",
+      "request": {
+        "method": "POST",
+        "path": "/promotion-gate/evaluate",
+        "body": {
+          "candidateId": "candidate-optimize-request-1",
+          "conformance": true,
+          "policy": true,
+          "championId": "champion-1",
+          "evalResult": {
+            "rubricRef": "rubric://support/classification@1.0.0",
+            "scores": { "accuracy": 0.92 },
+            "sampleCount": 128,
+            "source": "live-eval"
+          },
+          "thresholds": {
+            "metricFloors": { "accuracy": 0.85 },
+            "minSamples": 100
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "candidateId": "candidate-optimize-request-1",
+          "outcome": "PROMOTION_OUTCOME_PROMOTE",
+          "passed": { "conformance": true, "eval": true, "policy": true },
+          "failures": [],
+          "championChallenger": {
+            "championId": "champion-1",
+            "challengerId": "candidate-optimize-request-1"
+          }
+        }
+      }
+    },
+    {
+      "description": "a challenger below the metric floor is refused with the failing lens recorded",
+      "request": {
+        "method": "POST",
+        "path": "/promotion-gate/evaluate",
+        "body": {
+          "candidateId": "candidate-optimize-request-2",
+          "conformance": true,
+          "policy": true,
+          "evalResult": {
+            "rubricRef": "rubric://support/classification@1.0.0",
+            "scores": { "accuracy": 0.71 },
+            "sampleCount": 128,
+            "source": "live-eval"
+          },
+          "thresholds": {
+            "metricFloors": { "accuracy": 0.85 },
+            "minSamples": 100
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "candidateId": "candidate-optimize-request-2",
+          "outcome": "PROMOTION_OUTCOME_REFUSE",
+          "passed": { "conformance": true, "eval": false, "policy": true }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

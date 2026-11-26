@@ -1,0 +1,6 @@
+refused missing=VITE_WORKOS_CLIENT_ID,VITE_WORKOS_REDIRECT_URI,WORKOS_CLIENT_ID,CONVEX_DEPLOY_KEY
+mock mode=mock mocked=true url=https://swaghaus.convex.cloud live=false
+self-hosted mode=self-hosted url=http://127.0.0.1:3210 live=true
+refused-receipt field=deploymentUrl
+impedance paradigm-mismatch:block no-control-plane-time-travel:warn occ-contention:info
+convex-swaghaus-deploy-adapter:ok

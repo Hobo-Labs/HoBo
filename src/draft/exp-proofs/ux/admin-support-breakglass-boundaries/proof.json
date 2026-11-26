@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "admin-support-breakglass-boundaries",
+  "experienceType": "ux",
+  "title": "Admin Support Break-Glass Boundaries POC",
+  "linear": "HOBO-495",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

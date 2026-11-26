@@ -1,0 +1,179 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "CloudflareLoadBalancingApi" },
+	"interactions": [
+		{
+			"description": "apply one weighted traffic routing rule",
+			"request": {
+				"method": "PUT",
+				"path": "/client/v4/zones/zone-a/load_balancers/load-balancer-a",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"name": "checkout.example.test",
+					"default_pools": ["pool-primary"],
+					"fallback_pool": "pool-primary",
+					"steering_policy": "random",
+					"enabled": true,
+					"random_steering": {
+						"pool_weights": { "pool-primary": 1 }
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"result": {
+						"id": "load-balancer-a",
+						"enabled": true,
+						"name": "checkout.example.test",
+						"default_pools": ["pool-primary"],
+						"fallback_pool": "pool-primary",
+						"steering_policy": "random",
+						"random_steering": {
+							"pool_weights": { "pool-primary": 1 }
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "observe an applied traffic routing rule",
+			"request": {
+				"method": "GET",
+				"path": "/client/v4/zones/zone-a/load_balancers/load-balancer-a"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"result": {
+						"id": "load-balancer-a",
+						"enabled": true,
+						"name": "checkout.example.test",
+						"default_pools": ["pool-primary"],
+						"fallback_pool": "pool-primary",
+						"steering_policy": "random",
+						"random_steering": {
+							"pool_weights": { "pool-primary": 1 }
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "revoke an applied traffic routing rule",
+			"request": {
+				"method": "DELETE",
+				"path": "/client/v4/zones/zone-a/load_balancers/load-balancer-a"
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true }
+			}
+		},
+		{
+			"description": "create a pool for lifecycle apply",
+			"request": {
+				"method": "POST",
+				"path": "/client/v4/accounts/account-a/load_balancers/pools",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"name": "hobo-backend-primary",
+					"origins": [
+						{
+							"name": "backend-primary",
+							"address": "checkout.example.test",
+							"enabled": true,
+							"weight": 100
+						}
+					],
+					"enabled": true,
+					"minimum_origins": 1
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"result": { "id": "pool-created-primary" }
+				}
+			}
+		},
+		{
+			"description": "create a load balancer for lifecycle apply",
+			"request": {
+				"method": "POST",
+				"path": "/client/v4/zones/zone-a/load_balancers",
+				"headers": {
+					"Accept": "application/json",
+					"Authorization": "Bearer test-token",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"name": "checkout.example.test",
+					"default_pools": ["pool-created-primary"],
+					"fallback_pool": "pool-created-primary",
+					"steering_policy": "random",
+					"enabled": true,
+					"random_steering": {
+						"pool_weights": { "pool-created-primary": 1 }
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"result": {
+						"id": "lb-created",
+						"enabled": true,
+						"name": "checkout.example.test",
+						"default_pools": ["pool-created-primary"],
+						"fallback_pool": "pool-created-primary",
+						"steering_policy": "random",
+						"random_steering": {
+							"pool_weights": { "pool-created-primary": 1 }
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "observe pool health for observe.health",
+			"request": {
+				"method": "GET",
+				"path": "/client/v4/accounts/account-a/load_balancers/pools/pool-created-primary/health"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"success": true,
+					"result": { "healthy": true }
+				}
+			}
+		},
+		{
+			"description": "revoke a created load balancer",
+			"request": {
+				"method": "DELETE",
+				"path": "/client/v4/zones/zone-a/load_balancers/lb-created"
+			},
+			"response": {
+				"status": 200,
+				"body": { "success": true }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboCodegenCliContractConsumer"
+  },
+  "provider": {
+    "name": "HoboCodegenCliContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Codegen Cli Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-codegen-cli-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_codegen_cli_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

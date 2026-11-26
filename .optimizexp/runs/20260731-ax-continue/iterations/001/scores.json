@@ -1,0 +1,32 @@
+{
+  "iteration": 1,
+  "runId": "20260731-ax-continue",
+  "scoredAt": "2026-07-31T13:43:30.000Z",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsBaseline": { "metric_total_delta": -5, "metric_max_delta": -3 },
+  "cells": [
+    {
+      "persona": "product-agent-operator",
+      "surface": "setup common-only re-run",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "outcomeId": "2026-07-31T13:43:00Z-5001-outcome"
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "gbrain fail-closed failure path",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0,
+      "outcomeId": "2026-07-31T13:43:10Z-5002-outcome"
+    }
+  ],
+  "implementableFindingsRemaining": 0,
+  "experimentsApplied": ["E-1", "E-2", "E-3"]
+}

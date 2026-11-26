@@ -1,0 +1,52 @@
+{
+  "consumer": { "name": "UpgradeMigrationFollowUpPlanner" },
+  "provider": { "name": "UpgradeMigrationM0ScopeAcceptanceGate" },
+  "interactions": [
+    {
+      "description": "reject follow-up issue creation while M0 scope is not yet accepted",
+      "providerStates": [
+        { "name": "HOBO-430 M0 scope record exists but is not accepted" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/upgrade-migration/follow-up",
+        "body": { "phase": "M1", "m0Accepted": false }
+      },
+      "response": {
+        "status": 200,
+        "body": { "allowed": false, "reason": "M0 scope not accepted" }
+      }
+    },
+    {
+      "description": "allow M1 follow-up issue creation once M0 scope is accepted",
+      "providerStates": [
+        { "name": "HOBO-430 M0 scope record is accepted" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/upgrade-migration/follow-up",
+        "body": { "phase": "M1", "m0Accepted": true }
+      },
+      "response": {
+        "status": 200,
+        "body": { "allowed": true }
+      }
+    },
+    {
+      "description": "reject an upgrade decision that implies forbidden live execution scope",
+      "providerStates": [
+        { "name": "HOBO-430 scope-creep classifier is published" }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/upgrade-migration/decision",
+        "body": { "decision": "run the production upgrade and execute live migration now" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "allowed": false, "reason": "out-of-scope: live execution" }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CrossYardPolicyAttestationContractConsumer"
+  },
+  "provider": {
+    "name": "CrossYardPolicyAttestationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Cross Yard Policy Attestation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/cross-yard-policy-attestation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.cross_yard_policy_attestation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "consumer": {"name": "durable-cloud-hosting-transition"},
+  "provider": {"name": "hosting-operation-observation-port"},
+  "metadata": {"pactSpecification": {"version": "4.0"}, "transport": "library-call", "verification": "consumer expectations; no live provider attestation"},
+  "interactions": [
+    {
+      "description": "One operation-bound mutation acknowledgement never advances without observation",
+      "request": {"operation": "execute", "action": 1, "tenantId": "tenant", "transitionId": "move", "sourcePlanId": "source", "targetPlanId": "target", "requiredHealthyBackends": 2},
+      "response": {"acknowledged": true, "advancesPhase": false}
+    },
+    {
+      "description": "Observe independently scoped postconditions before shifting",
+      "request": {"operation": "observe", "action": 1, "tenantId": "tenant", "transitionId": "move"},
+      "response": {"outcome": "applied", "ready": true, "healthyBackends": 2, "jurisdiction": "US", "capabilityDigest": "capabilities:v1", "nextPhase": 4}
+    },
+    {
+      "description": "Unknown mutation response retains reservation and schedules observation",
+      "request": {"operation": "execute", "action": 2, "responseLost": true},
+      "response": {"phase": 10, "reservationStatus": "uncertain", "mutationAttempts": 1}
+    },
+    {
+      "description": "Explicit interruptible decommission retires without inventing a destination",
+      "request": {"intent": "decommission", "interruptionAllowed": true, "minimumHealthyBackends": 0},
+      "response": {"nextAction": 5, "requiresSourceRetired": true, "requiresFinalUsage": true, "destinationRequired": false}
+    },
+    {
+      "description": "Explicit bounded resume retains identity and uses a durable single-attempt journal",
+      "request": {"operation": "resumeMutation", "outcome": "pending", "executionGuarantee": "idempotent-operation", "journalPersistence": "durable-cas", "maximumMutationResumes": 1},
+      "response": {"operationIdentityChanged": false, "reservationChanged": false, "maximumAdditionalAttempts": 1, "automaticReplay": false}
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+plan hash=sha256:control-plane-reference-001
+dependency order=orders-db -> checkout-api -> web-edge -> receipt-worker
+matching decisions=4 catalog-pinned liveCalls=0
+delta applied=set:checkout-prod@sha256:002 sandbox=firecracker ambientCreds=false
+drift detected=true compensation=rolled_back_with_orphan_recorded
+dispatch first=reserved second=cas_rejected
+bootstrap seed=single_use_operator_svid handover=real_identity_broker_ready rebootstrapBlocked=true
+EPIC HELD: plan, converge, recover, and bootstrap are deterministic behind mocked boundaries

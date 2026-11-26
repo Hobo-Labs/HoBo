@@ -1,0 +1,63 @@
+{
+  "consumer": {
+    "name": "VibeDeploymentDashboardMockupsConsumer"
+  },
+  "provider": {
+    "name": "VibeDeploymentDashboardMockupsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe Deployment Dashboard Mockups boundary returns accepted HOBO-544 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-deployment-dashboard-mockups/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.vibe_deployment_dashboard_mockups/v1",
+          "issue": "HOBO-544",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups",
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "deployment-timeline"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-inspect-event-projection-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "topology-graph"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "run-inspector"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "live",
+              "consumingSurface": "health-cost-incident-rollups"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "consumingSurface": "project-environment-fleet"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

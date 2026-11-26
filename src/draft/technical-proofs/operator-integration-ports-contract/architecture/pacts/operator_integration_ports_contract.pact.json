@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OperatorIntegrationPortsContractConsumer"
+  },
+  "provider": {
+    "name": "OperatorIntegrationPortsContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Operator Integration Ports Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/operator-integration-ports-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.operator_integration_ports_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

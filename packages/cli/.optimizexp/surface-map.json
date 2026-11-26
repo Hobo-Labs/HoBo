@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "projectId": "cli",
+  "scannedAt": "2026-11-17T18:35:43.754Z",
+  "productName": "@hobo/cli",
+  "packageDir": "packages/cli",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "packages/cli/package.json: no package bin is declared"
+  },
+  "binaries": [],
+  "binAssessments": [],
+  "defaultEntry": null,
+  "nonInteractiveHelp": null,
+  "commands": [],
+  "interactiveSurfaces": [],
+  "requiredJourneys": [
+    "happy-critical-path"
+  ],
+  "probes": []
+}

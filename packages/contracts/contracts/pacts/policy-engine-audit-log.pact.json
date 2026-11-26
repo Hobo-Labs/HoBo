@@ -1,0 +1,43 @@
+{
+  "consumer": {
+    "name": "Built-in Policy Engine"
+  },
+  "provider": {
+    "name": "Audit Log"
+  },
+  "interactions": [
+    {
+      "description": "append policy.Decided event with deterministic evidence",
+      "providerStates": [
+        {
+          "name": "audit log is represented by deterministic append-only fixture"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/audit/events",
+        "body": {
+          "type": "policy.Decided",
+          "decision": {
+            "effect": "like:policy-effect",
+            "evidence": "like:evidence"
+          }
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "accepted": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Policy Engine to Audit Log",
+    "status": "mocked_provider_unavailable",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

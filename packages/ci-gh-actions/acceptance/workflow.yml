@@ -1,0 +1,25 @@
+name: HoBo runner acceptance
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: hobo
+    timeout-minutes: 1
+    steps:
+      - name: Verify assigned runner and execute original job
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${HOBO_CI_ACCEPTANCE_MARKER:-}" ]; then
+            test "$HOBO_CI_RUNNER_NAME" = "hobo-$HOBO_CI_LEASE_ID"
+            test -n "$HOBO_CI_EXECUTION_ID"
+            test -n "$HOBO_CI_PROVIDER"
+            printf '%s\n' "$HOBO_CI_LEASE_ID|$HOBO_CI_PROVIDER|$HOBO_CI_EXECUTION_ID|$HOBO_CI_ORIGINAL_JOB_ID|$HOBO_CI_WORKFLOW_SHA256|$HOBO_CI_RUNNER_NAME" > "$HOBO_CI_ACCEPTANCE_MARKER"
+          else
+            case "$RUNNER_NAME" in hobo-*) ;; *) echo 'Job did not run on a HoBo runner'; exit 1 ;; esac
+            printf 'HoBo runner executed original job: %s\n' "$RUNNER_NAME"
+          fi
+          value="quoted value with spaces and 'literal' quotes"
+          test "$value" = "quoted value with spaces and 'literal' quotes"
+          printf 'original-job-completed\n'

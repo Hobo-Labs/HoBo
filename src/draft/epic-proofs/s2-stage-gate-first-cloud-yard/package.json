@@ -1,0 +1,15 @@
+{
+  "name": "@hobo-draft/s2-stage-gate-first-cloud-yard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-626 Stage-2 gate: governed hello-bindle deploy, Yard restart resume, compensation, Gatekeeper block, timeline projection.",
+  "main": "./src/s2-stage-gate-drill.ts",
+  "exports": {
+    ".": "./src/s2-stage-gate-drill.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root .",
+    "drill": "node --import tsx scripts/run-stage-gate-drill.ts"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SupportDebugToolsScopeConsumer"
+  },
+  "provider": {
+    "name": "SupportDebugToolsScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Support & Debug Tools Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/support-debug-tools-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.support_debug_tools_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

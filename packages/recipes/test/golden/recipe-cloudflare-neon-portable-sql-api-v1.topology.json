@@ -1,0 +1,153 @@
+{
+	"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+	"topologyDigest": "sha256:312c55b15dd3ee8f5c515246c61c107d5118a7117a823d53f052c7c11a237813",
+	"resolutionDigest": "sha256:3e24693710a484cc7229a18f69845551203320ea5cd423c7cb08527723aea5a2",
+	"topology": {
+		"schemaVersion": "hobo.resolved-topology/v1",
+		"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
+		"junctionRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1",
+		"yards": [
+			{
+				"yardId": "data",
+				"yardRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/data",
+				"providerId": "neon",
+				"resourceOnly": true,
+				"sponsored": false,
+				"regions": [],
+				"camps": [],
+				"resources": [
+					{
+						"resourceRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/data/db",
+						"placementId": "db",
+						"capabilityRef": "db",
+						"primitive": "data",
+						"satisfiesProfileId": "data.postgres/v1",
+						"productDefinitionId": "neon.claimable-postgres/v1",
+						"realization": "native",
+						"producesBindingProfiles": [
+							"binding.neon-serverless/v1",
+							"binding.postgresql/v1"
+						]
+					}
+				]
+			},
+			{
+				"yardId": "edge",
+				"yardRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/edge",
+				"providerId": "cloudflare",
+				"resourceOnly": false,
+				"sponsored": false,
+				"regions": [],
+				"camps": [
+					{
+						"campId": "app",
+						"campRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/edge/app",
+						"resources": [
+							{
+								"resourceRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/edge/api",
+								"placementId": "api",
+								"capabilityRef": "api",
+								"primitive": "api",
+								"satisfiesProfileId": "api.http/v1",
+								"productDefinitionId": "cloudflare.temporary-workers-api/v1",
+								"realization": "native",
+								"runtimeModel": "serverless_faas",
+								"producesBindingProfiles": [
+									"binding.http/v1"
+								]
+							}
+						]
+					}
+				],
+				"resources": []
+			}
+		],
+		"bindings": [
+			{
+				"edgeId": "api-db",
+				"fromResourceRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/edge/api",
+				"toResourceRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/data/db",
+				"bindingProfileRef": "binding.postgresql/v1",
+				"connectivityImplementationId": "cloudflare.postgres.hyperdrive/v1",
+				"crossYard": true,
+				"usedFallback": false
+			}
+		]
+	},
+	"claims": {
+		"actionCount": 2,
+		"providerCount": 2,
+		"atomicity": "best-effort-saga",
+		"earliestDeadlineMs": 1700086400000,
+		"items": [
+			{
+				"claimId": "claim/api",
+				"subjectRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/edge/api",
+				"subjectKind": "resource",
+				"providerId": "cloudflare",
+				"mode": "account-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "rotatable",
+				"postClaimActions": [
+					"revoke-bootstrap-authority",
+					"rotate-binding"
+				]
+			},
+			{
+				"claimId": "claim/db",
+				"subjectRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/data/db",
+				"subjectKind": "resource",
+				"providerId": "neon",
+				"mode": "resource-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700086400000,
+				"creatorAuthorityAfterClaim": "rotatable",
+				"postClaimActions": [
+					"rotate-binding"
+				]
+			}
+		]
+	},
+	"guestLeases": [
+		{
+			"leaseId": "lease/data",
+			"yardId": "data",
+			"subjectRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/data",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "retain-until-provider-expiry",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		},
+		{
+			"leaseId": "lease/edge",
+			"yardId": "edge",
+			"subjectRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1/edge",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "delete",
+			"renewable": false,
+			"claimByMs": 1700086400000
+		}
+	],
+	"portability": {
+		"providerCount": 2,
+		"exportSupportedPlacements": [
+			"api",
+			"db"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": [
+			"migration.postgres-dump/v1"
+		]
+	},
+	"widenings": [],
+	"trustEvidenceRefs": [
+		"cloudflare.temporary-workers-api/v1#sha256:cdcd88566d33d7d5548f8b3c464c2c11163873900894d20d11ba46afa9bba931",
+		"neon.claimable-postgres/v1#sha256:2b1d404bd632371e23b7e98d52ee236c6b96585a6a473e154e9f9728f2588ac6"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/cloudflare.temporary-workers-api/v1/api.http/v1",
+		"conformance/neon.claimable-postgres/v1/data.postgres/v1"
+	],
+	"sponsoredCostMinorUnits": 0
+}

@@ -1,0 +1,79 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderGcpBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for the six GCP equivalence-class ports",
+      "request": {
+        "method": "POST",
+        "path": "/providers/gcp/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "keyless auth posture: GCP Workload Identity Federation, no service-account keys",
+      "request": {
+        "method": "GET",
+        "path": "/providers/gcp/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "svid-federation",
+          "exchange": "gcp:WorkloadIdentityFederation",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "realize a compute ResourcePlan into a pulumi IacProgram with a gcp:cloud-run-service resource",
+      "request": {
+        "method": "POST",
+        "path": "/providers/gcp/realize",
+        "body": {
+          "name": "api",
+          "port": "compute",
+          "provider": "gcp"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "iac": {
+            "apiVersion": "hobo.iac-program/v1",
+            "kind": "iac-program",
+            "provider": "pulumi",
+            "resources": [
+              {
+                "name": "api",
+                "type": "gcp:cloud-run-service",
+                "provider": "gcp"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

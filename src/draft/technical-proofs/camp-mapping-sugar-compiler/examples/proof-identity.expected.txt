@@ -1,0 +1,3 @@
+slug: camp-mapping-sugar-compiler
+layer: technical
+proof-identity: ok

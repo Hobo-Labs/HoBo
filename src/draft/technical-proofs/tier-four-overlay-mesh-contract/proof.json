@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "tier-four-overlay-mesh-contract",
+  "title": "Tier-Four Overlay Mesh Contract POC",
+  "linear": "HOBO-129",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/connectivity-tier-ir-contract",
+      "src/draft/technical-proofs/mtls-data-path-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

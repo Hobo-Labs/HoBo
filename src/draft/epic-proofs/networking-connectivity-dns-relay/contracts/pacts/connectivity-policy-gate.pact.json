@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "ConnectivityPolicyGate" },
+  "interactions": [
+    {
+      "description": "allows tier 3 and denies public-tier widening",
+      "request": { "method": "POST", "path": "/connectivity/policy/can-deploy" },
+      "response": { "status": 200, "body": { "effect": "allow", "maxTier": 3 } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

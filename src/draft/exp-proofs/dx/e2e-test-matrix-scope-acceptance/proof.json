@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "e2e-test-matrix-scope-acceptance",
+  "experienceType": "dx",
+  "title": "E2E Test Matrix Scope And Acceptance",
+  "linear": "HOBO-438",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

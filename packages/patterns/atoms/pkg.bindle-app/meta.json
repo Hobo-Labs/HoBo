@@ -1,0 +1,42 @@
+{
+	"id": "pkg.bindle-app",
+	"tier": 1,
+	"kind": "package",
+	"description": "package.json and README for a workspace Bindle app with Hono.",
+	"tags": [
+		"package",
+		"bindle",
+		"manifest",
+		"hono"
+	],
+	"queries": [
+		"bindle package.json",
+		"app manifest",
+		"hello world package"
+	],
+	"requires": [],
+	"provides": [
+		"pkg.manifest"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "package.json",
+			"from": "body/package.json.tpl"
+		},
+		{
+			"path": "README.md",
+			"from": "body/README.md.tpl"
+		}
+	]
+}

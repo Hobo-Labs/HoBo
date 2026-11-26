@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package hobo.draft.dx_resource_lifecycle_scenario_matrix.v1;
+
+message DxResourceLifecycleScenarioMatrix {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated string design_terms = 6;
+  repeated string scope_out = 7;
+  repeated DxScenarioJourney journeys = 8;
+}
+
+message DxScenarioJourney {
+  string id = 1;
+  string role = 2;
+  string intent = 3;
+  repeated string commands = 4;
+  repeated string sdk_calls = 5;
+  repeated string api_calls = 6;
+  repeated string mcp_tools = 7;
+  repeated string expected_artifacts = 8;
+  string proof_mode = 9;
+  repeated string fixture_requirements = 10;
+  repeated string scenario_paths = 11;
+  repeated string design_terms = 12;
+}

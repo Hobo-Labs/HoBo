@@ -1,0 +1,10 @@
+{
+  "organizationUrl": "https://dev.azure.com/example",
+  "project": "HoBo",
+  "pipelineId": 7,
+  "refName": "refs/heads/main.lock",
+  "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tokenEnv": "ADO_TEST_PAT",
+  "authentication": "pat",
+  "timeoutSeconds": 5
+}

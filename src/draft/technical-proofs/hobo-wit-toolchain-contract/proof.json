@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "hobo-wit-toolchain-contract",
+  "title": "HOBO-3 WIT Toolchain Contract",
+  "linear": "HOBO-3",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/adr/07-portability-extensibility.md",
+      "docs/design/wasm-runtime-wit.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CreditLedgerViewContractConsumer"
+  },
+  "provider": {
+    "name": "CreditLedgerViewContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Credit Ledger View Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/credit-ledger-view-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.credit_ledger_view_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

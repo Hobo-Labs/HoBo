@@ -1,0 +1,13 @@
+{
+  "consumer": { "name": "SdkAuthoringReferenceApp" },
+  "provider": { "name": "AuthConsumerContractProvider" },
+  "interactions": [
+    {
+      "description": "emit hobo auth consumer contract for generated ctx.user surface",
+      "providerStates": [{ "name": "auth providers declared" }],
+      "request": { "method": "POST", "path": "/auth/consumer-contract", "body": { "providers": ["oidc", "customJwt", "builtin-dev"] } },
+      "response": { "status": 200, "body": { "generatedSurface": ["ctx.user", "ctx.tenant", "useAuth", "signIn", "signOut"], "plaintextSecrets": false } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,956 @@
+{
+  "coverage": {
+    "docs": [
+      {
+        "chunks": 12,
+        "covered": 7,
+        "docUri": "docs/billing.md",
+        "notTestable": [
+          "docs/billing.md#billing/performance/p1"
+        ],
+        "uncovered": [
+          "docs/billing.md#billing/p1",
+          "docs/billing.md#billing/downgrading/p4"
+        ]
+      }
+    ]
+  },
+  "exitCode": 1,
+  "finishedAt": "2026-10-13T01:14:26.676Z",
+  "options": {
+    "audit": false,
+    "frozen": true,
+    "noAgent": false,
+    "recordingsMode": "read-write",
+    "strict": false,
+    "updateRecordings": false,
+    "workers": 4
+  },
+  "runId": "01a132d3-35a7-7623-b621-a7800343d762",
+  "scenarios": [
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 1282,
+      "error": {
+        "code": "CHECK_FAILED",
+        "details": {
+          "predicates": [
+            {
+              "actual": {
+                "matches": 0
+              },
+              "predicate": {
+                "op": "exists",
+                "query": {
+                  "name": "Plan: Pro",
+                  "role": "status",
+                  "within": {
+                    "name": "Plan",
+                    "role": "region"
+                  }
+                }
+              },
+              "satisfied": false
+            }
+          ]
+        },
+        "message": "the recorded check does not hold",
+        "retryable": false
+      },
+      "featureId": "docs-billing--upgrade-to-pro",
+      "mode": "replay",
+      "recording": "discarded",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--upgrade-to-pro/upgrade-from-free-to-pro",
+      "status": "failed",
+      "steps": [
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 249,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p2",
+              "hash": "27defd08b4ebc967451eadf7c77540e561bb7656d0d4dd603738323653572114",
+              "quote": "Clicking the upgrade button opens a confirmation dialog",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "when:e44de6cea56f",
+          "text": "the customer clicks the upgrade button",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Confirm upgrade",
+                    "role": "dialog"
+                  }
+                },
+                "satisfied": true
+              },
+              {
+                "actual": {
+                  "matches": 1,
+                  "text": "You will be charged a prorated amount of $12.50 today."
+                },
+                "predicate": {
+                  "match": "contains",
+                  "op": "text",
+                  "query": {
+                    "role": "paragraph",
+                    "within": {
+                      "name": "Confirm upgrade",
+                      "role": "dialog"
+                    }
+                  },
+                  "value": {
+                    "literal": "$12.50"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 123,
+          "evidence": [
+            {
+              "bytes": 667,
+              "kind": "observation",
+              "path": "artifacts/e88761294eb96f937486825c7d36ad6b768f6cc335e954e37035b8d492dee42a.json",
+              "sha256": "e88761294eb96f937486825c7d36ad6b768f6cc335e954e37035b8d492dee42a"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p2",
+              "hash": "27defd08b4ebc967451eadf7c77540e561bb7656d0d4dd603738323653572114",
+              "quote": "The confirmation dialog shows the prorated charge",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:a1356eec4635",
+          "text": "the confirmation dialog shows the prorated charge",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 717,
+          "evidence": [
+            {
+              "bytes": 904,
+              "kind": "act-transcript",
+              "path": "artifacts/5a58cd171280942d5336ec704e3da7bf6cfd77eeedb1037b8d2e519eed538478.json",
+              "sha256": "5a58cd171280942d5336ec704e3da7bf6cfd77eeedb1037b8d2e519eed538478"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "heal",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "After the customer confirms",
+              "relation": "source"
+            }
+          ],
+          "status": "healed",
+          "stepKey": "when:73becadc3ca3",
+          "text": "the customer confirms the upgrade",
+          "usage": {
+            "inputTokens": 754,
+            "modelCalls": 1,
+            "outputTokens": 43
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": false,
+            "results": [
+              {
+                "actual": {
+                  "matches": 0
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Plan: Pro",
+                    "role": "status",
+                    "within": {
+                      "name": "Plan",
+                      "role": "region"
+                    }
+                  }
+                },
+                "satisfied": false
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 36,
+          "error": {
+            "code": "CHECK_FAILED",
+            "details": {
+              "predicates": [
+                {
+                  "actual": {
+                    "matches": 0
+                  },
+                  "predicate": {
+                    "op": "exists",
+                    "query": {
+                      "name": "Plan: Pro",
+                      "role": "status",
+                      "within": {
+                        "name": "Plan",
+                        "role": "region"
+                      }
+                    }
+                  },
+                  "satisfied": false
+                }
+              ]
+            },
+            "message": "the recorded check does not hold",
+            "retryable": false
+          },
+          "evidence": [
+            {
+              "bytes": 508,
+              "kind": "observation",
+              "path": "artifacts/aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde.json",
+              "sha256": "aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "the plan changes to Pro",
+              "relation": "source"
+            }
+          ],
+          "status": "failed",
+          "stepKey": "then:e46127ec0d01",
+          "text": "the plan changes to Pro",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "determinism": "n/a",
+          "durationMs": 0,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "none",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "the invoice preview shows the prorated amount",
+              "relation": "source"
+            }
+          ],
+          "status": "skipped",
+          "stepKey": "then:26efce026b9e",
+          "text": "the invoice preview shows the prorated amount",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "determinism": "n/a",
+          "durationMs": 0,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "none",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p3",
+              "hash": "fe5e74676198003bcd1aa50ccee7e88cd4f707b761f3b68671928bc9029f6c66",
+              "quote": "A confirmation message appears once the upgrade is complete",
+              "relation": "source"
+            }
+          ],
+          "status": "skipped",
+          "stepKey": "then:c02e3af7c428",
+          "text": "an upgrade confirmation message appears",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Upgrade from Free to Pro",
+      "usage": {
+        "inputTokens": 754,
+        "modelCalls": 1,
+        "outputTokens": 43
+      }
+    },
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 170,
+      "featureId": "docs-billing--upgrade-to-pro",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--upgrade-to-pro/upgrade-button-is-visible-on-the-free-plan",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Upgrade to Pro",
+                    "role": "button",
+                    "within": {
+                      "name": "Plan",
+                      "role": "region"
+                    }
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 10,
+          "evidence": [
+            {
+              "bytes": 508,
+              "kind": "observation",
+              "path": "artifacts/aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde.json",
+              "sha256": "aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/upgrading-to-pro/p1",
+              "hash": "71973978acb0387668ad56df6556b2d500fb46aaf32d30ff38d7e5b3b6e550ea",
+              "quote": "The upgrade button is visible while the account is on the Free plan",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:b8bacca78888",
+          "text": "the upgrade button is visible",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Upgrade button is visible on the Free plan",
+      "usage": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      }
+    },
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 912,
+      "featureId": "docs-billing--downgrade-from-pro",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--downgrade-from-pro/downgrade-is-blocked-with-unpaid-invoices",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 0,
+          "determinism": "deterministic",
+          "durationMs": 1,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "given",
+          "path": "fixture",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p2",
+              "hash": "ad9018b9e658bc6ffd5abd9b2b16a09052cc816c308bc93d189e48271b9b4127",
+              "quote": "Given a customer with two unpaid invoices",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "given:5b03de3ad51d",
+          "text": "a customer on the Pro plan with 2 unpaid invoices",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 1,
+          "determinism": "fuzzy",
+          "durationMs": 400,
+          "evidence": [
+            {
+              "bytes": 1692,
+              "kind": "act-transcript",
+              "path": "artifacts/254348282f1ce71e6514ad9f1744d8c9fe9e7ee15a7e205be6b00f9a41a28364.json",
+              "sha256": "254348282f1ce71e6514ad9f1744d8c9fe9e7ee15a7e205be6b00f9a41a28364"
+            }
+          ],
+          "fuzzyReasons": [
+            "no-observable-effect"
+          ],
+          "kind": "when",
+          "path": "agent",
+          "sources": [],
+          "status": "passed",
+          "stepKey": "when:2c9fb72cc81f",
+          "text": "the customer opens the billing page from the navigation",
+          "usage": {
+            "inputTokens": 1554,
+            "modelCalls": 2,
+            "outputTokens": 53
+          }
+        },
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 222,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p2",
+              "hash": "ad9018b9e658bc6ffd5abd9b2b16a09052cc816c308bc93d189e48271b9b4127",
+              "quote": "attempting to downgrade",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "when:4fc0a2b9bf15",
+          "text": "the customer clicks the downgrade button",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "role": "alert"
+                  }
+                },
+                "satisfied": true
+              },
+              {
+                "actual": {
+                  "matches": 1,
+                  "text": "You have 2 unpaid invoices. Settle them before downgrading."
+                },
+                "predicate": {
+                  "match": "contains",
+                  "op": "text",
+                  "query": {
+                    "role": "alert"
+                  },
+                  "value": {
+                    "literal": "2 unpaid invoices"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 125,
+          "evidence": [
+            {
+              "bytes": 597,
+              "kind": "observation",
+              "path": "artifacts/3459ba037f1bdad644b658bb0434d7341a92c175ce51854ecbcbc66dec37d407.json",
+              "sha256": "3459ba037f1bdad644b658bb0434d7341a92c175ce51854ecbcbc66dec37d407"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p2",
+              "hash": "ad9018b9e658bc6ffd5abd9b2b16a09052cc816c308bc93d189e48271b9b4127",
+              "quote": "shows an alert that says how many invoices are unpaid",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:e65534247758",
+          "text": "an alert says how many invoices are unpaid",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Downgrade is blocked with unpaid invoices",
+      "usage": {
+        "inputTokens": 1554,
+        "modelCalls": 2,
+        "outputTokens": 53
+      }
+    },
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 918,
+      "featureId": "docs-billing--downgrade-from-pro",
+      "mode": "replay",
+      "recording": "none",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--downgrade-from-pro/downgrade-goes-through-without-unpaid-invoices",
+      "status": "passed",
+      "steps": [
+        {
+          "actions": 0,
+          "determinism": "deterministic",
+          "durationMs": 0,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "given",
+          "path": "fixture",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p3",
+              "hash": "4e2fe3c70fbe747d6f16c489196f271df7bc5979ef8b2b06ca2e8208bed48791",
+              "quote": "When the account has no unpaid invoices",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "given:05092d9a46aa",
+          "text": "a customer on the Pro plan with no unpaid invoices",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 1,
+          "determinism": "fuzzy",
+          "durationMs": 399,
+          "evidence": [
+            {
+              "bytes": 1697,
+              "kind": "act-transcript",
+              "path": "artifacts/9d05254d750e4fd06ccace0d8350f27898170466918822aa6acf4066b718c682.json",
+              "sha256": "9d05254d750e4fd06ccace0d8350f27898170466918822aa6acf4066b718c682"
+            }
+          ],
+          "fuzzyReasons": [
+            "no-observable-effect"
+          ],
+          "kind": "when",
+          "path": "agent",
+          "sources": [],
+          "status": "passed",
+          "stepKey": "when:2c9fb72cc81f",
+          "text": "the customer opens the billing page from the navigation",
+          "usage": {
+            "inputTokens": 1556,
+            "modelCalls": 2,
+            "outputTokens": 53
+          }
+        },
+        {
+          "actions": 1,
+          "determinism": "deterministic",
+          "durationMs": 222,
+          "evidence": [],
+          "fuzzyReasons": [],
+          "kind": "when",
+          "path": "replay",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p3",
+              "hash": "4e2fe3c70fbe747d6f16c489196f271df7bc5979ef8b2b06ca2e8208bed48791",
+              "quote": "the downgrade goes through",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "when:4fc0a2b9bf15",
+          "text": "the customer clicks the downgrade button",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Plan: Free",
+                    "role": "status",
+                    "within": {
+                      "name": "Plan",
+                      "role": "region"
+                    }
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 128,
+          "evidence": [
+            {
+              "bytes": 543,
+              "kind": "observation",
+              "path": "artifacts/4d4232228d0f3b34db79cd4d3170961f9358a0faadbc24f7a7e141ab238db7db.json",
+              "sha256": "4d4232228d0f3b34db79cd4d3170961f9358a0faadbc24f7a7e141ab238db7db"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p3",
+              "hash": "4e2fe3c70fbe747d6f16c489196f271df7bc5979ef8b2b06ca2e8208bed48791",
+              "quote": "the plan changes to Free",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:a14efc1c8b9e",
+          "text": "the plan changes to Free",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        },
+        {
+          "actions": 0,
+          "check": {
+            "passed": true,
+            "results": [
+              {
+                "actual": {
+                  "matches": 1
+                },
+                "predicate": {
+                  "op": "exists",
+                  "query": {
+                    "name": "Downgraded to Free",
+                    "role": "status"
+                  }
+                },
+                "satisfied": true
+              }
+            ]
+          },
+          "determinism": "deterministic",
+          "durationMs": 2,
+          "evidence": [
+            {
+              "bytes": 543,
+              "kind": "observation",
+              "path": "artifacts/4d4232228d0f3b34db79cd4d3170961f9358a0faadbc24f7a7e141ab238db7db.json",
+              "sha256": "4d4232228d0f3b34db79cd4d3170961f9358a0faadbc24f7a7e141ab238db7db"
+            }
+          ],
+          "fuzzyReasons": [],
+          "kind": "then",
+          "path": "check",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/downgrading/p3",
+              "hash": "4e2fe3c70fbe747d6f16c489196f271df7bc5979ef8b2b06ca2e8208bed48791",
+              "quote": "a confirmation message appears",
+              "relation": "source"
+            }
+          ],
+          "status": "passed",
+          "stepKey": "then:9bc2118022d9",
+          "text": "a downgrade confirmation message appears",
+          "usage": {
+            "inputTokens": 0,
+            "modelCalls": 0,
+            "outputTokens": 0
+          }
+        }
+      ],
+      "title": "Downgrade goes through without unpaid invoices",
+      "usage": {
+        "inputTokens": 1556,
+        "modelCalls": 2,
+        "outputTokens": 53
+      }
+    },
+    {
+      "docUri": "docs/billing.md",
+      "driver": "fake",
+      "durationMs": 1434,
+      "error": {
+        "code": "JUDGE_FAILED",
+        "details": {
+          "explanations": [
+            "The AFTER observation does not satisfy the criterion.",
+            "The expected content is absent after the action.",
+            "The criterion does not hold."
+          ],
+          "score": 0.076666666667,
+          "spread": 0.05
+        },
+        "message": "the criterion does not hold (score 0.08)",
+        "retryable": false
+      },
+      "featureId": "docs-billing--friendly-confirmation-messages",
+      "mode": "replay",
+      "recording": "discarded",
+      "review": "unreviewed",
+      "scenarioId": "docs-billing--friendly-confirmation-messages/friendly-confirmation-after-upgrading",
+      "status": "failed",
+      "steps": [
+        {
+          "actions": 4,
+          "determinism": "fuzzy",
+          "durationMs": 1097,
+          "evidence": [
+            {
+              "bytes": 2374,
+              "kind": "act-transcript",
+              "path": "artifacts/2be6a17033745445741fda2f152736e4a91bb9b3ea33cf5b42897c543286e1eb.json",
+              "sha256": "2be6a17033745445741fda2f152736e4a91bb9b3ea33cf5b42897c543286e1eb"
+            }
+          ],
+          "fuzzyReasons": [
+            "no-observable-effect"
+          ],
+          "kind": "when",
+          "path": "heal",
+          "sources": [],
+          "status": "healed",
+          "stepKey": "when:005b61cae827",
+          "text": "the customer upgrades to Pro",
+          "usage": {
+            "inputTokens": 2358,
+            "modelCalls": 3,
+            "outputTokens": 74
+          }
+        },
+        {
+          "actions": 0,
+          "determinism": "fuzzy",
+          "durationMs": 214,
+          "error": {
+            "code": "JUDGE_FAILED",
+            "details": {
+              "explanations": [
+                "The AFTER observation does not satisfy the criterion.",
+                "The expected content is absent after the action.",
+                "The criterion does not hold."
+              ],
+              "score": 0.076666666667,
+              "spread": 0.05
+            },
+            "message": "the criterion does not hold (score 0.08)",
+            "retryable": false
+          },
+          "evidence": [
+            {
+              "bytes": 508,
+              "kind": "observation",
+              "path": "artifacts/aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde.json",
+              "sha256": "aafe914424c0615b6e0dfba06e876d52d03dd674662767adcf98a4197985ccde"
+            },
+            {
+              "bytes": 99,
+              "kind": "screenshot",
+              "path": "artifacts/dedfb4a92d95755286f14305320d2a0dad09849c1067ed237ef7ff5e9b047031.png",
+              "sha256": "dedfb4a92d95755286f14305320d2a0dad09849c1067ed237ef7ff5e9b047031"
+            }
+          ],
+          "fuzzyReasons": [
+            "subjective"
+          ],
+          "judge": {
+            "cached": false,
+            "modelId": "fake:judge",
+            "promptVersion": "judge-v1",
+            "samples": [
+              {
+                "explanation": "The AFTER observation does not satisfy the criterion.",
+                "observed": "missing: Upgraded to Pro",
+                "probability": 0.05,
+                "verdict": "fails"
+              },
+              {
+                "explanation": "The expected content is absent after the action.",
+                "observed": "missing: Upgraded to Pro",
+                "probability": 0.1,
+                "verdict": "fails"
+              },
+              {
+                "explanation": "The criterion does not hold.",
+                "observed": "missing: Upgraded to Pro",
+                "probability": 0.08,
+                "verdict": "fails"
+              }
+            ],
+            "score": 0.076666666667,
+            "spread": 0.05,
+            "usage": {
+              "inputTokens": 2274,
+              "modelCalls": 3,
+              "outputTokens": 122
+            },
+            "verdict": "fail"
+          },
+          "kind": "then",
+          "path": "judge",
+          "sources": [
+            {
+              "chunkId": "docs/billing.md#billing/tone/p1",
+              "hash": "3da61380eb4ff37af20d676349e46b2d78cff4fab9f23fbfebd9b33c554f9faf",
+              "quote": "Confirmation messages should feel friendly",
+              "relation": "source"
+            }
+          ],
+          "status": "failed",
+          "stepKey": "then:fb24b4440be0",
+          "text": "the confirmation message feels friendly",
+          "usage": {
+            "inputTokens": 2274,
+            "modelCalls": 3,
+            "outputTokens": 122
+          }
+        }
+      ],
+      "title": "Friendly confirmation after upgrading",
+      "usage": {
+        "inputTokens": 4632,
+        "modelCalls": 6,
+        "outputTokens": 196
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "startedAt": "2026-10-13T01:14:24.989Z",
+  "totals": {
+    "blocked": 0,
+    "error": 0,
+    "failed": 2,
+    "healed": 0,
+    "inconclusive": 0,
+    "passed": 3,
+    "skipped": 0
+  },
+  "usage": {
+    "byPurpose": {
+      "act": {
+        "inputTokens": 6222,
+        "modelCalls": 8,
+        "outputTokens": 223
+      },
+      "checkgen": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      },
+      "extract": {
+        "inputTokens": 0,
+        "modelCalls": 0,
+        "outputTokens": 0
+      },
+      "judge": {
+        "inputTokens": 2274,
+        "modelCalls": 3,
+        "outputTokens": 122
+      }
+    },
+    "inputTokens": 8496,
+    "modelCalls": 11,
+    "outputTokens": 345
+  },
+  "warnings": []
+}

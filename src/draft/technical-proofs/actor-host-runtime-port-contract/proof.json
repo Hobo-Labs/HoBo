@@ -1,0 +1,20 @@
+{
+  "layer": "technical",
+  "slug": "actor-host-runtime-port-contract",
+  "title": "ActorHost Runtime Port Contract POC",
+  "linear": "HOBO-21",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/camp-eventstore-runtime-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

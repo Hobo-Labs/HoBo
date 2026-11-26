@@ -1,0 +1,53 @@
+name: HoBo CI swap conformance
+on: workflow_dispatch
+jobs:
+  prepare:
+    runs-on: hobo
+    outputs:
+      ready: ${{ steps.output.outputs.ready }}
+    steps:
+      - id: output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$HOBO_CI_PROVIDER" = "$HOBO_CI_EXPECTED_PROVIDER"
+          echo 'ready=ready' >> "$GITHUB_OUTPUT"
+          printf 'prepare\n' >> "$HOBO_CI_EVIDENCE/events"
+  matrix:
+    runs-on: hobo
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [alpha, beta]
+    steps:
+      - shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          READY: ${{ needs.prepare.outputs.ready }}
+        run: |
+          set -euo pipefail
+          test "$READY" = ready
+          printf 'artifact-%s\n' "$SHARD" > "$HOBO_CI_EVIDENCE/$SHARD.txt"
+          printf 'matrix-%s\n' "$SHARD" >> "$HOBO_CI_EVIDENCE/events"
+  expected_failure:
+    runs-on: hobo
+    needs: prepare
+    steps:
+      - id: failure
+        continue-on-error: true
+        shell: bash
+        run: exit 7
+      - if: steps.failure.outcome == 'failure'
+        shell: bash
+        run: printf 'expected-failure\n' >> "$HOBO_CI_EVIDENCE/events"
+  verify:
+    runs-on: hobo
+    needs: [matrix, expected_failure]
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat "$HOBO_CI_EVIDENCE/alpha.txt")" = artifact-alpha
+          test "$(cat "$HOBO_CI_EVIDENCE/beta.txt")" = artifact-beta
+          printf 'verify\n' >> "$HOBO_CI_EVIDENCE/events"

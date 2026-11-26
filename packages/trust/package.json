@@ -1,0 +1,36 @@
+{
+	"name": "@hobo/trust",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo provider trust evidence and fail-closed trust evaluation: signed adapter evidence, typed trust requirements, a pure verdict function that never treats unknown as a pass, and an audited operator override that is never usable for automatic selection.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/capability-profiles": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

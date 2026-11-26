@@ -1,0 +1,35 @@
+{
+	"name": "@hobo/data-sqlite",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo SQLite data engine: the @hobo/data-core SPI over node:sqlite \u2014 typed tables from the canonical schema, transactional-outbox change capture, idempotent apply with watermarks, bucketed digests, durable write fences, guarded retire, file-snapshot schema apply \u2014 plus the sync dual-run and schema-apply ports @hobo/trails runs its live lanes on.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/data-core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "resource-lifecycle-quickstart-examples",
+  "experienceType": "dx",
+  "title": "Resource lifecycle quickstart examples",
+  "linear": "HOBO-577",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

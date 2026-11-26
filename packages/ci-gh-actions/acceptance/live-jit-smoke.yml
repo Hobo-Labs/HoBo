@@ -1,0 +1,20 @@
+# Copy to .github/workflows only when the isolated host is ready for a live run.
+# This minimal job establishes JIT registration and execution; it does not
+# establish checkout, artifacts, or provider routing without relay evidence.
+name: HoBo JIT smoke
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  smoke:
+    runs-on: hobo
+    timeout-minutes: 5
+    steps:
+      - name: Verify HoBo runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_NAME:-}" =~ ^hobo-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]
+          test "${RUNNER_ENVIRONMENT:-}" = self-hosted
+          test "${GITHUB_EVENT_NAME:-}" = workflow_dispatch
+          printf 'hobo-jit-smoke run=%s attempt=%s runner=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$RUNNER_NAME"

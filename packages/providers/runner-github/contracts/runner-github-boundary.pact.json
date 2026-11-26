@@ -1,0 +1,84 @@
+{
+  "consumer": {
+    "name": "@hobo/dispatcher"
+  },
+  "provider": {
+    "name": "RunnerGithubBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "dispatch a runner job via workflow_dispatch (GitHub REST 2022-11-28)",
+      "request": {
+        "method": "POST",
+        "path": "/repos/hobo-dev/hobo-jobs/actions/workflows/hobo-runner.yml/dispatches",
+        "headers": {
+          "accept": "application/vnd.github+json",
+          "x-github-api-version": "2022-11-28"
+        },
+        "body": {
+          "ref": "main",
+          "inputs": {
+            "job_id": "job-1",
+            "command": "pnpm test"
+          }
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "track the dispatched run to completion",
+      "request": {
+        "method": "GET",
+        "path": "/repos/hobo-dev/hobo-jobs/actions/runs/4242"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": 4242,
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/hobo-dev/hobo-jobs/actions/runs/4242"
+        }
+      }
+    },
+    {
+      "description": "secretless posture: broker-minted short-lived installation tokens, no PATs",
+      "request": {
+        "method": "GET",
+        "path": "/providers/runner-github/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "github-app-installation",
+          "tokenAudience": "api.github.com",
+          "exchange": "hobo:brokered-installation-token",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "resolve a completed build's published GHCR image digest into a pullable ImageRef",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/hobo-dev/packages/container/checkout-api/versions"
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "name": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          }
+        ]
+      }
+    }
+  ]
+}

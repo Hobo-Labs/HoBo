@@ -1,0 +1,78 @@
+{
+  "consumer": {
+    "name": "HoboCiSchemaGate"
+  },
+  "provider": {
+    "name": "SchemaToolsCodegen"
+  },
+  "interactions": [
+    {
+      "description": "codegen check returns CLEAN envelope for CI",
+      "request": {
+        "method": "POST",
+        "path": "/schema-tools/codegen/check",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "json": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "status": "CLEAN",
+          "drift": [],
+          "cueViolations": [],
+          "durationMs": 0
+        },
+        "matchingRules": {
+          "body": {
+            "$.status": { "matchers": [{ "match": "type" }] },
+            "$.drift": { "matchers": [{ "match": "type" }] },
+            "$.cueViolations": { "matchers": [{ "match": "type" }] },
+            "$.durationMs": { "matchers": [{ "match": "integer" }] }
+          }
+        }
+      }
+    },
+    {
+      "description": "codegen check reports drift paths on mismatch",
+      "request": {
+        "method": "POST",
+        "path": "/schema-tools/codegen/check",
+        "body": {
+          "json": true,
+          "scenario": "drift"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "status": "DRIFT",
+          "drift": [
+            {
+              "path": "packages/core/src/_generated/example_pb.ts",
+              "kind": "changed"
+            }
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.status": { "matchers": [{ "match": "type" }] },
+            "$.drift": { "matchers": [{ "match": "type", "min": 1 }] },
+            "$.drift[*].path": { "matchers": [{ "match": "type" }] }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

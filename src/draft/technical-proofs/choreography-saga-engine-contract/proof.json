@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "choreography-saga-engine-contract",
+  "title": "Choreography Saga Engine Contract",
+  "linear": "HOBO-249",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/system-failure-classifier-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

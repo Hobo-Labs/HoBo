@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/identity/id-jag-token-exchange.v1.json",
+  "title": "HoBo ID-JAG token-exchange v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["draftVersion", "tokenType", "grantProfile"],
+  "properties": {
+    "draftVersion": {
+      "$ref": "#/$defs/draftVersion"
+    },
+    "tokenType": {
+      "const": "urn:ietf:params:oauth:token-type:id-jag"
+    },
+    "grantProfile": {
+      "const": "urn:ietf:params:oauth:grant-profile:id-jag"
+    }
+  },
+  "$defs": {
+    "draftVersion": {
+      "const": "draft-ietf-oauth-identity-assertion-authz-grant-04"
+    },
+    "spaceSeparatedScopes": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s]+(?: [^\\s]+)*$"
+    },
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^\\s/?#]+(?:[/?#].*)?$"
+    },
+    "idJagTokenExchangeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grant_type",
+        "requested_token_type",
+        "audience",
+        "resource",
+        "scope",
+        "subject_token",
+        "subject_token_type"
+      ],
+      "properties": {
+        "grant_type": {
+          "const": "urn:ietf:params:oauth:grant-type:token-exchange"
+        },
+        "requested_token_type": {
+          "const": "urn:ietf:params:oauth:token-type:id-jag"
+        },
+        "audience": { "$ref": "#/$defs/httpsUrl" },
+        "resource": { "$ref": "#/$defs/httpsUrl" },
+        "scope": { "$ref": "#/$defs/spaceSeparatedScopes" },
+        "subject_token": { "type": "string", "minLength": 1 },
+        "subject_token_type": {
+          "enum": [
+            "urn:ietf:params:oauth:token-type:id_token",
+            "urn:ietf:params:oauth:token-type:jwt"
+          ]
+        },
+        "client_assertion_type": {
+          "const": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        },
+        "client_assertion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "idJagTokenExchangeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issued_token_type", "access_token", "token_type", "scope", "expires_in"],
+      "properties": {
+        "issued_token_type": {
+          "const": "urn:ietf:params:oauth:token-type:id-jag"
+        },
+        "access_token": { "type": "string", "minLength": 1 },
+        "token_type": { "const": "N_A" },
+        "scope": { "$ref": "#/$defs/spaceSeparatedScopes" },
+        "expires_in": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "jwtBearerGrantRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grant_type", "assertion"],
+      "properties": {
+        "grant_type": {
+          "const": "urn:ietf:params:oauth:grant-type:jwt-bearer"
+        },
+        "assertion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "idJagHeader": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["alg", "typ"],
+      "properties": {
+        "alg": { "type": "string", "minLength": 1, "not": { "const": "none" } },
+        "typ": { "const": "oauth-id-jag+jwt" }
+      }
+    },
+    "delegatedSubject": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "id", "delegatedBy"],
+      "properties": {
+        "kind": { "enum": ["agent", "service", "workload"] },
+        "id": { "type": "string", "minLength": 1 },
+        "delegatedBy": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "user" },
+            "id": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "idJagClaims": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "iss",
+        "sub",
+        "aud",
+        "resource",
+        "client_id",
+        "exp",
+        "iat",
+        "scope",
+        "nonce",
+        "jti",
+        "subject",
+        "grant_profile",
+        "idJagDraftVersion"
+      ],
+      "properties": {
+        "iss": { "$ref": "#/$defs/httpsUrl" },
+        "sub": { "type": "string", "minLength": 1 },
+        "aud": { "$ref": "#/$defs/httpsUrl" },
+        "resource": { "$ref": "#/$defs/httpsUrl" },
+        "client_id": { "$ref": "#/$defs/httpsUrl" },
+        "exp": { "type": "integer", "minimum": 1 },
+        "iat": { "type": "integer", "minimum": 1 },
+        "scope": { "$ref": "#/$defs/spaceSeparatedScopes" },
+        "nonce": { "type": "string", "minLength": 1 },
+        "jti": { "type": "string", "minLength": 1 },
+        "subject": { "$ref": "#/$defs/delegatedSubject" },
+        "grant_profile": { "const": "urn:ietf:params:oauth:grant-profile:id-jag" },
+        "idJagDraftVersion": { "$ref": "#/$defs/draftVersion" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorization_grant_profiles_supported", "grant_types"],
+      "properties": {
+        "authorization_grant_profiles_supported": {
+          "type": "array",
+          "items": {
+            "const": "urn:ietf:params:oauth:grant-profile:id-jag"
+          },
+          "minItems": 1
+        },
+        "grant_types": {
+          "type": "array",
+          "contains": {
+            "const": "urn:ietf:params:oauth:grant-type:token-exchange"
+          }
+        }
+      }
+    }
+  }
+}

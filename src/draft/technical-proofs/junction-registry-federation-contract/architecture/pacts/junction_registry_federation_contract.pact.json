@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "JunctionRegistryFederationContractConsumer"
+  },
+  "provider": {
+    "name": "JunctionRegistryFederationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Junction Registry Federation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/junction-registry-federation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.junction_registry_federation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

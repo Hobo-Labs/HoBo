@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/identity/workload-attestation.v1.json",
+  "title": "HoBo workload attestation document v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "claimed",
+    "launchMeasurement",
+    "hostSignature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "hobo.workload-attestation/v1"
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "claimed": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "tenant": { "type": "string", "minLength": 1 },
+        "parentPrincipal": { "$ref": "#/$defs/principal" }
+      }
+    },
+    "launchMeasurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "tenant",
+        "parentPrincipal",
+        "codeVersion",
+        "componentImageDigest",
+        "hostId",
+        "issuedAt",
+        "expiresAt",
+        "nonce",
+        "isolationTier"
+      ],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "tenant": { "type": "string", "minLength": 1 },
+        "parentPrincipal": { "$ref": "#/$defs/principal" },
+        "codeVersion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["digest"],
+          "properties": {
+            "digest": { "$ref": "#/$defs/sha256Digest" },
+            "version": { "type": "string", "minLength": 1 }
+          }
+        },
+        "componentImageDigest": { "$ref": "#/$defs/sha256Digest" },
+        "hostId": { "type": "string", "minLength": 1 },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "nonce": { "type": "string", "minLength": 1 },
+        "isolationTier": { "type": "string", "minLength": 1 }
+      }
+    },
+    "hostSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "hostId", "keyId", "value"],
+      "properties": {
+        "algorithm": { "type": "string", "minLength": 1 },
+        "hostId": { "type": "string", "minLength": 1 },
+        "keyId": { "type": "string", "minLength": 1 },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "enum": ["user", "agent", "service", "workload"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

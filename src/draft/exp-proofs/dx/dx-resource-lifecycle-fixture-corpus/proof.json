@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dx-resource-lifecycle-fixture-corpus",
+  "experienceType": "dx",
+  "title": "DX Resource Lifecycle Fixture Corpus",
+  "linear": "HOBO-572",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

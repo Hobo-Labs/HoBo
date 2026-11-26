@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package hobo.replay.v1;
+
+// Session Replay contracts (ADR-0137).
+// Distinct from control-plane auth `session.*` and from event-log "replay".
+// Lifecycle events use the `replay.*` family.
+
+message PrivacyPolicy {
+  string schema_version = 1;
+  bool mask_inputs = 2;
+  bool mask_passwords = 3;
+  bool mask_emails = 4;
+  bool mask_tel = 5;
+  repeated string mask_selectors = 6;
+  repeated string block_attributes = 7;
+  bool capture_network = 8;
+  bool capture_console = 9;
+  bool capture_errors = 10;
+}
+
+message SessionCorrelation {
+  string schema_version = 1;
+  string principal_ref = 2; // continuous-identity PrincipalRef, never free-text PII
+  string station_id = 3;
+  string yard_id = 4;
+  string camp_id = 5;
+  string trail_id = 6;
+  string control_plane_event_id = 7;
+  string error_id = 8;
+  repeated string harness_flag_keys = 9;
+  string isolation_class = 10;
+  string tenant = 11;
+  string env = 12;
+}
+
+message RecordingChunk {
+  string schema_version = 1;
+  string session_id = 2;
+  uint32 seq = 3;
+  string content_hash = 4; // sha256:...
+  uint64 byte_size = 5;
+  string blob_ref = 6;
+  string created_at = 7;
+}
+
+message SessionRecord {
+  string schema_version = 1;
+  string id = 2;
+  string status = 3; // recording | ended | retained | erased
+  string started_at = 4;
+  string ended_at = 5;
+  SessionCorrelation correlation = 6;
+  PrivacyPolicy privacy = 7;
+  uint64 chunk_count = 8;
+  uint64 total_bytes = 9;
+  string summary = 10;
+}
+
+message ReplayLifecycleEventData {
+  string session_id = 1;
+  string event_type = 2; // replay.Started | ChunkIngested | Ended | ErrorLinked | RetentionApplied | Accessed
+  string station_id = 3;
+  string correlation_id = 4;
+  string blob_ref = 5;
+  string error_id = 6;
+  uint64 bytes = 7;
+}

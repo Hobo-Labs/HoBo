@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "policy-pack-federation-contract",
+  "title": "Policy pack federation contract POC",
+  "linear": "HOBO-150",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/built-in-policy-engine-contract",
+      "src/draft/technical-proofs/deny-ceiling-algebra-poc"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

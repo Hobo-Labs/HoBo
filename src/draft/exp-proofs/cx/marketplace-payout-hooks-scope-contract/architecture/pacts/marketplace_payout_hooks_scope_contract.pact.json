@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MarketplacePayoutHooksScopeContractConsumer"
+  },
+  "provider": {
+    "name": "MarketplacePayoutHooksScopeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Marketplace Payout Hooks Scope Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/marketplace-payout-hooks-scope-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.marketplace_payout_hooks_scope_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

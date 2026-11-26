@@ -1,0 +1,130 @@
+{
+	"consumer": { "name": "@hobo/provider-vercel" },
+	"provider": { "name": "VercelProjectTransferApi" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"boundary": {
+			"description": "The documented Vercel REST endpoints the sponsor-backed vercel.sponsored-project-transfer/v1 strategy calls, all of them on https://api.vercel.com. Deployment creation is deliberately absent: its versioned paths were not read, so it is an injected SponsoredDeploymentPort rather than a guessed endpoint.",
+			"allowedHosts": ["api.vercel.com"],
+			"claimCeremonyHost": "vercel.com",
+			"secretHandling": "The transfer code is bearer authority over the project and its database. Bodies below carry the placeholder <redacted-transfer-code>; the driver seals the real value into a SecretValue and stores it behind a hobo-token:// locator."
+		}
+	},
+	"interactions": [
+		{
+			"description": "create a project transfer request and receive a code valid for the documented 24 hour window",
+			"request": {
+				"method": "POST",
+				"path": "/projects/prj-sponsored-demo/transfer-request",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json",
+					"content-type": "application/json"
+				},
+				"body": {}
+			},
+			"response": {
+				"status": 200,
+				"body": { "code": "<redacted-transfer-code>" }
+			}
+		},
+		{
+			"description": "read the project while the sponsor still owns it: accountId is the sponsor team, so the observation is owned-by-sponsor",
+			"request": {
+				"method": "GET",
+				"path": "/v9/projects/prj-sponsored-demo",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "prj-sponsored-demo",
+					"name": "sponsored-demo",
+					"accountId": "team-hobo-sponsor"
+				}
+			}
+		},
+		{
+			"description": "read the project after the human accepted the transfer: accountId moved to the claiming team, which is the ownership fact",
+			"request": {
+				"method": "GET",
+				"path": "/v9/projects/prj-claimed-demo",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "prj-claimed-demo",
+					"name": "claimed-demo",
+					"accountId": "team-claiming"
+				}
+			}
+		},
+		{
+			"description": "the sponsoring credential can no longer see the project: unreachable-by-sponsor, which is consistent with a completed transfer and is never reported as a provisioning failure",
+			"request": {
+				"method": "GET",
+				"path": "/v9/projects/prj-unreachable-demo",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": { "error": { "code": "forbidden" } }
+			}
+		},
+		{
+			"description": "a project response missing the documented accountId fails closed rather than being treated as unowned",
+			"request": {
+				"method": "GET",
+				"path": "/v9/projects/prj-contract-drift",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "id": "prj-contract-drift", "name": "contract-drift" }
+			}
+		},
+		{
+			"description": "revoke a token that existed before the claim",
+			"request": {
+				"method": "DELETE",
+				"path": "/v3/user/tokens/token-sponsor-deploy",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "tokenId": "token-sponsor-deploy" }
+			}
+		},
+		{
+			"description": "revoking a token that is already gone is success: a token that no longer exists cannot be used, and treating it as an error is how revocation gets retried forever",
+			"request": {
+				"method": "DELETE",
+				"path": "/v3/user/tokens/token-already-revoked",
+				"headers": {
+					"authorization": "Bearer <redacted-sponsoring-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 404,
+				"body": { "error": { "code": "not_found" } }
+			}
+		}
+	]
+}

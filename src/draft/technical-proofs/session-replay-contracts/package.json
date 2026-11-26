@@ -1,0 +1,14 @@
+{
+	"name": "@hobo-draft/session-replay-contracts",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run --root ."
+	},
+	"dependencies": {
+		"@hobo/replay": "workspace:*"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.9"
+	}
+}

@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "ComponentHostAdapterMock" },
+  "interactions": [
+    {
+      "description": "instantiate a component and report host lifecycle evidence",
+      "request": {
+        "method": "POST",
+        "path": "/component-host/instantiate",
+        "body": {
+          "componentId": "checkout-workflow",
+          "hostPin": "sha256:component-host-v1",
+          "fuelLimit": 1000000
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "instanceId": "instance-checkout-workflow",
+          "trapIsolated": true,
+          "teardownRegistered": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "component-host-lifecycle",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

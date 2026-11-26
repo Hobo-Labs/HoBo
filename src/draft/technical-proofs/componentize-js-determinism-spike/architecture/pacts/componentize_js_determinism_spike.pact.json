@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "ComponentizeJsDeterminismSpikeConsumer"
+  },
+  "provider": {
+    "name": "ComponentizeJsDeterminismSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "HOBO-603 spike records relaxed S0 stage gate decision",
+      "request": {
+        "method": "GET",
+        "path": "/componentize-js-determinism-spike/stage-gate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "requireInputsDigest": true,
+          "requireSmokeEquivalence": true,
+          "requireByteIdenticalWasm": false,
+          "adr": "ADR-0105"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

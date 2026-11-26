@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "vibe-clickable-first-run-walkthrough",
+  "experienceType": "ux",
+  "title": "Vibe Clickable First-Run Walkthrough",
+  "linear": "HOBO-559",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
+      "src/draft/exp-proofs/ux/vibe-workspace-project-states"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,44 @@
+{
+	"consumer": { "name": "hobo-trails-cli" },
+	"provider": { "name": "hobo-trails-runner" },
+	"interactions": [
+		{
+			"description": "can-trail dry-run for identity continuous",
+			"request": {
+				"method": "POST",
+				"path": "/trails/can-trail",
+				"body": {
+					"trailId": "platform.identity.continuous",
+					"dryRun": true
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"dimension": "can-trail",
+					"evidence": {
+						"identityContinuous": true,
+						"bindleConfigRequired": false,
+						"continuousDefault": true,
+						"dryRun": true
+					}
+				}
+			}
+		},
+		{
+			"description": "trails status observe",
+			"request": {
+				"method": "GET",
+				"path": "/trails/status"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"active": false,
+					"handsOffIdentity": true
+				}
+			}
+		}
+	]
+}

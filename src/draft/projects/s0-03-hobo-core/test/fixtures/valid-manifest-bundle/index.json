@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "hobo.core/v1",
+  "issuer": "https://acme-cloud.example.com",
+  "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "signature": {
+    "alg": "HOBO-FIXTURE-SHA256",
+    "keyId": "acme-provider-key",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "files": ["capabilities.json", "auth.json", "cost.json"]
+}

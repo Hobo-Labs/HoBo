@@ -1,0 +1,347 @@
+{
+	"consumer": {
+		"name": "HoboDataCoreExecutors"
+	},
+	"provider": {
+		"name": "DataEngineBinding"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The engine SPI, expressed over HTTP because that is the shape a networked binding receives; an in-process binding satisfies the same expectations with the same bodies. Four rules are load-bearing: a write to a fenced scope is refused with FENCED_WRITE rather than accepted or dropped; a capture read returns changes in commit order and does not consume them; a digest carries counts and digests only, never a record; and a native transfer's ticket names where the records are without carrying a credential or a record, while a transfer the engine cannot do faithfully is refused with NATIVE_TRANSFER_REFUSED rather than approximated. test/pact.test.ts replays every interaction against the reference engine, and the conformance kit holds every other engine to the same behaviour."
+	},
+	"interactions": [
+		{
+			"description": "a write to a fenced scope is refused, not accepted and not silently dropped",
+			"providerState": "dataset orders exists and tenant acme is fenced",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/records",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"mutations": [
+						{
+							"tenant": "acme",
+							"key": "[\"o-1\"]",
+							"op": "upsert",
+							"record": {
+								"id": "o-1",
+								"total": "10"
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"code": "FENCED_WRITE",
+						"dataset": "orders",
+						"tenant": "acme"
+					}
+				}
+			}
+		},
+		{
+			"description": "a capture read returns changes after a position in commit order and does not consume them",
+			"providerState": "dataset orders exists with subscription sub started, then o-1 was written, updated, and deleted",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/capture/sub/read",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"tenant": "",
+					"after": "0",
+					"limit": 10
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"changes": [
+						{
+							"contract": "hobo.change-envelope/v1",
+							"dataset": "orders",
+							"position": "1",
+							"schemaVersion": 1,
+							"tenant": "",
+							"key": "[\"o-1\"]",
+							"op": "upsert",
+							"record": {
+								"id": "o-1",
+								"total": "10"
+							}
+						},
+						{
+							"contract": "hobo.change-envelope/v1",
+							"dataset": "orders",
+							"position": "2",
+							"schemaVersion": 1,
+							"tenant": "",
+							"key": "[\"o-1\"]",
+							"op": "upsert",
+							"record": {
+								"id": "o-1",
+								"total": "12.5"
+							}
+						},
+						{
+							"contract": "hobo.change-envelope/v1",
+							"dataset": "orders",
+							"position": "3",
+							"schemaVersion": 1,
+							"tenant": "",
+							"key": "[\"o-1\"]",
+							"op": "delete"
+						}
+					],
+					"position": "3",
+					"caughtUp": true
+				}
+			}
+		},
+		{
+			"description": "an apply records its batch position as the watermark, atomically with the changes",
+			"providerState": "dataset orders exists and is empty",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/apply",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"source": "upstream",
+					"position": "41",
+					"changes": [
+						{
+							"tenant": "",
+							"key": "[\"o-9\"]",
+							"op": "upsert",
+							"record": {
+								"id": "o-9",
+								"total": "1"
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"applied": 1,
+					"watermark": "41"
+				}
+			}
+		},
+		{
+			"description": "a digest carries counts and digests only",
+			"providerState": "dataset orders holds the single record o-9 with total 1",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/digest",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"tenant": "",
+					"buckets": 2
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"contract": "hobo.dataset-digest/v1",
+					"dataset": "orders",
+					"tenant": "",
+					"count": 1,
+					"keys": [
+						"buckets",
+						"contract",
+						"count",
+						"dataset",
+						"digest",
+						"tenant"
+					]
+				}
+			}
+		},
+		{
+			"description": "publishing a native transfer answers a ticket that carries no credential and no record",
+			"providerState": "dataset orders holds the single record o-9 and the engine declares migration.reference.direct/v1",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/native/hobo_migration_m1_native/publish",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"profile": "migration.reference.direct/v1",
+					"tenant": ""
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"ticket": {
+						"profile": "migration.reference.direct/v1",
+						"dataset": "orders",
+						"tenant": ""
+					},
+					"keys": [
+						"dataset",
+						"origin",
+						"profile",
+						"tenant"
+					]
+				}
+			}
+		},
+		{
+			"description": "subscribing a target that already holds records is refused, not merged",
+			"providerState": "a published transfer and a target whose dataset orders already holds a record",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/native/hobo_migration_m1_native/subscribe",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"profile": "migration.reference.direct/v1",
+					"tenant": ""
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"code": "NATIVE_TRANSFER_REFUSED",
+						"reason": "TARGET_NOT_EMPTY",
+						"profile": "migration.reference.direct/v1"
+					}
+				}
+			}
+		},
+		{
+			"description": "a conditional apply that names a watermark the store has moved past is refused, and nothing of it lands",
+			"providerState": "dataset orders has applied upstream through position 41",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/apply",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"source": "upstream",
+					"position": "57",
+					"expectedWatermark": "12",
+					"changes": [
+						{
+							"tenant": "",
+							"key": "[\"o-9\"]",
+							"op": "upsert",
+							"record": {
+								"id": "o-9",
+								"total": "2"
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"code": "STALE_APPLY",
+						"dataset": "orders",
+						"source": "upstream"
+					},
+					"watermark": "41",
+					"total": "1"
+				}
+			}
+		},
+		{
+			"description": "a paused native transfer delivers nothing until it is resumed",
+			"providerState": "a subscribed transfer whose initial copy is done, and a source that has written o-10 since",
+			"request": {
+				"method": "POST",
+				"path": "/datasets/orders/native/hobo_migration_m1_native/pause",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"profile": "migration.reference.direct/v1",
+					"tenant": ""
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"paused": true,
+					"deliveredWhilePaused": 0,
+					"deliveredAfterResume": 1
+				}
+			}
+		},
+		{
+			"description": "a router refuses an authority move decided at a journal head lower than one it has applied",
+			"providerState": "the router has applied a move for migration m1 decided at journal head 14",
+			"request": {
+				"method": "POST",
+				"path": "/migrations/m1/authority",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"migrationId": "m1",
+					"head": 11,
+					"direction": "to-target"
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": {
+						"code": "STALE_AUTHORITY_MOVE",
+						"migrationId": "m1",
+						"head": 11,
+						"appliedHead": 14
+					}
+				}
+			}
+		}
+	]
+}

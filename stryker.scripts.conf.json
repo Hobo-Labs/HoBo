@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing for the competitor-corpus checker. This script is a gate: it blocks commits, and it regenerates three documents that 90 captures link into. A silently-passing test here does not fail loudly \u2014 it lets the gate rot while continuing to report success, which is the exact failure mode mutation testing exists to catch. Scoped to the one file, matching the @hobo/core config's stance that a gate nobody runs is not a gate.",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.mutation.config.ts"
+  },
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "scripts/check-competitor-docs.ts"
+  ],
+  "_sandbox": "Stryker copies the repo into a sandbox per run. Two constraints shape this list. Unbounded, it walks examples/wasp-opensaas/app and dies on a symlinked skills directory (EISDIR on copyfile). But examples/ cannot be excluded wholesale either: docs/competitors/wasp.md links into examples/wasp-opensaas/HOBO.md, and the suite's real-corpus test would then fail the dry run on a broken link that exists only inside the sandbox. So the exclusion is exactly the symlinked subtree. packages/ and external/ are excluded because nothing under mutation reads them and copying them costs far more than it returns.",
+  "ignorePatterns": [
+    "examples/wasp-opensaas/app",
+    "external",
+    "packages",
+    "site",
+    "src/draft",
+    "evals",
+    ".stryker-tmp",
+    ".coverage",
+    "**/dist"
+  ],
+  "reporters": [
+    "clear-text",
+    "progress"
+  ],
+  "clearTextReporter": {
+    "maxTestsToLog": 0
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 80
+  },
+  "timeoutMS": 20000,
+  "concurrency": 4,
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "_baseline": "Measured 2026-08-20: 81.27% (512 killed, 99 survived, 19 no coverage), 56 seconds. Started at 69.45% and was raised past 80 by targeting the surviving mutants directly -- extracting the CLI body from a top-level `if` so its exit code and output could be tested at all, then pinning each regex from BOTH sides of its boundary. break is set at 80 to hold that line. The 19 no-coverage mutants are the module-level `invokedDirectly` guard, which cannot be exercised in-process."
+}

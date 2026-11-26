@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SvidAutoRotationContractConsumer"
+  },
+  "provider": {
+    "name": "SvidAutoRotationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Svid Auto Rotation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/svid-auto-rotation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.svid_auto_rotation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "layer": "project",
+  "slug": "s3-02-hobo-identity",
+  "title": "S3-02 @hobo/identity draft POC (HOBO-628)",
+  "linear": "HOBO-628",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

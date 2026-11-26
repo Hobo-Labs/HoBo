@@ -1,0 +1,40 @@
+{
+	"name": "@hobo/data-mongodb",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo MongoDB data engine: the data.mongodb/v1 profile and the @hobo/data-core SPI over an injected command executor \u2014 collections from the canonical schema, change-stream capture with resume tokens, idempotent apply with watermarks, bucketed digests, entry-point write fences, guarded retire \u2014 with no driver dependency at runtime.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/data-core": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/data-postgres": "workspace:*",
+		"@hobo/data-sqlite": "workspace:*",
+		"@types/node": "^22.15.29",
+		"@types/pg": "8.15.5",
+		"mongodb": "6.21.0",
+		"pg": "8.22.0",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

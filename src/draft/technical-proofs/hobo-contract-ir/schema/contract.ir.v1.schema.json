@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hobo.dev/contract.ir.v1.schema.json",
+  "title": "HoBo Contract IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "mode",
+    "edge",
+    "requiredShape",
+    "provenance",
+    "consumerRequirements",
+    "interop"
+  ],
+  "properties": {
+    "schema": {
+      "const": "contract.ir/v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+    },
+    "mode": {
+      "enum": [
+        "declared",
+        "inferred",
+        "observed",
+        "promoted"
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "producer",
+        "consumer",
+        "operation"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "http",
+            "event",
+            "message",
+            "topic",
+            "resource-binding",
+            "capability-scope",
+            "runtime-slo",
+            "semantic-function",
+            "agent-tool",
+            "provider-interface",
+            "service",
+            "actor",
+            "workflow"
+          ]
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "requiredShape": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "format",
+        "requiredFields"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaVersion": {
+          "type": "string"
+        },
+        "requiredFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "source",
+        "verifiedByConstruction"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verifiedByConstruction": {
+          "type": "boolean"
+        },
+        "sampleCoverage": {
+          "type": "object",
+          "required": [
+            "samples",
+            "coveragePct"
+          ],
+          "properties": {
+            "samples": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "coveragePct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "traceWindow": {
+              "type": "string"
+            }
+          }
+        },
+        "migrationWindow": {
+          "type": "object",
+          "required": [
+            "days"
+          ],
+          "properties": {
+            "days": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "startedAt": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "consumerRequirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consumer",
+          "requiredFields"
+        ],
+        "properties": {
+          "consumer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requiredFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "interop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "importTargets",
+        "exportTargets"
+      ],
+      "properties": {
+        "importTargets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exportTargets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

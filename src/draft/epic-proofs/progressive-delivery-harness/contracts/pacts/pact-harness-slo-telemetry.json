@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-reliability-slo-snapshot-provider" },
+  "interactions": [
+    {
+      "description": "read pinned healthy SLO snapshot for rollout step zero",
+      "providerStates": [{ "name": "SLO snapshot seq 101 is available" }],
+      "request": {
+        "method": "GET",
+        "path": "/slo-snapshots/checkout-v2",
+        "body": {
+          "stepIndex": 0
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "snapshotSeq": 101,
+          "verdict": "promote",
+          "reason": "healthy",
+          "burnRate": 0.4
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "slo-telemetry",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

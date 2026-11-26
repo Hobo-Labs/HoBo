@@ -1,0 +1,46 @@
+{
+  "consumer": {
+    "name": "HostedBrokerGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "HostedBrokerGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hosted broker GA handoff boundary returns accepted evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hosted-broker-ga-handoff/evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.hosted-broker-ga-handoff-evidence/v1",
+          "issue": "HOBO-530",
+          "phase": "M4",
+          "milestoneGate": "M4 GA handoff evidence for hosted broker operations"
+        }
+      }
+    },
+    {
+      "description": "Hosted broker GA handoff boundary rejects proofless GA publication",
+      "request": {
+        "method": "POST",
+        "path": "/hosted-broker-ga-handoff/ga-claim"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "error": "GA claim cannot publish from local fixtures or manually edited receipts"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

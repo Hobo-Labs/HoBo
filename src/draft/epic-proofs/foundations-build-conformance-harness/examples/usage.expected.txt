@@ -1,0 +1,7 @@
+workspace status=valid packageManager=pnpm boundaryViolation=deny
+adapter import lint effect=deny
+componentize wasmValid=true smokeExit=0 ociMediaType=application/vnd.oci.image.manifest.v1+json
+trust gate installOk=true availableToMatching=true autoSelected=false
+unsigned artifact refused reasons=signature.required
+ci contract=true e2e=passed tokenTtl=900s missingOidcPasses=false
+EPIC HELD: skeleton lint, deterministic builds, signed-artifact trust, and OIDC-gated CI all enforce

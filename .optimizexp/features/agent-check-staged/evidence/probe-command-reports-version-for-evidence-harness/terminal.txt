@@ -1,0 +1,14 @@
+# OptimizeXP CLI evidence
+command: node -v
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+durationMs: 22
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T03:03:10.581Z
+
+## stdout
+v26.5.0
+
+
+## stderr
+(empty)

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "bootstrap-launch-smoke-matrix-contract",
+  "experienceType": "dx",
+  "title": "Bootstrap Launch Smoke Matrix Contract",
+  "linear": "HOBO-501",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

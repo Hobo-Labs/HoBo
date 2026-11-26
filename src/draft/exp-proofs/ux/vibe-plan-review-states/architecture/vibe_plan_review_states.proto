@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Design-time schema for HOBO-542 plan review state fixtures. This package is
+// not compiled at runtime; it gives the architecture guard a language-neutral
+// contract for the parsed record.
+
+enum VibePlanReviewProofMode {
+  VIBE_PLAN_REVIEW_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_PLAN_REVIEW_PROOF_MODE_LIVE = 1;
+  VIBE_PLAN_REVIEW_PROOF_MODE_SIMULATED = 2;
+  VIBE_PLAN_REVIEW_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_PLAN_REVIEW_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibePlanReviewState {
+  string id = 1;
+  string evidence_source = 2;
+  string owner = 3;
+  string safe_next_action = 4;
+  string risk_category = 5;
+  string policy_disposition = 6;
+  string cost_disposition = 7;
+  string capacity_disposition = 8;
+  string customer_safe_wording = 9;
+  VibePlanReviewProofMode proof_mode = 10;
+}
+
+message VibePlanReviewStatesRecord {
+  string issue = 1;
+  string package_path = 2;
+  string proof_path = 3;
+  repeated VibePlanReviewState states = 4;
+  repeated string quickstart_fixture_ids = 5;
+}

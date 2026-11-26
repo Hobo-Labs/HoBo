@@ -1,0 +1,86 @@
+{
+  "consumer": {
+    "name": "hobo-example-ci-runner-balancing"
+  },
+  "provider": {
+    "name": "github-billing-api"
+  },
+  "interactions": [
+    {
+      "description": "balancer reads month-to-date Actions usage from the enhanced billing platform",
+      "request": {
+        "method": "GET",
+        "path": "/users/hobo-operator/settings/billing/usage",
+        "query": "year=2026&month=7",
+        "headers": {
+          "Accept": "application/vnd.github+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "usageItems": [
+            {
+              "date": "2026-07-14",
+              "product": "actions",
+              "sku": "Actions Linux",
+              "quantity": 2200,
+              "unitType": "minutes",
+              "pricePerUnit": 0.006,
+              "grossAmount": 25.2,
+              "discountAmount": 12,
+              "netAmount": 13.2,
+              "repositoryName": "HoBo"
+            },
+            {
+              "date": "2026-07-14",
+              "product": "packages",
+              "sku": "Packages storage",
+              "quantity": 1,
+              "unitType": "gigabyte-hours",
+              "pricePerUnit": 0.008,
+              "grossAmount": 0.008,
+              "discountAmount": 0.008,
+              "netAmount": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "balancer falls back to the legacy per-account Actions billing endpoint",
+      "request": {
+        "method": "GET",
+        "path": "/users/hobo-operator/settings/billing/actions",
+        "headers": {
+          "Accept": "application/vnd.github+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "total_minutes_used": 305,
+          "total_paid_minutes_used": 10,
+          "included_minutes": 2000,
+          "minutes_used_breakdown": {
+            "UBUNTU": 205,
+            "MACOS": 10,
+            "WINDOWS": 90,
+            "total": 305
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

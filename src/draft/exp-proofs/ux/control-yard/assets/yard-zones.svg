@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="HoBo Yard zone layout">
+  <title>HoBo Yard zones (1280×720)</title>
+  <rect width="1280" height="720" fill="#f7f4ea"/>
+  <rect x="120" y="300" width="1040" height="80" fill="#2a2a2a" stroke="#000" stroke-width="2"/>
+  <text x="640" y="345" text-anchor="middle" font-family="monospace" font-size="16" fill="#fff">Active Rail Track</text>
+  <rect x="80" y="480" width="220" height="160" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="190" y="560" text-anchor="middle" font-family="monospace" font-size="14">Platform Rest</text>
+  <rect x="340" y="420" width="180" height="140" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="430" y="490" text-anchor="middle" font-family="monospace" font-size="14">Bootstrap Desk</text>
+  <rect x="900" y="420" width="280" height="200" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="1040" y="520" text-anchor="middle" font-family="monospace" font-size="14">Connection Bay</text>
+  <rect x="560" y="120" width="320" height="140" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="720" y="195" text-anchor="middle" font-family="monospace" font-size="14">Policy Board</text>
+  <rect x="1000" y="120" width="200" height="140" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="1100" y="195" text-anchor="middle" font-family="monospace" font-size="14">Cost Booth</text>
+  <rect x="40" y="100" width="200" height="140" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="140" y="175" text-anchor="middle" font-family="monospace" font-size="14">Error Bunker</text>
+  <!-- Bo silhouette mark (monochrome) -->
+  <circle cx="190" cy="600" r="18" fill="#000"/>
+  <ellipse cx="183" cy="595" rx="4" ry="5" fill="#fff"/>
+  <ellipse cx="197" cy="595" rx="4" ry="5" fill="#fff"/>
+  <text x="640" y="700" text-anchor="middle" font-family="monospace" font-size="12" fill="#333">ADR-0135 · layout.ts coordinates · Bo art bible locked</text>
+</svg>

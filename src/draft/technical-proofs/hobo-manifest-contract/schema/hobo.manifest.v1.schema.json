@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/hobo.manifest.v1.schema.json",
+  "title": "HoBo Manifest v1",
+  "type": "object",
+  "required": ["schema", "componentHost", "resources"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "hobo.manifest/v1" },
+    "componentHost": {
+      "type": "object",
+      "required": ["kind", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/resource" }
+    }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "required": ["type"],
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "data.v1" } } },
+          "then": { "required": ["port"] }
+        }
+      ],
+      "properties": {
+        "type": { "enum": ["data.v1", "component.v1", "website.v1"] },
+        "port": { "type": "string", "minLength": 1 },
+        "paradigm": { "type": "string" },
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "connectionString": { "type": "string" },
+        "image": { "type": "string" },
+        "runtime": { "enum": ["wasm", "container"] },
+        "exports": { "type": "array", "items": { "type": "string" } },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["import", "to"],
+            "additionalProperties": false,
+            "properties": {
+              "import": { "type": "string", "minLength": 1 },
+              "to": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "endpoints": { "type": "object" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "annotations": { "type": "object" },
+        "bind": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

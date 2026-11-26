@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package hobo.storage_sqlite.v1;
+
+// Boundary records for durable journal wire forms.
+// Domain EventEnvelope remains in hobo.core.v1; this package owns store-local shapes.
+
+message PositionedEventWire {
+  // Database-local position as decimal string to preserve full u64 across languages.
+  string global_position = 1;
+  bytes event_envelope = 2;
+}
+
+message StreamHeadWire {
+  string stream_id = 1;
+  int64 revision = 2;
+  // Owner epoch / fence as decimal string (u64-safe).
+  string owner_epoch = 3;
+  string created_at = 4;
+  string updated_at = 5;
+}
+
+message DurableEffectWire {
+  string kind = 1;
+  string id = 2;
+  string idempotency_key = 3;
+  bool deduped = 4;
+}
+
+message DurableCommitResultWire {
+  string stream_id = 1;
+  repeated bytes appended = 2;
+  repeated bytes deduped = 3;
+  string first_position = 4;
+  string last_position = 5;
+  repeated DurableEffectWire effects = 6;
+}
+
+message SubscriptionCheckpointWire {
+  string subscription_id = 1;
+  string partition_id = 2;
+  string position = 3;
+  string fence_token = 4;
+  string updated_at = 5;
+}
+
+message SubscriptionLeaseWire {
+  string subscription_id = 1;
+  string partition_id = 2;
+  string holder_id = 3;
+  string fence_token = 4;
+  string expires_at = 5;
+}
+
+enum StorageErrorCode {
+  STORAGE_ERROR_CODE_UNSPECIFIED = 0;
+  STORAGE_ERROR_CODE_OPTIMISTIC_SEQUENCE_CONFLICT = 1;
+  STORAGE_ERROR_CODE_STALE_FENCE = 2;
+  STORAGE_ERROR_CODE_MISSING_FENCE = 3;
+  STORAGE_ERROR_CODE_CHECKPOINT_REGRESSION = 4;
+  STORAGE_ERROR_CODE_UNSUPPORTED_SCHEMA_VERSION = 5;
+  STORAGE_ERROR_CODE_MIGRATION_FAILURE = 6;
+  STORAGE_ERROR_CODE_UNSUPPORTED_CODEC = 7;
+  STORAGE_ERROR_CODE_PERSISTENCE_UNAVAILABLE = 8;
+  STORAGE_ERROR_CODE_SQLITE_BUSY = 9;
+  STORAGE_ERROR_CODE_INTEGRITY_FAILURE = 10;
+  STORAGE_ERROR_CODE_SNAPSHOT_AHEAD = 11;
+  STORAGE_ERROR_CODE_STREAM_INTEGRITY = 12;
+}

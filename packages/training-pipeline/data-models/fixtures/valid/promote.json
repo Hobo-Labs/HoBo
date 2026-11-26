@@ -1,0 +1,10 @@
+{
+  "candidate_id": "candidate-optimize-request-1",
+  "outcome": "PROMOTION_OUTCOME_PROMOTE",
+  "passed": { "conformance": true, "eval": true, "policy": true },
+  "failures": [],
+  "champion_challenger": {
+    "champion_id": "champion-1",
+    "challenger_id": "candidate-optimize-request-1"
+  }
+}

@@ -1,0 +1,6 @@
+syntax = "proto3";
+package hobo.draft.convex_swaghaus_bindle;
+
+message ProofRoot {
+  string root = 1;
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IacStateModelContractConsumer"
+  },
+  "provider": {
+    "name": "IacStateModelContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Iac State Model Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/iac-state-model-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.iac_state_model_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

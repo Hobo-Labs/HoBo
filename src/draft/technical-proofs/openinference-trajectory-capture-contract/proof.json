@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "openinference-trajectory-capture-contract",
+  "title": "OpenInference Trajectory Capture Contract",
+  "linear": "HOBO-335",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

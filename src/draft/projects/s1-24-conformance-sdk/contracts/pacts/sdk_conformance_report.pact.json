@@ -1,0 +1,84 @@
+{
+  "consumer": {
+    "name": "GatedPackageParityTest"
+  },
+  "provider": {
+    "name": "HoboConformanceSdkReportEmitter"
+  },
+  "interactions": [
+    {
+      "description": "passing sdk conformance report envelope",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/sdk/report",
+        "body": {
+          "suite": "@hobo/conformance/sdk",
+          "contract": "hobo:sdk@0.1.0",
+          "status": "passed"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "suite": "@hobo/conformance/sdk",
+          "contract": "hobo:sdk@0.1.0",
+          "status": "passed",
+          "lanes": [
+            { "lane": "golden-ir-lowering-equivalence", "status": "passed" },
+            { "lane": "semantics-annex", "status": "passed" }
+          ]
+        }
+      }
+    },
+    {
+      "description": "failing semantics-annex report carries vector-level diff",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/sdk/report",
+        "body": {
+          "suite": "@hobo/conformance/sdk",
+          "status": "failed"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "suite": "@hobo/conformance/sdk",
+          "status": "failed",
+          "lanes": [
+            {
+              "lane": "semantics-annex",
+              "status": "failed",
+              "cases": [
+                {
+                  "name": "caller-cancellation",
+                  "status": "failed",
+                  "diffPaths": ["$"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "empty corpus or vectors error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/conformance/sdk/validate-input"
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "error": "TypeError",
+          "message": "SDK conformance requires a non-empty golden-IR corpus"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "consumer": { "name": "OrchestratorReconciliationFsmDraft" },
+  "provider": { "name": "ActorHostExecutorBoundary" },
+  "interactions": [
+    {
+      "description": "orchestrator acquires ActorHost lease before ResourceActor transitions",
+      "request": {
+        "type": "message",
+        "body": {
+          "actorKey": "resource:deploy-fixture:api",
+          "holderId": "yard/orchestrator"
+        }
+      },
+      "response": {
+        "body": {
+          "leaseGranted": true,
+          "eventsAppended": ["resource.Provisioning", "resource.Provisioned"]
+        }
+      }
+    },
+    {
+      "description": "mid-DAG failure triggers reverse-order compensation through mocked executor destroy",
+      "request": {
+        "type": "message",
+        "body": {
+          "deploymentId": "deploy-fixture",
+          "failedResourceId": "api",
+          "provisionedResourceIds": ["network", "database", "api"]
+        }
+      },
+      "response": {
+        "body": {
+          "rollbackEvent": "deployment.RolledBack",
+          "destroyOrder": ["api", "database", "network"]
+        }
+      }
+    }
+  ]
+}

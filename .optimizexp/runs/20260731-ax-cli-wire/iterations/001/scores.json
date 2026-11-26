@@ -1,0 +1,9 @@
+{
+  "iteration": 1,
+  "runId": "20260731-ax-cli-wire",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsBaseline": { "metric_total_delta": -6, "metric_max_delta": -4 },
+  "implementableFindingsRemaining": 0,
+  "experimentsApplied": ["E-1", "E-2", "E-3"]
+}

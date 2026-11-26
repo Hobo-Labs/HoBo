@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "SnapshopGraphqlClient" },
+  "provider": { "name": "GraphqlFacadeBoundary" },
+  "interactions": [
+    {
+      "description": "query orders from materialization snapshot",
+      "request": {
+        "method": "POST",
+        "path": "/graphql",
+        "body": { "query": "query { orders { orderId totalCents } }" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "data": { "orders": [{ "orderId": "1001", "totalCents": 4200 }] } }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

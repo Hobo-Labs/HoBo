@@ -1,0 +1,17 @@
+{
+  "name": "@hobo-draft/s0-04-protobuf-cue-codegen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HOBO-581 draft POC: protobuf+CUE codegen pipeline with drift gate",
+  "scripts": {
+    "codegen": "node --import tsx packages/schema-tools/src/cli.ts",
+    "codegen:check": "node --import tsx packages/schema-tools/src/cli.ts --check",
+    "test": "vitest run --no-isolate --maxWorkers=1 packages/schema-tools/test"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.71.0",
+    "@bufbuild/protobuf": "2.12.1",
+    "@bufbuild/protoc-gen-es": "2.12.1"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "integration": "cf",
+  "status": "implemented",
+  "executionAvailable": true,
+  "targetSdk": "@cloudflare/ci",
+  "targetDocumentation": "https://github.com/cloudflare/ci",
+  "pendingGates": [
+    "Execution remains deferred."
+  ]
+}

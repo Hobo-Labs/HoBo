@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "vibe-plan-diff-review-prototype",
+  "experienceType": "ux",
+  "title": "Vibe Plan/Diff Review Prototype",
+  "linear": "HOBO-560",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/ux/vibe-plan-annotation-pseudocode",
+      "src/draft/exp-proofs/ux/vibe-plan-review-states"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

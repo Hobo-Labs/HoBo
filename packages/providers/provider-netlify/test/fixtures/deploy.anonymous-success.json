@@ -1,0 +1,9 @@
+{
+  "site_id": "FAKE-site-00000000-0000-4000-8000-000000000000",
+  "site_name": "hobo-fake-anonymous-site",
+  "deploy_id": "FAKE-deploy-00000000-0000-4000-8000-000000000001",
+  "url": "https://hobo-fake-anonymous-site.netlify.app",
+  "deploy_url": "https://FAKE-deploy--hobo-fake-anonymous-site.netlify.app",
+  "claim_url": "https://app.netlify.com/claim?utm_source=cli#FAKECLAIMTOKENnotarealtoken",
+  "logs": "https://app.netlify.com/sites/hobo-fake-anonymous-site/deploys/FAKE-deploy"
+}

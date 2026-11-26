@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-site-demo-alpha-evidence-contract",
+  "experienceType": "cx",
+  "title": "Launch Site Demo Alpha Evidence Contract",
+  "linear": "HOBO-458",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

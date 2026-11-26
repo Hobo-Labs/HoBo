@@ -1,0 +1,23 @@
+{
+  "layer": "epic",
+  "slug": "progressive-delivery-harness",
+  "title": "Progressive Delivery Harness Reference Implementation",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/experiment-statistical-analysis-contract",
+      "src/draft/technical-proofs/hobo-experiment-port",
+      "src/draft/technical-proofs/openexperiment-runtime-data-contract",
+      "src/draft/technical-proofs/policy-gated-flag-flips-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "wrpc-lattice-transport-contract",
+  "title": "HOBO-27 wRPC Lattice Transport Contract",
+  "linear": "HOBO-27",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/wrpc-membrane-failure-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

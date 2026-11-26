@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "obligation-engine-contract",
+  "title": "Obligation Engine Contract",
+  "linear": "HOBO-141",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-policy-ir-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

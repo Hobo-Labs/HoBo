@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "JunctionFederatedDomainContractConsumer"
+  },
+  "provider": {
+    "name": "JunctionFederatedDomainContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Junction Federated Domain Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/junction-federated-domain-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.junction_federated_domain_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

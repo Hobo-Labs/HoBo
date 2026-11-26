@@ -1,0 +1,62 @@
+{
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "46.0.1"
+  },
+  "resources": {
+    "main": {
+      "bindings": {
+        "todos": {
+          "clientType": "KvClient",
+          "port": "wasi:keyvalue",
+          "resource": "todos"
+        }
+      },
+      "collection": {
+        "stableId": "api:main"
+      },
+      "exports": [
+        "wasi:http/incoming-handler"
+      ],
+      "kind": "api",
+      "links": [
+        {
+          "import": "wasi:keyvalue",
+          "to": "todos"
+        }
+      ],
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/todos/:id"
+        },
+        {
+          "method": "POST",
+          "path": "/todos"
+        }
+      ],
+      "runtime": "wasm",
+      "type": "component.v1"
+    },
+    "todos": {
+      "allow": [
+        "get",
+        "set"
+      ],
+      "collection": {
+        "stableId": "kv:todos"
+      },
+      "kind": "kv",
+      "port": "wasi:keyvalue",
+      "type": "data.v1",
+      "usage": {
+        "inferred": [
+          "get",
+          "set"
+        ],
+        "source": "run-to-collect"
+      }
+    }
+  },
+  "schema": "hobo.manifest/v1"
+}

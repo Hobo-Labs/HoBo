@@ -1,0 +1,73 @@
+{
+  "consumer": {
+    "name": "hobo-v1-release-readiness"
+  },
+  "provider": {
+    "name": "legal-privacy-terms-dogfood-alpha-evidence"
+  },
+  "interactions": [
+    {
+      "description": "accept M1 legal privacy terms dogfood alpha evidence",
+      "providerState": "all evidence items are accepted and mapped to the release cutline",
+      "request": {
+        "method": "POST",
+        "path": "/legal-privacy-terms/dogfood-alpha/evidence",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-457",
+          "phase": "M1 Dogfood/alpha proof",
+          "milestoneEvidenceAccepted": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "canCompleteMilestone": true,
+          "blockers": [],
+          "missingEvidence": [],
+          "invalidFollowUps": [],
+          "unreflectedDependencies": []
+        }
+      }
+    },
+    {
+      "description": "reject missing evidence without follow-up work",
+      "providerState": "privacy notice evidence is missing without a follow-up issue",
+      "request": {
+        "method": "POST",
+        "path": "/legal-privacy-terms/dogfood-alpha/evidence",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-457",
+          "evidence": [
+            {
+              "domain": "privacy-notice",
+              "status": "missing"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "error": "evidence.privacy-notice.missing_follow_up"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

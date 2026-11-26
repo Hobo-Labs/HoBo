@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboContractIrConsumer"
+  },
+  "provider": {
+    "name": "HoboContractIrBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Contract Ir boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-contract-ir/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_contract_ir/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BuiltInOptoTrainingEngineContractConsumer"
+  },
+  "provider": {
+    "name": "BuiltInOptoTrainingEngineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Built In Opto Training Engine Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/built-in-opto-training-engine-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.built_in_opto_training_engine_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

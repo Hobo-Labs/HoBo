@@ -1,0 +1,38 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.2/schema.json",
+	"files": {
+		"includes": [
+			"packages/**",
+			"scripts/**",
+			"test/**",
+			"!test/output/**",
+			"!**/dist/**",
+			"!**/node_modules/**",
+			"!**/generated/**",
+			"!**/_generated/**",
+			"!**/.hobo/**",
+			"!**/*.snap",
+			"!**/contracts/api.snapshot.d.ts",
+			"!**/*.json"
+		]
+	},
+	"formatter": {
+		"enabled": true
+	},
+	"linter": {
+		"enabled": false
+	},
+	"overrides": [
+		{
+			"includes": ["packages/**", "!packages/**/dist/**"],
+			"linter": {
+				"enabled": true,
+				"rules": {
+					"suspicious": {
+						"noTemplateCurlyInString": "off"
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "crew-event-contract",
+  "title": "Crew Event Contract POC",
+  "linear": "HOBO-254",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

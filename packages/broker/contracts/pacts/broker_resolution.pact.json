@@ -1,0 +1,115 @@
+{
+	"consumer": {
+		"name": "YardGatewayBrokerConsumer"
+	},
+	"provider": {
+		"name": "HoboBrokerResolutionBoundary"
+	},
+	"interactions": [
+		{
+			"description": "A policy-clean request is resolved to the cheapest eligible provider per resource",
+			"request": {
+				"method": "POST",
+				"path": "/broker/resolve",
+				"body": {
+					"schemaVersion": "hobo.broker/v1",
+					"requestId": "req-checkout-1",
+					"scope": { "bindleId": "bindle:checkout" },
+					"requirements": [
+						{ "resourceId": "api", "port": "hobo:http-service" }
+					],
+					"spendEstimateUsd": 5
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"outcome": "resolved",
+					"receipt": {
+						"schemaVersion": "hobo.broker/v1",
+						"requestId": "req-checkout-1",
+						"placements": [
+							{ "resourceId": "api", "providerId": "@hobo/provider-cheap" }
+						]
+					},
+					"events": [
+						{ "type": "broker.Requested" },
+						{ "type": "policy.Decided" },
+						{ "type": "broker.Resolved" }
+					]
+				}
+			}
+		},
+		{
+			"description": "A junction lockdown rejects placement without an explicit camp",
+			"request": {
+				"method": "POST",
+				"path": "/broker/resolve",
+				"body": {
+					"schemaVersion": "hobo.broker/v1",
+					"requestId": "req-checkout-2",
+					"scope": { "bindleId": "bindle:checkout", "junctionId": "junction:global" },
+					"requirements": [
+						{ "resourceId": "api", "port": "hobo:http-service" }
+					],
+					"spendEstimateUsd": 5
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"outcome": "rejected",
+					"rejection": {
+						"schemaVersion": "hobo.broker/v1",
+						"requestId": "req-checkout-2",
+						"reasons": [
+							{ "plane": "policy", "code": "explicit-camp-required" }
+						]
+					},
+					"events": [
+						{ "type": "broker.Requested" },
+						{ "type": "broker.Rejected" }
+					]
+				}
+			}
+		},
+		{
+			"description": "A spend estimate over the billing cap is rejected by the billing plane",
+			"request": {
+				"method": "POST",
+				"path": "/broker/resolve",
+				"body": {
+					"schemaVersion": "hobo.broker/v1",
+					"requestId": "req-checkout-3",
+					"scope": { "bindleId": "bindle:checkout" },
+					"requirements": [
+						{ "resourceId": "api", "port": "hobo:http-service" }
+					],
+					"spendEstimateUsd": 500
+				}
+			},
+			"response": {
+				"status": 402,
+				"body": {
+					"outcome": "rejected",
+					"rejection": {
+						"schemaVersion": "hobo.broker/v1",
+						"requestId": "req-checkout-3",
+						"reasons": [
+							{ "plane": "billing", "code": "spend-cap-exceeded" }
+						]
+					},
+					"events": [
+						{ "type": "broker.Requested" },
+						{ "type": "broker.Rejected" }
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

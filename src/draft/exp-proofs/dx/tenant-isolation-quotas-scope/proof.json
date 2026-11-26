@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "tenant-isolation-quotas-scope",
+  "experienceType": "dx",
+  "title": "Tenant Isolation & Quotas Scope",
+  "linear": "HOBO-415",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/hobo-415-tenant-isolation-quotas/README.md",
+      "docs/design/tenant-isolation-quotas.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

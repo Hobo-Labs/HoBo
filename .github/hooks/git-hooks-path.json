@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "sh \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

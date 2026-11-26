@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "vibe-topology-status-prototype",
+  "experienceType": "ux",
+  "title": "Vibe Topology/Status Prototype",
+  "linear": "HOBO-561",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/ux/vibe-dashboard-freshness-rbac-fixtures",
+      "src/draft/exp-proofs/ux/vibe-deployment-dashboard-mockups"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

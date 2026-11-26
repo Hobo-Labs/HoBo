@@ -1,0 +1,84 @@
+{
+	"consumer": {
+		"name": "@hobo/status-page"
+	},
+	"provider": {
+		"name": "status-page-projection"
+	},
+	"interactions": [
+		{
+			"description": "slo measurements and incidents fold into a scoped status row",
+			"request": {
+				"method": "POST",
+				"path": "/projections/status-page/fold",
+				"body": {
+					"events": [
+						{
+							"type": "slo.Measured",
+							"project": "shop",
+							"data": {
+								"componentId": "kit-web",
+								"sloName": "availability",
+								"attainment": 0.9995,
+								"target": 0.999,
+								"measuredAt": "2026-08-17T00:00:00.000Z"
+							}
+						},
+						{
+							"type": "incident.Opened",
+							"project": "shop",
+							"data": {
+								"incidentId": "INC-1",
+								"title": "Checkout latency",
+								"impact": "major",
+								"affectedComponents": ["kit-web"],
+								"currentStatus": "investigating"
+							}
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"scopeKey": "project:shop",
+					"components": {
+						"kit-web": {
+							"status": "operational"
+						}
+					},
+					"incidents": {
+						"INC-1": {
+							"state": "investigating",
+							"impact": "major"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "publishing requires a declared-public allowlist and a content hash",
+			"request": {
+				"method": "POST",
+				"path": "/status-pages/project:shop/publish",
+				"body": {
+					"componentAllowlist": ["kit-web"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"event": "statuspage.Published",
+					"scopeKind": "project",
+					"scopeId": "shop",
+					"components": ["kit-web"]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

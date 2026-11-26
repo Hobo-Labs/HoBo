@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hobo.dev/policy-engine.v1.schema.json",
+  "title": "HoBo policy-engine port contract",
+  "type": "object",
+  "required": ["schema", "engineId", "ruleset"],
+  "properties": {
+    "schema": { "const": "hobo.policy-engine/v1" },
+    "engineId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ruleset": {
+      "type": "object",
+      "required": ["schema", "id", "version", "rules"],
+      "properties": {
+        "schema": { "const": "hobo.policy-ruleset/v1" },
+        "id": { "type": "string", "minLength": 1 },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "rules": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

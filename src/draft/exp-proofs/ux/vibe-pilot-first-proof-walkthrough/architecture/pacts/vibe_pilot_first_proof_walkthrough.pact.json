@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "VibePilotFirstProofWalkthroughConsumer"
+  },
+  "provider": {
+    "name": "VibePilotFirstProofWalkthroughBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe Pilot First-Proof Walkthrough boundary returns accepted HOBO-563 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-pilot-first-proof-walkthrough/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.vibe_pilot_first_proof_walkthrough/v1",
+          "issue": "HOBO-563",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-pilot-first-proof-walkthrough",
+          "consumedStoryboard": {
+            "sourceIssue": "HOBO-549",
+            "packagePath": "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard"
+          },
+          "blockerRoutes": [
+            "cutline",
+            "docs",
+            "product-ux",
+            "support",
+            "engineering"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

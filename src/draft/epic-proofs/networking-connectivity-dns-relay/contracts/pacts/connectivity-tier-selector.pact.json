@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "ConnectivityTierSelector" },
+  "interactions": [
+    {
+      "description": "selects tier 3 for cross-provider private interconnect",
+      "request": { "method": "POST", "path": "/connectivity/tier/select" },
+      "response": { "status": 200, "body": { "tier": 3, "edgeId": "orders.api->orders.db" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

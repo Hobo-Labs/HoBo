@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PoisonEventQuarantineContractConsumer"
+  },
+  "provider": {
+    "name": "PoisonEventQuarantineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Poison Event Quarantine Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/poison-event-quarantine-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.poison_event_quarantine_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

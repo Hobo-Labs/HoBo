@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum S2StageGateEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_DRILL_REPORT = 1;
+  EVIDENCE_KIND_TIMELINE = 2;
+}
+
+message S2StageGateDrillRecord {
+  string issue = 1;
+  string fixture = 2;
+  string provider = 3;
+  uint32 resume_budget_ms = 4;
+  repeated string gate_arms = 5;
+}

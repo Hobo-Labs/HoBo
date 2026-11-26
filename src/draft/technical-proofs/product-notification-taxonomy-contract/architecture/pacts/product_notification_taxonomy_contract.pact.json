@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProductNotificationTaxonomyContractConsumer"
+  },
+  "provider": {
+    "name": "ProductNotificationTaxonomyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Product Notification Taxonomy Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/product-notification-taxonomy-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.product_notification_taxonomy_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

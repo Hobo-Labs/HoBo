@@ -1,0 +1,63 @@
+{
+  "$schema": "https://hobo.local/schemas/wrpc-wit-baseline-lock.v1.json",
+  "decision": "ADR-0085",
+  "issue": "HOBO-12",
+  "recordedAt": "2026-06-25",
+  "toolchain": {
+    "wasmtime": {
+      "version": "46.0.1",
+      "source": "https://github.com/bytecodealliance/wasmtime/releases/tag/v46.0.1",
+      "role": "Component Model host and compatibility floor"
+    },
+    "jco": {
+      "version": "1.24.3",
+      "package": "@bytecodealliance/jco",
+      "source": "https://www.npmjs.com/package/@bytecodealliance/jco"
+    },
+    "componentizeJs": {
+      "version": "0.21.0",
+      "package": "@bytecodealliance/componentize-js",
+      "source": "https://www.npmjs.com/package/@bytecodealliance/componentize-js"
+    },
+    "witBindgenCli": {
+      "version": "0.58.0",
+      "crate": "wit-bindgen-cli",
+      "source": "https://crates.io/crates/wit-bindgen-cli"
+    },
+    "wrpc": {
+      "version": "0.17.0",
+      "crate": "wrpc",
+      "source": "https://crates.io/crates/wrpc"
+    },
+    "wasmCloud": {
+      "version": "2.4.0",
+      "source": "https://github.com/wasmCloud/wasmCloud/releases/tag/v2.4.0",
+      "role": "Self-hosted lattice integration floor for wRPC links"
+    }
+  },
+  "manifestFloor": {
+    "componentModel": "wasmtime@46.0.1",
+    "defaultTransport": "wrpc@0.17.0+nats",
+    "interfacePinShape": "namespace:package/interface@semver@stability",
+    "previewBumpsRequire": [
+      "upcaster",
+      "new-bindle-version",
+      "deprecation-window"
+    ]
+  },
+  "vendoredInterfaces": [
+    {
+      "id": "wasi:clocks/wall-clock@0.2.0@stable",
+      "path": "wit/deps/wasi-clocks/wall-clock.wit",
+      "sha256": "4354c73e8eb73af150141565370f3ca5f7700dd72935e6be5c22f81418f249fd",
+      "stability": "stable",
+      "upcasterRequiredOnBreakingChange": true
+    }
+  ],
+  "ciGuards": [
+    "vendored-interface-sha256-matches-lock",
+    "wit-bindgen-cli-resolves-baseline-world",
+    "jco-types-resolves-baseline-world",
+    "preview-bump-declares-upcaster"
+  ]
+}

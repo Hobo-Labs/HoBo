@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/topology-objects-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for first-class Bindle/Camp/Yard/Junction topology objects.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "upgrade-migration-scope-contract",
+  "experienceType": "cx",
+  "title": "Upgrade Migration Scope Contract",
+  "linear": "HOBO-430",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/upgrade-migration-engine.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

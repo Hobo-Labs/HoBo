@@ -1,0 +1,7 @@
+cold start stages=5 outcome=certified traceReplay=passed
+safety certifiable=allow sandboxEgressAttempts=0
+training trajectories=3 optimizer=ready-for-gate liveEval=gate-passed
+training poisoning=trusted-for-promotion rawPayloadsToOptimizer=false promotion=promoted
+live fix=requires-human-approval nonConverging=needs-human
+malicious=deny poisonedTraining=quarantined crossLayer=propagated
+EPIC HELD: generation certifies only through sandboxed gates; training promotes only trusted evidence

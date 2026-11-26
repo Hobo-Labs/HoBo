@@ -1,0 +1,68 @@
+{
+  "consumer": {
+    "name": "dx-result-refusal-proof-envelope-consumer"
+  },
+  "provider": {
+    "name": "dx-result-refusal-proof-envelope-contract"
+  },
+  "interactions": [
+    {
+      "description": "read shared DX envelope catalog for SDK, CLI JSON, and MCP examples",
+      "request": {
+        "method": "GET",
+        "path": "/dx-result-refusal-proof-envelopes/hobo-571"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-571",
+          "phase": "M1",
+          "requiredKinds": [
+            "success",
+            "plan-warning",
+            "gatekeeper-denial",
+            "approval-required",
+            "contract-incompatibility",
+            "stale-projection",
+            "unknown-evidence",
+            "non-reactive-sink",
+            "migration-blocked",
+            "rollback-available",
+            "support-handoff"
+          ],
+          "surfaces": [
+            "sdk",
+            "cli-json",
+            "mcp-tool-result"
+          ]
+        }
+      }
+    },
+    {
+      "description": "classify optimistic live success claims without fixture proof as rejected",
+      "request": {
+        "method": "POST",
+        "path": "/dx-result-refusal-proof-envelopes/hobo-571/classify-claim"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "allowed": false,
+          "reason": "live or production success needs accepted fixture evidence before this proof may claim it",
+          "route": "dx-result-refusal-proof-envelopes"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

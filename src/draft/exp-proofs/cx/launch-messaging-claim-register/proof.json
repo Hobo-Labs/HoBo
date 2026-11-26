@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "launch-messaging-claim-register",
+  "experienceType": "cx",
+  "title": "Launch Messaging Claim Register",
+  "linear": "HOBO-406",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/launch-messaging-claims.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

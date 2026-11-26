@@ -1,0 +1,141 @@
+{
+	"consumer": {
+		"name": "@hobo/kv-redis-compatible"
+	},
+	"provider": {
+		"name": "KvRedisExecutor"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The one boundary that leaves this package is KvRedisExecutor.execute(command). It is expressed here over the REST transport, because that is the shape an HTTP-fronted store actually receives; a RESP or in-process adapter satisfies the same expectations with the same bodies. The load-bearing rule is the second interaction: a rejected command is a returned error reply, never a thrown exception, because several conformance cases assert that a command MUST be rejected and a throw makes those indistinguishable from a broken socket."
+	},
+	"interactions": [
+		{
+			"description": "a command is a verb followed by arguments that reach the store byte-for-byte",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": ["SET", "run-42:hobo:conf:utf8", "café — 🚀"]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": "OK"
+				}
+			}
+		},
+		{
+			"description": "a rejected command is an error reply, not a thrown exception",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": ["INCR", "run-42:hobo:conf:not-a-number"]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "error",
+					"message": "ERR value is not an integer or out of range"
+				}
+			}
+		},
+		{
+			"description": "nil is a null value reply and is distinct from the empty string",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": ["GET", "run-42:hobo:conf:absent"]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": null
+				}
+			}
+		},
+		{
+			"description": "an integer reply may arrive as a numeric string; TTL over REST and over RESP legitimately differ here",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": ["TTL", "run-42:hobo:conf:ttl"]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": "60"
+				}
+			}
+		},
+		{
+			"description": "a value over the declared maximum is refused rather than silently truncated",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": ["SET", "run-42:hobo:conf:bounded", "<over-max-value-bytes fill>"]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "error",
+					"message": "ERR value is too large"
+				}
+			}
+		},
+		{
+			"description": "a transport failure is not a store answer: the runner aborts the run rather than recording a case result",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": ["PING"]
+			},
+			"response": {
+				"status": 503,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"error": "upstream unavailable"
+				}
+			}
+		}
+	]
+}

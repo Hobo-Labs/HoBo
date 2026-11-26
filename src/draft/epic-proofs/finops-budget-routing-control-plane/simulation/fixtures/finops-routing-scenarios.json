@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "hobo.finops.routing-scenarios/v1",
+  "seq": 42,
+  "scenarios": [
+    {
+      "id": "approved-route",
+      "description": "Balanced candidate selected from Pareto set with no stability override."
+    },
+    {
+      "id": "approval-required",
+      "description": "Budget forecast crosses threshold and emits approval-required decision."
+    },
+    {
+      "id": "budget-deny",
+      "description": "No eligible candidates remain after hard budget constraints."
+    },
+    {
+      "id": "stability-cooldown",
+      "description": "Preference winner is blocked by cooldown and minimum improvement threshold."
+    }
+  ],
+  "adapterFixtures": [
+    "terraform-plan-json",
+    "pulumi-automation-api",
+    "crossplane-composition",
+    "kubernetes-runtime-controller"
+  ]
+}

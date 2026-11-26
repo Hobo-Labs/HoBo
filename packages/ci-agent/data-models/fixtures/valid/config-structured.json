@@ -1,0 +1,1 @@
+{"mode": "suggest", "engines": [{"id": "m", "kind": "gateway", "model": "openai/gpt-5.1"}], "resolution": {"structuredMerge": true, "maxRepairs": 2}}

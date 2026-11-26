@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package hobo.support.sla_channels.v1;
+
+message SupportSlaChannelRecord {
+  string id = 1;
+  string availability = 2;
+  bool customer_visible = 3;
+  string evidence = 4;
+}
+
+message SupportSlaResponseTarget {
+  string severity = 1;
+  string support_hours = 2;
+  string internal_target = 3;
+  string beta_promise = 4;
+  string handoff_rule = 5;
+}
+
+message SupportSlaPublicationGate {
+  string mode = 1;
+  bool business_owner_approved = 2;
+  bool evidence_accepted = 3;
+  bool allowed = 4;
+  string reason = 5;
+}

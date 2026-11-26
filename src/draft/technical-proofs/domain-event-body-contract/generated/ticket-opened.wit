@@ -1,0 +1,10 @@
+package hobo:domain-event-bodies@1.0.0;
+
+interface ticket {
+  record opened {
+    ticket-id: string,
+    summary: string,
+    priority: u32,
+    requester-email: string,
+  }
+}

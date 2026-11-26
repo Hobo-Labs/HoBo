@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "legal-privacy-terms-readiness-contract",
+  "experienceType": "cx",
+  "title": "Legal Privacy Terms Readiness Contract",
+  "linear": "HOBO-405",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

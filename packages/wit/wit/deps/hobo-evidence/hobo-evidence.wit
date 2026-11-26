@@ -1,0 +1,56 @@
+package hobo:evidence@0.1.0;
+
+/// Development evidence is append-only and host-attributed. Guests may submit
+/// claims and bytes, but cannot assign verification state or storage paths.
+/// stability: experimental
+interface evidence {
+  enum kind {
+    status,
+    test,
+    feature,
+    decision,
+    diagram,
+    screenshot,
+    recording,
+    replay,
+    annotation,
+    note,
+  }
+
+  record artifact-metadata {
+    title: string,
+    media-type: string,
+  }
+
+  record artifact-ref {
+    id: string,
+    media-type: string,
+    sha256: string,
+    size: u64,
+  }
+
+  record evidence-record {
+    kind: kind,
+    title: string,
+    summary: string,
+    subject: string,
+    artifact-refs: list<string>,
+    source-ref: option<string>,
+  }
+
+  resource artifact-writer {
+    write: func(chunk: list<u8>) -> result<_, string>;
+    finish: func() -> result<artifact-ref, string>;
+  }
+
+  submit: func(item: evidence-record) -> result<string, string>;
+  begin-artifact: func(metadata: artifact-metadata) -> result<artifact-writer, string>;
+}
+
+world evidence-provider {
+  export evidence;
+}
+
+world evidence-guest {
+  import evidence;
+}

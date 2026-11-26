@@ -1,0 +1,25 @@
+{
+  "layer": "technical",
+  "slug": "vscode-extension-contract",
+  "title": "VS Code Extension Contract POC",
+  "linear": "HOBO-180",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-cli-shell-contract",
+      "src/draft/technical-proofs/hobo-inspect-projection-contract",
+      "src/draft/technical-proofs/hobo-mcp-server-contract",
+      "src/draft/technical-proofs/hobo-plan-preview-contract",
+      "src/draft/technical-proofs/run-inspector-projection-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

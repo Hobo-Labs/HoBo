@@ -1,0 +1,38 @@
+{
+  "featureId": "cli-help-and-doctor",
+  "scenarioSlug": "primary-path-works-for-product-app-developer",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent",
+    "role-developers",
+    "role-devsecops",
+    "role-finops",
+    "role-platform-engineers",
+    "role-sre"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T20:13:12.804Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 1317,
+    "sha256": "3b9035b74e70fa9912469002b0bf88f2589fe68574761f8c182a582f1fc790c9"
+  },
+  "frames": [],
+  "repro": {
+    "command": "pnpm run doctor 2>&1 | head -50",
+    "cwd": ".",
+    "via": "capture-evidence"
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

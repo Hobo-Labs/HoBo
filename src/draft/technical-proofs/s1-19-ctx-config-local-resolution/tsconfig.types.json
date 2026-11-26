@@ -1,0 +1,19 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "strict": true,
+    "noEmit": true
+  },
+  "include": [
+    "types/config-surface.types.ts",
+    "src/bindles/**/*.ts",
+    "src/core/**/*.ts",
+    "src/runtime/context.ts",
+    "src/runtime/resolver.ts",
+    "src/runtime/redaction.ts",
+    "src/runtime/event-store.ts"
+  ]
+}

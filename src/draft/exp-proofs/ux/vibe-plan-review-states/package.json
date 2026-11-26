@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-vibe-plan-review-states",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

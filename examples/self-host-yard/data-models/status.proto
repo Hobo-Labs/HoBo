@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package hobo.examples.self_host_yard.v1;
+
+// Request/response contracts for the status-page API in src/api.ts — the small
+// service this example deploys through a SELF-HOSTED Yard (the HoBo control
+// plane running on the operator's own machine, event log on the operator's own
+// disk).
+
+enum Health {
+  HEALTH_UNSPECIFIED = 0;
+  HEALTH_OPERATIONAL = 1;
+  HEALTH_DEGRADED = 2;
+  HEALTH_DOWN = 3;
+}
+
+message ComponentStatus {
+  string component = 1;
+  Health health = 2;
+  string note = 3;
+}
+
+message StatusPage {
+  repeated ComponentStatus components = 1;
+}
+
+message IncidentReport {
+  string component = 1;
+  string note = 2;
+}
+
+message IncidentAck {
+  string incident_id = 1;
+  string component = 2;
+  string note = 3;
+}

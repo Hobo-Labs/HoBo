@@ -1,0 +1,8 @@
+# The vendored anti-slop copies are pinned by SHA-256 (ADR-0173): keep their
+# bytes exactly as committed, so no checkout converts line endings.
+tools/oxlint/anti-slop/** -text
+.claude/skills/install-anti-slop/assets/anti-slop/** -text
+.agents/skills/install-anti-slop/assets/anti-slop/** -text
+
+scripts/ci/attestation.mts merge=hobo-attestation-pins
+docs/ci/errors.md merge=hobo-error-catalog

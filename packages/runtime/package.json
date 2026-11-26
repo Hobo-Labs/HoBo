@@ -1,0 +1,46 @@
+{
+	"name": "@hobo/runtime",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./replay": {
+			"types": "./dist/replay/index.d.ts",
+			"default": "./dist/replay/index.js"
+		},
+		"./durable-messaging-host": {
+			"types": "./dist/durable-messaging-host.d.ts",
+			"default": "./dist/durable-messaging-host.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
+		"ts-autocode-grounding": "workspace:*",
+		"@hobo/wit": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.3",
+		"fast-check": "^4.3.0",
+		"tsx": "^4.20.3"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "tsc --noEmit -p tsconfig.test.json && vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer"
+	}
+}

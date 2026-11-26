@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-support-escalation-matrix",
+  "experienceType": "cx",
+  "title": "Launch Support Escalation Matrix POC",
+  "linear": "HOBO-408",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

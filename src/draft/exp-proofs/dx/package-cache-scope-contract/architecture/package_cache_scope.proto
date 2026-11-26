@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Package Cache Scope
+// draft package reasons about. Documents the records/objects this package owns
+// so the architecture guard has a language-neutral schema reference. Not
+// compiled at runtime; this is a design-time contract artifact.
+
+enum PackageCacheEvidenceKind {
+  PACKAGE_CACHE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  PACKAGE_CACHE_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  PACKAGE_CACHE_EVIDENCE_KIND_REFERENCE_FIXTURE = 2;
+  PACKAGE_CACHE_EVIDENCE_KIND_CONTRACT_TEST = 3;
+  PACKAGE_CACHE_EVIDENCE_KIND_MANIFEST_FIXTURE = 4;
+  PACKAGE_CACHE_EVIDENCE_KIND_SECURITY_FIXTURE = 5;
+  PACKAGE_CACHE_EVIDENCE_KIND_SUPPORT_HANDOFF = 6;
+  PACKAGE_CACHE_EVIDENCE_KIND_POLICY_MAP = 7;
+}
+
+message PackageCacheScopeRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string goal = 4;
+  repeated PackageCacheBoundary boundaries = 5;
+  repeated PackageCacheEvidence required_evidence = 6;
+  repeated PackageCacheSubject cache_subjects = 7;
+}
+
+message PackageCacheBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message PackageCacheEvidence {
+  string id = 1;
+  string owner = 2;
+  string proof = 3;
+}
+
+message PackageCacheSubject {
+  string id = 1;
+  string definition = 2;
+}

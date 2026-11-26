@@ -1,0 +1,55 @@
+{
+	"consumer": {
+		"name": "@hobo/runtime"
+	},
+	"provider": {
+		"name": "RealizeEmissionBoundary"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	},
+	"interactions": [
+		{
+			"description": "realize a compute ResourcePlan into a Pulumi IacProgram accepted by @hobo/iac-pulumi",
+			"request": {
+				"type": "message",
+				"body": {
+					"name": "service",
+					"port": "compute",
+					"provider": "cloudflare"
+				}
+			},
+			"response": {
+				"body": {
+					"ok": true,
+					"apiVersion": "hobo.iac-program/v1",
+					"kind": "iac-program",
+					"provider": "pulumi",
+					"resourceClass": "cloudflare:workers-script"
+				}
+			}
+		},
+		{
+			"description": "realize the hello-bindle deployment plan into one previewable IacProgram",
+			"request": {
+				"type": "message",
+				"body": {
+					"plan": "hello-bindle"
+				}
+			},
+			"response": {
+				"body": {
+					"ok": true,
+					"resourceIds": ["service", "assets", "sessions"],
+					"resourceClasses": [
+						"cloudflare:workers-script",
+						"cloudflare:r2-bucket",
+						"cloudflare:kv-namespace"
+					]
+				}
+			}
+		}
+	]
+}

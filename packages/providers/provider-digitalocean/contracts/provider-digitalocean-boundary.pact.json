@@ -1,0 +1,103 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderDigitalOceanBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for the four DigitalOcean equivalence-class ports",
+      "request": {
+        "method": "POST",
+        "path": "/providers/digitalocean/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "broker-custody credential locator posture: no static secrets in the package",
+      "request": {
+        "method": "GET",
+        "path": "/providers/digitalocean/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "svid-federation",
+          "exchange": "hobo:broker-credential-locator",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "realize a compute ResourcePlan into a pulumi IacProgram with a digitalocean:app-platform-service resource",
+      "request": {
+        "method": "POST",
+        "path": "/providers/digitalocean/realize",
+        "body": {
+          "name": "api",
+          "port": "compute",
+          "provider": "digitalocean"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "iac": {
+            "apiVersion": "hobo.iac-program/v1",
+            "kind": "iac-program",
+            "provider": "pulumi",
+            "resources": [
+              {
+                "name": "api",
+                "type": "digitalocean:app-platform-service",
+                "provider": "digitalocean"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "reconcile a managed postgres cluster twice: one create call, one stable physicalId",
+      "request": {
+        "method": "POST",
+        "path": "/providers/digitalocean/resolve",
+        "body": {
+          "productId": "digitalocean.managed-postgres/v1",
+          "logicalId": "ledger",
+          "desired": {
+            "region": "nyc3",
+            "size": "db-s-1vcpu-1gb"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contract": "hobo.resource-resolver/v1",
+          "action": "create",
+          "createCalls": 1,
+          "reconcileTwiceAction": "noop"
+        }
+      }
+    }
+  ]
+}

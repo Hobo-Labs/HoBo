@@ -1,0 +1,147 @@
+---
+import { href } from "../lib/url";
+
+interface Props {
+	src: string;
+	poster?: string;
+	height?: string;
+}
+const { src, poster, height = "26rem" } = Astro.props;
+const modelUrl = href(src);
+const posterUrl = poster ? href(poster) : undefined;
+---
+
+<div class="viewer" style={`--h:${height}`} data-model={modelUrl}>
+	<canvas class="viewer-canvas" aria-label="Interactive 3D model of HoBit Bill"></canvas>
+	{
+		posterUrl && (
+			<img class="viewer-poster" src={posterUrl} alt="" aria-hidden="true" />
+		)
+	}
+	<p class="viewer-hint">drag to orbit · scroll to zoom</p>
+	<noscript>
+		<p class="viewer-fallback">
+			The 3D viewer needs JavaScript. The still render above shows the same
+			mesh, and the .glb is downloadable below.
+		</p>
+	</noscript>
+</div>
+
+<style>
+	.viewer {
+		position: relative;
+		height: var(--h);
+		border-radius: 8px;
+		overflow: hidden;
+		background: repeating-linear-gradient(
+			45deg,
+			transparent 0 10px,
+			rgba(128, 128, 128, 0.06) 10px 20px
+		);
+		cursor: grab;
+	}
+	.viewer:active { cursor: grabbing; }
+	.viewer-canvas { display: block; width: 100%; height: 100%; }
+	.viewer-poster {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		transition: opacity 220ms ease;
+	}
+	.viewer.is-ready .viewer-poster { opacity: 0; pointer-events: none; }
+	.viewer-hint {
+		position: absolute;
+		right: 0.6rem;
+		bottom: 0.5rem;
+		margin: 0;
+		font-size: 0.72rem;
+		letter-spacing: 0.02em;
+		color: var(--mute);
+		background: var(--paper);
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		padding: 0.15rem 0.6rem;
+		opacity: 0;
+		transition: opacity 220ms ease;
+	}
+	.viewer.is-ready .viewer-hint { opacity: 1; }
+	.viewer-fallback { padding: 1rem; color: var(--mute); }
+</style>
+
+<script>
+	import * as THREE from "three";
+	import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+	import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+
+	for (const host of document.querySelectorAll<HTMLElement>(".viewer")) {
+		const canvas = host.querySelector("canvas");
+		const url = host.dataset.model;
+		if (!canvas || !url) continue;
+
+		const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+		renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+		const scene = new THREE.Scene();
+		const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+		const controls = new OrbitControls(camera, canvas);
+		controls.enableDamping = true;
+		controls.enablePan = false;
+
+		scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.2));
+		const key = new THREE.DirectionalLight(0xffffff, 1.6);
+		key.position.set(2, 3, 2);
+		scene.add(key);
+
+		const resize = () => {
+			const { clientWidth: w, clientHeight: h } = host;
+			if (!w || !h) return;
+			renderer.setSize(w, h, false);
+			camera.aspect = w / h;
+			camera.updateProjectionMatrix();
+		};
+		resize();
+		new ResizeObserver(resize).observe(host);
+
+		new GLTFLoader().load(
+			url,
+			(gltf) => {
+				const model = gltf.scene;
+				const box = new THREE.Box3().setFromObject(model);
+				const size = box.getSize(new THREE.Vector3());
+				const centre = box.getCenter(new THREE.Vector3());
+				model.position.sub(centre);
+				scene.add(model);
+
+				const radius = Math.max(size.x, size.y, size.z) * 0.5 || 1;
+				const dist = radius / Math.sin((camera.fov * Math.PI) / 360);
+				camera.position.set(dist * 0.55, dist * 0.28, dist * 0.95);
+				controls.target.set(0, 0, 0);
+				controls.minDistance = dist * 0.4;
+				controls.maxDistance = dist * 3;
+				controls.update();
+				host.classList.add("is-ready");
+			},
+			undefined,
+			() => {
+				host.classList.remove("is-ready");
+			},
+		);
+
+		const still = matchMedia("(prefers-reduced-motion: reduce)");
+		let running = false;
+		const tick = () => {
+			if (!running) return;
+			controls.update();
+			renderer.render(scene, camera);
+			requestAnimationFrame(tick);
+		};
+		new IntersectionObserver(([entry]) => {
+			running = entry.isIntersecting;
+			if (running) tick();
+		}).observe(host);
+		controls.autoRotate = !still.matches;
+		controls.autoRotateSpeed = 0.8;
+	}
+</script>

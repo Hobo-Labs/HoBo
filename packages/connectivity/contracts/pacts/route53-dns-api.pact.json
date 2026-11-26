@@ -1,0 +1,44 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "Route53DnsApi" },
+	"interactions": [
+		{
+			"description": "change resource record sets upsert",
+			"request": {
+				"method": "POST",
+				"path": "/2013-04-01/hostedzone/Z123/rrset/"
+			},
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "text/xml" },
+				"body": "<?xml version=\"1.0\"?><ChangeResourceRecordSetsResponse xmlns=\"https://route53.amazonaws.com/doc/2013-04-01/\"><ChangeInfo><Id>/change/C1</Id><Status>PENDING</Status></ChangeInfo></ChangeResourceRecordSetsResponse>"
+			}
+		},
+		{
+			"description": "list resource record sets",
+			"request": {
+				"method": "GET",
+				"path": "/2013-04-01/hostedzone/Z123/rrset?maxitems=100"
+			},
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "text/xml" },
+				"body": "<?xml version=\"1.0\"?><ListResourceRecordSetsResponse xmlns=\"https://route53.amazonaws.com/doc/2013-04-01/\"><ResourceRecordSets><ResourceRecordSet><Name>web.example.com.</Name><Type>CNAME</Type><TTL>300</TTL><ResourceRecords><ResourceRecord><Value>funnel.ts.net.</Value></ResourceRecord></ResourceRecords></ResourceRecordSet></ResourceRecordSets></ListResourceRecordSetsResponse>"
+			}
+		},
+		{
+			"description": "list forbidden",
+			"request": {
+				"method": "GET",
+				"path": "/2013-04-01/hostedzone/ZFORBIDDEN/rrset?maxitems=100"
+			},
+			"response": {
+				"status": 403,
+				"body": "AccessDenied"
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/hobo.mtls-data-path.v1.schema.json",
+  "title": "HoBo mTLS Data Path Contract v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "connectionId",
+    "tenant",
+    "trustDomain",
+    "sourceSvid",
+    "peerCertificate",
+    "allowedPeers",
+    "certMaterialRef",
+    "authz"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "hobo.mtls-data-path/v1" },
+    "connectionId": { "type": "string", "minLength": 1 },
+    "tenant": { "type": "string", "minLength": 1 },
+    "trustDomain": { "type": "string", "minLength": 1 },
+    "sourceSvid": { "type": "string", "pattern": "^spiffe://" },
+    "peerCertificate": {
+      "type": "object",
+      "required": ["spiffeId", "serialNumber", "notBefore", "notAfter", "rotationEpoch"],
+      "additionalProperties": false,
+      "properties": {
+        "spiffeId": { "type": "string", "pattern": "^spiffe://" },
+        "serialNumber": { "type": "string", "minLength": 1 },
+        "notBefore": { "type": "string", "format": "date-time" },
+        "notAfter": { "type": "string", "format": "date-time" },
+        "rotationEpoch": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "allowedPeers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^spiffe://" },
+      "uniqueItems": true
+    },
+    "certMaterialRef": { "type": "string", "pattern": "^identity://" },
+    "minimumPeerRotationEpoch": { "type": "integer", "minimum": 0 },
+    "now": { "type": "string", "format": "date-time" },
+    "authz": {
+      "type": "object",
+      "required": ["bindEdgeId", "verbs"],
+      "additionalProperties": false,
+      "properties": {
+        "bindEdgeId": { "type": "string", "minLength": 1 },
+        "verbs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

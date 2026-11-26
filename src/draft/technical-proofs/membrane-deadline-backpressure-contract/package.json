@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/membrane-deadline-backpressure-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "S1-09 draft POC: deadline propagation + membrane backpressure + partial-failure taxonomy (HOBO-598).",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

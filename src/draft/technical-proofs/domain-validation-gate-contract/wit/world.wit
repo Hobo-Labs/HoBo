@@ -1,0 +1,80 @@
+package hobo:domain-validation-gate@0.1.0;
+
+interface gate {
+  enum check-kind {
+    multi-vantage-resolve,
+    ttl-aware-propagation,
+    acme-challenge,
+    endpoint-health,
+  }
+
+  enum validation-event-type {
+    validation-started,
+    validated,
+    validation-failed,
+  }
+
+  record check-evidence {
+    kind: check-kind,
+    status: string,
+    evidence-json: string,
+  }
+
+  record validation-started {
+    /// Event type string: domain.ValidationStarted.
+    event-type: string,
+    change-id: string,
+    domain: string,
+    camp: string,
+    checks: list<check-kind>,
+    stage: string,
+    live-zone-mutation-allowed: bool,
+  }
+
+  record validation-failed {
+    /// Event type string: domain.ValidationFailed.
+    event-type: string,
+    change-id: string,
+    domain: string,
+    camp: string,
+    failed-check: string,
+    reason: string,
+    stage: string,
+    live-zone-untouched: bool,
+    checks: list<check-evidence>,
+  }
+
+  record validated {
+    /// Event type string: domain.Validated.
+    event-type: string,
+    change-id: string,
+    domain: string,
+    camp: string,
+    stage: string,
+    live-zone-untouched: bool,
+    checks: list<check-evidence>,
+  }
+
+  variant validation-event {
+    validation-started(validation-started),
+    validated(validated),
+    validation-failed(validation-failed),
+  }
+
+  record validation-request {
+    change-id: string,
+    domain: string,
+    camp: string,
+  }
+
+  variant validation-outcome {
+    validated(list<validation-event>),
+    failed(list<validation-event>),
+  }
+
+  validate: func(request: validation-request) -> result<validation-outcome, string>;
+}
+
+world domain-validation-gate {
+  export gate;
+}

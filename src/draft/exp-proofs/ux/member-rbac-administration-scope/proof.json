@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "member-rbac-administration-scope",
+  "experienceType": "ux",
+  "title": "Member/RBAC Administration Scope POC",
+  "linear": "HOBO-416",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

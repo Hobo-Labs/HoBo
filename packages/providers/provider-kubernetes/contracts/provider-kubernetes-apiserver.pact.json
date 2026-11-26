@@ -1,0 +1,511 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-kubernetes"
+	},
+	"provider": {
+		"name": "KubernetesApiServer"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"source": {
+			"url": "https://kubernetes.io/docs/reference/kubernetes-api/",
+			"apiVersions": ["v1", "apps/v1"],
+			"checkedAt": "2026-08-08"
+		}
+	},
+	"interactions": [
+		{
+			"description": "create the placement namespace",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/namespaces",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Namespace",
+					"metadata": {
+						"name": "hobo-try-site",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Namespace",
+					"metadata": {
+						"name": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000001",
+						"resourceVersion": "148213",
+						"creationTimestamp": "2026-08-08T12:00:00Z",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo",
+							"kubernetes.io/metadata.name": "hobo-try-site"
+						}
+					},
+					"spec": {
+						"finalizers": ["kubernetes"]
+					},
+					"status": {
+						"phase": "Active"
+					}
+				}
+			}
+		},
+		{
+			"description": "report AlreadyExists when the namespace is already there",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/namespaces",
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Namespace",
+					"metadata": {
+						"name": "hobo-try-site",
+						"labels": {
+							"app.kubernetes.io/managed-by": "hobo"
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "namespaces \"hobo-try-site\" already exists",
+					"reason": "AlreadyExists",
+					"details": {
+						"name": "hobo-try-site",
+						"kind": "namespaces"
+					},
+					"code": 409
+				}
+			}
+		},
+		{
+			"description": "read a namespace that already exists, so a second deploy adopts it",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/namespaces/hobo-try-site",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Namespace",
+					"metadata": {
+						"name": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000001",
+						"resourceVersion": "148213",
+						"creationTimestamp": "2026-08-08T11:00:00Z"
+					},
+					"status": {
+						"phase": "Active"
+					}
+				}
+			}
+		},
+		{
+			"description": "create the workload deployment",
+			"request": {
+				"method": "POST",
+				"path": "/apis/apps/v1/namespaces/hobo-try-site/deployments",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"labels": {
+							"app.kubernetes.io/name": "try-site",
+							"app.kubernetes.io/managed-by": "hobo"
+						}
+					},
+					"spec": {
+						"replicas": 2,
+						"selector": {
+							"matchLabels": {
+								"app.kubernetes.io/name": "try-site"
+							}
+						},
+						"strategy": {
+							"type": "RollingUpdate",
+							"rollingUpdate": {
+								"maxSurge": 1,
+								"maxUnavailable": 0
+							}
+						},
+						"template": {
+							"metadata": {
+								"labels": {
+									"app.kubernetes.io/name": "try-site",
+									"app.kubernetes.io/managed-by": "hobo"
+								}
+							},
+							"spec": {
+								"automountServiceAccountToken": false,
+								"enableServiceLinks": false,
+								"securityContext": {
+									"runAsNonRoot": true,
+									"seccompProfile": {
+										"type": "RuntimeDefault"
+									}
+								},
+								"containers": [
+									{
+										"name": "try-site",
+										"image": "ghcr.io/hobo/try-site@sha256:221b467378d5ca6ae498f03408d3b19d3b762bb8b078a99a014b61c33d1f1240",
+										"imagePullPolicy": "IfNotPresent",
+										"ports": [
+											{
+												"containerPort": 8080,
+												"protocol": "TCP"
+											}
+										],
+										"resources": {
+											"requests": {
+												"cpu": "250m",
+												"memory": "128Mi"
+											},
+											"limits": {
+												"cpu": "500m",
+												"memory": "256Mi"
+											}
+										},
+										"securityContext": {
+											"allowPrivilegeEscalation": false,
+											"readOnlyRootFilesystem": true,
+											"capabilities": {
+												"drop": ["ALL"]
+											}
+										}
+									}
+								]
+							}
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000002",
+						"resourceVersion": "148216",
+						"generation": 1,
+						"creationTimestamp": "2026-08-08T12:00:01Z"
+					},
+					"spec": {
+						"replicas": 2
+					},
+					"status": {}
+				}
+			}
+		},
+		{
+			"description": "create the ClusterIP service in front of the deployment",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/namespaces/hobo-try-site/services",
+				"headers": {
+					"Accept": "application/json",
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Service",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"labels": {
+							"app.kubernetes.io/name": "try-site",
+							"app.kubernetes.io/managed-by": "hobo"
+						}
+					},
+					"spec": {
+						"type": "ClusterIP",
+						"selector": {
+							"app.kubernetes.io/name": "try-site"
+						},
+						"ports": [
+							{
+								"name": "http",
+								"port": 80,
+								"targetPort": 8080,
+								"protocol": "TCP"
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Service",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000003",
+						"resourceVersion": "148220",
+						"creationTimestamp": "2026-08-08T12:00:02Z"
+					},
+					"spec": {
+						"type": "ClusterIP",
+						"clusterIP": "10.96.42.17",
+						"selector": {
+							"app.kubernetes.io/name": "try-site"
+						},
+						"ports": [
+							{
+								"name": "http",
+								"port": 80,
+								"targetPort": 8080,
+								"protocol": "TCP"
+							}
+						]
+					},
+					"status": {
+						"loadBalancer": {}
+					}
+				}
+			}
+		},
+		{
+			"description": "observe a rollout the controller has seen but not finished",
+			"request": {
+				"method": "GET",
+				"path": "/apis/apps/v1/namespaces/hobo-try-site/deployments/try-site/status",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000002",
+						"resourceVersion": "148231",
+						"generation": 1,
+						"creationTimestamp": "2026-08-08T12:00:01Z"
+					},
+					"spec": {
+						"replicas": 2
+					},
+					"status": {
+						"observedGeneration": 1,
+						"replicas": 2,
+						"replicas": 2,
+						"updatedReplicas": 2,
+						"readyReplicas": 1,
+						"availableReplicas": 1,
+						"conditions": [
+							{
+								"type": "Progressing",
+								"status": "True",
+								"reason": "ReplicaSetUpdated",
+								"lastUpdateTime": "2026-08-08T12:00:09Z"
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "observe a rollout the controller calls complete",
+			"request": {
+				"method": "GET",
+				"path": "/apis/apps/v1/namespaces/hobo-try-site/deployments/try-site/status"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000002",
+						"resourceVersion": "148244",
+						"generation": 1,
+						"creationTimestamp": "2026-08-08T12:00:01Z"
+					},
+					"spec": {
+						"replicas": 2
+					},
+					"status": {
+						"observedGeneration": 1,
+						"replicas": 2,
+						"replicas": 2,
+						"updatedReplicas": 2,
+						"readyReplicas": 2,
+						"availableReplicas": 2,
+						"conditions": [
+							{
+								"type": "Available",
+								"status": "True",
+								"reason": "MinimumReplicasAvailable"
+							},
+							{
+								"type": "Progressing",
+								"status": "True",
+								"reason": "NewReplicaSetAvailable"
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "observe a rollout that ran out of progress deadline while old replicas stayed up",
+			"request": {
+				"method": "GET",
+				"path": "/apis/apps/v1/namespaces/hobo-try-site/deployments/try-site/status"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "apps/v1",
+					"kind": "Deployment",
+					"metadata": {
+						"name": "try-site",
+						"namespace": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000002",
+						"resourceVersion": "148702",
+						"generation": 2,
+						"creationTimestamp": "2026-08-08T12:00:01Z"
+					},
+					"spec": {
+						"replicas": 2
+					},
+					"status": {
+						"observedGeneration": 2,
+						"replicas": 3,
+						"replicas": 3,
+						"updatedReplicas": 1,
+						"readyReplicas": 2,
+						"availableReplicas": 2,
+						"conditions": [
+							{
+								"type": "Available",
+								"status": "True",
+								"reason": "MinimumReplicasAvailable"
+							},
+							{
+								"type": "Progressing",
+								"status": "False",
+								"reason": "ProgressDeadlineExceeded",
+								"message": "ReplicaSet \"try-site-7c9f\" has timed out progressing."
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "refuse a create the caller is not authorized for",
+			"request": {
+				"method": "POST",
+				"path": "/apis/apps/v1/namespaces/hobo-try-site/deployments"
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "deployments.apps is forbidden: User \"system:serviceaccount:hobo:deployer\" cannot create resource \"deployments\" in API group \"apps\" in the namespace \"hobo-try-site\"",
+					"reason": "Forbidden",
+					"details": {
+						"group": "apps",
+						"kind": "deployments"
+					},
+					"code": 403
+				}
+			}
+		},
+		{
+			"description": "accept a namespace delete, which answers Terminating rather than gone",
+			"request": {
+				"method": "DELETE",
+				"path": "/api/v1/namespaces/hobo-try-site",
+				"headers": {
+					"Accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"apiVersion": "v1",
+					"kind": "Namespace",
+					"metadata": {
+						"name": "hobo-try-site",
+						"uid": "3d1a9c40-0000-4000-8000-000000000001",
+						"resourceVersion": "149010",
+						"creationTimestamp": "2026-08-08T12:00:00Z",
+						"deletionTimestamp": "2026-08-08T12:30:00Z"
+					},
+					"spec": {
+						"finalizers": ["kubernetes"]
+					},
+					"status": {
+						"phase": "Terminating"
+					}
+				}
+			}
+		},
+		{
+			"description": "report NotFound once the namespace finalizers have run",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/namespaces/hobo-try-site"
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"kind": "Status",
+					"apiVersion": "v1",
+					"metadata": {},
+					"status": "Failure",
+					"message": "namespaces \"hobo-try-site\" not found",
+					"reason": "NotFound",
+					"details": {
+						"name": "hobo-try-site",
+						"kind": "namespaces"
+					},
+					"code": 404
+				}
+			}
+		}
+	]
+}

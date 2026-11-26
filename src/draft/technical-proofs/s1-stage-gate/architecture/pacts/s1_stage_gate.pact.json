@@ -1,0 +1,36 @@
+{
+  "consumer": {
+    "name": "S1StageGateConsumer"
+  },
+  "provider": {
+    "name": "S1StageGateRecordBoundary"
+  },
+  "interactions": [
+    {
+      "description": "S1 stage gate assembles a parsed StageGateS1Record from check timings",
+      "request": {
+        "method": "POST",
+        "path": "/s1-stage-gate/record",
+        "body": {
+          "gate_id": "s1-stage-gate"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "gate_id": "s1-stage-gate",
+          "checks": [
+            { "check_id": "runtime-port-conformance", "status": "pass" },
+            { "check_id": "offline-hello-bindle", "status": "pass" },
+            { "check_id": "replay-equals-live", "status": "pass" }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

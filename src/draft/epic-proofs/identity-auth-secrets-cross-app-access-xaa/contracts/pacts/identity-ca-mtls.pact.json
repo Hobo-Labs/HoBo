@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "IdentityCertificateAuthority" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "issues tenant-scoped X.509-SVID certificate shape",
+      "providerStates": [{ "name": "tenant-a SVID CA is active" }],
+      "request": {
+        "method": "POST",
+        "path": "/x509-svids/issue",
+        "headers": { "content-type": "application/json" },
+        "body": { "subject": "spiffe://yard/tenant-a/bindle/orders-api/service/api", "ttlSeconds": 900 }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "certificateRef": "certref://tenant-a/orders-api/api/0", "san": "spiffe://yard/tenant-a/bindle/orders-api/service/api", "rotateAtSeconds": 600 }
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "hobo.data-flywheel-privacy/v1",
+  "defaults": {
+    "trajectoryRetentionDays": 30,
+    "rawAccessPurposes": ["eval-debug", "incident-review"],
+    "externalProviderSensitiveClasses": ["public", "internal"]
+  },
+  "classes": {
+    "public": {
+      "store": "cleartext",
+      "optimizer": "cleartext"
+    },
+    "internal": {
+      "store": "minimized-hash",
+      "optimizer": "minimized-hash"
+    },
+    "pii": {
+      "store": "tokenized-encrypted-ref",
+      "optimizer": "tokenized",
+      "rawAccess": "in-boundary-policy-gated"
+    },
+    "secret": {
+      "store": "encrypted-ref-only",
+      "optimizer": "omitted",
+      "rawAccess": "deny-by-default"
+    }
+  }
+}

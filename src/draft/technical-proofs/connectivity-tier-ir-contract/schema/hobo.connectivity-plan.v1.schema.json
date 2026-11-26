@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/hobo.connectivity-plan.v1.schema.json",
+  "title": "HoBo ConnectivityPlan v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "edgeId",
+    "source",
+    "target",
+    "tier",
+    "endpoints",
+    "identity",
+    "parameters"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "hobo.connectivity-plan/v1"
+    },
+    "edgeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "$ref": "#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "#/$defs/endpoint"
+    },
+    "tier": {
+      "enum": [1, 2, 3, 4, 5]
+    },
+    "endpoints": {
+      "type": "object",
+      "required": ["sourceLogicalName", "targetLogicalName"],
+      "additionalProperties": false,
+      "properties": {
+        "sourceLogicalName": { "type": "string", "minLength": 1 },
+        "targetLogicalName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["source", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "pattern": "^spiffe://" },
+        "target": { "type": "string", "pattern": "^spiffe://" }
+      }
+    },
+    "parameters": {
+      "type": "object"
+    },
+    "residency": {
+      "type": "object",
+      "required": ["tag"],
+      "additionalProperties": false,
+      "properties": {
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["maxTier"],
+      "additionalProperties": false,
+      "properties": {
+        "maxTier": { "enum": [1, 2, 3, 4, 5] },
+        "allowPublicMtls": { "type": "boolean" }
+      }
+    },
+    "override": {
+      "type": "object",
+      "required": ["requestedTier", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "requestedTier": { "enum": [1, 2, 3, 4, 5] },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "type": "object",
+      "required": ["resourceId", "provider", "region", "yardId"],
+      "additionalProperties": false,
+      "properties": {
+        "resourceId": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "region": { "type": "string", "minLength": 1 },
+        "yardId": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

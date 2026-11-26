@@ -1,0 +1,81 @@
+{
+	"consumer": { "name": "@hobo/provider-netlify" },
+	"provider": { "name": "NetlifySiteApi" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"boundary": {
+			"description": "The one REST read netlify.anonymous-static-site/v1 depends on: GET /api/v1/sites/{site_id} on https://api.netlify.com. The anonymous deploy itself never reaches this boundary — it has no credential to call it with, which is the point of that path — so every interaction here is post-claim verification or observation.",
+			"allowedHosts": ["api.netlify.com"],
+			"claimCeremonyHost": "app.netlify.com",
+			"secretHandling": "The claim URL is bearer authority over a live site and never appears in a request, a response, or a record; the token below is the claiming account's own, shown redacted."
+		}
+	},
+	"interactions": [
+		{
+			"description": "the claiming account reads the site and it resolves to that account: the ownership fact a claim has to move",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/sites/site-claimed-demo",
+				"headers": {
+					"authorization": "Bearer <redacted-claiming-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "site-claimed-demo",
+					"name": "claimed-demo",
+					"account_id": "team-claiming",
+					"account_slug": "claiming-team",
+					"ssl_url": "https://claimed-demo.netlify.app"
+				}
+			}
+		},
+		{
+			"description": "a credential with no standing over the site is forbidden, not absent: losing read access is evidence the site moved",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/sites/site-foreign-demo",
+				"headers": {
+					"authorization": "Bearer <redacted-claiming-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": { "code": 403, "message": "Access Denied" }
+			}
+		},
+		{
+			"description": "an unclaimed anonymous project is gone after the documented one hour window: absent, which maps to CLAIM_EXPIRED rather than a generic not-found",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/sites/site-reaped-demo",
+				"headers": {
+					"authorization": "Bearer <redacted-claiming-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 404,
+				"body": { "code": 404, "message": "Not Found" }
+			}
+		},
+		{
+			"description": "a site response carrying no owning account fails closed: a verification that cannot compare ownership must not pass",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/sites/site-contract-drift",
+				"headers": {
+					"authorization": "Bearer <redacted-claiming-token>",
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": { "id": "site-contract-drift", "name": "contract-drift" }
+			}
+		}
+	]
+}

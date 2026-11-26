@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package hobo.componentize.v1;
+
+// Design-time contract for S0-10 artifact signing and install verification.
+
+enum ProvenanceTier {
+  PROVENANCE_TIER_UNSPECIFIED = 0;
+  BUILDER_OBSERVED = 1;
+  SANDBOXED_BUILDER = 2;
+  SLSA_BUILD_L3 = 3;
+}
+
+enum RefusalReason {
+  REFUSAL_REASON_UNSPECIFIED = 0;
+  CANDIDATE_REQUIRED = 1;
+  ARTIFACT_REQUIRED = 2;
+  ARTIFACT_DIGEST_MISMATCH = 3;
+  ARTIFACT_DIGEST_INVALID = 4;
+  ARTIFACT_URI_DIGEST_MISMATCH = 5;
+  ARTIFACT_COORDINATE_SCOPE = 6;
+  SIGNATURE_REQUIRED = 7;
+  SIGNATURE_ALG = 8;
+  SIGNATURE_KEY_UNTRUSTED = 9;
+  SIGNATURE_PAYLOAD_DIGEST_MISMATCH = 10;
+  SIGNATURE_INVALID = 11;
+  PROVENANCE_BUILDER_UNTRUSTED = 12;
+  PROVENANCE_TIER_BELOW_POLICY_MINIMUM = 13;
+  PROVENANCE_SUBJECT_DIGEST_MISMATCH = 14;
+  CONFORMANCE_REQUIRED = 15;
+  CONFORMANCE_SUITE_UNTRUSTED = 16;
+  CONFORMANCE_FAILED = 17;
+}
+
+message ArtifactRef {
+  string coordinate = 1;
+  string version = 2;
+  string media_type = 3;
+  string bytes = 4;
+  string digest = 5;
+  string uri = 6;
+}
+
+message SlsaProvenance {
+  string schema = 1;
+  SlsaPayload slsa = 2;
+}
+
+message SlsaPayload {
+  SlsaBuilder builder = 1;
+  SlsaSubject subject = 2;
+  string issued_at = 3;
+  ProvenanceTier provenance_tier = 4;
+}
+
+message SlsaBuilder {
+  string id = 1;
+}
+
+message SlsaSubject {
+  string name = 1;
+  string digest = 2;
+}
+
+message ConformanceReportRef {
+  string schema = 1;
+  string digest = 2;
+}
+
+message ArtifactSignature {
+  string alg = 1;
+  string key_id = 2;
+  string public_key_pem = 3;
+  string payload_digest = 4;
+  string value = 5;
+}
+
+message SignedArtifactCandidate {
+  ArtifactRef artifact = 1;
+  SlsaProvenance provenance = 2;
+  ConformanceReportRef conformance = 3;
+  ArtifactSignature signature = 4;
+}
+
+message TrustBoundary {
+  repeated string trusted_key_ids = 1;
+  repeated string trusted_builder_ids = 2;
+  repeated string required_conformance_suites = 3;
+  repeated string allowed_coordinate_scopes = 4;
+  ProvenanceTier minimum_provenance_tier = 5;
+}
+
+message InstallVerdictOk {
+  bool ok = 1;
+  repeated RefusalReason reasons = 2;
+  bool available_to_matching = 3;
+  bool selected_by_matching = 4;
+  string assurance = 5;
+}
+
+message ArtifactPublishedEvent {
+  string type = 1;
+  ArtifactRef ref = 2;
+  string key_id = 3;
+  ProvenanceTier provenance_tier = 4;
+}
+
+message ArtifactInstallVerifiedEvent {
+  string type = 1;
+  ArtifactRef ref = 2;
+  string key_id = 3;
+  ProvenanceTier provenance_tier = 4;
+}
+
+message ArtifactInstallRefusedEvent {
+  string type = 1;
+  ArtifactRef ref = 2;
+  repeated RefusalReason reasons = 3;
+}

@@ -1,0 +1,21 @@
+{
+	"name": "@hobo/example-self-host-station",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@hobo/stations": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.3",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	}
+}

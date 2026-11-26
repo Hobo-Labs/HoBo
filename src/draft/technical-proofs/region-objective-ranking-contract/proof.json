@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "region-objective-ranking-contract",
+  "title": "Region Objective Ranking Contract",
+  "linear": "HOBO-81",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-event-schema-contract",
+      "src/draft/technical-proofs/matching-specificity-vectors"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

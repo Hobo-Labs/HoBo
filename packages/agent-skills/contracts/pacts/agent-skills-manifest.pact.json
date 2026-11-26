@@ -1,0 +1,38 @@
+{
+	"consumer": {
+		"name": "hobo-registry-listing"
+	},
+	"provider": {
+		"name": "agent-skills-bundle"
+	},
+	"interactions": [
+		{
+			"description": "a registry listing requests the skills manifest of the bundle",
+			"request": {
+				"method": "GET",
+				"path": "/manifest.json"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"schema": "hobo.agent-skills-manifest/v1",
+					"skills": [
+						{
+							"name": "sdlc",
+							"description": "Coordinate iterative feature development end to end.",
+							"entry": "sdlc/SKILL.md"
+						}
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

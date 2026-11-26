@@ -1,0 +1,36 @@
+{
+  "consumer": { "name": "progressive-delivery-harness-reference" },
+  "provider": { "name": "mock-hobo-feature-flag-provider" },
+  "interactions": [
+    {
+      "description": "evaluate checkout-v2 flag from a fresh ruleset",
+      "providerStates": [{ "name": "fresh ruleset seq 7 is loaded" }],
+      "request": {
+        "method": "POST",
+        "path": "/feature-flags/evaluate",
+        "body": {
+          "flagKey": "checkout-v2",
+          "defaultValue": "control"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "flagKey": "checkout-v2",
+          "value": "treatment",
+          "variant": "treatment",
+          "reason": "targeting-match",
+          "rulesetSeq": 7,
+          "freshness": {
+            "status": "fresh",
+            "ageMs": 1200
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "flag-provider",
+    "pactSpecification": { "version": "4.0.0" }
+  }
+}

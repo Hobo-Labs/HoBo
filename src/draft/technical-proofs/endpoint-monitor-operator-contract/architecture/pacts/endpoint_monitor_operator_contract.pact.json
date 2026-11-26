@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "EndpointMonitorOperatorContractConsumer"
+  },
+  "provider": {
+    "name": "EndpointMonitorOperatorContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Endpoint Monitor Operator Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/endpoint-monitor-operator-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.endpoint_monitor_operator_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

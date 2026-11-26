@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "planner-dag-skeleton-contract",
+  "title": "Planner DAG Skeleton Contract POC",
+  "linear": "HOBO-61",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-event-schema-contract",
+      "src/draft/technical-proofs/deployment-plan-ir-contract",
+      "src/draft/technical-proofs/hobo-manifest-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

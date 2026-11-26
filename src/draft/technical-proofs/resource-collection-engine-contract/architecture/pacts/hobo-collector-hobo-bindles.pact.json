@@ -1,0 +1,283 @@
+{
+  "consumer": {
+    "name": "@hobo/collector"
+  },
+  "provider": {
+    "name": "@hobo/bindles"
+  },
+  "interactions": [
+    {
+      "description": "collector reads catalog factory metadata",
+      "request": {
+        "method": "GET",
+        "path": "/bindles/catalog"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "factoryNames": [
+            "api",
+            "kv",
+            "cache",
+            "bucket",
+            "queue",
+            "topic",
+            "secret",
+            "data",
+            "schedule",
+            "websocket",
+            "job",
+            "web",
+            "service",
+            "flag",
+            "auth",
+            "crypto",
+            "notify",
+            "guardrail",
+            "ui",
+            "experiment"
+          ],
+          "catalog": [
+            {
+              "factory": "api",
+              "portRef": [
+                "wasi:http",
+                "hobo:http"
+              ],
+              "allowVerbs": []
+            },
+            {
+              "factory": "kv",
+              "portRef": [
+                "wasi:keyvalue"
+              ],
+              "allowVerbs": [
+                "get",
+                "set",
+                "delete"
+              ]
+            },
+            {
+              "factory": "cache",
+              "portRef": [
+                "hobo:cache"
+              ],
+              "allowVerbs": [
+                "get",
+                "set",
+                "delete",
+                "invalidate"
+              ]
+            },
+            {
+              "factory": "bucket",
+              "portRef": [
+                "wasi:blobstore",
+                "hobo:blob-events"
+              ],
+              "allowVerbs": [
+                "read",
+                "write",
+                "delete"
+              ]
+            },
+            {
+              "factory": "queue",
+              "portRef": [
+                "hobo:queue"
+              ],
+              "allowVerbs": [
+                "enqueue",
+                "dequeue"
+              ]
+            },
+            {
+              "factory": "topic",
+              "portRef": [
+                "wasi:messaging"
+              ],
+              "allowVerbs": [
+                "publish",
+                "subscribe"
+              ]
+            },
+            {
+              "factory": "secret",
+              "portRef": [
+                "wasi:config",
+                "hobo:secrets"
+              ],
+              "allowVerbs": [
+                "put",
+                "access"
+              ]
+            },
+            {
+              "factory": "data",
+              "portRef": [
+                "hobo:data"
+              ],
+              "allowVerbs": [
+                "read",
+                "write",
+                "query",
+                "admin"
+              ]
+            },
+            {
+              "factory": "schedule",
+              "portRef": [
+                "hobo:scheduler"
+              ],
+              "allowVerbs": []
+            },
+            {
+              "factory": "websocket",
+              "portRef": [
+                "wasi:websocket",
+                "hobo:websocket"
+              ],
+              "allowVerbs": [
+                "accept",
+                "connect",
+                "send",
+                "broadcast",
+                "subscribe"
+              ]
+            },
+            {
+              "factory": "job",
+              "portRef": [
+                "hobo:job"
+              ],
+              "allowVerbs": [
+                "submit"
+              ]
+            },
+            {
+              "factory": "web",
+              "portRef": [
+                "wasi:http"
+              ],
+              "allowVerbs": []
+            },
+            {
+              "factory": "service",
+              "portRef": [
+                "wasi:http"
+              ],
+              "allowVerbs": []
+            },
+            {
+              "factory": "flag",
+              "portRef": [
+                "hobo:feature-flag"
+              ],
+              "allowVerbs": [
+                "eval",
+                "change"
+              ]
+            },
+            {
+              "factory": "auth",
+              "portRef": [
+                "hobo:auth"
+              ],
+              "allowVerbs": [
+                "verify",
+                "session"
+              ]
+            },
+            {
+              "factory": "crypto",
+              "portRef": [
+                "hobo:crypto"
+              ],
+              "allowVerbs": [
+                "encrypt",
+                "decrypt",
+                "sign",
+                "verify"
+              ]
+            },
+            {
+              "factory": "notify",
+              "portRef": [
+                "hobo:notify"
+              ],
+              "allowVerbs": [
+                "send"
+              ]
+            },
+            {
+              "factory": "guardrail",
+              "portRef": [
+                "hobo:guardrail"
+              ],
+              "allowVerbs": [
+                "check"
+              ]
+            },
+            {
+              "factory": "ui",
+              "portRef": [
+                "hobo:ui-render"
+              ],
+              "allowVerbs": [
+                "render",
+                "drive"
+              ]
+            },
+            {
+              "factory": "experiment",
+              "portRef": [
+                "hobo:experiment"
+              ],
+              "allowVerbs": [
+                "assign",
+                "expose",
+                "analyze"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "collector exercises kv handle shape and verb narrowing",
+      "request": {
+        "method": "POST",
+        "path": "/bindles/handle/kv"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "kind": "kv",
+          "name": "todos",
+          "stableId": "kv:todos",
+          "declaredAllow": [
+            "get"
+          ],
+          "lowering": {
+            "lowersTo": "hobo:sdk",
+            "kind": "kv",
+            "name": "todos",
+            "handleStableId": "kv:todos",
+            "portRef": [
+              "wasi:keyvalue"
+            ],
+            "verb": "get",
+            "args": [
+              "todo-1"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

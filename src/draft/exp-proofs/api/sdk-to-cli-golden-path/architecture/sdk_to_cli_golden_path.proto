@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-576
+// SDK-to-CLI golden path proof. This is a design-time schema artifact, not a
+// runtime compilation target.
+
+enum SdkToCliProofMode {
+  SDK_TO_CLI_PROOF_MODE_UNSPECIFIED = 0;
+  SDK_TO_CLI_PROOF_MODE_REFERENCE_FIXTURE = 1;
+  SDK_TO_CLI_PROOF_MODE_SIMULATED = 2;
+  SDK_TO_CLI_PROOF_MODE_DESIGN_RECORD = 3;
+}
+
+enum SdkToCliResultKind {
+  SDK_TO_CLI_RESULT_KIND_UNSPECIFIED = 0;
+  SDK_TO_CLI_RESULT_KIND_SUCCESS = 1;
+  SDK_TO_CLI_RESULT_KIND_GATEKEEPER_DENIED = 2;
+  SDK_TO_CLI_RESULT_KIND_CONTRACT_INCOMPATIBLE = 3;
+  SDK_TO_CLI_RESULT_KIND_STALE_OR_UNKNOWN_EVIDENCE = 4;
+  SDK_TO_CLI_RESULT_KIND_SUPPORT_HANDOFF = 5;
+}
+
+message SdkToCliCompileCheck {
+  string command = 1;
+  string expected = 2;
+}
+
+message SdkToCliConsumer {
+  string fixture_id = 1;
+  string file = 2;
+  repeated string imports = 3;
+  bool contains_cloud_provider_logic = 4;
+  SdkToCliCompileCheck compile_check = 5;
+}
+
+message SdkToCliManifestResource {
+  string kind = 1;
+  string name = 2;
+  repeated string consumes = 3;
+  string engine = 4;
+  string requirement = 5;
+}
+
+message SdkToCliManifestIr {
+  string fixture_id = 1;
+  string name = 2;
+  repeated SdkToCliManifestResource resources = 3;
+  SdkToCliProofMode proof_mode = 4;
+}
+
+message SdkToCliTranscriptStep {
+  string fixture_id = 1;
+  string command = 2;
+  SdkToCliResultKind result_kind = 3;
+  SdkToCliProofMode proof_mode = 4;
+  int32 exit_code = 5;
+  string stdout = 6;
+}
+
+message SdkToCliApiOperation {
+  string fixture_id = 1;
+  string route = 2;
+  string response = 3;
+}
+
+message SdkToCliMcpToolResult {
+  string fixture_id = 1;
+  string name = 2;
+  SdkToCliResultKind result_kind = 3;
+}
+
+message SdkToCliHandoff {
+  string owner = 1;
+  string consumes_fixture_id = 2;
+}
+
+message SdkToCliContractArtifacts {
+  string protobuf = 1;
+  string cue = 2;
+  string pact = 3;
+}
+
+message SdkToCliGoldenPathRecord {
+  string issue = 1;
+  string phase = 2;
+  string fixture_id = 3;
+  string proof_note = 4;
+  SdkToCliConsumer sdk_consumer = 5;
+  SdkToCliManifestIr manifest_ir = 6;
+  repeated SdkToCliTranscriptStep cli_transcript = 7;
+  repeated SdkToCliApiOperation api_shape = 8;
+  repeated SdkToCliMcpToolResult mcp_result = 9;
+  repeated SdkToCliHandoff handoffs = 10;
+  repeated SdkToCliResultKind expected_result_kinds = 11;
+  SdkToCliContractArtifacts contract_artifacts = 12;
+  repeated string scope_claims = 13;
+}

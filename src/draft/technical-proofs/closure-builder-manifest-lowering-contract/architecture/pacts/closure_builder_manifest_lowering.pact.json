@@ -1,0 +1,55 @@
+{
+  "consumer": {
+    "name": "closure-builder-sdk-conformance-consumer"
+  },
+  "provider": {
+    "name": "closure-builder-manifest-lowering-contract"
+  },
+  "interactions": [
+    {
+      "description": "lower captured closure-builder resources to hobo:sdk calls and manifest IR",
+      "request": {
+        "method": "POST",
+        "path": "/closure-builder/v1/lower"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.manifest/v1",
+          "bindle": "shop",
+          "resources": [
+            {
+              "generatedId": "res_0001",
+              "kind": "cache",
+              "type": "kv.v1",
+              "port": "wasi:keyvalue"
+            },
+            {
+              "generatedId": "res_0002",
+              "kind": "api",
+              "type": "component.v1",
+              "port": "wasi:http"
+            }
+          ],
+          "relationships": [
+            {
+              "from": "res_0002",
+              "to": "res_0001",
+              "verb": "dependsOn"
+            }
+          ],
+          "authoringAliases": {
+            "api": "res_0002",
+            "cache": "res_0001"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

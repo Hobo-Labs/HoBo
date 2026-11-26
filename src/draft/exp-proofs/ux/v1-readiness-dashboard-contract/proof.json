@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-readiness-dashboard-contract",
+  "experienceType": "ux",
+  "title": "V1 Readiness Dashboard Contract",
+  "linear": "HOBO-482",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

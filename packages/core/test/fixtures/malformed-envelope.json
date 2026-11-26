@@ -1,0 +1,10 @@
+{
+  "id": "evt-bad",
+  "type": "identity.Issued",
+  "v": 1,
+  "seq": -1,
+  "ts": "2026-06-25T12:00:00.000Z",
+  "actor": { "kind": "agent", "id": "agent:release" },
+  "tenant": "tenant-acme",
+  "data": {}
+}

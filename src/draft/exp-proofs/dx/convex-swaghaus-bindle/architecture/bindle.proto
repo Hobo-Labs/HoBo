@@ -1,0 +1,52 @@
+syntax = "proto3";
+package hobo.draft.convex_swaghaus_bindle;
+
+// Wire shapes for the Bindle an author writes to package swaghaus as a
+// provider-neutral HoBo app (ADR-0144). Every type below is constrained by
+// bindle.cue and parsed by src/parse.ts before the DX path uses it.
+
+// The provider-neutral Bindle kinds this experience uses. Kinds are the
+// authoring vocabulary — never a provider name (ADR-0024).
+enum BindleResourceKind {
+  BINDLE_RESOURCE_KIND_UNSPECIFIED = 0;
+  BINDLE_RESOURCE_KIND_DATA = 1;
+  BINDLE_RESOURCE_KIND_EXTERNAL = 2;
+  BINDLE_RESOURCE_KIND_WEB = 3;
+}
+
+// Where a required environment name is sourced from. `ENV_ROUTING_ENV` is a
+// broker/Camp value, `ENV_ROUTING_EXTERNAL` is a `b.external()` connector, and
+// `ENV_ROUTING_DATA` is an output of a realized `b.data()` resource.
+enum EnvRouting {
+  ENV_ROUTING_UNSPECIFIED = 0;
+  ENV_ROUTING_ENV = 1;
+  ENV_ROUTING_EXTERNAL = 2;
+  ENV_ROUTING_DATA = 3;
+}
+
+// One resource in the authored Bindle graph.
+message BindleResourceRef {
+  string name = 1;
+  BindleResourceKind kind = 2;
+  // Names of the resources this one depends on (Bindle edges).
+  repeated string depends_on = 3;
+}
+
+// A ship-required environment name and the Bindle-shaped source it rides.
+// Names only: no value, secret material, or credential ever appears here.
+message EnvDependency {
+  string name = 1;
+  EnvRouting routing = 2;
+  // Author-facing remediation sentence for this name.
+  string via = 3;
+}
+
+// The authored swaghaus Bindle, as parsed from a manifest graph.
+message SwaghausBindleShape {
+  // Repo-relative Convex app directory stamped by `convexApp(root)`.
+  string web_root = 1;
+  string framework = 2;
+  string app_name = 3;
+  repeated BindleResourceRef resources = 4;
+  repeated EnvDependency env_deps = 5;
+}

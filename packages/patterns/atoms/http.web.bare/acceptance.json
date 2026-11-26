@@ -1,0 +1,13 @@
+{
+	"params": {
+		"name": "bare"
+	},
+	"expectFiles": [
+		"src/webapp.ts"
+	],
+	"expectContains": {
+		"src/webapp.ts": [
+			"bare"
+		]
+	}
+}

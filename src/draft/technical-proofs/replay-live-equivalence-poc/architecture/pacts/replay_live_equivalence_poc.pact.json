@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ReplayLiveEquivalencePocConsumer"
+  },
+  "provider": {
+    "name": "ReplayLiveEquivalencePocBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Replay Live Equivalence Poc boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/replay-live-equivalence-poc/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.replay_live_equivalence_poc/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

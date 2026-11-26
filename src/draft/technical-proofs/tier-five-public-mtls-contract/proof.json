@@ -1,0 +1,23 @@
+{
+  "layer": "technical",
+  "slug": "tier-five-public-mtls-contract",
+  "title": "Tier-Five Public mTLS Contract POC",
+  "linear": "HOBO-134",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/connectivity-policy-enforcement-contract",
+      "src/draft/technical-proofs/connectivity-tier-ir-contract",
+      "src/draft/technical-proofs/mtls-data-path-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

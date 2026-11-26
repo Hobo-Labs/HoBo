@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "RuntimeEventStoreMock" },
+  "interactions": [
+    {
+      "description": "append an idempotent runtime event with sequence discipline",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/eventstore/append",
+        "body": {
+          "stream": "checkout-42",
+          "expectedSeq": 10,
+          "dedupKey": "checkout-001"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "seq": 11,
+          "idempotentReplay": false,
+          "poisonQuarantine": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "runtime-eventstore",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

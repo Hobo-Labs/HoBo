@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "per-app-tenant-routing-contract",
+  "experienceType": "api",
+  "title": "HoBo per-app tenant routing POC",
+  "linear": "HOBO-177",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

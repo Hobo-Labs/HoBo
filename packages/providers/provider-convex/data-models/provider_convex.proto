@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package hobo.provider.convex.v1;
+
+// Architecture-guard evidence: protobuf data shapes @hobo/provider-convex
+// reasons about at its boundaries — the published capability-manifest
+// documents, the emitted convex-deploy driver program, and the impedance
+// record (ADR-0144 §5). Design-time contract artifacts; not compiled at
+// runtime.
+
+message ConvexEquivalenceClassRecord {
+  string class = 1; // web/service | database/reactive | objectStore
+  string port = 2; // compute | database | objectStore
+  string resource_class = 3; // convex:function-host | convex:document-db | convex:file-storage
+  string provider_service = 4;
+  repeated string features = 5;
+}
+
+message ConvexCostFactRecord {
+  string port = 1;
+  string sku = 2;
+  string unit = 3;
+  string marginal_price = 4;
+  uint64 free_tier_included = 5;
+}
+
+message ConvexAuthRecord {
+  string schema = 1; // hobo.provider-auth/v1
+  string provider_id = 2;
+  string mode = 3; // deploy-key-brokered
+  string token_audience = 4; // convex.management
+  string exchange = 5; // hobo:brokered-deploy-token
+  repeated string required_claims = 6;
+  bool static_secrets = 7; // always false
+}
+
+message ConvexDriverResourceRecord {
+  string name = 1;
+  string type = 2;
+  string provider = 3;
+  repeated string outputs = 4;
+}
+
+message ConvexDriverProgramRecord {
+  string api_version = 1; // hobo.driver-program/v1
+  string kind = 2; // driver-program
+  string driver = 3; // convex-deploy
+  string deployment_id = 4;
+  string deployment = 5;
+  repeated ConvexDriverResourceRecord resources = 6;
+}
+
+message ConvexLimitsRecord {
+  uint32 query_mutation_ms = 1; // 1000
+  uint64 document_bytes = 2; // 1 MiB
+  uint32 action_ms = 3; // 600000
+  uint32 transaction_write_cap = 4;
+  string paradigm = 5; // document
+}
+
+message ConvexImpedanceFindingRecord {
+  string code = 1;
+  string severity = 2; // info | warn | block
+  string message = 3;
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "hello-bindle",
+  "builtAt": "2026-11-17T18:35:43.686Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "examples/hello-bindle/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "2bb04bf7e1b1d75897aae4d882acb27fd6fb64101a810e729599b3341aa95dcd",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

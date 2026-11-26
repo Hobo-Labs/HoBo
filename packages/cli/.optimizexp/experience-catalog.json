@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "cli",
+  "builtAt": "2026-11-17T18:35:43.768Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "packages/cli/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "c646529f31363cedfa7c2b85094ab327f06f3a7ba9840275b267321a822be386",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

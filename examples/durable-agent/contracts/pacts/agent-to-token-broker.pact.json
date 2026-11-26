@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "durable-agent-ops"
+  },
+  "provider": {
+    "name": "hobo-runtime-token-broker"
+  },
+  "interactions": [
+    {
+      "description": "ops agent mints a scoped broker token before writing the order",
+      "request": {
+        "method": "POST",
+        "path": "/tokens",
+        "body": {
+          "provider": "acme-cloud",
+          "scope": "database:write"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "ref": "stub://acme-cloud/database:write"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

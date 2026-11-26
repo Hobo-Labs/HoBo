@@ -1,0 +1,51 @@
+# Vercel Queues as the hosted relay's lease lifecycle driver (ADR-0179
+# amendment, phase 5): each lease step a delayed message keyed
+# `${leaseId}:${step}:${n}`. Lowered into the @hobo/pricing catalog by
+# scripts/generate-offers.mts.
+#
+# UNVERIFIED: Queues pricing was not re-verified in the amendment, so the
+# charge is declared with an external model, which the rating kernel reports
+# as unrated and never prices as zero.
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: vercel-queues
+  displayName: Vercel Queues
+  homepage: https://vercel.com/docs/queues
+  description: Durable topics with delayed delivery and idempotency keys.
+
+capabilities:
+  regions: [iad1]
+  mappings:
+    - id: lifecycle/queues
+      port: lifecycle
+      resourceClass: queue-driver
+      providerService: vercel.queues
+      features: [delayedDelivery, idempotencyKey]
+      profiles: [lifecycle.lease-driver/v1]
+      stability: stable
+      products: [queues]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://vercel.com/docs/queues
+    checkedAt: 2026-11-11
+    note: UNVERIFIED; pricing not re-checked. About 8 messages a job.
+  billables:
+    - id: messages
+      category: service
+      unit: message
+  products:
+    - id: queues
+      kind: service
+      billables: [messages]
+      plans:
+        - id: pay-as-you-go
+          charges:
+            - id: messages
+              external:
+                model: x-unverified-vercel-queues
+                params: { messagesPerJob: "8" }

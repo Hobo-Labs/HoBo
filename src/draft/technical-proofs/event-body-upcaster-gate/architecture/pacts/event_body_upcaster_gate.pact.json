@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "EventBodyUpcasterGateConsumer"
+  },
+  "provider": {
+    "name": "EventBodyUpcasterGateBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Event Body Upcaster Gate boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/event-body-upcaster-gate/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.event_body_upcaster_gate/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

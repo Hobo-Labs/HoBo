@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Typed realization output contract (schema hobo.realization-result/v1):
+// what a realization engine — an IaC program or a provider recipe/driver
+// program — reports back after apply. Secrets are REFERENCES ONLY: a secret
+// value never rides this record; the parse boundary fails closed on raw
+// secret-looking values in outputs, values, or bindings.
+
+message RealizedResourceRecord {
+  string name = 1; // logical resource name inside the deployment set
+  string resource_class = 2; // resource class/type token, e.g. bucket | kv | convex.function
+  string provider_id = 3; // stable provider-side id (URN, workspace key, adopted external id, OCI digest)
+  map<string, string> outputs = 4; // JSON-encoded non-sensitive output values
+}
+
+message SecretRefRecord {
+  string secret_ref = 1; // URI-shaped reference (e.g. broker://tenant/db) — never a value
+}
+
+message RealizationBindingRecord {
+  string key = 1; // binding key or ${resources.<name>.outputs.<key>} placeholder
+  string value = 2; // JSON-encoded resolved value
+}
+
+message RealizationResultRecord {
+  string schema = 1; // hobo.realization-result/v1
+  repeated RealizedResourceRecord resources = 2; // sorted by name
+  map<string, string> values = 3; // JSON-encoded non-sensitive stack outputs for dependents
+  repeated RealizationBindingRecord bindings = 4; // sorted by key
+  map<string, SecretRefRecord> secrets = 5; // ref-only, fail-closed
+}

@@ -1,0 +1,194 @@
+package hobo:storage@0.1.0;
+
+/// Host-provided event-store / runtime-journal capability.
+/// Engine-neutral: implementable by SQLite, PostgreSQL, Cosmos, DynamoDB, etc.
+/// No SQL, filesystem paths, or SQLite handles cross this boundary.
+///
+/// Positions and fence tokens use u64 (full 64-bit). Guests must not assume
+/// JavaScript number precision.
+
+interface types {
+  type bytes = list<u8>;
+
+  /// Decimal string or binary-encoded u64; host documents encoding.
+  /// Prefer u64 fields below for positions and fences.
+
+  record principal-ref {
+    kind: string,
+    id: string,
+  }
+
+  record event-input {
+    event-type: string,
+    v: u32,
+    data: bytes,
+    meta: bytes,
+    idempotency-key: option<string>,
+  }
+
+  record append-options {
+    expected-seq: u64,
+    actor: principal-ref,
+    tenant: string,
+    project: option<string>,
+    causation-id: option<string>,
+    correlation-id: option<string>,
+    lane: option<string>,
+    fence-token: option<u64>,
+  }
+
+  record event-envelope {
+    id: string,
+    event-type: string,
+    v: u32,
+    stream-id: string,
+    seq: u64,
+    ts: string,
+    actor: principal-ref,
+    tenant: string,
+    project: option<string>,
+    causation-id: option<string>,
+    correlation-id: option<string>,
+    lane: option<string>,
+    data: bytes,
+    meta: bytes,
+  }
+
+  record positioned-event {
+    position: u64,
+    event: event-envelope,
+  }
+
+  record append-result {
+    stream-id: string,
+    appended: list<event-envelope>,
+    deduped: list<event-envelope>,
+    first-position: option<u64>,
+    last-position: option<u64>,
+  }
+
+  record read-all-options {
+    after: option<u64>,
+    limit: option<u32>,
+    stream-id: option<string>,
+    event-type: option<string>,
+    tenant: option<string>,
+    lane: option<string>,
+  }
+
+  record read-page {
+    items: list<positioned-event>,
+    next-after: option<u64>,
+    done: bool,
+  }
+
+  record durable-effect {
+    kind: string,
+    payload: bytes,
+    idempotency-key: string,
+  }
+
+  record durable-commit-request {
+    stream-id: string,
+    events: list<event-input>,
+    options: append-options,
+    effects: list<durable-effect>,
+  }
+
+  record durable-effect-receipt {
+    kind: string,
+    id: string,
+    idempotency-key: string,
+    deduped: bool,
+  }
+
+  record durable-commit-result {
+    append: append-result,
+    effects: list<durable-effect-receipt>,
+  }
+
+  record subscription-lease {
+    subscription-id: string,
+    partition-id: string,
+    holder-id: string,
+    fence-token: u64,
+    expires-at: string,
+  }
+
+  record subscription-checkpoint {
+    subscription-id: string,
+    partition-id: string,
+    position: u64,
+    fence-token: u64,
+    updated-at: string,
+  }
+
+  variant storage-error {
+    invalid-input(string),
+    optimistic-conflict(string),
+    stale-fence(string),
+    missing-fence(string),
+    checkpoint-regression(string),
+    unsupported-schema(string),
+    unsupported-codec(string),
+    persistence-unavailable(string),
+    busy(string),
+    integrity-failure(string),
+    internal(string),
+  }
+}
+
+interface event-store {
+  use types.{
+    append-options, append-result, durable-commit-request, durable-commit-result,
+    event-envelope, event-input, read-all-options, read-page, storage-error,
+    subscription-checkpoint, subscription-lease,
+  };
+
+  /// Append domain facts with optional fence token.
+  append: func(
+    stream-id: string,
+    events: list<event-input>,
+    options: append-options,
+  ) -> result<append-result, storage-error>;
+
+  /// Atomic events + staged durable effects.
+  commit: func(
+    request: durable-commit-request,
+  ) -> result<durable-commit-result, storage-error>;
+
+  /// Bounded stream read page (seq-ordered within one stream).
+  read-stream-page: func(
+    stream-id: string,
+    from-seq: u64,
+    limit: u32,
+  ) -> result<list<event-envelope>, storage-error>;
+
+  /// Bounded catch-up page by database-local position within one partition.
+  read-all-page: func(
+    options: read-all-options,
+  ) -> result<read-page, storage-error>;
+
+  claim-subscription: func(
+    subscription-id: string,
+    partition-id: string,
+    holder-id: string,
+    lease-ttl-ms: u32,
+  ) -> result<subscription-lease, storage-error>;
+
+  load-checkpoint: func(
+    subscription-id: string,
+    partition-id: string,
+  ) -> result<option<subscription-checkpoint>, storage-error>;
+
+  commit-checkpoint: func(
+    subscription-id: string,
+    partition-id: string,
+    position: u64,
+    fence-token: u64,
+  ) -> result<subscription-checkpoint, storage-error>;
+}
+
+world storage-host {
+  export event-store;
+}

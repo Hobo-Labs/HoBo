@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-adr-0064-ui-generation-citation-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

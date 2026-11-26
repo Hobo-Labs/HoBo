@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Dogfood Yard M1
+// Evidence Contract draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum DogfoodGapDecision {
+  DOGFOOD_GAP_DECISION_UNSPECIFIED = 0;
+  DOGFOOD_GAP_DECISION_BETA_BLOCKER = 1;
+  DOGFOOD_GAP_DECISION_LAUNCH_NOTE = 2;
+  DOGFOOD_GAP_DECISION_FOLLOW_UP_WORK = 3;
+}
+
+message DogfoodScenarioEvidence {
+  string id = 1;
+  string owner_project = 2;
+  repeated string evidence = 3;
+  string cutline_impact = 4;
+}
+
+message DogfoodM1EvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  repeated string required_evidence = 4;
+  repeated DogfoodScenarioEvidence scenario_evidence = 5;
+  repeated DogfoodGapDecision gap_decisions = 6;
+  repeated string cutline_dependencies = 7;
+}

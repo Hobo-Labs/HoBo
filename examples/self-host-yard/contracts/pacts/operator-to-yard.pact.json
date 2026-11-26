@@ -1,0 +1,51 @@
+{
+  "consumer": {
+    "name": "self-host-yard-operator"
+  },
+  "provider": {
+    "name": "self-hosted-yard-control-plane"
+  },
+  "interactions": [
+    {
+      "description": "operator realizes the status-page bindle on their own yard (hobo up)",
+      "request": {
+        "method": "POST",
+        "path": "/deployments/self-host-yard/up"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "deploymentId": "self-host-yard",
+          "status": "deployed",
+          "provisioned": ["api", "web"]
+        }
+      }
+    },
+    {
+      "description": "operator tears the deployment back down on their own yard (hobo down)",
+      "request": {
+        "method": "POST",
+        "path": "/deployments/self-host-yard/down"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "deploymentId": "self-host-yard",
+          "status": "destroyed",
+          "destroyed": ["api", "web"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

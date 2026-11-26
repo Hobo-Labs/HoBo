@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "resource-definition-driver-contract",
+  "title": "HOBO-45 Resource Definition + Driver Contract POC",
+  "linear": "HOBO-45",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

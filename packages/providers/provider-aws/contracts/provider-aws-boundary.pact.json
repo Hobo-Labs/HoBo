@@ -1,0 +1,80 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "ProviderAwsBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "publish capability manifest bundle for the six AWS equivalence-class ports",
+      "request": {
+        "method": "POST",
+        "path": "/providers/aws/manifest/publish"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "paths": [
+            "/.well-known/capability-manifest/index.json",
+            "/.well-known/capability-manifest/capabilities.json",
+            "/.well-known/capability-manifest/auth.json",
+            "/.well-known/capability-manifest/cost.json"
+          ]
+        }
+      }
+    },
+    {
+      "description": "keyless auth posture: OIDC federation to AWS STS, no static secrets",
+      "request": {
+        "method": "GET",
+        "path": "/providers/aws/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "svid-federation",
+          "tokenAudience": "sts.amazonaws.com",
+          "exchange": "sts:AssumeRoleWithWebIdentity",
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "realize a compute ResourcePlan into a pulumi IacProgram with an aws:fargate-service resource",
+      "request": {
+        "method": "POST",
+        "path": "/providers/aws/realize",
+        "body": {
+          "name": "api",
+          "port": "compute",
+          "provider": "aws"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "iac": {
+            "apiVersion": "hobo.iac-program/v1",
+            "kind": "iac-program",
+            "provider": "pulumi",
+            "resources": [
+              {
+                "name": "api",
+                "type": "aws:fargate-service",
+                "provider": "aws"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

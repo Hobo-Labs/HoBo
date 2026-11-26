@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package hobo.manifest.v1;
+
+import "google/protobuf/struct.proto";
+
+enum ResourceType {
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+  DATA_V1 = 1;
+  COMPONENT_V1 = 2;
+  WEBSITE_V1 = 3;
+}
+
+enum RuntimeKind {
+  RUNTIME_KIND_UNSPECIFIED = 0;
+  WASM = 1;
+  CONTAINER = 2;
+}
+
+enum TriggerKind {
+  TRIGGER_KIND_UNSPECIFIED = 0;
+  TOPIC_SUBSCRIBE = 1;
+  SCHEDULE_CRON = 2;
+  BLOB_EVENT = 3;
+}
+
+message ComponentHost {
+  string kind = 1;
+  string version = 2;
+}
+
+message Link {
+  string import = 1;
+  string to = 2;
+}
+
+message Resource {
+  ResourceType type = 1;
+  string port = 2;
+  string paradigm = 3;
+  repeated string allow = 4;
+  string connection_string = 5;
+  string image = 6;
+  RuntimeKind runtime = 7;
+  repeated string exports = 8;
+  repeated Link links = 9;
+  google.protobuf.Struct endpoints = 10;
+  map<string, string> env = 11;
+  google.protobuf.Struct annotations = 12;
+  repeated string bind = 13;
+}
+
+message TriggerEdge {
+  string id = 1;
+  TriggerKind kind = 2;
+  string resource_id = 3;
+  string export_interface = 4;
+  string event = 5;
+}
+
+message Manifest {
+  string schema = 1;
+  ComponentHost component_host = 2;
+  map<string, Resource> resources = 3;
+  repeated TriggerEdge trigger_edges = 4;
+  // Scope budget, contract-effect and resilience references survive collection.
+  google.protobuf.Struct policy = 5;
+}

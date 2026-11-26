@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/hobo.yard-manifest.v1.schema.json",
+  "title": "HoBo YardManifest v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "yard",
+    "providerZones",
+    "exposedEndpoints",
+    "crossYardLinks",
+    "topologyOverrides",
+    "contentHash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": "hobo.yard-manifest/v1"
+    },
+    "yard": {
+      "$ref": "#/$defs/yard"
+    },
+    "providerZones": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/providerZone"
+      }
+    },
+    "exposedEndpoints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exposedEndpoint"
+      }
+    },
+    "crossYardLinks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/crossYardLink"
+      }
+    },
+    "topologyOverrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/topologyOverride"
+      }
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "yard": {
+      "type": "object",
+      "required": ["id", "provider", "regions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "junctionId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "providerZone": {
+      "type": "object",
+      "required": ["id", "domain", "regions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string", "minLength": 1 },
+        "regions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "exposedEndpoint": {
+      "type": "object",
+      "required": ["logicalName", "resourceId", "campId", "provider", "region", "dnsName", "residencyTag"],
+      "additionalProperties": false,
+      "properties": {
+        "logicalName": { "type": "string", "minLength": 1 },
+        "resourceId": { "type": "string", "minLength": 1 },
+        "campId": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "region": { "type": "string", "minLength": 1 },
+        "dnsName": { "type": "string", "minLength": 1 },
+        "residencyTag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "crossYardLink": {
+      "type": "object",
+      "required": ["id", "bindleId", "source", "target", "requiredTier", "dnsRules"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "bindleId": { "type": "string", "minLength": 1 },
+        "source": { "$ref": "#/$defs/linkEndpoint" },
+        "target": { "$ref": "#/$defs/linkEndpoint" },
+        "requiredTier": { "enum": [1, 2, 3, 4, 5] },
+        "dnsRules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dnsRule" }
+        }
+      }
+    },
+    "linkEndpoint": {
+      "type": "object",
+      "required": ["yardId", "resourceId", "endpoint", "residencyTag"],
+      "additionalProperties": false,
+      "properties": {
+        "yardId": { "type": "string", "minLength": 1 },
+        "resourceId": { "type": "string", "minLength": 1 },
+        "endpoint": { "type": "string", "minLength": 1 },
+        "residencyTag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dnsRule": {
+      "type": "object",
+      "required": ["recordName", "type", "targets"],
+      "additionalProperties": false,
+      "properties": {
+        "recordName": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["A", "AAAA", "CNAME"] },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "topologyOverride": {
+      "type": "object",
+      "required": ["id", "kind", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["dns-record", "connectivity-tier"] },
+        "recordName": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["A", "AAAA", "CNAME"] },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "linkId": { "type": "string", "minLength": 1 },
+        "requiredTier": { "enum": [1, 2, 3, 4, 5] },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        {
+          "properties": { "kind": { "const": "dns-record" } },
+          "required": ["recordName", "type", "targets"],
+          "not": {
+            "anyOf": [
+              { "required": ["linkId"] },
+              { "required": ["requiredTier"] }
+            ]
+          }
+        },
+        {
+          "properties": { "kind": { "const": "connectivity-tier" } },
+          "required": ["linkId", "requiredTier"],
+          "not": {
+            "anyOf": [
+              { "required": ["recordName"] },
+              { "required": ["type"] },
+              { "required": ["targets"] }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

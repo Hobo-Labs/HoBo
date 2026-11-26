@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "control-plane-api-resource-lifecycle-shapes",
+  "experienceType": "api",
+  "title": "Control-Plane API Resource Lifecycle Shapes",
+  "linear": "HOBO-569",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

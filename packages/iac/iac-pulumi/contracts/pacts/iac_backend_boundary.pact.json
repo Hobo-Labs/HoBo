@@ -1,0 +1,56 @@
+{
+  "consumer": {
+    "name": "IacBackendConformanceConsumer"
+  },
+  "provider": {
+    "name": "IacPulumiBackendBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Pulumi IaC backend satisfies the @hobo/conformance/iac-backend suite for a trivial program",
+      "request": {
+        "method": "POST",
+        "path": "/iac-pulumi/conformance",
+        "body": {
+          "adapter": "@hobo/iac-pulumi",
+          "program": "trivial"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "suite": "@hobo/conformance/iac-backend",
+          "provider": "pulumi",
+          "passed": true,
+          "assertions": [
+            "preview-diff",
+            "apply-outputs",
+            "binding-outputs",
+            "refresh-clean",
+            "destroy-clean"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Pulumi IaC backend reports the pinned Automation API version and per-resource stack model",
+      "request": {
+        "method": "GET",
+        "path": "/iac-pulumi/identity"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "@hobo/iac-pulumi",
+          "pulumiVersion": "3.130.0",
+          "stackModel": "per-resource-stack"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

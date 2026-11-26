@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DomainEventBodyContractConsumer"
+  },
+  "provider": {
+    "name": "DomainEventBodyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Domain Event Body Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/domain-event-body-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.domain_event_body_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

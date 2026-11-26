@@ -1,0 +1,193 @@
+syntax = "proto3";
+
+import "google/protobuf/struct.proto";
+
+package hobo.provider.prisma_postgres.v1;
+
+// A local TTL cannot close provider-side financial exposure.
+message PrismaDestroyOutcome {
+  bool released = 1;
+  string reap_mode = 2;
+  bool custody_revoked = 3;
+  string expires_at_iso = 4;
+  string detail = 5;
+  optional string retirement_evidence_ref = 6;
+  optional string usage_evidence_ref = 7;
+}
+
+// Design-time contract artifacts for @hobo/provider-prisma-postgres: the data
+// shapes crossing this package's boundaries — the pinned `create-db --json`
+// document, the associated-resource reference a bundled claim strategy
+// consumes, the claim plan, and the provision receipt. Not compiled at
+// runtime; the parsers in src/output.ts and the projections in src/receipt.ts
+// are the executable view and must stay reconciled with these shapes.
+
+enum PrismaClaimState {
+  PRISMA_CLAIM_STATE_UNSPECIFIED = 0;
+  PRISMA_CLAIM_STATE_UNCLAIMED = 1;
+  PRISMA_CLAIM_STATE_CLAIMED_PENDING_ROTATION = 2;
+  PRISMA_CLAIM_STATE_COMPLETE = 3;
+  PRISMA_CLAIM_STATE_EXPIRED = 4;
+}
+
+enum PrismaOutputMode {
+  PRISMA_OUTPUT_MODE_UNSPECIFIED = 0;
+  PRISMA_OUTPUT_MODE_JSON = 1;
+  PRISMA_OUTPUT_MODE_HUMAN_V1 = 2;
+  PRISMA_OUTPUT_MODE_LOCAL_JOURNAL = 3;
+}
+
+// The pinned CLI's success document, minus the credential. `connection_string`
+// is deliberately absent: it is deposited into secret custody at the parse
+// boundary and never enters a persisted record.
+message PrismaCreateDocument {
+  string project_id = 1;                // proj_…
+  string claim_url = 2;                 // https://create-db.prisma.io…?projectID=proj_…
+  int64 deletion_date_ms = 3;           // computed by the CLI's own clock
+  string region = 4;
+  string name = 5;
+  bool connection_string_present = 6;
+  PrismaOutputMode output_mode = 7;
+}
+
+// A non-secret address. A hostname is not a credential, and there is no field
+// here that could hold one: the connection string lives in custody and is
+// named downstream only by a locator.
+message PrismaNonSecretEndpoint {
+  string host = 1;                      // db.prisma.io
+  optional uint32 port = 2;             // 5432
+  optional string path = 3;             // "/<database>" when the URI carried one
+  bool tls = 4;
+}
+
+message PrismaClaimAction {
+  string id = 1;
+  string kind = 2;                      // human-ceremony | owner-api
+  string description = 3;
+  bool blocking = 4;
+  bool completed = 5;
+  // Explicit presence: an action with no URL is not an action with an empty
+  // one, and a receipt must not be able to spell "absent" as "".
+  optional string url = 6;
+}
+
+// What a bundled (Vercel-style) claim strategy needs in order to include this
+// resource in a multi-resource ceremony. Carries no credential material.
+message PrismaAssociatedResourceRef {
+  string schema_version = 1;
+  string kind = 2;                      // prisma-postgres-project
+  string provider_id = 3;
+  string definition_id = 4;
+  string project_id = 5;
+  string claim_url = 6;
+  string claim_host = 7;
+  bool standalone_claim_supported = 8;  // always true for this product
+  bool requires_workspace = 9;
+  string bundle_strategy = 10;          // associated-resource
+  string region = 11;
+  string database_name = 12;
+  // The instant a bundler renders next to the resource. ISO-8601 rather than
+  // epoch milliseconds because this reference exists to be shown to whoever
+  // is running the bundled ceremony.
+  string expires_at_iso = 13;
+  string expiry_source = 14;            // always cli-local-clock
+}
+
+message PrismaClaimPlan {
+  string strategy = 1;                  // resource-claim
+  string boundary = 2;                  // resource
+  string resource_kind = 3;             // prisma-postgres-project
+  string atomicity = 4;                 // single-resource
+  string claim_url = 5;
+  PrismaClaimState state = 6;
+  repeated PrismaClaimAction actions = 7;
+  PrismaAssociatedResourceRef associated_resource = 8;
+}
+
+// What the pure compiler emits and the executor consumes. It carries the
+// literal argv so a plan can be reviewed — pinned CLI version included —
+// before anything is spawned, and it carries no instant at all, because the
+// compiler reads no clock.
+message PrismaProvisionOperation {
+  string schema_version = 1;
+  string kind = 2;                      // provision
+  string definition_id = 3;
+  string provider_id = 4;
+  string compiler_ref = 5;
+  string executor_ref = 6;
+  string bootstrap_strategy_ref = 7;    // bootstrap.prisma.create-db/v1
+  string claim_strategy_ref = 8;        // claim.prisma.database/v1
+  string resource_ref = 9;
+  string idempotency_key = 10;
+  string region = 11;
+  repeated string argv = 12;
+  int32 timeout_ms = 13;
+  int32 max_output_bytes = 14;
+  string output_mode = 15;              // json
+  int32 documented_ttl_hours = 16;
+  // Explicit presence: absent means "the CLI default", which is not the same
+  // statement as an empty TTL string.
+  optional string requested_ttl = 17;   // 30m or 1h-24h
+  repeated string produces_binding_profiles = 18;
+  string expected_secret_purpose = 19;  // connection-string
+}
+
+// What the receipt says about the claim: the state plus the blocking actions
+// still outstanding, so a reader cannot mistake "the ceremony happened" for
+// "nobody holds a residual credential". The receipt carries this summary
+// rather than the whole plan — the action descriptions are guidance for the
+// operator doing the ceremony, not evidence worth persisting — and carries the
+// associated-resource reference beside it, because that is what a bundled
+// claim actually consumes.
+message PrismaClaimSummary {
+  PrismaClaimState state = 1;
+  string boundary = 2;                  // resource
+  string atomicity = 3;                 // single-resource
+  reserved 4;
+  reserved "claim_url";
+  string claim_ref = 6;
+  repeated string blocking_action_ids = 5;
+}
+
+// The serialized output that leaves this package. Built by projection from the
+// record, never by spreading it, and re-scanned for credential material before
+// it is returned.
+message PrismaProvisionReceipt {
+  string schema_version = 1;
+  string definition_id = 2;
+  string provider_id = 3;
+  string resource_ref = 4;
+  reserved 5, 8, 18;
+  reserved "project_id", "endpoint", "associated_resource";
+  string database_name = 6;
+  string region = 7;
+  optional string credential_ref = 9;   // SecretRef locator, never material
+  string expires_at_iso = 10;
+  int64 expires_at_ms = 11;
+  string expiry_source = 12;            // always cli-local-clock
+  int32 documented_ttl_hours = 13;      // 24, per the published docs
+  int64 observed_at_ms = 14;
+  bool adopted = 15;
+  // Which output contract produced the record this receipt projects: there is
+  // no read-by-id API, so a receipt has to say where its facts came from.
+  PrismaOutputMode output_mode = 16;
+  PrismaClaimSummary claim = 17;
+  repeated string binding_profiles = 19;
+  repeated string migration_profiles = 20;
+  string opaque_physical_id = 21;
+  string native_identity_ref = 22;
+  string associated_resource_ref = 23;
+  string endpoint_ref = 24;
+  optional string binding_ref = 25;
+}
+
+
+// Public fact projection: native capability values exist only in custody.
+message PrismaProviderFact {
+  string kind = 1;
+  int64 occurred_at_ms = 2;
+  string resource_ref = 3;
+  string opaque_physical_id = 4;
+  string native_identity_ref = 5;
+  google.protobuf.Struct detail = 6;
+}

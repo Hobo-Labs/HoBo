@@ -1,0 +1,19 @@
+# Governed by default: a policy.Decided is emitted even when nothing denies.
+{"method":"decide","name":"allows a compatible deploy under a permissive default pack and still records policy.Decided","input":[{}],"subset":{"decision":"allow","reasons":[],"policyDecidedType":"policy.Decided","policyEffect":"allow","canDeployOk":true,"costQuotaOk":true,"eventTypes":["compat.GatePassed","gatekeeper.Decided","policy.Decided"]}}
+# Contracts gate.
+{"method":"decide","name":"denies a breaking contract change with an explainable machine-readable reason","input":[{"candidate":"breaking"}],"subset":{"decision":"deny","reasons":["contracts:required-field-removed"],"detailsByCode":{"required-field-removed":{"fields":["tenantId"]}},"policyDecidedType":"policy.Decided"}}
+# Policy pack.
+{"method":"decide","name":"denies when a policy pack denies the action","input":[{"pack":"freeze"}],"subset":{"decision":"deny","reasons":["policy:policy-denied"]}}
+{"method":"decide","name":"requires approval when a policy obligation is pending","input":[{"pack":"approval"}],"subset":{"decision":"require-approval","reasons":["obligations:obligation-pending"],"obligationIds":["obl:approval:checkout-prod"]}}
+{"method":"decide","name":"allows once the obligation is satisfied","input":[{"obligations":[{"id":"obl:canary:checkout-prod","kind":"require-canary","satisfied":true}]}],"subset":{"decision":"allow"}}
+# Cost gate.
+{"method":"decide","name":"denies when the cost quota is exceeded","input":[{"costQuota":{"quota":"deployments/day","used":20,"limit":20}}],"subset":{"decision":"deny","reasons":["cost:quota-exceeded"],"costQuotaOk":false}}
+# Secretless config (ADR-0027) and binding delivery (ADR-0141).
+{"method":"decide","name":"denies when the secretless-config ranking gate fails","input":[{"secretlessConfig":{"ok":false,"reasons":[{"code":"static-escape-forbidden","message":"field LEGACY source static-escape exceeds policy ceiling","field":"LEGACY"}]}}],"subset":{"decision":"deny","reasons":["contracts:secretless-config:static-escape-forbidden"]}}
+{"method":"decide","name":"denies when the binding-delivery gate fails","input":[{"bindingDelivery":{"ok":false,"reasons":[{"code":"connection-strings-env","message":"forbidden ConnectionStrings__* env","path":"resources.api.env.ConnectionStrings__db"}]}}],"subset":{"decision":"deny","reasons":["contracts:binding-delivery:connection-strings-env"]}}
+# can-migrate (continuous identity migration).
+{"method":"decide","name":"denies when the can-migrate dimension fails","input":[{"canMigrate":{"ok":false,"summary":"can-migrate:blocked (mapping-spec-missing)","reasons":[{"code":"mapping-spec-missing","message":"MappingSpec missing"}],"evidence":{"continuousDefault":true,"dryRun":true,"rollbackPosture":"compensate-to-source"}}}],"subset":{"decision":"deny","reasons":["contracts:can-migrate:mapping-spec-missing"]}}
+{"method":"decide","name":"allows when can-migrate is ok on the zero-config continuous path","input":[{"canMigrate":{"ok":true,"summary":"can-migrate:ok continuous dual-path ready","reasons":[],"evidence":{"continuousDefault":true,"dryRun":true}}}],"subset":{"decision":"allow"}}
+# Residency (ADR-0146): a precomputed verdict, still audited either way.
+{"method":"decide","name":"denies with residency reasons when the precomputed verdict conflicts","input":[{"residency":{"ok":false,"reasons":[{"code":"jurisdiction-not-allowed","message":"region \"us-east-1\" (us) is outside allowed jurisdictions [eu]","region":"us-east-1","jurisdictions":["us"]}]}}],"subset":{"decision":"deny","reasons":["residency:jurisdiction-not-allowed"],"detailsByCode":{"jurisdiction-not-allowed":{"region":"us-east-1","jurisdictions":["us"]}},"policyDecidedType":"policy.Decided"}}
+{"method":"decide","name":"allows unchanged when the residency verdict is ok","input":[{"residency":{"ok":true,"reasons":[]}}],"subset":{"decision":"allow","reasons":[]}}

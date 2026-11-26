@@ -1,0 +1,83 @@
+package hobo:dns@0.1.0;
+
+world dns-provider {
+  export hobo-dns;
+}
+
+interface hobo-dns {
+  enum record-type {
+    a,
+    aaaa,
+    cname,
+    txt,
+    caa,
+  }
+
+  record dns-target {
+    camp: string,
+    value: string,
+  }
+
+  record camp-override {
+    camp: string,
+    targets: list<dns-target>,
+  }
+
+  record failover-target {
+    camp: string,
+    priority: u32,
+  }
+
+  record weighted-target {
+    camp: string,
+    weight: u32,
+  }
+
+  record latency-target {
+    camp: string,
+    region: string,
+  }
+
+  record geo-target {
+    camp: string,
+    geo: string,
+  }
+
+  record cost-target {
+    camp: string,
+    replica-class: string,
+  }
+
+  variant routing-policy {
+    failover(list<failover-target>),
+    weighted(list<weighted-target>),
+    latency(list<latency-target>),
+    geo(list<geo-target>),
+    cost(list<cost-target>),
+  }
+
+  record dns-record {
+    name: string,
+    record-type: record-type,
+    ttl: u32,
+    targets: list<dns-target>,
+    policy: routing-policy,
+    camp-overrides: list<camp-override>,
+  }
+
+  record dns-change {
+    zone: string,
+    change-id: string,
+    event-type: string,
+  }
+
+  variant dns-error {
+    invalid-record(string),
+    invalid-policy(string),
+    shadow-isolation-violation(string),
+  }
+
+  upsert-record: func(record: dns-record) -> result<dns-change, dns-error>;
+  read-records: func(name: string) -> result<list<dns-record>, dns-error>;
+  delete-record: func(name: string, record-type: record-type) -> result<dns-change, dns-error>;
+}

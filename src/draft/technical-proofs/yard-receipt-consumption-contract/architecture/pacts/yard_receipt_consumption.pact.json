@@ -1,0 +1,65 @@
+{
+  "consumer": {
+    "name": "YardReceiptConsumer"
+  },
+  "provider": {
+    "name": "MetaCloudBrokerResolutionAuthority"
+  },
+  "interactions": [
+    {
+      "description": "Yard consumes a signed Resolution Receipt without re-resolving broker authority",
+      "request": {
+        "method": "POST",
+        "path": "/yard/receipt-consumption",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "receiptId": "receipt-shop-prod-001",
+          "issuer": "meta-cloud-broker",
+          "manifestDigest": "sha256:manifest-shop-prod",
+          "environmentDigest": "sha256:broker-env-prod"
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "source": "resolution-receipt",
+          "planningAuthority": "yard-control-plane",
+          "resolutionAuthority": "meta-cloud-broker",
+          "mayRecomputeBrokerMapping": false
+        }
+      }
+    },
+    {
+      "description": "Yard fails closed when receipt evidence is missing or invalid",
+      "request": {
+        "method": "POST",
+        "path": "/yard/receipt-consumption",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "receiptId": null
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "receipt-required:no-broker-reresolve"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

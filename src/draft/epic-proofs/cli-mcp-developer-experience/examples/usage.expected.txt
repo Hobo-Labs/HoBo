@@ -1,0 +1,8 @@
+command surface parity ok=true missing=0
+app dev loop replayDiff=unchanged deploy=deployed cloudSpecificMatches=0
+mcp plan ok=true; unscoped deploy denied code=MCP_SCOPE_DENIED
+credentials staticKey=rejected afterRevoke=denied
+operators gitopsReadOnly=true secops=deny/replay=deny sreDrift=true
+canary healthy=promoted regressing=rolled-back
+workspace mockedOnly=true liveExternalCalls=0
+EPIC HELD: CLI/MCP parity, fail-closed scopes, and mocked operator journeys are deterministic

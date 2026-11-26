@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package hobo.yard_receipt_consumption.v1;
+
+message ResolutionReceipt {
+  string receipt_id = 1;
+  string protocol_version = 2;
+  string issuer = 3;
+  string manifest_digest = 4;
+  string environment_digest = 5;
+  string catalog_snapshot_digest = 6;
+  string issued_at = 7;
+  string expires_at = 8;
+  ReceiptCompatibility compatibility = 9;
+  ReceiptHandoffFacts handoff_facts = 10;
+  string digest = 11;
+  string signature = 12;
+}
+
+message ReceiptCompatibility {
+  string yard_protocol_version = 1;
+}
+
+message ReceiptHandoffFacts {
+  repeated ResourcePlan resource_plans = 1;
+  string gatekeeper_mode = 2;
+}
+
+message ResourcePlan {
+  string resource_id = 1;
+  string provider = 2;
+  ResourceAction action = 3;
+}
+
+enum ResourceAction {
+  RESOURCE_ACTION_UNSPECIFIED = 0;
+  RESOURCE_ACTION_PROVISION = 1;
+  RESOURCE_ACTION_DEPLOY = 2;
+  RESOURCE_ACTION_BIND = 3;
+}
+
+message YardPlanningInput {
+  string receipt_id = 1;
+  string manifest_digest = 2;
+  string environment_digest = 3;
+  string catalog_snapshot_digest = 4;
+  repeated ResourcePlan resource_plans = 5;
+  string planning_authority = 6;
+  string resolution_authority = 7;
+  bool may_recompute_broker_mapping = 8;
+}
+
+message GatekeeperDecision {
+  string effect = 1;
+  repeated string obligations = 2;
+}
+
+enum ReceiptFailureCode {
+  RECEIPT_FAILURE_CODE_UNSPECIFIED = 0;
+  RECEIPT_FAILURE_CODE_REQUIRED = 1;
+  RECEIPT_FAILURE_CODE_INTEGRITY_FAILED = 2;
+  RECEIPT_FAILURE_CODE_STALE = 3;
+  RECEIPT_FAILURE_CODE_INCOMPATIBLE = 4;
+  RECEIPT_FAILURE_CODE_ADMIN_MUTATION_REFUSED = 5;
+  RECEIPT_FAILURE_CODE_GATEKEEPER_REWRITE_REFUSED = 6;
+}

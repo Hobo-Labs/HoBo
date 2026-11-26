@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SignedArtifactPublishInstallContractConsumer"
+  },
+  "provider": {
+    "name": "SignedArtifactPublishInstallContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Signed Artifact Publish Install Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/signed-artifact-publish-install-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.signed_artifact_publish_install_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

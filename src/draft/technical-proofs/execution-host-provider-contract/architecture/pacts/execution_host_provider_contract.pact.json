@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ExecutionHostProviderContractConsumer"
+  },
+  "provider": {
+    "name": "ExecutionHostProviderContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Execution Host Provider Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/execution-host-provider-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.execution_host_provider_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "acme-dns01-cert-issuance-contract",
+  "title": "ACME DNS-01 Certificate Issuance Contract",
+  "linear": "HOBO-144",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/domain-validation-gate-contract",
+      "src/draft/technical-proofs/hobo-dns-port-contract",
+      "src/draft/technical-proofs/obligation-engine-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

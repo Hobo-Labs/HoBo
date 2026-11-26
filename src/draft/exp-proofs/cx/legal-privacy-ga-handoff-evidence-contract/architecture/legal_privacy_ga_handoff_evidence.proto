@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package hobo.draft.legal_privacy_ga_handoff_evidence;
+
+// Architecture-guard evidence: protobuf data shapes the Legal Privacy GA
+// Handoff Evidence draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum LegalPrivacyGaEvidenceStatus {
+  LEGAL_PRIVACY_GA_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LEGAL_PRIVACY_GA_EVIDENCE_STATUS_ACCEPTED = 1;
+  LEGAL_PRIVACY_GA_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  LEGAL_PRIVACY_GA_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum LegalPrivacyGaBlockerState {
+  LEGAL_PRIVACY_GA_BLOCKER_STATE_UNSPECIFIED = 0;
+  LEGAL_PRIVACY_GA_BLOCKER_STATE_CLEARED = 1;
+  LEGAL_PRIVACY_GA_BLOCKER_STATE_ACCEPTED_RISK = 2;
+}
+
+message LegalPrivacyGaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  LegalPrivacyGaEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message LegalPrivacyGaBlocker {
+  string id = 1;
+  string owner_project = 2;
+  LegalPrivacyGaBlockerState state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message LegalPrivacyGaAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message LegalPrivacyGaReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message LegalPrivacyGaMissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+}
+
+message LegalPrivacyGaFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message LegalPrivacyGaInitiativeStatusGate {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message LegalPrivacyGaPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message LegalPrivacyGaHandoffEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated LegalPrivacyGaEvidenceItem evidence = 5;
+  repeated LegalPrivacyGaBlocker blockers = 6;
+  repeated LegalPrivacyGaAcceptedRisk accepted_risks = 7;
+  repeated LegalPrivacyGaReleaseCutlineDependency release_cutline_dependencies = 8;
+  repeated LegalPrivacyGaMissingEvidence missing_evidence = 9;
+  repeated LegalPrivacyGaFollowUp follow_ups = 10;
+  LegalPrivacyGaInitiativeStatusGate initiative_status = 11;
+  repeated string scope_out = 12;
+  repeated LegalPrivacyGaPublicClaimGuard public_claim_guards = 13;
+}

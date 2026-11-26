@@ -1,0 +1,12 @@
+{
+ "consumer":{"name":"HoboDaggerDefaultConnector"},
+ "provider":{"name":"DaggerEngineGraphql"},
+ "metadata":{"pactSpecification":{"version":"3.0.0"},"evidence":"Hand-authored local consumer contract driving the actual pinned SDK over loopback HTTP, not vendor verification."},
+ "interactions":[
+  {"description":"query the engine protocol version","request":{"method":"POST","path":"/query","operation":"version"},"response":{"status":200,"value":"v0.21.11"}},
+  {"description":"identify the bound source Directory","request":{"method":"POST","path":"/query","operation":"id"},"response":{"status":200,"value":"directory-1"}},
+  {"description":"observe the actual command exit code","request":{"method":"POST","path":"/query","operation":"exitCode"},"response":{"status":200,"value":0}},
+  {"description":"read command stdout","request":{"method":"POST","path":"/query","operation":"stdout"},"response":{"status":200,"value":"written\n"}},
+  {"description":"read command stderr","request":{"method":"POST","path":"/query","operation":"stderr"},"response":{"status":200,"value":""}}
+ ]
+}

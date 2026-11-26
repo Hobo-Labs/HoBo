@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "hobo.bindle/v1",
+  "name": "{{name}}",
+  "template": "{{template}}",
+  "entrypoint": "app.ts",
+  "generated": "src/_generated/index.ts",
+  "resources": [{ "name": "{{template}}Store", "kind": "kv" }],
+  "handlers": [{ "name": "api", "kind": "http" }]
+}

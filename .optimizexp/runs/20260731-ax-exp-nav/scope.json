@@ -1,0 +1,27 @@
+{
+  "runId": "20260731-ax-exp-nav",
+  "experiences": [
+    "ax"
+  ],
+  "projects": [
+    "all"
+  ],
+  "personas": [
+    "product-coding-agent",
+    "product-platform-engineer"
+  ],
+  "features": [
+    "draft-experience-proof-navigation"
+  ],
+  "surfaces": [
+    "bash -lc 'test -f src/draft/exp-proofs/_classification.md && ls src/draft/exp-proofs && head -n 40 src/draft/exp-proofs/_classification.md'"
+  ],
+  "reportOnly": false,
+  "stopPolicy": "true-plateau-only",
+  "hostAgent": "grok",
+  "priorRun": "20260731-ax-cli-wire",
+  "createdAt": "2026-07-31T14:20:00.000Z",
+  "passesCompleted": 2,
+  "lastImplementableFindings": 0,
+  "stopReason": "plateau"
+}

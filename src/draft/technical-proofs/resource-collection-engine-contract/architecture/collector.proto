@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.collector.v1;
+
+message CollectionInput {
+  string bindle_id = 1;
+  string file_name = 2;
+  string source_text = 3;
+  ComponentHost component_host = 4;
+}
+
+message ComponentHost {
+  string kind = 1;
+  string version = 2;
+}
+
+message SideEffectRecord {
+  string kind = 1;
+  string target = 2;
+  string disposition = 3;
+}
+
+message CoverageDiagnostic {
+  string code = 1;
+  string severity = 2;
+  string resource_id = 3;
+  string bind_key = 4;
+}
+
+message CoverageSummary {
+  bool ok = 1;
+  string status = 2;
+  repeated string observed_resource_ids = 3;
+  repeated string observed_bind_keys = 4;
+  repeated CoverageDiagnostic diagnostics = 5;
+}
+
+message ResourcesCollectedData {
+  string bindle_id = 1;
+  repeated string resources = 2;
+  repeated string binds = 3;
+  CoverageSummary coverage = 4;
+}
+
+message ManifestProducedData {
+  string bindle_id = 1;
+  string manifest_hash = 2;
+}
+
+message CollectionEvent {
+  string id = 1;
+  string type = 2;
+  int32 seq = 3;
+  string source = 4;
+}

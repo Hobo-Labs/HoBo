@@ -1,0 +1,45 @@
+{
+  "specVersion": "hobo.sdk.semantics-annex/v1",
+  "semantics": [
+    {
+      "name": "result-error-mapping",
+      "category": "error-mapping",
+      "spec_version": "hobo.sdk.semantics-annex/v1",
+      "result": { "err": { "tag": "deadline-exceeded", "message": "step timed out" } },
+      "expectedThrow": { "name": "HoboWitError", "tag": "deadline-exceeded" }
+    },
+    {
+      "name": "caller-cancellation",
+      "category": "cancellation",
+      "spec_version": "hobo.sdk.semantics-annex/v1",
+      "signal": { "reason": "caller-aborted", "deadlineMs": 250 },
+      "expected": {
+        "err": {
+          "tag": "cancelled",
+          "message": "caller-aborted",
+          "deadlineMs": 250,
+          "retry": "caller-owned"
+        }
+      }
+    },
+    {
+      "name": "awaited-ifc-order",
+      "category": "async-ordering",
+      "spec_version": "hobo.sdk.semantics-annex/v1",
+      "facts": [
+        { "sequence": 2, "kind": "handler", "resource": "api", "event": "http.request" },
+        { "sequence": 1, "kind": "resource", "name": "api" }
+      ],
+      "expected": { "ok": ["resource:api", "handler:api:http.request"] }
+    },
+    {
+      "name": "missing-resource-before-handler",
+      "category": "ifc-side-effects",
+      "spec_version": "hobo.sdk.semantics-annex/v1",
+      "facts": [
+        { "sequence": 1, "kind": "handler", "resource": "api", "event": "http.request" }
+      ],
+      "expectedError": "IfC order violation: handler api observed before resource declaration"
+    }
+  ]
+}

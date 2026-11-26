@@ -1,0 +1,49 @@
+{
+  "consumer": {
+    "name": "Gatekeeper Verify"
+  },
+  "provider": {
+    "name": "Built-in Policy Engine"
+  },
+  "interactions": [
+    {
+      "description": "evaluate signed policy packs and deny ceiling for deploy request",
+      "providerStates": [
+        {
+          "name": "signed policy packs are available"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/policy/evaluate",
+        "body": {
+          "action": "hobo:delta:promote",
+          "resource": {
+            "kind": "deployment"
+          },
+          "phase": "apply"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "require-approval",
+          "reason": "like:policy reason",
+          "obligations": "like:obligation-list",
+          "evidence": {
+            "engine": "like:engine-id",
+            "policyIds": "like:policy-id-list"
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Gatekeeper to Policy Engine",
+    "status": "consumer_tested",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

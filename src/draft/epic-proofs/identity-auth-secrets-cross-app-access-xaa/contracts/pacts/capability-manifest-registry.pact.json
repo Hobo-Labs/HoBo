@@ -1,0 +1,21 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "CapabilityManifestRegistry" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "returns signed auth.json with keyless-first flow order",
+      "providerStates": [{ "name": "aws manifest is signed by trusted registry issuer" }],
+      "request": {
+        "method": "GET",
+        "path": "/capability-manifests/aws/auth.json",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "issuer": "registry://hobo/aws", "flows": ["oidc-federation", "oauth2-xaa", "api-key"], "audit": ["token.Granted", "token.Used"] }
+      }
+    }
+  ]
+}

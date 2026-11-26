@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/gateway-port",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the HoBo gateway port contract from HOBO-105.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,33 @@
+{
+	"name": "@hobo/wasp",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"description": "Wasp webApp primitive for HoBo Bindles — maps wasp-lang/open-saas (and other Wasp apps) onto b.web() with inferred env/endpoint/config from usage.",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/bindles": "workspace:*",
+		"@hobo/runtime": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/core": "workspace:*",
+		"@types/node": "^22.15.3"
+	}
+}

@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Admin Support
+// Break-Glass Boundaries draft package reasons about. Not compiled at runtime;
+// this is a design-time contract artifact.
+
+enum BreakGlassAuditEventKind {
+  BREAK_GLASS_AUDIT_EVENT_KIND_UNSPECIFIED = 0;
+  BREAK_GLASS_AUDIT_EVENT_KIND_REQUESTED = 1;
+  BREAK_GLASS_AUDIT_EVENT_KIND_APPROVED = 2;
+  BREAK_GLASS_AUDIT_EVENT_KIND_STARTED = 3;
+  BREAK_GLASS_AUDIT_EVENT_KIND_USED = 4;
+  BREAK_GLASS_AUDIT_EVENT_KIND_REVOKED = 5;
+}
+
+message BreakGlassAccessClass {
+  string id = 1;
+  string owner = 2;
+  repeated string approval_path = 3;
+  repeated BreakGlassAuditEventKind audit_events = 4;
+  uint32 max_ttl_minutes = 5;
+  string customer_notification = 6;
+  string revocation = 7;
+}
+
+message BreakGlassBoundaryRecord {
+  string issue = 1;
+  string phase = 2;
+  string default_posture = 3;
+  repeated string roles = 4;
+  repeated BreakGlassAccessClass access_classes = 5;
+  repeated string unsupported_actions = 6;
+}

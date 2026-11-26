@@ -1,0 +1,12 @@
+{
+  "consumer": {"name": "HoboCiPolicyAuthor"},
+  "provider": {"name": "HoboCiDesiredPolicyParser"},
+  "interactions": [
+    {
+      "description": "compile an account-scoped desired policy without runtime balances",
+      "request": {"method":"COMPILE", "body":{"accountId":"acme","tenantId":"acme","pool":{"label":"hobo","os":"linux","architecture":"x64"},"providers":[{"id":"github","kind":"github","connectionRef":"github-ci","runsOn":"ubuntu-24.04","enabled":true}],"budget":{"scope":"ci-account","currency":"USD","limitMicros":100000000,"period":"manual","timeZone":"UTC"},"routing":{"strategy":"lowest-total-incremental-cost","noEligibleProvider":"queue","unknownAllocation":"zero"},"thresholds":[{"fraction":1,"allow":[]}]}},
+      "response": {"body":{"accountId":"acme","connectionRef":"github-ci","limitMicros":100000000,"pauseAt":1}}
+    }
+  ],
+  "metadata": {"pactSpecification":{"version":"3.0.0"}}
+}

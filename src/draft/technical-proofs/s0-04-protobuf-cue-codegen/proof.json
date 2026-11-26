@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "s0-04-protobuf-cue-codegen",
+  "title": "S0-04 Protobuf+CUE Codegen Pipeline (HOBO-581 draft POC)",
+  "linear": "HOBO-581",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

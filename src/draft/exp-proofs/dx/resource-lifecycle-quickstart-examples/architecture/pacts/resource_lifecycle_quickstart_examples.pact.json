@@ -1,0 +1,447 @@
+{
+  "consumer": {
+    "name": "resource-lifecycle-downstream-docs-consumer"
+  },
+  "provider": {
+    "name": "resource-lifecycle-quickstart-examples"
+  },
+  "interactions": [
+    {
+      "description": "reads canonical resource lifecycle quickstart examples",
+      "providerStates": [
+        {
+          "name": "HOBO-577 quickstart fixture is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-577",
+          "phase": "M2",
+          "targetPackage": "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
+          "proofNote": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+          "designRefs": [
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/sdk-api.md#plan-02",
+            "docs/design/control-plane.md#plan-04"
+          ],
+          "scopeOut": [
+            "marketing copy not backed by transcripts",
+            "customer promises",
+            "live credentials",
+            "production docs publication",
+            "enterprise dashboard feature tours"
+          ],
+          "safeClaims": [
+            "Shows the canonical resource lifecycle quickstart as fixtures, not a shipped runtime.",
+            "Labels each snippet as reference fixture, simulated, optional live read, or scope-out.",
+            "Covers deploy, manage, migrate, and recover without inventing dashboard behavior."
+          ],
+          "modeNotes": [
+            {
+              "proofMode": "reference-fixture",
+              "meaning": "The snippet reads a checked-in fixture or transcript-equivalent contract.",
+              "docsLabel": "Reference fixture"
+            },
+            {
+              "proofMode": "simulated",
+              "meaning": "The snippet is runnable only against mocked service boundaries.",
+              "docsLabel": "Simulated"
+            },
+            {
+              "proofMode": "live",
+              "meaning": "The snippet may be adapted for a future live tenant after credentials and release gates exist.",
+              "docsLabel": "Optional live"
+            },
+            {
+              "proofMode": "scope-out",
+              "meaning": "The quickstart names a boundary that downstream docs must not claim as implemented.",
+              "docsLabel": "Scope-out"
+            }
+          ],
+          "steps": [
+            {
+              "phase": "define",
+              "title": "Define resource intent",
+              "intent": "Start from the canonical object-graph sample.",
+              "snippets": {
+                "sdk": {
+                  "id": "define-sdk-bindle",
+                  "channel": "sdk",
+                  "text": "bindle('shop-api')",
+                  "fixtureId": "rlq-define-object-graph-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Defines a fixture-backed object graph with generated resource identifiers."
+                },
+                "cli": {
+                  "id": "define-cli-new",
+                  "channel": "cli",
+                  "text": "hobo new shop-api --fixture resource-lifecycle",
+                  "fixtureId": "rlq-define-object-graph-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Copies the quickstart fixture without claiming a shipped runtime."
+                },
+                "api": {
+                  "id": "define-api-fixture",
+                  "channel": "api",
+                  "text": "POST /draft/resource-lifecycle/fixtures/rlq-define-object-graph-v1/manifest",
+                  "fixtureId": "rlq-define-object-graph-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Returns the fixture manifest shape used by later snippets."
+                },
+                "mcp": {
+                  "id": "define-mcp-fixture",
+                  "channel": "mcp",
+                  "text": "hobo_read_resource_lifecycle_fixture({ fixtureId: 'rlq-define-object-graph-v1' })",
+                  "fixtureId": "rlq-define-object-graph-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Lets an agent inspect the same fixture without hidden deploy authority."
+                }
+              }
+            },
+            {
+              "phase": "collect",
+              "title": "Collect manifest IR",
+              "intent": "Lower authoring code into hobo.manifest/v1.",
+              "snippets": {
+                "sdk": {
+                  "id": "collect-sdk-manifest",
+                  "channel": "sdk",
+                  "text": "await bindle.collect({ fixtureId: 'rlq-define-object-graph-v1' })",
+                  "fixtureId": "rlq-collect-manifest-ir-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Collects the fixture into a manifest IR under mocked collector boundaries."
+                },
+                "cli": {
+                  "id": "collect-cli-json",
+                  "channel": "cli",
+                  "text": "hobo collect ./examples/shop-api --json",
+                  "fixtureId": "rlq-collect-manifest-ir-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Shows manifest collection output without claiming a production CLI implementation."
+                },
+                "api": {
+                  "id": "collect-api",
+                  "channel": "api",
+                  "text": "POST /draft/resource-lifecycle/collect",
+                  "fixtureId": "rlq-collect-manifest-ir-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Returns deterministic manifest IR for docs and tutorial reuse."
+                },
+                "mcp": {
+                  "id": "collect-mcp",
+                  "channel": "mcp",
+                  "text": "hobo_collect({ fixtureId: 'rlq-define-object-graph-v1' })",
+                  "fixtureId": "rlq-collect-manifest-ir-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Uses the same fixture contract as CLI and API collect snippets."
+                }
+              }
+            },
+            {
+              "phase": "plan",
+              "title": "Plan deployability",
+              "intent": "Convert manifest IR into DeploymentPlan, Gatekeeper, and Delta preview evidence.",
+              "snippets": {
+                "sdk": {
+                  "id": "plan-sdk-preview",
+                  "channel": "sdk",
+                  "text": "await hobo.plan({ fixtureId: 'rlq-collect-manifest-ir-v1' })",
+                  "fixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Shows a plan preview against deterministic Gatekeeper and planner fixtures."
+                },
+                "cli": {
+                  "id": "plan-cli-preview",
+                  "channel": "cli",
+                  "text": "hobo plan --fixture rlq-collect-manifest-ir-v1 --json",
+                  "fixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Emits the fixture DeploymentPlan, Gatekeeper receipt, and Delta preview."
+                },
+                "api": {
+                  "id": "plan-api-preview",
+                  "channel": "api",
+                  "text": "POST /draft/resource-lifecycle/plans",
+                  "fixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Models the plan boundary without promising provider execution."
+                },
+                "mcp": {
+                  "id": "plan-mcp-preview",
+                  "channel": "mcp",
+                  "text": "hobo_plan({ fixtureId: 'rlq-collect-manifest-ir-v1' })",
+                  "fixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Lets agents request the same preview while preserving approval boundaries."
+                }
+              }
+            },
+            {
+              "phase": "deploy",
+              "title": "Deploy a simulated set",
+              "intent": "Accept a safe DeploymentPlan into a Deployment Set and ResourceActor timeline.",
+              "snippets": {
+                "sdk": {
+                  "id": "deploy-sdk-up",
+                  "channel": "sdk",
+                  "text": "await hobo.up({ planFixtureId: 'rlq-plan-safe-preview-v1', mode: 'simulated' })",
+                  "fixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Shows the accepted deploy event sequence using mocked execution boundaries."
+                },
+                "cli": {
+                  "id": "deploy-cli-up",
+                  "channel": "cli",
+                  "text": "hobo up --plan-fixture rlq-plan-safe-preview-v1 --mode simulated --json",
+                  "fixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Demonstrates deploy flow without live providers or credentials."
+                },
+                "api": {
+                  "id": "deploy-api-up",
+                  "channel": "api",
+                  "text": "POST /draft/resource-lifecycle/deployments",
+                  "fixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Returns a simulated Deployment Set receipt and ResourceActor timeline."
+                },
+                "mcp": {
+                  "id": "deploy-mcp-up",
+                  "channel": "mcp",
+                  "text": "hobo_up({ planFixtureId: 'rlq-plan-safe-preview-v1', mode: 'simulated' })",
+                  "fixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Requires fixture approval evidence before agent-triggered deploy simulation."
+                }
+              }
+            },
+            {
+              "phase": "inspect",
+              "title": "Inspect current state",
+              "intent": "Read event-derived projections and freshness labels.",
+              "snippets": {
+                "sdk": {
+                  "id": "inspect-sdk-projection",
+                  "channel": "sdk",
+                  "text": "await hobo.inspect.resource({ fixtureId: 'rlq-deploy-run-accepted-v1' })",
+                  "fixtureId": "rlq-inspect-event-projection-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Reads the checked-in projection fixture for the deployed API resource."
+                },
+                "cli": {
+                  "id": "inspect-cli-run",
+                  "channel": "cli",
+                  "text": "hobo inspect run --fixture rlq-deploy-run-accepted-v1 --last --json",
+                  "fixtureId": "rlq-inspect-event-projection-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Shows run and resource status from replayable fixture evidence."
+                },
+                "api": {
+                  "id": "inspect-api-projection",
+                  "channel": "api",
+                  "text": "GET /draft/resource-lifecycle/projections/rlq-inspect-event-projection-v1/resources/api",
+                  "fixtureId": "rlq-inspect-event-projection-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Returns a projection snapshot with freshness labels."
+                },
+                "mcp": {
+                  "id": "inspect-mcp-run",
+                  "channel": "mcp",
+                  "text": "hobo_inspect_run({ fixtureId: 'rlq-deploy-run-accepted-v1', freshness: 'label-stale' })",
+                  "fixtureId": "rlq-inspect-event-projection-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Lets agents inspect replay-derived state without treating unknown evidence as green."
+                }
+              }
+            },
+            {
+              "phase": "manage",
+              "title": "Manage stale evidence",
+              "intent": "Show drift, stale projections, and doctor guidance.",
+              "snippets": {
+                "sdk": {
+                  "id": "manage-sdk-doctor",
+                  "channel": "sdk",
+                  "text": "await hobo.doctor({ fixtureId: 'rlq-inspect-event-projection-v1' })",
+                  "fixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Reports stale evidence as a managed condition, not a successful deploy."
+                },
+                "cli": {
+                  "id": "manage-cli-doctor",
+                  "channel": "cli",
+                  "text": "hobo doctor --fixture rlq-inspect-event-projection-v1",
+                  "fixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Shows remediation guidance from the stale projection fixture."
+                },
+                "api": {
+                  "id": "manage-api-doctor",
+                  "channel": "api",
+                  "text": "POST /draft/resource-lifecycle/doctor",
+                  "fixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Returns deterministic doctor findings for docs and troubleshooting."
+                },
+                "mcp": {
+                  "id": "manage-mcp-doctor",
+                  "channel": "mcp",
+                  "text": "hobo_doctor({ fixtureId: 'rlq-inspect-event-projection-v1' })",
+                  "fixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Lets agents surface the same safe remediation without inventing dashboard actions."
+                }
+              }
+            },
+            {
+              "phase": "migrate",
+              "title": "Migrate brownfield resources",
+              "intent": "Preview import and migration events before deploy-like action.",
+              "snippets": {
+                "sdk": {
+                  "id": "migrate-sdk-import",
+                  "channel": "sdk",
+                  "text": "await hobo.importTerraform({ fixtureId: 'rlq-brownfield-terraform-v1', dryRun: true })",
+                  "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Produces migration.* preview events without adopting live infrastructure."
+                },
+                "cli": {
+                  "id": "migrate-cli-import",
+                  "channel": "cli",
+                  "text": "hobo import terraform ./infra --fixture rlq-brownfield-terraform-v1 --dry-run --json",
+                  "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Shows import/adopt preview output that must feed plan before deploy."
+                },
+                "api": {
+                  "id": "migrate-api-import",
+                  "channel": "api",
+                  "text": "POST /draft/resource-lifecycle/migrations/preview",
+                  "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Returns migration preview events and a blocked deploy handoff."
+                },
+                "mcp": {
+                  "id": "migrate-mcp-import",
+                  "channel": "mcp",
+                  "text": "hobo_import_terraform({ fixtureId: 'rlq-brownfield-terraform-v1', dryRun: true })",
+                  "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                  "proofMode": "simulated",
+                  "safeClaim": "Lets agents inspect migration preview evidence without adoption authority."
+                }
+              }
+            },
+            {
+              "phase": "recover",
+              "title": "Recover from a safe snapshot",
+              "intent": "Use snapshot and rollback fixtures to show recovery boundaries.",
+              "snippets": {
+                "sdk": {
+                  "id": "recover-sdk-snapshot",
+                  "channel": "sdk",
+                  "text": "await hobo.recover({ fixtureId: 'rlq-recover-snapshot-restore-v1', mode: 'preview' })",
+                  "fixtureId": "rlq-recover-snapshot-restore-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Shows recovery preview from a fixture snapshot, not a live restore."
+                },
+                "cli": {
+                  "id": "recover-cli-rollback",
+                  "channel": "cli",
+                  "text": "hobo up --rollback deployment-set:previous --fixture rlq-recover-snapshot-restore-v1 --dry-run",
+                  "fixtureId": "rlq-recover-snapshot-restore-v1",
+                  "proofMode": "reference-fixture",
+                  "safeClaim": "Documents rollback preview using replayable Deployment Set evidence."
+                },
+                "api": {
+                  "id": "recover-api-live-boundary",
+                  "channel": "api",
+                  "text": "GET /draft/resource-lifecycle/live-boundary/rlq-recover-snapshot-restore-v1",
+                  "fixtureId": "rlq-recover-snapshot-restore-v1",
+                  "proofMode": "live",
+                  "safeClaim": "Marks future live restore as optional and gated by credentials, release, and policy reviews."
+                },
+                "mcp": {
+                  "id": "recover-mcp-scope-out",
+                  "channel": "mcp",
+                  "text": "hobo_quickstart_scope_out({ boundary: 'no-production-restore-or-dashboard-tour' })",
+                  "fixtureId": "rlq-recover-scope-out-v1",
+                  "proofMode": "scope-out",
+                  "safeClaim": "Explicitly prevents docs, agents, and demos from claiming production restore or broad dashboard behavior."
+                }
+              }
+            }
+          ],
+          "handoffs": [
+            {
+              "consumer": "Docs Portal",
+              "use": "Use the phase-ordered snippets as the canonical quickstart page source.",
+              "fixtureIds": ["rlq-define-object-graph-v1", "rlq-collect-manifest-ir-v1"],
+              "handoffNote": "Preserve proof-mode labels beside every snippet.",
+              "mustNotClaim": ["production docs publication", "live provider support"]
+            },
+            {
+              "consumer": "Tutorials",
+              "use": "Turn the eight phases into tutorial checkpoints.",
+              "fixtureIds": ["rlq-collect-manifest-ir-v1", "rlq-migrate-brownfield-preview-v1"],
+              "handoffNote": "Keep simulated steps separate from future live setup instructions.",
+              "mustNotClaim": ["real credentials", "customer data"]
+            },
+            {
+              "consumer": "Troubleshooting",
+              "use": "Reuse stale evidence, Gatekeeper, doctor, rollback, and migration preview fixtures.",
+              "fixtureIds": ["rlq-manage-stale-evidence-v1", "rlq-recover-snapshot-restore-v1"],
+              "handoffNote": "Troubleshooting can cite fixture failures and recovery preview only.",
+              "mustNotClaim": ["support automation", "live incident response"]
+            },
+            {
+              "consumer": "Launch Site",
+              "use": "Extract safe claims and launch demo labels from the quickstart contract.",
+              "fixtureIds": ["rlq-deploy-run-accepted-v1", "rlq-recover-scope-out-v1"],
+              "handoffNote": "Launch copy must stay within the safeClaims list.",
+              "mustNotClaim": ["customer promises", "unsupported launch claims"]
+            },
+            {
+              "consumer": "Workspace UX",
+              "use": "Use fixture ids as state names for mocked onboarding and walkthroughs.",
+              "fixtureIds": ["rlq-define-object-graph-v1", "rlq-inspect-event-projection-v1"],
+              "handoffNote": "Workspace UX may show fixture state labels only.",
+              "mustNotClaim": ["production workspace state", "live tenant data"]
+            },
+            {
+              "consumer": "Plan/Diff",
+              "use": "Consume plan, Delta, migration preview, stale evidence, and rollback fixtures.",
+              "fixtureIds": ["rlq-plan-safe-preview-v1", "rlq-migrate-brownfield-preview-v1"],
+              "handoffNote": "Plan/Diff surfaces must show preview and blocked states before deploy claims.",
+              "mustNotClaim": ["live applies", "unreviewed adoption"]
+            },
+            {
+              "consumer": "Dashboard",
+              "use": "Reuse inspect and manage fixture ids for mockup topology and status cards.",
+              "fixtureIds": ["rlq-inspect-event-projection-v1", "rlq-manage-stale-evidence-v1"],
+              "handoffNote": "Dashboard mockups must cite fixture ids and avoid enterprise feature tours.",
+              "mustNotClaim": ["enterprise dashboard feature tours", "invented topology behavior"]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-577",
+      "proof": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+    }
+  }
+}

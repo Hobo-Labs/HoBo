@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the S3-05 allow triple-effects draft package.
+
+message AllowDeclarationRecord {
+  string bindle = 1;
+  string component_id = 2;
+  string resource_id = 3;
+  string port = 4;
+  repeated string verbs = 5;
+}
+
+message IamEffectRecord {
+  string policy_id = 1;
+  string subject = 2;
+  repeated string actions = 3;
+  string resource_pattern = 4;
+}
+
+message LinkTableEffectRecord {
+  string component_id = 1;
+  string import = 2;
+  string to = 3;
+  repeated string allowed_verbs = 4;
+  bool deny_by_default = 5;
+}
+
+message TokenScopeCeilingRecord {
+  string resource = 1;
+  string port = 2;
+  repeated string verbs = 3;
+}
+
+message AllowTripleEffectsRecord {
+  IamEffectRecord iam = 1;
+  LinkTableEffectRecord link_table = 2;
+  TokenScopeCeilingRecord token_scope_ceiling = 3;
+}

@@ -1,0 +1,143 @@
+package hobo:delivery@0.1.0;
+
+interface types {
+  enum strategy-kind {
+    recreate,
+    blue-green,
+    canary,
+    progressive,
+  }
+
+  enum rollout-state {
+    pending,
+    running,
+    promoted,
+    rolled-back,
+    failed,
+  }
+
+  enum rollout-capability {
+    recreate,
+    blue-green,
+    canary,
+    progressive,
+    automated-rollback,
+  }
+
+  record gate-ref {
+    kind: string,
+    id: string,
+  }
+
+  record rollout-step {
+    name: string,
+    weight: u32,
+    gate-refs: list<gate-ref>,
+  }
+
+  record analysis-window {
+    duration-seconds: u32,
+    min-samples: u32,
+  }
+
+  record promotion-policy {
+    strategy: strategy-kind,
+    steps: list<rollout-step>,
+    analysis-window: option<analysis-window>,
+    required-capabilities: list<rollout-capability>,
+  }
+
+  record rollout-target {
+    service: string,
+    from-version: string,
+    to-version: string,
+  }
+
+  record start-rollout-request {
+    rollout-id: string,
+    run-id: string,
+    tenant: string,
+    target: rollout-target,
+    policy: promotion-policy,
+  }
+
+  record rollout-command {
+    rollout-id: string,
+    step: option<string>,
+    reason: option<string>,
+  }
+
+  record plan-warning {
+    code: string,
+    message: string,
+    missing-capability: option<rollout-capability>,
+  }
+
+  record rollout-status {
+    rollout-id: string,
+    state: rollout-state,
+    current-step: option<string>,
+    warnings: list<plan-warning>,
+  }
+
+  record rollout-started {
+    rollout-id: string,
+    run-id: string,
+    tenant: string,
+    target: rollout-target,
+    policy: promotion-policy,
+    warnings: list<plan-warning>,
+  }
+
+  record rollout-stepped {
+    rollout-id: string,
+    step: rollout-step,
+    state: rollout-state,
+  }
+
+  record rollout-promoted {
+    rollout-id: string,
+    final-version: string,
+  }
+
+  record rollout-rolled-back {
+    rollout-id: string,
+    restored-version: string,
+    reason: string,
+  }
+
+  record rollout-failed {
+    rollout-id: string,
+    state: rollout-state,
+    reason: string,
+    dangling: bool,
+  }
+
+  variant rollout-event {
+    started(rollout-started),
+    stepped(rollout-stepped),
+    promoted(rollout-promoted),
+    rolled-back(rollout-rolled-back),
+    failed(rollout-failed),
+  }
+
+  record rollout-command-result {
+    status: rollout-status,
+    events: list<rollout-event>,
+  }
+}
+
+interface provider {
+  use types.{rollout-command, rollout-command-result, rollout-status, start-rollout-request};
+
+  start: func(request: start-rollout-request) -> rollout-command-result;
+  step: func(command: rollout-command) -> rollout-command-result;
+  promote: func(command: rollout-command) -> rollout-command-result;
+  rollback: func(command: rollout-command) -> rollout-command-result;
+  abort: func(command: rollout-command) -> rollout-command-result;
+  status: func(rollout-id: string) -> rollout-status;
+}
+
+world delivery {
+  export provider;
+}

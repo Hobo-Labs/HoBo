@@ -1,0 +1,11 @@
+package wasi:config@0.2.0;
+
+interface store {
+  record config-value {
+    key: string,
+    value-ref: string,
+    sensitivity: string,
+  }
+
+  get: func(key: string) -> option<config-value>;
+}

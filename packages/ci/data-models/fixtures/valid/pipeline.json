@@ -1,0 +1,21 @@
+{
+  "id": "portable-fixture",
+  "accountId": "tenant",
+  "steps": [
+    {
+      "id": "test",
+      "argv": [
+        "printf",
+        "hello"
+      ],
+      "cwd": ".",
+      "env": {}
+    }
+  ],
+  "artifactPaths": [],
+  "timeoutSeconds": 30,
+  "requiredCapabilities": [
+    "commands",
+    "cancellation"
+  ]
+}

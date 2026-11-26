@@ -1,0 +1,146 @@
+{
+	"consumer": { "name": "hobo-capability-matching" },
+	"provider": { "name": "hobo-postgres-product" },
+	"interactions": [
+		{
+			"description": "a conformant product reports the subset it advertises, and nothing more",
+			"request": {
+				"method": "POST",
+				"path": "/conformance/data.postgres/v1/run",
+				"body": {
+					"advertised": {
+						"postgresWireProtocol": true,
+						"tls": true,
+						"transactions": true,
+						"transactionRollback": true,
+						"constraints": true,
+						"connectionUriBinding": true,
+						"ddl": true,
+						"serverVersionMajor": 17
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"suiteRef": "conformance.data.postgres/v1",
+					"outcome": "pass",
+					"results": [
+						{
+							"caseId": "postgres.wire.protocol",
+							"capabilityKey": "postgresWireProtocol",
+							"status": "pass"
+						},
+						{
+							"caseId": "postgres.schema.ddl",
+							"capabilityKey": "ddl",
+							"status": "pass"
+						}
+					],
+					"skipped": [{ "caseId": "postgres.types.jsonb", "reason": "not-advertised" }]
+				}
+			}
+		},
+		{
+			"description": "a run with no executor for an applicable case is unknown, never pass",
+			"request": {
+				"method": "POST",
+				"path": "/conformance/data.postgres/v1/run",
+				"body": {
+					"advertised": { "postgresWireProtocol": true },
+					"executors": []
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"suiteRef": "conformance.data.postgres/v1",
+					"outcome": "unknown",
+					"results": [
+						{
+							"caseId": "postgres.wire.protocol",
+							"capabilityKey": "postgresWireProtocol",
+							"status": "not-run",
+							"detail": "no sql executor was provided"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "a relational-but-not-Postgres product is rejected rather than ranked lower",
+			"request": {
+				"method": "POST",
+				"path": "/matching/resolve",
+				"body": {
+					"requiredProfiles": [{ "profileId": "data.postgres/v1", "versionRange": ">=1" }],
+					"candidateProfiles": ["data.sqlite/v1"]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"code": "PROFILE_INCOMPATIBLE",
+					"detail": "does not implement data.postgres/v1 >=1"
+				}
+			}
+		},
+		{
+			"description": "an export command is an argv array with the credential out of band",
+			"request": {
+				"method": "POST",
+				"path": "/migration/migration.postgres.pg-dump/v1/plan",
+				"body": {
+					"target": {
+						"host": "db.example.test",
+						"port": 5432,
+						"database": "postgres",
+						"username": "app_role",
+						"sslMode": "require"
+					},
+					"filePath": "/var/hobo/exports/db.pgc",
+					"format": "custom"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"argv": [
+						"pg_dump",
+						"--host=db.example.test",
+						"--port=5432",
+						"--username=app_role",
+						"--dbname=postgres",
+						"--no-password",
+						"--format=custom",
+						"--file=/var/hobo/exports/db.pgc"
+					],
+					"credentialChannel": "environment:PGPASSWORD"
+				}
+			}
+		},
+		{
+			"description": "an injected database name is refused before a command is built",
+			"request": {
+				"method": "POST",
+				"path": "/migration/migration.postgres.pg-dump/v1/plan",
+				"body": {
+					"target": {
+						"host": "db.example.test",
+						"port": 5432,
+						"database": "postgres; DROP DATABASE prod",
+						"username": "app_role",
+						"sslMode": "require"
+					},
+					"filePath": "/var/hobo/exports/db.pgc",
+					"format": "custom"
+				}
+			},
+			"response": {
+				"status": 400,
+				"body": { "code": "UNSAFE_COMMAND_ARGUMENT" }
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "2.0.0" } }
+}

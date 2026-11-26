@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FailureTaxonomySafeFixClassifierConsumer"
+  },
+  "provider": {
+    "name": "FailureTaxonomySafeFixClassifierBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Failure Taxonomy Safe Fix Classifier boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/failure-taxonomy-safe-fix-classifier/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.failure_taxonomy_safe_fix_classifier/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

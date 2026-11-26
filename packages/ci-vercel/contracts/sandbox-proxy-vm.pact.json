@@ -1,0 +1,11 @@
+{
+  "consumer": { "name": "HoBoCiSandboxProxyVm" },
+  "provider": { "name": "VercelSandboxSession" },
+  "interactions": [
+    { "description": "create an ephemeral proxy sandbox", "request": { "method": "POST", "path": "/api/v3/sandboxes" }, "response": { "status": 200 } },
+    { "description": "create the VM working directory", "request": { "method": "POST", "path": "/api/v2/sandboxes/sessions/sbx_proxy/cmd" }, "response": { "status": 200 } },
+    { "description": "upload the proxy bundle and restricted configuration", "request": { "method": "POST", "path": "/api/v2/sandboxes/sessions/sbx_proxy/fs/write" }, "response": { "status": 200 } },
+    { "description": "start the detached proxy without credentials in the command", "request": { "method": "POST", "path": "/api/v2/sandboxes/sessions/sbx_proxy/cmd" }, "response": { "status": 200 } }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

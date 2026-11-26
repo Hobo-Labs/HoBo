@@ -1,0 +1,1873 @@
+{
+  "consumer": {
+    "name": "HoboCiAdoAcceptance"
+  },
+  "provider": {
+    "name": "AzureDevOpsRest71"
+  },
+  "interactions": [
+    {
+      "description": "empty pool inventory",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": []
+        }
+      }
+    },
+    {
+      "description": "zero pool identity",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "id": 0,
+              "name": "hobo-local",
+              "isHosted": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "ambiguous pool inventory",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "id": 3,
+              "name": "hobo-local",
+              "isHosted": false
+            },
+            {
+              "id": 4,
+              "name": "hobo-local",
+              "isHosted": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "unknown vendor fields",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "id": 3,
+              "name": "hobo-local",
+              "isHosted": false,
+              "vendorAdded": true
+            }
+          ],
+          "count": 1
+        }
+      }
+    },
+    {
+      "description": "pool HTTP 401",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat must not leak"
+        }
+      }
+    },
+    {
+      "description": "pool HTTP 404",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat must not leak"
+        }
+      }
+    },
+    {
+      "description": "pool HTTP 429",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat must not leak"
+        }
+      }
+    },
+    {
+      "description": "pool HTTP 500",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat must not leak"
+        }
+      }
+    },
+    {
+      "description": "pool HTTP 503",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat must not leak"
+        }
+      }
+    },
+    {
+      "description": "wrong definition identity",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/pipelines/7?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 8,
+          "revision": 12
+        }
+      }
+    },
+    {
+      "description": "missing definition revision",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/pipelines/7?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 7
+        }
+      }
+    },
+    {
+      "description": "malformed definition",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/pipelines/7?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": {},
+          "revision": 12
+        }
+      }
+    },
+    {
+      "description": "empty preview",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": ""
+        }
+      }
+    },
+    {
+      "description": "null preview",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "null"
+        }
+      }
+    },
+    {
+      "description": "invalid preview YAML",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "jobs: [unclosed"
+        }
+      }
+    },
+    {
+      "description": "multiple preview stages",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n- stage: extra\n  jobs: []\n"
+        }
+      }
+    },
+    {
+      "description": "mixed preview roots",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\njobs:\n- job: extra\n"
+        }
+      }
+    },
+    {
+      "description": "duplicate preview job",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "missing preview pool",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      unknownField: value\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      unknownField: value\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "hosted image alongside pool",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n      vmImage: ubuntu-latest\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n      vmImage: ubuntu-latest\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "missing publish task",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: Other@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "missing download task",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: Other@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "missing bundle guard",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --other \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "digest prefix spoof",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b06480 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b06480 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "wrong compiled Bash version",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@4\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js run packages/ci-ado/examples/ci.json . --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --artifacts \"$HOBO_CI_ARTIFACT_DIRECTORY\"\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@4\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "missing queued identity",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {}
+      }
+    },
+    {
+      "description": "negative queued identity",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": -1
+        }
+      }
+    },
+    {
+      "description": "malformed queued identity",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": "not-an-id"
+        }
+      }
+    },
+    {
+      "description": "queue HTTP 403",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat"
+        }
+      }
+    },
+    {
+      "description": "pipeline state notStarted",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "notStarted",
+          "result": "",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline state postponed",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "postponed",
+          "result": "",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline state mystery",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "mystery",
+          "result": "",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline state cancelling",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "cancelling",
+          "result": "",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline result canceled",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "completed",
+          "result": "canceled",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline result partiallySucceeded",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "completed",
+          "result": "partiallySucceeded",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline result none",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "completed",
+          "result": "none",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "pipeline result unexpected",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "completed",
+          "result": "unexpected",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "wrong completed run identity",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 99,
+          "status": "completed",
+          "result": "succeeded",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "missing run pool",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "inProgress",
+          "result": "",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {}
+        }
+      }
+    },
+    {
+      "description": "malformed status",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": {}
+        }
+      }
+    },
+    {
+      "description": "status HTTP 503",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat"
+        }
+      }
+    },
+    {
+      "description": "wrong cancelled identity",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 99,
+          "status": "completed",
+          "result": "canceled",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "cancellation still pending",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 42,
+          "status": "cancelling",
+          "result": "",
+          "sourceVersion": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queue": {
+            "pool": {
+              "id": 3
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "malformed cancellation reply",
+      "request": {
+        "method": "PATCH",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "status": "cancelling"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "unexpected": "body is irrelevant"
+        }
+      }
+    },
+    {
+      "description": "malformed cancellation status",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": {}
+        }
+      }
+    },
+    {
+      "description": "failed timeline checks",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Job",
+              "name": "hobo_ci_verify_artifacts",
+              "identifier": "hobo_ci_verify_artifacts",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "failed"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "succeeded"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "failed timeline publish",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Job",
+              "name": "hobo_ci_verify_artifacts",
+              "identifier": "hobo_ci_verify_artifacts",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "failed"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "succeeded"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "failed timeline download",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Job",
+              "name": "hobo_ci_verify_artifacts",
+              "identifier": "hobo_ci_verify_artifacts",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "failed"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "succeeded"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "failed timeline hashes",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Job",
+              "name": "hobo_ci_verify_artifacts",
+              "identifier": "hobo_ci_verify_artifacts",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "failed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "unfinished verifier job",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Job",
+              "name": "hobo_ci_verify_artifacts",
+              "identifier": "hobo_ci_verify_artifacts",
+              "state": "inProgress",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "succeeded"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "failed verifier job",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Job",
+              "name": "hobo_ci_verify_artifacts",
+              "identifier": "hobo_ci_verify_artifacts",
+              "state": "completed",
+              "result": "failed"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "succeeded"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "missing verifier job",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "type": "Job",
+              "name": "hobo_ci",
+              "identifier": "hobo_ci",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Run HoBo CI checks",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Publish verified execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Download execution bundle",
+              "state": "completed",
+              "result": "succeeded"
+            },
+            {
+              "type": "Task",
+              "name": "Verify downloaded artifact hashes",
+              "state": "completed",
+              "result": "succeeded"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "wrong artifact type",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/artifacts?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "name": "hobo-producer-1",
+              "resource": {
+                "type": "Container"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "missing artifact resource",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/artifacts?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "name": "hobo-producer-1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "wrong artifact prefix",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/artifacts?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "name": "other-producer-1",
+              "resource": {
+                "type": "PipelineArtifact"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "empty artifact suffix",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/artifacts?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "name": "hobo-",
+              "resource": {
+                "type": "PipelineArtifact"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "timeline HTTP 403",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/timeline?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat"
+        }
+      }
+    },
+    {
+      "description": "artifacts HTTP 503",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo/_apis/build/builds/42/artifacts?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "message": "fixture-pat"
+        }
+      }
+    },
+    {
+      "description": "bearer pool authorization",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=hobo-local&api-version=7.1",
+        "headers": {
+          "authorization": "Bearer fixture-pat",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "id": 3,
+              "name": "hobo-local",
+              "isHosted": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "missing inline script",
+      "request": {
+        "method": "POST",
+        "path": "/example/HoBo/_apis/pipelines/7/runs?pipelineVersion=12&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        },
+        "body": {
+          "previewRun": true,
+          "resources": {
+            "repositories": {
+              "self": {
+                "refName": "refs/heads/main",
+                "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: hobo_ci\n    pool:\n      name: hobo-local\n    steps:\n    - task: Bash@3\n      displayName: Run HoBo CI checks\n      inputs:\n        targetType: inline\n    - task: PublishPipelineArtifact@1\n      displayName: Publish verified execution bundle\n  - job: hobo_ci_verify_artifacts\n    pool:\n      name: hobo-local\n    steps:\n    - task: DownloadPipelineArtifact@2\n      displayName: Download execution bundle\n    - task: Bash@3\n      displayName: Verify downloaded artifact hashes\n      inputs:\n        targetType: inline\n        script: node packages/ci-ado/dist/cli.js verify \"$HOBO_CI_DOWNLOAD_DIRECTORY\" --config packages/ci-ado/examples/ci.json --expected-plan 2445bc2eab4dc39db60e672575c4f387817eed692572b3dc5afa3e8b466b0648 --expected-bundle \"$HOBO_CI_EXPECTED_BUNDLE_DIGEST\"\n"
+        }
+      }
+    },
+    {
+      "description": "spaced project lookup",
+      "request": {
+        "method": "GET",
+        "path": "/example/HoBo%20Project/_apis/pipelines/7?api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": 7
+        }
+      }
+    },
+    {
+      "description": "spaced pool lookup",
+      "request": {
+        "method": "GET",
+        "path": "/example/_apis/distributedtask/pools?poolName=HoBo%20Local&api-version=7.1",
+        "headers": {
+          "authorization": "Basic OmZpeHR1cmUtcGF0",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "value": [
+            {
+              "id": 3,
+              "name": "HoBo Local",
+              "isHosted": false
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "evidence": "Hand-authored boundary and refusal states. Transport fault tests alter delivery of these recorded messages, not provider semantics."
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "consumer": { "name": "SRE operator" },
+  "provider": { "name": "projection read API" },
+  "interactions": [
+    {
+      "description": "read-diagnosis-projection",
+      "providerStates": [{ "name": "incident projections are current" }],
+      "request": {
+        "method": "POST",
+        "path": "/mcp/sre/diagnose",
+        "body": {
+          "incidentId": "inc-crew-001",
+          "projection": "incident-diagnosis"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "failureClass": "provider-degraded",
+          "evidence": ["probe-latency-p95", "provider-5xx-rate"]
+        }
+      }
+    },
+    {
+      "description": "read-compat-projection",
+      "providerStates": [{ "name": "compatibility gate failed" }],
+      "request": {
+        "method": "POST",
+        "path": "/mcp/sre/diagnose",
+        "body": {
+          "incidentId": "inc-crew-002",
+          "projection": "compatibility-diagnosis"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "failureClass": "contract-skew",
+          "evidence": ["compat-gate-diff", "consumer-pact-failure"]
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "epic",
+  "slug": "v1-vibe-example-gap-closure",
+  "title": "V1 Vibe Example Gap Closure Reference Implementation",
+  "linear": "HOBO-539",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

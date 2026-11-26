@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package hobo.provider.browser_wasm.v1;
+
+// Design-time contract artifacts for @hobo/provider-browser-wasm: the records
+// this package exchanges when it places a workload inside a browser's
+// WebAssembly runtime.
+//
+// There is no control-plane API here and no cloud account. The only thing on
+// the far side of the wire is the host page's own asset origin, which serves
+// the guest bundle; everything after that is a same-process instantiation
+// across the host/guest boundary. So the records are: what the host says it
+// can do, what the bundle claims to be, what actually arrived, the handle to a
+// running guest, and what was released when it stopped.
+//
+// Not compiled at runtime. The TypeScript parsers in src/manifest.ts and
+// src/placement.ts are the executable view and must stay reconciled with these
+// shapes; data-models/provider_browser_wasm.cue carries the invariants.
+
+// Where a guest's durable state lives. `unavailable` is a real answer, not an
+// error: a private-mode browsing context has no OPFS, and a provider that
+// silently fell back to memory would be promising durability it does not have.
+enum BrowserWasmPersistenceMode {
+  BROWSER_WASM_PERSISTENCE_MODE_UNSPECIFIED = 0;
+  BROWSER_WASM_PERSISTENCE_MODE_OPFS_SAHPOOL = 1;
+  BROWSER_WASM_PERSISTENCE_MODE_TRANSIENT_MEMORY = 2;
+  BROWSER_WASM_PERSISTENCE_MODE_UNAVAILABLE = 3;
+}
+
+enum BrowserWasmGuestPhase {
+  BROWSER_WASM_GUEST_PHASE_UNSPECIFIED = 0;
+  // Bundle fetched and digest-verified, not yet instantiated.
+  BROWSER_WASM_GUEST_PHASE_FETCHED = 1;
+  BROWSER_WASM_GUEST_PHASE_RUNNING = 2;
+  BROWSER_WASM_GUEST_PHASE_TERMINATED = 3;
+  BROWSER_WASM_GUEST_PHASE_FAILED = 4;
+}
+
+enum BrowserWasmCleanupState {
+  BROWSER_WASM_CLEANUP_STATE_UNSPECIFIED = 0;
+  // Worker terminated and the OPFS partition removed.
+  BROWSER_WASM_CLEANUP_STATE_RELEASED = 1;
+  // Worker terminated, partition deliberately kept for the next run.
+  BROWSER_WASM_CLEANUP_STATE_RETAINED = 2;
+  // The tab went away before release ran; whatever it held is still there.
+  BROWSER_WASM_CLEANUP_STATE_ORPHANED = 3;
+}
+
+// What the host page reports about the context the guest would run in. This is
+// an observation, never a request: a provider cannot grant itself cross-origin
+// isolation, and asking for a capability the document does not have is how a
+// guest gets instantiated into a context that cannot support it.
+message BrowserWasmHostCapabilities {
+  string schema_version = 1;
+  string origin = 2;
+  // COOP: same-origin plus COEP: require-corp were served on the document.
+  // Without both there is no SharedArrayBuffer, so no shared linear memory.
+  bool cross_origin_isolated = 3;
+  // Dedicated workers are available. OPFS sync access handles are worker-only.
+  bool dedicated_workers = 4;
+  BrowserWasmPersistenceMode persistence = 5;
+  uint64 max_memory_bytes = 6;
+}
+
+// One authored placement, refined from the untrusted `.with(browserWasm.*)`
+// option bag before anything is fetched.
+message BrowserWasmPlacementRequest {
+  string guest_id = 1;        // DNS-1123 label; becomes a station subdomain
+  string port = 2;            // compute | kv | queue
+  string resource_class = 3;  // browser-wasm:guest | :kv | :queue
+  string world = 4;           // WIT world the guest is expected to target
+  BrowserWasmPersistenceMode persistence = 5;
+  uint64 memory_limit_bytes = 6;
+  // Shared linear memory, which requires cross-origin isolation.
+  bool shared_memory = 7;
+  // Epoch interruption deadline. A guest that never yields is the browser's
+  // main-thread freeze; there is no OS to kill it.
+  uint32 epoch_deadline_ms = 8;
+  repeated string required_imports = 9; // WIT interface ids
+}
+
+// The bundle descriptor the host origin serves alongside the component.
+message BrowserWasmGuestManifest {
+  string schema_version = 1;
+  string guest_id = 2;
+  string port = 3;
+  string resource_class = 4;
+  string world = 5;
+  string component_path = 6;   // same-origin absolute path
+  string content_digest = 7;   // sha256-<hex>, matched against the bytes
+  uint64 byte_length = 8;
+  repeated string imports = 9; // what the guest needs the host to supply
+  repeated string exports = 10;
+  BrowserWasmPersistenceMode persistence = 11;
+  uint64 memory_limit_bytes = 12;
+  bool shared_memory = 13;
+}
+
+// What actually came back from the component fetch, as opposed to what the
+// manifest claimed. The two are separate records on purpose: the whole point
+// of the digest is that the second can disagree with the first.
+message BrowserWasmComponentArtifact {
+  string content_digest = 1;
+  uint64 byte_length = 2;
+  string media_type = 3;  // must be application/wasm
+  // The component-model preamble was present (\0asm, version 0x0d, layer 1),
+  // i.e. this is a component and not a bare core module.
+  bool component_model = 4;
+}
+
+message BrowserWasmGuestHandle {
+  string guest_id = 1;
+  string origin = 2;
+  // OPFS partition name; empty when persistence is transient or unavailable.
+  string partition_id = 3;
+  // Dedicated worker name; empty when the guest runs on the main thread.
+  string worker_name = 4;
+  BrowserWasmGuestPhase phase = 5;
+  int64 instantiated_at_ms = 6;
+  string failure_reason = 7;
+}
+
+message BrowserWasmProvisionReceipt {
+  string schema_version = 1;
+  string provider_id = 2;
+  BrowserWasmPlacementRequest placement = 3;
+  BrowserWasmHostCapabilities host = 4;
+  BrowserWasmGuestManifest manifest = 5;
+  BrowserWasmComponentArtifact artifact = 6;
+  BrowserWasmGuestHandle handle = 7;
+  // The persistence actually obtained, which may be weaker than the one asked
+  // for. Carried separately from the request so a downgrade is legible.
+  BrowserWasmPersistenceMode effective_persistence = 8;
+  string guest_url = 9;
+}
+
+message BrowserWasmCleanupOutcome {
+  string guest_id = 1;
+  BrowserWasmCleanupState state = 2;
+  bool worker_terminated = 3;
+  bool partition_dropped = 4;
+  int64 released_at_ms = 5;
+  string retained_reason = 6;
+}
+
+// The host origin's error envelope for the two asset routes.
+message BrowserWasmHostFault {
+  string schema_version = 1;
+  string code = 2;  // GUEST_NOT_FOUND | BUNDLE_UNAVAILABLE | HOST_UNSUPPORTED
+  string message = 3;
+  string guest_id = 4;
+}

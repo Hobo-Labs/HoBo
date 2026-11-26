@@ -1,0 +1,11 @@
+{
+	"schemaVersion": "hobo.secret-capture/v1",
+	"type": "secret.CaptureStored",
+	"seq": 3,
+	"time": "2026-11-12T10:02:00.000Z",
+	"ticketId": "cap_AAAAAAAAAAAAAAAAAAAAAA",
+	"name": "HOBO_CI_WEBHOOK_SECRET",
+	"target": "runtime",
+	"channel": "mcp-app",
+	"ref": "infisical://proj-1/prod/hobo-ci-relay/HOBO_CI_WEBHOOK_SECRET"
+}

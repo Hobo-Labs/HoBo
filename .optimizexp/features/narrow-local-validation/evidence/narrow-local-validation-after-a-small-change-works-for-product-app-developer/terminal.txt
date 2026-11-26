@@ -1,0 +1,164 @@
+# OptimizeXP CLI evidence
+command: pnpm run agent:check -- --staged
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 12782
+screen: ?x? (cols x rows)
+capturedAt: 2026-07-31T12:57:07.384Z
+
+## stdout
+
+> hobo-design@ agent:check /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --experimental-strip-types scripts/dx-preflight.mts agent:check -- --staged
+
+Changed files: 144
+Detected scope: docs, automation
+- pnpm run install:check (package manager or root task graph changed)
+- pnpm run case:check (Windows case-collision preflight for tracked paths)
+- pnpm run architecture:guard:staged -- --base=HEAD~1 (architecture-sensitive source or automation changed)
+- pnpm run lint:code (Biome code formatting is enforced for source or automation changes)
+- pnpm run konsistent (structural package conventions (konsistent.json) are enforced when packages, automation, or the convention config change)
+- pnpm run test:root (root scripts/tests changed)
+- pnpm run typecheck:root (root scripts/tests must stay type-clean)
+- pnpm run standards:check -- --staged --base=HEAD~1 (technical standards evidence may need refreshing)
+- pnpm run licenses:check (package manifests or dependencies changed; licence metadata must stay compliant)
+- pnpm run lint:docs:staged -- --base=HEAD~1 (markdown docs linters may be affected)
+- pnpm run docs:coverage (documentation coverage may be affected)
+- pnpm run docs:freshness:staged (docs freshness gate for code/config changes)
+- node --import tsx scripts/validate-traceability.ts (traceability evidence changed)
+
+▶ pnpm run install:check
+
+> hobo-design@ install:check /home/codex/.herdr/worktrees/hobo/hobo-devx
+> pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+
+Scope: all 713 workspace projects
+ WARN  There are cyclic workspace dependencies: /home/codex/.herdr/worktrees/hobo/hobo-devx/packages/contract-harness, /home/codex/.herdr/worktrees/hobo/hobo-devx/packages/contracts, /home/codex/.herdr/worktrees/hobo/hobo-devx/packages/core
+Lockfile is up to date, resolution step is skipped
+Already up to date
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/node_modules/.pnpm/@bytecodealliance+wizer@10.0.0/node_modules/@bytecodealliance/wizer/node_modules/.bin/wizer-win32-x64. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/node_modules/.pnpm/@bytecodealliance+wizer@10.0.0/node_modules/@bytecodealliance/wizer-win32-x64/wizer'
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/examples/hello-bindle/node_modules/.bin/hobo. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/cli/dist/bin/hobo.js'
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/examples/self-host-yard/node_modules/.bin/hobo. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/hobo/dist/bin/hobo.js'
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/examples/self-host-yard/node_modules/.bin/hobo-mcp. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/hobo/dist/bin/hobo-mcp.js'
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/examples/multi-cloud-shop/node_modules/.bin/hobo. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/cli/dist/bin/hobo.js'
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/packages/hobo/node_modules/.bin/hobo. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/cli/dist/bin/hobo.js'
+ WARN  Failed to create bin at /home/codex/.herdr/worktrees/hobo/hobo-devx/packages/mcp/node_modules/.bin/hobo. ENOENT: no such file or directory, open '/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/cli/dist/bin/hobo.js'
+
+Done in 7s using pnpm v10.33.4
+Running 12 parallel-capable check(s) with concurrency 4.
+
+▶ pnpm run case:check
+
+▶ pnpm run architecture:guard:staged -- --base=HEAD~1
+
+▶ pnpm run lint:code
+
+▶ pnpm run konsistent
+
+> hobo-design@ architecture:guard:staged /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node scripts/check-architecture-guardrails.mjs --staged -- '--base=HEAD~1'
+
+
+> hobo-design@ case:check /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/check-case-collisions.ts
+
+
+> hobo-design@ lint:code /home/codex/.herdr/worktrees/hobo/hobo-devx
+> biome format .
+
+Architecture guardrails OK: no changed implementation packages.
+
+▶ pnpm run test:root
+case collision check ok
+
+▶ pnpm run typecheck:root
+
+> hobo-design@ konsistent /home/codex/.herdr/worktrees/hobo/hobo-devx
+> konsistent
+
+Checked 1100 files in 310ms. No fixes applied.
+
+▶ pnpm run standards:check -- --staged --base=HEAD~1
+Checked 57 files in 21ms. No violations found.
+
+▶ pnpm run licenses:check
+
+> hobo-design@ test:root /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/run-tests.ts --root-only
+
+
+> hobo-design@ typecheck:root /home/codex/.herdr/worktrees/hobo/hobo-devx
+> tsc -p tsconfig.json
+
+
+> hobo-design@ standards:check /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/check-technical-standards.ts -- --staged '--base=HEAD~1'
+
+
+ RUN  v4.1.9 /home/codex/.herdr/worktrees/hobo/hobo-devx
+
+
+> hobo-design@ licenses:check /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/check-licenses.ts
+
+  outbound: 64 workspace manifests checked, 34 publishable
+  inbound: 3138 third-party packages checked (316 reachable from a publishable package)
+  inbound: 9 development-only dependencies carry a non-allowlisted licence (not distributed, not blocking):
+      @agentv/core@4.42.4 — no licence declared
+      @github/copilot-linux-arm64@1.0.70 — SEE LICENSE IN LICENSE.md
+      @github/copilot-linux-x64@1.0.70 — SEE LICENSE IN LICENSE.md
+      @github/copilot-win32-arm64@1.0.70 — SEE LICENSE IN LICENSE.md
+      @github/copilot-win32-x64@1.0.70 — SEE LICENSE IN LICENSE.md
+      @github/copilot@1.0.70 — SEE LICENSE IN LICENSE.md
+      @google/design.md@0.4.0 — no licence declared
+      @img/sharp-libvips-linux-arm64@1.2.4 — LGPL-3.0-or-later
+      @img/sharp-libvips-linux-x64@1.2.4 — LGPL-3.0-or-later
+
+Licence gate passed.
+ ✓ test/docs-coverage.test.ts (2 tests) 16ms
+ ✓ test/promoted-proof-drift.test.ts (1 test) 153ms
+
+▶ pnpm run lint:docs:staged -- --base=HEAD~1
+ ✓ test/relevant-check-policy.test.ts (38 tests) 30ms
+ ✓ test/architecture-guardrails.test.mjs (10 tests) 234ms
+ ✓ test/cli-docs.test.ts (5 tests) 523ms
+   ✓ repository docs contain no unreconciled CLI command mentions  493ms
+
+> hobo-design@ lint:docs:staged /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/run-linters.ts --staged -- '--base=HEAD~1'
+
+ ✓ test/draft-artifact-gates.test.ts (7 tests) 886ms
+
+▶ pnpm run docs:coverage
+ ✓ test/design-docs.test.ts (7 tests) 1027ms
+   ✓ repository design docs pass link, ADR, glossary, and event-family lint  822ms
+
+ Test Files  7 passed (7)
+      Tests  70 passed (70)
+   Start at  07:57:04
+   Duration  1.47s (transform 1.35s, setup 0ms, import 1.70s, tests 2.87s, environment 0ms)
+
+
+▶ pnpm run docs:freshness:staged
+technical standards ok
+
+▶ node --import tsx scripts/validate-traceability.ts
+traceability ok: 127 ADRs, 11 documented gaps, 18 plans, 1726 issue references
+
+> hobo-design@ docs:coverage /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/check-docs-coverage.ts
+
+docs coverage ok
+
+> hobo-design@ docs:freshness:staged /home/codex/.herdr/worktrees/hobo/hobo-devx
+> node --import tsx scripts/check-docs-freshness.ts --staged
+
+Docs freshness OK: 65 code file(s), 19 doc file(s).
+lint: markdown changed=89 cli=full design=full
+
+ok  agent:check — 13 relevant check(s) passed (staged scope)
+
+
+## stderr
+(empty)

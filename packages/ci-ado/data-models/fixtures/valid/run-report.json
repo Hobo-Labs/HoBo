@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "hobo.ci.ado-report/v1",
+  "planDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "executionId": "fixture-execution",
+  "status": "succeeded",
+  "artifacts": [
+    {
+      "path": "result.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sizeBytes": 0
+    }
+  ],
+  "stepCount": 1,
+  "error": ""
+}

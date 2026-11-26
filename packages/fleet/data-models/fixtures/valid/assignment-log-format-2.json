@@ -1,0 +1,34 @@
+{
+  "format": 2,
+  "entries": [
+    {
+      "epoch": "1",
+      "active": "primary",
+      "reason": "bootstrap",
+      "decidedBy": "fleet-tick"
+    },
+    {
+      "epoch": "2",
+      "active": "primary",
+      "reason": "pin-members",
+      "decidedAtMs": "1794268000000",
+      "decidedBy": "fleet-tick:box-a",
+      "members": [
+        "primary",
+        "standby"
+      ]
+    },
+    {
+      "epoch": "3",
+      "active": "primary",
+      "reason": "admit:witness",
+      "decidedAtMs": "1794268060000",
+      "decidedBy": "fleet-tick:box-a",
+      "members": [
+        "primary",
+        "standby",
+        "witness"
+      ]
+    }
+  ]
+}

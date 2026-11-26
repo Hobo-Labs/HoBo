@@ -1,0 +1,54 @@
+{
+  "iteration": 1,
+  "runId": "20260730-dx-review",
+  "scoredAt": "2026-07-30T18:01:30.000Z",
+  "source": "outcome judged scorecards",
+  "metric_total": 20,
+  "metric_max": 4,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "featureId": "narrow-local-validation",
+      "outcomeId": "2026-07-30T18:01:05Z-0005",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 3,
+      "total": 7,
+      "max": 4,
+      "matchedExpectation": true
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "featureId": "cli-help-and-doctor",
+      "outcomeId": "2026-07-30T18:01:15Z-0007",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 2,
+      "total": 6,
+      "max": 4,
+      "matchedExpectation": true
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "surface": "pnpm run agent:check -- --staged",
+      "featureId": "agent-check-staged",
+      "outcomeId": "2026-07-30T18:01:25Z-0009",
+      "harms": 0,
+      "friction": 4,
+      "uncertainty": 3,
+      "total": 7,
+      "max": 4,
+      "matchedExpectation": true
+    }
+  ],
+  "vsBaseline": {
+    "metric_total_delta": 0,
+    "metric_max_delta": 0,
+    "note": "No reductions applied (report-only). Scores plateau at install-blocker level."
+  },
+  "busCorrections": 3,
+  "matchedExpectations": 3,
+  "mismatchedExpectations": 0
+}

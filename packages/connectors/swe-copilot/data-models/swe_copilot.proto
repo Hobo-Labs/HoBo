@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.swe.copilot.v1;
+
+// Wire records for the Copilot SWE agent adapter (@hobo/swe-copilot,
+// HOBO-725). CUE constraints in swe_copilot.cue bound every type declared
+// here; the runtime parses untrusted documents into derived parsed types
+// before use.
+
+// The vendor-bridge launch spec (copilot over the Copilot SDK/CLI
+// — no HoBo-side protocol shim).
+message CopilotLaunchRecord {
+  string command = 1;
+  repeated string args = 2;
+  string cwd = 3;
+  string credential_env = 4;
+}
+
+// One golden-transcript step the replay lane replays.
+message CopilotTranscriptStepRecord {
+  string kind = 1;
+  string value = 2;
+  string tool_call_id = 3;
+}
+
+// The SWE-task input handed to the adapter.
+message CopilotSweTaskRecord {
+  string task_id = 1;
+  string instruction = 2;
+  string workspace = 3;
+}
+
+// The report derived purely from the session's audit facts.
+message CopilotSweTaskReportRecord {
+  string schema = 1;
+  string task_id = 2;
+  string session_id = 3;
+  string stop_reason = 4;
+  repeated string edits = 5;
+  repeated string refusals = 6;
+  bool completed = 7;
+}
+
+// The sandbox access report (s3-07): granted actions outside the
+// workspace/test surface are findings; the acceptance expects none.
+message SandboxAccessReportRecord {
+  string schema = 1;
+  string workspace_root = 2;
+  repeated string granted_actions = 3;
+  repeated string out_of_scope_access = 4;
+  bool clean = 5;
+}

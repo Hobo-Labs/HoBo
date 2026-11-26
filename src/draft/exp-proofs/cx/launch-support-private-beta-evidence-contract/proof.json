@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-support-private-beta-evidence-contract",
+  "experienceType": "cx",
+  "title": "Launch Support Private Beta Evidence",
+  "linear": "HOBO-467",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

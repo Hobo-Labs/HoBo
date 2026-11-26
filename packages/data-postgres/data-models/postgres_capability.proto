@@ -1,0 +1,164 @@
+// Wire records for the provider-neutral PostgreSQL surface.
+//
+// These are the durable shapes: what a Postgres product advertises, where a
+// migration command points, and what a conformance run recorded. The branded
+// TypeScript values in `src/` are parsed narrowings of these records — a
+// `PostgresTarget` whose host has already been refused if it carried a shell
+// metacharacter is still this record on the wire.
+//
+// Absence is meaningful throughout. Every advertised capability is `optional`
+// so that "not stated" stays distinguishable from "stated false": an unset key
+// must fail a required gate rather than default to true, and a defaulted false
+// would lose that distinction the moment the record round-tripped.
+//
+// No field here is a credential. A password reaches libpq through the
+// environment or a password file; it is neither an argv element nor a record
+// field, so these records are safe to append to an event store and replay.
+
+syntax = "proto3";
+
+package hobo.data.postgres.v1;
+
+enum PostgresIsolationLevel {
+  POSTGRES_ISOLATION_LEVEL_UNSPECIFIED = 0;
+  POSTGRES_ISOLATION_LEVEL_READ_UNCOMMITTED = 1;
+  POSTGRES_ISOLATION_LEVEL_READ_COMMITTED = 2;
+  POSTGRES_ISOLATION_LEVEL_REPEATABLE_READ = 3;
+  POSTGRES_ISOLATION_LEVEL_SERIALIZABLE = 4;
+}
+
+// Reachability is a separate fact from protocol: a Workers or WASM caller
+// speaks Postgres and still has no raw TCP.
+enum PostgresConnectivityTransport {
+  POSTGRES_CONNECTIVITY_TRANSPORT_UNSPECIFIED = 0;
+  POSTGRES_CONNECTIVITY_TRANSPORT_TCP = 1;
+  POSTGRES_CONNECTIVITY_TRANSPORT_TLS_TCP = 2;
+  POSTGRES_CONNECTIVITY_TRANSPORT_HTTP = 3;
+  POSTGRES_CONNECTIVITY_TRANSPORT_WEBSOCKET = 4;
+}
+
+enum PostgresMigrationTool {
+  POSTGRES_MIGRATION_TOOL_UNSPECIFIED = 0;
+  POSTGRES_MIGRATION_TOOL_PG_DUMP = 1;
+  POSTGRES_MIGRATION_TOOL_PG_RESTORE = 2;
+  POSTGRES_MIGRATION_TOOL_PSQL = 3;
+  POSTGRES_MIGRATION_TOOL_PRISMA_MIGRATE = 4;
+  POSTGRES_MIGRATION_TOOL_DRIZZLE_KIT = 5;
+  POSTGRES_MIGRATION_TOOL_KNEX = 6;
+  POSTGRES_MIGRATION_TOOL_FLYWAY = 7;
+  POSTGRES_MIGRATION_TOOL_LIQUIBASE = 8;
+  POSTGRES_MIGRATION_TOOL_ATLAS = 9;
+  POSTGRES_MIGRATION_TOOL_SQLALCHEMY_ALEMBIC = 10;
+}
+
+// `NONE` is a legitimate answer, not a missing one: after a claim, rotation is
+// what removes the creating party's authority, so a product that cannot rotate
+// should say so and rank accordingly.
+enum PostgresCredentialRotationMode {
+  POSTGRES_CREDENTIAL_ROTATION_MODE_UNSPECIFIED = 0;
+  POSTGRES_CREDENTIAL_ROTATION_MODE_SELF_SERVICE_SQL = 1;
+  POSTGRES_CREDENTIAL_ROTATION_MODE_PROVIDER_CONSOLE = 2;
+  POSTGRES_CREDENTIAL_ROTATION_MODE_PROVIDER_API = 3;
+  POSTGRES_CREDENTIAL_ROTATION_MODE_NONE = 4;
+}
+
+enum PostgresMigrationProfileId {
+  POSTGRES_MIGRATION_PROFILE_ID_UNSPECIFIED = 0;
+  // migration.postgres.pg-dump/v1
+  POSTGRES_MIGRATION_PROFILE_ID_PG_DUMP = 1;
+  // migration.postgres.logical-copy/v1
+  POSTGRES_MIGRATION_PROFILE_ID_LOGICAL_COPY = 2;
+}
+
+// `disable` and `allow` are deliberately absent: a managed Postgres reachable
+// in cleartext is a credential-disclosure bug, and this record should not be
+// able to express one.
+enum PostgresSslMode {
+  POSTGRES_SSL_MODE_UNSPECIFIED = 0;
+  POSTGRES_SSL_MODE_PREFER = 1;
+  POSTGRES_SSL_MODE_REQUIRE = 2;
+  POSTGRES_SSL_MODE_VERIFY_CA = 3;
+  POSTGRES_SSL_MODE_VERIFY_FULL = 4;
+}
+
+// A connection target. Every field is a value a parser has already refused if
+// it carried a shell metacharacter, whitespace, a leading dash, or traversal.
+// The password is not here: it travels in PGPASSWORD or PGPASSFILE, because
+// argv is world-readable in /proc.
+message PostgresTarget {
+  string host = 1;
+  uint32 port = 2;
+  string database = 3;
+  string username = 4;
+  PostgresSslMode ssl_mode = 5;
+}
+
+// What a Postgres product advertises, and therefore owes conformance evidence
+// for. Guarantees first, then the ranked and gated features.
+message PostgresStructuredCapabilities {
+  optional bool postgres_wire_protocol = 1;
+  optional bool tls = 2;
+  optional bool transactions = 3;
+  optional bool constraints = 4;
+  optional bool connection_uri_binding = 5;
+  optional bool ddl = 6;
+  optional bool transaction_rollback = 7;
+
+  // Human-readable ranking fact, e.g. "17.2".
+  optional string server_version = 8;
+  // The same claim lowered to an integer, because ">=16" must match "17" and
+  // string comparison does not do that.
+  optional uint32 server_version_major = 9;
+  repeated PostgresIsolationLevel isolation_levels = 10;
+  optional bool prepared_statements = 11;
+  optional bool json_documents = 12;
+  optional bool jsonb = 13;
+  repeated PostgresMigrationTool migration_tool_compatibility = 14;
+  optional uint32 max_connections = 15;
+  optional bool pooling = 16;
+  repeated PostgresConnectivityTransport connectivity_transports = 17;
+  repeated string extensions = 18;
+  optional PostgresCredentialRotationMode credential_rotation = 19;
+  optional bool logical_replication = 20;
+  optional bool export_supported = 21;
+  optional bool import_supported = 22;
+  optional uint64 max_storage_bytes = 23;
+}
+
+enum PostgresConformanceOutcome {
+  POSTGRES_CONFORMANCE_OUTCOME_UNSPECIFIED = 0;
+  POSTGRES_CONFORMANCE_OUTCOME_PASS = 1;
+  POSTGRES_CONFORMANCE_OUTCOME_FAIL = 2;
+  POSTGRES_CONFORMANCE_OUTCOME_UNKNOWN = 3;
+}
+
+// `BLOCKED` (a dependency failed) and `NOT_RUN` (nobody looked) stay separate.
+// Collapsing them would let a missing executor masquerade as a product defect.
+enum PostgresConformanceResultStatus {
+  POSTGRES_CONFORMANCE_RESULT_STATUS_UNSPECIFIED = 0;
+  POSTGRES_CONFORMANCE_RESULT_STATUS_PASS = 1;
+  POSTGRES_CONFORMANCE_RESULT_STATUS_FAIL = 2;
+  POSTGRES_CONFORMANCE_RESULT_STATUS_NOT_RUN = 3;
+  POSTGRES_CONFORMANCE_RESULT_STATUS_BLOCKED = 4;
+}
+
+message PostgresConformanceResult {
+  // Stable case id, e.g. postgres.wire.protocol.
+  string case_id = 1;
+  string capability_key = 2;
+  PostgresConformanceResultStatus status = 3;
+  // Operator-facing detail. Never carries an executor's raw error text, which
+  // can contain a DSN.
+  string detail = 4;
+}
+
+// The record a product's profile implementation points at. `PASS` is only
+// reachable when every applicable case actually ran and passed.
+message PostgresConformanceReport {
+  // Always conformance.data.postgres/v1.
+  string suite_ref = 1;
+  PostgresConformanceOutcome outcome = 2;
+  repeated PostgresConformanceResult results = 3;
+  // Injected instant. This package never reads a clock.
+  uint64 ran_at_ms = 4;
+}

@@ -1,0 +1,445 @@
+import { createSign } from "node:crypto";
+import { z } from "zod";
+
+export interface GithubTransport {
+	/**
+	 * `ifNoneMatch` makes a GET conditional: GitHub answers 304 when the ETag
+	 * still matches, and a 304 does not count against the installation's rate
+	 * limit. A transport may ignore it; the caller then just sees a 200.
+	 */
+	request(
+		installationId: number,
+		path: string,
+		method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+		body?: string,
+		ifNoneMatch?: string,
+	): Promise<Response>;
+}
+const Run = z.object({
+	id: z.number().int().positive(),
+	run_attempt: z.number().int().positive(),
+	event: z.string(),
+	head_sha: z.string(),
+	head_branch: z.string().nullable(),
+	path: z.string(),
+	display_title: z.string(),
+	status: z.string(),
+	conclusion: z.string().nullable(),
+	created_at: z.string().optional(),
+	run_started_at: z.string().nullable(),
+	updated_at: z.string(),
+	actor: z.object({ id: z.number().int().positive() }),
+	repository: z.object({
+		id: z.number().int().positive(),
+		private: z.boolean(),
+	}),
+	head_repository: z.object({ id: z.number().int().positive() }).nullable(),
+	pull_requests: z
+		.array(
+			z.object({
+				base: z.object({
+					ref: z.string(),
+					repo: z.object({ id: z.number().int().positive() }),
+				}),
+			}),
+		)
+		.optional(),
+});
+export type GithubRun = z.infer<typeof Run>;
+export async function getRun(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<GithubRun> {
+	const response = await api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}`,
+	);
+	if (!response.ok)
+		throw new Error(`GitHub run lookup failed (${response.status})`);
+	return Run.parse(await response.json());
+}
+export async function getHostJob(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+) {
+	const response = await api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}/jobs`,
+	);
+	if (!response.ok)
+		throw new Error(`GitHub host job lookup failed (${response.status})`);
+	const result = z
+		.object({
+			jobs: z.array(
+				z.object({
+					name: z.string(),
+					labels: z.array(z.string()),
+					status: z.string(),
+					started_at: z.string().nullable(),
+					completed_at: z.string().nullable(),
+				}),
+			),
+		})
+		.parse(await response.json());
+	if (result.jobs.length !== 1 || result.jobs[0]?.name !== "host")
+		throw new Error("unexpected host job graph");
+	return result.jobs[0];
+}
+const RunWorkflowJob = z.object({
+	id: z.number().int().positive(),
+	run_id: z.number().int().positive(),
+	run_attempt: z.number().int().positive().optional(),
+	status: z.string(),
+	labels: z.array(z.string()).optional(),
+	runner_name: z.string().nullable().optional(),
+	// Queued jobs are unassigned: GitHub may send 0 or null.
+	runner_id: z.number().int().nonnegative().nullable().optional(),
+	runner_group_id: z.number().int().nonnegative().nullable().optional(),
+});
+
+export type GithubRunWorkflowJob = z.infer<typeof RunWorkflowJob>;
+
+const WorkflowRunPage = z.object({
+	workflow_runs: z.array(
+		z.object({
+			id: z.number().int().positive(),
+		}),
+	),
+});
+
+export class IncompleteGithubRunListing extends Error {
+	readonly runIds: readonly number[];
+	constructor(runIds: readonly number[]) {
+		super("GitHub runner assignment scan incomplete");
+		this.name = "IncompleteGithubRunListing";
+		this.runIds = [...runIds];
+	}
+}
+
+/** Recent in-progress workflow runs for cross-run runner assignment lookup. */
+export async function listInProgressWorkflowRunIds(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	limit = 25,
+): Promise<readonly number[]> {
+	if (!Number.isSafeInteger(limit) || limit < 1)
+		throw new RangeError(
+			"GitHub in-progress run limit must be a positive safe integer",
+		);
+	const ids: number[] = [];
+	const seen = new Set<number>();
+	for (let page = 1; page <= 3; page++) {
+		const perPage = Math.min(100, limit);
+		const response = await api.request(
+			installationId,
+			`/repos/${repository}/actions/runs?status=in_progress&per_page=${perPage}&page=${page}`,
+		);
+		if (!response.ok)
+			throw new Error(`GitHub run listing failed (${response.status})`);
+		const parsed = WorkflowRunPage.parse(await response.json());
+		if (parsed.workflow_runs.length > perPage)
+			throw new Error("invalid GitHub run listing page");
+		for (const run of parsed.workflow_runs) {
+			if (seen.has(run.id))
+				throw new Error("duplicate GitHub run in assignment scan");
+			if (ids.length >= limit) throw new IncompleteGithubRunListing(ids);
+			seen.add(run.id);
+			ids.push(run.id);
+		}
+		if (parsed.workflow_runs.length < perPage) return ids;
+	}
+	throw new IncompleteGithubRunListing(ids);
+}
+
+export async function listRunWorkflowJobs(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<readonly GithubRunWorkflowJob[]> {
+	const jobs: GithubRunWorkflowJob[] = [];
+	const seen = new Set<number>();
+	for (let page = 1; page <= 100; page++) {
+		const suffix = page === 1 ? "" : `&page=${page}`;
+		const response = await api.request(
+			installationId,
+			`/repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100${suffix}`,
+		);
+		if (!response.ok)
+			throw new Error(`GitHub run jobs lookup failed (${response.status})`);
+		const result = z
+			.object({ jobs: z.array(RunWorkflowJob) })
+			.parse(await response.json());
+		if (result.jobs.length > 100)
+			throw new Error("invalid GitHub run jobs page");
+		for (const job of result.jobs) {
+			if (job.run_id !== runId)
+				throw new Error("GitHub job belongs to another run");
+			if (seen.has(job.id))
+				throw new Error("duplicate GitHub job in assignment scan");
+			seen.add(job.id);
+			jobs.push(job);
+		}
+		if (result.jobs.length < 100) return jobs;
+	}
+	throw new Error("GitHub run jobs lookup incomplete");
+}
+
+export async function rerunWorkflowRun(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	runId: number,
+): Promise<Response> {
+	return api.request(
+		installationId,
+		`/repos/${repository}/actions/runs/${runId}/rerun`,
+		"POST",
+	);
+}
+
+/** Re-run one workflow job without cancelling the rest of the run. */
+export async function rerunWorkflowJob(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	jobId: number,
+): Promise<Response> {
+	return api.request(
+		installationId,
+		`/repos/${repository}/actions/jobs/${jobId}/rerun`,
+		"POST",
+	);
+}
+
+export async function getJob(
+	api: GithubTransport,
+	installationId: number,
+	repository: string,
+	jobId: number,
+) {
+	const response = await api.request(
+		installationId,
+		`/repos/${repository}/actions/jobs/${jobId}`,
+	);
+	if (!response.ok)
+		throw new Error(`GitHub job lookup failed (${response.status})`);
+	return z
+		.object({
+			id: z.number().int().positive(),
+			run_id: z.number().int().positive(),
+			status: z.string(),
+			labels: z.array(z.string()),
+			name: z.string().optional(),
+			runner_name: z.string().nullable().optional(),
+			runner_id: z.number().int().nonnegative().nullable().optional(),
+			runner_group_id: z.number().int().nonnegative().nullable().optional(),
+			run_attempt: z.number().int().positive().optional(),
+			created_at: z.string().optional(),
+		})
+		.parse(await response.json());
+}
+
+export interface GithubAppTransport extends GithubTransport {
+	appRequest(path: string): Promise<Response>;
+}
+
+/** Only relative GitHub API paths; encoded separators cannot change the resource scope. */
+export function githubApiUrl(path: string): string {
+	const [pathname] = path.split("?");
+	if (
+		!pathname ||
+		(!/^\/(?:repos|app|users)\b\/[A-Za-z0-9_.%/-]+$/.test(pathname) &&
+			pathname !== "/app" &&
+			pathname !== "/graphql")
+	)
+		throw new Error("invalid GitHub API path");
+	if (
+		/%(?:2f|5c|00)/i.test(pathname) ||
+		pathname
+			.split("/")
+			.some((part) => [".", ".."].includes(decodeURIComponent(part)))
+	)
+		throw new Error("invalid GitHub API path");
+	const url = new URL(path, "https://api.github.com");
+	if (
+		url.origin !== "https://api.github.com" ||
+		url.hash ||
+		url.username ||
+		url.password
+	)
+		throw new Error("invalid GitHub API path");
+	const keys = new Set<string>();
+	for (const [key, value] of url.searchParams) {
+		if (
+			keys.has(key) ||
+			![
+				"event",
+				"per_page",
+				"page",
+				"ref",
+				"state",
+				"head",
+				"status",
+				"filter",
+				"created",
+			].includes(key) ||
+			!value ||
+			value.length > 200 ||
+			Array.from(value).some((character) => {
+				const point = character.codePointAt(0) ?? 0;
+				return point < 32 || point === 127;
+			})
+		)
+			throw new Error("invalid GitHub API query");
+		keys.add(key);
+		if (
+			(key === "per_page" || key === "page") &&
+			(!/^\d+$/.test(value) ||
+				Number(value) < 1 ||
+				Number(value) > (key === "per_page" ? 100 : 1000))
+		)
+			throw new Error("invalid GitHub API pagination");
+		if (key === "event" && value !== "workflow_dispatch")
+			throw new Error("invalid GitHub API event");
+		if (
+			key === "status" &&
+			![
+				"queued",
+				"in_progress",
+				"waiting",
+				"pending",
+				"requested",
+				"completed",
+			].includes(value)
+		)
+			throw new Error("invalid GitHub API status");
+		if (
+			key === "created" &&
+			!/^>=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value)
+		)
+			throw new Error("invalid GitHub API created");
+		if (key === "filter" && value !== "latest")
+			throw new Error("invalid GitHub API filter");
+		if (key === "state" && !["all", "open", "closed"].includes(value))
+			throw new Error("invalid GitHub API state");
+	}
+	return url.href;
+}
+
+/** App keys never leave the relay; concurrent lookups share short-lived installation tokens. */
+export function createGithubAppTransport(options: {
+	appId: string;
+	privateKey: string;
+	fetch?: typeof fetch;
+	now?: () => number;
+}): GithubAppTransport & {
+	/**
+	 * A short-lived installation token for an in-process caller that speaks a
+	 * protocol this transport does not (GraphQL, git over HTTPS). The App key
+	 * still never leaves the relay.
+	 */
+	installationToken(installationId: number): Promise<string>;
+} {
+	const send = options.fetch ?? fetch;
+	const now = options.now ?? Date.now;
+	const tokens = new Map<number, { token: string; expiresAt: number }>();
+	const minting = new Map<number, Promise<string>>();
+	const common = {
+		Accept: "application/vnd.github+json",
+		"X-GitHub-Api-Version": "2026-03-10",
+		"Content-Type": "application/json",
+	};
+	function jwt(): string {
+		const issued = Math.floor(now() / 1000) - 60;
+		const header = Buffer.from(
+			JSON.stringify({ alg: "RS256", typ: "JWT" }),
+		).toString("base64url");
+		const payload = Buffer.from(
+			JSON.stringify({ iat: issued, exp: issued + 600, iss: options.appId }),
+		).toString("base64url");
+		const input = `${header}.${payload}`;
+		return `${input}.${createSign("RSA-SHA256").update(input).sign(options.privateKey).toString("base64url")}`;
+	}
+	async function installationToken(id: number): Promise<string> {
+		if (!Number.isSafeInteger(id) || id <= 0)
+			throw new Error("invalid installation id");
+		const cached = tokens.get(id);
+		if (cached && cached.expiresAt > now() + 60_000) return cached.token;
+		const pending = minting.get(id);
+		if (pending) return pending;
+		const task = (async () => {
+			const response = await send(
+				`https://api.github.com/app/installations/${id}/access_tokens`,
+				{
+					method: "POST",
+					headers: { ...common, Authorization: `Bearer ${jwt()}` },
+					redirect: "error",
+					signal: AbortSignal.timeout(15000),
+				},
+			);
+			if (!response.ok)
+				throw new Error(
+					`GitHub App authentication failed (${response.status})`,
+				);
+			const result = z
+				.object({ token: z.string().min(1), expires_at: z.string().optional() })
+				.parse(await response.json());
+			if (result.expires_at && Number.isFinite(Date.parse(result.expires_at)))
+				tokens.set(id, {
+					token: result.token,
+					expiresAt: Math.min(
+						Date.parse(result.expires_at),
+						now() + 50 * 60000,
+					),
+				});
+			return result.token;
+		})().finally(() => minting.delete(id));
+		minting.set(id, task);
+		return task;
+	}
+	return {
+		installationToken,
+		async appRequest(path) {
+			const url = githubApiUrl(path);
+			if (
+				!/^\/app(?:\/installations\/\d+)?$/.test(new URL(url).pathname) &&
+				!/^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/installation$/.test(
+					new URL(url).pathname,
+				) &&
+				!/^\/users\/[A-Za-z0-9_.%[\]-]+$/.test(new URL(url).pathname)
+			)
+				throw new Error("unsupported GitHub App metadata request");
+			return send(url, {
+				headers: { ...common, Authorization: `Bearer ${jwt()}` },
+				redirect: "error",
+				signal: AbortSignal.timeout(15000),
+			});
+		},
+		async request(installationId, path, method = "GET", body, ifNoneMatch) {
+			const url = githubApiUrl(path);
+			const token = await installationToken(installationId);
+			const conditional =
+				method === "GET" && ifNoneMatch ? { "If-None-Match": ifNoneMatch } : {};
+			const init: RequestInit = {
+				method,
+				headers: {
+					...common,
+					...conditional,
+					Authorization: `Bearer ${token}`,
+				},
+				redirect: "error",
+				signal: AbortSignal.timeout(15000),
+			};
+			if (body !== undefined) init.body = body;
+			const response = await send(url, init);
+			if (response.status === 401) tokens.delete(installationId);
+			return response;
+		},
+	};
+}

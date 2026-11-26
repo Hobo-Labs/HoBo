@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "crypto-shred-erasure-contract",
+  "title": "Crypto-Shred Erasure Contract",
+  "linear": "HOBO-295",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

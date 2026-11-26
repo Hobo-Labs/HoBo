@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GatekeeperV1PolicyContractsConsumer"
+  },
+  "provider": {
+    "name": "GatekeeperV1PolicyContractsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Gatekeeper v1 boundary returns deploy verification contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/gatekeeper-v1-policy-contracts/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.gatekeeper_v1_policy_contracts/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

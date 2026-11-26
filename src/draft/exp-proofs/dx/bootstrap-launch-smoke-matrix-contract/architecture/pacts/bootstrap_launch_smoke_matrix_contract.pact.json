@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "BootstrapInstallerLaunchReadinessConsumer"
+  },
+  "provider": {
+    "name": "BootstrapLaunchSmokeMatrixContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Bootstrap launch readiness returns accepted smoke matrix evidence",
+      "request": {
+        "method": "GET",
+        "path": "/bootstrap-launch-smoke-matrix/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.bootstrap_launch_smoke_matrix_contract/v1",
+          "feeds": ["release-notes", "troubleshooting", "support-handoff"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "runId": "20260731-all-eq",
+  "phase": "baseline",
+  "regime": "harm_reduce",
+  "scoredAt": "2026-07-31T15:38:50.000Z",
+  "metric_total": 0,
+  "metric_max": 0,
+  "notes": "All primaryCommand probes exit 0. Prior all-exp/AX/DX plateaus left harm floor at ~0; residual multi-gate agent:check is L not S/M.",
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "pnpm run doctor",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-coding-agent",
+      "surface": "setup-agent-tools --help",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-designer",
+      "surface": "pnpm run design:lint",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-end-user",
+      "surface": "pnpm run docs:site-nav",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    }
+  ]
+}

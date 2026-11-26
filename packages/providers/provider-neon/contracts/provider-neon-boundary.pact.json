@@ -1,0 +1,121 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-neon"
+	},
+	"provider": {
+		"name": "NeonClaimablePostgresApi"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"sourceRefs": [
+			{
+				"url": "https://neon.com/docs/reference/claimable-postgres",
+				"checkedAt": "2026-08-08"
+			}
+		]
+	},
+	"interactions": [
+		{
+			"description": "create a claimable database with an unauthenticated referrer-tagged request",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/database",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"ref": "hobo-test"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"id": "01999999-0000-7000-8000-000000000001",
+					"status": "UNCLAIMED",
+					"neon_project_id": "fake-project-00000000",
+					"connection_string": "postgresql://neondb_owner:REDACTED@ep-fake-000000-pooler.c-2.us-east-2.aws.neon.tech/neondb?channel_binding=require&sslmode=require",
+					"claim_url": "https://neon.new/claim/01999999-0000-7000-8000-000000000001",
+					"expires_at": "2026-08-11T12:00:00.000Z",
+					"created_at": "2026-08-08T12:00:00.000Z",
+					"updated_at": "2026-08-08T12:00:00.000Z"
+				}
+			}
+		},
+		{
+			"description": "observe a database that is mid-claim",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/database/01999999-0000-7000-8000-000000000001"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "01999999-0000-7000-8000-000000000001",
+					"status": "CLAIMING",
+					"neon_project_id": "fake-project-00000000",
+					"connection_string": "postgresql://neondb_owner:REDACTED@ep-fake-000000-pooler.c-2.us-east-2.aws.neon.tech/neondb?channel_binding=require&sslmode=require",
+					"claim_url": "https://neon.new/claim/01999999-0000-7000-8000-000000000001",
+					"expires_at": "2026-08-11T12:00:00.000Z",
+					"created_at": "2026-08-08T12:00:00.000Z",
+					"updated_at": "2026-08-08T13:00:00.000Z"
+				}
+			}
+		},
+		{
+			"description": "observe a claimed database, whose connection string the API no longer returns",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/database/01999999-0000-7000-8000-000000000001"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "01999999-0000-7000-8000-000000000001",
+					"status": "CLAIMED",
+					"neon_project_id": "fake-project-00000000",
+					"connection_string": null,
+					"claim_url": "https://neon.new/claim/01999999-0000-7000-8000-000000000001",
+					"expires_at": "2026-08-11T12:00:00.000Z",
+					"created_at": "2026-08-08T12:00:00.000Z",
+					"updated_at": "2026-08-08T14:00:00.000Z"
+				}
+			}
+		},
+		{
+			"description": "reject a create with a missing referrer",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/database",
+				"body": {}
+			},
+			"response": {
+				"status": 400,
+				"body": {
+					"message": "Missing referrer",
+					"hint": "Provide a `ref` identifying your application."
+				}
+			}
+		},
+		{
+			"description": "an ambiguous create failure, which the driver must never resolve by creating a second database",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/database",
+				"body": {
+					"ref": "hobo-test"
+				}
+			},
+			"response": {
+				"status": 500,
+				"body": {
+					"message": "Failed to create the database."
+				}
+			}
+		}
+	]
+}

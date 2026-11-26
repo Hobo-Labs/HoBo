@@ -1,0 +1,68 @@
+{
+	"cast": [
+		{
+			"name": "tuck",
+			"board": "tuck-board.png",
+			"cols": 4,
+			"rows": 2,
+			"poses": [
+				"stand",
+				"wave",
+				"startled",
+				"doze",
+				"walkA",
+				"walkPass",
+				"walkB",
+				"run"
+			]
+		},
+		{
+			"name": "pip",
+			"board": "pip-board.png",
+			"cols": 4,
+			"rows": 2,
+			"poses": [
+				"stand",
+				"wave",
+				"startled",
+				"doze",
+				"walkA",
+				"walkPass",
+				"walkB",
+				"run"
+			]
+		},
+		{
+			"name": "mags",
+			"board": "mags-board.png",
+			"cols": 4,
+			"rows": 2,
+			"poses": [
+				"stand",
+				"wave",
+				"startled",
+				"doze",
+				"walkA",
+				"walkPass",
+				"walkB",
+				"run"
+			]
+		},
+		{
+			"name": "cog",
+			"board": "cog-board.png",
+			"cols": 4,
+			"rows": 2,
+			"poses": [
+				"stand",
+				"wave",
+				"startled",
+				"doze",
+				"walkA",
+				"walkPass",
+				"walkB",
+				"run"
+			]
+		}
+	]
+}

@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum CliCloudProofMode {
+  CLI_CLOUD_PROOF_MODE_UNSPECIFIED = 0;
+  CLI_CLOUD_PROOF_MODE_REFERENCE_FIXTURE = 1;
+  CLI_CLOUD_PROOF_MODE_SIMULATED = 2;
+}
+
+enum CliCloudCommandStatus {
+  CLI_CLOUD_COMMAND_STATUS_UNSPECIFIED = 0;
+  CLI_CLOUD_COMMAND_STATUS_SUCCESS = 1;
+  CLI_CLOUD_COMMAND_STATUS_BLOCKED = 2;
+  CLI_CLOUD_COMMAND_STATUS_ERROR = 3;
+}
+
+message CliCloudActionableError {
+  string code = 1;
+  string cause = 2;
+  repeated string remediation = 3;
+  string correlation_id = 4;
+}
+
+message CliCloudLoginResult {
+  string svid = 1;
+  repeated string scopes = 2;
+  CliCloudProofMode proof_mode = 3;
+}
+
+message CliCloudPlanWarning {
+  string code = 1;
+  string message = 2;
+}
+
+message CliCloudPlanResult {
+  string deployment_plan_id = 1;
+  repeated CliCloudPlanWarning warnings = 2;
+  CliCloudCommandStatus status = 3;
+  CliCloudActionableError error = 4;
+}
+
+message CliCloudDeployResult {
+  string deployment_id = 1;
+  string deployment_set_id = 2;
+  CliCloudCommandStatus status = 3;
+  CliCloudActionableError error = 4;
+}
+
+message CliCloudInspectDeployResult {
+  string deployment_id = 1;
+  int32 projection_seq = 2;
+  string state = 3;
+  CliCloudCommandStatus status = 4;
+  CliCloudActionableError error = 5;
+}
+
+message CliCloudLogLine {
+  string stream = 1;
+  string message = 2;
+  string timestamp = 3;
+}
+
+message CliCloudLogsResult {
+  repeated CliCloudLogLine lines = 1;
+  CliCloudCommandStatus status = 2;
+  CliCloudActionableError error = 3;
+}
+
+message CliCloudJourneyStep {
+  string command = 1;
+  CliCloudCommandStatus status = 2;
+  string fixture_id = 3;
+}
+
+message CliCloudYardPathRecord {
+  string issue = 1;
+  string phase = 2;
+  string fixture_id = 3;
+  string bindle = 4;
+  string proof_note = 5;
+  repeated CliCloudJourneyStep j1_journey = 6;
+  repeated string gateway_routes = 7;
+  repeated string scope_out = 8;
+}

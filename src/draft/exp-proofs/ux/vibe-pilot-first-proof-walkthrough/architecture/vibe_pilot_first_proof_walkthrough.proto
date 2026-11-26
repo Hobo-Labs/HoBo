@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-563 pilot first-proof walkthrough.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibePilotFirstProofMode {
+  VIBE_PILOT_FIRST_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_PILOT_FIRST_PROOF_MODE_LIVE = 1;
+  VIBE_PILOT_FIRST_PROOF_MODE_SIMULATED = 2;
+  VIBE_PILOT_FIRST_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_PILOT_FIRST_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibePilotFirstProofConsumedStoryboard {
+  string source_issue = 1;
+  string package_path = 2;
+  string proof_path = 3;
+  repeated string stages = 4;
+}
+
+message VibePilotFirstProofWalkthroughStep {
+  string stage = 1;
+  string source_storyboard_stage = 2;
+  string title = 3;
+  string persona = 4;
+  string user_action = 5;
+  string expected_evidence = 6;
+  string blocker_route = 7;
+  VibePilotFirstProofMode proof_mode = 8;
+  string customer_safe_message = 9;
+}
+
+message VibePilotFirstProofScenarioPath {
+  string id = 1;
+  repeated string stage_ids = 2;
+  string narrative = 3;
+  string safe_outcome = 4;
+}
+
+message VibePilotFirstProofBlockerRoute {
+  string route = 1;
+  string trigger = 2;
+  string owner = 3;
+  string safe_next_action = 4;
+  string customer_safe_message = 5;
+}
+
+message VibePilotFirstProofSupportHandoffEvidence {
+  string severity = 1;
+  string redaction_state = 2;
+  string evidence_link = 3;
+  string next_update_condition = 4;
+}
+
+message VibePilotFirstProofWalkthroughRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  VibePilotFirstProofConsumedStoryboard consumed_storyboard = 6;
+  repeated VibePilotFirstProofWalkthroughStep steps = 7;
+  repeated VibePilotFirstProofScenarioPath scenario_paths = 8;
+  repeated VibePilotFirstProofBlockerRoute blocker_routes = 9;
+  VibePilotFirstProofSupportHandoffEvidence support_handoff_evidence = 10;
+  repeated string accessibility_notes = 11;
+  repeated string scope_out = 12;
+}

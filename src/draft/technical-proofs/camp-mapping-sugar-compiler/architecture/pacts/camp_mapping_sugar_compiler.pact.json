@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "CampMappingSugarCompilerConsumer"
+  },
+  "provider": {
+    "name": "CampMappingSugarCompilerBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Camp Mapping Sugar Compiler boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/camp-mapping-sugar-compiler/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.camp_mapping_sugar_compiler/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

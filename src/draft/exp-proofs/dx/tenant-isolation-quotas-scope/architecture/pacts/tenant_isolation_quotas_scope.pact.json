@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TenantIsolationQuotasScopeConsumer"
+  },
+  "provider": {
+    "name": "TenantIsolationQuotasScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Tenant Isolation Quotas Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/tenant-isolation-quotas-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.tenant_isolation_quotas_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

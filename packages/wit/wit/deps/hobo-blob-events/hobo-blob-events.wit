@@ -1,0 +1,66 @@
+package hobo:blob-events@0.1.0;
+
+/// stability: experimental
+interface blob-events {
+  enum blob-event-error-code {
+    invalid-argument,
+    not-found,
+    unauthorized,
+    provider-error,
+  }
+
+  enum blob-event-kind {
+    created,
+    updated,
+    deleted,
+  }
+
+  record blob-event-error {
+    code: blob-event-error-code,
+    message: option<string>,
+    retryable: bool,
+  }
+
+  record blob-event-filter {
+    bucket: string,
+    prefix: option<string>,
+    events: list<blob-event-kind>,
+  }
+
+  record blob-subscription {
+    subscription-id: string,
+    filter: blob-event-filter,
+  }
+
+  record presigned-url-request {
+    bucket: string,
+    key: string,
+    expires-in-ms: u64,
+    content-type: option<string>,
+  }
+
+  record header {
+    name: string,
+    value: string,
+  }
+
+  record presigned-url {
+    url: string,
+    expires-at-ms: u64,
+    headers: list<header>,
+  }
+
+  on: func(filter: blob-event-filter) -> result<blob-subscription, blob-event-error>;
+
+  download-url: func(request: presigned-url-request) -> result<presigned-url, blob-event-error>;
+
+  upload-url: func(request: presigned-url-request) -> result<presigned-url, blob-event-error>;
+}
+
+world blob-events-guest {
+  import blob-events;
+}
+
+world blob-events-provider {
+  export blob-events;
+}

@@ -1,0 +1,39 @@
+{
+	"id": "bindle.web-only",
+	"tier": 1,
+	"kind": "bindle",
+	"description": "Public web Bindle with no private API service.",
+	"tags": [
+		"bindle",
+		"web",
+		"barebones"
+	],
+	"queries": [
+		"web only bindle",
+		"barebones bindle",
+		"blank bindle"
+	],
+	"requires": [
+		"http.handler.web"
+	],
+	"provides": [
+		"bindle.topology.web"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/bindle.ts",
+			"from": "body/bindle.ts.tpl"
+		}
+	]
+}

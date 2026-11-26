@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package hobo.bindings.v1;
+
+// Binding resolution and the binding.* event family (ADR-0157).
+//
+// A resolution names the Yard, the capability profile, and the product plus
+// connectivity implementation chosen to satisfy it, together with the canonical
+// Yard binding row keys that constrained the decision and the number of
+// candidates considered. The wire records exist so the plan-phase decision, the
+// audit trail, and the event log describe the same fact.
+//
+// The family is exactly three facts. There is deliberately no
+// BindingDeclaredRecord: Yard binding row state rides yard.Registered, and
+// duplicating it into a second stream is how an audit trail starts disagreeing
+// with itself.
+
+message BindingResolutionRecord {
+  string contract = 1;
+  string yard_id = 2;
+  string profile = 3;
+  string product_id = 4;
+  string connectivity_id = 5;
+  // "native" | "pack" | "bridge".
+  string realization = 6;
+  // Canonical row keys "<profile>|<productId>|<connectivityId>", sorted.
+  repeated string applied_rows = 7;
+  uint32 considered_count = 8;
+}
+
+// binding.Resolved — plan-phase decision for one workload edge.
+message BindingResolvedRecord {
+  string type = 1;
+  string schema_version = 2;
+  BindingResolutionRecord data = 3;
+}
+
+// binding.Projected — DEPLOY-TIME wiring of a resolved binding into a workload.
+// Per-activation client construction (ADR-0158 `init`) emits nothing: a
+// control-plane write per activation is a hot-path cost with no audit value.
+message BindingProjectedDataRecord {
+  string yard_id = 1;
+  string alias = 2;
+  string binding_profile_ref = 3;
+  string connectivity_id = 4;
+  string projection = 5;
+}
+
+message BindingProjectedRecord {
+  string type = 1;
+  string schema_version = 2;
+  BindingProjectedDataRecord data = 3;
+}
+
+// binding.Unavailable — the fail-closed refusal. Remediation is required, not
+// optional: a refusal without remediation is a dead end for the operator.
+message BindingUnavailableDataRecord {
+  string yard_id = 1;
+  string profile = 2;
+  string code = 3;
+  string remediation = 4;
+  uint32 considered_count = 5;
+}
+
+message BindingUnavailableRecord {
+  string type = 1;
+  string schema_version = 2;
+  BindingUnavailableDataRecord data = 3;
+}

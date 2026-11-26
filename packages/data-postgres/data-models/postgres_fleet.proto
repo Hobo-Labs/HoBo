@@ -1,0 +1,100 @@
+//
+// A fleet keeps one writer and any number of standbys. These are the records
+//
+// A backend id is an opaque token. Nothing here names a product, a host, or a
+// credential, so every record is safe to log and to replay.
+
+syntax = "proto3";
+
+package hobo.data.postgres.fleet.v1;
+
+// One copied table of a standby: how many rows, and what they hash to.
+message PostgresFleetReplicatedTable {
+  string name = 1;
+  uint64 rows = 2;
+  // Order-independent SHA-256 over every row in text form, lower-case hex.
+  string digest = 3;
+}
+
+// What a standby holds: which writer it was copied from, under which
+// assignment, and as of when. A standby's lag is the time since `snapshot_at_ms`.
+message PostgresFleetWatermark {
+  // The backend the standby was copied from.
+  string source = 1;
+  // The assignment epoch the copy was made under.
+  uint64 source_epoch = 2;
+  // When the snapshot was taken, on the source's clock.
+  uint64 snapshot_at_ms = 3;
+  repeated PostgresFleetReplicatedTable tables = 4;
+  uint64 row_count = 5;
+  uint64 byte_count = 6;
+  // SHA-256 over every table's name, row count and digest, lower-case hex.
+  string digest = 7;
+}
+
+// The units an allowance, and therefore a measurement, is stated in.
+enum PostgresFleetUsageUnit {
+  POSTGRES_FLEET_USAGE_UNIT_UNSPECIFIED = 0;
+  // One statement sent to the backend.
+  POSTGRES_FLEET_USAGE_UNIT_OPERATIONS = 1;
+  POSTGRES_FLEET_USAGE_UNIT_COMPUTE_HOURS = 2;
+  POSTGRES_FLEET_USAGE_UNIT_STORAGE_BYTES = 3;
+}
+
+// One backend's counter for one billing period, kept on that backend.
+message PostgresFleetUsage {
+  // YYYY-MM of the UTC calendar month.
+  string period = 1;
+  PostgresFleetUsageUnit unit = 2;
+  uint64 used = 3;
+}
+
+enum PostgresFleetReplicationStatus {
+  POSTGRES_FLEET_REPLICATION_STATUS_UNSPECIFIED = 0;
+  POSTGRES_FLEET_REPLICATION_STATUS_REPLICATED = 1;
+  // A check refused the copy; `refusal` names which.
+  POSTGRES_FLEET_REPLICATION_STATUS_REFUSED = 2;
+  // A connection or statement failed; `failure` classifies it.
+  POSTGRES_FLEET_REPLICATION_STATUS_FAILED = 3;
+}
+
+// What one copy from the writer to one standby did. Logged per tick.
+message PostgresFleetReplicationResult {
+  string source = 1;
+  string target = 2;
+  uint64 epoch = 3;
+  PostgresFleetReplicationStatus status = 4;
+  // e.g. target-is-writer, schema-mismatch, oversized, busy.
+  optional string refusal = 5;
+  reserved 6;
+  reserved "failure";
+  optional uint64 rows = 7;
+  // Row text rewritten. Zero when nothing had changed.
+  optional uint64 bytes = 8;
+  uint64 duration_ms = 9;
+  optional string failure_health = 10;
+}
+
+enum PostgresFleetTransitionStep {
+  POSTGRES_FLEET_TRANSITION_STEP_UNSPECIFIED = 0;
+  POSTGRES_FLEET_TRANSITION_STEP_BOOTSTRAP = 1;
+  // Planned move, first half: nobody may write.
+  POSTGRES_FLEET_TRANSITION_STEP_SEAL = 2;
+  // Planned move, second half: the target is the writer.
+  POSTGRES_FLEET_TRANSITION_STEP_ACTIVATE = 3;
+  // Planned move undone: the old writer writes again.
+  POSTGRES_FLEET_TRANSITION_STEP_UNSEAL = 4;
+  POSTGRES_FLEET_TRANSITION_STEP_FAILOVER = 5;
+  POSTGRES_FLEET_TRANSITION_STEP_MEMBERSHIP = 6;
+}
+
+// One attempt to change the assignment. Only status "decided" changed it.
+message PostgresFleetTransition {
+  PostgresFleetTransitionStep step = 1;
+  // decided, undecided, stale, unavailable or refused.
+  string status = 2;
+  optional uint64 epoch = 3;
+  optional string active = 4;
+  optional string target = 5;
+  string reason = 6;
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProviderHetznerContractConsumer"
+  },
+  "provider": {
+    "name": "ProviderHetznerContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Provider Hetzner Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/provider-hetzner-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.provider_hetzner_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

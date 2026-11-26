@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "hobo-config-secret-schema-contract",
+  "title": "HoBo config and secret schema contract",
+  "linear": "HOBO-40",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

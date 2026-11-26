@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dapr-parity-anchor-audit",
+  "experienceType": "dx",
+  "title": "Dapr Parity Anchor Audit",
+  "linear": "HOBO-699",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

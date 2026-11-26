@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "publisher-portal-scope-contract",
+  "experienceType": "ux",
+  "title": "Publisher Portal Scope Contract",
+  "linear": "HOBO-422",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/proofs/hobo-422-publisher-portal/README.md",
+      "docs/design/publisher-portal.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

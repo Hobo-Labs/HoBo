@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.draft.full_dashboard_projection_views.v1;
+
+message DashboardView {
+  string id = 1;
+  string title = 2;
+  string projection_source = 3;
+  string fixture = 4;
+  bool projection_only = 5;
+  optional int32 scrubber_at_seq = 6;
+  optional string replay_diff_status = 7;
+  string payload_json = 8;
+}
+
+message DashboardRenderResult {
+  string issue = 1;
+  string fixture = 2;
+  repeated DashboardView views = 3;
+  repeated string interactions = 4;
+  bool projection_only = 5;
+}
+
+message WcagAuditResult {
+  string target = 1;
+  bool passed = 2;
+  repeated string violation_rules = 3;
+}
+
+message PseudoLocalizationResult {
+  int32 expansion_factor = 1;
+  string direction = 2;
+  bool passed = 3;
+  int32 longest_expanded_label_length = 4;
+}

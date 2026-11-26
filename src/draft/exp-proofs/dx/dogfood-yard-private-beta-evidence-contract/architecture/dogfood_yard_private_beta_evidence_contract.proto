@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package hobo.draft.dogfood_yard_private_beta;
+
+enum EvidenceStatus {
+  EVIDENCE_STATUS_UNSPECIFIED = 0;
+  EVIDENCE_STATUS_ACCEPTED = 1;
+  EVIDENCE_STATUS_PENDING = 2;
+  EVIDENCE_STATUS_REJECTED = 3;
+}
+
+enum EvidenceChannelKind {
+  EVIDENCE_CHANNEL_KIND_UNSPECIFIED = 0;
+  EVIDENCE_CHANNEL_KIND_LOGS = 1;
+  EVIDENCE_CHANNEL_KIND_TRACES = 2;
+  EVIDENCE_CHANNEL_KIND_STATUS_VIEWS = 3;
+  EVIDENCE_CHANNEL_KIND_SUPPORT_DEBUG = 4;
+  EVIDENCE_CHANNEL_KIND_ROLLBACK_SIGNALS = 5;
+}
+
+message RequiredEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string evidence_source = 3;
+  string proves = 4;
+  EvidenceStatus status = 5;
+}
+
+message PrivateBetaScenario {
+  string id = 1;
+  string yard_mode = 2;
+  string beta_cohort = 3;
+  repeated string fixture_ids = 4;
+  repeated EvidenceChannelKind evidence_channels = 5;
+  repeated string exit_criteria = 6;
+  string support_handoff = 7;
+  bool uses_live_customer_data = 8;
+  bool calls_live_providers = 9;
+}
+
+message EvidenceChannel {
+  EvidenceChannelKind id = 1;
+  string owner_project = 2;
+  string redaction_rule = 3;
+  string private_beta_use = 4;
+}
+
+message RecordedBlocker {
+  string id = 1;
+  string category = 2;
+  string owner_project = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+  string launch_risk = 6;
+}
+
+message AcceptedRisk {
+  string id = 1;
+  string owner_role = 2;
+  string mitigation = 3;
+  string follow_up_or_launch_note = 4;
+  string revisit_date = 5;
+  string evidence_id = 6;
+}
+
+message CrossProjectDependency {
+  string owner_project = 1;
+  string consumes_evidence_id = 2;
+  string cutline_impact = 3;
+}
+
+message MissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+  string launch_disposition = 4;
+}
+
+message FollowUpIssue {
+  string id = 1;
+  string owner_project = 2;
+  string missing_evidence_id = 3;
+  string allowed_reason = 4;
+}
+
+message ParentInitiativeSync {
+  string initiative = 1;
+  bool launch_risk_changed = 2;
+  bool status_updated = 3;
+  string status_update_reason = 4;
+}
+
+message DogfoodYardPrivateBetaEvidence {
+  string issue = 1;
+  string parent_issue = 2;
+  string phase = 3;
+  string milestone_gate = 4;
+  repeated RequiredEvidence required_evidence = 5;
+  repeated PrivateBetaScenario scenarios = 6;
+  repeated EvidenceChannel evidence_channels = 7;
+  repeated RecordedBlocker blockers = 8;
+  repeated AcceptedRisk accepted_risks = 9;
+  repeated CrossProjectDependency cross_project_dependencies = 10;
+  repeated MissingEvidence missing_evidence = 11;
+  repeated FollowUpIssue follow_up_issues = 12;
+  ParentInitiativeSync parent_initiative_sync = 13;
+}

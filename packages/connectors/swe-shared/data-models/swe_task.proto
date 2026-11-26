@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package hobo.connectors.swe_shared;
+
+// SWE-task session records shared by every vendor SWE adapter (HOBO-722..726).
+// src/swe-task.ts consumes the generated types from src/_generated/swe_task_pb.ts
+// (buf codegen via @hobo/schema-tools); the CUE invariants live in swe_task.cue.
+
+message SweTask {
+  string task_id = 1;
+  string instruction = 2;
+  string workspace = 3;
+}
+
+message SweTaskReport {
+  string schema = 1; // always "hobo.swe-task-report/v1"
+  string task_id = 2;
+  string session_id = 3;
+  string stop_reason = 4;
+  repeated string edits = 5;
+  repeated string refusals = 6;
+  bool completed = 7;
+}
+
+message SandboxAccessReport {
+  string schema = 1; // always "hobo.sandbox-access-report/v1"
+  string workspace_root = 2;
+  repeated string granted_actions = 3;
+  repeated string out_of_scope_access = 4;
+  bool clean = 5;
+}
+
+message SweTaskRunResult {
+  SweTaskReport report = 1;
+  SandboxAccessReport sandbox_report = 2;
+  repeated string fact_kinds = 3;
+}

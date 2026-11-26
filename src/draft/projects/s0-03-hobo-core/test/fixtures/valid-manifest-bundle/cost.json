@@ -1,0 +1,7 @@
+{
+  "currency": "USD",
+  "unitPrices": {
+    "compute.container.vcpu-hour": { "unit": "hour", "amount": 0.04, "regions": ["us-east-1"] }
+  },
+  "freeTier": [{ "meter": "compute.container.vcpu-hour", "amount": 10, "resetWindow": "P1M" }]
+}

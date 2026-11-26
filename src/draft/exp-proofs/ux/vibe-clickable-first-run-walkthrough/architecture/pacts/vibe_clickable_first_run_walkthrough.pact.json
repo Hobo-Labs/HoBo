@@ -1,0 +1,48 @@
+{
+  "consumer": {
+    "name": "workspace-onboarding-ux"
+  },
+  "provider": {
+    "name": "vibe-clickable-first-run-walkthrough-proof"
+  },
+  "interactions": [
+    {
+      "description": "read fixture-backed clickable first-run walkthrough",
+      "request": {
+        "method": "GET",
+        "path": "/draft/vibe-clickable-first-run-walkthrough"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-559",
+          "phase": "M2",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-clickable-first-run-walkthrough",
+          "proofPath": "docs/design/proofs/vibe-clickable-first-run-walkthrough/README.md",
+          "consumedActivationRail": {
+            "sourceIssue": "HOBO-540",
+            "packagePath": "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
+            "proofPath": "docs/design/proofs/vibe-first-run-activation-rail/README.md"
+          },
+          "consumedWorkspaceProjectStates": {
+            "sourceIssue": "HOBO-541",
+            "packagePath": "src/draft/exp-proofs/ux/vibe-workspace-project-states",
+            "proofPath": "docs/design/proofs/vibe-workspace-project-states/README.md"
+          },
+          "scenarioPaths": [
+            { "id": "happy-path" },
+            { "id": "blocked-path" },
+            { "id": "stale-or-unknown-evidence" },
+            { "id": "support-handoff" }
+          ],
+          "handoffRoutes": [
+            { "surface": "docs-portal" },
+            { "surface": "tutorials" },
+            { "surface": "troubleshooting" },
+            { "surface": "support-workflow" }
+          ]
+        }
+      }
+    }
+  ]
+}

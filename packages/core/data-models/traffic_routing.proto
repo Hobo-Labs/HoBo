@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Provider-neutral wire records for ADR-0143 TrafficRouting plans and results.
+message TrafficRoutingBackendRecord {
+  string id = 1;
+  string service = 2;
+  repeated string location_hints = 3;
+  optional uint32 weight = 4;
+  optional string endpoint = 5;
+}
+
+message TrafficRoutingMatchRecord {
+  optional string path_prefix = 1;
+  map<string, string> headers = 2;
+}
+
+message TrafficRoutingRuleRecord {
+  enum WeightStrategy {
+    WEIGHT_STRATEGY_UNSPECIFIED = 0;
+    WEIGHT_STRATEGY_STATIC = 1;
+    WEIGHT_STRATEGY_PREFER_HEALTHY = 2;
+    WEIGHT_STRATEGY_LOCALITY = 3;
+  }
+
+  optional TrafficRoutingMatchRecord match = 1;
+  repeated TrafficRoutingBackendRecord backends = 2;
+  WeightStrategy weight_strategy = 3;
+}
+
+message TrafficRoutingAvailabilityRecord {
+  optional uint32 min_healthy_backends = 1;
+  optional uint32 min_distinct_locations = 2;
+  repeated string location_labels = 3;
+}
+
+message TrafficRoutingResiliencyRecord {
+  optional uint32 timeout_ms = 1;
+  optional uint32 retries = 2;
+}
+
+message TrafficRoutingIntentRecord {
+  string service = 1;
+  string tenant_id = 2;
+  repeated TrafficRoutingRuleRecord rules = 3;
+  optional TrafficRoutingAvailabilityRecord availability = 4;
+  optional TrafficRoutingResiliencyRecord resiliency = 5;
+}
+
+message TrafficRoutingPlanRecord {
+  string plan_id = 1;
+  TrafficRoutingIntentRecord intent = 2;
+  repeated TrafficRoutingBackendRecord backends = 3;
+  optional string station_id = 4;
+  optional string rail_hash = 5;
+  string created_at = 6;
+  bool degraded = 7;
+  repeated string notes = 8;
+}
+
+message TrafficRoutingApplyResultRecord {
+  enum ProviderKind {
+    PROVIDER_KIND_UNSPECIFIED = 0;
+    PROVIDER_KIND_SIMPLE = 1;
+    PROVIDER_KIND_CLOUDFLARE = 2;
+    PROVIDER_KIND_FUNNEL = 3;
+    PROVIDER_KIND_VERCEL = 4;
+    PROVIDER_KIND_LAKEBED = 5;
+    PROVIDER_KIND_OTHER = 6;
+  }
+
+  enum Realization {
+    REALIZATION_UNSPECIFIED = 0;
+    REALIZATION_FULL = 1;
+    REALIZATION_PARTIAL = 2;
+    REALIZATION_NONE = 3;
+  }
+
+  string plan_id = 1;
+  ProviderKind provider = 2;
+  Realization realized = 3;
+  repeated string notes = 4;
+  uint32 applied_rules = 5;
+  repeated string unmet = 6;
+  repeated string capabilities = 7;
+}
+
+message TrafficRoutingStatusRecord {
+  string plan_id = 1;
+  bool active = 2;
+  TrafficRoutingApplyResultRecord.Realization realized = 3;
+  repeated string notes = 4;
+}
+
+message TrafficRoutingRevokeResultRecord {
+  bool ok = 1;
+  repeated string notes = 2;
+}

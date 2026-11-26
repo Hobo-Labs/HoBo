@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/draft-plan-preview-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/plan-preview.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

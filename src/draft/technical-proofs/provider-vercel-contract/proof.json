@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "provider-vercel-contract",
+  "title": "HOBO-178 Vercel Provider Contract POC",
+  "linear": "HOBO-178",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/provider-capability-conformance-suites"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

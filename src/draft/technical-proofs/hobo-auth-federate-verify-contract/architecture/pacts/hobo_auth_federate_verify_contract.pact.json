@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboAuthFederateVerifyContractConsumer"
+  },
+  "provider": {
+    "name": "HoboAuthFederateVerifyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Auth Federate Verify Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-auth-federate-verify-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_auth_federate_verify_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

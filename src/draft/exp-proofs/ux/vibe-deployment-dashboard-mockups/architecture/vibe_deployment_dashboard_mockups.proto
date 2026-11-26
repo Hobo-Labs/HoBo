@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-544 dashboard mockup fixture.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibeDeploymentDashboardProofMode {
+  VIBE_DEPLOYMENT_DASHBOARD_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_DEPLOYMENT_DASHBOARD_PROOF_MODE_LIVE = 1;
+  VIBE_DEPLOYMENT_DASHBOARD_PROOF_MODE_SIMULATED = 2;
+  VIBE_DEPLOYMENT_DASHBOARD_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_DEPLOYMENT_DASHBOARD_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibeDeploymentDashboardFreshness {
+  string status = 1;
+  string observed_at = 2;
+  string freshness_bound = 3;
+  string stale_disposition = 4;
+}
+
+message VibeDeploymentDashboardFieldGroup {
+  string id = 1;
+  string surface = 2;
+  string projection_source = 3;
+  VibeDeploymentDashboardFreshness freshness = 4;
+  string owner = 5;
+  string tenant_rbac_disposition = 6;
+  string safe_next_action = 7;
+  VibeDeploymentDashboardProofMode proof_mode = 8;
+}
+
+message VibeDeploymentDashboardWireframe {
+  string id = 1;
+  string surface = 2;
+  string title = 3;
+  repeated string personas = 4;
+  repeated string questions_answered = 5;
+  repeated string field_group_ids = 6;
+}
+
+message VibeDeploymentDashboardScenarioPath {
+  string id = 1;
+  string narrative = 2;
+  repeated string field_group_ids = 3;
+  string safe_outcome = 4;
+}
+
+message VibeDeploymentDashboardQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  string consuming_surface = 4;
+  string dashboard_use = 5;
+}
+
+message VibeDeploymentDashboardMockupsRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated VibeDeploymentDashboardQuickstartFixtureReference quickstart_fixture_refs = 6;
+  repeated string personas = 7;
+  repeated VibeDeploymentDashboardWireframe wireframes = 8;
+  repeated VibeDeploymentDashboardFieldGroup field_groups = 9;
+  repeated VibeDeploymentDashboardScenarioPath scenario_paths = 10;
+  repeated string accessibility_notes = 11;
+  repeated string scope_out = 12;
+}

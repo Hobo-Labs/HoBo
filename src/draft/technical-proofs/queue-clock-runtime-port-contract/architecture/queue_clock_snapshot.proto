@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+import "clock_port.proto";
+import "queue_port.proto";
+
+// Snapshot projection cache for queue + clock restart simulation.
+
+message QueueClockSnapshotRecord {
+  string version = 1;
+  string seed = 2;
+  int64 now_ms = 3;
+  repeated QueueMessage messages = 4;
+  ClockSnapshot clock = 5;
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "release-channels-scope",
+  "experienceType": "dx",
+  "title": "Release Channels Scope POC",
+  "linear": "HOBO-431",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

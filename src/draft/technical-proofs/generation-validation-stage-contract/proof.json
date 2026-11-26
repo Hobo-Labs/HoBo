@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "generation-validation-stage-contract",
+  "title": "Generation Validation Stage Contract POC",
+  "linear": "HOBO-327",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/generation-pipeline-io-contract",
+      "src/draft/technical-proofs/no-egress-generation-sandbox-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

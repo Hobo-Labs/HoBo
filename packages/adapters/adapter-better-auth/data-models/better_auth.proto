@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package hobo.adapter_better_auth.v1;
+
+// Wire records for the Better Auth issuer adapter.
+//
+// Two invariants are load-bearing here and are expressed as constraints in the
+// matching .cue rather than as prose:
+//
+//   1. `signing_secret_ref` is a locator, never material. The app holds a
+//      custody URI; the signing key itself is brokered (ADR-0113/ADR-0161) and
+//      has no field to live in on any record in this file.
+//   2. `claims_mapping_version` travels with every mapped principal. ADR-0073
+//      makes the claims to roles/tenancy mapping an explicit, versioned,
+//      conformance-tested part of each IdP adapter, so a principal that cannot
+//      name the rules that produced it is not representable.
+
+// The registry entry that makes this adapter selectable by Matching.
+message AuthAdapterDescriptorRecord {
+  string contract = 1; // hobo.auth-adapter/v1
+  string id = 2; // better-auth
+  string display_name = 3;
+  AuthAdapterHostingKind hosting = 4;
+  // Ports the bundle composes rather than owning: the relational store, the
+  // brokered secret, and the HTTP route mount. Sorted, so the record is
+  // byte-stable.
+  repeated string required_ports = 5;
+  string claims_mapping_version = 6;
+  bool supports_organizations = 7;
+}
+
+enum AuthAdapterHostingKind {
+  AUTH_ADAPTER_HOSTING_KIND_UNSPECIFIED = 0;
+  AUTH_ADAPTER_HOSTING_KIND_SELF_HOSTED = 1;
+  AUTH_ADAPTER_HOSTING_KIND_HOSTED = 2;
+}
+
+// A parsed adapter config. Only the parse boundary mints one.
+message BetterAuthConfigRecord {
+  string contract = 1; // hobo.auth-adapter/v1
+  string adapter_id = 2; // better-auth
+  // Absolute mount path for the auth routes, e.g. "/api/auth".
+  string base_path = 3;
+  // Custody locator only. A signing key never appears in this record.
+  string signing_secret_ref = 4;
+  // Capability profile of the relational store the auth tables live in.
+  string database_profile = 5;
+  bool email_and_password_enabled = 6;
+  // Provider slugs, deduped and sorted. Provider credentials are brokered
+  // separately and are absent by construction.
+  repeated string social_providers = 7;
+  bool organizations_enabled = 8;
+}
+
+// The principal derived from verified claims.
+message MappedPrincipalRecord {
+  string subject = 1;
+  string issuer = 2;
+  string email = 3;
+  string organization_id = 4;
+  // Deduped and sorted, so issue order can never become authorization signal.
+  repeated string roles = 5;
+  string claims_mapping_version = 6;
+}
+
+// A refusal from one of this adapter's parse boundaries. Every refusal names a
+// code and carries human-actionable remediation; a refusal without remediation
+// is a dead end for the operator.
+message BetterAuthRefusalRecord {
+  string code = 1;
+  string message = 2;
+  string remediation = 3;
+}

@@ -1,0 +1,922 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/LocalProvider"
+    },
+    {
+      "$ref": "#/$defs/GithubProvider"
+    },
+    {
+      "$ref": "#/$defs/BlacksmithProvider"
+    },
+    {
+      "$ref": "#/$defs/DepotProvider"
+    },
+    {
+      "$ref": "#/$defs/WarpbuildProvider"
+    },
+    {
+      "$ref": "#/$defs/KubernetesProvider"
+    },
+    {
+      "$ref": "#/$defs/HoboBoxWorkerProvider"
+    },
+    {
+      "$ref": "#/$defs/VercelProvider"
+    },
+    {
+      "$ref": "#/$defs/Agent37Provider"
+    }
+  ],
+  "$defs": {
+    "LocalProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema4"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema0": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,80}$"
+    },
+    "__schema1": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/-]{1,200}$"
+    },
+    "__schema2": {
+      "type": "string",
+      "pattern": "^(?![Hh][Oo][Bb][Oo]$)[A-Za-z0-9_.-]{1,100}$"
+    },
+    "__schema3": {
+      "type": "boolean"
+    },
+    "__schema4": {
+      "type": "string",
+      "const": "local"
+    },
+    "GithubProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "string",
+      "const": "github"
+    },
+    "BlacksmithProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema6"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "string",
+      "const": "blacksmith"
+    },
+    "DepotProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema7": {
+      "type": "string",
+      "const": "depot"
+    },
+    "WarpbuildProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema8"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema8": {
+      "type": "string",
+      "const": "warpbuild"
+    },
+    "KubernetesProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "scaleSet": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "engine": {
+          "$ref": "#/$defs/__schema13"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "scaleSet",
+          "engine"
+        ]
+      }
+    },
+    "__schema9": {
+      "type": "string",
+      "const": "kubernetes"
+    },
+    "__schema10": {
+      "$ref": "#/$defs/KubernetesScaleSet"
+    },
+    "KubernetesScaleSet": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/KubernetesName"
+        },
+        "minRunners": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "maxRunners": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "namespace": {
+          "$ref": "#/$defs/KubernetesName"
+        }
+      },
+      "required": [
+        "name",
+        "maxRunners",
+        "namespace"
+      ],
+      "additionalProperties": false
+    },
+    "KubernetesName": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+    },
+    "__schema11": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "__schema12": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "__schema13": {
+      "$ref": "#/$defs/DaggerEngine"
+    },
+    "DaggerEngine": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/KubernetesName"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "HoboBoxWorkerProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema14"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema14": {
+      "type": "string",
+      "const": "hobo-box-worker"
+    },
+    "VercelProvider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "location": {
+          "$ref": "#/$defs/__schema16"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind",
+        "location"
+      ],
+      "additionalProperties": false
+    },
+    "__schema15": {
+      "type": "string",
+      "const": "vercel"
+    },
+    "__schema16": {
+      "type": "string",
+      "enum": [
+        "vercel",
+        "local",
+        "remote"
+      ]
+    },
+    "Agent37Provider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "connectionRef": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "enabled": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema17"
+        },
+        "pool": {
+          "$ref": "#/$defs/Agent37Pool"
+        }
+      },
+      "required": [
+        "id",
+        "connectionRef",
+        "runsOn",
+        "kind",
+        "pool"
+      ],
+      "additionalProperties": false
+    },
+    "__schema17": {
+      "type": "string",
+      "const": "agent37"
+    },
+    "Agent37Pool": {
+      "type": "object",
+      "properties": {
+        "minBoxes": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "maxBoxes": {
+          "$ref": "#/$defs/__schema19"
+        },
+        "type": {
+          "$ref": "#/$defs/__schema20"
+        },
+        "size": {
+          "$ref": "#/$defs/Agent37Size"
+        },
+        "region": {
+          "$ref": "#/$defs/__schema27"
+        },
+        "template": {
+          "$ref": "#/$defs/__schema28"
+        },
+        "idleTtlSeconds": {
+          "$ref": "#/$defs/__schema29"
+        },
+        "jobTimeoutSeconds": {
+          "$ref": "#/$defs/__schema30"
+        },
+        "labels": {
+          "$ref": "#/$defs/__schema31"
+        },
+        "network": {
+          "$ref": "#/$defs/__schema32"
+        },
+        "budget": {
+          "$ref": "#/$defs/__schema34"
+        },
+        "allowAboveFreeTier": {
+          "$ref": "#/$defs/__schema35"
+        }
+      },
+      "required": [
+        "minBoxes",
+        "maxBoxes",
+        "type",
+        "size",
+        "region",
+        "template",
+        "idleTtlSeconds",
+        "jobTimeoutSeconds",
+        "labels",
+        "network",
+        "budget"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "region": {
+                "enum": [
+                  "eu",
+                  "ap-south"
+                ]
+              },
+              "type": {
+                "const": "default"
+              }
+            },
+            "required": [
+              "region",
+              "type"
+            ]
+          }
+        },
+        {
+          "not": {
+            "properties": {
+              "type": {
+                "const": "default"
+              },
+              "size": {
+                "properties": {
+                  "cpu": {
+                    "const": 8
+                  }
+                },
+                "required": [
+                  "cpu"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "size"
+            ]
+          }
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "allowAboveFreeTier": {
+                  "const": true
+                }
+              },
+              "required": [
+                "allowAboveFreeTier"
+              ]
+            },
+            {
+              "properties": {
+                "size": {
+                  "properties": {
+                    "memory": {
+                      "const": 4
+                    }
+                  },
+                  "required": [
+                    "memory"
+                  ]
+                },
+                "maxBoxes": {
+                  "maximum": 8
+                }
+              },
+              "required": [
+                "size",
+                "maxBoxes"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "allowAboveFreeTier": {
+                  "const": true
+                }
+              },
+              "required": [
+                "allowAboveFreeTier"
+              ]
+            },
+            {
+              "properties": {
+                "size": {
+                  "properties": {
+                    "memory": {
+                      "const": 8
+                    }
+                  },
+                  "required": [
+                    "memory"
+                  ]
+                },
+                "maxBoxes": {
+                  "maximum": 4
+                }
+              },
+              "required": [
+                "size",
+                "maxBoxes"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "allowAboveFreeTier": {
+                  "const": true
+                }
+              },
+              "required": [
+                "allowAboveFreeTier"
+              ]
+            },
+            {
+              "properties": {
+                "size": {
+                  "properties": {
+                    "memory": {
+                      "const": 16
+                    }
+                  },
+                  "required": [
+                    "memory"
+                  ]
+                },
+                "maxBoxes": {
+                  "maximum": 2
+                }
+              },
+              "required": [
+                "size",
+                "maxBoxes"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "allowAboveFreeTier": {
+                  "const": true
+                }
+              },
+              "required": [
+                "allowAboveFreeTier"
+              ]
+            },
+            {
+              "properties": {
+                "size": {
+                  "properties": {
+                    "memory": {
+                      "const": 32
+                    }
+                  },
+                  "required": [
+                    "memory"
+                  ]
+                },
+                "maxBoxes": {
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "size",
+                "maxBoxes"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "allowAboveFreeTier": {
+                  "const": true
+                }
+              },
+              "required": [
+                "allowAboveFreeTier"
+              ]
+            },
+            {
+              "properties": {
+                "size": {
+                  "properties": {
+                    "memory": {
+                      "const": 64
+                    }
+                  },
+                  "required": [
+                    "memory"
+                  ]
+                },
+                "maxBoxes": {
+                  "maximum": 0
+                }
+              },
+              "required": [
+                "size",
+                "maxBoxes"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "__schema18": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "__schema19": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "__schema20": {
+      "type": "string",
+      "enum": [
+        "default",
+        "vm",
+        "performance"
+      ]
+    },
+    "Agent37Size": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema21"
+        },
+        {
+          "$ref": "#/$defs/__schema23"
+        },
+        {
+          "$ref": "#/$defs/__schema24"
+        },
+        {
+          "$ref": "#/$defs/__schema25"
+        },
+        {
+          "$ref": "#/$defs/__schema26"
+        }
+      ]
+    },
+    "__schema21": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "number",
+          "const": 2
+        },
+        "memory": {
+          "type": "number",
+          "const": 4
+        },
+        "disk": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "cpu",
+        "memory",
+        "disk"
+      ],
+      "additionalProperties": false
+    },
+    "__schema22": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "__schema23": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "number",
+          "const": 4
+        },
+        "memory": {
+          "type": "number",
+          "const": 8
+        },
+        "disk": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "cpu",
+        "memory",
+        "disk"
+      ],
+      "additionalProperties": false
+    },
+    "__schema24": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "number",
+          "const": 4
+        },
+        "memory": {
+          "type": "number",
+          "const": 16
+        },
+        "disk": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "cpu",
+        "memory",
+        "disk"
+      ],
+      "additionalProperties": false
+    },
+    "__schema25": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "number",
+          "const": 4
+        },
+        "memory": {
+          "type": "number",
+          "const": 32
+        },
+        "disk": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "cpu",
+        "memory",
+        "disk"
+      ],
+      "additionalProperties": false
+    },
+    "__schema26": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "number",
+          "const": 8
+        },
+        "memory": {
+          "type": "number",
+          "const": 64
+        },
+        "disk": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "cpu",
+        "memory",
+        "disk"
+      ],
+      "additionalProperties": false
+    },
+    "__schema27": {
+      "type": "string",
+      "enum": [
+        "us",
+        "eu",
+        "ap-south"
+      ]
+    },
+    "__schema28": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$"
+    },
+    "__schema29": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600
+    },
+    "__schema30": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 19800
+    },
+    "__schema31": {
+      "minItems": 1,
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema2"
+      },
+      "uniqueItems": true
+    },
+    "__schema32": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema33"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "allow"
+      ],
+      "additionalProperties": false
+    },
+    "__schema33": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^(?=.{1,253}$)(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}|\\*\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.){2,}[a-z]{2,63})$"
+    },
+    "__schema34": {
+      "type": "object",
+      "properties": {
+        "limitMicros": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "period": {
+          "type": "string",
+          "const": "month"
+        },
+        "maxCreatesPerHour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "required": [
+        "limitMicros",
+        "period",
+        "maxCreatesPerHour"
+      ],
+      "additionalProperties": false
+    },
+    "__schema35": {
+      "type": "boolean"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project-providers.schema.json",
+  "title": "HoBo CI provider"
+}

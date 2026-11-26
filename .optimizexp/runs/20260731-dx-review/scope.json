@@ -1,0 +1,39 @@
+{
+  "runId": "20260731-dx-review",
+  "experiences": [
+    "dx"
+  ],
+  "projects": [
+    "all"
+  ],
+  "personas": [
+    "product-app-developer",
+    "product-platform-engineer",
+    "developer"
+  ],
+  "personaResolution": "dx intersection (review focused on product-app-developer + platform-engineer; full dx roster available)",
+  "dxPersonasAvailable": 15,
+  "featuresReviewed": [
+    "narrow-local-validation",
+    "cli-help-and-doctor"
+  ],
+  "featuresInScope": [
+    "agent-check-staged",
+    "agent-tooling-setup",
+    "cli-help-and-doctor",
+    "design-system-contract",
+    "draft-experience-proof-navigation",
+    "narrow-local-validation"
+  ],
+  "surfaces": [
+    "pnpm run agent:check -- --staged",
+    "pnpm run doctor"
+  ],
+  "maxIterations": 1,
+  "minIterations": 1,
+  "iterationsCompleted": 1,
+  "iterationMeaning": "persona-scenario-review-passes",
+  "stopReason": "cap",
+  "hostAgent": "grok",
+  "autoInitRan": false
+}

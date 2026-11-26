@@ -1,0 +1,18 @@
+{
+  "id": "ado-example",
+  "accountId": "local",
+  "timeoutSeconds": 60,
+  "steps": [
+    {
+      "id": "check",
+      "argv": [
+        "node",
+        "-e",
+        "require(\"node:fs\").writeFileSync(\"hobo-ci-result.txt\", \"checks passed\\n\")"
+      ]
+    }
+  ],
+  "artifactPaths": [
+    "hobo-ci-result.txt"
+  ]
+}

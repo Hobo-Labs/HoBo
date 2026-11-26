@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DenyCeilingAlgebraPocConsumer"
+  },
+  "provider": {
+    "name": "DenyCeilingAlgebraPocBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Deny Ceiling Algebra Poc boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/deny-ceiling-algebra-poc/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.deny_ceiling_algebra_poc/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

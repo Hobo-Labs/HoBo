@@ -1,0 +1,23 @@
+{
+  "id": "regional-dr-failover",
+  "title": "DR runbook certifies fencing, RPO honesty, and replay before failover",
+  "persona": "sre-operator",
+  "bddScenario": "Given a production region loss, when the DR runbook evaluates failover, then it verifies fencing, reports RPO honestly, replays the replicated event log, and only then allows a traffic-shift proposal.",
+  "verticalSlice": "dr-fence-replay-failover",
+  "incidentId": "inc-crew-004",
+  "severity": "SEV1",
+  "correlationId": "corr-regional-dr-failover",
+  "failedRegion": "prod-us-central",
+  "survivorRegion": "prod-us-east",
+  "rpoSeconds": 42,
+  "replayedEvents": 1283,
+  "replayHash": "sha256-regional-dr-failover-replay",
+  "slo": {
+    "mttrMinutes": 21
+  },
+  "mockInteractions": {
+    "sre-operator-to-policy-engine": "allow-fenced-failover",
+    "dr-runbook-to-replicated-event-log": "verify-fenced-replay",
+    "sre-operator-to-knowledge-base": "publish-dr-postmortem"
+  }
+}

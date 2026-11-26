@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/draft-resource-definitions-matching-packs-contract",
+  "private": true,
+  "type": "module",
+  "main": "./src/resource-definitions-matching-packs.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

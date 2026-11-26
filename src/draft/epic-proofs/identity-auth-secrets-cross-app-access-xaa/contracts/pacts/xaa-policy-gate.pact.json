@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "EnterprisePolicyGate" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "allows XAA mint only for verified delegation and inferred scope",
+      "providerStates": [{ "name": "user alice delegated tasks write to agent scheduler" }],
+      "request": {
+        "method": "POST",
+        "path": "/policy/decide",
+        "headers": { "content-type": "application/json" },
+        "body": { "subject": "agent_scheduler", "delegatedBy": "user_alice", "target": "asana", "scope": ["tasks:write"] }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "decision": "allow", "reason": "verified-delegation-and-inferred-scope" }
+      }
+    }
+  ]
+}

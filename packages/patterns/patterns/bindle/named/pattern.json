@@ -1,0 +1,66 @@
+{
+  "id": "bindle.named",
+  "version": 1,
+  "kind": "concept",
+  "maturity": "stable",
+  "title": "Named Bindle",
+  "intent": "declare a named bindle",
+  "description": "declare a named bindle",
+  "aliases": [
+    "bindle",
+    "named bindle"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "artifact:bindle",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": true,
+      "default": "app",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "bindle"
+  ],
+  "requires": [],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    },
+    {
+      "id": "file",
+      "kind": "file",
+      "path": "body/file.ts.tpl",
+      "language": "ts"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

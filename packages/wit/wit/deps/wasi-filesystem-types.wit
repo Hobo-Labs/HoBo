@@ -1,0 +1,10 @@
+package wasi:filesystem@0.2.0;
+
+interface types {
+  record descriptor {
+    path: string,
+    rights: list<string>,
+  }
+
+  open: func(path: string) -> descriptor;
+}

@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "IdentityReferenceApp" },
+  "provider": { "name": "RelaySvidAuthorizer" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" }, "epic": "identity-auth-secrets-cross-app-access-xaa" },
+  "interactions": [
+    {
+      "description": "accepts relay attach only for registered target and tenant SVID",
+      "providerStates": [{ "name": "private-orders-db target is registered for tenant-a" }],
+      "request": {
+        "method": "POST",
+        "path": "/relay/attach",
+        "headers": { "content-type": "application/json" },
+        "body": { "targetId": "private-orders-db", "svidSubject": "spiffe://yard/tenant-a/relay/private-network" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "decision": "allow", "transport": "outbound-443", "credentialEgress": "references-only" }
+      }
+    }
+  ]
+}

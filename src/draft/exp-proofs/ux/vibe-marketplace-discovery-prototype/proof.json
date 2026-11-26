@@ -1,0 +1,22 @@
+{
+  "layer": "exp",
+  "slug": "vibe-marketplace-discovery-prototype",
+  "experienceType": "ux",
+  "title": "Vibe Marketplace Discovery Prototype",
+  "linear": "HOBO-562",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
+      "src/draft/exp-proofs/ux/vibe-marketplace-trust-copy-states"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

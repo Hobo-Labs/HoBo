@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dx-resource-lifecycle-scenario-matrix",
+  "experienceType": "dx",
+  "title": "DX resource lifecycle scenario matrix",
+  "linear": "HOBO-567",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

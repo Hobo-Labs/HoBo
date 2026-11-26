@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "@hobo/cli"
+  },
+  "provider": {
+    "name": "@hobo/collector"
+  },
+  "interactions": [
+    {
+      "description": "CLI collect invokes collector engine with bindle source descriptor",
+      "request": {
+        "method": "POST",
+        "path": "/collector/collect",
+        "body": {
+          "bindleId": "hello-bindle",
+          "fileName": "bindle.ts",
+          "guestLanguage": "ts"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "manifest": {
+            "schema": "hobo.manifest/v1"
+          },
+          "manifestHash": "sha256:cf9b2ce9cf6621bd747f0c2f10bfba36ac4a956ddc235ee591280d4772c5e87e",
+          "coverage": {
+            "ok": true
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

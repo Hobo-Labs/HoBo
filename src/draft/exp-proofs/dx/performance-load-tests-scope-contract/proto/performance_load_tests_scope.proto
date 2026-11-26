@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package hobo.performance_load_tests.v1;
+
+// Data shapes for the HOBO-440 Performance & Load Tests M0 scope record.
+// These mirror the structures validated by
+// `src/performance-load-tests-scope.mjs` so the design-time contract has a
+// language-neutral schema for downstream M1+ consumers.
+
+enum ProofMode {
+  PROOF_MODE_UNSPECIFIED = 0;
+  PROOF_MODE_DESIGN_RECORD = 1;
+  PROOF_MODE_CONTRACT_TEST = 2;
+  PROOF_MODE_REFERENCE_FIXTURE = 3;
+  PROOF_MODE_RELEASE_HANDOFF = 4;
+  PROOF_MODE_SUPPORT_HANDOFF = 5;
+  PROOF_MODE_SECURITY_REVIEW = 6;
+}
+
+message Persona {
+  string role = 1;
+  string need = 2;
+}
+
+message DesignDependency {
+  string source = 1;
+  string reason = 2;
+}
+
+message InitiativeDependency {
+  string owner = 1;
+  string consumes = 2;
+  string scope_boundary = 3;
+}
+
+message M1Evidence {
+  string kind = 1;
+  string owner = 2;
+  ProofMode proof_mode = 3;
+  string source = 4;
+  string proves = 5;
+}
+
+message FollowUpGate {
+  string allowed_after = 1;
+  string blocked_before = 2;
+}
+
+message PerformanceLoadTestsScope {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string goal = 4;
+  repeated Persona personas = 5;
+  repeated string scope_in = 6;
+  repeated string scope_out = 7;
+  repeated string non_goals = 8;
+  repeated DesignDependency dependencies = 9;
+  repeated InitiativeDependency initiative_dependencies = 10;
+  repeated string scenario_dimensions = 11;
+  repeated M1Evidence m1_evidence = 12;
+  FollowUpGate follow_up_gate = 13;
+}

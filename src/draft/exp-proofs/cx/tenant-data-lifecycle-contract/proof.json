@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "tenant-data-lifecycle-contract",
+  "experienceType": "cx",
+  "title": "Tenant Data Lifecycle Contract",
+  "linear": "HOBO-492",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

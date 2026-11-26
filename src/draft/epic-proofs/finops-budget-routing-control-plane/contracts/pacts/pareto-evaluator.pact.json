@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "ParetoEvaluator"
+  },
+  "interactions": [
+    {
+      "description": "construct Pareto frontier before preference selection",
+      "request": {
+        "method": "POST",
+        "path": "/pareto/evaluate"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "frontier": ["candidate-economy", "candidate-balanced", "candidate-premium"],
+          "dominated": ["candidate-wasteful"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

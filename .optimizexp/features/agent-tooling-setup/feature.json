@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "agent-tooling-setup",
+  "title": "Zero-key agent setup",
+  "experiences": [
+    "ax",
+    "dx"
+  ],
+  "personas": [
+    "product-coding-agent"
+  ],
+  "interfaces": [
+    "cli"
+  ],
+  "driver": "cli",
+  "surfaces": [
+    "bash scripts/setup-agent-tools.sh --help",
+    "bash scripts/agent-mcp-gbrain.sh"
+  ],
+  "tags": [
+    "@optimizexp",
+    "@ax",
+    "@dx"
+  ],
+  "bindings": {
+    "steps": "steps/bindings.steps.ts",
+    "implementations": "steps/implementations.ts",
+    "tests": "test/agent-tooling-setup.bindings.test.ts"
+  },
+  "implementationStatus": "wired",
+  "primaryCommand": "bash scripts/setup-agent-tools.sh --help"
+}

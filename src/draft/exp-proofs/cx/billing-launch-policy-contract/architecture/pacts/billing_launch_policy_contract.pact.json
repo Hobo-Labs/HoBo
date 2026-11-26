@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BillingLaunchPolicyContractConsumer"
+  },
+  "provider": {
+    "name": "BillingLaunchPolicyContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Billing Launch Policy Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/billing-launch-policy-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.billing_launch_policy_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

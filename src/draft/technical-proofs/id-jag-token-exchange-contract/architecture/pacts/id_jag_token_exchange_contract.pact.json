@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IdJagTokenExchangeContractConsumer"
+  },
+  "provider": {
+    "name": "IdJagTokenExchangeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Id Jag Token Exchange Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/id-jag-token-exchange-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.id_jag_token_exchange_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "consumer": {
+    "name": "@hobo/junctions"
+  },
+  "provider": {
+    "name": "@hobo/yards"
+  },
+  "interactions": [
+    {
+      "description": "junction accepts parsed Yard objects and composes a junction definition",
+      "request": {
+        "method": "POST",
+        "path": "/junctions/compose",
+        "body": {
+          "name": "my-app",
+          "yards": [
+            {
+              "kind": "yard",
+              "name": "aws",
+              "providerId": "aws"
+            },
+            {
+              "kind": "yard",
+              "name": "azure",
+              "providerId": "azure"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "kind": "junction",
+          "name": "my-app",
+          "members": [
+            "aws",
+            "azure"
+          ]
+        }
+      }
+    },
+    {
+      "description": "each member yard can extract its own half of the derived plan",
+      "request": {
+        "method": "GET",
+        "path": "/junctions/my-app/plan/aws"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "yardName": "aws",
+          "halves": [
+            {
+              "edgeId": "aws->azure",
+              "yardName": "aws",
+              "peerYardName": "azure",
+              "role": "source",
+              "tier": "overlay-mesh",
+              "tierLevel": 4
+            }
+          ],
+          "dnsRecordsToRealize": [
+            {
+              "recordName": "aws.my-app.junction.internal",
+              "recordType": "CNAME",
+              "target": "aws.aws.yard.internal",
+              "ownerYard": "aws"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

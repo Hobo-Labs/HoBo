@@ -1,0 +1,6 @@
+{
+  "appId": "demo.prod.app",
+  "published": 1,
+  "consumed": 1,
+  "yamlPreview": "apiVersion: dapr.io/v1alpha1\nkind: Component\nmetadata:\n  name: pubsub\nspec:\n  type: pubsub.kafka\n  version: v1\n  metadata:\n    - name: brokers\n      value: \"fromBinding:kafka-bootstrap\"\n    - name: authType\n      value: \"oidc\""
+}

@@ -1,0 +1,284 @@
+{
+  "consumer": {
+    "name": "VibeSupportWorkflowMockupsConsumer"
+  },
+  "provider": {
+    "name": "VibeSupportWorkflowMockupsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe Support Workflow Mockups boundary returns accepted HOBO-550 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-support-workflow-mockups/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-550",
+          "phase": "M1",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-support-workflow-mockups",
+          "proofPath": "docs/design/proofs/vibe-support-workflow-mockups/README.md",
+          "designRefs": [
+            "docs/design/support-workflow.md",
+            "docs/design/support-sla-channels.md",
+            "docs/design/launch-support-escalation.md",
+            "docs/design/incident-communications.md",
+            "docs/design/admin-console.md",
+            "docs/design/security-verification.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "simulated",
+              "supportUse": "support intake can cite accepted deploy transcript ids without claiming live provider operation"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "supportUse": "stale evidence support copy reuses the accepted quickstart stale-evidence fixture"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "live",
+              "supportUse": "future live recovery handoff stays gated by proof-mode label and owner route"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "supportUse": "scope-out quickstart claims stay visible as limitations, not support promises"
+            }
+          ],
+          "personas": [
+            "support lead",
+            "support operator",
+            "customer admin",
+            "incident commander",
+            "release owner",
+            "security/compliance reviewer"
+          ],
+          "mockups": [
+            {
+              "id": "wf-received-intake",
+              "state": "received",
+              "title": "Support intake with requester, channel, affected surface, and first safe summary",
+              "personas": ["support lead", "support operator", "customer admin"],
+              "questionsAnswered": [
+                "What was received, who asked for help, and what can support safely repeat back?",
+                "Which evidence is missing before severity and owner route become accepted?"
+              ],
+              "fixtureIds": ["swm-received-admin-request"]
+            },
+            {
+              "id": "wf-classified-triage",
+              "state": "classified",
+              "title": "Severity triage over accepted support SLA and escalation language",
+              "personas": ["support lead", "support operator", "incident commander", "release owner"],
+              "questionsAnswered": [
+                "Which severity applies and which owner must accept the next support boundary?",
+                "Does the issue need incident communication or stay in support workflow scope?"
+              ],
+              "fixtureIds": ["swm-classified-incident-risk"]
+            },
+            {
+              "id": "wf-evidence-linked",
+              "state": "evidence-linked",
+              "title": "Redacted proof links and source records attached to a support case",
+              "personas": ["support operator", "security/compliance reviewer", "release owner"],
+              "questionsAnswered": [
+                "Which proof package, docs source, quickstart fixture, or incident record is safe to link?",
+                "Is the evidence customer-safe, internal-only, or blocked on approval?"
+              ],
+              "fixtureIds": ["swm-evidence-linked-plan-block"]
+            },
+            {
+              "id": "wf-owner-routed",
+              "state": "owner-routed",
+              "title": "Owner route matrix for security, incident, docs, release, and support handoffs",
+              "personas": ["support lead", "incident commander", "security/compliance reviewer"],
+              "questionsAnswered": [
+                "Which owning initiative accepts the next action without mutating customer data here?",
+                "What must support say while the owner route is pending?"
+              ],
+              "fixtureIds": ["swm-owner-routed-security-approval"]
+            },
+            {
+              "id": "wf-customer-updated",
+              "state": "customer-updated",
+              "title": "Customer-safe update with limitation wording and next update condition",
+              "personas": ["support operator", "customer admin", "release owner"],
+              "questionsAnswered": [
+                "What can be told to the customer without exposing internals or promising an SLA?",
+                "When is the next update due and which owner can change the answer?"
+              ],
+              "fixtureIds": ["swm-customer-updated-limitation"]
+            },
+            {
+              "id": "wf-closed",
+              "state": "closed",
+              "title": "Closure state with approved answer, follow-up issue, or unsupported explanation",
+              "personas": ["support lead", "support operator", "customer admin"],
+              "questionsAnswered": [
+                "Does closure link an approved docs answer, a follow-up owner, or an unsupported-state explanation?",
+                "Can the request close without creating support automation or public launch claims?"
+              ],
+              "fixtureIds": ["swm-closed-docs-answer"]
+            }
+          ],
+          "fixtures": [
+            {
+              "id": "swm-received-admin-request",
+              "requester": "customer admin for workspace acme-prod",
+              "customerSafeSummary": "customer-safe intake summary with no raw secrets or tenant payloads",
+              "severity": "SEV2",
+              "affectedSurface": "workspace onboarding support form",
+              "ownerRoute": "Support Workflow / Customer Onboarding",
+              "evidenceLinks": [
+                "docs/design/support-workflow.md#required-support-evidence",
+                "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md#fixture-ids"
+              ],
+              "redactionState": "customer-safe",
+              "nextUpdateCondition": "when support classifies severity and affected surface",
+              "proofMode": "live"
+            },
+            {
+              "id": "swm-classified-incident-risk",
+              "requester": "support operator after launch-window alert",
+              "customerSafeSummary": "redacted incident-adjacent summary without responder-only notes",
+              "severity": "SEV1",
+              "affectedSurface": "resource lifecycle deploy quickstart",
+              "ownerRoute": "Incident Communications / Support Workflow",
+              "evidenceLinks": [
+                "docs/design/incident-communications.md#communication-surfaces",
+                "docs/design/launch-support-escalation.md#severity-matrix"
+              ],
+              "redactionState": "internal-only",
+              "nextUpdateCondition": "after incident commander confirms customer-visible impact",
+              "proofMode": "simulated"
+            },
+            {
+              "id": "swm-evidence-linked-plan-block",
+              "requester": "release owner reviewing blocked plan evidence",
+              "customerSafeSummary": "customer-safe blocked-plan summary with redacted proof ids",
+              "severity": "SEV3",
+              "affectedSurface": "plan/diff viewer handoff",
+              "ownerRoute": "Docs / Troubleshooting Guides",
+              "evidenceLinks": [
+                "fixture://rlq-manage-stale-evidence-v1",
+                "docs/design/troubleshooting-guides.md"
+              ],
+              "redactionState": "customer-safe",
+              "nextUpdateCondition": "once docs owner approves the customer-safe workaround",
+              "proofMode": "reference fixture"
+            },
+            {
+              "id": "swm-owner-routed-security-approval",
+              "requester": "security/compliance reviewer",
+              "customerSafeSummary": "scope-out raw customer-data request routed without disclosure",
+              "severity": "SEV0",
+              "affectedSurface": "support evidence redaction gate",
+              "ownerRoute": "Security Verification / Legal",
+              "evidenceLinks": [
+                "docs/design/security-verification.md#customer-communication",
+                "docs/design/support-workflow.md#scope-out-and-non-goals"
+              ],
+              "redactionState": "requires-security-approval",
+              "nextUpdateCondition": "before any customer-visible evidence leaves internal review",
+              "proofMode": "scope-out"
+            },
+            {
+              "id": "swm-customer-updated-limitation",
+              "requester": "customer admin awaiting support update",
+              "customerSafeSummary": "customer-safe limitation update without unsupported SLA language",
+              "severity": "SEV3",
+              "affectedSurface": "support ticket customer update",
+              "ownerRoute": "V1 Release Program & Cutline",
+              "evidenceLinks": [
+                "docs/design/support-sla-channels.md#sla-language-boundary",
+                "docs/design/known-limitations-register.md"
+              ],
+              "redactionState": "customer-safe",
+              "nextUpdateCondition": "when release owner accepts or rejects the limitation wording",
+              "proofMode": "simulated"
+            },
+            {
+              "id": "swm-closed-docs-answer",
+              "requester": "support lead closing an approved docs answer",
+              "customerSafeSummary": "redacted closure summary with approved docs source and owner",
+              "severity": "SEV3",
+              "affectedSurface": "docs portal troubleshooting answer",
+              "ownerRoute": "Support Workflow / Docs Portal",
+              "evidenceLinks": [
+                "docs/design/docs-portal.md",
+                "docs/design/support-workflow.md#intake-states"
+              ],
+              "redactionState": "customer-safe",
+              "nextUpdateCondition": "after follow-up issue or approved unsupported-state explanation is linked",
+              "proofMode": "reference fixture"
+            }
+          ],
+          "scenarioPaths": [
+            {
+              "id": "happy-path",
+              "narrative": "Support receives a customer-safe request, classifies it, links proof, updates the customer, and closes on approved docs.",
+              "fixtureIds": [
+                "swm-received-admin-request",
+                "swm-evidence-linked-plan-block",
+                "swm-closed-docs-answer"
+              ],
+              "safeOutcome": "customer receives approved support wording and a docs source without raw evidence exposure"
+            },
+            {
+              "id": "blocked-path",
+              "narrative": "Security-sensitive evidence blocks customer-visible update until the security/legal owner route accepts it.",
+              "fixtureIds": ["swm-owner-routed-security-approval"],
+              "safeOutcome": "request remains owner-routed with scope-out label instead of leaking customer data"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "narrative": "A stale quickstart or proof fixture creates a customer-safe limitation update instead of an unsupported claim.",
+              "fixtureIds": [
+                "swm-evidence-linked-plan-block",
+                "swm-customer-updated-limitation"
+              ],
+              "safeOutcome": "support states limitation and next update condition before promising readiness"
+            },
+            {
+              "id": "support-handoff",
+              "narrative": "Incident-adjacent severity routes to incident communications while support preserves redacted context.",
+              "fixtureIds": [
+                "swm-classified-incident-risk",
+                "swm-owner-routed-security-approval"
+              ],
+              "safeOutcome": "incident commander receives context and support keeps customer-safe boundary wording"
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order follows intake, triage, evidence, owner route, customer update, then closure regions.",
+            "Screen reader labels include state, severity, owner route, redaction state, proof mode, and next update condition.",
+            "Contrast is not the only signal; blocked, stale, internal-only, and scope-out states include explicit text labels.",
+            "Motion is optional; status changes and timeline transitions must respect reduced-motion preferences."
+          ],
+          "scopeOut": [
+            "No helpdesk software or ticket queue automation.",
+            "No production support UI.",
+            "No customer-data access, secret access, or support impersonation.",
+            "No incident command, on-call staffing, runbook execution, or notification dispatch.",
+            "No contractual SLA promise, public response-time guarantee, or paid support term.",
+            "No launch claim without evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

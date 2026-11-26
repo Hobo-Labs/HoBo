@@ -1,0 +1,21 @@
+{
+  "iteration": 0,
+  "cells": [
+    {
+      "persona": "product-app-developer",
+      "surface": "agent:check staged",
+      "harms": 0,
+      "friction": 2,
+      "uncertainty": 1
+    },
+    {
+      "persona": "product-app-developer",
+      "surface": "doctor",
+      "harms": 0,
+      "friction": 1,
+      "uncertainty": 1
+    }
+  ],
+  "metric_total": 4,
+  "metric_max": 2
+}

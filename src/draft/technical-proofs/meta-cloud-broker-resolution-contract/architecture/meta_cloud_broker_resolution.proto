@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-525
+// deterministic Meta-cloud Broker resolution proof.
+
+enum BrokerResolutionAction {
+  BROKER_RESOLUTION_ACTION_UNSPECIFIED = 0;
+  BROKER_RESOLUTION_ACTION_PROVISION = 1;
+  BROKER_RESOLUTION_ACTION_DEPLOY = 2;
+  BROKER_RESOLUTION_ACTION_BIND = 3;
+}
+
+enum BrokerRejectionCode {
+  BROKER_REJECTION_CODE_UNSPECIFIED = 0;
+  BROKER_REJECTION_CODE_MAPPING_AMBIGUOUS = 1;
+  BROKER_REJECTION_CODE_MAPPING_INCOMPATIBLE = 2;
+  BROKER_REJECTION_CODE_MAPPING_UNAVAILABLE = 3;
+}
+
+message BrokerManifestResource {
+  string resource_id = 1;
+  string interface = 2;
+  repeated string required_features = 3;
+  BrokerResolutionAction action = 4;
+}
+
+message BrokerContractManifest {
+  string schema = 1;
+  string manifest_id = 2;
+  string manifest_digest = 3;
+  repeated BrokerManifestResource resources = 4;
+}
+
+message BrokerMappingContract {
+  string mapping_id = 1;
+  string resource_id = 2;
+  string capability_id = 3;
+  string provider = 4;
+  bool approved = 5;
+}
+
+message BrokerCatalogCapability {
+  string capability_id = 1;
+  string provider = 2;
+  string interface = 3;
+  repeated string features = 4;
+  bool approved = 5;
+  bool compatible = 6;
+  bool available = 7;
+  bool default_for_interface = 8;
+}
+
+message BrokerEnvironmentSnapshot {
+  string schema = 1;
+  string snapshot_id = 2;
+  string environment_digest = 3;
+  string catalog_snapshot_digest = 4;
+  repeated BrokerMappingContract mappings = 5;
+  repeated BrokerCatalogCapability catalog = 6;
+}
+
+message BrokerResourcePlan {
+  string resource_id = 1;
+  string provider = 2;
+  string capability_id = 3;
+  BrokerResolutionAction action = 4;
+}
+
+message BrokerReplayInputs {
+  string manifest_digest = 1;
+  string environment_digest = 2;
+  string catalog_snapshot_digest = 3;
+}
+
+message BrokerResolutionReceipt {
+  string schema = 1;
+  string receipt_id = 2;
+  string resolution_authority = 3;
+  string manifest_id = 4;
+  string environment_snapshot_id = 5;
+  BrokerReplayInputs replay_inputs = 6;
+  repeated BrokerResourcePlan resource_plans = 7;
+  string digest = 8;
+  string signature = 9;
+}
+
+message BrokerResolutionRejection {
+  string schema = 1;
+  string rejection_id = 2;
+  string resolution_authority = 3;
+  BrokerReplayInputs replay_inputs = 4;
+  BrokerRejectionCode code = 5;
+  string message = 6;
+  repeated string details = 7;
+  bool fallback_attempted = 8;
+  string digest = 9;
+  string signature = 10;
+}

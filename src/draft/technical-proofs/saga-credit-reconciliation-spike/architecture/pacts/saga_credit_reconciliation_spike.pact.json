@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SagaCreditReconciliationSpikeConsumer"
+  },
+  "provider": {
+    "name": "SagaCreditReconciliationSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Saga Credit Reconciliation Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/saga-credit-reconciliation-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.saga_credit_reconciliation_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

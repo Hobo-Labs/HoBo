@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package hobo.connector.acp.v1;
+
+// Wire records for the production ACP protocol connector
+// (@hobo/connector-acp, HOBO-721). CUE constraints in connector_acp.cue
+// bound every type declared here; the runtime parses untrusted documents
+// into derived parsed types before use.
+
+// The SVID-bound, user-delegated agent principal (ai-native-agent-auth.md).
+message AgentPrincipalRecord {
+  string kind = 1;
+  string id = 2;
+  string svid = 3;
+  string delegated_by_kind = 4;
+  string delegated_by_id = 5;
+}
+
+// A governed session opening on the durable audit stream.
+message SessionOpenedRecord {
+  string session_id = 1;
+  string connector = 2;
+  string protocol = 3;
+  AgentPrincipalRecord principal = 4;
+}
+
+// One decided tool-permission request (deny-ceiling, fail closed).
+message PolicyDecidedRecord {
+  string session_id = 1;
+  string tool_call_id = 2;
+  string action = 3;
+  string action_class = 4;
+  string effect = 5;
+  repeated string reasons = 6;
+}
+
+// The structured refusal shown to the agent on denial.
+message ToolCallRefusedRecord {
+  string session_id = 1;
+  string tool_call_id = 2;
+  string action = 3;
+  string refusal = 4;
+}
+
+// The manifest external-dependency entry connector(...) lowers to.
+message ConnectorManifestEntryRecord {
+  string type = 1;
+  string protocol = 2;
+  string via = 3;
+  string on_behalf_of = 4;
+  repeated string allow = 5;
+  repeated string observed_scopes = 6;
+  string requested_scope_source = 7;
+  bool usage_exceeds_declared_allow = 8;
+}
+
+// The Executor sandbox posture the agent subprocess runs under (s3-07).
+message SandboxPostureRecord {
+  string schema = 1;
+  bool ambient_credentials = 2;
+  string filesystem_scope = 3;
+  string filesystem_root = 4;
+  string network_scope = 5;
+  repeated string network_allowlist = 6;
+  repeated string env_allowlist = 7;
+}

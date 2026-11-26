@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-supported-platform-matrix-contract",
+  "experienceType": "cx",
+  "title": "V1 Supported Platform Matrix Contract",
+  "linear": "HOBO-511",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

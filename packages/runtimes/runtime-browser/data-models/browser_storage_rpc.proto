@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package hobo.runtime_browser.v1;
+
+// Typed Worker RPC envelope for browser SQLite storage.
+// No SQL, file paths, or SQLite handles appear on this boundary.
+
+message BrowserStorageRpcRequest {
+  string id = 1;
+  string op = 2;
+  bytes payload = 3;
+}
+
+message BrowserStorageRpcResponse {
+  string id = 1;
+  bool ok = 2;
+  bytes result = 3;
+  optional string error_name = 4;
+  optional string error_message = 5;
+  optional string error_code = 6;
+}
+
+message BrowserPersistenceStatus {
+  string mode = 1; // opfs-sahpool | transient-memory | unavailable
+  optional string reason = 2;
+}

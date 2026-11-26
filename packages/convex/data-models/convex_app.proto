@@ -1,0 +1,61 @@
+// Wire records for Convex app discovery.
+//
+// This package turns a repo-relative directory into two durable facts: that a
+// Bindle web resource is a Convex app rooted there, and which environment
+// dependencies shipping it will require. Both records leave the process — the
+// first as a Bindle annotation, the second as the dependency list a deployment
+// plan is compiled from.
+//
+// A record here names an environment variable; it never carries the value of
+// one. `CONVEX_DEPLOY_KEY` appears below as a key that must be supplied by a
+// broker-minted locator, which is why these records are safe to append to an
+// event store, put in a plan, and show in a diff.
+
+syntax = "proto3";
+
+package hobo.convex.v1;
+
+// Which Bindle primitive supplies a discovered key. `DATA` means Matching
+// realizes the backend and the URL comes from the resulting binding, not from
+// a value someone pasted into config.
+enum ConvexBindleKind {
+  CONVEX_BINDLE_KIND_UNSPECIFIED = 0;
+  CONVEX_BINDLE_KIND_ENV = 1;
+  CONVEX_BINDLE_KIND_EXTERNAL = 2;
+  CONVEX_BINDLE_KIND_DATA = 3;
+}
+
+// The marker stamped on a `b.web(convexApp(root))` resource. Deliberately thin:
+// a framework tag and a repo-relative root, so a Bindle stays provider-neutral
+// and nothing about Convex hosting leaks into the definition.
+message ConvexWebAppMetaRecord {
+  // Always "convex".
+  string framework = 1;
+  // Repo-relative, trimmed, never absolute and never containing "..".
+  string root = 2;
+}
+
+// One bucket of discovered keys and the Bindle primitive that should supply
+// them.
+message ConvexEnvDependencyRecord {
+  ConvexBindleKind kind = 1;
+  // How the keys are supplied, in words a reviewer can check, e.g.
+  // "broker-minted deploy key (never Bindle config)".
+  string via = 2;
+  // Variable names only. A value in this list would be a leaked credential.
+  repeated string keys = 3;
+}
+
+// What probing an app root established. Both booleans are observations, not
+// assumptions: an absent `convex/` directory means the app was not found there,
+// never that it is elsewhere.
+message ConvexAppDiscoveryRecord {
+  string root = 1;
+  // The root resolved against the repo root, after the escape check.
+  string abs_root = 2;
+  bool has_convex_dir = 3;
+  // convex/auth.config.ts exists, so the app authenticates.
+  bool has_auth_config = 4;
+  repeated string general_env = 5;
+  repeated ConvexEnvDependencyRecord suggested_deps = 6;
+}

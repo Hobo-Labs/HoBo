@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "executor-skeleton-contract",
+  "title": "Executor skeleton contract",
+  "linear": "HOBO-72",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-event-schema-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

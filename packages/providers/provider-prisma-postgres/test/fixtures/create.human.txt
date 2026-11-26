@@ -1,0 +1,16 @@
+┌  🚀 Creating a Prisma Postgres database
+│
+│  Provisioning a temporary database in us-east-1...
+│  It will be automatically deleted in 24 hours, but you can claim it.
+◇  Database created successfully!
+│
+●  Database Connection
+│    Connection String:
+│    postgresql://fake_user_000000:REDACTED@db.prisma.io:5432/postgres?sslmode=require
+│
+◆  Claim your database →
+│    Keep your database for free:
+│    https://create-db.prisma.io?projectID=proj_fake000000000000
+│
+│    Your database will be deleted on 2026-08-09T13:00:00.000Z if not claimed.
+└

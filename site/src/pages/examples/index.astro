@@ -1,0 +1,1066 @@
+---
+import Base from "../../layouts/Base.astro";
+---
+
+<Base
+	title="Try HoBo — station-first Examples"
+	description="1 Pool stations · 2 Ship bindles · 3 Live preview and logs — browser Home Station."
+>
+
+	<section class="ex-hero">
+		<div class="container">
+			<h1>
+				Stations.<br />
+				<em>Apps. Live.</em>
+			</h1>
+			<p>
+				Pool stamps Environment Stations, Ship loads a catalog Bindle, Live
+				previews the host. Lifecycle on the CLI is <code>hobo up</code> /
+				<code>hobo down</code> — <code>hobo deploy</code> is observe-only.
+				On GitHub Pages, pick a local-bridge app and start
+				<code>pnpm --filter hobo-site run examples:bridge</code>. Browser-WIT
+				hello-world needs local <code>astro dev</code> (Pages omits the wasm).
+			</p>
+		</div>
+	</section>
+
+	<section
+		class="ex-console"
+		data-examples-console
+		data-base={import.meta.env.BASE_URL}
+		data-station-broker={import.meta.env.PUBLIC_HOBO_STATION_BROKER_URL ?? ""}
+	>
+		<div class="container">
+			<div class="ex-strip" aria-label="Deploy storyboard" data-phase="pool">
+				<section class="ex-board" aria-labelledby="board-pool" data-board="pool">
+					<h2 id="board-pool"><span class="ex-board-num" aria-hidden="true">1</span> Pool</h2>
+					<p class="ex-board-lead">
+						Pick yards and stamp stations. Code shows every yard in the
+						deploy plan — the station bootstrap you type and run.
+						<code class="ex-mono" data-station-id>station:browser:…</code>
+					</p>
+
+					<div class="ex-field ex-yard-field">
+						<span id="yards-label">Yards</span>
+						<div class="ex-yard-picker" data-yard-picker>
+							<button
+								type="button"
+								class="ex-yard-trigger"
+								data-yard-trigger
+								aria-expanded="false"
+								aria-controls="ex-yard-menu"
+								aria-labelledby="yards-label"
+							>
+								<span data-yard-summary>Select yards…</span>
+								<span class="ex-yard-chevron" aria-hidden="true">▾</span>
+							</button>
+							<div
+								class="ex-yard-menu"
+								id="ex-yard-menu"
+								data-yard-menu
+								hidden
+							>
+								<div class="ex-yard-menu-bar">
+									<button type="button" class="ex-text-btn" data-yard-all>All</button>
+									<button type="button" class="ex-text-btn" data-yard-none>None</button>
+								</div>
+								<div
+									class="ex-yard-list"
+									role="listbox"
+									aria-multiselectable="true"
+									aria-labelledby="yards-label"
+									data-yard-list
+								></div>
+							</div>
+							<select
+								multiple
+								class="ex-yard-native"
+								data-yard-select
+								aria-hidden="true"
+								tabindex="-1"
+							></select>
+						</div>
+					</div>
+
+					<div class="ex-view-tabs" role="tablist" aria-label="Station config">
+						<button type="button" role="tab" aria-pressed="true" data-pool-view="policy">Policy</button>
+						<button type="button" role="tab" aria-pressed="false" data-pool-view="code">Code</button>
+					</div>
+
+					<div class="ex-board-panel" data-pool-panel="policy">
+						<label class="ex-field">
+							<span>Demo policy</span>
+							<select data-demo-policy></select>
+						</label>
+						<dl class="ex-policy" data-station-policy></dl>
+						<p class="ex-plan" data-station-plan-line>Calculating station plan…</p>
+					</div>
+
+					<div class="ex-board-panel" data-pool-panel="code" hidden>
+						<div class="ex-source-path" data-pool-source-path></div>
+						<pre class="ex-code" tabindex="0"><code data-pool-source></code></pre>
+					</div>
+
+					<button class="btn btn-primary ex-stamp" type="button" data-deploy-stations disabled>
+						<span>Deploy stations</span>
+					</button>
+
+					<div class="ex-board-foot">
+						<div class="ex-foot-head">
+							<h3>Deployed</h3>
+							<button type="button" class="ex-text-btn" data-clear-stations>Clear</button>
+						</div>
+						<label class="ex-field">
+							<span>Station</span>
+							<select data-station-select aria-label="Deployed stations">
+								<option value="">None yet</option>
+							</select>
+						</label>
+						<button type="button" class="ex-text-btn" data-remove-station disabled>Remove selected</button>
+					</div>
+				</section>
+
+				<section class="ex-board" aria-labelledby="board-ship" data-board="ship" data-locked="true">
+					<h2 id="board-ship"><span class="ex-board-num" aria-hidden="true">2</span> Ship</h2>
+					<p class="ex-board-lead">Pick one catalog app Bindle and ship it to pooled stations.</p>
+
+					<div class="ex-ship-gate" data-ship-gate>
+						<p class="ex-empty-stamp" aria-hidden="true">1 → 2</p>
+						<p>Deploy at least one station in Pool first.</p>
+					</div>
+
+					<div class="ex-ship-body" data-ship-body hidden>
+						<label class="ex-field">
+							<span>App</span>
+							<select data-app-select aria-label="App to ship">
+								<option value="">Select an app…</option>
+							</select>
+						</label>
+
+						<div class="ex-bindle-block">
+							<span class="ex-field-label">Bindle source</span>
+							<div class="ex-source-path" data-ship-source-path></div>
+							<pre class="ex-code" tabindex="0"><code data-ship-source></code></pre>
+						</div>
+
+						<details class="ex-policy-fold">
+							<summary>App plan</summary>
+							<dl class="ex-policy" data-example-policy></dl>
+						</details>
+
+						<details class="ex-policy-fold" data-terms-fold hidden>
+							<summary>
+								Before you deploy <span class="ex-terms-summary" data-terms-summary></span>
+							</summary>
+							<p class="ex-terms-lead" data-terms-lead></p>
+							<dl class="ex-policy" data-terms></dl>
+						</details>
+						<p class="ex-plan" data-example-plan-line>Deploy stations first…</p>
+						<button class="btn btn-primary ex-stamp" type="button" data-deploy-apps disabled>
+							<span>Locked — deploy stations first</span>
+						</button>
+					</div>
+				</section>
+
+				<section class="ex-board ex-board-live" aria-labelledby="board-live" data-board="live">
+					<header class="ex-live-head">
+						<h2 id="board-live"><span class="ex-board-num" aria-hidden="true">3</span> Live</h2>
+						<p class="ex-board-lead">Preview the app or read the deploy reel. Claim codes appear when issued.</p>
+					</header>
+
+					<label class="ex-field">
+						<span>Deployment</span>
+						<select data-live-select aria-label="Live deployments">
+							<option value="">None yet</option>
+						</select>
+					</label>
+
+					<div class="ex-claim-codes" data-claim-codes hidden>
+						<span class="ex-field-label">Claim code</span>
+						<p class="ex-claim-note">
+							Anonymous deploys stay temporary until you claim them.
+						</p>
+						<a class="ex-claim-link" data-claim-url rel="noopener" target="_blank" hidden></a>
+						<p class="ex-claim-missing" data-claim-missing hidden>No claim URL on this host.</p>
+					</div>
+
+					<section class="ex-stage" aria-labelledby="workspace-title" data-stage>
+						<header class="ex-stage-head">
+							<h3 id="workspace-title" data-example-title>Stage</h3>
+							<div class="ex-stage-actions">
+								<a class="ex-text-btn" data-open-preview hidden rel="noopener" target="_blank">Open</a>
+								<div class="ex-view-tabs" role="tablist" aria-label="Live stage">
+									<button type="button" role="tab" aria-pressed="true" data-view="preview">Preview</button>
+									<button type="button" role="tab" aria-pressed="false" data-view="logs">Logs</button>
+								</div>
+							</div>
+						</header>
+
+						<div class="ex-stage-body" data-view-panel="preview">
+							<nav class="ex-host-tabs" aria-label="Live hosts" data-host-tabs hidden></nav>
+							<div class="ex-empty" data-host-empty>
+								<p class="ex-empty-stamp" aria-hidden="true">1 → 2 → 3</p>
+								<h4 data-empty-title>Ship an app</h4>
+								<p data-provision-preview>
+									Pool stamps stations. Ship loads a Bindle. Preview lands here.
+								</p>
+							</div>
+							<p class="ex-junction" data-junction-note hidden></p>
+						</div>
+
+						<div class="ex-stage-body" data-view-panel="logs" hidden>
+							<div class="ex-log-head">
+								<span>Deploy reel</span>
+								<span class="ex-mono" data-deploy-state>idle</span>
+							</div>
+							<div
+								class="deploy-terminal"
+								role="log"
+								aria-live="polite"
+								aria-label="Deploy output"
+								data-terminal
+							>
+								<p class="system">
+									Stamp stations, ship an app — logs stream here.
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<p class="ex-placement-line" data-placement>Ship an app to see placement.</p>
+				</section>
+			</div>
+		</div>
+	</section>
+
+	<script>
+		import { bootExamplesConsole } from "../../lib/examples/controller.ts";
+		void bootExamplesConsole().catch((error) => {
+			const message = error instanceof Error ? error.message : String(error);
+			const terminal = document.querySelector<HTMLElement>("[data-terminal]");
+			const state = document.querySelector<HTMLElement>("[data-deploy-state]");
+			const plan = document.querySelector<HTMLElement>("[data-station-plan-line]");
+			const yards = document.querySelector<HTMLSelectElement>("[data-yard-select]");
+			const yardList = document.querySelector<HTMLElement>("[data-yard-list]");
+			if (state) state.textContent = "error";
+			if (plan) plan.textContent = `Boot failed: ${message}`;
+			if (yards && yards.options.length === 0) {
+				const option = document.createElement("option");
+				option.disabled = true;
+				option.textContent = "Yards unavailable — see Logs / reload";
+				yards.replaceChildren(option);
+			}
+			if (yardList && yardList.childElementCount === 0) {
+				const note = document.createElement("p");
+				note.className = "ex-yard-empty";
+				note.textContent = "Yards unavailable — see Logs / reload";
+				yardList.replaceChildren(note);
+			}
+			if (terminal) {
+				const line = document.createElement("p");
+				line.className = "stderr";
+				line.textContent = `Could not start Home Station: ${message}`;
+				terminal.replaceChildren(line);
+			}
+		});
+	</script>
+</Base>
+
+<style is:global>
+
+	.ex-hero {
+		padding: clamp(2rem, 5vw, 3.25rem) 0 1.5rem;
+		border-bottom: 3px solid var(--ink);
+	}
+
+	.ex-hero h1 {
+		margin: 0 0 0.65rem;
+		font-family: var(--font-display);
+		font-size: clamp(2.5rem, 6vw, 3.75rem);
+		line-height: 1.05;
+		letter-spacing: 0.01em;
+	}
+
+	.ex-hero h1 em {
+		font-style: normal;
+		color: var(--spark);
+	}
+
+	.ex-hero p {
+		max-width: 40rem;
+		margin: 0;
+		color: var(--text-mute);
+		font-size: 1.05rem;
+	}
+
+	.ex-console {
+		padding: 2rem 0 4rem;
+		overflow-x: clip;
+	}
+
+	.ex-console .container {
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.ex-strip {
+		position: relative;
+		display: grid;
+		gap: 1.25rem;
+		padding-top: 1.25rem;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.ex-strip::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		left: 0.25rem;
+		right: 0.25rem;
+		height: 8px;
+		background: repeating-linear-gradient(
+			90deg,
+			var(--ink) 0 14px,
+			transparent 14px 30px
+		);
+		border-radius: 4px;
+		opacity: 0.85;
+	}
+
+	@media (min-width: 720px) {
+		.ex-strip {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			align-items: stretch;
+		}
+
+		.ex-strip [data-board="live"] {
+			grid-column: 1 / -1;
+		}
+	}
+
+	@media (min-width: 1100px) {
+		.ex-strip {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr);
+		}
+
+		.ex-strip [data-board="live"] {
+			grid-column: auto;
+		}
+	}
+
+	.ex-strip[data-phase="pool"] [data-board="ship"],
+	.ex-strip[data-phase="pool"] [data-board="live"] {
+		opacity: 0.55;
+	}
+
+	.ex-strip[data-phase="ship"] [data-board="live"] {
+		opacity: 0.55;
+	}
+
+	.ex-board {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		min-width: 0;
+		max-width: 100%;
+		padding: 1.1rem 1.15rem 1.2rem;
+		border: 3px solid var(--ink);
+		border-radius: var(--radius);
+		background: var(--paper, var(--bg));
+		box-shadow: 4px 4px 0 var(--ink);
+	}
+
+	.ex-board[data-locked="true"] {
+		background: var(--cream, var(--bg-inset));
+	}
+
+	.ex-board h2 {
+		display: flex;
+		align-items: baseline;
+		gap: 0.45rem;
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 1.55rem;
+		line-height: 1.1;
+	}
+
+	.ex-board-num {
+		display: inline-grid;
+		place-items: center;
+		width: 1.55rem;
+		height: 1.55rem;
+		border: 2.5px solid var(--ink);
+		border-radius: 999px;
+		background: var(--spark);
+		color: #fff;
+		font: 700 0.85rem/1 var(--font-sans);
+	}
+
+	.ex-board-lead {
+		margin: 0;
+		min-width: 0;
+		color: var(--text-mute);
+		font-size: 0.92rem;
+		line-height: 1.45;
+		overflow-wrap: anywhere;
+	}
+
+	.ex-board-lead .ex-mono,
+	.ex-mono {
+		display: inline;
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+
+	.ex-field,
+	.ex-bindle-block,
+	.ex-claim-codes {
+		display: grid;
+		gap: 0.35rem;
+		min-width: 0;
+		max-width: 100%;
+		font-size: 0.875rem;
+		font-weight: 700;
+		color: var(--ink);
+	}
+
+	.ex-field-label {
+		font: 700 0.8rem/1.3 var(--font-sans);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.ex-field {
+		position: relative;
+	}
+
+	.ex-field select {
+		width: 100%;
+		min-height: 2.75rem;
+		font-weight: 500;
+	}
+
+	.ex-field select.ex-yard-native,
+	select.ex-yard-native {
+		position: absolute;
+		inset: 0 auto auto 0;
+		width: 1px !important;
+		height: 1px !important;
+		min-height: 0 !important;
+		max-width: 1px;
+		padding: 0;
+		margin: 0;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
+		border: 0;
+		opacity: 0;
+		pointer-events: none;
+		box-shadow: none !important;
+	}
+
+	.ex-yard-field {
+		gap: 0.4rem;
+	}
+
+	.ex-yard-picker {
+		position: relative;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.ex-yard-trigger {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.65rem;
+		width: 100%;
+		min-height: 2.75rem;
+		margin: 0;
+		padding: 0.55rem 0.75rem;
+		border: 2.5px solid var(--ink);
+		border-radius: var(--control-radius, var(--radius));
+		background: var(--paper, var(--bg));
+		color: var(--ink);
+		font: 600 0.9rem/1.3 var(--font-sans);
+		text-align: left;
+		cursor: var(--cursor-point, pointer);
+		box-shadow: 2px 2px 0 var(--pop-soft);
+	}
+
+	.ex-yard-trigger[aria-expanded="true"] {
+		background: color-mix(in srgb, var(--spark) 10%, var(--paper, #fff));
+	}
+
+	.ex-yard-summary,
+	[data-yard-summary] {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ex-yard-chevron {
+		flex: none;
+		font-size: 0.85rem;
+		line-height: 1;
+	}
+
+	.ex-yard-menu {
+		position: absolute;
+		z-index: 8;
+		top: calc(100% + 0.35rem);
+		left: 0;
+		right: 0;
+		display: grid;
+		gap: 0.45rem;
+		padding: 0.5rem;
+		border: 2.5px solid var(--ink);
+		border-radius: var(--control-radius, var(--radius));
+		background: var(--paper, var(--bg));
+		box-shadow: 3px 3px 0 var(--ink);
+	}
+
+	.ex-yard-menu[hidden] {
+		display: none !important;
+	}
+
+	.ex-yard-menu-bar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		justify-content: flex-end;
+	}
+
+	.ex-yard-list {
+		display: grid;
+		gap: 0.35rem;
+		max-height: 14rem;
+		min-width: 0;
+		max-width: 100%;
+		overflow: auto;
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
+		padding: 0.15rem;
+	}
+
+	.ex-yard-option {
+		display: grid;
+		grid-template-columns: 1.35rem minmax(0, 1fr);
+		gap: 0.55rem;
+		align-items: start;
+		box-sizing: border-box;
+		min-width: 0;
+		width: 100%;
+		max-width: 100%;
+		margin: 0;
+		padding: 0.45rem 0.55rem;
+		border: 2px solid transparent;
+		border-radius: calc(var(--control-radius, var(--radius)) - 2px);
+		background: var(--cream, var(--bg-inset));
+		color: var(--ink);
+		font: 0.9rem/1.35 var(--font-sans);
+		text-align: left;
+		cursor: var(--cursor-point, pointer);
+	}
+
+	.ex-yard-option:hover,
+	.ex-yard-option:focus-visible {
+		border-color: var(--ink);
+		outline: none;
+	}
+
+	.ex-yard-option[aria-pressed="true"],
+	.ex-yard-option[aria-checked="true"] {
+		border-color: var(--ink);
+		background: color-mix(in srgb, var(--spark) 12%, var(--paper, #fff));
+	}
+
+	.ex-yard-option[aria-checked="mixed"] {
+		border-color: var(--ink);
+		background: color-mix(in srgb, var(--spark) 6%, var(--paper, #fff));
+	}
+
+	.ex-yard-check {
+		display: inline-grid;
+		place-items: center;
+		width: 1.2rem;
+		height: 1.2rem;
+		margin-top: 0.1rem;
+		border: 2.5px solid var(--ink);
+		border-radius: 4px;
+		background: var(--paper, #fff);
+		color: transparent;
+		font: 700 0.7rem/1 var(--font-sans);
+	}
+
+	.ex-yard-option[aria-pressed="true"] .ex-yard-check,
+	.ex-yard-option[aria-checked="true"] .ex-yard-check {
+		background: var(--ink);
+		color: var(--paper, #fff);
+	}
+
+	.ex-yard-option[aria-pressed="true"] .ex-yard-check::before,
+	.ex-yard-option[aria-checked="true"] .ex-yard-check::before {
+		content: "✓";
+	}
+
+	.ex-yard-option[aria-checked="mixed"] .ex-yard-check {
+		background: color-mix(in srgb, var(--ink) 35%, var(--paper, #fff));
+		color: var(--ink);
+	}
+
+	.ex-yard-option[aria-checked="mixed"] .ex-yard-check::before {
+		content: "–";
+	}
+
+	.ex-yard-copy {
+		display: grid;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.ex-yard-label {
+		font-weight: 700;
+	}
+
+	.ex-yard-hint {
+		color: var(--text-mute);
+		font: 0.75rem/1.35 var(--font-mono);
+		overflow-wrap: anywhere;
+	}
+
+	.ex-yard-empty {
+		margin: 0;
+		padding: 0.75rem;
+		color: var(--text-mute);
+		font: 0.9rem/1.4 var(--font-sans);
+		text-align: center;
+	}
+
+	.ex-view-tabs {
+		display: inline-flex;
+		align-self: start;
+		border: 2.5px solid var(--ink);
+		border-radius: var(--control-radius, var(--radius));
+		overflow: hidden;
+		box-shadow: 2px 2px 0 var(--pop-soft);
+	}
+
+	.ex-view-tabs button {
+		margin: 0;
+		padding: 0.4rem 0.75rem;
+		border: 0;
+		background: var(--cream, var(--bg-inset));
+		color: var(--ink);
+		font: 700 0.72rem/1.2 var(--font-sans);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		cursor: var(--cursor-point, pointer);
+	}
+
+	.ex-view-tabs button[aria-pressed="true"] {
+		background: var(--ink);
+		color: var(--paper, #fff);
+	}
+
+	.ex-board-panel {
+		display: grid;
+		gap: 0.65rem;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.ex-board-panel[hidden],
+	.ex-stage-body[hidden] {
+		display: none !important;
+	}
+
+	.ex-console .code-block {
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.ex-source-path {
+		min-width: 0;
+		max-width: 100%;
+		color: var(--text-mute);
+		font: 0.75rem/1.4 var(--font-mono);
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+
+	.ex-code {
+		box-sizing: border-box;
+		margin: 0;
+		min-width: 0;
+		width: 100%;
+		max-width: 100%;
+		max-height: 12rem;
+		overflow: scroll;
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
+		padding: 0.7rem 0.85rem;
+		border: 2.5px solid var(--ink);
+		border-radius: var(--radius);
+		background: var(--code-bg, #f7f7f5);
+		box-shadow: 2px 2px 0 var(--pop-soft);
+	}
+
+	.ex-code code {
+		display: block;
+		min-width: 0;
+		max-width: 100%;
+		font: 0.78rem/1.45 var(--font-mono);
+		white-space: pre;
+		overflow-wrap: normal;
+		word-break: normal;
+	}
+
+	.ex-policy-fold {
+		border: 2px solid var(--border-strong, #c9c8c2);
+		border-radius: var(--control-radius, var(--radius));
+		padding: 0.35rem 0.55rem;
+		background: var(--bg-inset, #f4f4f2);
+	}
+
+	.ex-policy-fold summary {
+		cursor: var(--cursor-point, pointer);
+		font: 700 0.8rem/1.3 var(--font-sans);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.ex-policy {
+		display: grid;
+		grid-template-columns: minmax(6.5rem, auto) 1fr;
+		gap: 0.25rem 0.65rem;
+		margin: 0.55rem 0 0.25rem;
+		font: 0.8rem/1.45 var(--font-mono);
+	}
+
+	.ex-policy dt {
+		color: var(--text-mute);
+	}
+
+	.ex-policy dd {
+		min-width: 0;
+		margin: 0;
+		overflow-wrap: anywhere;
+		text-align: right;
+	}
+
+	.ex-plan {
+		margin: 0;
+		min-width: 0;
+		max-width: 100%;
+		padding: 0.75rem 0.85rem;
+		border: 2.5px dashed var(--ink);
+		border-radius: var(--radius);
+		background: var(--accent-soft, var(--spark-soft));
+		font: 0.85rem/1.45 var(--font-mono);
+		overflow-wrap: anywhere;
+	}
+
+	.ex-stamp {
+		width: 100%;
+		min-height: 3.15rem;
+		margin-top: auto;
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+		font-weight: 400;
+		line-height: 1.3;
+	}
+
+	.ex-stamp:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+
+	.ex-board-foot {
+		display: grid;
+		gap: 0.55rem;
+		margin-top: 0.35rem;
+		padding-top: 0.75rem;
+		border-top: 2px solid var(--border, #e3e2de);
+	}
+
+	.ex-foot-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.ex-foot-head h3 {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+	}
+
+	.ex-text-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.35rem 0.55rem;
+		border: 2px solid var(--ink);
+		border-radius: var(--control-radius, var(--radius));
+		background: var(--paper, #fff);
+		color: var(--ink);
+		font: 700 0.75rem/1.2 var(--font-sans);
+		letter-spacing: 0.04em;
+		text-decoration: none;
+		cursor: var(--cursor-point, pointer);
+		box-shadow: 1.5px 1.5px 0 var(--pop-soft);
+	}
+
+	.ex-text-btn:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.ex-text-btn[hidden] {
+		display: none !important;
+	}
+
+	.ex-ship-gate {
+		flex: 1;
+		display: grid;
+		gap: 0.35rem;
+		place-content: center;
+		place-items: center;
+		padding: 1.25rem 0.75rem;
+		text-align: center;
+		border: 2.5px dashed var(--ink);
+		border-radius: var(--radius);
+		background: var(--cream, var(--bg-inset));
+		font: 0.95rem/1.4 var(--font-sans);
+	}
+
+	.ex-ship-gate[hidden],
+	.ex-ship-body[hidden] {
+		display: none !important;
+	}
+
+	.ex-ship-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		flex: 1;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.ex-board-live {
+		gap: 0.85rem;
+	}
+
+	.ex-live-head {
+		display: grid;
+		gap: 0.35rem;
+	}
+
+	.ex-claim-codes {
+		padding: 0.7rem 0.85rem;
+		border: 2.5px solid var(--go);
+		border-radius: var(--radius);
+		background: color-mix(in srgb, var(--go) 10%, var(--paper, #fff));
+	}
+
+	.ex-claim-codes[hidden] {
+		display: none !important;
+	}
+
+	.ex-claim-note,
+	.ex-claim-missing {
+		margin: 0;
+		font: 0.8rem/1.4 var(--font-sans);
+		font-weight: 500;
+		color: var(--text-mute);
+	}
+
+	.ex-claim-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		max-width: 100%;
+		overflow-wrap: anywhere;
+		font: 0.85rem/1.4 var(--font-mono);
+		font-weight: 700;
+		color: var(--ink);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+
+	.ex-claim-link[hidden] {
+		display: none !important;
+	}
+
+	.ex-stage {
+		position: relative;
+		min-width: 0;
+		max-width: 100%;
+		padding: 0.85rem 0.95rem 1rem;
+		border: 3px solid var(--ink);
+		border-radius: var(--radius);
+		background:
+			radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--spark) 12%, transparent), transparent 42%),
+			var(--paper, var(--bg));
+		box-shadow: 3px 3px 0 var(--ink);
+	}
+
+	.ex-stage-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.55rem;
+		margin-bottom: 0.65rem;
+		padding-bottom: 0.5rem;
+		border-bottom: 2px solid var(--ink);
+	}
+
+	.ex-stage-head h3 {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		line-height: 1.1;
+	}
+
+	.ex-stage-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.45rem;
+	}
+
+	.ex-stage-body {
+		min-height: 10rem;
+	}
+
+	.ex-host-tabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin-bottom: 0.55rem;
+	}
+
+	.ex-host-tabs button {
+		padding: 0.35rem 0.65rem;
+		border: 2px solid var(--ink);
+		border-radius: var(--control-radius, var(--radius));
+		background: var(--cream, var(--bg-inset));
+		font: 0.8rem/1.2 var(--font-sans);
+		cursor: var(--cursor-point, pointer);
+	}
+
+	.ex-host-tabs button[aria-pressed="true"] {
+		background: var(--ink);
+		color: var(--paper, #fff);
+	}
+
+	.ex-empty {
+		display: grid;
+		place-content: center;
+		gap: 0.3rem;
+		min-height: 9rem;
+		padding: 1rem;
+		text-align: center;
+	}
+
+	.ex-empty-stamp {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 1.65rem;
+		color: var(--faint, var(--text-mute));
+	}
+
+	.ex-empty h4 {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+	}
+
+	.ex-empty p {
+		margin: 0;
+		max-width: 18rem;
+		color: var(--text-mute);
+		font-size: 0.9rem;
+	}
+
+	.ex-junction,
+	.ex-placement-line {
+		margin: 0.55rem 0 0;
+		min-width: 0;
+		max-width: 100%;
+		color: var(--text-mute);
+		font: 0.75rem/1.4 var(--font-mono);
+		overflow-wrap: anywhere;
+	}
+
+	iframe[data-host-frame] {
+		display: block;
+		width: 100%;
+		max-width: 100%;
+		min-height: clamp(14rem, 32vh, 22rem);
+		border: 2.5px solid var(--ink);
+		border-radius: var(--radius);
+		background: var(--paper, #fff);
+		box-shadow: 2px 2px 0 var(--pop-soft);
+	}
+
+	.ex-log-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.45rem;
+		font: 700 0.75rem/1.2 var(--font-sans);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.deploy-terminal {
+		box-sizing: border-box;
+		max-width: 100%;
+		min-width: 0;
+		max-height: 16rem;
+		min-height: 10rem;
+		overflow-x: auto;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
+		padding: 0.6rem 0.7rem;
+		border: 2.5px solid var(--ink);
+		border-radius: var(--radius);
+		background: var(--cream, var(--bg-inset));
+		font: 0.75rem/1.45 var(--font-mono);
+	}
+
+	.deploy-terminal p {
+		margin: 0 0 0.35rem;
+	}
+
+	.deploy-terminal .command {
+		color: var(--ink);
+		font-weight: 700;
+	}
+
+	.deploy-terminal .success {
+		color: var(--go);
+	}
+
+	.deploy-terminal .stderr {
+		color: var(--spark);
+	}
+
+	.deploy-terminal .skip {
+		color: var(--text-mute);
+	}
+
+	.ex-mono {
+		font-family: var(--font-mono);
+		font-size: 0.85em;
+	}
+</style>

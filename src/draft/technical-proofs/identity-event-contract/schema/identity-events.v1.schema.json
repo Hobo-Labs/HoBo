@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hobo.dev/schemas/identity-events.v1.schema.json",
+  "title": "HoBo Identity Audit Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "schemaVersion",
+    "tenant",
+    "seq",
+    "time",
+    "actor",
+    "correlationId",
+    "causationId",
+    "retention",
+    "data"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "identity.Issued",
+        "identity.Rotated",
+        "token.Granted",
+        "token.Used",
+        "token.Denied",
+        "token.Revoked",
+        "user.Authenticated",
+        "session.Started",
+        "session.Refreshed",
+        "session.Revoked",
+        "secret.Accessed",
+        "config.Resolved"
+      ]
+    },
+    "schemaVersion": { "const": "hobo.identity-events/v1" },
+    "tenant": { "type": "string", "minLength": 1 },
+    "seq": { "type": "integer", "minimum": 0 },
+    "time": { "type": "string", "format": "date-time" },
+    "actor": { "$ref": "#/$defs/principal" },
+    "correlationId": { "type": "string", "minLength": 1 },
+    "causationId": { "type": "string", "minLength": 1 },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "neverCompact", "streamPolicy"],
+      "properties": {
+        "class": { "const": "security-audit" },
+        "neverCompact": { "const": true },
+        "streamPolicy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "principal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["user", "agent", "service"] },
+        "id": { "type": "string", "minLength": 1 },
+        "delegatedBy": { "$ref": "#/$defs/principal" }
+      }
+    }
+  },
+  "x-hobo-requiredBodyFields": {
+    "identity.Issued": ["identityId", "subject", "svidRef", "scope", "expiresAt"],
+    "identity.Rotated": ["identityId", "previousIdentityId", "subject", "svidRef", "expiresAt"],
+    "token.Granted": ["grantId", "subject", "target", "audience", "scopes", "tokenRef", "expiresAt"],
+    "token.Used": ["grantId", "usageId", "operation", "resource"],
+    "token.Denied": ["requestId", "subject", "target", "reason"],
+    "token.Revoked": ["grantId", "reason"],
+    "user.Authenticated": ["principal", "provider", "authTime", "sessionId"],
+    "session.Started": ["sessionId", "principal", "expiresAt"],
+    "session.Refreshed": ["sessionId", "previousSessionId", "principal", "expiresAt"],
+    "session.Revoked": ["sessionId", "reason"],
+    "secret.Accessed": ["secretRef", "source", "tokenUsageId"],
+    "config.Resolved": ["configRef", "source"]
+  },
+  "x-hobo-redaction": {
+    "forbiddenDataKeys": [
+      "accessToken",
+      "apiKey",
+      "email",
+      "jwt",
+      "password",
+      "plaintext",
+      "refreshToken",
+      "secret",
+      "secretValue",
+      "ssn",
+      "token",
+      "value"
+    ],
+    "rule": "emit refs, digests, or source markers instead of secret or PII values"
+  }
+}

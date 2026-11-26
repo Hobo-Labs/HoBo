@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-deployment-dashboard-mockups",
+  "experienceType": "ux",
+  "title": "Vibe Deployment Dashboard Mockups",
+  "linear": "HOBO-544",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

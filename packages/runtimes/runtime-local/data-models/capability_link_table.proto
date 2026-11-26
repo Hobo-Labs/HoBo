@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package hobo.runtimes.v1;
+
+message CapabilityLinkTableRecord {
+  string package_name = 1;
+  string owner_issue = 2;
+  string boundary_id = 3;
+}

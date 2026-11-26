@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package hobo.manifest.capability.v1;
+
+// The capability requirement manifest: what a Bindle primitive asks for, with
+// no provider, product, region, or account anywhere in it.
+//
+// Named capability_requirement rather than capability_manifest because
+// @hobo/core already owns data-models/capability_manifest.proto
+// (hobo.core.v1.CapabilityManifestBundle), which is the *provider's* published
+// capability/auth/cost bundle. Two files with the same basename describing
+// opposite directions of the same conversation is how a reader ends up
+// generating the wrong one.
+//
+// PRESENCE IS THE WHOLE POINT OF THIS FILE. tsconfig.base.json sets
+// exactOptionalPropertyTypes, so in the TypeScript this schema describes,
+// "field absent" and "field present holding undefined" are different values,
+// and "absent" and "present holding the zero value" are different values too.
+// Proto3 erases both distinctions unless you ask for presence explicitly:
+//
+//   - scalar fields that may be absent carry `optional`;
+//   - repeated fields that may be absent are wrapped in StringList, because a
+//     bare `repeated` cannot tell an absent list from an empty one and the
+//     round-trip tests in test/round-trip.test.ts prove that difference is
+//     observable downstream (it changes a digest that twelve committed golden
+//     offers in packages/recipes/test/golden/ carry).
+//
+// A `repeated` field with no wrapper in this file is one the parse boundary
+// guarantees is always present, possibly empty.
+
+// A list wrapper that exists only to give a repeated field explicit presence.
+// Message fields have presence in proto3; repeated fields do not.
+message StringList {
+  repeated string values = 1;
+}
+
+// <primitive-family>.<name>/v<major>, e.g. "data.postgres/v1". An open
+// namespace, deliberately not an enum: a provider package registers a new
+// profile without editing a central switch.
+message ProfileConstraint {
+  string profile_id = 1;
+  // Always present after parsing: the parse boundary defaults it to
+  // ">=<major of profile_id>" when the author omitted it.
+  string version_range = 2;
+}
+
+// A preference, not a gate. Ranking only — it can never admit a candidate a
+// required constraint refused.
+message WeightedPreference {
+  string profile_id = 1;
+  string version_range = 2;
+  // Non-negative integer. Higher means stronger preference.
+  uint32 weight = 3;
+}
+
+// Runtime realization models. `required` is absent for most requirements, and
+// absent means "unconstrained" — not "" and not the first enum value.
+message RuntimeRequirement {
+  optional string required = 1;
+  repeated string allowed = 2;
+  repeated string preferred = 3;
+}
+
+// How a product may satisfy the profile. Every flag defaults to true at the
+// parse boundary, and all-false is refused, so this message is always present
+// and never needs presence of its own.
+message RealizationAllowance {
+  bool native = 1;
+  bool pack = 2;
+  bool bridge = 3;
+}
+
+// The value side of a structured feature/guarantee predicate.
+//
+// The TypeScript union is `boolean | number | string | readonly string[]`, so
+// this is a oneof rather than a string: comparing "1000000000" to "2000000000"
+// as strings is how an at-least gate silently starts admitting the wrong
+// candidates. A oneof field is serialized even when it holds the zero value,
+// which is what keeps `false`, `0` and `""` distinguishable from unset.
+//
+// The numeric split is deliberate. JavaScript has one number type; protobuf
+// does not. int_value carries values that satisfy Number.isSafeInteger and is
+// encoded as a decimal string per the proto3 JSON mapping; double_value
+// carries the rest. Non-finite numbers are refused at the boundary rather than
+// encoded, because JSON has no spelling for them and a NaN threshold is not a
+// requirement anyone meant to write.
+message RequirementValue {
+  oneof value {
+    bool bool_value = 1;
+    int64 int_value = 2;
+    double double_value = 3;
+    string string_value = 4;
+    StringList string_set_value = 5;
+  }
+}
+
+// Operators and necessity travel as strings whose vocabulary is closed in
+// capability_requirement.cue, which is the idiom the rest of this repo's
+// data-models use (see packages/bindings/data-models/bindings.proto). A proto3
+// enum would add a zero value that means "unspecified", and an unset operator
+// decoding to a valid-looking one is exactly the failure this schema exists to
+// prevent.
+//
+//   operator (feature):   "equals" | "at-least" | "at-most" | "one-of" | "includes-all"
+//   operator (guarantee): "equals" | "at-least" | "one-of"
+//   necessity:            "required" | "preferred"
+
+message StructuredFeatureRequirement {
+  string key = 1;
+  string operator = 2;
+  RequirementValue value = 3;
+  string necessity = 4;
+}
+
+message StructuredGuaranteeRequirement {
+  string key = 1;
+  string operator = 2;
+  RequirementValue value = 3;
+}
+
+// Portability asks. Every field is defaulted at the parse boundary, so this
+// message is always present; required_migration_profiles is always present and
+// possibly empty, hence a bare repeated rather than a StringList.
+message PortabilityRequirement {
+  bool require_standard_binding = 1;
+  bool require_export_profile = 2;
+  repeated string required_migration_profiles = 3;
+}
+
+// The parsed capability requirement. Every list is canonically ordered by the
+// parse boundary: profile constraints by profile_id, preferences by descending
+// weight then profile_id, features and guarantees by key.
+message CapabilityRequirement {
+  // Non-empty. A requirement that names no required profile is refused.
+  repeated ProfileConstraint required_profiles = 1;
+  repeated WeightedPreference preferred_profiles = 2;
+  repeated ProfileConstraint prohibited_profiles = 3;
+  RuntimeRequirement runtime = 4;
+  RealizationAllowance realization = 5;
+  repeated StructuredFeatureRequirement features = 6;
+  repeated StructuredGuaranteeRequirement guarantees = 7;
+  PortabilityRequirement portability = 8;
+  // An opaque reference to a trust requirement. Absent means "the caller's
+  // default trust policy", which is not the same as the empty reference.
+  optional string trust_ref = 9;
+}

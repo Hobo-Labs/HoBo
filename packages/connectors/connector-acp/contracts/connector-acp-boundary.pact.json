@@ -1,0 +1,100 @@
+{
+  "consumer": {
+    "name": "@hobo/bindles"
+  },
+  "provider": {
+    "name": "ConnectorAcpBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "connector(name, { protocol: 'acp' }) lowers to a usage-inferred manifest entry",
+      "request": {
+        "method": "POST",
+        "path": "/connectors/acp/lower",
+        "body": {
+          "name": "swe-agent",
+          "protocol": "acp",
+          "observedOperations": ["logs.tail", "deployments.apply"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "type": "connector.v1",
+          "protocol": "acp",
+          "via": "xaa",
+          "onBehalfOf": "user",
+          "allow": ["deployments:apply", "logs:tail"],
+          "requestedScopeSource": "usage-inferred",
+          "usageExceedsDeclaredAllow": false
+        }
+      }
+    },
+    {
+      "description": "a governed prompt turn: permission-gated tool call decided by policy",
+      "request": {
+        "method": "POST",
+        "path": "/connectors/acp/sessions/sess-fixture-1/prompt",
+        "body": {
+          "prompt": "tail the logs"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "stopReason": "end_turn",
+          "facts": [
+            "connector.SessionOpened",
+            "agent.PromptSubmitted",
+            "agent.SessionUpdated",
+            "agent.ToolPermissionRequested",
+            "policy.Decided",
+            "agent.SessionUpdated",
+            "agent.TurnCompleted",
+            "connector.SessionClosed"
+          ]
+        }
+      }
+    },
+    {
+      "description": "policy denial fails closed and is visible to the agent as a structured refusal",
+      "request": {
+        "method": "POST",
+        "path": "/connectors/acp/sessions/sess-fixture-1/permissions/call-1",
+        "body": {
+          "action": "resource.delete:database"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "deny",
+          "actionClass": "destroy",
+          "outcome": {
+            "outcome": "selected",
+            "optionId": "reject-once"
+          },
+          "refusalPrefix": "hobo.policy-refusal/v1:"
+        }
+      }
+    },
+    {
+      "description": "no public agent() factory exists (negative vector)",
+      "request": {
+        "method": "GET",
+        "path": "/connectors/acp/exports/agent"
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "error": "agent is not a supported public collection/factory"
+        }
+      }
+    }
+  ]
+}

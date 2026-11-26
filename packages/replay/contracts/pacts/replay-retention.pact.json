@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "ReplayService" },
+  "provider": { "name": "ReplayRetention" },
+  "interactions": [
+    {
+      "description": "retention GC returns scanned erased retained",
+      "request": {
+        "method": "POST",
+        "path": "/replay/retention/apply",
+        "body": { "maxAgeDays": 30 }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "recipe": "replay.retention"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

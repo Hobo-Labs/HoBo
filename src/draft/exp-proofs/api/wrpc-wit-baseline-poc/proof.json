@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "wrpc-wit-baseline-poc",
+  "experienceType": "api",
+  "title": "wRPC + WIT baseline POC",
+  "linear": "HOBO-12",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,16 @@
+{
+  "consumer": { "name": "S5StageGateForgeDrill" },
+  "provider": { "name": "StubImplEvalPromotionGate" },
+  "interactions": [
+    {
+      "description": "AI-generated stub implementation reproduces traces and promotes through eval gate",
+      "providerState": "recorded traces and conformance suite available",
+      "contents": {
+        "traceReplay": "passed",
+        "evalGate": "passed",
+        "promotionOutcome": "promoted"
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

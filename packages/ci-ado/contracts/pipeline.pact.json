@@ -1,0 +1,81 @@
+{
+  "consumer": {
+    "name": "hobo-ci-ado-project"
+  },
+  "provider": {
+    "name": "azure-pipelines-yaml"
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "self-hosted job and Pipeline Artifact publication",
+      "request": {
+        "contents": {
+          "schemaVersion": "hobo.ci.ado/v1",
+          "pool": "hobo-local",
+          "demands": [
+            "Agent.OS -equals Linux"
+          ],
+          "pipelinePath": "packages/ci-ado/examples/pipeline.json",
+          "artifactPrefix": "hobo"
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "pool": {
+              "name": "hobo-local",
+              "demands": [
+                "Agent.OS -equals Linux"
+              ]
+            },
+            "task": "PublishPipelineArtifact@1",
+            "inputs": {
+              "targetPath": "$(Agent.TempDirectory)/hobo-ci-$(System.JobId)-$(System.JobAttempt)",
+              "artifact": "hobo-$(System.JobId)-$(System.JobAttempt)",
+              "publishLocation": "pipeline"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "native downstream Pipeline Artifact download",
+      "request": {
+        "contents": {
+          "schemaVersion": "hobo.ci.ado/v1",
+          "pool": "hobo-local",
+          "demands": [
+            "Agent.OS -equals Linux"
+          ],
+          "pipelinePath": "packages/ci-ado/examples/pipeline.json",
+          "artifactPrefix": "hobo"
+        }
+      },
+      "response": [
+        {
+          "contents": {
+            "pool": {
+              "name": "hobo-local",
+              "demands": [
+                "Agent.OS -equals Linux"
+              ]
+            },
+            "task": "DownloadPipelineArtifact@2",
+            "inputs": {
+              "buildType": "current",
+              "artifactName": "$(hoboArtifactName)",
+              "targetPath": "$(Agent.TempDirectory)/hobo-ci-download-$(System.JobId)-$(System.JobAttempt)"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    }
+  }
+}

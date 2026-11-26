@@ -1,0 +1,62 @@
+{
+  "consumer": { "name": "HoboRelayOperator" },
+  "provider": { "name": "HoboRelayService" },
+  "interactions": [
+    {
+      "description": "process liveness while provider permissions are unavailable",
+      "providerStates": [{ "name": "provider readiness unavailable" }],
+      "request": { "method": "GET", "path": "/healthz" },
+      "response": {
+        "status": 200,
+        "body": { "ok": true, "engines": { "gh-actions": { "ok": true } } }
+      }
+    },
+    {
+      "description": "readiness fails closed without configured permissions",
+      "providerStates": [{ "name": "provider readiness unavailable" }],
+      "request": { "method": "GET", "path": "/readyz" },
+      "response": {
+        "status": 503,
+        "body": {
+          "ready": false,
+          "engines": { "gh-actions": { "ready": false } }
+        }
+      }
+    },
+    {
+      "description": "unready webhook intake is retriable and receives no payload",
+      "providerStates": [{ "name": "provider readiness unavailable" }],
+      "request": {
+        "method": "POST",
+        "path": "/github/webhooks",
+        "headers": {
+          "x-github-event": "workflow_job",
+          "x-github-delivery": "service-boundary-1",
+          "x-hub-signature-256": "sha256=03130823635a4efe2391a0a4964e2083d1208d4f0eb21b0a0d3a5a1e5b710451"
+        },
+        "body": { "workflow_job": {} }
+      },
+      "response": { "status": 503, "body": { "error": "webhook rejected" } }
+    },
+    {
+      "description": "readiness succeeds only after the injected permissions probe",
+      "providerStates": [{ "name": "provider readiness available" }],
+      "request": { "method": "GET", "path": "/readyz" },
+      "response": {
+        "status": 200,
+        "body": {
+          "ready": true,
+          "engines": { "gh-actions": { "ready": true } }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "verification": {
+      "kind": "hand-authored local service HTTP contract",
+      "dependencies": "injected permission probe and GitHub transport fixtures",
+      "liveProviderVerified": false
+    }
+  }
+}

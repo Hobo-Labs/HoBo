@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "xaa-scope-inference-contract",
+  "experienceType": "api",
+  "title": "XAA Scope Inference Contract POC",
+  "linear": "HOBO-83",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/connector-authoring-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

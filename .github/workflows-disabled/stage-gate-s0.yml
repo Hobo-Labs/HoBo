@@ -1,0 +1,109 @@
+name: Stage Gate S0
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  merge_group:
+    branches: [main]
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage-gate:
+    # Hosted Actions runners are disabled until explicitly re-enabled.
+    if: ${{ false }}
+    name: S0 stage gate (${{ matrix.artifact }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # runs-on follows the routed runner variable (Linux) or GitHub-hosted
+        # Windows; artifact labels stay stable (linux/windows) so digest-parity
+        # never hardcodes a runner label like ubuntu-latest.
+        include:
+          - os: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+            artifact: linux
+          - os: windows-latest
+            artifact: windows
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Normalize git line endings
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+          git reset --hard HEAD
+      - run: corepack enable pnpm
+      - run: corepack prepare pnpm@10.33.4 --activate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: cue-lang/setup-cue@v1.0.0
+        with:
+          version: v0.14.0
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build stage-gate CLI
+        run: pnpm exec turbo run build --filter @hobo/stage-gate... --concurrency=100%
+      - name: Run S0 stage gate
+        shell: bash
+        env:
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_DATE_EPOCH: "1704067200"
+        run: |
+          git config --global core.autocrlf false
+          git reset --hard HEAD
+          node packages/stage-gate/dist/cli.js run s0 --out artifacts/stage-gate-s0.record.json
+      - name: Upload stage-gate record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-gate-s0-record-${{ matrix.artifact }}
+          path: artifacts/stage-gate-s0.record.json
+          if-no-files-found: warn
+
+  digest-parity:
+    # Hosted Actions runners are disabled until explicitly re-enabled.
+    if: ${{ false }}
+    name: Cross-OS digest parity
+    needs: stage-gate
+    runs-on: ${{ vars.HOBO_RUNNER_LINUX_SMALL || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: stage-gate-s0-record-*
+          merge-multiple: false
+      - name: Assert identical hello-bindle digests across OS legs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Artifact names are stable labels (linux/windows), independent of
+          # vars.HOBO_RUNNER_LINUX_SMALL or the windows-latest runner label.
+          linux_record="stage-gate-s0-record-linux/stage-gate-s0.record.json"
+          windows_record="stage-gate-s0-record-windows/stage-gate-s0.record.json"
+          linux_digest="$(node -e "const r=require('./${linux_record}'); console.log(r.artifact.digest_sha256)")"
+          windows_digest="$(node -e "const r=require('./${windows_record}'); console.log(r.artifact.digest_sha256)")"
+          echo "linux digest: ${linux_digest}"
+          echo "windows digest: ${windows_digest}"
+          test "${linux_digest}" = "${windows_digest}"

@@ -1,0 +1,79 @@
+{
+  "consumer": {
+    "name": "v1-beta-pilot-feedback-loop"
+  },
+  "provider": {
+    "name": "release-readiness-cutline"
+  },
+  "interactions": [
+    {
+      "description": "accepts mapped M2 private-beta evidence",
+      "providerState": "required private-beta evidence is mapped to owners",
+      "request": {
+        "method": "POST",
+        "path": "/release-readiness/private-beta-evidence",
+        "headers": {
+          "content-type": "application/json",
+          "x-hobo-issue": "HOBO-463"
+        },
+        "body": {
+          "issue": "HOBO-463",
+          "phase": "M2",
+          "requiredEvidence": [
+            {
+              "id": "pilot-cohort-snapshot",
+              "ownerProject": "V1 Beta Pilot & Feedback Loop",
+              "status": "complete"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "accepted": true,
+          "parentReadinessSignal": "risk-increased"
+        }
+      }
+    },
+    {
+      "description": "rejects scope creep that resolves beta blockers in this proof",
+      "providerState": "private-beta evidence contains forbidden implementation work",
+      "request": {
+        "method": "POST",
+        "path": "/release-readiness/private-beta-evidence",
+        "headers": {
+          "content-type": "application/json",
+          "x-hobo-issue": "HOBO-463"
+        },
+        "body": {
+          "issue": "HOBO-463",
+          "phase": "M2",
+          "scopeIn": [
+            "Resolve launch blockers and build support ticketing automation."
+          ]
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "accepted": false,
+          "errors": [
+            "scope creep: blocker resolution"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

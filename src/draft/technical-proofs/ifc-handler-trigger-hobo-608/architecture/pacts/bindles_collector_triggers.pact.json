@@ -1,0 +1,99 @@
+{
+  "consumer": {
+    "name": "@hobo/bindles"
+  },
+  "provider": {
+    "name": "hobo-collector"
+  },
+  "interactions": [
+    {
+      "description": "submit trigger edges for manifest collection",
+      "request": {
+        "method": "POST",
+        "path": "/collector/trigger-edges",
+        "body": {
+          "triggerEdges": [
+            {
+              "id": "api.GET./hello",
+              "kind": "http.route",
+              "resource": "api",
+              "method": "GET",
+              "path": "/hello",
+              "exportInterface": "wasi:http/incoming-handler",
+              "handler": "helloHandler"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "accepted": true,
+          "schema": "hobo.manifest/v1"
+        }
+      }
+    },
+    {
+      "description": "reject duplicate HTTP route",
+      "request": {
+        "method": "POST",
+        "path": "/collector/trigger-edges",
+        "body": {
+          "error": {
+            "path": "resources.api.routes[GET /hello]",
+            "message": "duplicate route"
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "error": "TriggerContractError"
+        }
+      }
+    },
+    {
+      "description": "reject out-of-Bindle trigger resource",
+      "request": {
+        "method": "POST",
+        "path": "/collector/trigger-edges",
+        "body": {
+          "error": {
+            "path": "triggers[0].resource",
+            "message": "orders is not declared in this Bindle"
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "error": "TriggerContractError"
+        }
+      }
+    },
+    {
+      "description": "reject workflow subscriber without durable event path",
+      "request": {
+        "method": "POST",
+        "path": "/collector/trigger-edges",
+        "body": {
+          "error": {
+            "path": "resources.orders.triggers.orders.created",
+            "message": "workflow subscriber requires a durable event path"
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "error": "TriggerContractError"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

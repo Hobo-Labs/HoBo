@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "kind": "persona-survey",
+  "runId": "20260731-all-eq",
+  "persona": "product-coding-agent",
+  "experiences": [
+    "ax",
+    "dx"
+  ],
+  "surfaces": [
+    "bash scripts/setup-agent-tools.sh --help",
+    "pnpm run doctor"
+  ],
+  "featureIds": [
+    "agent-tooling-setup",
+    "cli-help-and-doctor"
+  ],
+  "polledAt": "2026-07-31T15:39:56.129Z",
+  "primaryPhaseStop": "metrics-zero",
+  "answers": [
+    {
+      "id": "q_excitement",
+      "prompt": "excitement",
+      "score": 4,
+      "text": "Fail-closed MCP + zero-key --help path; doctor remediation pasteable."
+    },
+    {
+      "id": "q_ease",
+      "prompt": "ease",
+      "score": 5,
+      "text": "Happy path is one command/exit 0."
+    },
+    {
+      "id": "q_optimal",
+      "prompt": "optimal",
+      "score": 4,
+      "text": "Optional: template incomplete product-* personas to schema v2 in bulk (M)."
+    },
+    {
+      "id": "q_delight",
+      "prompt": "delight",
+      "text": "Fail-closed MCP + zero-key --help path; doctor remediation pasteable."
+    },
+    {
+      "id": "q_friction_feel",
+      "prompt": "friction",
+      "text": "gbrain still optional noise but now actionable."
+    },
+    {
+      "id": "q_one_change",
+      "prompt": "one change",
+      "text": "Optional: template incomplete product-* personas to schema v2 in bulk (M)."
+    },
+    {
+      "id": "q_never",
+      "prompt": "never",
+      "text": "Never auto-install key tools or send embeddings without consent."
+    },
+    {
+      "id": "q_recommend",
+      "prompt": "recommend",
+      "recommend": "yes",
+      "text": "Zero-key progressive setup is agent-safe."
+    }
+  ],
+  "positive": {
+    "excitement": 4,
+    "easeOfUse": 5,
+    "perceivedOptimality": 4,
+    "total": 13,
+    "min": 4,
+    "gapTotal": 2,
+    "gapMax": 1
+  },
+  "cognitive": {
+    "featureSprawl": 2,
+    "visualClutter": 0,
+    "interactiveClutter": 0,
+    "choiceOverload": 1,
+    "informationDensity": 1,
+    "noveltyTax": 1,
+    "contextSwitchTax": 1,
+    "workingMemoryLoad": 1,
+    "interruptionFragility": 0,
+    "total": 7,
+    "max": 2,
+    "breaches": []
+  },
+  "featureRequests": [
+    {
+      "id": "fr-product-personas-schema-v2-backfill",
+      "title": "Backfill product-* personas to schema v2 KYC models",
+      "problem": "Most product personas still v1 without cognitive thresholds / psychographics.",
+      "desiredOutcome": "All product-* personas schemaVersion 2 with segment + thresholds.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-coding-agent",
+      "featureIds": [
+        "agent-tooling-setup",
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "bash scripts/setup-agent-tools.sh --help",
+        "pnpm run doctor"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 0,
+        "perceivedOptimality": 2
+      },
+      "effortHint": "M",
+      "antiGoals": [],
+      "smallestExperiment": "Scaffold v2 sections for product-* personas via generate-persona rewrite batch."
+    }
+  ],
+  "evidenceRefs": [
+    ".optimizexp/features/agent-tooling-setup/evidence/",
+    ".optimizexp/features/cli-help-and-doctor/evidence/"
+  ]
+}

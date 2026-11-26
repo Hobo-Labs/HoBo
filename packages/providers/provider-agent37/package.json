@@ -1,0 +1,48 @@
+{
+	"name": "@hobo/provider-agent37",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist",
+		"data-models",
+		"contracts"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./fake": {
+			"types": "./dist/fake.d.ts",
+			"default": "./dist/fake.js"
+		},
+		"./fake/container": {
+			"types": "./dist/fake/container.d.ts",
+			"default": "./dist/fake/container.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run test/"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
+		"zod": "^4.1.13"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"testcontainers": "11.8.1",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"description": "HoBo Agent37 CI runner provider with a bounded redacted client, capability manifest, and published offline fake."
+}

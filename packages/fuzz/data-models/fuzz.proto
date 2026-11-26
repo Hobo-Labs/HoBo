@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package hobo.fuzz.v1;
+
+// Documentation-only wire shapes for property/fuzz oracles.
+// No buf.yaml: this folder is not opted into codegen.
+
+message InvariantVerdict {
+  string schema = 1; // hobo.fuzz.invariant-verdict/v1
+  string invariant = 2;
+  bool ok = 3;
+  string message = 4;
+}
+
+message FuzzTrace {
+  string schema = 1; // hobo.fuzz.trace/v1
+  string seed = 2;
+  repeated string commands = 3;
+  repeated InvariantVerdict verdicts = 4;
+}

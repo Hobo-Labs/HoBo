@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "S605ObservabilityDriftLoopContractConsumer"
+  },
+  "provider": {
+    "name": "S605ObservabilityDriftLoopContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "S6-05 observability drift loop boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/s6-05-observability-drift-loop-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.s6_05_observability_drift_loop_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

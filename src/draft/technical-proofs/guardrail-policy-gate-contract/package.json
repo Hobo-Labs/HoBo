@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/guardrail-policy-gate-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for the HoBo guardrail policy-gated step and four-lens promotion gate.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

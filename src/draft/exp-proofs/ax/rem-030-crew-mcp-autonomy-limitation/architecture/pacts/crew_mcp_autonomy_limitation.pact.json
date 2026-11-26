@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "CrewMcpAutonomyLimitationConsumer"
+  },
+  "provider": {
+    "name": "CrewMcpAutonomyLimitationProof"
+  },
+  "interactions": [
+    {
+      "description": "REM-030 proof confirms Crew/MCP autonomy limitation is registered",
+      "request": {
+        "method": "GET",
+        "path": "/rem-030/crew-mcp-autonomy-limitation"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "issue": "HOBO-697",
+          "gap": "GAP-022"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

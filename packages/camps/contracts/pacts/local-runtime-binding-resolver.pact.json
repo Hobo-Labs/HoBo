@@ -1,0 +1,34 @@
+{
+  "consumer": {
+    "name": "@hobo/camps"
+  },
+  "provider": {
+    "name": "@hobo/runtime-local"
+  },
+  "interactions": [
+    {
+      "description": "resolve local binding tokens for sample resources",
+      "providerStates": [{ "name": "local equivalents registered for sample resources" }],
+      "request": {
+        "method": "POST",
+        "path": "/runtime-local/bindings/resolve",
+        "body": {
+          "resourceId": "db",
+          "property": "connectionString"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "value": "sqlite://file:hello-bindle.db?mode=memory&cache=shared",
+          "source": "runtime-local"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

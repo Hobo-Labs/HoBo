@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "V1VibeGapClosureReferenceApp"
+  },
+  "provider": {
+    "name": "VibeUnblockLedgerBoundary"
+  },
+  "interactions": [
+    {
+      "description": "record parent blocker outcome for downstream DX and artifact issues",
+      "request": {
+        "method": "PUT",
+        "path": "/hobo-539/unblock-ledger",
+        "body": {
+          "parentIssue": "HOBO-539",
+          "downstreamChildren": 26,
+          "dxBackboneChildren": 11,
+          "quickstartConsumers": 25
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "outcome": "dx-backbone-continues-after-pr-merge",
+          "blockedByClosesWhen": "HOBO-539 Done"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

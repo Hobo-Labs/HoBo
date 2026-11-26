@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DisasterRecoveryFailoverContractConsumer"
+  },
+  "provider": {
+    "name": "DisasterRecoveryFailoverContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Disaster Recovery Failover Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/disaster-recovery-failover-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.disaster_recovery_failover_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

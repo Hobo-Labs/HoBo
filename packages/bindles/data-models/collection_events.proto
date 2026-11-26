@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package hobo.bindles.v1;
+
+// Run-to-collect emits two facts per Bindle collection run. They are the
+// command/event evidence the collection engine (src/collect/) appends: the
+// engine runs the Bindle's components in resource-collection mode, an actor
+// folds the observed resources into the manifest IR, and these events are the
+// materialized-view/projection inputs a downstream read store replays.
+
+// bindle.ResourcesCollected — the resources and bind edges observed while the
+// components ran in collection mode.
+message BindleResourcesCollected {
+  string id = 1;
+  string type = 2;
+  uint32 seq = 3;
+  string source = 4;
+  string bindle_id = 5;
+  repeated string resources = 6;
+  repeated string binds = 7;
+}
+
+// bindle.ManifestProduced — the deterministic manifest IR (and its canonical
+// hash) assembled from the collected resources.
+message BindleManifestProduced {
+  string id = 1;
+  string type = 2;
+  uint32 seq = 3;
+  string source = 4;
+  string bindle_id = 5;
+  string manifest_hash = 6;
+}

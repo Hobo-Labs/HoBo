@@ -1,0 +1,38 @@
+{
+	"id": "connector.http",
+	"tier": 2,
+	"kind": "connector",
+	"description": "Bindle connector attachment that resolves a short-lived token from Station context.",
+	"tags": [
+		"connector",
+		"http",
+		"firecrawl",
+		"token"
+	],
+	"queries": [
+		"attach a connector",
+		"firecrawl connector",
+		"connector token"
+	],
+	"requires": [],
+	"provides": [
+		"connector.http"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/connector.ts",
+			"from": "body/connector.ts.tpl"
+		}
+	]
+}

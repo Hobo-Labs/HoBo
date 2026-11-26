@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "autonomous-drift-remediation-contract",
+  "title": "Autonomous drift remediation contract",
+  "linear": "HOBO-292",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/crew-event-contract",
+      "src/draft/technical-proofs/failure-taxonomy-safe-fix-classifier",
+      "src/draft/technical-proofs/gated-autonomous-remediation-contract",
+      "src/draft/technical-proofs/hobo-remediation-action-contract",
+      "src/draft/technical-proofs/incident-aggregate-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

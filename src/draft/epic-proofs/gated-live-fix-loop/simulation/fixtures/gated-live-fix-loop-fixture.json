@@ -1,0 +1,61 @@
+{
+  "now": "2026-07-02T00:10:00.000Z",
+  "incident": {
+    "id": "incident-checkout-500",
+    "correlationId": "corr-checkout-500",
+    "environment": "staging",
+    "signal": "slo-burn",
+    "failureEventId": "slo-burn-checkout"
+  },
+  "failingTrace": {
+    "id": "trace-checkout-500",
+    "assertions": [
+      "checkout POST /orders returns 2xx",
+      "payment authorization span completes before response"
+    ]
+  },
+  "candidate": {
+    "id": "candidate-live-fix-001",
+    "patchRef": "draft://generated-stack/live-fix/candidate-001",
+    "riskClass": "low",
+    "hypothesis": "increase connection pool timeout",
+    "sandbox": { "passed": true, "reportRef": "validation://sandbox/green" },
+    "conformance": { "passed": true, "reportRef": "validation://conformance/green" },
+    "traceReplay": { "passed": true, "reportRef": "validation://trace/replay-green" },
+    "blastRadius": {
+      "maxResources": 1,
+      "destructive": false,
+      "reversible": true,
+      "compensationRef": "rollback://candidate-live-fix-001"
+    }
+  },
+  "policy": { "maxBlastRadius": { "maxResources": 1 } },
+  "rollout": { "id": "rollout-live-fix-001" },
+  "sloRegression": {
+    "snapshot": {
+      "sloId": "checkout-availability",
+      "seq": 22,
+      "status": "available",
+      "burnRate": 14.8,
+      "remainingBudgetRatio": 0.04
+    },
+    "windowSamples": [
+      { "seq": 21, "status": "available", "burnRate": 13.5, "remainingBudgetRatio": 0.06 },
+      { "seq": 22, "status": "available", "burnRate": 14.8, "remainingBudgetRatio": 0.04 }
+    ]
+  },
+  "canaryObservation": {
+    "snapshot": {
+      "sloId": "checkout-availability",
+      "seq": 24,
+      "status": "available",
+      "burnRate": 15.2,
+      "remainingBudgetRatio": 0.03
+    },
+    "windowSamples": [
+      { "seq": 23, "status": "available", "burnRate": 14.1, "remainingBudgetRatio": 0.05 },
+      { "seq": 24, "status": "available", "burnRate": 15.2, "remainingBudgetRatio": 0.03 }
+    ],
+    "goldenSuite": { "suiteId": "checkout-golden", "status": "passed", "failures": [] }
+  }
+}

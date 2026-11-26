@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/search-extension-packages-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

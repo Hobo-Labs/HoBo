@@ -1,0 +1,19 @@
+{
+  "packageManager": "pnpm",
+  "taskRunner": "turbo",
+  "commands": {
+    "setup": "pnpm setup",
+    "targetedCheck": "pnpm agent:check",
+    "changedCheck": "pnpm check:changed",
+    "changedBuildCheck": "pnpm check:changed:build",
+    "fullCheck": "pnpm check:all",
+    "codegen": "pnpm contracts:data-models"
+  },
+  "testing": {
+    "policy": "contract-first-no-e2e",
+    "default": "pnpm agent:check",
+    "manualLive": ["pnpm eval:agent:live"]
+  },
+  "generated": ["contracts/data-models/data-models.proto", "contracts/data-models/data-models.cue", "**/generated/**", "**/src/gen/**"],
+  "doNotEdit": ["contracts/data-models/data-models.proto", "contracts/data-models/data-models.cue", "**/generated/**", "**/src/gen/**"]
+}

@@ -1,0 +1,17 @@
+{
+  "iteration": 2,
+  "runId": "20260731-ax-continue",
+  "scoredAt": "2026-07-31T13:44:00.000Z",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsPrev": { "metric_total_delta": 0, "metric_max_delta": 0 },
+  "implementableFindingsRemaining": 0,
+  "reverify": {
+    "helpExit": 0,
+    "setupSkipReinstall": true,
+    "gbrainExit": 1,
+    "serenaMissExit": 1,
+    "headroomMissExit": 1,
+    "bindings": "4/4"
+  }
+}

@@ -1,0 +1,59 @@
+{
+	"consumer": {
+		"name": "HoboBrokerGatePlaneConsumer"
+	},
+	"provider": {
+		"name": "CedarAuthorizationBoundary"
+	},
+	"interactions": [
+		{
+			"description": "The broker asks Cedar is_authorized and an Allow flows through",
+			"request": {
+				"method": "POST",
+				"path": "/v1/is_authorized",
+				"body": {
+					"principal": "Service::\"broker:yard-1\"",
+					"action": "Action::\"hobo:broker:resolve\"",
+					"resource": "Bindle::\"bindle:checkout\""
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"decision": "Allow",
+					"diagnostics": {
+						"reason": ["hobo.cedar/placement-allow"],
+						"errors": []
+					}
+				}
+			}
+		},
+		{
+			"description": "A Cedar Deny lowers onto a policy-plane rejection reason",
+			"request": {
+				"method": "POST",
+				"path": "/v1/is_authorized",
+				"body": {
+					"principal": "Service::\"broker:yard-1\"",
+					"action": "Action::\"hobo:broker:resolve\"",
+					"resource": "Bindle::\"bindle:frozen\""
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"decision": "Deny",
+					"diagnostics": {
+						"reason": ["hobo.cedar/change-freeze"],
+						"errors": []
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "hobo.cost/v1",
+  "providerId": "fixture-azure",
+  "currency": "USD",
+  "regions": ["us-east-1"],
+  "unitPrices": {
+    "runtime-compute-seconds": 0.01,
+    "generation-runs": 1,
+    "egress-gb": {
+      "same_region": 0,
+      "cross_region": 0.02,
+      "internet": 0.09
+    }
+  },
+  "freeTier": {}
+}

@@ -1,0 +1,17 @@
+{
+  "id": "oracle-free-isolated",
+  "provider": "hobo-box-worker",
+  "providerAccountId": "oracle-free-vm",
+  "enabled": true,
+  "runsOn": "hobo-isolated-worker",
+  "backend": "isolated-container",
+  "freeMinutes": 0,
+  "priceMicrosPerMinute": 0,
+  "budgetMicros": 0,
+  "spentMicros": 0,
+  "concurrency": 1,
+  "observedAt": "2026-11-02T00:00:00Z",
+  "validUntil": "2026-12-31T23:59:59Z",
+  "sourceUrl": "https://example.test/hobo-ci-worker-evidence",
+  "bridgeAcknowledged": true
+}

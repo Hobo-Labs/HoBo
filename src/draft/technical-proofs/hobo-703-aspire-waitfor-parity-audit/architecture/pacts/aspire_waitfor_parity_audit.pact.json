@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "intent-alignment-gap-remediation-consumer"
+  },
+  "provider": {
+    "name": "aspire-waitfor-parity-audit"
+  },
+  "interactions": [
+    {
+      "description": "audit aspire WaitFor tracker row is partial not parity",
+      "request": {
+        "method": "POST",
+        "path": "/competitors/v1/aspire-waitfor-parity-audit"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "trackerRow": {
+            "aspireFeature": "`WaitFor` / `WaitForCompletion` (health-gated)",
+            "hoboEquivalent": "Choreography on `resource.Provisioned` only today; health/readiness-gated DAG edges not yet designed",
+            "status": "◐",
+            "hoboDoc": "../design/control-plane.md#health-gated-dependency-ordering-iteration-hook"
+          },
+          "failures": [],
+          "pass": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "consumer": {
+    "name": "cli-mcp-reference-app"
+  },
+  "provider": {
+    "name": "identity-policy-gateway"
+  },
+  "interactions": [
+    {
+      "description": "static cloud key is refused",
+      "request": {
+        "operation": "acceptCredential",
+        "type": "static-cloud-key"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "rejected",
+          "reason": "static-cloud-key-not-accepted"
+        }
+      }
+    },
+    {
+      "description": "mandatory deny ceiling blocks unsafe prod action",
+      "request": {
+        "operation": "policyDecision",
+        "scopes": ["object.delete"]
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "deny"
+        }
+      }
+    }
+  ]
+}

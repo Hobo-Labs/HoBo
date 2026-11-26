@@ -1,0 +1,24 @@
+{
+  "id": "ambiguous-runaway-remediation",
+  "title": "Runaway remediation guard escalates ambiguous self-caused drift",
+  "persona": "sre-operator",
+  "bddScenario": "Given a drift signal may be caused by the operator's prior fix, when the failure taxonomy cannot classify it safely, then the runaway guard opens a circuit and SRE escalates without another write action.",
+  "verticalSlice": "detect-fail-closed-escalate",
+  "incidentId": "inc-crew-003",
+  "resource": "api.autoscale-policy",
+  "severity": "SEV1",
+  "correlationId": "corr-runaway-remediation",
+  "signal": {
+    "source": "resource.DriftDetected"
+  },
+  "diagnosis": {
+    "evidence": ["self-causation-chain", "cooldown-active", "unknown-blast-radius"]
+  },
+  "cooldownMinutes": 30,
+  "mockInteractions": {
+    "sre-operator-to-projection-read-api": "read-drift-projection",
+    "sre-operator-to-policy-engine": "deny-self-caused-write",
+    "sre-operator-to-a2h-notifier": "notify-runaway-escalation",
+    "sre-operator-to-issue-tracker": "file-runbook-follow-up"
+  }
+}

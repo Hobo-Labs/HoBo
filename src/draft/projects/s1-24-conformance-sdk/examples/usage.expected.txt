@@ -1,0 +1,14 @@
+corpus fixtures: orders-handler,bindle-closure,allow-narrowing,secret-ref
+annex vectors: error-mapping/result-error-mapping,cancellation/caller-cancellation,async-ordering/awaited-ifc-order,ifc-side-effects/missing-resource-before-handler
+gate lanes: golden-ir-lowering-equivalence,semantics-annex,thin-idiom-layer,authorship-neutral-gate,coverage-claim
+lane golden-ir-lowering-equivalence: passed
+lane semantics-annex: passed
+lane thin-idiom-layer: passed
+lane authorship-neutral-gate: passed
+lane coverage-claim: passed
+report status=passed boundedByCorpus=true
+canonical report json deterministic: true
+seeded drift: golden-ir=passed semantics-annex=failed case=caller-cancellation diffPaths=err|ok
+unbacked helper claim: report=failed reason="helper claim has no golden-IR or semantics-annex vector"
+empty corpus rejected: TypeError
+CONTRACT HELD: sdk conformance is corpus-bounded, drift-detecting, and coverage-honest

@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+enum PortKind {
+  PORT_KIND_UNSPECIFIED = 0;
+  PORT_KIND_RUNTIME = 1;
+  PORT_KIND_PROVIDER = 2;
+  PORT_KIND_PORT = 3;
+}
+
+enum InterfaceStability {
+  STABILITY_UNSPECIFIED = 0;
+  STABILITY_STABLE = 1;
+  STABILITY_PREVIEW = 2;
+  STABILITY_EXPERIMENTAL = 3;
+}
+
+message PortDescriptor {
+  PortKind kind = 1;
+  string name = 2;
+  string interface_ref = 3;
+  InterfaceStability stability = 4;
+}

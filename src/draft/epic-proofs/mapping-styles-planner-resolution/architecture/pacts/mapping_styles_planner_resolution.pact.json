@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MappingStylesPlannerResolutionConsumer"
+  },
+  "provider": {
+    "name": "MappingStylesPlannerResolutionBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Planner boundary returns contract evidence for mapping-style resolution",
+      "request": {
+        "method": "GET",
+        "path": "/mapping-styles-planner-resolution/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.mapping_styles_planner_resolution/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

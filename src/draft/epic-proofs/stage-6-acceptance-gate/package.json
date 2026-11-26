@@ -1,0 +1,10 @@
+{
+  "name": "@hobo/epic-reference-stage-6-acceptance-gate",
+  "private": true,
+  "type": "module",
+  "description": "HOBO-665: scripted Stage-6 acceptance drill for v1 GA readiness (HA, FinOps, UX, governance).",
+  "scripts": {
+    "test": "vitest run --root .",
+    "simulate": "node --import tsx simulation/run-simulation.ts"
+  }
+}

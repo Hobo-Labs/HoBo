@@ -1,0 +1,57 @@
+# Vercel Blob (private) as the hosted relay's cache (ADR-0179 amendment,
+# phase 5). Lowered into the @hobo/pricing catalog by
+# scripts/generate-offers.mts.
+#
+# UNVERIFIED: these are Pro operation rates as @hobo/provider-vercel-blob
+# records them, not checked for this store, and Hobby's included operations
+# are not modelled. The relay admits a pay-as-you-go offer only under a cap
+# the owner declares (HOBO_CI_CACHE_OFFERS_JSON); the default cap is zero.
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: vercel-blob
+  displayName: Vercel Blob
+  homepage: https://vercel.com/docs/vercel-blob
+  description: Private Blob store on the relay's own project; OIDC, compare-and-set by ETag.
+
+capabilities:
+  regions: [iad1]
+  mappings:
+    - id: kv/blob-private
+      port: kv
+      resourceClass: blob
+      providerService: vercel.blob
+      features: [ttl, atomicCompareAndSet]
+      profiles: [kv.ephemeral-state/v1]
+      stability: preview
+      products: [blob-private]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://vercel.com/docs/vercel-blob/usage-and-pricing
+    checkedAt: 2026-11-11
+    note: UNVERIFIED for this store; Pro rates via @hobo/provider-vercel-blob.
+  billables:
+    - id: simple-operations
+      category: service
+      unit: operation
+    - id: advanced-operations
+      category: service
+      unit: operation
+  products:
+    - id: blob-private
+      kind: service
+      plans:
+        - id: pay-as-you-go
+          charges:
+            - id: simple-operations
+              metered:
+                billable: simple-operations
+                package: { per: 1000000, amount: "0.40" }
+            - id: advanced-operations
+              metered:
+                billable: advanced-operations
+                package: { per: 1000000, amount: "5.00" }

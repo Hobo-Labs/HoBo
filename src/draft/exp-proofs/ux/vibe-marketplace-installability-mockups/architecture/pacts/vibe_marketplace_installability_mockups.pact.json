@@ -1,0 +1,287 @@
+{
+  "consumer": {
+    "name": "MarketplaceUxMockupConsumer"
+  },
+  "provider": {
+    "name": "MarketplaceInstallabilityFixtureProvider"
+  },
+  "interactions": [
+    {
+      "description": "marketplace browse search detail and installability reference mockups",
+      "providerStates": [
+        {
+          "name": "HOBO-546 reference fixture package is available"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/hobo-546/marketplace-installability-mockups"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-546",
+          "phase": "M1",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-marketplace-installability-mockups",
+          "proofPath": "docs/design/proofs/vibe-marketplace-installability-mockups/README.md",
+          "designRefs": [
+            "docs/design/marketplace-ux.md",
+            "docs/design/marketplace-publisher-trust-evidence.md",
+            "docs/design/capability-review-approval.md",
+            "docs/design/org-catalogs.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "browse",
+              "marketplaceUse": "browse cards use accepted manifest fixture ids instead of inventing resource lifecycle behavior"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "consumingSurface": "search",
+              "marketplaceUse": "search result warnings reuse plan-preview proof-mode wording"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "live",
+              "consumingSurface": "installability-panel",
+              "marketplaceUse": "installability copy can cite accepted deploy evidence without building install runtime"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingSurface": "listing-detail",
+              "marketplaceUse": "listing detail stale-evidence labels reuse the accepted manage fixture"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "consumingSurface": "installability-panel",
+              "marketplaceUse": "scope-out recovery label prevents marketplace UI from implying live remediation"
+            }
+          ],
+          "personas": [
+            "app developer",
+            "workspace administrator",
+            "marketplace operator",
+            "security reviewer",
+            "support operator"
+          ],
+          "wireframes": [
+            {
+              "id": "wf-marketplace-browse",
+              "surface": "browse",
+              "title": "Browse grid with visible listing state and proof-mode chips",
+              "personas": ["app developer", "workspace administrator", "marketplace operator"],
+              "questionsAnswered": [
+                "Which listings are visible, preview-only, beta, installable, blocked, deprecated, or yanked before the user clicks?",
+                "What evidence and owner route explain why a card can or cannot expose install intent?"
+              ],
+              "fixtureIds": [
+                "hobo-546-marketplace-preview-only",
+                "hobo-546-marketplace-limited-beta",
+                "hobo-546-marketplace-installable"
+              ]
+            },
+            {
+              "id": "wf-marketplace-search",
+              "surface": "search",
+              "title": "Search results with org-catalog filter and blocked-state explanation",
+              "personas": ["app developer", "workspace administrator", "security reviewer"],
+              "questionsAnswered": [
+                "Which policy, trust, catalog, or evidence boundary removed or downgraded a search result?",
+                "Can a reviewer see why ratings or publisher identity did not make the listing installable?"
+              ],
+              "fixtureIds": [
+                "hobo-546-marketplace-policy-blocked",
+                "hobo-546-marketplace-preview-only"
+              ]
+            },
+            {
+              "id": "wf-marketplace-listing-detail",
+              "surface": "listing-detail",
+              "title": "Listing detail with trust evidence, stale warning, deprecation, and owner route",
+              "personas": ["app developer", "marketplace operator", "support operator"],
+              "questionsAnswered": [
+                "Which evidence source, customer-safe message, and support handoff are visible on detail pages?",
+                "When a listing is deprecated or stale, what migration or support action replaces install intent?"
+              ],
+              "fixtureIds": [
+                "hobo-546-marketplace-deprecated",
+                "hobo-546-marketplace-yanked"
+              ]
+            },
+            {
+              "id": "wf-marketplace-installability-panel",
+              "surface": "installability-panel",
+              "title": "Installability outcome panel with customer-safe message and scope-out guard",
+              "personas": ["workspace administrator", "security reviewer", "support operator"],
+              "questionsAnswered": [
+                "Does the panel have enough provenance, conformance, security, catalog, and policy evidence to show installability?",
+                "What exact text is shown when install runtime, registry, policy, or support execution is out of scope?"
+              ],
+              "fixtureIds": [
+                "hobo-546-marketplace-installable",
+                "hobo-546-marketplace-policy-blocked",
+                "hobo-546-marketplace-yanked"
+              ]
+            }
+          ],
+          "fixtures": [
+            {
+              "state": "preview-only",
+              "fixtureId": "hobo-546-marketplace-preview-only",
+              "visibleState": "Preview only",
+              "evidenceSource": "docs/design/marketplace-publisher-trust-evidence.md#launch-limitations",
+              "ownerRoute": "Marketplace Publisher Trust Evidence",
+              "customerSafeMessage": "Preview listing is visible for evaluation but cannot be presented as installable.",
+              "orgCatalogDisposition": "not in org catalog; workspace admins see an evaluation-only state",
+              "proofMode": "reference fixture",
+              "trustEvidence": "publisher identity present; security review and catalog approval incomplete",
+              "supportHandoff": "route questions to marketplace trust owner with launch-limit wording"
+            },
+            {
+              "state": "limited-beta",
+              "fixtureId": "hobo-546-marketplace-limited-beta",
+              "visibleState": "Limited beta",
+              "evidenceSource": "docs/design/capability-review-approval.md#approval-outcomes",
+              "ownerRoute": "Capability Review & Approval",
+              "customerSafeMessage": "Limited-beta listing is available only to allowed scopes with explicit missing-evidence limits.",
+              "orgCatalogDisposition": "approved for beta workspace scope with policy pin required",
+              "proofMode": "simulated",
+              "trustEvidence": "limited-beta approval recorded; conformance evidence still bounded",
+              "supportHandoff": "route blockers to capability review owner before expanding visibility"
+            },
+            {
+              "state": "installable",
+              "fixtureId": "hobo-546-marketplace-installable",
+              "visibleState": "Installable with evidence",
+              "evidenceSource": "docs/design/marketplace-ux.md#installability-outcomes",
+              "ownerRoute": "Capability Review & Approval",
+              "customerSafeMessage": "Listing is installable only because provenance, conformance, security review, catalog, and policy evidence are present.",
+              "orgCatalogDisposition": "approved in org catalog with immutable version pin and support owner",
+              "proofMode": "live",
+              "trustEvidence": "signed provenance, conformance certificate, security review, and org catalog approval exist",
+              "supportHandoff": "attach evidence links and approved scope before any customer action"
+            },
+            {
+              "state": "policy-blocked",
+              "fixtureId": "hobo-546-marketplace-policy-blocked",
+              "visibleState": "Blocked by policy",
+              "evidenceSource": "docs/design/org-catalogs.md#entry-states",
+              "ownerRoute": "Org Catalogs",
+              "customerSafeMessage": "Listing is blocked for this workspace by catalog, policy, trust, or approval state.",
+              "orgCatalogDisposition": "blocked for current workspace; no install intent is exposed",
+              "proofMode": "reference fixture",
+              "trustEvidence": "policy pin denies this scope even though listing metadata remains visible",
+              "supportHandoff": "show owner route and denial evidence without granting override"
+            },
+            {
+              "state": "deprecated",
+              "fixtureId": "hobo-546-marketplace-deprecated",
+              "visibleState": "Deprecated",
+              "evidenceSource": "docs/design/org-catalogs.md#entry-states",
+              "ownerRoute": "Registry Distribution",
+              "customerSafeMessage": "Deprecated listing remains visible only for migration guidance and existing-use explanation.",
+              "orgCatalogDisposition": "deprecated entry remains audit-visible with replacement route",
+              "proofMode": "reference fixture",
+              "trustEvidence": "deprecation notice and replacement evidence exist; new install is not default",
+              "supportHandoff": "route to migration owner and support-safe replacement guidance"
+            },
+            {
+              "state": "yanked",
+              "fixtureId": "hobo-546-marketplace-yanked",
+              "visibleState": "Yanked",
+              "evidenceSource": "docs/design/capability-review-approval.md#review-queue-states",
+              "ownerRoute": "Support Workflow",
+              "customerSafeMessage": "Yanked listing is removed from new selection and routed to support or migration guidance.",
+              "orgCatalogDisposition": "retired from org catalog selection and retained for audit only",
+              "proofMode": "scope-out",
+              "trustEvidence": "yank decision exists; production registry removal stays out of this proof",
+              "supportHandoff": "send redacted customer-safe yank reason to support owner"
+            }
+          ],
+          "scenarioPaths": [
+            {
+              "id": "happy-path",
+              "narrative": "Browse and installability panel show one listing as installable only after all evidence sources exist.",
+              "fixtureIds": ["hobo-546-marketplace-installable"],
+              "proofModeLabels": ["reference fixture", "live"],
+              "accessibilityNote": "Keyboard focus reaches state, evidence source, owner route, and proof-mode chip in order.",
+              "safeOutcome": "show install intent copy while naming the evidence owner and fixture source"
+            },
+            {
+              "id": "blocked-path",
+              "narrative": "Policy-blocked and yanked listings keep state visible but suppress install intent.",
+              "fixtureIds": [
+                "hobo-546-marketplace-policy-blocked",
+                "hobo-546-marketplace-yanked"
+              ],
+              "proofModeLabels": ["reference fixture", "scope-out"],
+              "accessibilityNote": "Blocked and yanked states are text labels, not color-only badges.",
+              "safeOutcome": "route to org catalog or support owner without granting override"
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "narrative": "Preview-only and limited-beta listings carry missing-evidence language rather than optimistic install claims.",
+              "fixtureIds": [
+                "hobo-546-marketplace-preview-only",
+                "hobo-546-marketplace-limited-beta"
+              ],
+              "proofModeLabels": ["reference fixture", "simulated"],
+              "accessibilityNote": "Screen reader copy announces missing evidence and limited-beta status.",
+              "safeOutcome": "show warning copy and review owner before selection"
+            },
+            {
+              "id": "support-handoff",
+              "narrative": "Deprecated and yanked listings expose customer-safe support or migration wording.",
+              "fixtureIds": [
+                "hobo-546-marketplace-deprecated",
+                "hobo-546-marketplace-yanked"
+              ],
+              "proofModeLabels": ["reference fixture", "live"],
+              "accessibilityNote": "Responsive layout keeps support route and customer-safe message adjacent.",
+              "safeOutcome": "handoff support-safe deprecation or yank evidence with no live ticket creation"
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard order moves from browse/search result to listing detail and then installability panel actions.",
+            "Screen reader labels include visible state, evidence source, owner route, proof mode, and support handoff.",
+            "Contrast and text labels distinguish preview, beta, installable, blocked, deprecated, and yanked states without relying on color.",
+            "Responsive layouts keep customer-safe message, org-catalog disposition, and owner route visible on narrow screens.",
+            "Motion is optional; warning and status transitions must respect reduced-motion preferences."
+          ],
+          "scopeOut": [
+            "No live storefront, browse/search service, marketplace service, or install runtime.",
+            "No Registry storage, resolver, package hosting, signing, or install-time verification implementation.",
+            "No ranking, recommendation, paid placement, monetization, payout, or commercial marketplace policy.",
+            "No publisher portal workflow, evidence upload service, maintainer workflow, or submission tooling.",
+            "No policy engine, RBAC runtime, scanner integration, conformance runner, or approval service implementation.",
+            "No support tooling, notification delivery, launch publication, or customer-facing launch claim without evidence."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-546",
+      "phase": "M1",
+      "proofMode": "reference fixture"
+    }
+  }
+}

@@ -1,0 +1,272 @@
+{
+	"consumer": {
+		"name": "hobo-capability-selection"
+	},
+	"provider": {
+		"name": "hobo-manifest-request-codec"
+	},
+	"interactions": [
+		{
+			"description": "a conformant candidate wins after a full record round trip",
+			"request": {
+				"type": "message",
+				"body": {
+					"requirement": {
+						"requiredProfiles": [
+							{
+								"profileId": "data.postgres/v1"
+							}
+						]
+					},
+					"nowMs": 1785110400000,
+					"candidates": [
+						{
+							"schema_version": "hobo.selection-candidate/v1",
+							"definition_id": "neon.claimable-postgres/v1",
+							"provider_id": "test",
+							"implements_profiles": [
+								{
+									"profile_id": "data.postgres/v1",
+									"version_range": ">=1",
+									"realization": "native",
+									"conformance_ref": "conformance.data.postgres/v1",
+									"conformance": "pass"
+								}
+							],
+							"runtime_models": [
+								"paas"
+							],
+							"structured_capabilities": {},
+							"produces_binding_profiles": [
+								"binding.postgresql/v1"
+							],
+							"migration_profiles": [
+								"migration.postgres.pg-dump/v1"
+							],
+							"provider_class": "verified-emerging",
+							"evidence_expires_at_ms": 1786665600000,
+							"evidence_signature_valid": true,
+							"creator_authority_after_claim": "rotatable",
+							"claim_atomicity": "single-resource",
+							"claim_action_count": 1,
+							"continuity": {
+								"endpoint": "preserved",
+								"data": "preserved",
+								"credentials": "rotated"
+							},
+							"supports_export": true,
+							"supports_rotation": true,
+							"supports_revocation": true,
+							"sponsor_exposure_minor_units": 0,
+							"has_registered_driver": true,
+							"secret_custody_available": true
+						}
+					]
+				}
+			},
+			"response": {
+				"winner": "neon.claimable-postgres/v1",
+				"rejectionCodes": []
+			}
+		},
+		{
+			"description": "unknown conformance still fails closed on the decoded candidate",
+			"request": {
+				"type": "message",
+				"body": {
+					"requirement": {
+						"requiredProfiles": [
+							{
+								"profileId": "data.postgres/v1"
+							}
+						]
+					},
+					"nowMs": 1785110400000,
+					"candidates": [
+						{
+							"schema_version": "hobo.selection-candidate/v1",
+							"definition_id": "neon.claimable-postgres/v1",
+							"provider_id": "test",
+							"implements_profiles": [
+								{
+									"profile_id": "data.postgres/v1",
+									"version_range": ">=1",
+									"realization": "native",
+									"conformance_ref": "conformance.data.postgres/v1",
+									"conformance": "unknown"
+								}
+							],
+							"runtime_models": [
+								"paas"
+							],
+							"structured_capabilities": {},
+							"produces_binding_profiles": [
+								"binding.postgresql/v1"
+							],
+							"migration_profiles": [
+								"migration.postgres.pg-dump/v1"
+							],
+							"provider_class": "verified-emerging",
+							"evidence_expires_at_ms": 1786665600000,
+							"evidence_signature_valid": true,
+							"creator_authority_after_claim": "rotatable",
+							"claim_atomicity": "single-resource",
+							"claim_action_count": 1,
+							"continuity": {
+								"endpoint": "preserved",
+								"data": "preserved",
+								"credentials": "rotated"
+							},
+							"supports_export": true,
+							"supports_rotation": true,
+							"supports_revocation": true,
+							"sponsor_exposure_minor_units": 0,
+							"has_registered_driver": true,
+							"secret_custody_available": true
+						}
+					]
+				}
+			},
+			"response": {
+				"winner": null,
+				"rejectionCodes": [
+					"CONFORMANCE_FAILED"
+				]
+			}
+		},
+		{
+			"description": "a profile the requirement does not name is still incompatible after decoding",
+			"request": {
+				"type": "message",
+				"body": {
+					"requirement": {
+						"requiredProfiles": [
+							{
+								"profileId": "data.postgres/v1"
+							}
+						]
+					},
+					"nowMs": 1785110400000,
+					"candidates": [
+						{
+							"schema_version": "hobo.selection-candidate/v1",
+							"definition_id": "cloudflare.temporary-d1/v1",
+							"provider_id": "test",
+							"implements_profiles": [
+								{
+									"profile_id": "data.sqlite/v1",
+									"version_range": ">=1",
+									"realization": "native",
+									"conformance_ref": "conformance.data.sqlite/v1",
+									"conformance": "pass"
+								}
+							],
+							"runtime_models": [
+								"paas"
+							],
+							"structured_capabilities": {},
+							"produces_binding_profiles": [
+								"binding.sqlite/v1"
+							],
+							"migration_profiles": [
+								"migration.sqlite.dump/v1"
+							],
+							"provider_class": "verified-emerging",
+							"evidence_expires_at_ms": 1786665600000,
+							"evidence_signature_valid": true,
+							"creator_authority_after_claim": "rotatable",
+							"claim_atomicity": "single-resource",
+							"claim_action_count": 1,
+							"continuity": {
+								"endpoint": "preserved",
+								"data": "preserved",
+								"credentials": "rotated"
+							},
+							"supports_export": true,
+							"supports_rotation": true,
+							"supports_revocation": true,
+							"sponsor_exposure_minor_units": 0,
+							"has_registered_driver": true,
+							"secret_custody_available": true
+						}
+					]
+				}
+			},
+			"response": {
+				"winner": null,
+				"rejectionCodes": [
+					"PROFILE_INCOMPATIBLE"
+				]
+			}
+		},
+		{
+			"description": "expired evidence is refused on the decoded candidate, not only on the literal",
+			"request": {
+				"type": "message",
+				"body": {
+					"requirement": {
+						"requiredProfiles": [
+							{
+								"profileId": "data.postgres/v1"
+							}
+						]
+					},
+					"nowMs": 1785110400000,
+					"candidates": [
+						{
+							"schema_version": "hobo.selection-candidate/v1",
+							"definition_id": "neon.claimable-postgres/v1",
+							"provider_id": "test",
+							"implements_profiles": [
+								{
+									"profile_id": "data.postgres/v1",
+									"version_range": ">=1",
+									"realization": "native",
+									"conformance_ref": "conformance.data.postgres/v1",
+									"conformance": "pass"
+								}
+							],
+							"runtime_models": [
+								"paas"
+							],
+							"structured_capabilities": {},
+							"produces_binding_profiles": [
+								"binding.postgresql/v1"
+							],
+							"migration_profiles": [
+								"migration.postgres.pg-dump/v1"
+							],
+							"provider_class": "verified-emerging",
+							"evidence_expires_at_ms": 1785110399999,
+							"evidence_signature_valid": true,
+							"creator_authority_after_claim": "rotatable",
+							"claim_atomicity": "single-resource",
+							"claim_action_count": 1,
+							"continuity": {
+								"endpoint": "preserved",
+								"data": "preserved",
+								"credentials": "rotated"
+							},
+							"supports_export": true,
+							"supports_rotation": true,
+							"supports_revocation": true,
+							"sponsor_exposure_minor_units": 0,
+							"has_registered_driver": true,
+							"secret_custody_available": true
+						}
+					]
+				}
+			},
+			"response": {
+				"winner": null,
+				"rejectionCodes": [
+					"EVIDENCE_STALE"
+				]
+			}
+		}
+	],
+	"metadata": {
+		"boundary": "SelectionCandidate wire record -> selectCapabilityImplementation",
+		"why": "The decomposition moved SelectionCandidate into @hobo/manifest-request while the gates that read it stayed in @hobo/capability-profiles. This pact is verified by REPLAY, not by being read: each interaction's candidate records are decoded with fromSelectionCandidateRecord and run through selectCapabilityImplementation, and the verdict must equal the response. A codec that widened a vocabulary, dropped an optional, or normalised an absent field would change a verdict here rather than passing a structural comparison."
+	}
+}

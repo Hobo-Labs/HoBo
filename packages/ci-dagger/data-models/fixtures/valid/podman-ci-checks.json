@@ -1,0 +1,6 @@
+{
+  "cliVersion": "1.0.0-beta.21",
+  "engine": "image+podman://registry.dagger.io/engine:v1.0.0-beta.21",
+  "environment": "ci",
+  "timeoutSeconds": 300
+}

@@ -1,0 +1,566 @@
+{
+  "consumer": {
+    "name": "HoboAccountCiClient"
+  },
+  "provider": {
+    "name": "HoboCiAccountControlApi"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "consumerFixtures": {
+      "tokens": {
+        "tenant": "control-tenant-token-with-at-least-32-characters",
+        "neighbor": "control-neighbor-token-with-at-least-32-characters",
+        "readonly": "control-readonly-token-with-at-least-32-characters"
+      },
+      "configuration": {
+        "accounts": [
+          {
+            "id": "tenant",
+            "budgetMicros": 1000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          {
+            "id": "neighbor",
+            "budgetMicros": 2000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          }
+        ]
+      },
+      "setupId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  "interactions": [
+    {
+      "description": "reject missing account authentication",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/policy",
+        "headers": {}
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account authentication required"
+        }
+      }
+    },
+    {
+      "description": "read only authenticated tenant policy",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "ETag": "\"1\""
+        },
+        "body": {
+          "revision": 1,
+          "account": {
+            "id": "tenant",
+            "budgetMicros": 1000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          "updatedAt": "2026-10-27T00:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "ignore client account query override",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/policy?accountId=neighbor",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "ETag": "\"1\""
+        },
+        "body": {
+          "revision": 1,
+          "account": {
+            "id": "tenant",
+            "budgetMicros": 1000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          "updatedAt": "2026-10-27T00:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "read the other account through its own binding",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "ETag": "\"1\""
+        },
+        "body": {
+          "revision": 1,
+          "account": {
+            "id": "neighbor",
+            "budgetMicros": 2000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          "updatedAt": "2026-10-27T00:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "refuse missing policy write scope",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-readonly-token-with-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "id": "tenant",
+          "budgetMicros": 1000000,
+          "maxRuntimeMinutes": 9,
+          "startupMinutes": 1
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account scope required"
+        }
+      }
+    },
+    {
+      "description": "refuse mutation of another tenant policy",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "id": "neighbor",
+          "budgetMicros": 2000000,
+          "maxRuntimeMinutes": 9,
+          "startupMinutes": 1
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account policy belongs to another account"
+        }
+      }
+    },
+    {
+      "description": "require policy compare and swap revision",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "id": "tenant",
+          "budgetMicros": 1000000,
+          "maxRuntimeMinutes": 9,
+          "startupMinutes": 1
+        }
+      },
+      "response": {
+        "status": 428,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "If-Match configuration revision required"
+        }
+      }
+    },
+    {
+      "description": "reject unknown protobuf JSON policy field",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "id": "tenant",
+          "budgetMicros": 1000000,
+          "maxRuntimeMinutes": 9,
+          "startupMinutes": 1,
+          "clientSuppliedPlan": {}
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "invalid account request"
+        }
+      }
+    },
+    {
+      "description": "commit own policy and expose new revision",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "id": "tenant",
+          "budgetMicros": 1000100,
+          "maxRuntimeMinutes": 9,
+          "startupMinutes": 1
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "ETag": "\"2\""
+        },
+        "body": {
+          "revision": 2,
+          "account": {
+            "id": "tenant",
+            "budgetMicros": 1000100,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          "updatedAt": "2026-10-27T00:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "reject stale policy revision without replay",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json",
+          "If-Match": "\"1\""
+        },
+        "body": {
+          "id": "tenant",
+          "budgetMicros": 1000000,
+          "maxRuntimeMinutes": 9,
+          "startupMinutes": 1
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "configuration conflicts with current revision, active leases or usage evidence"
+        }
+      }
+    },
+    {
+      "description": "preserve other account after own policy update",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/policy",
+        "headers": {
+          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "ETag": "\"2\""
+        },
+        "body": {
+          "revision": 2,
+          "account": {
+            "id": "neighbor",
+            "budgetMicros": 2000000,
+            "maxRuntimeMinutes": 9,
+            "startupMinutes": 1
+          },
+          "updatedAt": "2026-10-27T00:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "return only own empty execution snapshot",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/leases",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {}
+      }
+    },
+    {
+      "description": "reject client authored setup artifacts",
+      "request": {
+        "method": "POST",
+        "path": "/v1/accounts/self/repositories/prepare",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "repository": "widget/repo",
+          "repositoryId": 42,
+          "installationId": 5,
+          "allowedRefs": [
+            "refs/heads/main"
+          ],
+          "trustedRepositoryAcknowledged": true,
+          "files": [
+            {
+              "path": "injected.ts",
+              "content": "code"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "invalid account request"
+        }
+      }
+    },
+    {
+      "description": "refuse body substitution for a stored reviewed plan",
+      "request": {
+        "method": "POST",
+        "path": "/v1/accounts/self/repositories/00000000-0000-4000-8000-000000000001/apply",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "files": [
+            {
+              "path": "injected.ts",
+              "content": "code"
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "setup actions use the stored reviewed plan, not request JSON"
+        }
+      },
+      "providerStates": [
+        {
+          "name": "tenant has a server-owned reviewed setup"
+        }
+      ]
+    },
+    {
+      "description": "hide stored setup operations from other accounts",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/repositories/00000000-0000-4000-8000-000000000001",
+        "headers": {
+          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "setup operation not found"
+        }
+      },
+      "providerStates": [
+        {
+          "name": "tenant has a server-owned reviewed setup"
+        }
+      ]
+    },
+    {
+      "description": "hide missing lease from other account reconciliation",
+      "request": {
+        "method": "POST",
+        "path": "/v1/accounts/self/leases/00000000-0000-4000-8000-000000000002/reconcile",
+        "headers": {
+          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "hostRunId": 22
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "lease not found"
+        }
+      }
+    },
+    {
+      "description": "list only tenant installation choices",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/installations",
+        "headers": {
+          "Authorization": "Bearer control-tenant-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "accountId": "tenant",
+          "installationIds": [
+            5
+          ]
+        }
+      }
+    },
+    {
+      "description": "list only neighbor installation choices",
+      "request": {
+        "method": "GET",
+        "path": "/v1/accounts/self/installations",
+        "headers": {
+          "Authorization": "Bearer control-neighbor-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "accountId": "neighbor",
+          "installationIds": [
+            6
+          ]
+        }
+      }
+    },
+    {
+      "description": "refuse the relay's fleet member list without account authentication",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/members",
+        "headers": {}
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "account authentication required"
+        }
+      }
+    },
+    {
+      "description": "answer the relay's fleet member list as unavailable on a relay that reads no fleet",
+      "request": {
+        "method": "GET",
+        "path": "/v1/fleet/members",
+        "headers": {
+          "Authorization": "Bearer control-readonly-token-with-at-least-32-characters"
+        }
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        "body": {
+          "error": "this relay reads no fleet"
+        }
+      }
+    }
+  ]
+}

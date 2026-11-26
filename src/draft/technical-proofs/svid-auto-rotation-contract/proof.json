@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "svid-auto-rotation-contract",
+  "title": "SVID Auto-Rotation Contract POC",
+  "linear": "HOBO-99",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-jwt-svid-contract",
+      "src/draft/technical-proofs/identity-event-contract",
+      "src/draft/technical-proofs/workload-attestation-intake-contract",
+      "src/draft/technical-proofs/yard-identity-issuer-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

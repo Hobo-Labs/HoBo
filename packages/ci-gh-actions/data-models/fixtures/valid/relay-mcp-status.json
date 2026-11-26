@@ -1,0 +1,16 @@
+{
+  "ready": true,
+  "engines": [
+    {
+      "id": "gh-actions",
+      "ready": true
+    }
+  ],
+  "subscriptions": true,
+  "waitDefaultSeconds": 25,
+  "waitMaxSeconds": 50,
+  "accountCalls": 8,
+  "accountWaits": 8,
+  "requestMessages": 8,
+  "mesh": "not-configured"
+}

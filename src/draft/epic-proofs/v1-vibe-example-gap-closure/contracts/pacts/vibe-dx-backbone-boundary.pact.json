@@ -1,0 +1,44 @@
+{
+  "consumer": {
+    "name": "V1VibeGapClosureReferenceApp"
+  },
+  "provider": {
+    "name": "VibeDxBackboneBoundary"
+  },
+  "interactions": [
+    {
+      "description": "validate DX-first backbone under HOBO-539",
+      "providerStates": [
+        {
+          "name": "HOBO-566 and HOBO-567 through HOBO-577 exist in Linear"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/vibe-gap-closure/dx-backbone",
+        "body": {
+          "parentIssue": "HOBO-539",
+          "backboneIssue": "HOBO-566",
+          "requiredLabels": ["dx-first", "api", "sdk", "cli", "contract"],
+          "requiredLifecycle": ["deploy", "manage", "migrate", "rollback", "support"],
+          "m1Foundations": ["HOBO-567", "HOBO-568", "HOBO-569", "HOBO-570", "HOBO-571", "HOBO-572"],
+          "m2Prototypes": ["HOBO-573", "HOBO-574", "HOBO-575", "HOBO-576", "HOBO-577"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "quickstartConsumers": 25,
+          "terminalErrorConsumer": "HOBO-558",
+          "scopeGuard": "production and live-service creep rejected"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

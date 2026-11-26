@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "hobo.cli-authmd/v1",
+  "resource": "https://service.example",
+  "registrationRef": "agent-123",
+  "binding": {
+    "sessionId": "session-123",
+    "tenantId": "acme",
+    "projectId": "app",
+    "audience": "service",
+    "service": "https://service.example"
+  },
+  "preClaimScopes": [
+    "read:data"
+  ],
+  "issuedAt": "2026-07-01T00:00:00.000Z",
+  "expiresAt": "2026-07-02T00:00:00.000Z",
+  "claimEndpoint": "https://service.example/claim",
+  "rotationEndpoint": "https://service.example/rotate",
+  "revocationEndpoint": "https://service.example/revoke",
+  "deployments": [
+    "deployment-1"
+  ],
+  "ownedDeployments": [
+    "deployment-1"
+  ],
+  "privateKey": "fixture-only-private-key-not-real",
+  "initiation": {
+    "registrationRef": "agent-123",
+    "claimUrl": "https://service.example/approve",
+    "pollEndpoint": "https://service.example/poll",
+    "expiresAt": "2026-07-01T01:00:00.000Z",
+    "intervalSeconds": 5,
+    "requestedPostClaimScopes": [
+      "read:data"
+    ],
+    "pollMaterial": "fixture-only-poll-token-not-real"
+  },
+  "principal": {
+    "registrationRef": "agent-123",
+    "phase": "human-bound",
+    "humanSubject": "user-1",
+    "binding": {
+      "sessionId": "session-123",
+      "tenantId": "acme",
+      "projectId": "app",
+      "audience": "service",
+      "service": "https://service.example"
+    },
+    "preClaimScopes": [
+      "read:data"
+    ],
+    "postClaimScopes": [
+      "read:data"
+    ],
+    "claimedAt": "2026-07-01T01:00:00.000Z",
+    "rotateAfterInfrastructureClaim": true,
+    "rotationSatisfied": true
+  },
+  "revoked": {
+    "revokedAt": "yesterday"
+  }
+}

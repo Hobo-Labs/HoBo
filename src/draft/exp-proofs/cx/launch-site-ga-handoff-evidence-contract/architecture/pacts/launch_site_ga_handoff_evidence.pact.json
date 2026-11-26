@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "LaunchSiteGaHandoffEvidenceConsumer"
+  },
+  "provider": {
+    "name": "LaunchSiteGaHandoffEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Site GA Handoff Evidence boundary returns the accepted M4 evidence gate",
+      "request": {
+        "method": "GET",
+        "path": "/launch-site-ga-handoff-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.launch-site-ga-handoff-evidence/2026-06-30",
+          "issue": "HOBO-479",
+          "phase": "M4"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+message ManifestIndex {
+  string schema_version = 1;
+  string issuer = 2;
+  string manifest_digest = 3;
+  ManifestSignature signature = 4;
+  repeated string files = 5;
+}
+
+message ManifestSignature {
+  string alg = 1;
+  string key_id = 2;
+  string digest = 3;
+}
+
+message CapabilityPort {
+  string port = 1;
+  repeated string kinds = 2;
+  string stability = 3;
+}
+
+message CapabilitiesFile {
+  repeated CapabilityPort ports = 1;
+  repeated string regions = 2;
+  repeated string equivalence_classes = 3;
+}
+
+message AuthFile {
+  string issuer = 1;
+  repeated AuthFlow flows = 2;
+  string scope_model = 3;
+  repeated string resource_indicators = 4;
+  int32 token_lifetime_sec = 5;
+  AuthAudit audit = 6;
+}
+
+message AuthFlow {
+  string type = 1;
+}
+
+message AuthAudit {
+  repeated string events = 1;
+}
+
+message CostFile {
+  string currency = 1;
+}
+
+message CapabilityManifestBundle {
+  ManifestIndex index = 1;
+  CapabilitiesFile capabilities = 2;
+  AuthFile auth = 3;
+  CostFile cost = 4;
+}

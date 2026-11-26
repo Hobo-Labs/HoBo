@@ -1,0 +1,4 @@
+{
+	"message": "Missing referrer",
+	"hint": "Provide a `ref` identifying your application."
+}

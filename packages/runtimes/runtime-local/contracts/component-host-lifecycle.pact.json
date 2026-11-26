@@ -1,0 +1,50 @@
+{
+  "consumer": { "name": "runtime-local-component-host" },
+  "provider": { "name": "capability-provider-boundary" },
+  "interactions": [
+    {
+      "description": "instantiate a component and establish an in-process link",
+      "request": {
+        "method": "POST",
+        "path": "/component-host/instantiate",
+        "body": {
+          "componentId": "hello-bindle",
+          "importInterface": "hobo:examples/health-capability@0.1.0",
+          "providerId": "hello-bindle-capability"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "instanceId": "hello-bindle",
+          "trapIsolated": true,
+          "teardownRegistered": true,
+          "boundaryMode": "live",
+          "transport": "in-process"
+        }
+      }
+    },
+    {
+      "description": "invoke a linked import and tear down the component",
+      "request": {
+        "method": "POST",
+        "path": "/component-host/teardown",
+        "body": {
+          "componentId": "hello-bindle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "componentId": "hello-bindle",
+          "leasesReleased": true,
+          "routesRemoved": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "component-host-lifecycle",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

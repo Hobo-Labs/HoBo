@@ -1,0 +1,9 @@
+{
+  "name": "hobo-auth-consumer-contract",
+  "private": true,
+  "type": "module",
+  "types": "./src/auth-consumer-contract.d.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "feature-flag-governance-contract",
+  "title": "Feature Flag Governance Contract",
+  "linear": "HOBO-179",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/built-in-policy-engine-contract",
+      "src/draft/technical-proofs/hobo-policy-ir-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

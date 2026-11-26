@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "policy-audit-export-contract",
+  "experienceType": "api",
+  "title": "HoBo policy audit export contract POC",
+  "linear": "HOBO-175",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

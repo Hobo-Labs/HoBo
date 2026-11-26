@@ -1,0 +1,78 @@
+{
+  "consumer": {
+    "name": "@hobo/cli"
+  },
+  "provider": {
+    "name": "@hobo/componentize"
+  },
+  "interactions": [
+    {
+      "description": "componentize hello-bindle service with pinned toolchain",
+      "request": {
+        "method": "POST",
+        "path": "/componentize",
+        "body": {
+          "sourceRoot": "services/hello-bindle",
+          "sourceDateEpoch": "2026-01-01T00:00:00.000Z",
+          "toolchain": {
+            "jco": "1.24.3",
+            "componentizeJs": "0.21.0",
+            "wasmTools": "1.235.0",
+            "wasmtime": "46.0.1"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "component": {
+            "mediaType": "application/vnd.wasm.component.v1+wasm",
+            "witWorld": "hobo:examples/hello-bindle@0.1.0/service"
+          },
+          "oci": {
+            "artifactType": "application/vnd.wasm.component.v1+wasm"
+          }
+        }
+      }
+    },
+    {
+      "description": "toolchain skew fails closed",
+      "request": {
+        "method": "POST",
+        "path": "/componentize",
+        "body": {
+          "toolchain": {
+            "jco": "1.24.4"
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "componentize.toolchain_skew"
+        }
+      }
+    },
+    {
+      "description": "nondeterministic source fails closed",
+      "request": {
+        "method": "POST",
+        "path": "/componentize",
+        "body": {
+          "sourceContains": "Date.now"
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "componentize.nondeterministic_source"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

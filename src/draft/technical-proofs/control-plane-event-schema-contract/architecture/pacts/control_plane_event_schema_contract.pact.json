@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ControlPlaneEventSchemaContractConsumer"
+  },
+  "provider": {
+    "name": "ControlPlaneEventSchemaContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Control Plane Event Schema Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/control-plane-event-schema-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.control_plane_event_schema_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

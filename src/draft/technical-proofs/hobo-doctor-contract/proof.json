@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "hobo-doctor-contract",
+  "title": "HOBO-147 Doctor Contract",
+  "linear": "HOBO-147",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-cli-shell-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

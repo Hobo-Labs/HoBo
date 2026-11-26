@@ -1,0 +1,5 @@
+flag.Changed: woke=sub:alice-vip-orders decision=allow rows=1
+session.Revoked: woke=sub:alice-vip-orders decision=deny reason=session-revoked rows=0
+hidden flag read: rejected (flag read missing readSet member: show-vip-orders)
+auth backend down: decision=deny reason=auth-recompute-failed rows=0
+CONTRACT HELD: read-set-driven wakes, server push, fail-closed auth recompute

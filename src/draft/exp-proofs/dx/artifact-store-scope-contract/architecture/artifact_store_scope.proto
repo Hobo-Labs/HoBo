@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Artifact Store Scope
+// draft package reasons about. Documents the records/objects this package owns
+// so the architecture guard has a language-neutral schema reference. Not
+// compiled at runtime; this is a design-time contract artifact.
+
+enum ArtifactStoreEvidenceKind {
+  ARTIFACT_STORE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  ARTIFACT_STORE_EVIDENCE_KIND_CONTRACT_TEST = 1;
+  ARTIFACT_STORE_EVIDENCE_KIND_DESIGN_RECORD = 2;
+  ARTIFACT_STORE_EVIDENCE_KIND_POLICY_CONTRACT = 3;
+  ARTIFACT_STORE_EVIDENCE_KIND_REFERENCE_FIXTURE = 4;
+  ARTIFACT_STORE_EVIDENCE_KIND_SUPPORT_HANDOFF = 5;
+  ARTIFACT_STORE_EVIDENCE_KIND_CUSTOMER_ASSURANCE = 6;
+}
+
+message ArtifactStoreScopeRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string goal = 4;
+  repeated ArtifactStoreBoundary boundaries = 5;
+  repeated ArtifactStoreEvidence required_evidence = 6;
+}
+
+message ArtifactStoreBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message ArtifactStoreEvidence {
+  string id = 1;
+  string owner = 2;
+  string proof = 3;
+}

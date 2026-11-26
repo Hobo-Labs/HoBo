@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Tenant Data Lifecycle Contract draft
+// package reasons about. Documents the records/objects this package owns so the architecture guard
+// has a language-neutral schema reference. Not compiled at runtime; this is a design-time contract
+// artifact.
+
+enum TenantDataLifecycleObligationState {
+  TENANT_DATA_LIFECYCLE_OBLIGATION_STATE_UNSPECIFIED = 0;
+  TENANT_DATA_LIFECYCLE_OBLIGATION_STATE_SUPPORTED_EXPORT = 1;
+  TENANT_DATA_LIFECYCLE_OBLIGATION_STATE_SUPPORTED_DELETE = 2;
+  TENANT_DATA_LIFECYCLE_OBLIGATION_STATE_MANUAL_REVIEW = 3;
+  TENANT_DATA_LIFECYCLE_OBLIGATION_STATE_DEFERRED_RETENTION = 4;
+  TENANT_DATA_LIFECYCLE_OBLIGATION_STATE_IMPOSSIBLE_WITH_RATIONALE = 5;
+}
+
+message TenantDataLifecycleDataClass {
+  string id = 1;
+  string retention = 2;
+  string deletion_export_expectation = 3;
+  string residency_sensitivity = 4;
+  string owner = 5;
+  string v1_limitation = 6;
+}
+
+message TenantDataLifecycleContractRecord {
+  string issue = 1;
+  repeated TenantDataLifecycleDataClass data_classes = 2;
+  repeated TenantDataLifecycleObligationState deletion_obligations = 3;
+  repeated string evidence = 4;
+}

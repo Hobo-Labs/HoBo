@@ -1,0 +1,8 @@
+{
+  "name": "@hobo-draft/e2e-test-matrix-scope-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

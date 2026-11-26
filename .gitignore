@@ -1,0 +1,140 @@
+# Secrets / local env
+.env
+.env.local
+
+# Agent-tool local state (machine-specific; do NOT commit)
+.gbrain/
+*.pglite
+.headroom/
+.serena/
+.caveman/
+
+# Node / tooling
+node_modules
+
+# Logs / OS cruft
+*.log
+.tmp/
+.cache/browser-wit-componentize/
+.DS_Store
+
+# NOTE: committed on purpose so clones get the tooling wired up —
+#   .mcp.json, .cursor/, .codex/, .claude/skills/, .agents/skills/,
+#   AGENTS.md, CLAUDE.md, skills-lock.json
+.agents/vendor/
+
+# Turborepo local cache
+.turbo/
+
+# Host-staged release OCI build contexts
+deploy/release-images/.staging/
+
+# Local hello-bindle deployment test state
+examples/hello-bindle/.hobo/local-deployment-events/
+examples/hello-bindle/.hobo/local-deployment-lock.sqlite
+
+# Package build output
+dist/
+
+# Isolated-wasm intermediates (esbuild bundles / componentize outputs).
+# Cached under $HOBO_HOME/sandboxes by default — never commit guest.wasm.
+**/*.guest.mjs
+**/*-wasm-entry.mjs
+sandboxes/
+
+# Pinned toolchain binaries downloaded on demand (e.g. CUE v0.14.0)
+.tools/
+# Local `mise oci build` output (see packages/ci-gh-actions/deploy/ci-runner/build.sh)
+packages/ci-gh-actions/deploy/ci-runner/oci-layout/
+packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/*
+!packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/.gitkeep
+# Local mise install cache (commit turbo lock sidecars under .mise/locks/)
+.mise/*
+!.mise/locks/
+!.mise/locks/**
+# Local yard/broker tooling installs (prefer $HOBO_HOME; belt-and-suspenders)
+.hobo/*
+!.hobo/dagger.json
+!.hobo/ci.json
+!.hobo/ci-attestors.json
+# Turbo's --anon-profile output from the workspace-test commands (CI and pnpm ci:attest).
+/turbo-profile.json
+/turbo-profile.json.md
+.hobo/ci.local.json
+# OS-released codegen/build lock database, sidecars and interrupted staging trees.
+.hobo-codegen.lock
+.hobo-codegen.lock-*
+.hobo-codegen-*
+
+# CI fixture runner append-only event logs (local + CI artifacts)
+test-results/
+
+# Test-run byproducts
+test/output/
+
+# Local scratch: generation runs and downloaded reference material.
+# Large, machine-specific, and not part of the product.
+runs/
+ref/
+*:Zone.Identifier
+
+# hobo-media build output
+media/dist/
+media/.astro/
+
+# Wasp OpenSaaS local build artifacts
+examples/wasp-opensaas/**/node_modules/
+examples/wasp-opensaas/**/.wasp/
+examples/wasp-opensaas/**/dist/
+examples/wasp-opensaas/**/package-lock.json
+examples/wasp-opensaas/**/.env.server
+examples/wasp-opensaas/**/.env.client
+# Template blog / Playwright e2e are not part of HoBo Examples Temporary Accounts path
+examples/wasp-opensaas/blog/
+examples/wasp-opensaas/e2e-tests/
+
+# Impeccable: machine-local consent + per-edit hook caches (merge-hostile).
+# Keep each surface's `.impeccable/design.json` tracked; ignore caches only.
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+**/.impeccable/hook.cache.json
+
+# Python bytecode (media/scripts, spriterrific runs)
+__pycache__/
+packages/core/.stryker-tmp/
+# Stryker's JSON/HTML report output (written when --reporters includes json).
+reports/mutation/
+# Root mutation lane (stryker.scripts.conf.json) sandboxes here.
+.stryker-tmp/
+
+# vitest coverage lane output (pnpm run test:coverage)
+.coverage/
+
+# sdlc subagent handback reports — session scratch, not product.
+.sdlc/
+
+# TypeScript incremental build state. `tsc -b` writes one of these per project;
+# they are machine- and path-specific, so committing them makes every build
+# machine fight over the same file for no benefit.
+*.tsbuildinfo
+
+# A submodule checkout the sibling pins moved aside (scripts/lib/pins-git-head.ts:
+# `mv external/<name> external/<name>.kept`, then `.kept.1`, ...). Local scratch
+# that holds a person's work; its `.git` file would make `git add -A` stage it
+# as an embedded repository.
+/external/*.kept
+/external/*.kept.[0-9]*
+.mise/
+
+# Plans are working documents and are never committed (AGENTS.md, "Plans are
+# not committed"). The repository keeps no plans directory. These paths are
+# ignored so a tool that writes a plan there cannot get it committed, and
+# `pnpm run plans:guard` refuses a plan anywhere else.
+/plans/
+/docs/plans/
+# An interrupted Control Yard capture must remain invalid until it is rerun.
+src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete
+
+# fleet:verify run report (CI uploads it as an artifact)
+/fleet-verification.json
+**/deploy/secret-store.binding.json

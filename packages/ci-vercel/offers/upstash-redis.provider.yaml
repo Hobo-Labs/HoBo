@@ -1,0 +1,69 @@
+# The hosted relay's Upstash Redis cache offers (ADR-0179 amendment, phase 5).
+# Lowered into the @hobo/pricing catalog by scripts/generate-offers.mts; the
+# relay's default cache offers are derived from that catalog.
+#
+# Prices as Upstash stated them on 2026-11-11 (re-check at provisioning).
+# The free plan is blocked when its allowance is exhausted; the pricing
+# catalog has no "blocked" model, so the generator's binding table records it.
+# Whether the pay-as-you-go plan includes the free allowance is unverified,
+# so the pay-as-you-go plan bills every command (an upper bound).
+schema: hobo.provider-manifest/v1
+
+provider:
+  id: upstash
+  displayName: Upstash
+  homepage: https://upstash.com
+  description: Serverless Redis over REST, attached through the Vercel Marketplace.
+
+capabilities:
+  regions: [us-east-1]
+  mappings:
+    - id: kv/redis-free
+      port: kv
+      resourceClass: redis
+      providerService: upstash.redis
+      features: [ttl, atomicIncrement, atomicCompareAndSet, restTransport]
+      profiles: [kv.redis-compatible/v1, kv.ephemeral-state/v1]
+      stability: stable
+      products: [redis-free]
+    - id: kv/redis-payg
+      port: kv
+      resourceClass: redis
+      providerService: upstash.redis
+      features: [ttl, atomicIncrement, atomicCompareAndSet, restTransport]
+      profiles: [kv.redis-compatible/v1, kv.ephemeral-state/v1]
+      stability: stable
+      products: [redis-payg]
+
+billing:
+  currency: USD
+  version: "2026.11.11"
+  effectiveFrom: 2026-11-11T00:00:00Z
+  source:
+    url: https://upstash.com/pricing/redis
+    checkedAt: 2026-11-11
+    note: Vendor list prices as recorded in the ADR-0179 amendment; re-check at provisioning.
+  billables:
+    - id: commands
+      category: service
+      unit: command
+      description: One Redis command sent to the database.
+  products:
+    - id: redis-free
+      kind: service
+      plans:
+        - id: free
+          included:
+            - { billable: commands, quantity: 500000, reset: monthly }
+          charges:
+            - id: commands
+              metered: { billable: commands, unitPrice: "0" }
+    - id: redis-payg
+      kind: service
+      plans:
+        - id: pay-as-you-go
+          charges:
+            - id: commands
+              metered:
+                billable: commands
+                package: { per: 100000, amount: "0.20" }

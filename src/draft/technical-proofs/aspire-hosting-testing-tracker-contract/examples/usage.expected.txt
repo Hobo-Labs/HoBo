@@ -1,0 +1,5 @@
+parity without harness spec: ok=false status=overclaimed
+deferred without hook: ok=false status=overclaimed
+deferred with hook: ok=true status=deferred harnessSpec=true
+repo docs: ok=true status=deferred harnessSpec=true
+CONTRACT HELD: tracker parity claims are parsed, not trusted

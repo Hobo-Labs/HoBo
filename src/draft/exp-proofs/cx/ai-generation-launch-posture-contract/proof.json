@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "ai-generation-launch-posture-contract",
+  "experienceType": "cx",
+  "title": "AI Generation Launch Posture Contract",
+  "linear": "HOBO-510",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

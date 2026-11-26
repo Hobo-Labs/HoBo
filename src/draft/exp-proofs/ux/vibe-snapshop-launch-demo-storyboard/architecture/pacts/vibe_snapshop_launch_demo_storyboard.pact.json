@@ -1,0 +1,280 @@
+{
+  "consumer": {
+    "name": "launch-demo-storyboard-consumer"
+  },
+  "provider": {
+    "name": "vibe-snapshop-launch-demo-storyboard-proof"
+  },
+  "interactions": [
+    {
+      "description": "returns the accepted HOBO-555 snapshop launch demo storyboard fixture",
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-555",
+          "phase": "M5",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-snapshop-launch-demo-storyboard",
+          "proofPath": "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md",
+          "designRefs": [
+            "docs/design/launch-demo-golden-path.md",
+            "docs/design/launch-messaging-claims.md",
+            "docs/design/known-limitations-register.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "proofModes": ["live", "simulated", "reference fixture", "scope-out"],
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-define-object-graph-v1",
+              "proofMode": "reference-fixture",
+              "consumingStep": "scaffold",
+              "storyboardUse": "scaffold scene uses accepted object-graph fixture ids and command transcript shape"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "proofMode": "simulated",
+              "consumingStep": "local-run",
+              "storyboardUse": "local run scene reuses the accepted manifest collection fixture instead of inventing runtime behavior"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "consumingStep": "plan",
+              "storyboardUse": "plan scene reuses accepted plan preview fixture and proof-mode labels"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "proofMode": "live",
+              "consumingStep": "live-recording-slot",
+              "storyboardUse": "live recording slot can claim live behavior only when manifest evidence is attached"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-inspect-event-projection-v1",
+              "proofMode": "reference-fixture",
+              "consumingStep": "inspect",
+              "storyboardUse": "inspect scene uses accepted projection evidence before layering freshness warnings"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1",
+              "proofMode": "reference-fixture",
+              "consumingStep": "inspect",
+              "storyboardUse": "inspect scene shows stale and unknown evidence without promoting it to live proof"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "proofMode": "reference-fixture",
+              "consumingStep": "failure-recovery",
+              "storyboardUse": "failure recovery scene cites accepted snapshot restore preview evidence without claiming production recovery"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "proofMode": "scope-out",
+              "consumingStep": "support-docs-handoff",
+              "storyboardUse": "support handoff scene labels unsupported remediation and routes it to docs/support"
+            }
+          ],
+          "storyboardSteps": [
+            {
+              "id": "scaffold",
+              "title": "Scaffold snapshop from the quickstart fixture",
+              "commandOrSurface": "npx hobo new snapshop -t fullstack --fixture rlq-define-object-graph-v1",
+              "proofMode": "reference fixture",
+              "fixtureId": "rlq-define-object-graph-v1",
+              "evidenceObject": "terminal scaffold transcript with fixture id and generated file summary",
+              "owner": "Example Apps",
+              "safeClaim": "Shows the command path shape for snapshop; it does not claim a shipped scaffold implementation.",
+              "supportDocsHandoff": "Docs Portal can reuse the transcript with reference-fixture labeling."
+            },
+            {
+              "id": "local-run",
+              "title": "Run snapshop locally through the simulated Camp",
+              "commandOrSurface": "hobo dev --fixture rlq-collect-manifest-ir-v1",
+              "proofMode": "simulated",
+              "fixtureId": "rlq-collect-manifest-ir-v1",
+              "evidenceObject": "local runtime activity screen with simulated service boundary markers",
+              "owner": "Example Apps",
+              "safeClaim": "Shows local runtime behavior over mocked boundaries, not provider-hosted execution.",
+              "supportDocsHandoff": "Tutorials can cite simulated local-run behavior and route failures to troubleshooting."
+            },
+            {
+              "id": "inspect",
+              "title": "Inspect run evidence and freshness",
+              "commandOrSurface": "hobo inspect run snapshop-preview-001 --fixture rlq-inspect-event-projection-v1",
+              "proofMode": "reference fixture",
+              "fixtureId": "rlq-inspect-event-projection-v1",
+              "evidenceObject": "run inspector timeline with projection freshness and unknown-evidence markers",
+              "owner": "CLI, MCP & Developer Experience",
+              "safeClaim": "Shows the inspection evidence shape without implementing the inspector runtime.",
+              "supportDocsHandoff": "Troubleshooting can link stale evidence to the support route and owner field."
+            },
+            {
+              "id": "plan",
+              "title": "Preview the deployment plan before launch",
+              "commandOrSurface": "hobo plan --camp preview --fixture rlq-plan-safe-preview-v1",
+              "proofMode": "simulated",
+              "fixtureId": "rlq-plan-safe-preview-v1",
+              "evidenceObject": "plan diff with proof-mode chips, policy disposition, and safe next action",
+              "owner": "Plan/Diff Viewer",
+              "safeClaim": "Demonstrates deterministic plan evidence and unsupported-state labels without provisioning.",
+              "supportDocsHandoff": "Plan/Diff consumers can reuse the fixture id and must keep approval/provider work out of scope."
+            },
+            {
+              "id": "live-recording-slot",
+              "title": "Reserve the live preview recording slot",
+              "commandOrSurface": "hobo up --camp preview --strategy canary --recording-slot launch-demo",
+              "proofMode": "live",
+              "fixtureId": "rlq-deploy-run-accepted-v1",
+              "evidenceObject": "recording manifest slot requiring accepted live preview evidence before public use",
+              "owner": "V1 Launch Site, Messaging & Demo Assets",
+              "safeClaim": "Live proof can be claimed only when the recording manifest links accepted live behavior.",
+              "supportDocsHandoff": "Launch Site consumes this as a placeholder until the manifest carries current evidence."
+            },
+            {
+              "id": "failure-recovery",
+              "title": "Preview snapshot restore recovery without overclaiming remediation",
+              "commandOrSurface": "hobo up --rollback deployment-set:previous --fixture rlq-recover-snapshot-restore-v1 --dry-run",
+              "proofMode": "reference fixture",
+              "fixtureId": "rlq-recover-snapshot-restore-v1",
+              "evidenceObject": "rollback preview panel with snapshot restore evidence and production-recovery guardrails",
+              "owner": "Troubleshooting Guides",
+              "safeClaim": "Shows accepted recovery preview evidence without promising automated production restore.",
+              "supportDocsHandoff": "Support Workflow receives the owner route, customer-safe recovery wording, and accepted limitation."
+            },
+            {
+              "id": "support-docs-handoff",
+              "title": "Hand off evidence to support and docs owners",
+              "commandOrSurface": "support/docs handoff matrix for snapshop launch demo assets",
+              "proofMode": "scope-out",
+              "fixtureId": "rlq-recover-scope-out-v1",
+              "evidenceObject": "handoff matrix naming docs route, support owner, stale downgrade, and limitation text",
+              "owner": "V1 Launch Site, Messaging & Demo Assets",
+              "safeClaim": "Keeps launch-demo support and docs follow-up explicit before any public claim is published.",
+              "supportDocsHandoff": "Docs Portal, Launch Site, Troubleshooting, and Support Workflow each get a target route."
+            }
+          ],
+          "assetMap": [
+            {
+              "kind": "screenshots",
+              "source": "docs/design/launch-demo-golden-path.md#required-assets",
+              "owner": "V1 Launch Site, Messaging & Demo Assets",
+              "proofMode": "live",
+              "refreshTrigger": "Any screen, command wording, output, or proof-mode label changes.",
+              "validationRoute": "docs/design/proofs/vibe-snapshop-launch-demo-storyboard/README.md#asset-map",
+              "staleDowngrade": "Downgrade to reference fixture until refreshed live screenshots exist."
+            },
+            {
+              "kind": "recording-manifest",
+              "source": "docs/design/launch-messaging-claims.md#required-demo-assets",
+              "owner": "V1 Launch Site, Messaging & Demo Assets",
+              "proofMode": "live",
+              "refreshTrigger": "Any live preview, expected output, simulated marker, or recording slot changes.",
+              "validationRoute": "recording manifest entry with freshness owner and accepted live evidence link",
+              "staleDowngrade": "Mark recording stale and block public live claims."
+            },
+            {
+              "kind": "command-transcript",
+              "source": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+              "owner": "Example Apps",
+              "proofMode": "reference fixture",
+              "refreshTrigger": "Any command path, CLI wording, fixture output, or safe-claim boundary changes.",
+              "validationRoute": "checked-in transcript fixture cited by the storyboard proof note",
+              "staleDowngrade": "Keep transcript reference-only until quickstart fixture ids are refreshed."
+            },
+            {
+              "kind": "fixture-data",
+              "source": "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples",
+              "owner": "Example Apps",
+              "proofMode": "reference fixture",
+              "refreshTrigger": "Any sample app, resource, manifest, failure, or recovery fixture changes.",
+              "validationRoute": "HOBO-577 quickstart parser and Pact-style fixture",
+              "staleDowngrade": "Reject downstream scenario updates that invent fixture ids."
+            },
+            {
+              "kind": "docs",
+              "source": "docs/design/launch-demo-golden-path.md",
+              "owner": "Example Apps",
+              "proofMode": "reference fixture",
+              "refreshTrigger": "Any acceptance, owner, scope, proof mode, or public-claim boundary changes.",
+              "validationRoute": "design proof README plus docs freshness gate",
+              "staleDowngrade": "Route to known limitations and support wording before publication."
+            }
+          ],
+          "scenarioPaths": [
+            {
+              "id": "happy-path",
+              "narrative": "Evaluator scaffolds snapshop, runs locally, previews a plan, and reaches the live recording slot only when evidence exists.",
+              "stepIds": ["scaffold", "local-run", "plan", "live-recording-slot"],
+              "assetKinds": ["command-transcript", "fixture-data", "recording-manifest", "screenshots"],
+              "proofModeLabels": ["reference fixture", "simulated", "live"],
+              "accessibilityNote": "Keyboard order follows command, evidence, owner, and proof-mode label before the next action.",
+              "supportHandoff": "Docs owner receives transcript and fixture ids; launch owner receives recording slot.",
+              "safeOutcome": "Demo can be rehearsed while live claims wait for recording-manifest evidence."
+            },
+            {
+              "id": "blocked-path",
+              "narrative": "Missing auth, policy denial, unsupported provider, or can-deploy failure blocks the live slot and routes to recovery.",
+              "stepIds": ["plan", "failure-recovery", "support-docs-handoff"],
+              "assetKinds": ["docs", "fixture-data", "command-transcript"],
+              "proofModeLabels": ["simulated", "scope-out", "reference fixture"],
+              "accessibilityNote": "Blocked state uses clear text, visible focus target, contrast-safe severity, and no motion-only cue.",
+              "supportHandoff": "Troubleshooting gets the denial evidence and customer-safe recovery wording.",
+              "safeOutcome": "No live provider action is implied while blocked recovery remains scope-out."
+            },
+            {
+              "id": "stale-or-unknown-evidence",
+              "narrative": "Stale recording, unknown projection freshness, or missing fixture source downgrades the asset before publication.",
+              "stepIds": ["inspect", "live-recording-slot", "support-docs-handoff"],
+              "assetKinds": ["recording-manifest", "screenshots", "docs"],
+              "proofModeLabels": ["reference fixture", "live", "scope-out"],
+              "accessibilityNote": "Screen reader text announces stale evidence, owner route, and downgrade result.",
+              "supportHandoff": "Launch owner refreshes the asset or docs owner marks the limitation.",
+              "safeOutcome": "Stale assets cannot support public launch claims until refreshed."
+            },
+            {
+              "id": "support-handoff",
+              "narrative": "Support and docs handoff keeps unsupported states explainable without claiming production recovery.",
+              "stepIds": ["failure-recovery", "support-docs-handoff"],
+              "assetKinds": ["docs", "command-transcript", "fixture-data"],
+              "proofModeLabels": ["reference fixture", "scope-out"],
+              "accessibilityNote": "Responsive layout keeps owner, next action, and support route visible without truncation.",
+              "supportHandoff": "Support Workflow receives limitation wording, escalation owner, and evidence source.",
+              "safeOutcome": "Customer-safe support wording is available before any public demo publication."
+            }
+          ],
+          "accessibilityNotes": [
+            "Keyboard navigation reaches each storyboard step, proof-mode chip, asset owner, and handoff route in reading order.",
+            "Screen reader labels name live, simulated, reference fixture, and scope-out modes without relying on color alone.",
+            "Contrast, responsive layout, and reduced motion are required for all launch-demo storyboard states."
+          ],
+          "scopeOut": [
+            "final launch marketing page",
+            "final demo video",
+            "live provider provisioning",
+            "provider credentials",
+            "customer data",
+            "public launch claims without evidence"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

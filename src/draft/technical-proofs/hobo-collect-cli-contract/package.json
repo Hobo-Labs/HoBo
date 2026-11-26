@@ -1,0 +1,12 @@
+{
+  "name": "@hobo/draft-hobo-collect-cli-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/collect-cli.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AuthorTimeCapabilityFeedbackContractConsumer"
+  },
+  "provider": {
+    "name": "AuthorTimeCapabilityFeedbackContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Author Time Capability Feedback Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/author-time-capability-feedback-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.author_time_capability_feedback_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GoldenSuiteChaosVerificationContractConsumer"
+  },
+  "provider": {
+    "name": "GoldenSuiteChaosVerificationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Golden Suite Chaos Verification Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/golden-suite-chaos-verification-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.golden_suite_chaos_verification_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

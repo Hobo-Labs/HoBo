@@ -1,0 +1,18 @@
+{
+	"id": "camp.colocate",
+	"tier": 2,
+	"kind": "camp",
+	"description": "Second Camp in the same Yard — same network, no new provider pin.",
+	"tags": ["camp", "yard", "network", "colocate"],
+	"queries": ["bundle apps in the same network", "colocate camps", "second camp"],
+	"requires": ["yard.topology"],
+	"provides": ["camp.colocate"],
+	"params": {
+		"required": ["name"],
+		"properties": {
+			"name": { "type": "string", "minLength": 1 },
+			"peerCamp": { "type": "string", "default": "api" }
+		}
+	},
+	"files": [{ "path": "src/yard.ts", "from": "body/yard.ts.tpl" }]
+}

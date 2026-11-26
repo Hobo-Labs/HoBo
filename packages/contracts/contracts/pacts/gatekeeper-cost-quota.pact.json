@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "Gatekeeper Verify"
+  },
+  "provider": {
+    "name": "Cost/Quota Policy"
+  },
+  "interactions": [
+    {
+      "description": "check deployment quota before allowing production promotion",
+      "providerStates": [
+        {
+          "name": "quota provider is represented by deterministic fixture"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/quota/check",
+        "body": {
+          "target": "prod",
+          "quota": "deployments/day"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "remaining": "like:number",
+          "limit": "like:number"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Gatekeeper to Cost/Quota Policy",
+    "status": "mocked_provider_unavailable",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

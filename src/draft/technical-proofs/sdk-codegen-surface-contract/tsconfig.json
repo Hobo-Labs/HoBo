@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "test-types/**/*.ts",
+    "tmp-generated/src/_generated/**/*.d.ts"
+  ]
+}

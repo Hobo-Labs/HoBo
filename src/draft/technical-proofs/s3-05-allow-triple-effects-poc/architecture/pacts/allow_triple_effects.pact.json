@@ -1,0 +1,65 @@
+{
+  "consumer": {
+    "name": "AllowTripleEffectsConsumer"
+  },
+  "provider": {
+    "name": "AllowTripleEffectsBoundary"
+  },
+  "interactions": [
+    {
+      "description": "compile .allow() declaration into IAM, link table, and token-scope ceiling",
+      "request": {
+        "method": "POST",
+        "path": "/allow-triple-effects/compile",
+        "body": {
+          "bindle": "hello-bindle",
+          "componentId": "api",
+          "resourceId": "todos",
+          "port": "wasi:keyvalue",
+          "verbs": ["get"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.allow-triple-effects/v1",
+          "triple": {
+            "iam": {
+              "policyId": "hello-bindle-todos-get"
+            },
+            "linkTable": {
+              "denyByDefault": true,
+              "allowedVerbs": ["get"]
+            },
+            "tokenScopeCeiling": {
+              "verbs": ["get"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "request_token exceeding allow ceiling returns token.Denied audit event",
+      "request": {
+        "method": "POST",
+        "path": "/allow-triple-effects/request-token",
+        "body": {
+          "scope": { "port": "wasi:keyvalue", "resource": "todos", "action": "set" },
+          "ceiling": { "verbs": ["get"] }
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "eventType": "token.Denied",
+          "reason": "exceeds .allow() ceiling"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

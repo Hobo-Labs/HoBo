@@ -1,0 +1,18 @@
+{
+  "consumer": { "name": "FoundationsReferenceApp" },
+  "provider": { "name": "CiFabricBoundary" },
+  "interactions": [
+    {
+      "description": "run PR gates plus mocked keyless hello-bindle E2E",
+      "request": { "method": "POST", "path": "/ci/run" },
+      "response": {
+        "status": 200,
+        "body": {
+          "contract": { "passed": true },
+          "e2e": { "status": "passed" }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

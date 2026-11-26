@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "provider-local-zero-infra",
+  "title": "HOBO-135 Local Provider POC",
+  "linear": "HOBO-135",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-realize-emission-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

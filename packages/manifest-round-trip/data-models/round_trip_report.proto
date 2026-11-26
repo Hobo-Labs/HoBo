@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+// The wire form of a cross-manifest decomposition report.
+//
+// One record per shape that moved into a `@hobo/manifest-*` package, saying
+// whether the package it moved out of now re-exports it (nothing can drift),
+// still declares it in agreement (parity), or still declares it in
+// disagreement (a named, recorded divergence).
+package hobo.manifest.roundtrip.v1;
+
+// What a single decomposition check found.
+enum CheckOutcome {
+  // Proto3 enums need a zero value and an unset field decodes to it; the parse
+  // boundary in src/index.ts refuses this one so an unset outcome cannot pass
+  // for a real verdict.
+  CHECK_OUTCOME_UNSPECIFIED = 0;
+  // Declared once, in the manifest package; upstream re-exports it.
+  CHECK_OUTCOME_SINGLE_DECLARATION = 1;
+  // Declared in both, agreeing field for field and optionality included.
+  CHECK_OUTCOME_PARITY = 2;
+  // Declared in both and not agreeing. `detail` names what differs.
+  CHECK_OUTCOME_DIVERGENT = 3;
+}
+
+message ManifestCheck {
+  // The exported name that moved, e.g. "ResourceIntent".
+  string shape = 1;
+  // The package that owns it now, e.g. "@hobo/manifest-declaration".
+  string owner = 2;
+  // Repo-relative path of the file it moved out of.
+  string upstream = 3;
+  CheckOutcome outcome = 4;
+  // Always required, not only on DIVERGENT: a check that reports an outcome
+  // without saying what it observed is a claim, not evidence.
+  string detail = 5;
+}
+
+message RoundTripReport {
+  // Pinned to "hobo.manifest-round-trip/v1". Hashed as part of the report.
+  string schema = 1;
+  // At least one. `shape` is unique across the list — two records for one
+  // shape means one of them is stale with no way to tell which.
+  repeated ManifestCheck checks = 2;
+}

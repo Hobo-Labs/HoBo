@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RollbackFailureCompensationContractConsumer"
+  },
+  "provider": {
+    "name": "RollbackFailureCompensationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Rollback Failure Compensation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/rollback-failure-compensation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.rollback_failure_compensation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

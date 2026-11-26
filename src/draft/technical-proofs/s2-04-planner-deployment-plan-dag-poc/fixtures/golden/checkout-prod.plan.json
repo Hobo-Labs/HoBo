@@ -1,0 +1,235 @@
+{
+  "planHash": "sha256:39033673949cb7cdfddec5be465fc6e25d8bf53ee61d24db84a969075c8c0513",
+  "deploymentPlan": {
+    "apiVersion": "hobo.deployment-plan/v1",
+    "deploymentId": "deploy-checkout-prod",
+    "resources": [
+      {
+        "id": "orders-db",
+        "name": "orders-db",
+        "port": {
+          "interface": "database.postgres",
+          "type": "data",
+          "className": "postgres"
+        },
+        "provider": {
+          "id": "aws-rds",
+          "definitionId": "aws-rds-postgres",
+          "driver": "terraform"
+        },
+        "context": {
+          "envType": "production",
+          "app": "checkout",
+          "env": "prod",
+          "tenant": "tenant-acme",
+          "resourceType": "data",
+          "resourceClass": "postgres",
+          "resourceId": "orders-db"
+        },
+        "options": {},
+        "deps": [],
+        "strategy": "reconcile",
+        "replication": "single-region",
+        "workloadProfile": "managed-resource",
+        "outputs": [
+          "connectionString"
+        ]
+      },
+      {
+        "id": "checkout-api",
+        "name": "checkout-api",
+        "port": {
+          "interface": "wasi:http/incoming-handler",
+          "type": "service",
+          "className": "wasm"
+        },
+        "provider": {
+          "id": "azure-container",
+          "definitionId": "azure-container-http",
+          "driver": "container"
+        },
+        "context": {
+          "envType": "production",
+          "app": "checkout",
+          "env": "prod",
+          "tenant": "tenant-acme",
+          "resourceType": "service",
+          "resourceClass": "wasm",
+          "resourceId": "checkout-api"
+        },
+        "options": {},
+        "deps": [
+          "orders-db"
+        ],
+        "strategy": "reconcile",
+        "replication": "single-region",
+        "workloadProfile": "wasm-component",
+        "outputs": [
+          "url"
+        ]
+      },
+      {
+        "id": "web-edge",
+        "name": "web-edge",
+        "port": {
+          "interface": "hobo:web/website",
+          "type": "website",
+          "className": "static"
+        },
+        "provider": {
+          "id": "cloudflare-workers",
+          "definitionId": "cloudflare-workers-edge",
+          "driver": "custom-webhook"
+        },
+        "context": {
+          "envType": "production",
+          "app": "checkout",
+          "env": "prod",
+          "tenant": "tenant-acme",
+          "resourceType": "website",
+          "resourceClass": "static",
+          "resourceId": "web-edge"
+        },
+        "options": {},
+        "deps": [
+          "checkout-api"
+        ],
+        "strategy": "reconcile",
+        "replication": "single-region",
+        "workloadProfile": "managed-resource",
+        "outputs": [
+          "url"
+        ]
+      },
+      {
+        "id": "receipt-worker",
+        "name": "receipt-worker",
+        "port": {
+          "interface": "hobo:queue/worker",
+          "type": "service",
+          "className": "wasm"
+        },
+        "provider": {
+          "id": "local-container",
+          "definitionId": "local-container-worker",
+          "driver": "echo"
+        },
+        "context": {
+          "envType": "production",
+          "app": "checkout",
+          "env": "prod",
+          "tenant": "tenant-acme",
+          "resourceType": "service",
+          "resourceClass": "wasm",
+          "resourceId": "receipt-worker"
+        },
+        "options": {},
+        "deps": [
+          "checkout-api"
+        ],
+        "strategy": "reconcile",
+        "replication": "single-region",
+        "workloadProfile": "wasm-component",
+        "outputs": [
+          "url"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "orders-db",
+        "to": "checkout-api",
+        "reason": "link:database.postgres"
+      },
+      {
+        "from": "checkout-api",
+        "to": "web-edge",
+        "reason": "bind"
+      },
+      {
+        "from": "checkout-api",
+        "to": "receipt-worker",
+        "reason": "bind"
+      }
+    ],
+    "meta": {
+      "objective": "cost",
+      "provenance": {
+        "sourceManifestHash": "sha256:5b29c4dd2e6ad2262d0bea2f3da852dffb76e670d473b291772355b7b97575fd",
+        "catalogContentHash": "sha256:1e7f9213a161a19e83777426b80669f022e06091ec9ac06037e8340cd28cecc9",
+        "matchDecisionIds": [
+          "match-orders-db",
+          "match-checkout-api",
+          "match-web-edge",
+          "match-receipt-worker"
+        ]
+      },
+      "rationale": [
+        {
+          "resourceId": "orders-db",
+          "winner": "aws-rds-postgres",
+          "provider": "aws-rds",
+          "objective": "cost",
+          "ranking": [
+            {
+              "definitionId": "aws-rds-postgres",
+              "specificity": 1,
+              "priority": 0,
+              "objectiveScore": 0,
+              "rank": 1
+            }
+          ],
+          "planWarnings": []
+        },
+        {
+          "resourceId": "checkout-api",
+          "winner": "azure-container-http",
+          "provider": "azure-container",
+          "objective": "cost",
+          "ranking": [
+            {
+              "definitionId": "azure-container-http",
+              "specificity": 1,
+              "priority": 0,
+              "objectiveScore": 0,
+              "rank": 1
+            }
+          ],
+          "planWarnings": []
+        },
+        {
+          "resourceId": "web-edge",
+          "winner": "cloudflare-workers-edge",
+          "provider": "cloudflare-workers",
+          "objective": "cost",
+          "ranking": [
+            {
+              "definitionId": "cloudflare-workers-edge",
+              "specificity": 1,
+              "priority": 0,
+              "objectiveScore": 0,
+              "rank": 1
+            }
+          ],
+          "planWarnings": []
+        },
+        {
+          "resourceId": "receipt-worker",
+          "winner": "local-container-worker",
+          "provider": "local-container",
+          "objective": "cost",
+          "ranking": [
+            {
+              "definitionId": "local-container-worker",
+              "specificity": 1,
+              "priority": 0,
+              "objectiveScore": 0,
+              "rank": 1
+            }
+          ],
+          "planWarnings": []
+        }
+      ]
+    }
+  }
+}

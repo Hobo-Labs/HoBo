@@ -1,0 +1,63 @@
+{
+  "id": "bindle.topology.api-connector",
+  "version": 1,
+  "kind": "concept",
+  "maturity": "stable",
+  "title": "API + connector",
+  "intent": "API-to-connector graph, no local key",
+  "description": "API-to-connector graph, no local key",
+  "aliases": [
+    "firecrawl"
+  ],
+  "apiSymbols": [],
+  "features": [
+    {
+      "id": "authoring-resource:api",
+      "weight": 1
+    },
+    {
+      "id": "constraint:no-local-secret",
+      "weight": 1
+    }
+  ],
+  "contexts": [
+    "bindle"
+  ],
+  "languages": [
+    "ts"
+  ],
+  "parameters": [
+    {
+      "name": "resourceName",
+      "kind": "resource_name",
+      "required": false,
+      "default": "resource",
+      "displayInReceipt": true
+    }
+  ],
+  "provides": [
+    "topology:api-connector"
+  ],
+  "requires": [],
+  "conflicts": [],
+  "effects": [],
+  "renderings": [
+    {
+      "id": "snippet",
+      "kind": "snippet",
+      "path": "body/snippet.ts.tpl",
+      "default": true,
+      "language": "ts"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "examples/",
+      "commit": "ff9edbad6",
+      "symbol": "",
+      "rationale": "curated from production authoring APIs"
+    }
+  ],
+  "limitations": [],
+  "legacyAliases": []
+}

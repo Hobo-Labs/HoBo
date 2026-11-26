@@ -1,0 +1,24 @@
+{
+	"layer": "exp",
+	"slug": "session-replay-local-path",
+	"experienceType": "dx",
+	"title": "Session Replay local dual-fixture DX path",
+	"linear": "HOBO-1350",
+	"references": {
+		"technicalProofs": [
+			"src/draft/technical-proofs/session-replay-contracts"
+		],
+		"epicProofs": [],
+		"expProofs": [],
+		"designDocs": [
+			"docs/design/adr/03-data-plane.md#adr-0137",
+			"packages/replay/README.md"
+		]
+	},
+	"artifacts": {
+		"examples": "examples",
+		"notebook": "notebook.ipynb",
+		"diagrams": ["README.md"]
+	},
+	"waivers": []
+}

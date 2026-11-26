@@ -1,0 +1,13 @@
+{
+  "iteration": 2,
+  "runId": "20260731-ax-cli-wire",
+  "metric_total": 0,
+  "metric_max": 0,
+  "vsPrev": { "metric_total_delta": 0, "metric_max_delta": 0 },
+  "implementableFindingsRemaining": 0,
+  "reverify": {
+    "doctorExit": 0,
+    "cliHelpBindings": "4/4",
+    "doctorAgentToolingTest": "pass"
+  }
+}

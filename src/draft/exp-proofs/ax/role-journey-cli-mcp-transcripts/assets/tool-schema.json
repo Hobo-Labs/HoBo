@@ -1,0 +1,8 @@
+{
+  "name": "role-journey-cli-mcp-transcripts",
+  "description": "MCP tool fixture for role-journey-cli-mcp-transcripts",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

@@ -1,0 +1,18 @@
+{
+	"consumer": { "name": "WorkspaceSkeleton" },
+	"provider": { "name": "CoreScaffoldBoundary" },
+	"interactions": [
+		{
+			"description": "core scaffold exposes package identity for workspace validation",
+			"request": { "method": "GET", "path": "/core/scaffold" },
+			"response": {
+				"status": 200,
+				"body": {
+					"package_name": "@hobo/core",
+					"owner_issue": "HOBO-578"
+				}
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

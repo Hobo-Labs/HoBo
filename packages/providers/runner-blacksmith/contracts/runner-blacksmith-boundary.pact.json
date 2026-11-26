@@ -1,0 +1,79 @@
+{
+  "consumer": {
+    "name": "@hobo/dispatcher"
+  },
+  "provider": {
+    "name": "RunnerBlacksmithBoundary"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "dispatch the SAME runner job spec onto the Blacksmith runs-on substrate",
+      "request": {
+        "method": "POST",
+        "path": "/repos/hobo-dev/hobo-jobs/actions/workflows/hobo-runner-blacksmith.yml/dispatches",
+        "headers": {
+          "accept": "application/vnd.github+json",
+          "x-github-api-version": "2022-11-28"
+        },
+        "body": {
+          "ref": "main",
+          "inputs": {
+            "job_id": "job-1",
+            "runs_on": "blacksmith-4vcpu-ubuntu-2204",
+            "command": "pnpm test"
+          }
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "secretless posture: brokered installation tokens + broker-held Blacksmith org relationship",
+      "request": {
+        "method": "GET",
+        "path": "/providers/runner-blacksmith/manifest/auth"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.provider-auth/v1",
+          "mode": "github-app-installation",
+          "tokenAudience": "api.github.com",
+          "exchange": "hobo:brokered-installation-token",
+          "substrate": {
+            "vendor": "blacksmith",
+            "exchange": "hobo:brokered-blacksmith-org-token"
+          },
+          "staticSecrets": false
+        }
+      }
+    },
+    {
+      "description": "an accelerated build surfaces its cache-lane fact alongside the pullable ImageRef",
+      "request": {
+        "method": "POST",
+        "path": "/providers/runner-blacksmith/build/checkout-api"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "image": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          },
+          "fact": {
+            "type": "build.CacheLaneObserved",
+            "cacheLane": "sticky-disk",
+            "source": "declared-provider"
+          }
+        }
+      }
+    }
+  ]
+}

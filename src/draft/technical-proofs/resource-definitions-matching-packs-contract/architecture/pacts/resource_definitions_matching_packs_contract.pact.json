@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ResourceDefinitionsMatchingPacksConsumer"
+  },
+  "provider": {
+    "name": "ResourceDefinitionsMatchingPacksBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Resource Definitions Matching Packs boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/resource-definitions-matching-packs-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.resource_definitions_matching_packs/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

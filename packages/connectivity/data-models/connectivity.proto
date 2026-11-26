@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package hobo.connectivity.v1;
+
+// Wire form for tenant-scoped usage metering events.
+message UsageEventRecord {
+  string tenant_id = 1;
+  string event_type = 2;
+  string resource = 3;
+  double quantity = 4;
+  string unit = 5;
+  string timestamp = 6;
+}
+
+// Wire form for a hierarchical named endpoint registration.
+message NamedEndpointRecord {
+  string tenant_id = 1;
+  string resource = 2;
+  string hostname = 3;
+  string url = 4;
+  string mode = 5; // local | overlay
+  string backend_url = 6;
+}
+
+// Wire form for a public DNS entrypoint suggestion/record.
+message PublicDnsEntrypointRecord {
+  string tenant_id = 1;
+  string hostname = 2;
+  string gateway_hostname = 3;
+  string managed_by = 4; // hobo | cloud-provider | none
+  string provider = 5;
+}
+
+// ADR-0027 secretless connector lease — public view only (no credential material).
+message SecretlessLeaseRecord {
+  string lease_id = 1;
+  // postgres | tcp | mysql | redis | extension plugin id
+  string protocol = 2;
+  // Workload dials this named/local endpoint only (ADR-0130).
+  string local_endpoint = 3;
+  string target_ref = 4;
+  string expires_at = 5;
+  bool has_credential = 6;
+  // shared | per-tenant | per-workload
+  string isolation = 7;
+  string tenant_id = 8;
+  string workload_id = 9;
+}
+
+// Environment network isolation (ADR-0133).
+message EnvMembershipRecord {
+  string id = 1;
+  string principal_id = 2;
+  string isolation_class = 3;
+  string assigned_at = 4;
+  string assigned_by = 5;
+  string expires_at = 6;
+  bool dual_control_required = 7;
+  bool control_plane_gated = 8;
+}
+
+message ElevatedAccessCapabilityRecord {
+  string id = 1;
+  string subject = 2;
+  string audience = 3;
+  string isolation_class = 4;
+  string issued_at = 5;
+  string expires_at = 6;
+  string token_ref = 7;
+}

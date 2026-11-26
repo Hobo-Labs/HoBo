@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "stage-gate-j2-agent" },
+  "provider": { "name": "hobo-mcp-s2-sandbox" },
+  "interactions": [
+    {
+      "description": "list_templates returns hello-bindle fixture",
+      "request": { "tool": "list_templates", "input": {} },
+      "response": { "status": "ok", "body": { "ok": true, "tool": "list_templates" } }
+    },
+    {
+      "description": "deploy blocked by compat gate exposes NFR-017 explainFailure",
+      "request": { "tool": "deploy", "input": { "camp": "s2-sandbox" } },
+      "response": {
+        "status": "blocked",
+        "body": { "ok": false, "code": "DEPLOY_GATE_FAILED" }
+      }
+    }
+  ]
+}

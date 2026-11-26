@@ -1,0 +1,37 @@
+{
+  "featureId": "cli-help-and-doctor",
+  "scenarioSlug": "cli-help-and-doctor-path-works-for-product-coding-agent",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent",
+    "role-developers",
+    "role-devsecops",
+    "role-finops",
+    "role-platform-engineers",
+    "role-sre"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T14:01:00.516Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 1114,
+    "sha256": "0552dd6ef66baec0fa2e19a11a1e2285d0f49b190875294a460cd87c8f297b6f"
+  },
+  "frames": [],
+  "repro": {
+    "command": "pnpm run doctor",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

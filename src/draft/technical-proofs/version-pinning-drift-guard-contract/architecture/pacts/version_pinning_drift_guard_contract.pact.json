@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "VersionPinningDriftGuardContractConsumer"
+  },
+  "provider": {
+    "name": "VersionPinningDriftGuardContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Version Pinning Drift Guard Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/version-pinning-drift-guard-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.version_pinning_drift_guard_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

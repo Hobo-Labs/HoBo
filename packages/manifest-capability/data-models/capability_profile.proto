@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package hobo.manifest.capability.v1;
+
+import "capability_requirement.proto";
+
+// Capability profile descriptors — the semantic layer between a Bindle
+// primitive (`data`) and a hosted product (`Neon Claimable Postgres`).
+//
+// The first-party catalog serialized against this schema is
+// STANDARD_CAPABILITY_PROFILES. Its identity is checkable: the registry digest
+// computed over the parsed catalog is
+// sha256:34d2dba5a7e4f8808307e26150b4291a62b76181c9964e911500de50e7ddced1,
+// and twelve golden offers under packages/recipes/test/golden/ carry that
+// value as `profileRegistryDigest`. test/round-trip.test.ts round-trips this
+// catalog through this schema and recomputes it.
+//
+// That digest is computed with JSON.stringify, which omits an `undefined`
+// property and emits `[]` for an empty array. So for this schema an absent
+// enum_values and an empty enum_values are DIFFERENT VALUES with DIFFERENT
+// DIGESTS. A bare `repeated string enum_values` here would decode absent as
+// empty and change the digest of a catalog nobody edited. That is why
+// enum_values, conflicts_with and requires are StringList and not repeated.
+
+// Maturity and value kinds travel as strings whose vocabulary is closed in
+// capability_profile.cue, matching the rest of this repo's data-models. A
+// proto3 enum would add an "unspecified" zero value, and a descriptor whose
+// maturity silently decoded to "unspecified" would rank in selection as though
+// someone had assessed it.
+//
+//   maturity:                        "stable" | "preview" | "experimental"
+//   value_kind (FeatureDescriptor):  "boolean" | "enum" | "integer" | "semver-range" | "string-set"
+//   value_kind (GuaranteeDescriptor): "boolean" | "enum" | "integer"
+
+// Official documentation or specification that justifies a profile's
+// semantics. checked_at is the ISO date a human verified the claim; it is
+// never generated.
+message EvidenceSourceRef {
+  string url = 1;
+  string checked_at = 2;
+  optional string note = 3;
+}
+
+// A capability a product may advertise. Guarantees use their own message
+// because a guarantee's value domain is narrower — a guarantee is a promise,
+// and "semver-range" or "string-set" are not promises anyone can conform to.
+message FeatureDescriptor {
+  string key = 1;
+  string description = 2;
+  string value_kind = 3;
+  // Absent for every descriptor whose value_kind is not ENUM. Absent and empty
+  // are different: see the digest note at the top of this file.
+  StringList enum_values = 4;
+}
+
+message GuaranteeDescriptor {
+  string key = 1;
+  string description = 2;
+  // Narrower than FeatureDescriptor.value_kind on purpose: BOOLEAN, ENUM or
+  // INTEGER only. Guarantees are monotonic across refinement — a child may add
+  // one but can never erase a parent's.
+  string value_kind = 3;
+  StringList enum_values = 4;
+}
+
+message CapabilityProfileDescriptor {
+  // Pinned literal "hobo.capability-profile/v1". A descriptor that does not
+  // carry it is refused rather than upgraded.
+  string schema_version = 1;
+  string id = 2;
+  // Bindle primitives are a closed set; profiles are open. The primitive is a
+  // string here rather than an enum because the parse boundary already proves
+  // it agrees with the family segment of `id`, and an enum would make adding a
+  // primitive a wire-breaking change for a set that is closed by design but
+  // versioned by ADR.
+  string primitive = 3;
+  string display_name = 4;
+  string description = 5;
+  // Always present, possibly empty: the parse boundary defaults it.
+  repeated string refines = 6;
+  // Optional on the descriptor. The parse boundary normalizes both to [], but
+  // the descriptor is a published constant that consumers serialize, so the
+  // wire must preserve which of the two an author wrote.
+  StringList conflicts_with = 7;
+  StringList requires = 8;
+  string requirement_schema_ref = 9;
+  string conformance_suite_ref = 10;
+  repeated FeatureDescriptor features = 11;
+  repeated GuaranteeDescriptor guarantees = 12;
+  string maturity = 13;
+  // Non-empty. A profile that cites no evidence is refused.
+  repeated EvidenceSourceRef source_refs = 14;
+}
+
+// The first-party catalog as one record, so a consumer can fetch, digest and
+// pin it as a unit.
+message CapabilityProfileCatalog {
+  string schema_version = 1;
+  repeated CapabilityProfileDescriptor profiles = 2;
+}

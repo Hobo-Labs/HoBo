@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package hobo.training.v1;
+
+// Built-in training-engine records (ADR-0025). These
+// are the engine-side shapes: the optimizer's own configuration and the
+// OpenInference-aligned trace record it emits per OPTO step. The port
+// request/response records (OptimizeRequest, TrainingCandidate, Trajectory)
+// live in packages/core/data-models/training_engine.proto and are never
+// redefined here.
+
+// Configuration for the built-in OPTO-style optimizer. The seed is required:
+// the engine is deterministic given a seed (same seed, same request => the
+// identical proposal trajectory and winner), which is what makes training
+// runs replayable and auditable from the event log.
+message OptimizerConfig {
+  string engine_id = 1;
+  // Seed for the engine-owned PRNG (32-bit unsigned). Required.
+  uint32 seed = 2;
+  // Number of propose -> score -> keep-best steps to run (>= 1).
+  uint32 max_iterations = 3;
+  // Demos sampled into each candidate parameter set (>= 1).
+  uint32 demos_per_candidate = 4;
+}
+
+// One OPTO step, recorded into the in-memory trace sink. Field vocabulary is
+// aligned with the OpenInference span conventions (span kind + attributes
+// map) without depending on any external tracing library; kind carries an
+// OpenInference span-kind label (e.g. CHAIN). Deliberately clockless so a
+// seeded run replays to byte-identical spans.
+message OptimizerTraceSpan {
+  string id = 1;
+  string parent_id = 2;
+  // OpenInference span-kind label: LLM, CHAIN, TOOL, RETRIEVER, RERANKER,
+  // EMBEDDING, AGENT, GUARDRAIL, EVALUATOR or PROMPT.
+  string kind = 3;
+  string name = 4;
+  // sha256:<hex64> digest of the proposed candidate parameter set.
+  string input_digest = 5;
+  // Rubric-derived score of the proposal, in [0, 1].
+  double score = 6;
+  // Keep-best decision for the step: "kept" or "rejected".
+  string decision = 7;
+  map<string, string> attributes = 8;
+}

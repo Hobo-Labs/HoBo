@@ -1,0 +1,31 @@
+{
+  "consumer": { "name": "ReplayTracker" },
+  "provider": { "name": "ReplayCorrelation" },
+  "interactions": [
+    {
+      "description": "build correlation without free-text PII",
+      "request": {
+        "method": "POST",
+        "path": "/replay/correlation/build",
+        "body": {
+          "stationId": "station:local",
+          "principalRef": "principal:dual-1",
+          "errorId": "err-42",
+          "trailId": "trail:cutover-1",
+          "harnessFlagKeys": ["hobo.session-replay"]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "stationId": "station:local",
+          "principalRef": "principal:dual-1",
+          "errorId": "err-42",
+          "trailId": "trail:cutover-1"
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

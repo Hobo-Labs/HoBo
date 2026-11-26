@@ -1,0 +1,26 @@
+{
+  "id": "prod-contract-skew",
+  "title": "SRE proposes a production contract-skew shim and waits for approval",
+  "persona": "sre-operator",
+  "bddScenario": "Given a production compatibility gate fails for an API producer and consumer, when SRE classifies contract skew, then it proposes a shim, requests human approval, and only applies a canary after approval.",
+  "verticalSlice": "diagnose-propose-approve-remediate",
+  "incidentId": "inc-crew-002",
+  "producer": "orders-api",
+  "consumer": "checkout-worker",
+  "severity": "SEV2",
+  "correlationId": "corr-prod-contract-skew",
+  "diagnosis": {
+    "evidence": ["compat-gate-diff", "consumer-pact-failure", "no-data-loss-risk"]
+  },
+  "slo": {
+    "mttrMinutes": 16
+  },
+  "approvalSnapshotHash": "sha256-prod-contract-skew-approval",
+  "mockInteractions": {
+    "sre-operator-to-projection-read-api": "read-compat-projection",
+    "sre-operator-to-policy-engine": "require-human-approval",
+    "sre-operator-to-a2h-notifier": "notify-on-call-approval",
+    "sre-operator-to-remediation-gateway": "apply-contract-shim-canary",
+    "sre-operator-to-issue-tracker": "sync-incident-ticket"
+  }
+}

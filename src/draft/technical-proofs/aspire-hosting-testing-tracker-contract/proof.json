@@ -1,0 +1,18 @@
+{
+  "layer": "technical",
+  "slug": "aspire-hosting-testing-tracker-contract",
+  "title": "HOBO-705 Aspire.Hosting.Testing tracker contract",
+  "linear": "HOBO-705",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

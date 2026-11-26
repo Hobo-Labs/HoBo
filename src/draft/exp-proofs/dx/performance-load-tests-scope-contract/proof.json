@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "performance-load-tests-scope-contract",
+  "experienceType": "dx",
+  "title": "Performance & Load Tests Scope Contract",
+  "linear": "HOBO-440",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

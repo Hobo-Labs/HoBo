@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package hobo.closurebuilder.lowering.v1;
+
+enum ClosureBuilderLoweringResourceKind {
+  CLOSURE_BUILDER_LOWERING_RESOURCE_KIND_UNSPECIFIED = 0;
+  CLOSURE_BUILDER_LOWERING_RESOURCE_KIND_API = 1;
+  CLOSURE_BUILDER_LOWERING_RESOURCE_KIND_CACHE = 2;
+  CLOSURE_BUILDER_LOWERING_RESOURCE_KIND_QUEUE = 3;
+}
+
+message ClosureBuilderLoweringInput {
+  string bindle_name = 1;
+  repeated ClosureBuilderLoweringResource resources = 2;
+  repeated ClosureBuilderAlias aliases = 3;
+  repeated ClosureBuilderRelationship relationships = 4;
+  bool requires_same_kind_identity_ledger = 5;
+}
+
+message ClosureBuilderLoweringResource {
+  string generated_id = 1;
+  ClosureBuilderLoweringResourceKind kind = 2;
+  ClosureBuilderWorkloadDescriptor workload = 3;
+  repeated ProviderAnnotation annotations = 4;
+}
+
+message ClosureBuilderWorkloadDescriptor {
+  string kind = 1;
+  string entrypoint = 2;
+}
+
+message ProviderAnnotation {
+  string provider = 1;
+  string option = 2;
+  string value_json = 3;
+}
+
+message ClosureBuilderAlias {
+  string alias = 1;
+  string generated_id = 2;
+}
+
+message ClosureBuilderRelationship {
+  string from = 1;
+  string to = 2;
+  string verb = 3;
+}
+
+message ClosureBuilderManifestSnapshot {
+  string schema = 1;
+  string bindle = 2;
+  repeated ClosureBuilderManifestResource resources = 3;
+  repeated ClosureBuilderRelationship relationships = 4;
+  repeated ClosureBuilderAlias authoring_aliases = 5;
+}
+
+message ClosureBuilderManifestResource {
+  string generated_id = 1;
+  ClosureBuilderLoweringResourceKind kind = 2;
+  string manifest_type = 3;
+  string port = 4;
+  ClosureBuilderWorkloadDescriptor workload = 5;
+  repeated ClosureBuilderLinkFacet links = 6;
+  repeated ProviderAnnotation provider_options = 7;
+}
+
+message ClosureBuilderLinkFacet {
+  string to = 1;
+  string relationship = 2;
+}
+
+message ClosureBuilderLoweringEvidenceEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string issue_id = 3;
+  ClosureBuilderLoweringInput input = 4;
+  ClosureBuilderManifestSnapshot manifest = 5;
+}

@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "ReleaseNotesPrivateBetaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "ReleaseNotesPrivateBetaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Release notes private beta evidence boundary returns accepted M2 gate evidence",
+      "request": {
+        "method": "GET",
+        "path": "/release-notes/private-beta/evidence"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "issue": "HOBO-466",
+          "schema": "hobo.draft.release_notes_private_beta/v1",
+          "milestoneGate": "M2 Private beta proof"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

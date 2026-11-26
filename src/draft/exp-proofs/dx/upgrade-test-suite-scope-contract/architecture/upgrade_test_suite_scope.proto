@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Upgrade Test Suite
+// Scope draft package reasons about. Documents the records/objects this package
+// owns so the architecture guard has a language-neutral schema reference. Not
+// compiled at runtime; this is a design-time contract artifact.
+
+enum UpgradeTestSuiteEvidenceKind {
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_REFERENCE_FIXTURE = 2;
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_CONTRACT_TEST = 3;
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_RECOVERY_FIXTURE = 4;
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_SCHEMA = 5;
+  UPGRADE_TEST_SUITE_EVIDENCE_KIND_SUPPORT_HANDOFF = 6;
+}
+
+message UpgradeTestSuiteScopeRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string goal = 4;
+  repeated UpgradeTestSuiteBoundary boundaries = 5;
+  repeated UpgradeTestSuiteEvidence required_evidence = 6;
+}
+
+message UpgradeTestSuiteBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message UpgradeTestSuiteEvidence {
+  string id = 1;
+  string owner = 2;
+  string proof = 3;
+}

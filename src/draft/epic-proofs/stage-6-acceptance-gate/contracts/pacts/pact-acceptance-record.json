@@ -1,0 +1,23 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "acceptance-record-boundary" },
+  "interactions": [
+    {
+      "description": "S6-01 acceptance record evidence attachment",
+      "request": { "method": "PUT", "path": "/acceptance/S6-01/evidence" },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "recordId": "S6-01",
+          "evidenceAttached": true,
+          "v1GaChecklistComplete": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "acceptance-record",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

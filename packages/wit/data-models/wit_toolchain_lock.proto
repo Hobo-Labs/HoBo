@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package hobo.wit.v1;
+
+message GeneratorPin {
+  string name = 1;
+  string version = 2;
+  string role = 3;
+}
+
+message CompatFloor {
+  string wasmtime = 1;
+  string componentize_js = 2;
+  string wrpc = 3;
+  string wasm_cloud = 4;
+  string default_transport = 5;
+}
+
+message InterfacePin {
+  string id = 1;
+  string namespace = 2;
+  string package_name = 3;
+  string interface_name = 4;
+  string version = 5;
+  string stability = 6;
+  string path = 7;
+  string sha256 = 8;
+}
+
+message ToolchainLock {
+  string schema = 1;
+  string package = 2;
+  GeneratorPin canonical_generator = 3;
+  repeated GeneratorPin smoke_generators = 4;
+  CompatFloor compat_floor = 5;
+  repeated InterfacePin wit_deps = 6;
+  repeated string guards = 7;
+}
+
+message FunctionSignature {
+  string name = 1;
+  repeated string params = 2;
+  string result = 3;
+}
+
+message InterfaceSignatures {
+  string name = 1;
+  repeated FunctionSignature functions = 2;
+}
+
+message ComponentSurface {
+  string package = 1;
+  string world = 2;
+  repeated string imports = 3;
+  repeated string exports = 4;
+  repeated InterfaceSignatures function_signatures = 5;
+  string surface_digest = 6;
+}
+
+message SurfaceParityReport {
+  string parity = 1;
+  repeated string drifted_imports = 2;
+  repeated string drifted_exports = 3;
+  repeated string drifted_signatures = 4;
+}
+
+message VendorVerification {
+  string schema = 1;
+  int32 verified = 2;
+  repeated InterfacePin pins = 3;
+}
+
+message DigestMismatchError {
+  string code = 1;
+  string pin_id = 2;
+  string expected_sha256 = 3;
+  string actual_sha256 = 4;
+}

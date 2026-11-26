@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProjectionSinkChangeFeedConformanceContractConsumer"
+  },
+  "provider": {
+    "name": "ProjectionSinkChangeFeedConformanceContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Projection Sink Change Feed Conformance Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/projection-sink-change-feed-conformance-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.projection_sink_change_feed_conformance_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

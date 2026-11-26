@@ -1,0 +1,3 @@
+slug: observed-contract-promotion-contract
+layer: technical
+proof-identity: ok

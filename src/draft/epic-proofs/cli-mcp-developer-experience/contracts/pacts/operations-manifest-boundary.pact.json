@@ -1,0 +1,23 @@
+{
+  "consumer": {
+    "name": "agent-docs-client"
+  },
+  "provider": {
+    "name": "hobo-operations-manifest-provider"
+  },
+  "interactions": [
+    {
+      "description": "docs.json publishes CLI and MCP operation routes",
+      "request": {
+        "path": "/docs.json"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.operations.docs/v1",
+          "routesInclude": ["plan", "deploy", "doctor"]
+        }
+      }
+    }
+  ]
+}

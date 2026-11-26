@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "GenerationReferenceApp"
+  },
+  "provider": {
+    "name": "TrainingPromotionPolicyGate"
+  },
+  "interactions": [
+    {
+      "description": "evaluate challenger against conformance, live evals, and poisoning guard",
+      "providerStates": [
+        {
+          "name": "challenger has shadow traffic, live eval rewards, and trusted influence"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/training/promotion-decisions",
+        "body": {
+          "candidateId": "candidate-opto-rollup",
+          "conformance": "passed",
+          "labelIntegrity": "trusted"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "certify",
+          "gate": "passed"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

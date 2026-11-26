@@ -1,0 +1,341 @@
+---
+import { Code } from "astro:components";
+import Base from "../layouts/Base.astro";
+import TrailStage from "../components/TrailStage.astro";
+import WorldHero from "../components/WorldHero.astro";
+import { href } from "../lib/url";
+import "../styles/trail.css";
+
+const bindleSnippet = `import { bindle } from "@hobo/bindles";
+
+export default bindle("hello-bindle", (b) => {
+  const api = b.api(() => helloApi.fetch);
+  const web = b.web(() => helloWeb.fetch).dependsOn(api);
+  return { api, web };
+});`;
+
+const shikiThemes = {
+	light: "github-light-high-contrast",
+	dark: "github-dark-high-contrast",
+} as const;
+
+const hobits = ["tuck", "cog", "mags", "pip"];
+---
+
+<Base
+	title="HoBo — pack your bindle, we'll find your app a home"
+	description="HoBo describes your app once, finds it the cheapest home that passes your policies, and keeps it moving with continuous, zero-drama migrations — across any provider, any mix, or your own metal."
+>
+	<WorldHero />
+
+	<div class="trail-page ink-world" data-trail-page>
+		<div class="trail-stops" data-trail-stops>
+			<section
+				class="hero stop stop-hero"
+				id="trailhead"
+				data-trail-stop="trailhead"
+				data-stop-name="Start"
+				data-stop-sign="Trailhead"
+				data-stop-extra="hint"
+				aria-labelledby="trailhead-title"
+			>
+				<div class="container">
+					<div class="stop-head">
+						<h1 id="trailhead-title">
+							Pack your bindle and hitch a ride — <em>we'll find your app a home.</em>
+						</h1>
+						<p class="hero-sub">
+							HoBo keeps your app on the <strong>cheapest infrastructure that passes
+							your policies</strong>. Describe it once in code. When a better option
+							appears, HoBo plans the migration, gates it, and moves it.
+						</p>
+						<p class="hero-sub">
+							<strong>Pre-release.</strong> Not on npm yet: clone the repo and build
+							<code>@hobo/hobo</code>.
+						</p>
+						<div class="hero-ctas">
+							<a class="btn btn-primary" href={href("/guide/getting-started/")}>Get started</a>
+							<a class="btn btn-ghost" href={href("/guide/concepts/")}>Core concepts</a>
+						</div>
+					</div>
+					<div class="terminal-wrap stop-card">
+						<div class="terminal">
+							<div class="terminal-bar">
+								<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+								<span class="title">src/bindle.ts</span>
+							</div>
+							<Code code={bindleSnippet} lang="ts" themes={shikiThemes} defaultColor={false} />
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="why"
+				data-trail-stop="crossroads"
+				data-stop-name="Why"
+				data-stop-extra="tuck"
+				aria-labelledby="why-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Why HoBo exists</span>
+						<h2 id="why-title">Two bad landlords, and the open road</h2>
+						<p>
+							Teams choose between a platform that locks them in and raw
+							infrastructure that becomes a second job. HoBo is a third option.
+						</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="company-gate">
+							<h3>Closed PaaS</h3>
+							<p>Easy until the price changes. One runtime, one bill, hard to leave.</p>
+						</article>
+						<article class="card stop-card" data-prop="shack">
+							<h3>Raw cloud + IaC</h3>
+							<p>Full control, and every app team becomes a part-time platform team.</p>
+						</article>
+						<article class="card stop-card" data-prop="signpost">
+							<h3>HoBo</h3>
+							<p>
+								Describe what the app needs. Policy, price and reliability decide
+								where it runs. Provider-specific features are one typed
+								<code>.with(...)</code> away.
+							</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="how"
+				data-trail-stop="rails"
+				data-stop-name="How"
+				data-stop-extra="cog"
+				aria-labelledby="how-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">How it works</span>
+						<h2 id="how-title">Deployment is not a destination. <em>It's a journey.</em></h2>
+						<p>
+							Most platforms deploy once and stop. HoBo keeps comparing options and
+							migrates when a cheaper one passes your policy gates, with your
+							approval or automatically.
+						</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="trunk">
+							<p class="step-num">1 · Describe</p>
+							<h3>Write a Bindle</h3>
+							<p>One provider-agnostic definition of your app: services, resources, wiring and permissions.</p>
+						</article>
+						<article class="card stop-card" data-prop="tent">
+							<p class="step-num">2 · Place</p>
+							<h3>Pick a Camp</h3>
+							<p>An environment such as prod or staging. Define one, or let HoBo infer it.</p>
+						</article>
+						<article class="card stop-card" data-prop="train">
+							<p class="step-num">3 · Migrate</p>
+							<h3>Continuous migration</h3>
+							<p>
+								When prices or reliability change, HoBo re-plans and moves the app if
+								it's worth it. Every move is logged and reversible.
+							</p>
+							<div class="event-chips">
+								<code>MigrationPlanned</code>
+								<code>Gated</code>
+								<code>Migrated</code>
+							</div>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="vocabulary"
+				data-trail-stop="depot"
+				data-stop-name="Vocabulary"
+				aria-labelledby="vocabulary-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Vocabulary</span>
+						<h2 id="vocabulary-title">Four words for traveling light</h2>
+						<p>The vocabulary is small. Start with the Bindle; the rest are optional until you need them.</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="milestone">
+							<div class="stop-pair">
+								<div><h3>Bindle</h3><p>Your app's definition: services, resources, wiring, policy.</p></div>
+								<div><h3>Camp</h3><p>An environment and its runtime requirements.</p></div>
+							</div>
+							<p class="card-cta"><a href={href("/primitives/bindles/")}>Bindle docs →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="switch-stand">
+							<div class="stop-pair">
+								<div><h3>Yard</h3><p>A provider, with shared policy and identity.</p></div>
+								<div><h3>Junction</h3><p>Federation between yards, for hybrid and multi-cloud.</p></div>
+							</div>
+							<p class="card-cta"><a href={href("/primitives/yards/")}>Yard docs →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="depot">
+							<div class="stop-pair">
+								<div><h3>Station</h3><p>An isolation boundary for the control plane.</p></div>
+								<div><h3>Trail</h3><p>A migration recipe your app owns.</p></div>
+							</div>
+							<p class="card-cta"><a href={href("/primitives/trails/")}>Trail docs →</a></p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="roles"
+				data-trail-stop="crew"
+				data-stop-name="Roles"
+				aria-labelledby="roles-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Roles</span>
+						<h2 id="roles-title">Who writes what</h2>
+						<p>Each role owns one kind of file and never has to touch the others.</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="drafting-table">
+							<p class="step-num">Write Bindles</p>
+							<h3>Developers</h3>
+							<p>Define the app in plain code. No YAML, no infra tickets.</p>
+							<p class="card-cta"><a href={href("/roles/developers/")}>For developers →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="toolbox">
+							<p class="step-num">Write Camps, Yards, Junctions</p>
+							<h3>Platform engineers</h3>
+							<p>Approve providers and define environments.</p>
+							<p class="card-cta"><a href={href("/roles/platform-engineers/")}>For platform engineers →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="barrier">
+							<p class="step-num">Write policy</p>
+							<h3>DevSecOps</h3>
+							<p>Decide what can run where. Every decision is enforced and logged.</p>
+							<p class="card-cta"><a href={href("/roles/devsecops/")}>For DevSecOps →</a></p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="ai-native"
+				data-trail-stop="airfield"
+				data-stop-name="AI-native"
+				aria-labelledby="ai-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">AI-native</span>
+						<h2 id="ai-title">Built for humans, and the agents that work for them</h2>
+						<p>
+							Everything is available through the SDK, the CLI and MCP. Agents are
+							first-class principals with scoped, short-lived credentials.
+						</p>
+					</div>
+					<div class="grid grid-3 stop-cards">
+						<article class="card stop-card" data-prop="padlock-post">
+							<h3>Agents as principals</h3>
+							<p>An agent requests only the credentials its task needs. Every token is an auditable event.</p>
+						</article>
+						<article class="card stop-card" data-prop="switchboard">
+							<h3>Built-in operators</h3>
+							<p>SRE, GitOps, FinOps and other agents ship with HoBo, gated by policy.</p>
+							<p class="card-cta"><a href={href("/operations/")}>Operators →</a></p>
+						</article>
+						<article class="card stop-card" data-prop="radio-mast">
+							<h3>Are you an agent?</h3>
+							<p>
+								Start with <a href={href("/llms.txt")}><code>llms.txt</code></a>, then the
+								agent docs for the MCP surface.
+							</p>
+							<p class="card-cta"><a href={href("/agents/")}>Agent docs →</a></p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop"
+				id="compare"
+				data-trail-stop="river"
+				data-stop-name="Compare"
+				data-stop-sign="Alternatives"
+				aria-labelledby="compare-title"
+			>
+				<div class="container">
+					<div class="section-head stop-head">
+						<span class="badge">Alternatives</span>
+						<h2 id="compare-title">Other roofs over your head</h2>
+						<p>
+							Cloud-agnostic tools aren't AI-native. AI-native platforms lock you in.
+							None of them keep optimizing after you deploy.
+						</p>
+					</div>
+					<div class="grid stop-cards stop-cards-one">
+						<article class="card stop-card stop-card-wide" data-prop="rooftops">
+							<div class="table-wrap" tabindex="0" role="region" aria-label="How HoBo compares (scrollable table)">
+								<table class="compare">
+									<thead>
+										<tr><th>Product</th><th>Cloud-agnostic</th><th>AI-native</th><th>Self-host</th></tr>
+									</thead>
+									<tbody>
+										<tr><th>Lakebed</th><td class="no">✗ own runtime</td><td class="yes">✓</td><td class="no">✗</td></tr>
+										<tr><th>Vercel + Workflow</th><td class="no">partial</td><td class="yes">✓</td><td class="no">runtime only</td></tr>
+										<tr><th>Nitric</th><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓</td></tr>
+										<tr><th>SST v3</th><td class="no">◐ AWS-centric</td><td class="no">✗</td><td class="yes">✓</td></tr>
+										<tr><th>Crossplane</th><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓ k8s</td></tr>
+										<tr><th>wasmCloud</th><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓</td></tr>
+										<tr class="hobo-row"><th>HoBo</th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+									</tbody>
+								</table>
+							</div>
+							<p class="stop-foot"><strong>Only HoBo</strong> keeps re-evaluating placement after you deploy.</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section
+				class="section stop stop-end"
+				id="get-started"
+				data-trail-stop="home"
+				data-stop-name="Get started"
+				aria-labelledby="start-title"
+			>
+				<div class="container">
+					<div class="card stop-card postcard" data-prop="cottage" data-prop-bare>
+						<h2 id="start-title" class="cta-inner-title">Ready to hit the rails?</h2>
+						<p>Write one Bindle to start. Everything else is optional until you need it.</p>
+						<div class="hero-ctas">
+							<a class="btn btn-primary" href={href("/guide/getting-started/")}>Get started</a>
+							<a class="btn btn-ghost" href={href("/primitives/")}>See the primitives</a>
+						</div>
+						<div class="stamps" data-stamps hidden>
+							<p class="stamps-title">Hobits met along the way</p>
+							{hobits.map((who) => (
+								<span class="stamp" data-who={who} role="img" aria-label="Not met yet">
+									<i style={`background-image:url("${href(`/cast/${who}.png`)}")`}></i>
+								</span>
+							))}
+						</div>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		<TrailStage />
+	</div>
+</Base>

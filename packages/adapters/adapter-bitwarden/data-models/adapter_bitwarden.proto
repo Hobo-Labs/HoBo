@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hobo.adapter_bitwarden.v1;
+
+// Where a HoBo deployment's secrets live in Bitwarden Secrets Manager: one
+// organization, one project, one secret per key. Coordinates only: the
+// machine account's access token the SDK client signs in with never appears
+// in a record. CUE constraints: adapter_bitwarden.cue.
+message BitwardenBinding {
+  string organization_id = 1;
+  string project_id = 2;
+  // "https://api.bitwarden.com" (US), "https://api.bitwarden.eu" (EU) or a
+  // self-hosted origin.
+  string api_url = 3;
+}
+
+// A reference to one secret: never its value.
+message BitwardenSecretRef {
+  string organization_id = 1;
+  string project_id = 2;
+  string secret_id = 3;
+}

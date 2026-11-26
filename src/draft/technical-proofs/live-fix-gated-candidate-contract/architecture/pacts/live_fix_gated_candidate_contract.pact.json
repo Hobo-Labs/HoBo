@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "LiveFixGatedCandidateContractConsumer"
+  },
+  "provider": {
+    "name": "LiveFixGatedCandidateContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Live Fix Gated Candidate Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/live-fix-gated-candidate-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.live_fix_gated_candidate_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

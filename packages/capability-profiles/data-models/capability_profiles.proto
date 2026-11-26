@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package hobo.capability_profiles.v1;
+
+// Capability implementation profiles: the semantic layer between a Bindle
+// primitive (data) and a hosted product (Neon Claimable Postgres).
+
+message FeatureDescriptorRecord {
+  string key = 1;
+  string description = 2;
+  bool required_for_conformance = 3;
+}
+
+message GuaranteeDescriptorRecord {
+  string key = 1;
+  string description = 2;
+  // Guarantees may be added by a refinement but never removed.
+  bool inheritable = 3;
+}
+
+message EvidenceSourceRefRecord {
+  string url = 1;
+  string checked_at = 2;
+  string note = 3;
+}
+
+message CapabilityProfileDescriptorRecord {
+  string schema_version = 1;
+  string id = 2;
+  string primitive = 3;
+  string display_name = 4;
+  string description = 5;
+  repeated string refines = 6;
+  repeated string conflicts_with = 7;
+  string requirement_schema_ref = 8;
+  string conformance_suite_ref = 9;
+  repeated FeatureDescriptorRecord features = 10;
+  repeated GuaranteeDescriptorRecord guarantees = 11;
+  string maturity = 12;
+  repeated EvidenceSourceRefRecord source_refs = 13;
+}
+
+message ProfileConstraintRecord {
+  string profile_id = 1;
+  string version_range = 2;
+}
+
+message WeightedPreferenceRecord {
+  string profile_id = 1;
+  string version_range = 2;
+  uint32 weight = 3;
+}
+
+message CapabilityRequirementRecord {
+  repeated ProfileConstraintRecord required_profiles = 1;
+  repeated WeightedPreferenceRecord preferred_profiles = 2;
+  repeated ProfileConstraintRecord prohibited_profiles = 3;
+  string runtime_required = 4;
+  repeated string runtime_allowed = 5;
+  repeated string runtime_preferred = 6;
+  bool allow_native = 7;
+  bool allow_pack = 8;
+  bool allow_bridge = 9;
+  string trust_ref = 10;
+}
+
+message ProfileImplementationRecord {
+  string profile_id = 1;
+  string version_range = 2;
+  string realization = 3;
+  string conformance_ref = 4;
+  string conformance = 5;
+}
+
+message SelectionRejectionRecord {
+  string definition_id = 1;
+  string code = 2;
+  string detail = 3;
+}

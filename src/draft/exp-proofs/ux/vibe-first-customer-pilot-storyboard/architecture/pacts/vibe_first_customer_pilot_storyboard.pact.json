@@ -1,0 +1,53 @@
+{
+  "consumer": {
+    "name": "VibeFirstCustomerPilotStoryboardConsumer"
+  },
+  "provider": {
+    "name": "VibeFirstCustomerPilotStoryboardBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe First-Customer Pilot Storyboard boundary returns accepted HOBO-549 evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-first-customer-pilot-storyboard/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.vibe_first_customer_pilot_storyboard/v1",
+          "issue": "HOBO-549",
+          "packagePath": "src/draft/exp-proofs/ux/vibe-first-customer-pilot-storyboard",
+          "quickstartFixtureRefs": [
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-define-object-graph-v1"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-plan-safe-preview-v1"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-deploy-run-accepted-v1"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-manage-stale-evidence-v1"
+            },
+            {
+              "sourceIssue": "HOBO-577",
+              "fixtureId": "rlq-recover-scope-out-v1"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

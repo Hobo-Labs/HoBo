@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PatternsStandardsCrossLinksConsumer"
+  },
+  "provider": {
+    "name": "PatternsStandardsCrossLinksBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Patterns standards cross-link guard returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/patterns-standards-cross-links/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.patterns_standards_cross_links/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

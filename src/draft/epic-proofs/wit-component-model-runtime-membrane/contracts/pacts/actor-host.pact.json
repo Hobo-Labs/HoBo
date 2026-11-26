@@ -1,0 +1,29 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "ActorHostPortMock" },
+  "interactions": [
+    {
+      "description": "append actor state behind a stale-fence guard",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/actor-host/append-state",
+        "body": {
+          "actorId": "cart-42",
+          "expectedFence": 7,
+          "snapshotSeq": 3
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "fence": 8,
+          "snapshotReplayRequired": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "actor-host",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

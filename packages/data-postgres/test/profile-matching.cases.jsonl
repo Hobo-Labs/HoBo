@@ -1,0 +1,20 @@
+# The gate this module exists for: relational is not PostgreSQL.
+{"method":"select","name":"a SQLite/D1-shaped candidate never satisfies data.postgres/v1","input":[{"candidates":["sqlite"]}],"subset":{"winner":null,"rejections":["cloudflare.temporary-d1/v1:PROFILE_INCOMPATIBLE"]}}
+{"method":"select","name":"admits Neon-shaped and Prisma-shaped candidates","input":[{"options":{"version":">=16"},"candidates":["sqlite","prisma","neon"]}],"subset":{"ranked":["neon.claimable-postgres/v1","prisma.claimable-postgres/v1"]}}
+# Version is gated on the parsed major, not on the version string.
+{"method":"select","name":"gates on the server major version rather than a version string","input":[{"options":{"version":">=16"},"candidates":[{"definitionId":"legacy.postgres/v1","providerId":"legacy","from":"neon","structuredCapabilities":{"serverVersion":">=13","serverVersionMajor":13}},"neon"]}],"subset":{"winner":"neon.claimable-postgres/v1","rejections":["legacy.postgres/v1:FEATURE_UNSATISFIED"]}}
+# Absent is not maybe: prisma never declares `extensions`.
+{"method":"select","name":"an unadvertised extension is a failure, not a maybe","input":[{"options":{"extensions":["vector"]},"candidates":["prisma","neon"]}],"subset":{"winner":"neon.claimable-postgres/v1","rejections":["prisma.claimable-postgres/v1:FEATURE_UNSATISFIED"]}}
+{"method":"select","name":"gates on a migration profile the product does not implement","input":[{"options":{"migration":{"profiles":["migration.postgres.logical-copy/v1"]}},"candidates":["prisma","neon"]}],"subset":{"winner":"neon.claimable-postgres/v1","rejections":["prisma.claimable-postgres/v1:MIGRATION_REQUIRED_BUT_UNAVAILABLE"]}}
+# Speaking the wire protocol is not the same as proving a tool works.
+{"method":"select","name":"gates on a migration tool claim rather than inferring it from the protocol","input":[{"options":{"migration":{"tools":["prisma-migrate"]}},"candidates":[{"definitionId":"wire.only-postgres/v1","providerId":"wireonly","guaranteesOnly":true,"structuredCapabilities":{"serverVersionMajor":17}}]}],"subset":{"winner":null,"rejections":["wire.only-postgres/v1:FEATURE_UNSATISFIED"]}}
+{"method":"select","name":"every Postgres guarantee is required, so a product missing DDL loses","input":[{"candidates":[{"definitionId":"readonly.postgres/v1","providerId":"readonly","from":"neon","structuredCapabilities":{"ddl":false}}]}],"subset":{"winner":null,"rejections":["readonly.postgres/v1:GUARANTEE_UNSATISFIED"]}}
+# Authoring order must not change the requirement.
+{"method":"isOrderIndependent","name":"identical options in a different order","input":[{"version":">=16","extensions":["vector","pg_trgm"],"isolation":["serializable","read-committed"]},{"isolation":["read-committed","serializable"],"extensions":["pg_trgm","vector"],"version":">=16"}],"expect":true}
+{"method":"isOrderIndependent","name":"different options are not collapsed","input":[{"version":">=16"},{"version":">=17"}],"expect":false}
+# Provider-neutral: an option naming placement instead of capability is refused.
+{"method":"requirement","name":"refuses a providerId option","input":[{"providerId":"neon"}],"throws":"provider-neutral|unknown postgres.database option"}
+{"method":"requirement","name":"refuses a region pin","input":[{"region":"us-east-1"}],"throws":"provider-neutral|unknown postgres.database option"}
+{"method":"requirement","name":"refuses a version range with no major","input":[{"version":"latest"}],"throws":"must be a major version"}
+{"method":"requirement","name":"refuses an extension name that is not a plain identifier","input":[{"extensions":["vector; DROP DATABASE x"]}],"throws":"plain PostgreSQL extension name"}
+{"method":"requirement","name":"a bare requirement parses","input":[],"match":"data.postgres/v1"}

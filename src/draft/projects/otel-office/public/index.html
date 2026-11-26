@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>HoBo OTel Office</title>
+		<style>
+			body {
+				margin: 0;
+				background: #111;
+				color: #eceff1;
+				font-family: monospace;
+			}
+			header {
+				display: flex;
+				gap: 12px;
+				align-items: center;
+				padding: 8px 12px;
+				background: #1c1c1c;
+			}
+			#stations button {
+				font: inherit;
+				margin-right: 6px;
+				background: #37474f;
+				color: #eceff1;
+				border: 1px solid #546e7a;
+				padding: 2px 10px;
+				cursor: pointer;
+			}
+			#stations button:disabled {
+				background: #4caf50;
+				cursor: default;
+			}
+			#panel {
+				display: none;
+				position: fixed;
+				top: 48px;
+				right: 0;
+				bottom: 0;
+				width: 340px;
+				overflow-y: auto;
+				background: #1c1c1c;
+				border-left: 1px solid #546e7a;
+				padding: 10px 12px;
+				font-size: 12px;
+			}
+			#panel table {
+				border-collapse: collapse;
+				width: 100%;
+			}
+			#panel td,
+			#panel th {
+				border-bottom: 1px solid #37474f;
+				padding: 2px 4px;
+				text-align: left;
+			}
+			#panel ul {
+				margin: 4px 0;
+				padding-left: 16px;
+			}
+			#panel .journey {
+				margin-bottom: 8px;
+				border-bottom: 1px dashed #37474f;
+				padding-bottom: 4px;
+			}
+			#panel .journey-row {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				margin: 2px 0;
+			}
+			#panel .journey-name {
+				flex: 0 0 45%;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			#panel .journey-track {
+				position: relative;
+				flex: 1;
+				height: 8px;
+				background: #263238;
+			}
+			#panel .journey-bar {
+				position: absolute;
+				top: 0;
+				bottom: 0;
+				background: #4caf50;
+			}
+			#panel .journey-bar.error {
+				background: #ef5350;
+			}
+			#panel .journey-bar.open {
+				background: #42a5f5;
+			}
+			#panel li.log-warn {
+				color: #ffb300;
+			}
+			#panel li.log-error {
+				color: #ef5350;
+			}
+			#mute {
+				font: inherit;
+				background: #37474f;
+				color: #eceff1;
+				border: 1px solid #546e7a;
+				padding: 2px 10px;
+				cursor: pointer;
+			}
+			canvas {
+				display: block;
+				image-rendering: pixelated;
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<strong>HoBo OTel Office</strong>
+			<span id="stations"></span>
+			<button id="mute" type="button">🔇 sound off</button>
+			<span>working=green reading=blue idle=gray stuck=red · drag/arrow keys pan · wheel zooms · click a character to inspect</span>
+		</header>
+		<canvas id="office" width="1280" height="720"></canvas>
+		<aside id="panel"></aside>
+		<script type="module" src="/client/index.js"></script>
+	</body>
+</html>

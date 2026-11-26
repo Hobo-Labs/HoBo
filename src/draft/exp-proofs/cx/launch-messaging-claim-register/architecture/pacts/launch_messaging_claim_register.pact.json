@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "LaunchMessagingClaimRegisterConsumer"
+  },
+  "provider": {
+    "name": "LaunchMessagingClaimRegisterBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Launch Messaging Claim Register boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/launch-messaging-claim-register/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.launch_messaging_claim_register/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

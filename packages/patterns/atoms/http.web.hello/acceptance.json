@@ -1,0 +1,14 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"src/webapp.ts"
+	],
+	"expectContains": {
+		"src/webapp.ts": [
+			"services__api__http__0",
+			"greeter"
+		]
+	}
+}

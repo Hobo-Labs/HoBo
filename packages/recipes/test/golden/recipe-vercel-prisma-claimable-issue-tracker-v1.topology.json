@@ -1,0 +1,152 @@
+{
+	"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
+	"topologyDigest": "sha256:6b9aeb293fd5f345dcd42bcb27eeafcb9435a32f2e12e0f005fc78df24ef91a8",
+	"resolutionDigest": "sha256:1f9f70813ea206baca3def6274376eb5c48ca8f799cab3edddeb801ca6db0a5d",
+	"topology": {
+		"schemaVersion": "hobo.resolved-topology/v1",
+		"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
+		"junctionRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1",
+		"yards": [
+			{
+				"yardId": "app",
+				"yardRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/app",
+				"providerId": "vercel",
+				"resourceOnly": false,
+				"sponsored": true,
+				"regions": [],
+				"camps": [
+					{
+						"campId": "app",
+						"campRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/app/app",
+						"resources": [
+							{
+								"resourceRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/app/web",
+								"placementId": "web",
+								"capabilityRef": "api",
+								"primitive": "api",
+								"satisfiesProfileId": "api.http/v1",
+								"productDefinitionId": "vercel.sponsored-api/v1",
+								"realization": "native",
+								"runtimeModel": "serverless_faas",
+								"producesBindingProfiles": [
+									"binding.http/v1"
+								]
+							}
+						]
+					}
+				],
+				"resources": []
+			},
+			{
+				"yardId": "data",
+				"yardRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/data",
+				"providerId": "prisma",
+				"resourceOnly": true,
+				"sponsored": false,
+				"regions": [],
+				"camps": [],
+				"resources": [
+					{
+						"resourceRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/data/db",
+						"placementId": "db",
+						"capabilityRef": "db",
+						"primitive": "data",
+						"satisfiesProfileId": "data.postgres/v1",
+						"productDefinitionId": "prisma.claimable-postgres/v1",
+						"realization": "native",
+						"producesBindingProfiles": [
+							"binding.postgresql/v1"
+						]
+					}
+				]
+			}
+		],
+		"bindings": [
+			{
+				"edgeId": "web-db",
+				"fromResourceRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/app/web",
+				"toResourceRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/data/db",
+				"bindingProfileRef": "binding.postgresql/v1",
+				"connectivityImplementationId": "vercel.postgres.environment-ref/v1",
+				"crossYard": true,
+				"usedFallback": false
+			}
+		]
+	},
+	"claims": {
+		"actionCount": 2,
+		"providerCount": 2,
+		"atomicity": "best-effort-saga",
+		"earliestDeadlineMs": 1700172800000,
+		"items": [
+			{
+				"claimId": "claim/db",
+				"subjectRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/data/db",
+				"subjectKind": "resource",
+				"providerId": "prisma",
+				"mode": "resource-claim",
+				"actionCount": 1,
+				"deadlineMs": 1700172800000,
+				"creatorAuthorityAfterClaim": "rotatable",
+				"postClaimActions": [
+					"rotate-binding"
+				]
+			},
+			{
+				"claimId": "claim/web",
+				"subjectRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/app/web",
+				"subjectKind": "resource",
+				"providerId": "vercel",
+				"mode": "project-transfer",
+				"actionCount": 1,
+				"deadlineMs": 1700172800000,
+				"creatorAuthorityAfterClaim": "reauthorization-required",
+				"postClaimActions": [
+					"reauthorize-agent",
+					"rotate-binding"
+				]
+			}
+		]
+	},
+	"guestLeases": [
+		{
+			"leaseId": "lease/app",
+			"yardId": "app",
+			"subjectRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/app",
+			"bootstrapClass": "sponsor",
+			"cleanupPolicy": "transfer",
+			"renewable": false,
+			"claimByMs": 1700172800000
+		},
+		{
+			"leaseId": "lease/data",
+			"yardId": "data",
+			"subjectRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1/data",
+			"bootstrapClass": "anonymous-claimable",
+			"cleanupPolicy": "retain-until-provider-expiry",
+			"renewable": false,
+			"claimByMs": 1700172800000
+		}
+	],
+	"portability": {
+		"providerCount": 2,
+		"exportSupportedPlacements": [
+			"db",
+			"web"
+		],
+		"exportMissingPlacements": [],
+		"migrationProfiles": [
+			"migration.postgres-dump/v1"
+		]
+	},
+	"widenings": [],
+	"trustEvidenceRefs": [
+		"prisma.claimable-postgres/v1#sha256:93cbe8050c229d00c2b73f09c86dd9a8431155898238dfaea9864028f691e386",
+		"vercel.sponsored-api/v1#sha256:1f206953d413e9dfef3bc7d85885ba0f87ddecf707e64ecda73e77f488497025"
+	],
+	"conformanceEvidenceRefs": [
+		"conformance/prisma.claimable-postgres/v1/data.postgres/v1",
+		"conformance/vercel.sponsored-api/v1/api.http/v1"
+	],
+	"sponsoredCostMinorUnits": 500
+}

@@ -1,0 +1,34 @@
+{
+  "featureId": "public-site-first-impression",
+  "scenarioSlug": "primary-path-works-for-product-end-user",
+  "personaIds": [
+    "product-end-user",
+    "product-designer",
+    "role-finops",
+    "role-platform-engineers",
+    "role-sre"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T20:13:12.952Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 969,
+    "sha256": "406401c521005e98a613f0260b5323060cc6cc790ffa5aa4f8019c9d05f9beb6"
+  },
+  "frames": [],
+  "repro": {
+    "command": "bash -lc 'test -f site/package.json && head -30 site/package.json'",
+    "cwd": ".",
+    "via": "capture-evidence"
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

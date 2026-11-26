@@ -1,0 +1,10 @@
+{
+  "name": "@hobo/live-fix-gated-candidate-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/live-fix-gated-candidate.ts",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

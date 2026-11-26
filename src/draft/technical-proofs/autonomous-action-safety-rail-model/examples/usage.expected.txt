@@ -1,0 +1,5 @@
+action classes documented: auto, canary-with-auto-rollback, require-approval, a2h-escalate
+envelope fallback rule: missing evidence -> a2h-escalate, no autonomous write
+schema pair: proto record+enum mirrored by CUE definitions
+pact: AutonomousActionSafetyRailModelConsumer -> AutonomousActionSafetyRailModelBoundary (1 interaction)
+CONTRACT HELD: documentation-only rail model evidence is present, consistent, and parseable

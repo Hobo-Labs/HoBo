@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "MtlsDataPathContractConsumer"
+  },
+  "provider": {
+    "name": "MtlsDataPathContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Mtls Data Path Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/mtls-data-path-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.mtls_data_path_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

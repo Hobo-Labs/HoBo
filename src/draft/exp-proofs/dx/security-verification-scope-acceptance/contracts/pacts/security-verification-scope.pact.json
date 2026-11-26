@@ -1,0 +1,58 @@
+{
+  "consumer": {
+    "name": "ReleaseCutlineGate"
+  },
+  "provider": {
+    "name": "SecurityVerificationScopeRecord"
+  },
+  "interactions": [
+    {
+      "description": "accepted M0 scope exposes release-cutline security evidence",
+      "providerState": "HOBO-441 M0 scope is accepted",
+      "request": {
+        "method": "GET",
+        "path": "/security-verification/scope/HOBO-441"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-441",
+          "phase": "M0",
+          "state": "SCOPE_ACCEPTED",
+          "boundaries": ["service", "ux", "security", "support"],
+          "m1Evidence": [
+            "scope-record",
+            "threat-review-intake",
+            "launch-blocker-taxonomy",
+            "vulnerability-disclosure-process",
+            "fix-verification-fixture",
+            "support-escalation-handoff"
+          ]
+        }
+      }
+    },
+    {
+      "description": "follow-up work is blocked before M0 acceptance",
+      "providerState": "HOBO-441 M0 scope is not accepted",
+      "request": {
+        "method": "POST",
+        "path": "/security-verification/follow-up",
+        "body": {
+          "phase": "M1"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "SECURITY_VERIFICATION_M0_REQUIRED",
+          "issue": "HOBO-441"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

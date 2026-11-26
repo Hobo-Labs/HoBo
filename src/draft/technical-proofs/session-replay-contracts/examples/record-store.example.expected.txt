@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "package": "@hobo/replay",
+  "sessionId": "sess-proof-1",
+  "chunkCount": 1,
+  "events": [
+    "replay.Started",
+    "replay.ChunkIngested",
+    "replay.Ended"
+  ]
+}

@@ -1,0 +1,194 @@
+{
+	"provider": "simple",
+	"startedAt": "2026-08-03T22:36:34.457Z",
+	"finishedAt": "2026-08-03T22:36:44.465Z",
+	"outcome": "reapplied",
+	"incumbent": "backend:b",
+	"probe": {
+		"url": "http://127.0.0.1:45697",
+		"intervalMs": 1000,
+		"total": 13,
+		"failed": 0,
+		"successRate": 1
+	},
+	"facts": [
+		{
+			"type": "dispatch.Decided",
+			"data": {
+				"dispatchId": "route:staging-site:r1",
+				"category": "traffic-backend",
+				"selectedProvider": "backend:b",
+				"objective": "maximize-credits",
+				"ledgerInput": {
+					"view": "CreditLedgerView",
+					"seq": 0,
+					"reservationId": "reservation-intent-route:staging-site:r1",
+					"balanceHash": "sha256:0d4dcaba40586dd9e81fd48daf243dd2927ce983d1eef0f33c68d2f2c6e3c21e"
+				},
+				"candidates": [
+					{
+						"provider": "backend:b",
+						"effectiveMarginalCost": 0.01,
+						"rationale": "objective=maximize-credits; ledgerSeq=0; credit-facts=missing; freeUnits=0; paidUnits=100; switchingCost=0"
+					},
+					{
+						"provider": "backend:a",
+						"effectiveMarginalCost": 0.05,
+						"rationale": "objective=maximize-credits; ledgerSeq=0; credit-facts=missing; freeUnits=0; paidUnits=100; switchingCost=0"
+					}
+				]
+			}
+		},
+		{
+			"type": "routing.ReplanProposed",
+			"data": {
+				"service": "staging-site",
+				"planId": "plan:staging-site:station:staging:r1",
+				"fromBackendId": "backend:a",
+				"toBackendId": "backend:b",
+				"revision": 1
+			}
+		},
+		{
+			"type": "domain.CutoverStarted",
+			"data": {
+				"service": "staging-site",
+				"fromBackendId": "backend:a",
+				"toBackendId": "backend:b",
+				"rampSteps": [
+					10,
+					50,
+					100
+				],
+				"startedAt": "2026-08-03T22:36:34.461Z"
+			}
+		},
+		{
+			"type": "routing.RampAdvanced",
+			"data": {
+				"service": "staging-site",
+				"toBackendId": "backend:b",
+				"percent": 10,
+				"planId": "plan:staging-site:station:staging:r1:p10"
+			}
+		},
+		{
+			"type": "routing.RampAdvanced",
+			"data": {
+				"service": "staging-site",
+				"toBackendId": "backend:b",
+				"percent": 50,
+				"planId": "plan:staging-site:station:staging:r1:p50"
+			}
+		},
+		{
+			"type": "routing.RampAdvanced",
+			"data": {
+				"service": "staging-site",
+				"toBackendId": "backend:b",
+				"percent": 100,
+				"planId": "plan:staging-site:station:staging:r1:p100"
+			}
+		},
+		{
+			"type": "domain.RoutingChanged",
+			"data": {
+				"service": "staging-site",
+				"fromBackendId": "backend:a",
+				"toBackendId": "backend:b",
+				"changedAt": "2026-08-03T22:36:40.472Z"
+			}
+		},
+		{
+			"type": "routing.Reapplied",
+			"data": {
+				"service": "staging-site",
+				"planId": "plan:staging-site:station:staging:r1:p100",
+				"fromBackendId": "backend:a",
+				"toBackendId": "backend:b",
+				"realized": "full",
+				"revision": 1
+			}
+		}
+	],
+	"samples": [
+		{
+			"at": "2026-08-03T22:36:32.652Z",
+			"status": 200,
+			"ms": 15,
+			"body": "A"
+		},
+		{
+			"at": "2026-08-03T22:36:33.652Z",
+			"status": 200,
+			"ms": 15,
+			"body": "A"
+		},
+		{
+			"at": "2026-08-03T22:36:34.654Z",
+			"status": 200,
+			"ms": 14,
+			"body": "A"
+		},
+		{
+			"at": "2026-08-03T22:36:34.454Z",
+			"status": 200,
+			"ms": 19,
+			"body": "A"
+		},
+		{
+			"at": "2026-08-03T22:36:35.455Z",
+			"status": 200,
+			"ms": 10,
+			"body": "A"
+		},
+		{
+			"at": "2026-08-03T22:36:36.456Z",
+			"status": 200,
+			"ms": 5,
+			"body": "A"
+		},
+		{
+			"at": "2026-08-03T22:36:37.457Z",
+			"status": 200,
+			"ms": 6,
+			"body": "B"
+		},
+		{
+			"at": "2026-08-03T22:36:38.457Z",
+			"status": 200,
+			"ms": 8,
+			"body": "B"
+		},
+		{
+			"at": "2026-08-03T22:36:39.458Z",
+			"status": 200,
+			"ms": 23,
+			"body": "B"
+		},
+		{
+			"at": "2026-08-03T22:36:40.461Z",
+			"status": 200,
+			"ms": 5,
+			"body": "B"
+		},
+		{
+			"at": "2026-08-03T22:36:41.462Z",
+			"status": 200,
+			"ms": 5,
+			"body": "B"
+		},
+		{
+			"at": "2026-08-03T22:36:42.462Z",
+			"status": 200,
+			"ms": 4,
+			"body": "B"
+		},
+		{
+			"at": "2026-08-03T22:36:43.463Z",
+			"status": 200,
+			"ms": 11,
+			"body": "B"
+		}
+	]
+}

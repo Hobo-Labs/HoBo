@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "operations-manifests-contract",
+  "title": "HOBO-176 Operations Manifests Contract",
+  "linear": "HOBO-176",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-cli-shell-contract",
+      "src/draft/technical-proofs/hobo-mcp-server-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

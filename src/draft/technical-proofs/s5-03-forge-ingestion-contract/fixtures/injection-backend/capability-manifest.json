@@ -1,0 +1,14 @@
+{
+  "schema": "hobo.capability-manifest/v1",
+  "providerId": "@hobo/provider-injection",
+  "targetWitPort": "hobo:database/postgres@0.1.0",
+  "claims": ["database"],
+  "networkEgress": false,
+  "equivalenceClasses": [
+    {
+      "port": "database",
+      "resourceClass": "mock:postgres-flexible",
+      "features": ["postgres"]
+    }
+  ]
+}

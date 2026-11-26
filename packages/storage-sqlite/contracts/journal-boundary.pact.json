@@ -1,0 +1,61 @@
+{
+	"consumer": { "name": "hobo-runtime-eventstore" },
+	"provider": { "name": "hobo-storage-sqlite-journal" },
+	"interactions": [
+		{
+			"description": "append commits events with database-local positions",
+			"request": {
+				"method": "append",
+				"streamId": "order:1",
+				"events": [{ "type": "order.Created", "data": { "n": 1 } }],
+				"options": {
+					"expectedSeq": 0,
+					"actor": { "kind": "system", "id": "test" },
+					"tenant": "t1"
+				}
+			},
+			"response": {
+				"appended": 1,
+				"firstPosition": "1",
+				"lastPosition": "1"
+			}
+		},
+		{
+			"description": "stale expectedSeq is rejected as an optimistic sequence conflict",
+			"request": {
+				"method": "append",
+				"streamId": "order:1",
+				"events": [{ "type": "order.Raced", "data": {} }],
+				"options": {
+					"expectedSeq": 0,
+					"actor": { "kind": "system", "id": "test" },
+					"tenant": "t1"
+				}
+			},
+			"response": {
+				"error": { "code": "OPTIMISTIC_SEQUENCE_CONFLICT" }
+			}
+		},
+		{
+			"description": "a stale fence token is rejected distinctly from a sequence conflict",
+			"request": {
+				"method": "append",
+				"streamId": "actor:a",
+				"events": [{ "type": "actor.Stale", "data": {} }],
+				"options": {
+					"expectedSeq": 1,
+					"actor": { "kind": "system", "id": "test" },
+					"tenant": "t1",
+					"fenceToken": "4"
+				}
+			},
+			"response": {
+				"error": { "code": "STALE_FENCE" }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" },
+		"evidence": "contracts/consumer/journal-boundary.test.ts"
+	}
+}

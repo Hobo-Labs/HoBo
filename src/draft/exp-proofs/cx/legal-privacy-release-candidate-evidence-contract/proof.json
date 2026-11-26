@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "legal-privacy-release-candidate-evidence-contract",
+  "experienceType": "cx",
+  "title": "Legal Privacy Release Candidate Evidence Contract",
+  "linear": "HOBO-471",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

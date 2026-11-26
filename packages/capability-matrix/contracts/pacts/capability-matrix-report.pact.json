@@ -1,0 +1,141 @@
+{
+	"consumer": { "name": "hobo-coverage-publisher" },
+	"provider": { "name": "hobo-capability-matrix" },
+	"interactions": [
+		{
+			"description": "an empty catalog yields a complete grid of uncovered cells, never an empty list",
+			"request": {
+				"method": "POST",
+				"path": "/capability-matrix",
+				"body": {
+					"evaluatedAtMs": 1785283200000,
+					"definitions": []
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"schemaVersion": "hobo.capability-matrix/v1",
+					"evaluatedAtMs": 1785283200000,
+					"cellCount": 50,
+					"summary": [
+						{ "verdict": "covered", "cells": 0 },
+						{ "verdict": "uncovered", "cells": 50 }
+					],
+					"digest": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "provider-native, pack, bridge, substrate and sponsor coverage are reported in separate buckets",
+			"request": {
+				"method": "GET",
+				"path": "/capability-matrix/cells/data/paas"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"key": "data/paas",
+					"verdict": "covered",
+					"buckets": {
+						"native": { "available": ["neon.claimable-postgres/v1"], "unavailable": [] },
+						"pack": { "available": ["hobo.pack-postgres/v1"], "unavailable": [] },
+						"bridge": { "available": ["hyperdrive.postgres-bridge/v1"], "unavailable": [] },
+						"substrate": { "available": ["hobo.operated-postgres/v1"], "unavailable": [] },
+						"sponsor": { "available": ["sponsored.postgres/v1"], "unavailable": [] }
+					}
+				}
+			}
+		},
+		{
+			"description": "a cell whose only coverage is a bridge is reported bridge-only, never covered",
+			"request": {
+				"method": "GET",
+				"path": "/capability-matrix/cells/queue/wasm"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"key": "queue/wasm",
+					"verdict": "bridge-only",
+					"buckets": {
+						"native": { "available": [], "unavailable": [] },
+						"bridge": { "available": ["bridge.queue-over-topic/v1"], "unavailable": [] }
+					}
+				}
+			}
+		},
+		{
+			"description": "expired trust evidence demotes a cell to evidence-lapsed and moves the definition to unavailable",
+			"request": {
+				"method": "GET",
+				"path": "/capability-matrix/cells/kv/serverless_faas?evaluatedAtMs=1790000000000"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"key": "kv/serverless_faas",
+					"verdict": "evidence-lapsed",
+					"buckets": {
+						"native": { "available": [], "unavailable": ["upstash.claimable-redis/v1"] }
+					},
+					"candidates": [
+						{
+							"definitionId": "upstash.claimable-redis/v1",
+							"available": false,
+							"evidenceState": "expired",
+							"unavailability": [{ "code": "evidence-expired" }]
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "validation returns findings as data, so an uncovered grid is reportable rather than an error",
+			"request": {
+				"method": "GET",
+				"path": "/capability-matrix/validation"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"matrixDigest": "sha256:*",
+					"expiryHorizonMs": 604800000,
+					"findings": [
+						{
+							"code": "uncovered-cell",
+							"severity": "warning",
+							"primitive": "topic",
+							"runtime": "vm_iaas"
+						},
+						{
+							"code": "missing-conformance-ref",
+							"severity": "error",
+							"primitive": "bucket",
+							"runtime": "oci",
+							"definitionIds": ["unproven.object-store/v1"]
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "a matrix document missing a cell is refused at the read boundary",
+			"request": {
+				"method": "POST",
+				"path": "/capability-matrix/parse",
+				"body": {
+					"schemaVersion": "hobo.capability-matrix/v1",
+					"cellCount": 49
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "INCOMPLETE_GRID",
+					"path": "matrix.cells"
+				}
+			}
+		}
+	]
+}

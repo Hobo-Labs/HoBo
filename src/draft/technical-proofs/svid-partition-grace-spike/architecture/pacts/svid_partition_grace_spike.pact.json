@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SvidPartitionGraceSpikeConsumer"
+  },
+  "provider": {
+    "name": "SvidPartitionGraceSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Svid Partition Grace Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/svid-partition-grace-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.svid_partition_grace_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

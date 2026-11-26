@@ -1,0 +1,8 @@
+{
+  "port": "compute",
+  "sku": "hostinger.hosting",
+  "unit": "hour",
+  "marginalPrice": "0.1",
+  "freeTierIncluded": 0,
+  "pricingStatus": "verified-zero"
+}

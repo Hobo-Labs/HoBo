@@ -1,0 +1,201 @@
+{
+  "consumer": {
+    "name": "workspace-onboarding-ux"
+  },
+  "provider": {
+    "name": "vibe-first-run-activation-rail-proof"
+  },
+  "interactions": [
+    {
+      "description": "read fixture-backed first-run activation rail",
+      "request": {
+        "method": "GET",
+        "path": "/draft/vibe-first-run-activation-rail"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-540",
+          "phase": "M1",
+          "targetPackage": "src/draft/exp-proofs/ux/vibe-first-run-activation-rail",
+          "proofNote": "docs/design/proofs/vibe-first-run-activation-rail/README.md",
+          "designRefs": [
+            "docs/design/workspace-onboarding-ux.md",
+            "docs/design/outcome-activation-rail.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "scopeOut": [
+            "live provider calls",
+            "production UI",
+            "customer data",
+            "real credentials",
+            "launch claims without evidence"
+          ],
+          "wireframes": [
+            {
+              "entryPoint": "app-developer",
+              "primaryQuestion": "What can I safely try first?",
+              "visibleStates": ["invite-or-try-it", "workspace", "plan-preview", "value-proof"],
+              "nextAction": "Open the fixture-backed quickstart and preview a simulated plan.",
+              "accessibilityNotes": ["Keyboard order follows rail stage order.", "State labels are text, not color-only."]
+            },
+            {
+              "entryPoint": "team-admin",
+              "primaryQuestion": "What must be ready before inviting the team?",
+              "visibleStates": ["workspace", "project", "plan-preview", "recovery"],
+              "nextAction": "Confirm workspace, project, and ownership prerequisites before invite expansion.",
+              "accessibilityNotes": ["Owner and blocker labels are exposed as headings.", "Action text avoids icon-only affordances."]
+            },
+            {
+              "entryPoint": "platform-engineer",
+              "primaryQuestion": "Which provider and policy prerequisites block the first plan?",
+              "visibleStates": ["project", "plan-preview", "launch-attempt", "recovery"],
+              "nextAction": "Inspect the Gatekeeper and provider-readiness evidence before launch simulation.",
+              "accessibilityNotes": ["Risk labels include plain-language summaries.", "Reduced-motion mode keeps the same state order."]
+            },
+            {
+              "entryPoint": "support-operator",
+              "primaryQuestion": "Where is the user stuck and who owns the next unblock?",
+              "visibleStates": ["plan-preview", "launch-attempt", "recovery", "value-proof"],
+              "nextAction": "Open the redacted support handoff with evidence id, owner, and safe wording.",
+              "accessibilityNotes": ["Support route is reachable without hover.", "Unknown evidence is announced as blocked, not success."]
+            }
+          ],
+          "stateModel": [
+            {
+              "stage": "invite-or-try-it",
+              "entryCondition": "User has an invite link or anonymous try-it path.",
+              "exitCondition": "Persona and desired outcome are captured.",
+              "owner": "Workspace & Onboarding UX",
+              "evidenceObject": "activation.outcome",
+              "missingPrerequisiteBehavior": "Show access requirement and preserve anonymous fixture path.",
+              "proofMode": "reference-fixture",
+              "quickstartFixtureIds": ["rlq-define-object-graph-v1"]
+            },
+            {
+              "stage": "workspace",
+              "entryCondition": "Outcome is captured and workspace context is available.",
+              "exitCondition": "Workspace profile, tenant boundary, and admin owner are known.",
+              "owner": "Organization & Workspace Model",
+              "evidenceObject": "workspace.profile",
+              "missingPrerequisiteBehavior": "Keep rail blocked with owner route instead of implying workspace readiness.",
+              "proofMode": "reference-fixture",
+              "quickstartFixtureIds": ["rlq-define-object-graph-v1"]
+            },
+            {
+              "stage": "project",
+              "entryCondition": "Workspace is selected with permission to create or choose a project.",
+              "exitCondition": "Project, environment, and safe-test fixture are selected.",
+              "owner": "Settings & Project Lifecycle",
+              "evidenceObject": "project.context",
+              "missingPrerequisiteBehavior": "Route to project setup and keep deploy actions disabled.",
+              "proofMode": "reference-fixture",
+              "quickstartFixtureIds": ["rlq-collect-manifest-ir-v1"]
+            },
+            {
+              "stage": "plan-preview",
+              "entryCondition": "A collected manifest or accepted quickstart fixture exists.",
+              "exitCondition": "Plan, risk, policy disposition, and approval needs are visible.",
+              "owner": "Plan/Diff Viewer",
+              "evidenceObject": "deployment.plan",
+              "missingPrerequisiteBehavior": "Show missing manifest or unknown evidence as a blocked preview.",
+              "proofMode": "simulated",
+              "quickstartFixtureIds": ["rlq-plan-safe-preview-v1"]
+            },
+            {
+              "stage": "launch-attempt",
+              "entryCondition": "Plan preview has no unresolved blockers or unsupported live claims.",
+              "exitCondition": "Simulated launch status, rollback path, and guardrail outcomes are recorded.",
+              "owner": "Deployment Dashboard & Topology Explorer",
+              "evidenceObject": "deployment.status",
+              "missingPrerequisiteBehavior": "Disable live launch and show simulated-only proof mode.",
+              "proofMode": "simulated",
+              "quickstartFixtureIds": ["rlq-deploy-run-accepted-v1", "rlq-inspect-event-projection-v1"]
+            },
+            {
+              "stage": "recovery",
+              "entryCondition": "Plan, launch, or evidence state is blocked, stale, unknown, or failed.",
+              "exitCondition": "Safe next action, owning team, and support route are identified.",
+              "owner": "Support Workflow",
+              "evidenceObject": "support.handoff",
+              "missingPrerequisiteBehavior": "Create a support-safe handoff without exposing customer data.",
+              "proofMode": "reference-fixture",
+              "quickstartFixtureIds": ["rlq-manage-stale-evidence-v1", "rlq-recover-snapshot-restore-v1"]
+            },
+            {
+              "stage": "value-proof",
+              "entryCondition": "Simulated or fixture-backed outcome has inspectable evidence.",
+              "exitCondition": "User-facing proof, docs link, and follow-up owner are recorded.",
+              "owner": "Workspace & Onboarding UX",
+              "evidenceObject": "activation.value-proof",
+              "missingPrerequisiteBehavior": "Show evidence unavailable rather than a green success state.",
+              "proofMode": "scope-out",
+              "quickstartFixtureIds": ["rlq-recover-scope-out-v1"]
+            }
+          ],
+          "outcomes": [
+            {
+              "kind": "happy-path",
+              "title": "Fixture plan reaches value proof",
+              "userMessage": "Your first proof is simulated and inspectable from the quickstart fixtures.",
+              "owner": "Workspace & Onboarding UX",
+              "proofMode": "simulated",
+              "quickstartFixtureIds": ["rlq-deploy-run-accepted-v1"]
+            },
+            {
+              "kind": "blocked-path",
+              "title": "Prerequisite blocks launch",
+              "userMessage": "Launch is blocked until the named owner resolves the prerequisite.",
+              "owner": "Plan/Diff Viewer",
+              "proofMode": "reference-fixture",
+              "quickstartFixtureIds": ["rlq-plan-safe-preview-v1"]
+            },
+            {
+              "kind": "stale-or-unknown-evidence",
+              "title": "Evidence is stale or unknown",
+              "userMessage": "The rail cannot mark success until fresh replay-derived evidence exists.",
+              "owner": "Deployment Dashboard & Topology Explorer",
+              "proofMode": "reference-fixture",
+              "quickstartFixtureIds": ["rlq-manage-stale-evidence-v1"]
+            },
+            {
+              "kind": "support-handoff",
+              "title": "Support-safe handoff",
+              "userMessage": "Support gets owner, evidence id, next action, and redaction state.",
+              "owner": "Support Workflow",
+              "proofMode": "live",
+              "quickstartFixtureIds": ["rlq-recover-snapshot-restore-v1"]
+            }
+          ],
+          "proofModeLegend": [
+            {
+              "proofMode": "live",
+              "label": "Live-gated",
+              "meaning": "Names a future live handoff that remains gated by release, policy, and credential controls."
+            },
+            {
+              "proofMode": "simulated",
+              "label": "Simulated",
+              "meaning": "Runs against mocked service boundaries and deterministic quickstart fixtures."
+            },
+            {
+              "proofMode": "reference-fixture",
+              "label": "Reference fixture",
+              "meaning": "Reads checked-in fixture or transcript-equivalent evidence."
+            },
+            {
+              "proofMode": "scope-out",
+              "label": "Scope-out",
+              "meaning": "Explicitly prevents downstream artifacts from making unsupported launch claims."
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

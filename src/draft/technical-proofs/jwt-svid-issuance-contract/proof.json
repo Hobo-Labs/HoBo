@@ -1,0 +1,24 @@
+{
+  "layer": "technical",
+  "slug": "jwt-svid-issuance-contract",
+  "title": "JWT-SVID Issuance Contract POC",
+  "linear": "HOBO-90",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/hobo-jwt-svid-contract",
+      "src/draft/technical-proofs/identity-event-contract",
+      "src/draft/technical-proofs/workload-attestation-intake-contract",
+      "src/draft/technical-proofs/yard-identity-issuer-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

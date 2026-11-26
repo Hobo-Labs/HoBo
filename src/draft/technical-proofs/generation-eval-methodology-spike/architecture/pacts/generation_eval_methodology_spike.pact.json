@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GenerationEvalMethodologySpikeConsumer"
+  },
+  "provider": {
+    "name": "GenerationEvalMethodologySpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Generation Eval Methodology Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/generation-eval-methodology-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.generation_eval_methodology_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

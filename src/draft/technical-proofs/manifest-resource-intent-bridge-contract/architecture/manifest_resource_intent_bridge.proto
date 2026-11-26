@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package hobo.manifestintent.bridge.v1;
+
+message ManifestResourceIntentBridgeInput {
+  string manifest_schema = 1;
+  map<string, ManifestResourceNode> resources = 2;
+  DeployContext deploy_context = 3;
+}
+
+message ManifestResourceNode {
+  string type = 1;
+  string port = 2;
+  string paradigm = 3;
+  repeated string allow = 4;
+  repeated string bind = 5;
+  repeated ManifestLink links = 6;
+}
+
+message ManifestLink {
+  string import = 1;
+  string to = 2;
+}
+
+message DeployContext {
+  string tenant = 1;
+  string workspace = 2;
+  string environment = 3;
+  string routing_objective = 4;
+  BudgetScope budget = 5;
+}
+
+message BudgetScope {
+  double amount = 1;
+  string currency = 2;
+  string period = 3;
+  string soft_limit_behavior = 4;
+  string hard_limit_behavior = 5;
+}
+
+message ResourceIntentRecord {
+  string schema_version = 1;
+  string resource_name = 2;
+  OwnerRef owner = 3;
+  CapabilityClass capability = 4;
+  BudgetScope budget = 5;
+  IntentConstraints constraints = 6;
+  string routing_objective = 7;
+}
+
+message OwnerRef {
+  string tenant = 1;
+  string workspace = 2;
+  string environment = 3;
+}
+
+message CapabilityClass {
+  string category = 1;
+  repeated string requirements = 2;
+}
+
+message IntentConstraints {
+  repeated string colocate_with = 1;
+}
+
+message ManifestResourceIntentBridgeEvidenceEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string issue_id = 3;
+  ManifestResourceIntentBridgeInput input = 4;
+  repeated ResourceIntentRecord intents = 5;
+}

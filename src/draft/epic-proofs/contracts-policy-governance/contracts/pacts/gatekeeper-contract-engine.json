@@ -1,0 +1,42 @@
+{
+  "consumer": {
+    "name": "Gatekeeper Verify"
+  },
+  "provider": {
+    "name": "Contract Engine"
+  },
+  "interactions": [
+    {
+      "description": "check deploy contract compatibility before Gatekeeper verdict",
+      "providerStates": [
+        {
+          "name": "prod camp has running consumers"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/contracts/can-deploy",
+        "body": {
+          "target": "prod",
+          "proposedSet": "like:producer-and-consumer-contracts"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "summary": "compatible",
+          "matrix": "like:compatibility-matrix"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Gatekeeper to Contract Engine",
+    "status": "consumer_tested",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

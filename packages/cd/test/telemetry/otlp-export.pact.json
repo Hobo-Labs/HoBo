@@ -1,0 +1,73 @@
+{
+  "consumer": { "name": "hobo-cd-telemetry-sink" },
+  "provider": { "name": "otlp-http-collector" },
+  "interactions": [
+    {
+      "description": "POST /v1/traces accepts an OTLP/JSON trace export",
+      "providerState": "collector accepting",
+      "request": {
+        "method": "POST",
+        "path": "/v1/traces",
+        "headers": { "Content-Type": "application/json" },
+        "bodyKeys": ["resourceSpans"]
+      },
+      "response": { "status": 200, "body": {} },
+      "outcome": "ok"
+    },
+    {
+      "description": "POST /v1/metrics accepts an OTLP/JSON metrics export",
+      "providerState": "collector accepting",
+      "request": {
+        "method": "POST",
+        "path": "/v1/metrics",
+        "headers": { "Content-Type": "application/json" },
+        "bodyKeys": ["resourceMetrics"]
+      },
+      "response": { "status": 200, "body": {} },
+      "outcome": "ok"
+    },
+    {
+      "description": "POST /v1/traces is throttled with Retry-After and retried",
+      "providerState": "collector throttling once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/traces",
+        "headers": { "Content-Type": "application/json" },
+        "bodyKeys": ["resourceSpans"]
+      },
+      "response": { "status": 429, "headers": { "Retry-After": "2" }, "body": {} },
+      "outcome": "retried"
+    },
+    {
+      "description": "POST /v1/metrics with a malformed payload is rejected without retry",
+      "providerState": "collector rejecting",
+      "request": {
+        "method": "POST",
+        "path": "/v1/metrics",
+        "headers": { "Content-Type": "application/json" },
+        "bodyKeys": ["resourceMetrics"]
+      },
+      "response": { "status": 400, "body": {} },
+      "outcome": "otlp-rejected"
+    },
+    {
+      "description": "POST /v1/traces partially accepted",
+      "providerState": "collector partially accepting",
+      "request": {
+        "method": "POST",
+        "path": "/v1/traces",
+        "headers": { "Content-Type": "application/json" },
+        "bodyKeys": ["resourceSpans"]
+      },
+      "response": {
+        "status": 200,
+        "body": { "partialSuccess": { "rejectedSpans": "1", "errorMessage": "attribute too long" } }
+      },
+      "outcome": "otlp-partial-success"
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "2.0.0" },
+    "note": "OTLP/HTTP JSON export boundary (opentelemetry-proto collector/{trace,metrics}/v1). Verified consumer-side by test/telemetry/otlp-export.pact.test.ts against the real createTelemetrySink."
+  }
+}

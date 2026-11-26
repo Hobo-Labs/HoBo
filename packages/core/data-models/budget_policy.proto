@@ -1,0 +1,61 @@
+syntax = "proto3";
+package hobo.core.budget.v1;
+
+// Authored control data. Usage, quotes, grants and execution state are separate.
+message BudgetPolicyConstraintRecord {
+  string key = 1;
+  string workload = 2;
+  string unit = 3;
+  optional double maximum = 4;
+  string target = 5;
+}
+message BudgetPolicyRecord {
+  string schema_version = 1;
+  string tenant_id = 2;
+  string budget_id = 3;
+  string period_id = 4;
+  string revision = 5;
+  repeated string workloads = 6;
+  string currency = 7;
+  optional double limit_micros = 8;
+  string objective = 9;
+  string enforcement = 10;
+  string period_kind = 11;
+  optional double period_starts_at_ms = 12;
+  optional double period_ends_at_ms = 13;
+  repeated BudgetPolicyConstraintRecord constraints = 14;
+}
+message BudgetScopeIdentityRecord {
+  string tenant_id = 1;
+  string budget_id = 2;
+  string period_id = 3;
+  string policy_revision = 4;
+}
+message BudgetPolicyMeasurementRecord {
+  string key = 1;
+  string unit = 2;
+  double value = 3;
+  string target = 4;
+}
+// Trusted adapter input, never authored financial evidence.
+message BudgetPolicyEvaluationContextRecord {
+  string workload = 1;
+  string tenant_id = 2;
+  string budget_id = 3;
+  string period_id = 4;
+  string policy_revision = 5;
+  double now_ms = 6;
+  double cost_bound_micros = 7;
+  double exposure_micros = 8;
+  string bound_kind = 9;
+  repeated BudgetPolicyMeasurementRecord measurements = 10;
+  string phase = 11;
+}
+message BudgetPolicyEvaluationRecord {
+  bool ok = 1;
+  string code = 2;
+  string reason = 3;
+  optional double projected_micros = 4;
+  optional double remaining_micros = 5;
+  bool requires_native_bound = 6;
+}

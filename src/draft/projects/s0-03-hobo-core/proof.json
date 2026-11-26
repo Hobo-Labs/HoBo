@@ -1,0 +1,18 @@
+{
+  "layer": "project",
+  "slug": "s0-03-hobo-core",
+  "title": "S0-03 @hobo/core draft POC (HOBO-580)",
+  "linear": "HOBO-580",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

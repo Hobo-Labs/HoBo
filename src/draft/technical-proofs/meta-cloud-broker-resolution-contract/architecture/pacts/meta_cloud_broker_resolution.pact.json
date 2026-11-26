@@ -1,0 +1,57 @@
+{
+  "consumer": {
+    "name": "MetaCloudBrokerResolutionConsumer"
+  },
+  "provider": {
+    "name": "MetaCloudBrokerResolution"
+  },
+  "interactions": [
+    {
+      "description": "Broker returns a deterministic resolution receipt for approved mapping inputs",
+      "request": {
+        "method": "POST",
+        "path": "/meta-cloud-broker/resolve",
+        "body": {
+          "manifestDigest": "sha256:manifest-orders-prod",
+          "environmentDigest": "sha256:broker-env-prod"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.resolution-receipt/v1",
+          "resolutionAuthority": "meta-cloud-broker"
+        }
+      }
+    },
+    {
+      "description": "Broker returns a structured rejection without Yard-local fallback",
+      "request": {
+        "method": "POST",
+        "path": "/meta-cloud-broker/resolve",
+        "body": {
+          "manifestDigest": "sha256:manifest-orders-prod",
+          "environmentDigest": "sha256:broker-env-prod",
+          "fixture": "mapping.unavailable"
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "ok": false,
+          "schema": "hobo.resolution-rejection/v1",
+          "reason": {
+            "code": "mapping.unavailable"
+          },
+          "fallbackAttempted": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

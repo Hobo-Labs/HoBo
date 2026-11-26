@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Billing & Credits Scope Contract draft
+// package reasons about. Not compiled at runtime; this is a design-time contract artifact.
+
+enum BillingCreditsScopeEvidenceKind {
+  BILLING_CREDITS_SCOPE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  BILLING_CREDITS_SCOPE_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  BILLING_CREDITS_SCOPE_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  BILLING_CREDITS_SCOPE_EVIDENCE_KIND_SUPPORT_HANDOFF = 3;
+  BILLING_CREDITS_SCOPE_EVIDENCE_KIND_LEGAL_REVIEW = 4;
+}
+
+message BillingCreditsPersona {
+  string role = 1;
+  string need = 2;
+}
+
+message BillingCreditsDependency {
+  string source = 1;
+  string reason = 2;
+}
+
+message BillingCreditsEvidence {
+  string kind = 1;
+  string owner = 2;
+  string proof_mode = 3;
+  string source = 4;
+  string proves = 5;
+}
+
+message BillingCreditsLimitation {
+  string id = 1;
+  string message = 2;
+  string owner = 3;
+}
+
+message BillingCreditsScopeRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string goal = 4;
+  repeated BillingCreditsPersona personas = 5;
+  repeated string scope_in = 6;
+  repeated string scope_out = 7;
+  repeated string non_goals = 8;
+  repeated BillingCreditsDependency dependencies = 9;
+  repeated BillingCreditsDependency initiative_dependencies = 10;
+  repeated BillingCreditsLimitation customer_visible_limitations = 11;
+  repeated BillingCreditsEvidence m1_evidence = 12;
+}

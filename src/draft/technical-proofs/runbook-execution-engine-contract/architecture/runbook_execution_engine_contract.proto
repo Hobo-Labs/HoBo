@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Runbook Execution Engine Contract draft package
+// reasons about. Documents the records/objects this package owns so the
+// architecture guard has a language-neutral schema reference. Not compiled at
+// runtime; this is a design-time contract artifact.
+
+enum RunbookExecutionEngineContractEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_DESIGN_RECORD = 1;
+  EVIDENCE_KIND_CONTRACT_TEST = 2;
+}
+
+message RunbookExecutionEngineContractRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string evidence = 3;
+}

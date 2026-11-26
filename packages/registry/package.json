@@ -1,0 +1,31 @@
+{
+	"name": "@hobo/registry",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/cloud": "workspace:*",
+		"@hobo/identity": "workspace:*"
+	},
+	"description": "HoBo Registry catalog service: wraps the @hobo/cloud registry catalog engine and adds bundle-manifest ingest (registry.BundleImported facts), fail-closed signature/provenance verification over the @hobo/identity issuer surface, and a deterministic in-memory bundle search index.",
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*"
+	}
+}

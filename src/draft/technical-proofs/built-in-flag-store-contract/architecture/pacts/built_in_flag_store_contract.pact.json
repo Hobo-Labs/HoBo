@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BuiltInFlagStoreContractConsumer"
+  },
+  "provider": {
+    "name": "BuiltInFlagStoreContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Built In Flag Store Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/built-in-flag-store-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.built_in_flag_store_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

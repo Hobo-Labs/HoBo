@@ -1,0 +1,294 @@
+{
+  "consumer": {
+    "name": "HOBO-574 CLI manage transcript prototype"
+  },
+  "provider": {
+    "name": "HoBo fixture-backed manage evidence"
+  },
+  "interactions": [
+    {
+      "description": "fixture-backed manage transcript scenes",
+      "request": {
+        "method": "GET",
+        "path": "/draft/hobo-574/manage-transcript"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-574",
+          "phase": "M2",
+          "targetPackage": "src/draft/exp-proofs/dx/cli-manage-inspect-logs-drift-prototype",
+          "proofNote": "docs/design/proofs/cli-manage-inspect-logs-drift-prototype/README.md",
+          "designRefs": [
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/data-plane.md#plan-11",
+            "docs/design/support-debug-tools.md"
+          ],
+          "scenes": [
+            {
+              "state": "normal-operation",
+              "fixtureId": "hobo-574-normal-operation",
+              "fixtureSources": ["run-inspector", "projection-freshness", "log-cursor"],
+              "proofMode": "reference fixture",
+              "correlationId": "corr-hobo-574-normal-operation",
+              "cli": {
+                "command": "hobo inspect run run_42 --json",
+                "exitCode": 0
+              },
+              "mcp": {
+                "tool": "hobo.inspect",
+                "input": {
+                  "target": "run",
+                  "id": "run_42",
+                  "json": true
+                },
+                "result": {
+                  "status": "ok",
+                  "code": "run.timeline-current",
+                  "message": "Run inspector projection is current at seq 184 and references deployment-set ds_42.",
+                  "remediation": "Use the log cursor and ResourceActor timeline for follow-up inspection."
+                }
+              },
+              "machine": {
+                "status": "ok",
+                "code": "run.timeline-current",
+                "message": "Run inspector projection is current at seq 184 and references deployment-set ds_42.",
+                "remediation": "Use the log cursor and ResourceActor timeline for follow-up inspection."
+              },
+              "human": {
+                "summary": "Run timeline current; no support escalation needed.",
+                "lines": ["run run_42 current at projection seq 184"],
+                "accessibilityNotes": ["Status is present in text and JSON, not color only."]
+              },
+              "redaction": {
+                "redacted": true,
+                "classification": "tenant-safe",
+                "visibleFields": ["tenant", "project", "environment", "correlationId", "ownerRoute"],
+                "withheldFields": ["rawLogPayload", "providerCredential", "secretValue", "customerPayload"]
+              }
+            },
+            {
+              "state": "stale-projection",
+              "fixtureId": "hobo-574-stale-projection",
+              "fixtureSources": ["projection-freshness", "run-inspector"],
+              "proofMode": "reference fixture",
+              "correlationId": "corr-hobo-574-stale-projection",
+              "cli": {
+                "command": "hobo inspect topology --json",
+                "exitCode": 1
+              },
+              "mcp": {
+                "tool": "hobo.inspect",
+                "input": {
+                  "target": "topology",
+                  "json": true
+                },
+                "result": {
+                  "status": "warning",
+                  "code": "projection.stale",
+                  "message": "Topology projection is 91 seconds behind the accepted freshness window.",
+                  "remediation": "Wait for projection catch-up or attach the correlation id to a support-safe bundle."
+                }
+              },
+              "machine": {
+                "status": "warning",
+                "code": "projection.stale",
+                "message": "Topology projection is 91 seconds behind the accepted freshness window.",
+                "remediation": "Wait for projection catch-up or attach the correlation id to a support-safe bundle."
+              },
+              "human": {
+                "summary": "Topology snapshot is stale and cannot be described as live state.",
+                "lines": ["topology projection stale by 91s"],
+                "accessibilityNotes": ["Freshness warning is repeated in the first text line."]
+              },
+              "redaction": {
+                "redacted": true,
+                "classification": "support-safe",
+                "visibleFields": ["tenant", "project", "environment", "correlationId", "ownerRoute"],
+                "withheldFields": ["rawLogPayload", "providerCredential", "secretValue", "customerPayload"]
+              }
+            },
+            {
+              "state": "non-reactive-sink-warning",
+              "fixtureId": "hobo-574-non-reactive-sink-warning",
+              "fixtureSources": ["projection-freshness", "run-inspector"],
+              "proofMode": "reference fixture",
+              "correlationId": "corr-hobo-574-non-reactive-sink-warning",
+              "cli": {
+                "command": "hobo inspect deploy dep_42 --json",
+                "exitCode": 1
+              },
+              "mcp": {
+                "tool": "hobo.inspect",
+                "input": {
+                  "target": "deploy",
+                  "id": "dep_42",
+                  "json": true
+                },
+                "result": {
+                  "status": "warning",
+                  "code": "projection.non-reactive-sink",
+                  "message": "Deployment view is backed by a non-reactive sink and will not live-push changes.",
+                  "remediation": "Treat the view as a snapshot and run doctor before using it for rollout decisions."
+                }
+              },
+              "machine": {
+                "status": "warning",
+                "code": "projection.non-reactive-sink",
+                "message": "Deployment view is backed by a non-reactive sink and will not live-push changes.",
+                "remediation": "Treat the view as a snapshot and run doctor before using it for rollout decisions."
+              },
+              "human": {
+                "summary": "Deployment snapshot is readable, but the sink is non-reactive.",
+                "lines": ["warning: sink has no change-feed capability"],
+                "accessibilityNotes": ["Warning prefix names the non-reactive capability gap."]
+              },
+              "redaction": {
+                "redacted": true,
+                "classification": "support-safe",
+                "visibleFields": ["tenant", "project", "environment", "correlationId", "ownerRoute"],
+                "withheldFields": ["rawLogPayload", "providerCredential", "secretValue", "customerPayload"]
+              }
+            },
+            {
+              "state": "drift-detected",
+              "fixtureId": "hobo-574-drift-detected",
+              "fixtureSources": ["drift", "run-inspector", "support-evidence"],
+              "proofMode": "reference fixture",
+              "correlationId": "corr-hobo-574-drift-detected",
+              "cli": {
+                "command": "hobo doctor --resource api --json",
+                "exitCode": 2
+              },
+              "mcp": {
+                "tool": "hobo.doctor",
+                "input": {
+                  "resource": "api",
+                  "json": true
+                },
+                "result": {
+                  "status": "blocked",
+                  "code": "resource.drift-detected",
+                  "message": "Doctor found api desired revision ds_42 but observed provider revision ds_40.",
+                  "remediation": "Route to Operators/SRE for a drift proposal; do not auto-heal from this prototype."
+                }
+              },
+              "machine": {
+                "status": "blocked",
+                "code": "resource.drift-detected",
+                "message": "Doctor found api desired revision ds_42 but observed provider revision ds_40.",
+                "remediation": "Route to Operators/SRE for a drift proposal; do not auto-heal from this prototype."
+              },
+              "human": {
+                "summary": "Drift is detected and routed without mutating live state.",
+                "lines": ["resource api drift detected"],
+                "accessibilityNotes": ["Blocked status and safe next action are text-first."]
+              },
+              "redaction": {
+                "redacted": true,
+                "classification": "support-safe",
+                "visibleFields": ["tenant", "project", "environment", "correlationId", "ownerRoute"],
+                "withheldFields": ["rawLogPayload", "providerCredential", "secretValue", "customerPayload"]
+              }
+            },
+            {
+              "state": "support-handoff",
+              "fixtureId": "hobo-574-support-handoff",
+              "fixtureSources": ["support-evidence", "token-audit", "projection-freshness"],
+              "proofMode": "reference fixture",
+              "correlationId": "corr-hobo-574-support-handoff",
+              "cli": {
+                "command": "hobo doctor --support-bundle run_42 --json",
+                "exitCode": 2
+              },
+              "mcp": {
+                "tool": "hobo.doctor",
+                "input": {
+                  "supportBundle": "run_42",
+                  "json": true
+                },
+                "result": {
+                  "status": "handoff",
+                  "code": "support.handoff-ready",
+                  "message": "Doctor assembled support-safe owner, severity, projection, audit, and redaction evidence.",
+                  "remediation": "Attach the support-safe bundle to the owner route without granting remediation authority."
+                }
+              },
+              "machine": {
+                "status": "handoff",
+                "code": "support.handoff-ready",
+                "message": "Doctor assembled support-safe owner, severity, projection, audit, and redaction evidence.",
+                "remediation": "Attach the support-safe bundle to the owner route without granting remediation authority."
+              },
+              "human": {
+                "summary": "Support handoff is ready with redacted evidence only.",
+                "lines": ["support bundle hobo-574-support-handoff ready"],
+                "accessibilityNotes": ["Owner route and redaction state are available in plain text."]
+              },
+              "redaction": {
+                "redacted": true,
+                "classification": "support-safe",
+                "visibleFields": ["tenant", "project", "environment", "correlationId", "ownerRoute"],
+                "withheldFields": ["rawLogPayload", "providerCredential", "secretValue", "customerPayload"]
+              }
+            },
+            {
+              "state": "redacted-evidence-pack",
+              "fixtureId": "hobo-574-redacted-evidence-pack",
+              "fixtureSources": ["log-cursor", "token-audit", "support-evidence"],
+              "proofMode": "reference fixture",
+              "correlationId": "corr-hobo-574-redacted-evidence-pack",
+              "cli": {
+                "command": "hobo logs --follow api --json",
+                "exitCode": 2
+              },
+              "mcp": {
+                "tool": "hobo.logs",
+                "input": {
+                  "resource": "api",
+                  "follow": true,
+                  "json": true
+                },
+                "result": {
+                  "status": "handoff",
+                  "code": "support.redacted-evidence-pack",
+                  "message": "Logs are replayed from a reference cursor and redacted before support packaging.",
+                  "remediation": "Use the cursor and correlation id; never paste unredacted log payloads."
+                }
+              },
+              "machine": {
+                "status": "handoff",
+                "code": "support.redacted-evidence-pack",
+                "message": "Logs are replayed from a reference cursor and redacted before support packaging.",
+                "remediation": "Use the cursor and correlation id; never paste unredacted log payloads."
+              },
+              "human": {
+                "summary": "Reference log cursor produced a support-safe evidence pack.",
+                "lines": ["proof mode: reference fixture; this is not live log streaming"],
+                "accessibilityNotes": ["The transcript names reference fixture mode beside the follow flag."]
+              },
+              "redaction": {
+                "redacted": true,
+                "classification": "support-safe",
+                "visibleFields": ["tenant", "project", "environment", "correlationId", "ownerRoute"],
+                "withheldFields": ["rawLogPayload", "providerCredential", "secretValue", "customerPayload"]
+              }
+            }
+          ],
+          "scopeOut": [
+            "No production observability pipeline.",
+            "No live log streaming.",
+            "No real support tooling or ticket queue automation.",
+            "No customer data or unredacted logs.",
+            "No dashboard-first run inspector mockups."
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

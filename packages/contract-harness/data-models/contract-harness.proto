@@ -1,0 +1,35 @@
+syntax = "proto3";
+package hobo.contract_harness.v1;
+import "google/protobuf/struct.proto";
+
+message PactParticipant { string name = 1; }
+message PactRequest {
+  string method = 1;
+  string path = 2;
+  map<string, string> headers = 3;
+  google.protobuf.Struct body = 4;
+}
+message PactResponse {
+  uint32 status = 1;
+  map<string, string> headers = 2;
+  google.protobuf.Struct body = 3;
+}
+message PactInteraction {
+  string description = 1;
+  PactRequest request = 2;
+  PactResponse response = 3;
+}
+message PactSpecification { string version = 1; }
+message PactMetadata { PactSpecification pact_specification = 1; }
+message PactDocument {
+  PactParticipant consumer = 1;
+  PactParticipant provider = 2;
+  repeated PactInteraction interactions = 3;
+  PactMetadata metadata = 4;
+}
+message InteractionFailure { string description = 1; string reason = 2; }
+message VerificationReport {
+  string provider_name = 1;
+  bool ok = 2;
+  repeated InteractionFailure failures = 3;
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-release-notes-upgrade-guide-ga-handoff-evidence-contract",
+  "experienceType": "cx",
+  "title": "V1 Release Notes Upgrade Guide GA Handoff Evidence",
+  "linear": "HOBO-480",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

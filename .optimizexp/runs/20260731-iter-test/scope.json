@@ -1,0 +1,16 @@
+{
+  "runId": "20260731-iter-test",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [
+    "developer"
+  ],
+  "surfaces": [],
+  "maxIterations": 3,
+  "minIterations": 2,
+  "noPlateauStop": false,
+  "iterationsCompleted": 3,
+  "hostAgent": "cross-agent",
+  "createdAt": "2026-07-31T03:25:23.453Z"
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-plan-annotation-pseudocode",
+  "experienceType": "ux",
+  "title": "Vibe Plan Annotation Pseudocode",
+  "linear": "HOBO-543",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

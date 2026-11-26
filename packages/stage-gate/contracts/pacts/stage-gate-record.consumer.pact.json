@@ -1,0 +1,53 @@
+{
+	"consumer": { "name": "StageGateAcceptanceSurface" },
+	"provider": { "name": "StageGateRecordPublisher" },
+	"interactions": [
+		{
+			"description": "publish a passed S0 stage-gate record with digest and signature evidence",
+			"request": {
+				"method": "POST",
+				"path": "/stage-gate/records",
+				"body": {
+					"gate_id": "s0",
+					"status": "passed"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"gate_id": "s0",
+					"status": "passed",
+					"artifact": {
+						"digest_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+					},
+					"signature": {
+						"verified": true,
+						"signer_identity": "https://hobo.dev/stage-gate/s0",
+						"provenance_tier": "sandboxed-builder"
+					}
+				}
+			}
+		},
+		{
+			"description": "reject a failed gate record without a structured error envelope",
+			"request": {
+				"method": "POST",
+				"path": "/stage-gate/records",
+				"body": {
+					"gate_id": "s0",
+					"status": "failed"
+				}
+			},
+			"response": {
+				"status": 400,
+				"body": {
+					"error": {
+						"code": "STAGE_GATE_RECORD_INVALID",
+						"message": "stage-gate record failed validation"
+					}
+				}
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

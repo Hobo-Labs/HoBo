@@ -1,0 +1,54 @@
+{
+	"consumer": {
+		"name": "hobo-broker-gate-plane"
+	},
+	"provider": {
+		"name": "cedar-agent"
+	},
+	"interactions": [
+		{
+			"description": "a Policy IR decision request authorized by cedar-agent",
+			"request": {
+				"method": "POST",
+				"path": "/v1/is_authorized",
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"principal": "User::\"u1\"",
+					"action": "Action::\"deploy\"",
+					"resource": "Bindle::\"b1\"",
+					"context": {
+						"phase": "plan",
+						"target": "prod",
+						"costQuota": {
+							"quota": "resources",
+							"used": 0,
+							"limit": 100
+						}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"decision": "Deny",
+					"diagnostics": {
+						"reason": [
+							"policy0"
+						],
+						"errors": []
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "InternalServiceDiscoveryContractConsumer"
+  },
+  "provider": {
+    "name": "InternalServiceDiscoveryContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Internal Service Discovery Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/internal-service-discovery-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.internal_service_discovery_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

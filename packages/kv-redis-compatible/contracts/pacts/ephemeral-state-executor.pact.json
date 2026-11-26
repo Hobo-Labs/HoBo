@@ -1,0 +1,190 @@
+{
+	"consumer": {
+		"name": "@hobo/kv-redis-compatible ephemeral-state binding"
+	},
+	"provider": {
+		"name": "KvRedisExecutor (Redis-protocol store: Valkey/Redis over RESP, Upstash over REST)"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "The wire the EphemeralStatePort binding sends through KvRedisExecutor.execute, shown in the REST shape (a JSON command array) that the RESP and in-memory executors satisfy with the same commands. Pinned on purpose: the script body and its SHA-1 are part of the contract, because a store caches scripts by SHA and an edited script is a new script every server must load. Interactions run in order against a store whose script cache is empty: the first EVALSHA must answer NOSCRIPT as a returned error reply (never a throw), which is what makes the EVAL fallback reachable."
+	},
+	"interactions": [
+		{
+			"description": "EVALSHA of a script the store has not cached answers NOSCRIPT as an error reply",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					"EVALSHA",
+					"87bb837992a6105feb19edd81c52106268435186",
+					"1",
+					"pact:lease:42",
+					"{\"runner\":\"r-1\"}",
+					"60000",
+					"inc-1"
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "error",
+					"message": "NOSCRIPT No matching script. Please use EVAL."
+				}
+			}
+		},
+		{
+			"description": "EVAL of putIfAbsent creates the key and returns its first version",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					"EVAL",
+					"if redis.call('EXISTS', KEYS[1]) == 1 then return false end\nredis.call('HSET', KEYS[1], 'v', ARGV[1], 'i', ARGV[3], 'r', 1)\nredis.call('PEXPIRE', KEYS[1], ARGV[2])\nreturn ARGV[3] .. ':1'",
+					"1",
+					"pact:lease:42",
+					"{\"runner\":\"r-1\"}",
+					"60000",
+					"inc-1"
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": "inc-1:1"
+				}
+			}
+		},
+		{
+			"description": "EVALSHA of the now-cached putIfAbsent on a live key returns nil: a lost race, not an error",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					"EVALSHA",
+					"87bb837992a6105feb19edd81c52106268435186",
+					"1",
+					"pact:lease:42",
+					"{\"runner\":\"r-2\"}",
+					"60000",
+					"inc-2"
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": null
+				}
+			}
+		},
+		{
+			"description": "HMGET of a live key returns value, incarnation, and revision",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					"HMGET",
+					"pact:lease:42",
+					"v",
+					"i",
+					"r"
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": [
+						"{\"runner\":\"r-1\"}",
+						"inc-1",
+						"1"
+					]
+				}
+			}
+		},
+		{
+			"description": "HMGET of an absent key returns three nils",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					"HMGET",
+					"pact:absent",
+					"v",
+					"i",
+					"r"
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": [
+						null,
+						null,
+						null
+					]
+				}
+			}
+		},
+		{
+			"description": "PEXPIRE of an absent key returns 0",
+			"request": {
+				"method": "POST",
+				"path": "/",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": [
+					"PEXPIRE",
+					"pact:absent",
+					"1000"
+				]
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"kind": "value",
+					"value": 0
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GoNoGoDecisionRecordConsumer"
+  },
+  "provider": {
+    "name": "GoNoGoDecisionRecordBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Go/No-Go Decision Record boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/go-no-go-decision-record/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.go_no_go_decision_record/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

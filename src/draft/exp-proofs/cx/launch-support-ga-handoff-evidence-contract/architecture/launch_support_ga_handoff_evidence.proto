@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package hobo.draft.launch_support_ga_handoff_evidence;
+
+// Architecture-guard evidence: protobuf data shapes the Launch Support GA
+// Handoff Evidence draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum LaunchSupportGaEvidenceStatus {
+  LAUNCH_SUPPORT_GA_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_GA_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SUPPORT_GA_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  LAUNCH_SUPPORT_GA_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum LaunchSupportGaBlockerState {
+  LAUNCH_SUPPORT_GA_BLOCKER_STATE_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_GA_BLOCKER_STATE_CLEARED = 1;
+  LAUNCH_SUPPORT_GA_BLOCKER_STATE_ACCEPTED_RISK = 2;
+}
+
+message LaunchSupportGaEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  LaunchSupportGaEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message LaunchSupportGaBlocker {
+  string id = 1;
+  string owner_project = 2;
+  LaunchSupportGaBlockerState state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message LaunchSupportGaAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message LaunchSupportGaReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message LaunchSupportGaMissingEvidence {
+  string id = 1;
+  string owner_project = 2;
+  string reason = 3;
+}
+
+message LaunchSupportGaFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message LaunchSupportGaInitiativeStatusGate {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+  string status_update_url = 5;
+}
+
+message LaunchSupportGaPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message LaunchSupportGaHandoffEvidenceRecord {
+  string schema = 1;
+  string issue = 2;
+  string project = 3;
+  string phase = 4;
+  string milestone = 5;
+  repeated LaunchSupportGaEvidenceItem evidence = 6;
+  repeated LaunchSupportGaBlocker blockers = 7;
+  repeated LaunchSupportGaAcceptedRisk accepted_risks = 8;
+  repeated LaunchSupportGaReleaseCutlineDependency release_cutline_dependencies = 9;
+  repeated LaunchSupportGaMissingEvidence missing_evidence = 10;
+  repeated LaunchSupportGaFollowUp follow_ups = 11;
+  LaunchSupportGaInitiativeStatusGate initiative_status = 12;
+  repeated string scope_out = 13;
+  repeated LaunchSupportGaPublicClaimGuard public_claim_guards = 14;
+}

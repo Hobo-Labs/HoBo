@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package hobo.draft.cli_migration_transcript.v1;
+
+message CliMigrationTranscriptPrototype {
+  string issue = 1;
+  string phase = 2;
+  repeated TranscriptStep transcript_steps = 3;
+  repeated MigrationEventFixture event_fixtures = 4;
+  MigrationExamples examples = 5;
+}
+
+message TranscriptStep {
+  string case_name = 1;
+  string actor = 2;
+  string command = 3;
+  string output = 4;
+  GateOutcome gate_outcome = 5;
+  ResultEnvelope result_envelope = 6;
+}
+
+message GateOutcome {
+  bool blocked = 1;
+  repeated string blockers = 2;
+  repeated string safe_next_steps = 3;
+}
+
+message ResultEnvelope {
+  string status = 1;
+  string code = 2;
+  string human_message = 3;
+  string remediation = 4;
+  string proof_mode = 5;
+  string fixture_id = 6;
+}
+
+message MigrationEventFixture {
+  string type = 1;
+  string fixture_id = 2;
+  string proof_mode = 3;
+  string aggregate_id = 4;
+  string phase = 5;
+  string snapshot_id = 6;
+}
+
+message MigrationExamples {
+  MigrationExample sdk = 1;
+  MigrationExample api = 2;
+}
+
+message MigrationExample {
+  MigrationRequest request = 1;
+  ResultEnvelope result_envelope = 2;
+}
+
+message MigrationRequest {
+  string request_id = 1;
+  string command = 2;
+  repeated string phases = 3;
+  repeated string adopted_resources = 4;
+  repeated string still_external_resources = 5;
+}

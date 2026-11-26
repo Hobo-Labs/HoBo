@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/cross-camp-bounded-staleness-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-261 cross-Camp bounded-staleness projections.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

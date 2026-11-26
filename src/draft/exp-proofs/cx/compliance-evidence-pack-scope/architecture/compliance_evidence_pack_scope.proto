@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Compliance Evidence Pack Scope draft
+// package reasons about. Documents the records/objects this package owns so the architecture guard
+// has a language-neutral schema reference. Not compiled at runtime; this is a design-time contract
+// artifact.
+
+enum ComplianceEvidencePackScopeReadiness {
+  COMPLIANCE_EVIDENCE_PACK_SCOPE_READINESS_UNSPECIFIED = 0;
+  COMPLIANCE_EVIDENCE_PACK_SCOPE_READINESS_ACCEPTED = 1;
+  COMPLIANCE_EVIDENCE_PACK_SCOPE_READINESS_MANUAL = 2;
+  COMPLIANCE_EVIDENCE_PACK_SCOPE_READINESS_LIMITED = 3;
+  COMPLIANCE_EVIDENCE_PACK_SCOPE_READINESS_BLOCKED = 4;
+  COMPLIANCE_EVIDENCE_PACK_SCOPE_READINESS_BLOCKED_UNTIL_EVIDENCE = 5;
+}
+
+message ComplianceEvidencePackScopeSection {
+  string id = 1;
+  string owner_project = 2;
+  string source_record = 3;
+  ComplianceEvidencePackScopeReadiness beta_readiness = 4;
+  ComplianceEvidencePackScopeReadiness ga_readiness = 5;
+  string blocker_route = 6;
+  string customer_safe_limitation = 7;
+}
+
+message ComplianceEvidencePackScopeBoundary {
+  string id = 1;
+  string owner = 2;
+  string rule = 3;
+}
+
+message ComplianceEvidencePackScopeRecord {
+  string issue = 1;
+  string goal = 2;
+  repeated string primary_personas = 3;
+  repeated ComplianceEvidencePackScopeSection assurance_sections = 4;
+  repeated string m1_evidence = 5;
+  repeated string scope_out = 6;
+  repeated string non_goals = 7;
+  repeated ComplianceEvidencePackScopeBoundary boundaries = 8;
+}

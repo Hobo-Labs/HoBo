@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "TraceContextQueue"
+  },
+  "interactions": [
+    {
+      "description": "repair missing trace context before queue handoff",
+      "providerStates": [
+        {
+          "name": "ingress command has no traceparent"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/trace/prepare-ingress",
+        "body": {
+          "id": "cmd-rollup",
+          "type": "deployment.Commanded"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "traceRepair": "synthesized-root",
+          "queued": true,
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

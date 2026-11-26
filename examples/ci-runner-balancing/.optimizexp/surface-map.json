@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "projectId": "ci-runner-balancing",
+  "scannedAt": "2026-11-17T18:35:43.632Z",
+  "productName": "@hobo/example-ci-runner-balancing",
+  "packageDir": "examples/ci-runner-balancing",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "examples/ci-runner-balancing/package.json: no package bin is declared"
+  },
+  "binaries": [],
+  "binAssessments": [],
+  "defaultEntry": null,
+  "nonInteractiveHelp": null,
+  "commands": [],
+  "interactiveSurfaces": [],
+  "requiredJourneys": [
+    "happy-critical-path"
+  ],
+  "probes": []
+}

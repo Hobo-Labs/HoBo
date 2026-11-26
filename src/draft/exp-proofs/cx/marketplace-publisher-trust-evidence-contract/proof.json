@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "marketplace-publisher-trust-evidence-contract",
+  "experienceType": "cx",
+  "title": "Marketplace Publisher Trust Evidence Contract",
+  "linear": "HOBO-503",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

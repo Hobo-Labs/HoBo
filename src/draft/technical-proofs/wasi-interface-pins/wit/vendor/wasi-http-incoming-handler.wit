@@ -1,0 +1,17 @@
+package wasi:http@0.2.0;
+
+interface incoming-handler {
+  record request {
+    method: string,
+    path: string,
+    headers: list<tuple<string, string>>,
+  }
+
+  record response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: list<u8>,
+  }
+
+  handle: func(request: request) -> response;
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dx-backbone-resource-lifecycle-vibe",
+  "experienceType": "dx",
+  "title": "DX Backbone Resource Lifecycle Vibe",
+  "linear": "HOBO-566",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

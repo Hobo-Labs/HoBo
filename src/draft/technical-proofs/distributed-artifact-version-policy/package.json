@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-distributed-artifact-version-policy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

@@ -1,0 +1,75 @@
+# OptimizeXP CLI evidence
+command: node packages/cli/dist/bin/hobo.js --help
+cwd: /home/codex/.herdr/worktrees/hobo/hobo-devx
+exitCode: 0
+spawnStatus: 0
+durationMs: 764
+screen: ?x? (cols x rows)
+capturedAt: 2026-08-01T15:31:39.125Z
+
+## stdout
+HoBo CLI
+
+Usage:
+  hobo [global flags] <verb> [args]
+  hobo --help
+  hobo <verb> --help
+
+Start here:
+  hobo doctor             Check local readiness and next steps
+  hobo new my-app -t api  Scaffold an offline app
+  cd my-app && hobo dev --once
+
+Global flags:
+  --json          Emit a machine-readable JSON envelope on stdout
+  --camp <camp>   Select the target Camp
+  --cwd <path>    Resolve the HoBo project from this directory
+  --verbose       Print detailed diagnostics on stderr
+  -q              Suppress non-error human output
+  --help          Show help
+
+Canonical verbs:
+  up          lifecycle     Realize the current object graph
+  down        lifecycle     Tear down what up realized
+  dev         local loop    Run against runtime-local
+  new         local loop    Scaffold a runnable SDK program
+  login       identity      Obtain a dev SVID through OIDC
+  connection  identity      Manage durable Connections (create/authorize/list/get/revoke/rotate)
+  identity    identity      Observe continuous identity migration status (status/inspect; zero Bindle config)
+  trails      migration     Observe Trails status/plan/inspect (continuous migration; identity hands-off)
+  access      identity      Request elevated/cross-env access or break-glass (short-lived capability; audited)
+  feature     delivery      OpenFeature flags / canary / experiment status (list|eval|set|kill)
+  deploy      delivery      Attested continuous delivery status/logs/rollback (secret-free)
+  incident    delivery      CD failure disposition: A2H handoff or sandboxed self-heal
+  claim       identity      Bind an anonymous deployment to an account
+  plan        read-only     Dry-run the up decision
+  verify      read-only     Run the unified Gatekeeper preflight
+  can-deploy  read-only     Diagnose producer/consumer compatibility
+  inspect     read-only     Render projections and time-travel views
+  logs        read-only     Live-tail Camp runtime streams
+  doctor      diagnostics   Report environment and portability hazards
+  messaging   diagnostics   Inspect messaging capability and delivery-guarantee readiness
+  codegen     authoring     Regenerate checked-in generated clients
+  build       authoring     Compile services to wasm components
+  collect     authoring     Run resource collection and print manifest IR
+  stub        authoring     Run with a contract-backed stub
+  drift       diagnostics   Report drift and governed remediation paths
+  add         distribution  Install a provider or listing
+  registry    distribution  Administer registry artifacts
+  import      migration     Adopt existing estate in place
+  generate    generation    Request provider generation
+  sandbox     test loop     Run a contract-backed isolated lane
+  test        test loop     Alias for the sandbox test lane
+  attest      governance    Produce signed external evidence exports
+  erase       governance    Request crypto-shred erasure
+  broker      governance    Resolve placements through the broker (the Conductor)
+  yard        control plane Install and inspect the default bare-metal Yard
+  station     control plane Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb
+  serve       control plane Local control-plane HTTP+SSE for the Yard game UI
+  replay      observability Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay)
+  derivative  extensibility Manage derived HoBo implementations
+  runbook     SRE           Execute or replay incident runbooks
+
+
+## stderr
+(empty)

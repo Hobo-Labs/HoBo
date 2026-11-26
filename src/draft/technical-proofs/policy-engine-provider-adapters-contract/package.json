@@ -1,0 +1,16 @@
+{
+  "name": "@hobo/policy-engine-provider-adapters-contract",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/policy-engine-provider-adapters.ts",
+  "types": "./src/policy-engine-provider-adapters.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/policy-engine-provider-adapters.d.mts",
+      "import": "./src/policy-engine-provider-adapters.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

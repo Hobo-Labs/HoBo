@@ -1,0 +1,30 @@
+package hobo:wrpc-baseline@0.1.0;
+
+interface baseline {
+  use wasi:clocks/wall-clock@0.2.0.{datetime};
+
+  record interface-pin {
+    id: string,
+    version: string,
+    stability: string,
+    digest: string,
+  }
+
+  record wrpc-link {
+    import-interface: string,
+    provider-export: string,
+    transport: string,
+    deadline-ms: u64,
+  }
+
+  smoke-call: func(
+    started-at: datetime,
+    link: wrpc-link,
+    pins: list<interface-pin>,
+  ) -> result<string, string>;
+}
+
+world baseline-smoke {
+  import wasi:clocks/wall-clock@0.2.0;
+  export baseline;
+}

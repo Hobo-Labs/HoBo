@@ -1,0 +1,44 @@
+{
+  "consumer": {
+    "name": "planner-finops-routing-consumer"
+  },
+  "provider": {
+    "name": "manifest-resource-intent-bridge-contract"
+  },
+  "interactions": [
+    {
+      "description": "lower hobo.manifest/v1 resource nodes to provider-neutral ResourceIntent on hobo plan",
+      "request": {
+        "method": "POST",
+        "path": "/manifest-intent-bridge/v1/lower",
+        "body": {
+          "manifestSchema": "hobo.manifest/v1",
+          "resourceName": "db",
+          "deployContext": {
+            "tenant": "acme",
+            "workspace": "platform",
+            "environment": "prod",
+            "routingObjective": "cost"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schemaVersion": "finops.resource-intent/v1",
+          "resourceName": "db",
+          "capability": {
+            "category": "hobo:data"
+          },
+          "providerNeutral": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

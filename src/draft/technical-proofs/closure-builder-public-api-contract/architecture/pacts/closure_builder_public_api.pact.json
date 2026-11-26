@@ -1,0 +1,47 @@
+{
+  "consumer": {
+    "name": "HOBO-533-anonymous-builder-resource-handles"
+  },
+  "provider": {
+    "name": "HOBO-532-closure-builder-public-api-contract"
+  },
+  "interactions": [
+    {
+      "description": "downstream builder implementation consumes the v1 closure-builder vocabulary",
+      "request": {
+        "method": "GET",
+        "path": "/closure-builder-public-api/v1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "packageName": "@hobo/bindles",
+          "bindleSignature": "bindle(name, builderFn)",
+          "bindleRole": "manifest-assembly",
+          "appHostOwner": "imported-app-code",
+          "runtimeHostBehavior": "out-of-scope",
+          "relationshipVerbs": ["dependsOn"],
+          "builderFactories": [
+            {
+              "name": "cache",
+              "acceptsResourceName": false,
+              "identitySource": "hobo-generated",
+              "aliasRole": "local-and-returned-key-only"
+            },
+            {
+              "name": "api",
+              "acceptsResourceName": false,
+              "identitySource": "hobo-generated",
+              "aliasRole": "local-and-returned-key-only"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

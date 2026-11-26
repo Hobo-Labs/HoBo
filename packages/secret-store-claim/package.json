@@ -1,0 +1,39 @@
+{
+	"name": "@hobo/secret-store-claim",
+	"version": "0.0.1",
+	"license": "MIT",
+	"private": true,
+	"description": "The secrets.config-service/v1 capability, chosen when a HoBo deployment runs and handed to its owner by claim: offers routed by HoBo policy (auth.md stores, a Cloudflare temporary account, self-hosted Infisical, an existing Infisical Cloud organization), provisioning against each, and a HoBo claim bundle whose one-time actions carry the claim links (ADR-0179 amendment).",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/adapter-infisical": "workspace:*",
+		"@hobo/auth-md": "workspace:*",
+		"@hobo/claims": "workspace:*",
+		"@hobo/provider-cloudflare": "workspace:*"
+	},
+	"devDependencies": {
+		"@hobo/contract-harness": "workspace:*",
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/ contracts/",
+		"test:contract:provider": "vitest run contracts/provider",
+		"test:unit": "vitest run test/"
+	}
+}

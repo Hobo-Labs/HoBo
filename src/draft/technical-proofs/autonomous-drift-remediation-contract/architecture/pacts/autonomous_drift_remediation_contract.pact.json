@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "AutonomousDriftRemediationContractConsumer"
+  },
+  "provider": {
+    "name": "AutonomousDriftRemediationContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Autonomous Drift Remediation Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/autonomous-drift-remediation-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.autonomous_drift_remediation_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

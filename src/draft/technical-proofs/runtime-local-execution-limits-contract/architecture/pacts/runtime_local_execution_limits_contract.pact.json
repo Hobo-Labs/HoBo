@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RuntimeLocalExecutionLimitsContractConsumer"
+  },
+  "provider": {
+    "name": "RuntimeLocalExecutionLimitsContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Runtime Local Execution Limits Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/runtime-local-execution-limits-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.runtime_local_execution_limits_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

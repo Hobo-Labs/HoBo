@@ -1,0 +1,15 @@
+{
+	"params": {
+		"name": "greeter"
+	},
+	"expectFiles": [
+		"src/camp-env.ts"
+	],
+	"expectContains": {
+		"src/camp-env.ts": [
+			"campEnv",
+			"GREETING_PREFIX",
+			"howdy"
+		]
+	}
+}

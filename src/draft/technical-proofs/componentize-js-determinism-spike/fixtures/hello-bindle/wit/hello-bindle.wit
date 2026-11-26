@@ -1,0 +1,5 @@
+package hobo:examples@0.1.0;
+
+world hello-bindle {
+  export health: func() -> string;
+}

@@ -1,0 +1,82 @@
+{
+	"consumer": {
+		"name": "@hobo/runtime"
+	},
+	"provider": {
+		"name": "ProviderConvexBoundary"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	},
+	"interactions": [
+		{
+			"description": "publish capability manifest bundle for the three honestly-scoped Convex ports",
+			"request": {
+				"method": "POST",
+				"path": "/providers/convex/manifest/publish"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"providerId": "@hobo/provider-convex",
+					"manifestSchema": "hobo.capability-manifest/v1",
+					"documents": [
+						"/.well-known/capability-manifest/index.json",
+						"/.well-known/capability-manifest/capabilities.json",
+						"/.well-known/capability-manifest/auth.json",
+						"/.well-known/capability-manifest/cost.json"
+					],
+					"auth": {
+						"mode": "deploy-key-brokered",
+						"staticSecrets": false
+					}
+				}
+			}
+		},
+		{
+			"description": "realize a database/reactive resource plan as a convex-deploy driver program",
+			"request": {
+				"method": "POST",
+				"path": "/providers/convex/realize",
+				"body": {
+					"name": "orders",
+					"port": "database",
+					"provider": "@hobo/provider-convex"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"driver": {
+						"apiVersion": "hobo.driver-program/v1",
+						"kind": "driver-program",
+						"driver": "convex-deploy",
+						"resources": [
+							{ "name": "deployment", "type": "convex:deployment" },
+							{ "name": "orders", "type": "convex:document-db" }
+						],
+						"outputs": {
+							"deploymentUrl": "${resources.deployment.outputs.url}",
+							"connectionRef": "${resources.orders.outputs.connectionRef}"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "management API fails closed without a broker-minted deploy key",
+			"request": {
+				"method": "GET",
+				"path": "/providers/convex/deployments"
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"error": "convex management API is credential-gated: no deploy key present"
+				}
+			}
+		}
+	]
+}

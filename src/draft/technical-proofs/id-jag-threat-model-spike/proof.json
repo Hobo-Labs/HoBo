@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "id-jag-threat-model-spike",
+  "title": "ID-JAG Threat Model Spike",
+  "linear": "HOBO-271",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/02-identity-security.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

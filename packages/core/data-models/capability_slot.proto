@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Capability slots and slot bindings (ADR-0157). The invariants here are
+// load-bearing for the Yard binding compile step: the slot vocabulary is
+// closed (an unknown slot would bind a capability the app never requested),
+// the profile obeys the ADR-0151 grammar so selection can key off it, at
+// least one of product_id / connectivity_id is present (a binding that
+// narrows nothing cannot be satisfied and would silently match everything),
+// and properties carry no credential-shaped keys and are key-sorted so two
+// authorings of the same configuration serialize identically.
+
+// One authored binding of a capability slot to the product and/or
+// connectivity that satisfies it. This is the typed authoring surface a
+// provider package emits; the Yard compiles it into a binding row.
+message SlotBindingRecord {
+  // Always "hobo.slot-binding/v1".
+  string contract = 1;
+  // web | api | service | data | kv | bucket | queue | topic | secretRef | webhook
+  string slot = 2;
+  // ADR-0151 grammar: <family>.<path>/v<major>
+  string profile = 3;
+  // Provider product this slot binds to. Empty when only connectivity is pinned.
+  string product_id = 4;
+  // Connectivity implementation this slot binds to. Empty when only a product is pinned.
+  string connectivity_id = 5;
+  // JSON-encoded non-sensitive configuration values, keys sorted by code unit.
+  map<string, string> properties = 6;
+}
+
+// The refusal the parse boundary reports. Carries the code so the caller can
+// branch on the reason instead of matching on a message.
+message SlotBindingRefusalRecord {
+  // SLOT_BINDING_SLOT_INVALID | SLOT_BINDING_PROFILE_INVALID |
+  // SLOT_BINDING_EMPTY_CONSTRAINT | SLOT_BINDING_CREDENTIAL_PROPERTY |
+  // SLOT_BINDING_PROPERTY_NOT_JSON
+  string code = 1;
+  // The slot under parse, when it was recognized before the refusal.
+  string slot = 2;
+  string message = 3;
+}

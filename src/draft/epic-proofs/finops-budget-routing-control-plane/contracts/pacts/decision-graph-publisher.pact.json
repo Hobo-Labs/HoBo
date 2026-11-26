@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "FinopsRoutingControlPlaneEpic"
+  },
+  "provider": {
+    "name": "DecisionGraphPublisher"
+  },
+  "interactions": [
+    {
+      "description": "publish decision graph with candidate, policy, metric, Pareto, stability, and audit evidence",
+      "request": {
+        "method": "POST",
+        "path": "/decision-graphs"
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "id": "decision-graph:approved-route",
+          "auditRefs": ["focus-ledger@seq:42", "cloud-event:routing.Decided"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

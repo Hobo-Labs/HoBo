@@ -1,0 +1,497 @@
+{
+	"consumer": {
+		"name": "HoboCdOciSubscriptionDriver"
+	},
+	"provider": {
+		"name": "OciDistributionRegistry"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Hand-authored OCI distribution-spec v1.1 exchanges (tags list with Link pagination, WWW-Authenticate bearer token, HEAD manifest digest, manifest by digest, referrers API with tag-schema fallback, blob). Generated from test/sources/oci-fixtures.ts and verified by contracts/sources.consumer.test.ts."
+	},
+	"interactions": [
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /token?service=registry.example.com&scope=repository%3Ateam%2Fapp%3Apull -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://auth.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/token",
+				"headers": {},
+				"query": "service=registry.example.com&scope=repository%3Ateam%2Fapp%3Apull"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"token\":\"reg-token\",\"expires_in\":300}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/tags/list?n=1000 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/tags/list",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				},
+				"query": "n=1000"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Link": "</v2/team/app/tags/list?n=1000&last=1.1.0>; rel=\"next\""
+				},
+				"body": {
+					"content": "{\"name\":\"team/app\",\"tags\":[\"1.0.0\",\"latest\",\"1.1.0\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/tags/list?n=1000&last=1.1.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/tags/list",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				},
+				"query": "n=1000&last=1.1.0"
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"name\":\"team/app\",\"tags\":[\"1.2.0\",\"1.2.0-rc.1\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/tags/list?n=1000 -> 401",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/tags/list",
+				"headers": {},
+				"query": "n=1000"
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"WWW-Authenticate": "Bearer realm=\"https://auth.example.com/token\",service=\"registry.example.com\",scope=\"repository:team/app:pull\""
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/1.2.0-rc.1 (authorized) -> 404",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/1.2.0-rc.1",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "HEAD /v2/team/app/manifests/1.0.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "HEAD",
+				"path": "/v2/team/app/manifests/1.0.0",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Content-Digest": "sha256:a6ebd676bad85b60a8690088ab380038eee16c34eaf9638130157534e34b84b5"
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/sha256:a6ebd676bad85b60a8690088ab380038eee16c34eaf9638130157534e34b84b5 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/sha256:a6ebd676bad85b60a8690088ab380038eee16c34eaf9638130157534e34b84b5",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:8f5d4df6e937bfe2e077714e4526914c24875a219606c3b305e4dc2ea0c1577a\",\"size\":2},\"layers\":[],\"annotations\":{\"org.opencontainers.image.revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"org.opencontainers.image.created\":\"2026-11-01T00:00:00Z\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/1.0.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/1.0.0",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Content-Digest": "sha256:a6ebd676bad85b60a8690088ab380038eee16c34eaf9638130157534e34b84b5"
+				},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:8f5d4df6e937bfe2e077714e4526914c24875a219606c3b305e4dc2ea0c1577a\",\"size\":2},\"layers\":[],\"annotations\":{\"org.opencontainers.image.revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"org.opencontainers.image.created\":\"2026-11-01T00:00:00Z\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "HEAD /v2/team/app/manifests/1.1.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "HEAD",
+				"path": "/v2/team/app/manifests/1.1.0",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Content-Digest": "sha256:69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525"
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/sha256:69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/sha256:69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:04f727ad0bdaa6b603c5c2b0d9e2d9d0238ced58121b414350592b76203628f9\",\"size\":2},\"layers\":[],\"annotations\":{\"org.opencontainers.image.revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"org.opencontainers.image.created\":\"2026-11-02T00:00:00Z\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/1.1.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/1.1.0",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Content-Digest": "sha256:69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525"
+				},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:04f727ad0bdaa6b603c5c2b0d9e2d9d0238ced58121b414350592b76203628f9\",\"size\":2},\"layers\":[],\"annotations\":{\"org.opencontainers.image.revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"org.opencontainers.image.created\":\"2026-11-02T00:00:00Z\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "HEAD /v2/team/app/manifests/1.2.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "HEAD",
+				"path": "/v2/team/app/manifests/1.2.0",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Content-Digest": "sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d"
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:d6df423d85267b8eaddb50b4b52c9cfd8415c5953ef8c8a1425186cc0f601750\",\"size\":2},\"layers\":[],\"annotations\":{\"org.opencontainers.image.revision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"org.opencontainers.image.created\":\"2026-11-03T00:00:00Z\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/1.2.0 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/1.2.0",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Docker-Content-Digest": "sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d"
+				},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:d6df423d85267b8eaddb50b4b52c9cfd8415c5953ef8c8a1425186cc0f601750\",\"size\":2},\"layers\":[],\"annotations\":{\"org.opencontainers.image.revision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"org.opencontainers.image.created\":\"2026-11-03T00:00:00Z\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/referrers/sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/referrers/sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.index.v1+json\",\"manifests\":[{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:8627174dbcca86ff900daee6519cdb44880cde5b918f7da850ce8c1780e3b7f7\",\"size\":1,\"artifactType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\"},{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:98f3ae1ef67113d8140d4f6cb8d2830070e21ea48f091be519659846c771a374\",\"size\":1,\"artifactType\":\"application/spdx+json\"}]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/sha256:8627174dbcca86ff900daee6519cdb44880cde5b918f7da850ce8c1780e3b7f7 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/sha256:8627174dbcca86ff900daee6519cdb44880cde5b918f7da850ce8c1780e3b7f7",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"artifactType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\",\"config\":{\"mediaType\":\"application/vnd.oci.empty.v1+json\",\"digest\":\"sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\",\"size\":2},\"layers\":[{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\",\"digest\":\"sha256:1994714c705a4d483ac21d482784717835b6024fac2fd8e151bbe7ccd2b24e3d\",\"size\":386}],\"subject\":{\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"digest\":\"sha256:c222a8d574bfff501a955deaadc2188a45e387e35689ce39b10ab9ec2f32535d\",\"size\":1}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/blobs/sha256:1994714c705a4d483ac21d482784717835b6024fac2fd8e151bbe7ccd2b24e3d (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/blobs/sha256:1994714c705a4d483ac21d482784717835b6024fac2fd8e151bbe7ccd2b24e3d",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "eyJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQuZGV2LnNpZ3N0b3JlLmJ1bmRsZS52MC4zK2pzb24iLCJkc3NlRW52ZWxvcGUiOnsicGF5bG9hZFR5cGUiOiJhcHBsaWNhdGlvbi92bmQuaW4tdG90bytqc29uIiwicGF5bG9hZCI6ImV5SmlkV2xzWkdWeUlqb2lhSFIwY0hNNkx5OWphUzVsZUdGdGNHeGxMMkoxYVd4a1pYSWlMQ0p6ZFdKcVpXTjBjeUk2V3lKemFHRXlOVFk2WXpJeU1tRTRaRFUzTkdKbVptWTFNREZoT1RVMVpHVmhZV1JqTWpFNE9HRTBOV1V6T0RkbE16VTJPRGxqWlRNNVlqRXdZV0k1WldNeVpqTXlOVE0xWkNKZExDSnphV2R1WlhJaU9pSm9kSFJ3Y3pvdkwyTnBMbVY0WVcxd2JHVXZjMmxuYm1WeUluMD0iLCJzaWduYXR1cmVzIjpbeyJzaWciOiJjMmxuIn1dfX0=",
+					"contentType": "application/octet-stream",
+					"encoded": "base64"
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/referrers/sha256:69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525 (authorized) -> 404",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/referrers/sha256:69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/manifests/sha256-69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525 (authorized) -> 404",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/manifests/sha256-69b058c8725bf87bb05b382e84dfceef0bd09149a27316755c2e33525293f525",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v2/team/app/referrers/sha256:a6ebd676bad85b60a8690088ab380038eee16c34eaf9638130157534e34b84b5 (authorized) -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v2/team/app/referrers/sha256:a6ebd676bad85b60a8690088ab380038eee16c34eaf9638130157534e34b84b5",
+				"headers": {
+					"authorization": "Bearer reg-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"schemaVersion\":2,\"manifests\":[]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		}
+	]
+}

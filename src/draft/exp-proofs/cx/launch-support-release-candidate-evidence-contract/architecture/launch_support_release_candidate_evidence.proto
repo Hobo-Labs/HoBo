@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Launch Support Release
+// Candidate Evidence draft package reasons about. Not compiled at runtime; this
+// is a design-time contract artifact.
+
+enum LaunchSupportReleaseCandidateEvidenceStatus {
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_EVIDENCE_STATUS_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_EVIDENCE_STATUS_ACCEPTED = 1;
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_EVIDENCE_STATUS_ACCEPTED_RISK = 2;
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_EVIDENCE_STATUS_MISSING = 3;
+}
+
+enum LaunchSupportReleaseCandidateBlockerState {
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_BLOCKER_STATE_UNSPECIFIED = 0;
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_BLOCKER_STATE_BLOCKED = 1;
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_BLOCKER_STATE_ACCEPTED_RISK = 2;
+  LAUNCH_SUPPORT_RELEASE_CANDIDATE_BLOCKER_STATE_CLEARED = 3;
+}
+
+message LaunchSupportReleaseCandidateEvidenceItem {
+  string id = 1;
+  string owner_project = 2;
+  string source = 3;
+  string proof_mode = 4;
+  LaunchSupportReleaseCandidateEvidenceStatus status = 5;
+  string acceptance_bullet = 6;
+}
+
+message LaunchSupportReleaseCandidateBlocker {
+  string id = 1;
+  string owner_project = 2;
+  LaunchSupportReleaseCandidateBlockerState state = 3;
+  string source_evidence_id = 4;
+  string disposition = 5;
+}
+
+message LaunchSupportReleaseCandidateAcceptedRisk {
+  string id = 1;
+  string owner_project = 2;
+  string mitigation = 3;
+  string launch_risk_effect = 4;
+}
+
+message LaunchSupportReleaseCutlineDependency {
+  string id = 1;
+  string owner_project = 2;
+  string readiness_domain = 3;
+  string cutline_category = 4;
+  string source = 5;
+}
+
+message LaunchSupportReleaseCandidateFollowUp {
+  string id = 1;
+  string evidence_id = 2;
+  string owner_project = 3;
+  string reason = 4;
+}
+
+message LaunchSupportInitiativeStatusGate {
+  string parent_initiative = 1;
+  string launch_risk_change = 2;
+  bool status_update_required = 3;
+  string update_source = 4;
+}
+
+message LaunchSupportPublicClaimGuard {
+  string id = 1;
+  string claim = 2;
+  string evidence_id = 3;
+  string disposition = 4;
+}
+
+message LaunchSupportReleaseCandidateEvidenceRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  string milestone = 4;
+  repeated LaunchSupportReleaseCandidateEvidenceItem evidence = 5;
+  repeated LaunchSupportReleaseCandidateBlocker blockers = 6;
+  repeated LaunchSupportReleaseCandidateAcceptedRisk accepted_risks = 7;
+  repeated LaunchSupportReleaseCutlineDependency release_cutline_dependencies = 8;
+  repeated LaunchSupportReleaseCandidateFollowUp follow_ups = 9;
+  LaunchSupportInitiativeStatusGate initiative_status = 10;
+  repeated string scope_out = 11;
+  repeated LaunchSupportPublicClaimGuard public_claim_guards = 12;
+}

@@ -1,0 +1,101 @@
+package hobo:training-engine@0.1.0;
+
+interface types {
+  record generated-region-ref {
+    region-id: string,
+    artifact-ref: string,
+    start-offset: u64,
+    end-offset: u64,
+    owner: string,
+  }
+
+  record agent-ref {
+    id: string,
+    principal-ref: string,
+  }
+
+  record run-ref {
+    id: string,
+    tenant-id: string,
+    bindle: string,
+    agent: agent-ref,
+  }
+
+  record span {
+    id: string,
+    parent-id: option<string>,
+    name: string,
+    attributes-json: string,
+    inputs-json: string,
+    outputs-json: string,
+  }
+
+  record reward {
+    source: string,
+    rubric-ref: string,
+    score: float64,
+  }
+
+  record trajectory {
+    schema: string,
+    id: string,
+    traceparent: string,
+    run: run-ref,
+    method: string,
+    contract-ref: string,
+    generated-region: generated-region-ref,
+    spans: list<span>,
+    payloads-json: string,
+    reward: reward,
+  }
+
+  record rubric {
+    id: string,
+    objective: string,
+  }
+
+  record contract-ref {
+    ref: string,
+    method: string,
+    allowed-region-id: string,
+  }
+
+  record optimize-request {
+    schema: string,
+    request-id: string,
+    generated-region: generated-region-ref,
+    trajectories: list<trajectory>,
+    rubric: rubric,
+    contract: contract-ref,
+  }
+
+  record candidate-edit {
+    start-offset: u64,
+    end-offset: u64,
+    replacement: string,
+  }
+
+  record candidate-patch {
+    schema: string,
+    id: string,
+    engine-id: string,
+    region: generated-region-ref,
+    edits: list<candidate-edit>,
+    provenance-json: string,
+  }
+
+  record training-error {
+    code: string,
+    message: string,
+  }
+}
+
+interface training-engine {
+  use types.{candidate-patch, optimize-request, training-error};
+
+  optimize: func(request: optimize-request) -> result<candidate-patch, training-error>;
+}
+
+world training-engine-provider {
+  export training-engine;
+}

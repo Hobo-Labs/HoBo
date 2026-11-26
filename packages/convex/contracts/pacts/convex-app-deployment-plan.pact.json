@@ -1,0 +1,178 @@
+{
+	"consumer": {
+		"name": "@hobo/convex"
+	},
+	"provider": {
+		"name": "HoboDeploymentPlanner"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"note": "This package performs no network I/O: it stamps a Bindle annotation and probes a directory. The boundary pinned here is what its outputs are consumed as — a discovered app root plus its dependency buckets are exchanged for resolved bindings. Every credential in a response is a locator; a plan that answered with a deploy key value would violate the third interaction, which is the reason this contract exists."
+	},
+	"interactions": [
+		{
+			"description": "a discovered Convex app is planned into bindings, with the deploy key as a broker-minted locator",
+			"request": {
+				"method": "POST",
+				"path": "/deployment/plan",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"webApp": {
+						"framework": "convex",
+						"root": "examples/convex-swaghaus"
+					},
+					"discovery": {
+						"hasConvexDir": true,
+						"hasAuthConfig": true,
+						"generalEnv": [
+							"CONVEX_DEPLOY_KEY",
+							"VITE_CONVEX_URL",
+							"VITE_WORKOS_CLIENT_ID",
+							"VITE_WORKOS_REDIRECT_URI",
+							"WORKOS_CLIENT_ID"
+						],
+						"suggestedDeps": [
+							{
+								"kind": "env",
+								"via": "broker-minted deploy key (never Bindle config)",
+								"keys": ["CONVEX_DEPLOY_KEY"]
+							},
+							{
+								"kind": "data",
+								"via": "b.data() realized by Matching",
+								"keys": ["VITE_CONVEX_URL"]
+							},
+							{
+								"kind": "external",
+								"via": "b.external() WorkOS AuthKit / Camp secretRef",
+								"keys": [
+									"VITE_WORKOS_CLIENT_ID",
+									"VITE_WORKOS_REDIRECT_URI",
+									"WORKOS_CLIENT_ID"
+								]
+							}
+						]
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"root": "examples/convex-swaghaus",
+					"bindings": [
+						{
+							"key": "CONVEX_DEPLOY_KEY",
+							"kind": "env",
+							"secretRef": "hobo-secret://tenant-1/convex/deploy-key"
+						},
+						{
+							"key": "VITE_CONVEX_URL",
+							"kind": "data",
+							"fromBinding": "backend"
+						},
+						{
+							"key": "WORKOS_CLIENT_ID",
+							"kind": "external",
+							"secretRef": "hobo-secret://tenant-1/workos/client-id"
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "a root that escapes the repo is refused before anything is probed",
+			"request": {
+				"method": "POST",
+				"path": "/deployment/plan",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"webApp": {
+						"framework": "convex",
+						"root": "../../etc"
+					}
+				}
+			},
+			"response": {
+				"status": 400,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"code": "CONVEX_ROOT_ESCAPES_REPO",
+					"detail": "convexApp root escapes repo: ../../etc"
+				}
+			}
+		},
+		{
+			"description": "a planner that returns deploy key material instead of a locator is rejected, not stored",
+			"request": {
+				"method": "POST",
+				"path": "/deployment/plan",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"webApp": {
+						"framework": "convex",
+						"root": "examples/convex-swaghaus"
+					},
+					"discovery": {
+						"hasConvexDir": true,
+						"generalEnv": ["CONVEX_DEPLOY_KEY"]
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"code": "PLAINTEXT_CREDENTIAL_IN_PLAN",
+					"detail": "CONVEX_DEPLOY_KEY must be supplied as a secretRef locator"
+				}
+			}
+		},
+		{
+			"description": "an app root with no convex/ directory is not planned as a Convex app",
+			"request": {
+				"method": "POST",
+				"path": "/deployment/plan",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"webApp": {
+						"framework": "convex",
+						"root": "examples/try-site"
+					},
+					"discovery": {
+						"hasConvexDir": false,
+						"hasAuthConfig": false,
+						"generalEnv": [],
+						"suggestedDeps": []
+					}
+				}
+			},
+			"response": {
+				"status": 409,
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"code": "CONVEX_APP_NOT_FOUND",
+					"detail": "no convex/ directory under examples/try-site"
+				}
+			}
+		}
+	]
+}

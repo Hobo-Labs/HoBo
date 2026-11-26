@@ -1,0 +1,15 @@
+{
+	"consumer": { "name": "HarnessInventoryGate" },
+	"provider": { "name": "ContractHarnessPackage" },
+	"interactions": [
+		{
+			"description": "harness package declares zero service boundaries",
+			"request": { "method": "GET", "path": "/harness/inventory" },
+			"response": {
+				"status": 200,
+				"body": { "ownsServiceBoundary": false }
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

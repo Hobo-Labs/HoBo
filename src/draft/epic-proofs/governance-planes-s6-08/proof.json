@@ -1,0 +1,25 @@
+{
+  "layer": "epic",
+  "slug": "governance-planes-s6-08",
+  "title": "Governance Planes S6-08 — Stage-6 Evidence Rollup",
+  "linear": "HOBO-663",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/capability-indexed-discovery-contract",
+      "src/draft/technical-proofs/crypto-shred-erasure-contract",
+      "src/draft/technical-proofs/data-governance-policy-contract",
+      "src/draft/technical-proofs/guardrail-policy-gate-contract",
+      "src/draft/technical-proofs/hobo-policy-ir-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

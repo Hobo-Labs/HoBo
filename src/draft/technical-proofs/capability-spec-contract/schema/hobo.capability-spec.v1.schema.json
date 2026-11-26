@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hobo.dev/hobo.capability-spec.v1.schema.json",
+  "title": "HoBo Capability Spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider",
+    "reports",
+    "interfaces"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hobo.capability-spec/v1"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+        }
+      }
+    },
+    "costFactsRef": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "capabilityHints": {
+      "type": "object"
+    },
+    "reports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/conformanceReportRef"
+      }
+    },
+    "interfaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capabilityDeclaration"
+      }
+    }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mediaType",
+        "uri",
+        "digest"
+      ],
+      "properties": {
+        "mediaType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uri": {
+          "type": "string",
+          "pattern": "^oci://[^@\\s]+@sha256:[a-f0-9]{64}$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "conformanceReportRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suite",
+        "suiteVersion",
+        "ref"
+      ],
+      "properties": {
+        "suite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "suiteVersion": {
+          "type": "string",
+          "pattern": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+        },
+        "ref": {
+          "$ref": "#/$defs/artifactRef"
+        }
+      }
+    },
+    "capabilityDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interface",
+        "semver",
+        "stability",
+        "conformanceSuite",
+        "conformanceSuiteVersion",
+        "conformanceReportRef"
+      ],
+      "properties": {
+        "interface": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "semver": {
+          "type": "string",
+          "pattern": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+        },
+        "stability": {
+          "enum": [
+            "stable",
+            "preview",
+            "experimental",
+            "deprecated"
+          ]
+        },
+        "conformanceSuite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conformanceSuiteVersion": {
+          "type": "string",
+          "pattern": "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+        },
+        "conformanceReportRef": {
+          "$ref": "#/$defs/artifactRef"
+        }
+      }
+    }
+  }
+}

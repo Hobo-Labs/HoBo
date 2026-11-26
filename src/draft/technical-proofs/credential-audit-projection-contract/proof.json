@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "credential-audit-projection-contract",
+  "title": "CredentialAudit Projection Contract POC",
+  "linear": "HOBO-635",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/identity-event-contract",
+      "src/draft/technical-proofs/snapshot-compaction-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

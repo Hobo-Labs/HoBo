@@ -1,0 +1,44 @@
+{
+  "consumer": { "name": "@hobo/conformance" },
+  "provider": { "name": "component-host-adapter" },
+  "interactions": [
+    {
+      "description": "plan component host against manifest-certified pin",
+      "request": {
+        "method": "POST",
+        "path": "/component-host/plan",
+        "body": {
+          "hostKind": "runtime-local",
+          "hostVersion": "wasmtime/46.0.1",
+          "suite": "@hobo/conformance/component-host"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": { "status": "pass" }
+      }
+    },
+    {
+      "description": "reject incompatible host version",
+      "request": {
+        "method": "POST",
+        "path": "/component-host/plan",
+        "body": {
+          "hostKind": "runtime-local",
+          "hostVersion": "wasmtime/45.0.0"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "component_host.host-version-incompatible",
+          "expectedVersions": ["wasmtime/46.0.1"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "conformance-component-host",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

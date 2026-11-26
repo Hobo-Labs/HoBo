@@ -1,0 +1,42 @@
+{
+	"consumer": {
+		"name": "hobo-gatekeeper"
+	},
+	"provider": {
+		"name": "evals-engine"
+	},
+	"interactions": [
+		{
+			"description": "gatekeeper composition requests the promotion verdict for a scored rubric run",
+			"request": {
+				"method": "GET",
+				"path": "/promotion-verdict",
+				"query": "rubric=rubric%3A%2F%2Fsupport%2Fclassifier%401.0.0"
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"ok": false,
+					"reasons": [
+						{
+							"code": "evals.rubric-failed",
+							"message": "rubric \"rubric://support/classifier@1.0.0\" report is not ok (weighted total 0.5, pass threshold 0.9)"
+						},
+						{
+							"code": "evals.criterion.required-failed",
+							"message": "required criterion \"pii-safe\" failed (score 0)"
+						}
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

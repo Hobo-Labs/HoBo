@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-connector-runtime-broker-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

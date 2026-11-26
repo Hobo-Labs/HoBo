@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "usage-metering-scope-contract",
+  "experienceType": "cx",
+  "title": "Usage Metering Scope Contract",
+  "linear": "HOBO-417",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/usage-metering.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

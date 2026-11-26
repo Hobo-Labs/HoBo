@@ -1,0 +1,19 @@
+{
+  "_comment": "Illustrative isolated connection shape for Hobo-Labs/HoBo after org transfer. Live policy is authoritative in the relay database (HOBO_CI_CONFIG_JSON seed); apply via hobo ci enable or connectIsolatedRepository.",
+  "accountId": "REPLACE_WITH_RELAY_ACCOUNT_ID",
+  "repository": "Hobo-Labs/HoBo",
+  "repositoryId": 1274791462,
+  "installationId": "REPLACE_WITH_GITHUB_APP_INSTALLATION_ID",
+  "isolatedOnly": true,
+  "acceptAllMatchingRepositoryJobs": true,
+  "trustedRepositoryAcknowledged": true,
+  "publicRepositoryAcknowledged": true,
+  "allowAllPullRequests": false,
+  "allowedEvents": [],
+  "allowedRefs": [],
+  "bridgeWorkflow": "",
+  "bridgeRef": "",
+  "bridgeSha": "0000000000000000000000000000000000000000",
+  "runnerGroupId": 1,
+  "dispatcherActorId": 0
+}

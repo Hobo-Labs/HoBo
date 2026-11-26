@@ -1,0 +1,18 @@
+{
+  "layer": "technical",
+  "slug": "auth-flag-readset-contract",
+  "title": "Auth/Flag Read-Set Contract POC",
+  "linear": "HOBO-269",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

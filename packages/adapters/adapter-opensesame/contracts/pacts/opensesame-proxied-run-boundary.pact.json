@@ -1,0 +1,388 @@
+{
+  "consumer": {
+    "name": "HoboOpenSesameAdapter"
+  },
+  "provider": {
+    "name": "OpenSesameProxiedRun"
+  },
+  "interactions": [
+    {
+      "description": "a bounded vercel binding: the child holds an osr_ surrogate, a proxy and a CA, and the run ends as the child does",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "surrogate-delivered",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 0,
+          "kind": "child_exit",
+          "childRan": true,
+          "childHolds": {
+            "VERCEL_TOKEN": "surrogate"
+          },
+          "childHasProxy": true,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "a surrogate with no bounded scope is refused by the plugin before anything is issued",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "scope-unbounded",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 1,
+          "kind": "scope_unbounded",
+          "childRan": false,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "the surrogate-proxy plugin is not installed: the run starts, exits 0, and the child holds a placeholder (never a false green)",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "plugin-absent",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 424,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 0,
+          "kind": "placeholders_only",
+          "childRan": true,
+          "childHolds": {
+            "VERCEL_TOKEN": "placeholder"
+          },
+          "childHasProxy": false,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "a surrogate sent to a host that is not its provider's: the run is revoked, the child is stopped and the status is 77",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "misdirected",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 77,
+          "kind": "tripwire",
+          "childRan": true,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "opensesame is sent SIGTERM: the run is revoked, the child is stopped and the status is 143",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "sigterm",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 410,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 143,
+          "kind": "signalled",
+          "childRan": true,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "no sealed entry for the connection: the child holds a placeholder and the run says where to store the token",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "no-sealed-entry",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 424,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 0,
+          "kind": "placeholders_only",
+          "childRan": true,
+          "childHolds": {
+            "VERCEL_TOKEN": "placeholder"
+          },
+          "childHasProxy": false,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "the plugin changed since it was pinned: the run fails and does not fall back to placeholders",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "plugin-changed",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 1,
+          "kind": "plugin_pin_mismatch",
+          "childRan": false,
+          "tokenLeaked": false
+        }
+      }
+    },
+    {
+      "description": "the sealed entry cannot be read with this passphrase: the child does not start",
+      "request": {
+        "method": "POST",
+        "path": "/dev/run",
+        "body": {
+          "scenario": "wrong-passphrase",
+          "bindings": {
+            "bindings": [
+              {
+                "locator": "hobo-token://vercel/deploy",
+                "connection": "conn://acme/vercel",
+                "provider": "vercel",
+                "env_name": "VERCEL_TOKEN",
+                "paths": [
+                  "/v9/projects",
+                  "/v13/deployments"
+                ],
+                "methods": [
+                  "GET",
+                  "POST"
+                ],
+                "projection": "legacy-token"
+              }
+            ]
+          },
+          "argv": [
+            "node",
+            "child.mts"
+          ]
+        }
+      },
+      "response": {
+        "status": 423,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "exitCode": 1,
+          "kind": "store_unreadable",
+          "childRan": false,
+          "tokenLeaked": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "tokenLeaked": "tokenLeaked is false by construction against the stand-in binary, which never reads the dummy that stands for the sealed token; it is evidence only in the real lane (test/real), where the token is sealed by `opensesame pass insert`, redeemed once at a recording upstream, and swept for in the child's environment and arguments, the output, the outcome, every file under the sandbox and every process."
+  }
+}

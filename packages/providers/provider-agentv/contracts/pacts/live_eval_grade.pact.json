@@ -1,0 +1,50 @@
+{
+  "consumer": {
+    "name": "TrainingLoopConsumer"
+  },
+  "provider": {
+    "name": "AgentVLiveEvalProvider"
+  },
+  "interactions": [
+    {
+      "description": "training loop requests a live-eval grade for one stored trajectory",
+      "request": {
+        "method": "POST",
+        "path": "/live-eval/grade",
+        "body": {
+          "id": "t1",
+          "subject": {
+            "method": "classifyTicket",
+            "contractRef": "contract://support/classification@1.0.0"
+          },
+          "reward": {
+            "source": "live-eval",
+            "rubricRef": "rubric://support/classifier@1.0.0"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "grade": {
+            "caseId": "t1",
+            "score": 1,
+            "namedScores": { "categoryCorrect": 1, "wellFormed": 1 },
+            "pass": true
+          },
+          "reward": {
+            "source": "live-eval",
+            "rubricRef": "rubric://support/classifier@1.0.0",
+            "eventId": "t1",
+            "score": 1
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

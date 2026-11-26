@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "auth-port-rbac-resolution-contract",
+  "title": "Auth Port RBAC Resolution Contract",
+  "linear": "HOBO-238",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/control-plane-authz-cache-contract",
+      "src/draft/technical-proofs/hobo-principal-ref-contract",
+      "src/draft/technical-proofs/rbac-role-binding-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

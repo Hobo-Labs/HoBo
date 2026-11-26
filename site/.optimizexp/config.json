@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "project",
+  "projectId": "site",
+  "label": "Public site (Astro)",
+  "defaults": {
+    "experiences": ["ux"],
+    "driver": "web",
+    "maxPersonas": 6,
+    "maxFeatures": 8
+  },
+  "personas": {
+    "requireSchemaVersion": 2,
+    "defaultPriority": 40,
+    "prefer": ["product-end-user", "product-designer", "designer", "end-user"],
+    "exclude": []
+  },
+  "features": {
+    "defaultDriver": "web",
+    "includeProjectFeatureGlobs": true,
+    "prefer": ["public-site-first-impression", "design-system-contract"],
+    "exclude": []
+  },
+  "evidence": {
+    "preferVideo": true,
+    "overwritePrimary": true,
+    "baseUrl": "http://localhost:4321",
+    "nativeCaptureEnv": "OPTIMIZEXP_NATIVE_CAPTURE"
+  },
+  "surfaces": {
+    "primaryUrl": "http://localhost:4321",
+    "commands": {
+      "dev": "pnpm --filter site dev",
+      "build": "pnpm --filter site build",
+      "design:lint": "pnpm run design:lint"
+    }
+  },
+  "gitignore": {
+    "enabled": true,
+    "managed": true,
+    "ignore": {
+      "evidenceMedia": true,
+      "evidenceAll": false,
+      "osJunk": true
+    },
+    "extra": [],
+    "negate": []
+  },
+  "notes": [
+    "Site is UX-primary: default experiences [ux] when focusing --project site.",
+    "Personas and features for the public site may live under site/.optimizexp/.",
+    "Project .gitignore ignores large evidence media (mp4/webm/frames)."
+  ]
+}

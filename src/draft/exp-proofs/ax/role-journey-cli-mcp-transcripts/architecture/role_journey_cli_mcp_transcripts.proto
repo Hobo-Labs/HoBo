@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package hobo.draft.role_journey_cli_mcp_transcripts.v1;
+
+message RoleJourneyCliMcpTranscripts {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  string source_quickstart_issue = 5;
+  string source_quickstart_proof = 6;
+  repeated string design_refs = 7;
+  repeated string scope_out = 8;
+  repeated RoleJourney journeys = 9;
+}
+
+message RoleJourney {
+  string role = 1;
+  string title = 2;
+  string audience = 3;
+  string intent = 4;
+  string primary_quickstart_fixture_id = 5;
+  repeated string coverage = 6;
+  repeated string negative_paths = 7;
+  repeated RoleJourneyStep sequence = 8;
+}
+
+message RoleJourneyStep {
+  string id = 1;
+  string command = 2;
+  string expected_terminal_output = 3;
+  string quickstart_fixture_id = 4;
+  string proof_mode = 5;
+  RoleJourneyJsonResult json_result = 6;
+  RoleJourneyMcpResult mcp_result = 7;
+  string support_handoff = 8;
+  string accessibility_note = 9;
+}
+
+message RoleJourneyJsonResult {
+  string schema = 1;
+  string status = 2;
+  string fixture_id = 3;
+  string proof_mode = 4;
+  string summary = 5;
+  string support_handoff = 6;
+}
+
+message RoleJourneyMcpResult {
+  string tool = 1;
+  string status = 2;
+  string fixture_id = 3;
+  string proof_mode = 4;
+  string result_schema = 5;
+}
+
+message RoleJourneyScopeDecision {
+  bool allowed = 1;
+  string reason = 2;
+}

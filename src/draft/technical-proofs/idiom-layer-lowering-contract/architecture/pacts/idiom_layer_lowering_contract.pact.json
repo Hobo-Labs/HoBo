@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IdiomLayerLoweringContractConsumer"
+  },
+  "provider": {
+    "name": "IdiomLayerLoweringContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Idiom Layer Lowering Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/idiom-layer-lowering-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.idiom_layer_lowering_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "hobo-intent-alignment-gap-remediation"
+  },
+  "provider": {
+    "name": "rem-038-stage6-notify-separation"
+  },
+  "interactions": [
+    {
+      "description": "accept separated notify and Plan 46 governance lanes",
+      "providerState": "stage-6 tables split notify port from governance planes",
+      "request": {
+        "method": "POST",
+        "path": "/stage6/notify-separation/validate",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-701",
+          "drift": "DRIFT-010"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "ok": true,
+          "errors": []
+        }
+      }
+    }
+  ]
+}

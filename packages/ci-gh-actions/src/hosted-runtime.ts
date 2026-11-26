@@ -1,0 +1,744 @@
+import { toJsonString } from "@bufbuild/protobuf";
+import { ACTIVE_STATES, type CiEvent, type Job, type Lease } from "@hobo/ci";
+import { z } from "zod";
+import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
+import { createAdmissionOrder } from "./admission-order.js";
+import { type GithubTransport, getJob } from "./github.js";
+import {
+	HostedRelay,
+	type HostedRelayStore,
+	type IsolatedRunnerHost,
+	type ServedRunnerLabelCache,
+	type TrunkWaitCache,
+} from "./hosted-relay.js";
+import { drainWebhookInbox, type InboxDrainOptions } from "./inbox-drain.js";
+import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
+import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
+import type { JobDurations } from "./job-durations.js";
+import type { JobPickupMetadataCache } from "./job-pickup.js";
+import {
+	hasOutstandingBoxCustody,
+	runnerCustody,
+} from "./job-runner-custody.js";
+import type { MergeQueuePositionSource } from "./merge-queue-order.js";
+import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
+import type { IdentityVerifier } from "./oidc.js";
+import type { PeerCapacityWitness } from "./peer-capacity.js";
+import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
+import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
+
+/** The inbox stores only signature-verified GitHub delivery bytes. */
+export interface HostedInboxStore extends HostedRelayStore {
+	ready(): Promise<boolean>;
+	latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]>;
+	acceptWebhook(input: {
+		deliveryId: string;
+		event: string;
+		installationId: number;
+		repositoryId: number;
+		rawBody: Uint8Array;
+		receivedAt: string;
+	}): Promise<{ duplicate: boolean }>;
+	acceptIgnoredWebhook(input: {
+		deliveryId: string;
+		event: string;
+		installationId: number;
+		repositoryId: number;
+		rawBody: Uint8Array;
+		receivedAt: string;
+	}): Promise<{ duplicate: boolean }>;
+	claimWebhook(
+		now: string,
+		leaseMs: number,
+	): Promise<
+		| undefined
+		| {
+				deliveryId: string;
+				event: string;
+				rawBody: Uint8Array;
+				token: string;
+		  }
+	>;
+	ackWebhook(deliveryId: string, token: string): Promise<boolean>;
+	failWebhook(
+		deliveryId: string,
+		token: string,
+		now: string,
+	): Promise<"retry" | "quarantined" | "stale">;
+}
+const DeliveryIdentity = z.object({
+	installation: z.object({
+		id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+	}),
+	repository: z.object({
+		id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+		full_name: z.string().min(3),
+	}),
+});
+const QueuedJobDelivery = z.object({
+	action: z.literal("queued"),
+	workflow_job: z.object({
+		id: z.number().int().positive(),
+		run_attempt: z.number().int().positive().optional(),
+	}),
+});
+
+/** A lease's lifecycle step, as a host schedules it (ADR-0179: one queue message per step). */
+export type HostedLeaseStepKind =
+	| "dispatch-check"
+	| "claim-timeout"
+	| "reconcile";
+
+/** An outcome after which the relay should admit pending work. */
+function wantsDispatch(outcome: string): boolean {
+	return (
+		outcome === "queued" ||
+		outcome === "requeued" ||
+		outcome.startsWith("reserved:")
+	);
+}
+
+/** A lease run by an isolated host (Vercel Sandbox or a box worker) under a sandbox name. */
+function isolatedSandboxLease(lease: Lease): boolean {
+	return (
+		(lease.provider === "vercel" ||
+			lease.provider === "kubernetes" ||
+			lease.provider === "hobo-box-worker") &&
+		!!lease.sandboxName
+	);
+}
+
+/** A lease whose state records an in-flight external call. */
+function holdsIntent(lease: Lease): boolean {
+	return (
+		lease.state === "dispatching" ||
+		lease.state === "claiming" ||
+		(lease.state === "dispatched" &&
+			lease.provider === "vercel" &&
+			!!lease.sandboxName)
+	);
+}
+
+/**
+ * How long an in-flight intent may stay open before the lease is uncertain:
+ * two minutes, or 17 for a Sandbox operation (a Vercel Function can run for
+ * up to 800 seconds).
+ */
+export function intentCutoffMs(sandbox: boolean): number {
+	return sandbox ? 1_020_000 : 120_000;
+}
+
+export type HostedRelayTickTiming = Readonly<{
+	totalMs: number;
+	deliveriesMs: number;
+	leaseReconcileMs: number;
+	dispatchMs: number;
+	leaseCount: number;
+	pendingCount: number;
+}>;
+
+/** Public API and bounded worker share the durable inbox and lease authority. */
+export function createHostedRelayRuntime(options: {
+	store: HostedInboxStore;
+	github: GithubTransport;
+	identity: IdentityVerifier;
+	webhookSecret: string;
+	isolatedHost?: IsolatedRunnerHost;
+	denyUnisolated?: boolean;
+	/** Shared across ticks; a relay is rebuilt per tick and would forget it. */
+	jobDurations?: JobDurations;
+	/** See `HostedRelay`: maximum active leases for shared-label runners. */
+	generalLeaseLimit?: number;
+	/** See `HostedRelay`: maximum distinct merge groups with active leases. */
+	mergeGroupLeaseLimit?: number;
+	jobPickupMetadata?: JobPickupMetadataCache;
+	/** See `HostedRelay`: whether shared-label runs may borrow trunk slots. */
+	lendTrunkSlots?: boolean;
+	/** See `HostedRelay`: local trunk slot count for fleet deferral. */
+	trunkSlots?: number;
+	memoryAdmission?: WorkerMemoryAdmission;
+	storageAdmission?: WorkerStorageAdmission;
+	storageJobReserve?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["storageJobReserve"];
+	mergeQueuePositions?: MergeQueuePositionSource;
+	headroomTrunkOverflow?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["headroomTrunkOverflow"];
+	headroomFleetDeferMs?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["headroomFleetDeferMs"];
+	fleetCapacity?: Readonly<{
+		snapshot: () => Promise<PeerCapacityWitness & { hoboFreeSlots: number }>;
+	}>;
+	/** Release reservations that never launch within policy bounds. */
+	unlaunchedReservationRelease?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["unlaunchedReservationRelease"];
+	parallelLaunchCapacity?: ConstructorParameters<
+		typeof HostedRelay
+	>[0]["parallelLaunchCapacity"];
+	/** Recovery-only access never admits work or starts a runner. */
+	isolatedRecoveryHost?: Pick<IsolatedRunnerHost, "reconcile">;
+	control: (request: Request) => Promise<Response | undefined>;
+	onTickTiming?: (timing: HostedRelayTickTiming) => void;
+	/** A lease whose reconciliation threw this tick; the lease is retained and retried. */
+	onLeaseFailure?: (leaseId: string) => void;
+	inboxDeliveryTimeoutMs?: number;
+	inboxDrainBudgetMs?: number;
+	onInboxDeliveryEvent?: (
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
+		fields: Readonly<{
+			deliveryId: string;
+			webhookEvent: string;
+			durationMs: number;
+			reason: string;
+		}>,
+	) => void;
+	now?: () => string;
+}) {
+	const now = options.now ?? (() => new Date().toISOString());
+	const logInboxDelivery = (
+		event: "hobo_ci_inbox_delivery_failed" | "hobo_ci_inbox_delivery_timed_out",
+		fields: Readonly<{
+			deliveryId: string;
+			webhookEvent: string;
+			durationMs: number;
+			reason: string;
+		}>,
+	) => {
+		if (options.onInboxDeliveryEvent) {
+			options.onInboxDeliveryEvent(event, fields);
+			return;
+		}
+		console.error(JSON.stringify({ event, ...fields }));
+	};
+	const inboxDrainBase = (): InboxDrainOptions => {
+		const shared = {
+			store: options.store,
+			processWebhook: async (rawBody: Buffer, event: string) =>
+				(await relay()).processWebhook(rawBody, event),
+			now,
+			onDeliveryEvent: logInboxDelivery,
+		};
+		if (
+			options.inboxDeliveryTimeoutMs !== undefined &&
+			options.inboxDrainBudgetMs !== undefined
+		)
+			return {
+				...shared,
+				deliveryTimeoutMs: options.inboxDeliveryTimeoutMs,
+				budgetMs: options.inboxDrainBudgetMs,
+			};
+		if (options.inboxDeliveryTimeoutMs !== undefined)
+			return {
+				...shared,
+				deliveryTimeoutMs: options.inboxDeliveryTimeoutMs,
+			};
+		if (options.inboxDrainBudgetMs !== undefined)
+			return { ...shared, budgetMs: options.inboxDrainBudgetMs };
+		return shared;
+	};
+	const lastDuplicateRecheck = new Map<string, number>();
+	const sharedLabelTrunkJobs = new Set<string>();
+	const mergeGroupCapWaitJobs = new Set<string>();
+	const servedRunnerLabels: ServedRunnerLabelCache = new Map();
+	const trunkWaits: TrunkWaitCache = new Map();
+	const jobPickupMetadata: JobPickupMetadataCache =
+		options.jobPickupMetadata ?? new Map();
+	const admissionOrder = createAdmissionOrder(
+		options.github,
+		options.jobDurations,
+		options.mergeQueuePositions,
+	);
+	const offlineJitRecovery = createOfflineJitJobRecovery({
+		github: options.github,
+		now: () => Date.parse(now()),
+	});
+	async function relay() {
+		const state = await options.store.configuration();
+		if (!state?.configuration) throw new Error("configuration unavailable");
+		const relayOptions: ConstructorParameters<typeof HostedRelay>[0] = {
+			config: state.configuration,
+			store: options.store,
+			github: options.github,
+			identity: options.identity,
+			webhookSecret: options.webhookSecret,
+			// Every tick ends in `dispatchPending`, which reserves in admission order.
+			deferReservation: true,
+			admissionOrder,
+			sharedLabelTrunkJobs,
+			mergeGroupCapWaitJobs,
+			servedRunnerLabels,
+			trunkWaits,
+			jobPickupMetadata,
+			offlineJitRecovery,
+			now,
+		};
+		if (options.denyUnisolated) relayOptions.denyUnisolated = true;
+		if (options.isolatedHost) relayOptions.isolatedHost = options.isolatedHost;
+		if (options.jobDurations) relayOptions.jobDurations = options.jobDurations;
+		if (options.generalLeaseLimit !== undefined)
+			relayOptions.generalLeaseLimit = options.generalLeaseLimit;
+		if (options.mergeGroupLeaseLimit !== undefined)
+			relayOptions.mergeGroupLeaseLimit = options.mergeGroupLeaseLimit;
+		if (options.lendTrunkSlots !== undefined)
+			relayOptions.lendTrunkSlots = options.lendTrunkSlots;
+		if (options.trunkSlots !== undefined)
+			relayOptions.trunkSlots = options.trunkSlots;
+		if (options.memoryAdmission)
+			relayOptions.memoryAdmission = options.memoryAdmission;
+		if (options.storageAdmission)
+			relayOptions.storageAdmission = options.storageAdmission;
+		if (options.storageJobReserve)
+			relayOptions.storageJobReserve = options.storageJobReserve;
+		if (options.headroomTrunkOverflow)
+			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
+		if (options.headroomFleetDeferMs !== undefined)
+			relayOptions.headroomFleetDeferMs = options.headroomFleetDeferMs;
+		if (options.fleetCapacity)
+			relayOptions.fleetCapacity = options.fleetCapacity;
+		if (options.unlaunchedReservationRelease)
+			relayOptions.unlaunchedReservationRelease =
+				options.unlaunchedReservationRelease;
+		if (options.parallelLaunchCapacity)
+			relayOptions.parallelLaunchCapacity = options.parallelLaunchCapacity;
+		return new HostedRelay(relayOptions);
+	}
+	/**
+	 * A function can die after committing intent and before recording the
+	 * external response. An in-flight intent older than its cutoff makes the
+	 * lease uncertain; it is never retried blind. Returns the leases as they
+	 * stand afterwards.
+	 */
+	async function recoverStaleIntents(leases: readonly Lease[]) {
+		const events = await options.store.latestLeaseIntents(
+			leases.filter(holdsIntent).map((lease) => lease.id),
+		);
+		const out: Lease[] = [];
+		for (const lease of leases) {
+			if (!holdsIntent(lease)) {
+				out.push(lease);
+				continue;
+			}
+			const sandbox = isolatedSandboxLease(lease);
+			const kind =
+				lease.state === "dispatching"
+					? "ci.DispatchRequested"
+					: lease.state === "claiming"
+						? "ci.RunnerClaimed"
+						: "ci.SandboxCreated";
+			// A Vercel Function can run for up to 800 seconds. Wait longer
+			// before treating its in-flight Sandbox operation as abandoned.
+			const cutoff = Date.parse(now()) - intentCutoffMs(sandbox);
+			const intent = [...events]
+				.reverse()
+				.find((event) => event.leaseId === lease.id && event.type === kind);
+			if (
+				!intent ||
+				!Number.isFinite(Date.parse(intent.at)) ||
+				Date.parse(intent.at) > cutoff
+			) {
+				out.push(lease);
+				continue;
+			}
+			const uncertain = await options.store.transition(
+				lease.id,
+				[lease.state],
+				(entry) => {
+					entry.state = "uncertain";
+				},
+				"ci.LeaseUncertain",
+				now(),
+			);
+			out.push(uncertain ?? lease);
+		}
+		return out;
+	}
+	/**
+	 * Reconcile one lease against its host, when its state calls for it:
+	 * false when there was nothing to do. Throws what the host threw; the
+	 * caller decides whether a failure is retried now or later.
+	 */
+	async function reconcileOne(
+		entry: Lease,
+		controller: HostedRelay,
+	): Promise<boolean> {
+		let lease = entry;
+		if (
+			!["running", "dispatched", "uncertain"].includes(lease.state) &&
+			!(
+				!options.isolatedHost &&
+				options.isolatedRecoveryHost &&
+				lease.provider === "vercel" &&
+				!!lease.sandboxName &&
+				["dispatching", "claiming"].includes(lease.state)
+			)
+		)
+			return false;
+		if (
+			(lease.provider === "vercel" ||
+				lease.provider === "kubernetes" ||
+				lease.provider === "hobo-box-worker") &&
+			lease.sandboxName
+		) {
+			const host = options.isolatedHost ?? options.isolatedRecoveryHost;
+			// An uncertain lease whose runner GitHub has assigned the job to, and
+			// still shows running it, is adopted rather than stopped: stopping it
+			// would fail the job. It is stopped and settled once GitHub reports
+			// the job finished (a lease rebuilt from a lost cache is the case).
+			if (
+				host &&
+				options.isolatedHost &&
+				lease.state === "uncertain" &&
+				lease.actualJobId > 0 &&
+				lease.runnerName &&
+				(await assignedJobRunning(lease))
+			)
+				return true;
+			if (host) {
+				let assignedJobCompleted = false;
+				if (
+					options.isolatedHost &&
+					lease.state !== "uncertain" &&
+					lease.runnerName
+				) {
+					const boxWorker =
+						lease.provider === "kubernetes" ||
+						lease.provider === "hobo-box-worker";
+					if (boxWorker) {
+						const at = options.now?.() ?? new Date().toISOString();
+						const custody = await adoptRunnerAssignment(
+							options.store,
+							options.github,
+							lease,
+							at,
+						);
+						lease = custody.lease;
+						if (custody.holdsActive) {
+							assignedJobCompleted = false;
+						} else if (
+							custody.assignment?.status === "completed" &&
+							custody.assignment.jobId ===
+								(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId)
+						) {
+							assignedJobCompleted = true;
+						} else if (
+							lease.actualJobId > 0 ||
+							servedRunnerLabels.get(`${lease.repository}:${lease.jobId}`) ===
+								TRUNK_RUNNER_LABEL
+						) {
+							assignedJobCompleted = await assignedJobFinished(lease);
+						}
+					} else if (
+						lease.actualJobId > 0 ||
+						servedRunnerLabels.get(`${lease.repository}:${lease.jobId}`) ===
+							TRUNK_RUNNER_LABEL
+					) {
+						assignedJobCompleted = await assignedJobFinished(lease);
+					}
+				}
+				await host.reconcile(
+					lease.id,
+					!options.isolatedHost ||
+						lease.state === "uncertain" ||
+						assignedJobCompleted,
+				);
+			}
+			return true;
+		}
+		if (lease.hostRunId > 0)
+			await controller.reconcile(lease.id, lease.hostRunId);
+		else await controller.discover(lease.id);
+		return true;
+	}
+	/** Whether GitHub shows the lease's job in progress on the lease's runner. */
+	async function assignedJobRunning(lease: Lease): Promise<boolean> {
+		try {
+			const job = await getJob(
+				options.github,
+				lease.installationId,
+				lease.repository,
+				lease.actualJobId,
+			);
+			return (
+				job.id === lease.actualJobId &&
+				job.status === "in_progress" &&
+				job.runner_name === lease.runnerName
+			);
+		} catch {
+			// An unanswered read keeps the job running: stopping is the step that
+			// cannot be undone, so it waits for an answer.
+			return true;
+		}
+	}
+	/** Whether GitHub shows the lease's job completed on the lease's runner. */
+	async function assignedJobFinished(lease: Lease): Promise<boolean> {
+		const jobId = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+		try {
+			const job = await getJob(
+				options.github,
+				lease.installationId,
+				lease.repository,
+				jobId,
+			);
+			return (
+				job.id === jobId &&
+				job.status === "completed" &&
+				job.runner_name === lease.runnerName
+			);
+		} catch {
+			// Failed or ambiguous GitHub reads cannot authorize a stop.
+			return false;
+		}
+	}
+	return {
+		admissionOrder,
+		async ingestWebhook(input: {
+			deliveryId: string;
+			event: "workflow_job" | "workflow_run";
+			rawBody: Uint8Array;
+			receivedAt: string;
+		}) {
+			const body = JSON.parse(Buffer.from(input.rawBody).toString("utf8"));
+			const identity = DeliveryIdentity.parse(body);
+			const state = await options.store.configuration();
+			if (!state?.configuration) throw new Error("configuration unavailable");
+			if (
+				!state.configuration.connections.some(
+					(connection) =>
+						connection.installationId === identity.installation.id &&
+						connection.repositoryId === identity.repository.id &&
+						connection.repository.toLowerCase() ===
+							identity.repository.full_name.toLowerCase(),
+				)
+			) {
+				await options.store.acceptIgnoredWebhook({
+					...input,
+					installationId: identity.installation.id,
+					repositoryId: identity.repository.id,
+				});
+				return "ignored" as const;
+			}
+			const result = await options.store.acceptWebhook({
+				...input,
+				installationId: identity.installation.id,
+				repositoryId: identity.repository.id,
+			});
+			if (!result.duplicate) return "accepted" as const;
+			if (input.event !== "workflow_job") return "duplicate" as const;
+			const queued = QueuedJobDelivery.safeParse(body);
+			if (!queued.success) return "duplicate" as const;
+			const jobId = queued.data.workflow_job.id;
+			const runAttempt = queued.data.workflow_job.run_attempt;
+			const matchesAttempt = (attempt: number) =>
+				runAttempt === undefined || attempt === runAttempt;
+			const [pending, leases] = await Promise.all([
+				options.store.pendingJobs(),
+				options.store.activeLeases(),
+			]);
+			const covered =
+				pending.some(
+					(job) =>
+						job.repositoryId === identity.repository.id &&
+						job.id === jobId &&
+						matchesAttempt(job.runAttempt),
+				) ||
+				leases.some(
+					(lease) =>
+						lease.repositoryId === identity.repository.id &&
+						matchesAttempt(lease.runAttempt) &&
+						((lease.jobId === jobId &&
+							(lease.actualJobId === 0 || lease.actualJobId === jobId)) ||
+							lease.actualJobId === jobId),
+				);
+			if (covered) return "duplicate" as const;
+			if (
+				leases.some((lease) =>
+					hasOutstandingBoxCustody(
+						lease,
+						identity.repository.id,
+						jobId,
+						runAttempt,
+					),
+				)
+			)
+				return "duplicate" as const;
+			const nowMs = Date.parse(now());
+			const registrationPending = leases.some((lease) =>
+				hasOutstandingBoxCustody(
+					lease,
+					identity.repository.id,
+					jobId,
+					runAttempt,
+				),
+			);
+			const recheckMs = registrationPending ? 300_000 : 60_000;
+			const recheckKey = `${identity.repository.id}:${jobId}:${runAttempt ?? 0}`;
+			for (const [key, lastMs] of lastDuplicateRecheck) {
+				if (nowMs - lastMs >= recheckMs) lastDuplicateRecheck.delete(key);
+			}
+			const lastRecheckMs = lastDuplicateRecheck.get(recheckKey);
+			if (lastRecheckMs !== undefined && nowMs - lastRecheckMs < recheckMs)
+				return "duplicate" as const;
+			lastDuplicateRecheck.set(recheckKey, nowMs);
+			try {
+				const current = await getJob(
+					options.github,
+					identity.installation.id,
+					identity.repository.full_name,
+					jobId,
+				);
+				if (
+					runnerCustody(current.runner_name) === "foreign" &&
+					(current.status === "queued" || current.status === "in_progress")
+				) {
+					const controller = await relay();
+					await controller.processWebhook(
+						Buffer.from(input.rawBody),
+						input.event,
+					);
+					return "foreign-runner" as const;
+				}
+			} catch {
+				// GitHub read failure: fall through to duplicate recheck.
+			}
+			try {
+				const recheck = await (await relay()).processWebhook(
+					Buffer.from(input.rawBody),
+					input.event,
+				);
+				if (recheck === "foreign-runner") return "foreign-runner" as const;
+				return recheck === "queued"
+					? ("requeued" as const)
+					: ("duplicate" as const);
+			} catch {
+				// Fail-open for poll recovery: coalesce must not strand jobs on GitHub.
+				return "requeued" as const;
+			}
+		},
+		async claim(id: string, token: string): Promise<Response> {
+			const result = await (await relay()).claim(id, token);
+			return new Response(toJsonString(JitBootstrapResponseSchema, result), {
+				headers: {
+					"Content-Type": "application/json",
+					"Cache-Control": "no-store",
+				},
+			});
+		},
+		control: options.control,
+		async ready() {
+			return (
+				(await options.store.ready()) &&
+				(await options.store.configuration())?.configuration !== undefined
+			);
+		},
+		/**
+		 * One verified delivery a queue pushed (a host with no inbox): process
+		 * it, then admit what it queued. Throws when processing fails, so the
+		 * queue redelivers it.
+		 */
+		async processDelivery(delivery: {
+			event: "workflow_job" | "workflow_run";
+			rawBody: Uint8Array;
+		}): Promise<string> {
+			const controller = await relay();
+			const outcome = await controller.processWebhook(
+				Buffer.from(delivery.rawBody),
+				delivery.event,
+			);
+			if (wantsDispatch(outcome)) await controller.dispatchPending();
+			return outcome;
+		},
+		/**
+		 * One lifecycle step of one lease, in place of a scan over every lease:
+		 * recover a stale intent, then either admit pending work (a lease
+		 * still `reserved` at its dispatch check) or reconcile the lease with
+		 * its host. Throws what the host threw.
+		 */
+		async step(lease: Lease, kind: HostedLeaseStepKind): Promise<void> {
+			if (!ACTIVE_STATES.has(lease.state)) return;
+			const [current] = await recoverStaleIntents([lease]);
+			if (!current || !ACTIVE_STATES.has(current.state)) return;
+			const controller = await relay();
+			if (current.state === "reserved") {
+				if (kind === "dispatch-check") await controller.dispatchPending();
+				return;
+			}
+			await reconcileOne(current, controller);
+		},
+		/**
+		 * Process a bounded inbox batch, then drain and inspect known leases.
+		 * With `admit: false` (a draining worker) it only inspects leases: no
+		 * delivery is taken and no pending job is reserved or launched.
+		 */
+		async drainInbox(tickOptions: { maxDeliveries?: number } = {}) {
+			if (tickOptions.maxDeliveries === undefined)
+				return drainWebhookInbox(inboxDrainBase());
+			return drainWebhookInbox({
+				...inboxDrainBase(),
+				maxDeliveries: tickOptions.maxDeliveries,
+			});
+		},
+		async tick(tickOptions: { maxDeliveries?: number; admit?: boolean } = {}) {
+			const tickStartedAt = Date.now();
+			const admit = tickOptions.admit ?? true;
+			const limit = admit ? (tickOptions.maxDeliveries ?? 10) : 0;
+			if (!Number.isInteger(limit) || limit < 0 || limit > 50)
+				throw new Error("invalid delivery batch size");
+			// A function can die after committing intent and before recording the
+			// external response. Old in-flight intent becomes uncertain, never retried.
+			await recoverStaleIntents(await options.store.activeLeases());
+			let ingressWantsDispatch = false;
+			let deliveriesMs = 0;
+			if (limit > 0) {
+				const drain = await drainWebhookInbox({
+					...inboxDrainBase(),
+					maxDeliveries: limit,
+					onIngressOutcome: (outcome) => {
+						if (wantsDispatch(outcome)) ingressWantsDispatch = true;
+					},
+				});
+				deliveriesMs = drain.deliveriesMs;
+				ingressWantsDispatch = drain.ingressWantsDispatch;
+			}
+			const controller = await relay();
+			let earlyDispatchCount = 0;
+			if (admit && ingressWantsDispatch)
+				earlyDispatchCount = await controller.dispatchPending();
+			const leaseReconcileStartedAt = Date.now();
+			const activeLeases = await options.store.activeLeases();
+			let reconcileDispatched = false;
+			for (const lease of activeLeases) {
+				try {
+					if (await reconcileOne(lease, controller)) reconcileDispatched = true;
+				} catch {
+					/* Retain ambiguous reservations until a later verified reconciliation. */
+					reconcileDispatched = true;
+					options.onLeaseFailure?.(lease.id);
+				}
+			}
+			const leaseReconcileMs = Date.now() - leaseReconcileStartedAt;
+			const dispatchStartedAt = Date.now();
+			let lateDispatchCount = 0;
+			if (admit && (!ingressWantsDispatch || reconcileDispatched))
+				lateDispatchCount = await controller.dispatchPending();
+			await offlineJitRecovery.reconcile();
+			const pendingCount = admit ? earlyDispatchCount + lateDispatchCount : 0;
+			const dispatchMs = Date.now() - dispatchStartedAt;
+			const totalMs = Date.now() - tickStartedAt;
+			if (totalMs > 5_000)
+				options.onTickTiming?.({
+					totalMs,
+					deliveriesMs,
+					leaseReconcileMs,
+					dispatchMs,
+					leaseCount: activeLeases.length,
+					pendingCount,
+				});
+		},
+		clearTrunkWait(job: Pick<Job, "repository" | "id" | "runAttempt">) {
+			trunkWaits.delete(`${job.repository}:${job.id}:${job.runAttempt}`);
+		},
+	};
+}

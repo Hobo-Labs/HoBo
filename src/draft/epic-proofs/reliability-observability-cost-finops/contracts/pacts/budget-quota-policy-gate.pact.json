@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "BudgetQuotaPolicyGate"
+  },
+  "interactions": [
+    {
+      "description": "allow degraded execution when spend velocity crosses cost availability tier",
+      "providerStates": [
+        {
+          "name": "camp spend is above reduced-tier threshold"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/finops/policy-gate",
+        "body": {
+          "scope": "tenant-a/camp-prod",
+          "costEstimateUsd": 1,
+          "currentSpendUsd": 70
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "effect": "allow-degraded",
+          "obligation": "spend.degradation-required",
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

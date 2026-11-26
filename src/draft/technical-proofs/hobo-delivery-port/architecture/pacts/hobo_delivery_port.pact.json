@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "HoboDeliveryPortConsumer"
+  },
+  "provider": {
+    "name": "HoboDeliveryPortBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Hobo Delivery Port boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/hobo-delivery-port/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.hobo_delivery_port/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package hobo.bindings.v1;
+
+// Portable capability bindings. A binding is what a workload consumes; it is
+// produced by whatever provisioned the capability and is deliberately
+// independent of that provisioner.
+
+message NonSecretEndpointRefRecord {
+  string host = 1;
+  uint32 port = 2;
+  string path = 3;
+  string region = 4;
+}
+
+message BindingEndpointRecord {
+  string protocol = 1;
+  NonSecretEndpointRefRecord address_ref = 2;
+  string role = 3;
+}
+
+message CapabilityBindingRecord {
+  string schema_version = 1;
+  string id = 2;
+  string resource_ref = 3;
+  string capability_profile_ref = 4;
+  string binding_profile_ref = 5;
+  string type = 6;
+  string provider = 7;
+  repeated BindingEndpointRecord endpoints = 8;
+  // Locators only. A resolved secret value never enters this record.
+  string credential_ref = 9;
+  string certificate_ref = 10;
+  map<string, string> metadata_refs = 11;
+  string expires_at = 12;
+  bool renewable = 13;
+  bool rotation_supported = 14;
+  bool revocation_supported = 15;
+  string producer_evidence_ref = 16;
+}
+
+message ConnectivityImplementationRecord {
+  string id = 1;
+  string binding_profile_ref = 2;
+  string runtime_model = 3;
+  string provider_id = 4;
+  string description = 5;
+}

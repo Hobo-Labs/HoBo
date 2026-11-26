@@ -1,0 +1,38 @@
+{
+  "consumer": {
+    "name": "SdkToCliGoldenPathConsumer"
+  },
+  "provider": {
+    "name": "SdkToCliGoldenPathBoundary"
+  },
+  "interactions": [
+    {
+      "description": "SDK-to-CLI golden path boundary returns the accepted transcript proof",
+      "request": {
+        "method": "GET",
+        "path": "/sdk-to-cli-golden-path/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.sdk-to-cli-golden-path/2026-07-01",
+          "issue": "HOBO-576",
+          "fixtureId": "dx.lifecycle.shop-api.v1",
+          "resultKinds": [
+            "success",
+            "gatekeeper-denied",
+            "contract-incompatible",
+            "stale-or-unknown-evidence",
+            "support-handoff"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+surfaces: wit=hobo:artifact-repo@0.1.0 dts=ArtifactRepoPort+MirrorSet declared
+pull: adapter=npm-primary digestPinned=true digest=sha256:f3cde8ee2e40...
+mutable tag pull: rejected (digest-pinned artifact required)
+publish: without provenance adapterCalls=0; with provenance digest ok
+mirror set: unregistered adapter rejected
+conformance: compliant ok=true; violating ok=false failures=2
+CONTRACT HELD: digest-pinned pulls, provenance-gated publish, registered mirrors only

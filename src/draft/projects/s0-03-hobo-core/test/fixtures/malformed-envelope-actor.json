@@ -1,0 +1,11 @@
+{
+  "id": "evt-bad-actor",
+  "type": "identity.Issued",
+  "v": 1,
+  "streamId": "identity/svid-agent-1",
+  "seq": 0,
+  "ts": "2026-06-25T12:00:00.000Z",
+  "actor": { "kind": "robot", "id": "agent:release" },
+  "tenant": "tenant-acme",
+  "data": {}
+}

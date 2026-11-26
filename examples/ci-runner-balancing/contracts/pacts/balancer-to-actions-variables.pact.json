@@ -1,0 +1,69 @@
+{
+  "consumer": {
+    "name": "hobo-example-ci-runner-balancing"
+  },
+  "provider": {
+    "name": "github-actions-variables-api"
+  },
+  "interactions": [
+    {
+      "description": "balancer reads the current routed runner variable",
+      "request": {
+        "method": "GET",
+        "path": "/repos/Hobo-Labs/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
+        "headers": {
+          "Accept": "application/vnd.github+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "name": "HOBO_RUNNER_LINUX_SMALL",
+          "value": "ubuntu-latest"
+        }
+      }
+    },
+    {
+      "description": "balancer patches the routed runner variable on a flip decision",
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/Hobo-Labs/HoBo/actions/variables/HOBO_RUNNER_LINUX_SMALL",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "HOBO_RUNNER_LINUX_SMALL",
+          "value": "blacksmith-2vcpu-ubuntu-2404"
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "description": "balancer creates the routed runner variable when it does not exist yet",
+      "request": {
+        "method": "POST",
+        "path": "/repos/Hobo-Labs/HoBo/actions/variables",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "HOBO_RUNNER_LINUX_SMALL",
+          "value": "ubuntu-latest"
+        }
+      },
+      "response": {
+        "status": 201
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

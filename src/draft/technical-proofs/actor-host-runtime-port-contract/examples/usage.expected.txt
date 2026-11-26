@@ -1,0 +1,9 @@
+leaseA: holder=worker-a fence=1
+worker-b acquire while leaseA live: LeaseConflictError
+leaseB: holder=worker-b fence=2
+zombie worker-a append: StaleFenceError
+state after fenced appends: value=3 seq=2
+passivated: snapshotSeq=2 state=3
+reactivated: fromSnapshotSeq=2 replayed=0 state=3
+tail replay: state=7 replayed=1
+CONTRACT HELD: fenced single-writer leases + snapshot/tail-replay activation

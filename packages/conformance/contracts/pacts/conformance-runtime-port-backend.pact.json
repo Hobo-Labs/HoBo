@@ -1,0 +1,58 @@
+{
+  "consumer": { "name": "@hobo/conformance" },
+  "provider": { "name": "runtime-backend-under-test" },
+  "interactions": [
+    {
+      "description": "EventStore conditional append with stale expectedSeq",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/eventstore/append",
+        "body": {
+          "streamId": "conformance:seq",
+          "expectedSeq": 0,
+          "events": [{ "type": "seq.Started", "data": {} }]
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": { "code": "eventstore.stale-expected-seq" }
+      }
+    },
+    {
+      "description": "Queue idempotent enqueue dedup",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/queue/enqueue",
+        "body": {
+          "queueName": "payments",
+          "idempotencyKey": "charge-1",
+          "body": { "cents": 4200 }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": { "deduped": true, "messageId": "msg-1" }
+      }
+    },
+    {
+      "description": "ActorHost rejects stale lease append",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/actorhost/append",
+        "body": {
+          "key": "actor:checkout",
+          "fenceToken": "1",
+          "event": { "type": "counter.Added", "amount": 1 }
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": { "code": "actorhost.stale-fence" }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "conformance-runtime-port-backend",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

@@ -1,0 +1,45 @@
+{
+	"id": "bindle.camp-env",
+	"tier": 1,
+	"kind": "bindle",
+	"description": "Camp env injection for GREETING_PREFIX and APP_TITLE.",
+	"tags": [
+		"bindle",
+		"campEnv",
+		"env"
+	],
+	"queries": [
+		"camp env",
+		"campEnv",
+		"GREETING_PREFIX APP_TITLE"
+	],
+	"requires": [],
+	"provides": [
+		"bindle.env"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			},
+			"greetingPrefix": {
+				"type": "string",
+				"default": "howdy"
+			},
+			"appTitle": {
+				"type": "string",
+				"default": "howdy"
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "src/camp-env.ts",
+			"from": "body/camp-env.ts.tpl"
+		}
+	]
+}

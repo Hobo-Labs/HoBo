@@ -1,0 +1,151 @@
+package hobo:training-engine@0.1.0;
+
+// The training-engine port (ADR-0025 / ADR-0125). Engines are internal
+// providers selected per tenant/Camp; this package is deliberately NOT
+// imported by the hobo:sdk world — the SDK surface never sees the optimizer.
+// Record shapes mirror hobo.core.v1 (data-models/training_engine.proto);
+// the proto is the canonical schema and this WIT is its component-model view.
+
+interface types {
+  enum open-inference-span-kind {
+    unspecified,
+    llm,
+    chain,
+    tool,
+    retriever,
+    reranker,
+    embedding,
+    agent,
+    guardrail,
+    evaluator,
+    prompt,
+  }
+
+  record generated-region-ref {
+    region-id: string,
+    artifact-ref: string,
+    start-offset: u32,
+    end-offset: u32,
+    owner: string,
+  }
+
+  record agent-ref {
+    id: string,
+    principal-ref: string,
+  }
+
+  record run-ref {
+    id: string,
+    tenant-id: string,
+    bindle: string,
+    agent: agent-ref,
+  }
+
+  record subject-ref {
+    method: string,
+    contract-ref: string,
+    generated-region: generated-region-ref,
+  }
+
+  record span {
+    id: string,
+    parent-id: option<string>,
+    kind: open-inference-span-kind,
+    name: string,
+    start-time: string,
+    end-time: string,
+    attributes-json: string,
+    inputs-json: string,
+    outputs-json: string,
+  }
+
+  record reward {
+    source: string,
+    rubric-ref: string,
+    score: f64,
+  }
+
+  record trajectory {
+    id: string,
+    traceparent: string,
+    run: run-ref,
+    subject: subject-ref,
+    spans: list<span>,
+    payloads-json: string,
+    reward: reward,
+  }
+
+  record rubric {
+    id: string,
+    objective: string,
+  }
+
+  record contract-ref {
+    ref: string,
+    method: string,
+    allowed-region-id: string,
+  }
+
+  record optimize-request {
+    request-id: string,
+    generated-region: generated-region-ref,
+    trajectories: list<trajectory>,
+    rubric: rubric,
+    contract: contract-ref,
+  }
+
+  record candidate-edit {
+    start-offset: u32,
+    end-offset: u32,
+    replacement: string,
+  }
+
+  // ADR-0048: region-scoped source rewrite.
+  record candidate-patch {
+    region: generated-region-ref,
+    edits: list<candidate-edit>,
+  }
+
+  // ADR-0125: the serialized-optimized-program candidate form, applied at
+  // component instantiation. program-json carries the platform-normalized
+  // TrainingArtifactProgram.
+  record training-artifact {
+    engine-id: string,
+    engine-version: string,
+    method-ref: string,
+    program-json: string,
+  }
+
+  variant candidate-body {
+    patch(candidate-patch),
+    artifact(training-artifact),
+  }
+
+  record candidate-provenance {
+    trajectory-hashes: list<string>,
+    rubric-ref: string,
+    contract-ref: string,
+  }
+
+  record candidate {
+    id: string,
+    engine-id: string,
+    provenance: candidate-provenance,
+    body: candidate-body,
+  }
+
+  record training-error {
+    code: string,
+    message: string,
+  }
+}
+
+interface training-engine {
+  use types.{candidate, optimize-request, training-error};
+
+  optimize: func(request: optimize-request) -> result<candidate, training-error>;
+}
+
+world training-engine-provider {
+  export training-engine;
+}

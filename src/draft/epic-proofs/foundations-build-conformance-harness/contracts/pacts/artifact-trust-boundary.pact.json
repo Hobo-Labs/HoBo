@@ -1,0 +1,21 @@
+{
+  "consumer": { "name": "FoundationsReferenceApp" },
+  "provider": { "name": "ArtifactTrustBoundary" },
+  "interactions": [
+    {
+      "description": "verify signed artifact and SLSA-tier provenance before Matching visibility",
+      "request": { "method": "POST", "path": "/artifact/verify-install" },
+      "response": {
+        "status": 200,
+        "body": {
+          "install": {
+            "ok": true,
+            "availableToMatching": true,
+            "selectedByMatching": false
+          }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -1,0 +1,43 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "SagaCompensationBoundary"
+  },
+  "interactions": [
+    {
+      "description": "compensate partial deploy failure in reverse topological order",
+      "providerStates": [
+        {
+          "name": "network and database were provisioned before API failed"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/saga/compensate",
+        "body": {
+          "deploymentId": "deploy-checkout-prod",
+          "failedResourceId": "api",
+          "failureClass": "partial-failure"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "rolled-back",
+          "compensationOrder": [
+            "db",
+            "network"
+          ],
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

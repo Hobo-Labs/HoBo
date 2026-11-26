@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes for the HOBO-488 launch
+// demo golden path contract. This is a design-time schema artifact, not a
+// runtime compilation target.
+
+enum LaunchDemoProofMode {
+  LAUNCH_DEMO_PROOF_MODE_UNSPECIFIED = 0;
+  LAUNCH_DEMO_PROOF_MODE_LIVE_PRODUCT = 1;
+  LAUNCH_DEMO_PROOF_MODE_REFERENCE_FIXTURE = 2;
+  LAUNCH_DEMO_PROOF_MODE_SIMULATED_REFERENCE = 3;
+  LAUNCH_DEMO_PROOF_MODE_DESIGN_RECORD = 4;
+}
+
+message LaunchDemoSampleApp {
+  string id = 1;
+  string source = 2;
+  string reason = 3;
+}
+
+message LaunchDemoPersona {
+  string role = 1;
+  string need = 2;
+}
+
+message LaunchDemoCommandStep {
+  string id = 1;
+  string command = 2;
+  string screen = 3;
+  LaunchDemoProofMode proof_mode = 4;
+  string claim_boundary = 5;
+}
+
+message LaunchDemoExpectedOutput {
+  string id = 1;
+  string output = 2;
+  LaunchDemoProofMode proof_mode = 3;
+}
+
+message LaunchDemoEvidenceArtifact {
+  string kind = 1;
+  string owner = 2;
+  LaunchDemoProofMode proof_mode = 3;
+  string source = 4;
+  string refresh_trigger = 5;
+}
+
+message LaunchDemoGoldenPathRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  LaunchDemoSampleApp sample_app = 4;
+  LaunchDemoPersona primary_persona = 5;
+  repeated LaunchDemoCommandStep command_path = 6;
+  repeated LaunchDemoExpectedOutput expected_outputs = 7;
+  repeated LaunchDemoEvidenceArtifact evidence_artifacts = 8;
+  repeated string failure_recovery = 9;
+  repeated string scope_out = 10;
+}

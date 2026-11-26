@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "FoundationsReferenceApp" },
+  "provider": { "name": "WitToolchainBoundary" },
+  "interactions": [
+    {
+      "description": "validate hobo:sdk WIT package and pinned generator lock",
+      "request": { "method": "POST", "path": "/wit/validate" },
+      "response": {
+        "status": 200,
+        "body": {
+          "package": "hobo:sdk",
+          "version": "0.1.0",
+          "lock": { "canonicalGenerator": "@bytecodealliance/jco@1.24.3" }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

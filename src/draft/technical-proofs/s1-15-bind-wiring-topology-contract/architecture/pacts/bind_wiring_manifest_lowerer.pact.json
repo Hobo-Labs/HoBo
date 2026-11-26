@@ -1,0 +1,35 @@
+{
+  "consumer": {
+    "name": "S1_15BindWiringTopologyConsumer"
+  },
+  "provider": {
+    "name": "ManifestWiringLowerer"
+  },
+  "interactions": [
+    {
+      "description": "lower bind reference wiring into hobo.manifest/v1 links and lazy env tokens",
+      "providerStates": [{ "name": "bindle camp yard graph available" }],
+      "request": {
+        "method": "POST",
+        "path": "/manifest/wiring/lower",
+        "body": {
+          "schema": "hobo.manifest/v1",
+          "bindle": "hello-bindle"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "schema": "hobo.manifest/v1",
+          "links": [{ "import": "hobo:data", "to": "db" }],
+          "env": { "ConnectionStrings__db": "{db.connectionString}" }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

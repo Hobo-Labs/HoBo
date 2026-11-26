@@ -1,0 +1,35 @@
+{
+	"name": "@hobo/adapter-hono",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "HoBo L2 adapter: wire Hono apps as bindle HTTP entrypoints ((Request) => Response). Framework lives here — not in @hobo/core or @hobo/hobo.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist",
+		"README.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"hono": "^4.6.14"
+	},
+	"devDependencies": {
+		"@types/node": ">=24.0.0"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	}
+}

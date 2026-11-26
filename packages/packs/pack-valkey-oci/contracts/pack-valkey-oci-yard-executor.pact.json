@@ -1,0 +1,622 @@
+{
+	"consumer": { "name": "hobo-yard-container-executor" },
+	"provider": { "name": "hobo-pack-valkey-oci" },
+	"interactions": [
+		{
+			"description": "a durable deployment renders a digest-pinned container whose credential is an included file and whose config is the operator's chosen durability",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-1",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+						"durabilityMode": "aof-everysec",
+						"evictionPolicy": "noeviction",
+						"maxmemoryBytes": 268435456
+					},
+					"volumeBindings": [
+						{
+							"volumeName": "valkey-data",
+							"storage": { "kind": "local-volume", "volumeId": "vol-valkey-1" }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"resourceRef": "resource:yard-1/cache-1",
+					"spec": {
+						"packId": "pack.valkey.oci/v1",
+						"image": "docker.io/valkey/valkey@sha256:3fe38a705227d29534a199e876b38d5474dec4d3baca980ac6894df539416562",
+						"architecture": "linux/amd64",
+						"command": ["valkey-server", "/etc/valkey/valkey.conf"],
+						"env": {},
+						"configFiles": [
+							{
+								"path": "/etc/valkey/valkey.conf",
+								"contents": "# Rendered by @hobo/pack-valkey-oci. Do not edit in place: the pack\n# regenerates this file from the deployment configuration, and a manual\n# edit would be lost on the next apply and invisible in the receipt.\nport 6379\ndir /data\ndatabases 16\nbind 0.0.0.0\nprotected-mode yes\nmaxmemory 268435456\nmaxmemory-policy noeviction\nsave \"\"\nappendonly yes\nappendfsync everysec\ninclude /run/secrets/valkey-requirepass.conf\n"
+							}
+						],
+						"secretFiles": [
+							{
+								"path": "/run/secrets/valkey-requirepass.conf",
+								"secretRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+								"format": "valkey-conf-requirepass",
+								"mode": "0400"
+							}
+						],
+						"volumeMounts": [
+							{
+								"volumeName": "valkey-data",
+								"mountPath": "/data",
+								"binding": {
+									"volumeName": "valkey-data",
+									"storage": { "kind": "local-volume", "volumeId": "vol-valkey-1" }
+								}
+							}
+						],
+						"ports": [{ "name": "valkey", "containerPort": 6379 }],
+						"retention": {
+							"durability": {
+								"mode": "aof-everysec",
+								"appendFsync": "everysec",
+								"worstCaseLossMs": 1000,
+								"survivesRestart": true
+							},
+							"eviction": {
+								"policy": "noeviction",
+								"evictsKeysWithoutTtl": false,
+								"writeBehaviourAtLimit": "error"
+							},
+							"keyLossPossible": false,
+							"behavesAsDurableKeyspace": true
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "a cache-mode deployment turns snapshots off explicitly and reports that a written key may vanish",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-2",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+						"durabilityMode": "none",
+						"evictionPolicy": "allkeys-lru",
+						"maxmemoryBytes": 268435456,
+						"databases": 1
+					},
+					"volumeBindings": [
+						{
+							"volumeName": "valkey-data",
+							"storage": { "kind": "local-volume", "volumeId": "vol-valkey-1" }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"resourceRef": "resource:yard-1/cache-2",
+					"spec": {
+						"configFiles": [
+							{
+								"path": "/etc/valkey/valkey.conf",
+								"contents": "# Rendered by @hobo/pack-valkey-oci. Do not edit in place: the pack\n# regenerates this file from the deployment configuration, and a manual\n# edit would be lost on the next apply and invisible in the receipt.\nport 6379\ndir /data\ndatabases 1\nbind 0.0.0.0\nprotected-mode yes\nmaxmemory 268435456\nmaxmemory-policy allkeys-lru\nsave \"\"\nappendonly no\ninclude /run/secrets/valkey-requirepass.conf\n"
+							}
+						],
+						"retention": {
+							"durability": {
+								"mode": "none",
+								"appendFsync": "not-applicable",
+								"worstCaseLossMs": null,
+								"survivesRestart": false
+							},
+							"eviction": { "policy": "allkeys-lru", "evictsKeysWithoutTtl": true },
+							"keyLossPossible": true,
+							"behavesAsDurableKeyspace": false
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "a deployment with no volume bound is refused rather than defaulted to a container layer that disappears",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-3",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+						"durabilityMode": "aof-everysec",
+						"evictionPolicy": "noeviction",
+						"maxmemoryBytes": 268435456
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_PERSISTENCE_REQUIRED",
+					"message": "pack pack.valkey.oci/v1 requires durable storage for volume valkey-data at /data*"
+				}
+			}
+		},
+		{
+			"description": "a deployment that omits the durability budget is refused instead of receiving a default",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-4",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+						"evictionPolicy": "noeviction",
+						"maxmemoryBytes": 268435456
+					},
+					"volumeBindings": [
+						{
+							"volumeName": "valkey-data",
+							"storage": { "kind": "local-volume", "volumeId": "vol-valkey-1" }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_CONFIGURATION_INVALID",
+					"message": "configuration durabilityMode is required by pack pack.valkey.oci/v1"
+				}
+			}
+		},
+		{
+			"description": "a maxmemory below the manifest floor is refused, because a limit smaller than the server's own overhead evicts constantly",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-5",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+						"durabilityMode": "aof-everysec",
+						"evictionPolicy": "noeviction",
+						"maxmemoryBytes": 1024
+					},
+					"volumeBindings": [
+						{
+							"volumeName": "valkey-data",
+							"storage": { "kind": "local-volume", "volumeId": "vol-valkey-1" }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_CONFIGURATION_INVALID",
+					"message": "configuration maxmemoryBytes is below its minimum 8388608"
+				}
+			}
+		},
+		{
+			"description": "a plaintext connection string supplied where a locator belongs never becomes configuration",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-6",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "redis://default:hunter2@cache-1:6379",
+						"durabilityMode": "aof-everysec",
+						"evictionPolicy": "noeviction",
+						"maxmemoryBytes": 268435456
+					},
+					"volumeBindings": [
+						{
+							"volumeName": "valkey-data",
+							"storage": { "kind": "local-volume", "volumeId": "vol-valkey-1" }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "SECRET_REFERENCE_EMBEDS_VALUE",
+					"message": "value looks like a plaintext credential, not a secret locator*"
+				}
+			}
+		},
+		{
+			"description": "object storage cannot stand in for the data volume, because an RDB or AOF is written with ordinary file semantics",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/deployments",
+				"body": {
+					"resourceRef": "resource:yard-1/cache-7",
+					"values": {
+						"dataVolume": "valkey-data",
+						"authPasswordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+						"durabilityMode": "aof-everysec",
+						"evictionPolicy": "noeviction",
+						"maxmemoryBytes": 268435456
+					},
+					"volumeBindings": [
+						{
+							"volumeName": "valkey-data",
+							"storage": { "kind": "external-storage", "storageRef": "s3://cache/valkey" }
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_PERSISTENCE_REQUIRED",
+					"message": "volume valkey-data declares externalStorageAllowed: false*"
+				}
+			}
+		},
+		{
+			"description": "readiness is an exec probe asking the server to answer a command, not a socket connect",
+			"request": { "method": "GET", "path": "/packs/valkey/probes" },
+			"response": {
+				"status": 200,
+				"body": {
+					"readiness": {
+						"kind": "exec",
+						"argv": ["valkey-cli", "ping"],
+						"initialDelayMs": 1000,
+						"periodMs": 5000,
+						"timeoutMs": 3000,
+						"failureThreshold": 12
+					},
+					"liveness": { "kind": "tcp", "portName": "valkey", "failureThreshold": 6 },
+					"startup": { "kind": "exec", "argv": ["valkey-cli", "ping"], "failureThreshold": 120 }
+				}
+			}
+		},
+		{
+			"description": "an on-demand rdb backup is an argv array with the credential travelling as a locator in secretEnv",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/operations",
+				"body": {
+					"operation": "backup",
+					"endpoint": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"outputPath": "/var/backups/cache-1.rdb"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"operationId": "valkey.backup.rdb-dump",
+					"argv": [
+						"valkey-cli",
+						"-h",
+						"cache-1.yard-1.hobo.test",
+						"-p",
+						"6379",
+						"-n",
+						"0",
+						"--no-auth-warning",
+						"--rdb",
+						"/var/backups/cache-1.rdb"
+					],
+					"env": {},
+					"secretEnv": {
+						"REDISCLI_AUTH": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"timeoutMs": 600000
+				}
+			}
+		},
+		{
+			"description": "argv mutated after the builder returned is refused before a process is spawned",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/operations",
+				"body": {
+					"operation": "backup",
+					"endpoint": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"outputPath": "/var/backups/cache-1.rdb",
+					"appendArgv": ["redis://default:hunter2@cache-1:6379"]
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_OPERATION_FAILED",
+					"message": "refusing to place credential-shaped material in argv*"
+				}
+			}
+		},
+		{
+			"description": "an append-only file rewrite is issued only in a mode that writes one",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/operations",
+				"body": {
+					"operation": "rewrite-aof",
+					"endpoint": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"durabilityMode": "aof-everysec"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"operationId": "valkey.maintenance.rewrite-aof",
+					"argv": [
+						"valkey-cli",
+						"-h",
+						"cache-1.yard-1.hobo.test",
+						"-p",
+						"6379",
+						"-n",
+						"0",
+						"--no-auth-warning",
+						"BGREWRITEAOF"
+					],
+					"env": {},
+					"secretEnv": {
+						"REDISCLI_AUTH": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"timeoutMs": 600000
+				}
+			}
+		},
+		{
+			"description": "a rewrite in a snapshot mode is refused instead of reporting success for a no-op",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/operations",
+				"body": {
+					"operation": "rewrite-aof",
+					"endpoint": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"durabilityMode": "rdb-snapshots"
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_OPERATION_FAILED",
+					"message": "BGREWRITEAOF is meaningless in durability mode rdb-snapshots*"
+				}
+			}
+		},
+		{
+			"description": "a live keyspace handoff is three commands issued to the target, not a shell pipeline with a sleep",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/migrations",
+				"body": {
+					"source": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"target": {
+						"host": "cache-2.yard-2.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"profileRef": "migration.valkey.replica-handoff/v1",
+					"replicate": {
+						"operationId": "valkey.migration.replica-handoff",
+						"argv": [
+							"valkey-cli",
+							"-h",
+							"cache-2.yard-2.hobo.test",
+							"-p",
+							"6379",
+							"-n",
+							"0",
+							"--no-auth-warning",
+							"REPLICAOF",
+							"cache-1.yard-1.hobo.test",
+							"6379"
+						]
+					},
+					"awaitSync": {
+						"operationId": "valkey.migration.replica-handoff",
+						"argv": [
+							"valkey-cli",
+							"-h",
+							"cache-2.yard-2.hobo.test",
+							"-p",
+							"6379",
+							"-n",
+							"0",
+							"--no-auth-warning",
+							"INFO",
+							"replication"
+						]
+					},
+					"promote": {
+						"operationId": "valkey.migration.replica-handoff",
+						"argv": [
+							"valkey-cli",
+							"-h",
+							"cache-2.yard-2.hobo.test",
+							"-p",
+							"6379",
+							"-n",
+							"0",
+							"--no-auth-warning",
+							"REPLICAOF",
+							"NO",
+							"ONE"
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "a handoff whose source and target are the same server is refused",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/migrations",
+				"body": {
+					"source": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					},
+					"target": {
+						"host": "cache-1.yard-1.hobo.test",
+						"passwordRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass"
+					}
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_OPERATION_FAILED",
+					"message": "handoff source and target are the same server*"
+				}
+			}
+		},
+		{
+			"description": "the issued binding carries a locator, the digest it was produced from, and the retention the server actually implements",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/bindings",
+				"body": {
+					"bindingId": "binding:yard-1/cache-1",
+					"resourceRef": "resource:yard-1/cache-1",
+					"host": "cache-1.yard-1.hobo.test",
+					"credentialRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+					"tls": false,
+					"durabilityMode": "aof-everysec",
+					"evictionPolicy": "noeviction",
+					"producerEvidenceRef": "receipt:yard-1/cache-1#1"
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"id": "binding:yard-1/cache-1",
+					"capabilityProfileRef": "kv.redis-compatible/v1",
+					"bindingProfileRef": "binding.redis-protocol/v1",
+					"type": "redis",
+					"endpoints": [
+						{
+							"protocol": "redis",
+							"role": "primary",
+							"addressRef": { "host": "cache-1.yard-1.hobo.test", "port": 6379, "tls": false }
+						}
+					],
+					"credentialRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+					"metadataRefs": {
+						"database": "0",
+						"serverVersion": "9.1.1",
+						"packId": "pack.valkey.oci/v1",
+						"imageDigest": "sha256:3fe38a705227d29534a199e876b38d5474dec4d3baca980ac6894df539416562",
+						"durabilityMode": "aof-everysec",
+						"worstCaseLossMs": "1000",
+						"evictionPolicy": "noeviction",
+						"keyLossPossible": "false",
+						"deliveryGuarantees": "none"
+					},
+					"renewable": false,
+					"rotationSupported": true,
+					"revocationSupported": true,
+					"producerEvidenceRef": "receipt:yard-1/cache-1#1"
+				}
+			}
+		},
+		{
+			"description": "a TLS binding names the certificate the client verifies against, or it is refused",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/bindings",
+				"body": {
+					"bindingId": "binding:yard-1/cache-8",
+					"resourceRef": "resource:yard-1/cache-8",
+					"host": "cache-8.yard-1.hobo.test",
+					"credentialRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+					"tls": true,
+					"durabilityMode": "aof-everysec",
+					"evictionPolicy": "noeviction",
+					"producerEvidenceRef": "receipt:yard-1/cache-8#1"
+				}
+			},
+			"response": {
+				"status": 422,
+				"body": {
+					"code": "PACK_CONFIGURATION_INVALID",
+					"message": "a TLS binding must reference the certificate the client should verify against"
+				}
+			}
+		},
+		{
+			"description": "a snapshot-mode TLS binding reports its coarser loss window and the certificate locator",
+			"request": {
+				"method": "POST",
+				"path": "/packs/valkey/bindings",
+				"body": {
+					"bindingId": "binding:yard-1/cache-9",
+					"resourceRef": "resource:yard-1/cache-9",
+					"host": "cache-9.yard-1.hobo.test",
+					"credentialRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+					"certificateRef": "hobo-secret://tenant-1/valkey/cache-1-server-ca",
+					"tls": true,
+					"database": 3,
+					"durabilityMode": "rdb-snapshots",
+					"evictionPolicy": "volatile-ttl",
+					"producerEvidenceRef": "receipt:yard-1/cache-9#1"
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"id": "binding:yard-1/cache-9",
+					"endpoints": [
+						{
+							"protocol": "redis",
+							"role": "primary",
+							"addressRef": { "host": "cache-9.yard-1.hobo.test", "port": 6379, "tls": true }
+						}
+					],
+					"credentialRef": "hobo-secret://tenant-1/valkey/cache-1-requirepass",
+					"certificateRef": "hobo-secret://tenant-1/valkey/cache-1-server-ca",
+					"metadataRefs": {
+						"database": "3",
+						"durabilityMode": "rdb-snapshots",
+						"worstCaseLossMs": "60000",
+						"evictionPolicy": "volatile-ttl",
+						"keyLossPossible": "false",
+						"deliveryGuarantees": "none"
+					}
+				}
+			}
+		}
+	]
+}

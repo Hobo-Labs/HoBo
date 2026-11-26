@@ -1,0 +1,115 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime-local"
+  },
+  "provider": {
+    "name": "runtime-local-ports"
+  },
+  "interactions": [
+    {
+      "description": "schedule every fires handler and emits trigger.Fired",
+      "request": {
+        "method": "POST",
+        "path": "/dispatcher/schedule/tick",
+        "body": {
+          "resource": "tick",
+          "kind": "schedule.every"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "event": {
+            "type": "trigger.Fired",
+            "kind": "schedule.every",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "description": "topic publish delivers to subscriber",
+      "request": {
+        "method": "POST",
+        "path": "/dispatcher/topic/publish",
+        "body": {
+          "resource": "orders",
+          "eventType": "orders.created",
+          "payload": {}
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "event": {
+            "type": "trigger.Fired",
+            "kind": "topic.subscribe",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "description": "queue enqueue invokes worker and completes message",
+      "request": {
+        "method": "POST",
+        "path": "/dispatcher/queue/enqueue",
+        "body": {
+          "resource": "jobs",
+          "body": { "id": "1" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "completed": true,
+          "event": {
+            "type": "trigger.Fired",
+            "kind": "queue.worker",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "description": "bucket write invokes event handler",
+      "request": {
+        "method": "POST",
+        "path": "/dispatcher/bucket/write",
+        "body": {
+          "resource": "uploads",
+          "key": "file.txt",
+          "value": "data"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "event": {
+            "type": "trigger.Fired",
+            "kind": "bucket.on",
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "description": "http route responds",
+      "request": {
+        "method": "GET",
+        "path": "/hello"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "message": "hello"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

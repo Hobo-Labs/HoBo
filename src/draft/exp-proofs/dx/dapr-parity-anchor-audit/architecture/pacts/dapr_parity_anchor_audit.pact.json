@@ -1,0 +1,53 @@
+{
+  "consumer": {
+    "name": "competitor-parity-doc-consumer"
+  },
+  "provider": {
+    "name": "dapr-parity-anchor-audit"
+  },
+  "interactions": [
+    {
+      "description": "audits Bindings and Distributed lock rows in dapr.md",
+      "providerStates": [
+        {
+          "name": "HOBO-699 dapr parity anchors are remediated"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/dx/dapr-parity-anchor-audit"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-699",
+          "targetDoc": "docs/competitors/dapr.md",
+          "rows": [
+            {
+              "feature": "Bindings",
+              "status": "🔜",
+              "designAnchors": [
+                "[Plan 20](../design/wasm-runtime-wit.md#plan-20)",
+                "[Plan 21](../design/authoring-resources-wiring.md#plan-21)",
+                "[ADR-0072](../design/adr/01-architecture-core.md#adr-0072)"
+              ],
+              "notes": "partial via hobo:blob-events, hobo:scheduler, and handler triggers; no unified bindings port"
+            },
+            {
+              "feature": "Distributed lock",
+              "status": "🔜",
+              "designAnchors": [
+                "[Plan 5](../design/reliability-observability-cost.md#plan-05)",
+                "[Plan 2](../design/sdk-api.md#plan-02)"
+              ],
+              "notes": "ActorHost single-writer lease and fencing for virtual-actor keys; not a general lock/unlock API"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "RegistryPublishFlowContractConsumer"
+  },
+  "provider": {
+    "name": "RegistryPublishFlowContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Registry Publish Flow Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/registry-publish-flow-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.registry_publish_flow_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

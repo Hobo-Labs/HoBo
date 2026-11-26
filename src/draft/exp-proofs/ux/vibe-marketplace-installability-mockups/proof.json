@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-marketplace-installability-mockups",
+  "experienceType": "ux",
+  "title": "Vibe Marketplace Installability Mockups",
+  "linear": "HOBO-546",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

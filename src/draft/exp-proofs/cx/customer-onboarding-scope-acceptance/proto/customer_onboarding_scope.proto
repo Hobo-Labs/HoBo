@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package hobo.customer_onboarding_scope.v1;
+
+message CustomerOnboardingScope {
+  string issue = 1;
+  string project = 2;
+  CustomerOnboardingState state = 3;
+  string goal = 4;
+  repeated CustomerOnboardingPersona personas = 5;
+  repeated CustomerOnboardingBoundary operating_boundaries = 6;
+  repeated CustomerOnboardingEvidence m1_evidence = 7;
+  repeated string scope_in = 8;
+  repeated string scope_out = 9;
+  repeated CustomerOnboardingStage onboarding_stages = 10;
+}
+
+message CustomerOnboardingPersona {
+  string id = 1;
+  string need = 2;
+}
+
+message CustomerOnboardingBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message CustomerOnboardingEvidence {
+  string id = 1;
+  string owner = 2;
+  string minimum_proof = 3;
+}
+
+message CustomerOnboardingStage {
+  string id = 1;
+  string owner = 2;
+  string evidence = 3;
+}
+
+enum CustomerOnboardingState {
+  CUSTOMER_ONBOARDING_STATE_UNSPECIFIED = 0;
+  CUSTOMER_ONBOARDING_STATE_SCOPE_DRAFT = 1;
+  CUSTOMER_ONBOARDING_STATE_SCOPE_ACCEPTED = 2;
+  CUSTOMER_ONBOARDING_STATE_FOLLOW_UP_BLOCKED = 3;
+}

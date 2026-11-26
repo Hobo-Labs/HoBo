@@ -1,0 +1,65 @@
+{
+	"consumer": { "name": "@hobo/replay-player" },
+	"provider": { "name": "replay-session-index" },
+	"interactions": [
+		{
+			"description": "player loads session metadata by id within station boundary",
+			"request": {
+				"method": "GET",
+				"path": "/replay/sessions/sess-local-1",
+				"headers": {
+					"x-hobo-station": "station:local"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "sess-local-1",
+					"status": "ended",
+					"stationId": "station:local",
+					"chunkCount": 1
+				}
+			}
+		},
+		{
+			"description": "cross-station get fails closed without federation",
+			"request": {
+				"method": "GET",
+				"path": "/replay/sessions/sess-other",
+				"headers": {
+					"x-hobo-station": "station:local"
+				}
+			},
+			"response": {
+				"status": 403,
+				"body": {
+					"ok": false,
+					"code": "REPLAY_STATION_BOUNDARY"
+				}
+			}
+		},
+		{
+			"description": "CLI/MCP list sessions filtered by error id",
+			"request": {
+				"method": "GET",
+				"path": "/replay/sessions",
+				"query": "errorId=err-42"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"sessions": [
+						{
+							"id": "sess-local-1",
+							"errorId": "err-42",
+							"summary": "checkout failed"
+						}
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

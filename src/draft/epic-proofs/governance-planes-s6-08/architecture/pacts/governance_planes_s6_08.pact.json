@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "GovernancePlanesS6Consumer"
+  },
+  "provider": {
+    "name": "GovernancePlanesS6Boundary"
+  },
+  "interactions": [
+    {
+      "description": "Governance planes S6-08 boundary returns stage-6 governance evidence contract",
+      "request": {
+        "method": "GET",
+        "path": "/governance-planes-s6-08/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.governance_planes_s6_08/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

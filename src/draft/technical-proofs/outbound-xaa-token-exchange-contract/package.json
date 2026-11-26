@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-outbound-xaa-token-exchange-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

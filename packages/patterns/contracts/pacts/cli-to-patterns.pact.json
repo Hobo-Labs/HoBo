@@ -1,0 +1,19 @@
+{
+	"consumer": { "name": "@hobo/cli" },
+	"provider": { "name": "@hobo/patterns" },
+	"interactions": [
+		{
+			"description": "hobo new starter alias resolves through the catalog",
+			"request": {
+				"method": "GET",
+				"path": "/patterns/starter.cli.api"
+			},
+			"response": {
+				"status": 200,
+				"headers": { "content-type": "application/json" },
+				"body": { "id": "starter.cli.api", "kind": "starter" }
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

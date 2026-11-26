@@ -1,0 +1,43 @@
+{
+	"id": "arch.package-skeleton",
+	"tier": 0,
+	"kind": "architecture",
+	"description": "Minimal konsistent package.json and tsconfig for a HoBo app.",
+	"tags": [
+		"package",
+		"skeleton",
+		"tsconfig",
+		"konsistent"
+	],
+	"queries": [
+		"package skeleton",
+		"new package.json tsconfig"
+	],
+	"requires": [
+		"arch.konsistent"
+	],
+	"provides": [
+		"arch.package"
+	],
+	"params": {
+		"required": [
+			"name"
+		],
+		"properties": {
+			"name": {
+				"type": "string",
+				"minLength": 1
+			}
+		}
+	},
+	"files": [
+		{
+			"path": "package.json",
+			"from": "body/package.json.tpl"
+		},
+		{
+			"path": "tsconfig.json",
+			"from": "body/tsconfig.json.tpl"
+		}
+	]
+}

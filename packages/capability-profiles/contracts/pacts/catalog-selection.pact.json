@@ -1,0 +1,58 @@
+{
+	"consumer": { "name": "hobo-planner" },
+	"provider": { "name": "hobo-capability-catalog" },
+	"interactions": [
+		{
+			"description": "a PostgreSQL requirement resolves to a conformant Postgres product",
+			"request": {
+				"method": "POST",
+				"path": "/capabilities/select",
+				"body": {
+					"requiredProfiles": [{ "profileId": "data.postgres/v1", "versionRange": ">=1" }]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"definitionId": "neon.claimable-postgres/v1",
+					"realization": "native",
+					"catalogHash": "sha256:*"
+				}
+			}
+		},
+		{
+			"description": "a SQLite-class product never satisfies a PostgreSQL requirement",
+			"request": {
+				"method": "POST",
+				"path": "/capabilities/select",
+				"body": {
+					"requiredProfiles": [{ "profileId": "data.postgres/v1", "versionRange": ">=1" }],
+					"restrictToDefinitions": ["cloudflare.temporary-d1/v1"]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"rejections": [{ "definitionId": "cloudflare.temporary-d1/v1", "code": "PROFILE_INCOMPATIBLE" }]
+				}
+			}
+		},
+		{
+			"description": "stale conformance evidence fails closed instead of ranking lower",
+			"request": {
+				"method": "POST",
+				"path": "/capabilities/select",
+				"body": {
+					"requiredProfiles": [{ "profileId": "data.postgres/v1", "versionRange": ">=1" }],
+					"restrictToDefinitions": ["neon.stale/v1"]
+				}
+			},
+			"response": {
+				"status": 409,
+				"body": {
+					"rejections": [{ "definitionId": "neon.stale/v1", "code": "EVIDENCE_STALE" }]
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ComplianceEvidencePackConsumer"
+  },
+  "provider": {
+    "name": "TenantDataLifecycleContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Tenant data lifecycle boundary returns its accepted M0 contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/tenant-data-lifecycle/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.tenant_data_lifecycle_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

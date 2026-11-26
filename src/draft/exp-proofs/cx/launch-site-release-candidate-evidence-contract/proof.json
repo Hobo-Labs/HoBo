@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-site-release-candidate-evidence-contract",
+  "experienceType": "cx",
+  "title": "Launch Site Release Candidate Evidence Contract",
+  "linear": "HOBO-472",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

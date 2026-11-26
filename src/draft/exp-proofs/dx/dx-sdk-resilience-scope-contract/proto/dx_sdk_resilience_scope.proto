@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package hobo.dx_sdk_resilience_scope.v1;
+
+message DxSdkResilienceScope {
+  string issue = 1;
+  string project = 2;
+  repeated string initiatives = 3;
+  repeated string vocabulary = 4;
+  repeated ChildIssue child_issues = 5;
+  repeated AdversarialRule adversarial_rules = 6;
+}
+
+message ChildIssue {
+  string id = 1;
+  Phase phase = 2;
+  string target_path = 3;
+  repeated string scope_in = 4;
+  repeated string scope_out = 5;
+  repeated string acceptance = 6;
+  repeated string adversarial_checks = 7;
+  repeated string verification_commands = 8;
+}
+
+message AdversarialRule {
+  string id = 1;
+  string claim = 2;
+  string failure_code = 3;
+}
+
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_M0 = 1;
+  PHASE_M1 = 2;
+  PHASE_M2 = 3;
+  PHASE_M3 = 4;
+  PHASE_M4 = 5;
+}

@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package hobo.closurebuilder.resources.v1;
+
+message ClosureBuilderResourceManifest {
+  string bindle_name = 1;
+  repeated ClosureBuilderResource resources = 2;
+  repeated ClosureBuilderRelationship relationships = 3;
+  ClosureBuilderResourceIdentityLedger identity_ledger = 4;
+}
+
+message ClosureBuilderResource {
+  string generated_id = 1;
+  string kind = 2;
+  string owner_bindle_id = 3;
+  ClosureBuilderWorkloadDescriptor workload = 4;
+  repeated string annotation_kinds = 5;
+}
+
+message ClosureBuilderResourceIdentityDiagnostic {
+  string alias = 1;
+  string generated_id = 2;
+  string kind = 3;
+  string owner_bindle_id = 4;
+  string physical_name_seed = 5;
+}
+
+message ClosureBuilderResourceIdentityLedger {
+  string bindle_name = 1;
+  string artifact_owner = 2;
+  string update_flow = 3;
+  string review_boundary = 4;
+  repeated ClosureBuilderResourceIdentityLedgerEntry entries = 5;
+}
+
+message ClosureBuilderResourceIdentityLedgerEntry {
+  string kind = 1;
+  uint32 occurrence = 2;
+  string generated_id = 3;
+  string identity_source = 4;
+  string review_state = 5;
+}
+
+message ClosureBuilderWorkloadDescriptor {
+  string kind = 1;
+}
+
+message ClosureBuilderRelationship {
+  string from = 1;
+  string to = 2;
+  string verb = 3;
+}
+
+message ClosureBuilderEvidenceEvent {
+  string event_id = 1;
+  string event_type = 2;
+  string issue_id = 3;
+  ClosureBuilderResourceManifest manifest = 4;
+}

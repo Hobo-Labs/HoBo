@@ -1,0 +1,8 @@
+fixture project ready: services=hello-bindle(ts/wasm),legacy-worker(python/container)
+artifact: service=hello-bindle kind=wasm-component runtime=wasm-component
+artifact: service=legacy-worker kind=oci-container runtime=oci-container fallback="unsupported-language: python"
+digest parity held: sha256:c0d38866fc7ad727a9c2bf877919fb5aa0a3f8a5057f6bd59b55f38f8fe8dfc0
+manifest reproducible: true
+cli envelope: ok=true command=build artifacts=2
+stale _generated rejected: code=HOBO_BUILD_CODEGEN_DRIFT
+CONTRACT HELD: hobo build is digest-stable, fallback-aware, and refuses stale codegen

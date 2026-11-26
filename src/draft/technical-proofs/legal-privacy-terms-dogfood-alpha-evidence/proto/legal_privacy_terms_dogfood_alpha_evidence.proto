@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package hobo.legal_privacy_terms_dogfood_alpha.v1;
+
+message LegalPrivacyTermsDogfoodAlphaRecord {
+  string issue = 1;
+  string phase = 2;
+  string project = 3;
+  ScopeBoundary scope = 4;
+  bool milestone_evidence_accepted = 5;
+  repeated DogfoodAlphaEvidenceItem evidence = 6;
+  repeated LaunchBlocker blockers = 7;
+  repeated AcceptedRisk accepted_risks = 8;
+  repeated string cross_project_dependencies = 9;
+  ReleaseCutline release_cutline = 10;
+  ParentInitiativeUpdate parent_initiative_update = 11;
+  bool final_legal_text_drafted = 12;
+  string public_launch_claim = 13;
+}
+
+message ScopeBoundary {
+  bool excludes_final_legal_text = 1;
+  bool excludes_paid_or_public_launch = 2;
+}
+
+message DogfoodAlphaEvidenceItem {
+  string domain = 1;
+  string status = 2;
+  string owning_project = 3;
+  string required_evidence = 4;
+  string source = 5;
+  string release_cutline_ref = 6;
+  string follow_up_issue = 7;
+  string accepted_risk = 8;
+}
+
+message LaunchBlocker {
+  string id = 1;
+  string owner = 2;
+  string status = 3;
+  string reason = 4;
+}
+
+message AcceptedRisk {
+  string id = 1;
+  string owner = 2;
+  string approver = 3;
+  string rationale = 4;
+  string expires_before = 5;
+}
+
+message ReleaseCutline {
+  string id = 1;
+  repeated string dependencies = 2;
+}
+
+message ParentInitiativeUpdate {
+  string initiative = 1;
+  bool risk_changed = 2;
+  string status = 3;
+}
+
+message GateEvaluation {
+  bool can_complete_milestone = 1;
+  repeated string blockers = 2;
+  repeated string missing_evidence = 3;
+  repeated string invalid_follow_ups = 4;
+  repeated string unreflected_dependencies = 5;
+}

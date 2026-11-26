@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260731-all-eq",
+  "personaCount": 4,
+  "delight_total": 48,
+  "delight_min": 3,
+  "delight_mean": 4,
+  "gap_max": 2,
+  "featureRequestCount": 4,
+  "featureRequests": [
+    {
+      "id": "fr-agent-check-multi-gate-wait",
+      "title": "Narrow multi-scope agent:check concurrency messaging",
+      "problem": "When package.json + docs + skills stage together, wait feels multi-gate without ranked progress.",
+      "desiredOutcome": "Staged check prints ordered gate list with expected duration class.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-app-developer",
+      "featureIds": [
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "pnpm run doctor"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 2,
+        "perceivedOptimality": 2
+      },
+      "effortHint": "L",
+      "antiGoals": [],
+      "smallestExperiment": "Impact-policy progress lines per selected gate (L-effort)."
+    },
+    {
+      "id": "fr-product-personas-schema-v2-backfill",
+      "title": "Backfill product-* personas to schema v2 KYC models",
+      "problem": "Most product personas still v1 without cognitive thresholds / psychographics.",
+      "desiredOutcome": "All product-* personas schemaVersion 2 with segment + thresholds.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-coding-agent",
+      "featureIds": [
+        "agent-tooling-setup",
+        "cli-help-and-doctor"
+      ],
+      "surfaces": [
+        "bash scripts/setup-agent-tools.sh --help",
+        "pnpm run doctor"
+      ],
+      "impactOn": {
+        "excitement": 1,
+        "easeOfUse": 0,
+        "perceivedOptimality": 2
+      },
+      "effortHint": "M",
+      "antiGoals": [],
+      "smallestExperiment": "Scaffold v2 sections for product-* personas via generate-persona rewrite batch."
+    },
+    {
+      "id": "fr-design-lint-agent-first-path",
+      "title": "Keep design:lint as primary in agent first paths",
+      "problem": "Agents historically bound docs:design-lint for DESIGN.md.",
+      "desiredOutcome": "AGENTS/docs and optimizexp bindings stay on design:lint.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change"
+      ],
+      "persona": "product-designer",
+      "featureIds": [
+        "design-system-contract"
+      ],
+      "surfaces": [
+        "pnpm run design:lint"
+      ],
+      "impactOn": {
+        "excitement": 0,
+        "easeOfUse": 0,
+        "perceivedOptimality": 1
+      },
+      "effortHint": "S",
+      "antiGoals": [],
+      "smallestExperiment": "Already rewired; document only if drift recurs."
+    },
+    {
+      "id": "fr-public-site-optional-web-capture",
+      "title": "Optional web-driver evidence for public-site-first-impression",
+      "problem": "CLI nav check cannot score visual excitement.",
+      "desiredOutcome": "Optional Playwright capture of site home when browser available.",
+      "source": "survey",
+      "sourceAnswerIds": [
+        "q_one_change",
+        "q_optimal"
+      ],
+      "persona": "product-end-user",
+      "featureIds": [
+        "public-site-first-impression"
+      ],
+      "surfaces": [
+        "pnpm run docs:site-nav"
+      ],
+      "impactOn": {
+        "excitement": 2,
+        "easeOfUse": 0,
+        "perceivedOptimality": 1
+      },
+      "effortHint": "L",
+      "antiGoals": [],
+      "smallestExperiment": "Wire feature driver web with degraded CLI fallback (L)."
+    }
+  ],
+  "problems": [],
+  "aggregatedAt": "2026-07-31T15:40:41.688Z"
+}

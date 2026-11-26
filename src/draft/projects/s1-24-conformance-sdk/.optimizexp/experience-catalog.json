@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "projectId": "s1-24-conformance-sdk",
+  "builtAt": "2026-11-17T18:35:43.909Z",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/s1-24-conformance-sdk/package.json: no package bin is declared"
+  },
+  "surfaceMapDigest": "74ba8f03389d1b4f14e0915cc7870747d7b28bc89030050933c9b6d4b4ec30a5",
+  "surfaceProblems": [],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
+  "experiences": []
+}

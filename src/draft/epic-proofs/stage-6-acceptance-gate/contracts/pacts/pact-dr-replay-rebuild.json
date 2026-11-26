@@ -1,0 +1,15 @@
+{
+  "consumer": { "name": "stage-6-acceptance-gate-reference" },
+  "provider": { "name": "dr-replay-rebuild-boundary" },
+  "interactions": [
+    {
+      "description": "DR rebuild from event log within RTO",
+      "request": { "method": "POST", "path": "/dr/replay-rebuild" },
+      "response": { "status": 200, "body": { "ok": true, "status": "pass" } }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "dr-replay-rebuild",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

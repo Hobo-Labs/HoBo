@@ -1,0 +1,15 @@
+{
+  "runId": "20260731-iter-default",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [],
+  "surfaces": [],
+  "maxIterations": 1,
+  "minIterations": 1,
+  "noPlateauStop": false,
+  "iterationsCompleted": 0,
+  "iterationMeaning": "persona-scenario-review-passes",
+  "hostAgent": "cross-agent",
+  "createdAt": "2026-07-31T03:27:06.365Z"
+}

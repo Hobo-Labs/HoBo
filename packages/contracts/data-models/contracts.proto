@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package hobo.contracts.v1;
+
+// Wire records for @hobo/contracts (S2-07): the Contract IR + can-deploy
+// compatibility engine + the composed Gatekeeper. Design source:
+// docs/design/contracts-policy-flags.md (Plan 29). These are the persisted /
+// exchanged shapes; the TypeScript surface in src/ follows parse-don't-validate,
+// narrowing these wire forms into derived domain types built only by the
+// package's constructors. See contracts.cue for one CUE constraint per type.
+
+// Contract lifecycle mode (declared -> inferred -> observed -> promoted).
+enum ContractMode {
+  CONTRACT_MODE_UNSPECIFIED = 0;
+  CONTRACT_MODE_DECLARED = 1;
+  CONTRACT_MODE_INFERRED = 2;
+  CONTRACT_MODE_OBSERVED = 3;
+  CONTRACT_MODE_PROMOTED = 4;
+}
+
+// The composed Gatekeeper effect over a deploy.
+enum GatekeeperEffect {
+  GATEKEEPER_EFFECT_UNSPECIFIED = 0;
+  GATEKEEPER_EFFECT_ALLOW = 1;
+  GATEKEEPER_EFFECT_ALLOW_DEGRADED = 2;
+  GATEKEEPER_EFFECT_DENY = 3;
+  GATEKEEPER_EFFECT_REQUIRE_APPROVAL = 4;
+}
+
+// A typed producer/consumer edge in the manifest graph.
+message ContractEdge {
+  string kind = 1;
+  string producer = 2;
+  string consumer = 3;
+  string channel = 4;
+  string operation = 5;
+}
+
+// The boundary's shape: the fields it requires of, and provides to, its edge.
+message RequiredShape {
+  string format = 1;
+  repeated string required_fields = 2;
+  repeated string provided_fields = 3;
+}
+
+// Verse-inspired purity lattice position (ADR-0136).
+enum PurityLevel {
+  PURITY_LEVEL_UNSPECIFIED = 0;
+  PURITY_LEVEL_PURE = 1;
+  PURITY_LEVEL_VARIES = 2;
+  PURITY_LEVEL_TRANSACTS = 3;
+  PURITY_LEVEL_NO_ROLLBACK = 4;
+}
+
+// EffectSpec: declarative side-effect exposure on a contract boundary (ADR-0136).
+message EffectSpec {
+  string schema_version = 1;
+  PurityLevel purity = 2;
+  repeated string capabilities = 3;
+  repeated string domains = 4;
+}
+
+// One Polly-inspired resilience strategy as HoBo-native metadata (not a runtime lib).
+message ResilienceStrategy {
+  string kind = 1;
+  map<string, string> params = 2;
+}
+
+// Secondary ResilienceProfile attached to a contract (ADR-0136).
+message ResilienceProfile {
+  string schema_version = 1;
+  string id = 2;
+  repeated ResilienceStrategy strategies = 3;
+  repeated string never_retry = 4;
+}
+
+// Exportable effect summary for policy/SRE/MCP/external systems.
+message EffectManifest {
+  string schema_version = 1;
+  string contract_id = 2;
+  string contract_version = 3;
+  string channel = 4;
+  EffectSpec effects = 5;
+  string purity_label = 6;
+  bool may_fail = 7;
+  bool requires_network = 8;
+  bool is_pure = 9;
+  string exported_at = 10;
+}
+
+// A versioned producer/consumer boundary contract and its compatibility rules.
+message BoundaryContract {
+  string schema_version = 1;
+  string id = 2;
+  string version = 3;
+  ContractMode mode = 4;
+  ContractEdge edge = 5;
+  RequiredShape required_shape = 6;
+  string contract_hash = 7;
+  optional EffectSpec effects = 8;
+  optional ResilienceProfile resilience = 9;
+}
+
+// One machine-readable breaking-change fact from checkCompatibility.
+message CompatibilityReason {
+  string code = 1;
+  string message = 2;
+  string contract_id = 3;
+  string channel = 4;
+  string prev_version = 5;
+  string next_version = 6;
+  repeated string fields = 7;
+}
+
+// The currently-deployed contract state the can-deploy gate compares against.
+message DeployedContractState {
+  repeated BoundaryContract contracts = 1;
+}
+
+// The can-deploy verdict: compatibility matrix + machine-readable reasons.
+message CanDeployResult {
+  string schema_version = 1;
+  bool ok = 2;
+  string target = 3;
+  repeated CompatibilityReason reasons = 4;
+  string summary = 5;
+  repeated string suggested_fixes = 6;
+}
+
+// A composed gate reason emitted by the Gatekeeper.
+message MachineReadableReason {
+  string gate = 1;
+  string code = 2;
+  string message = 3;
+}
+
+// An allowed-but-must-do effect the Gatekeeper tracks to satisfaction.
+message ObligationRecord {
+  string id = 1;
+  string kind = 2;
+  bool satisfied = 3;
+  string deadline = 4;
+}
+
+// A cost/quota check input and verdict.
+message CostQuotaRecord {
+  string quota = 1;
+  double used = 2;
+  double requested = 3;
+  double limit = 4;
+  double remaining = 5;
+  bool ok = 6;
+}
+
+// The single explainable Gatekeeper decision composing all four gates.
+message GatekeeperDecision {
+  string schema_version = 1;
+  GatekeeperEffect decision = 2;
+  repeated MachineReadableReason reasons = 3;
+  repeated ObligationRecord obligations = 4;
+  CanDeployResult can_deploy = 5;
+  CostQuotaRecord cost_quota = 6;
+}

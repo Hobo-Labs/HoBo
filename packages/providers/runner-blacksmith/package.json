@@ -1,0 +1,28 @@
+{
+	"name": "@hobo/runner-blacksmith",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/runner-github": "workspace:*"
+	},
+	"description": "HoBo Blacksmith.sh execution-host adapter: fast-runner RunnerProvider (hobo:runner) + cache-accelerated BuildMachineProvider (hobo:build-machine) substituting the runs-on substrate of the GitHub Actions job model (HOBO-719, ADR-0071)."
+}

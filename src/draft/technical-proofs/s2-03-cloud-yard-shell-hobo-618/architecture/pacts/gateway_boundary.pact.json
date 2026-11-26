@@ -1,0 +1,60 @@
+{
+  "consumer": {
+    "name": "CloudYardShellClient"
+  },
+  "provider": {
+    "name": "CloudYardGateway"
+  },
+  "interactions": [
+    {
+      "description": "authenticated Deploy command appends deployment.DeployRequested and returns seq",
+      "request": {
+        "method": "POST",
+        "path": "/v1/commands/deploy",
+        "headers": {
+          "Authorization": "Bearer yard-svid:alice@camp-prod"
+        },
+        "body": {
+          "deploymentId": "deploy:checkout-prod:001",
+          "bindleRef": "@examples/hello-bindle",
+          "camp": "camp-prod",
+          "yard": "yard-local"
+        }
+      },
+      "response": {
+        "status": 202,
+        "body": {
+          "accepted": true,
+          "eventType": "deployment.DeployRequested",
+          "seq": 1,
+          "streamId": "deployment:checkout-prod",
+          "correlationId": "deploy:checkout-prod:001"
+        }
+      }
+    },
+    {
+      "description": "deployment timeline projection reconstructs choreography graph by correlationId",
+      "request": {
+        "method": "GET",
+        "path": "/v1/read-models/deployment-timeline",
+        "query": {
+          "deploymentId": "deploy:checkout-prod:001"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "correlationComplete": false,
+          "graphNodes": ["DeployRequested"],
+          "missingEvents": [],
+          "replayEquivalent": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

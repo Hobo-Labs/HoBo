@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/junction-connectivity-plan-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-159 Junction cross-cloud connectivity inference delivery.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

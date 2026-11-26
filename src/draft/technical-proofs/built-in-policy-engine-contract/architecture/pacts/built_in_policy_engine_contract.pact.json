@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "BuiltInPolicyEngineContractConsumer"
+  },
+  "provider": {
+    "name": "BuiltInPolicyEngineContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Built In Policy Engine Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/built-in-policy-engine-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.built_in_policy_engine_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

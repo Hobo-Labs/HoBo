@@ -1,0 +1,13 @@
+package wasi:messaging@0.2.0;
+
+interface messaging {
+  record message {
+    id: string,
+    subject: string,
+    payload: list<u8>,
+    attributes: list<tuple<string, string>>,
+  }
+
+  publish: func(topic: string, message: message);
+  subscribe: func(topic: string) -> list<message>;
+}

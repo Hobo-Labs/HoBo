@@ -1,0 +1,30 @@
+{
+  "runId": "20260731-dx-plateau",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [
+    "product-app-developer",
+    "junior-typescript-developer",
+    "product-platform-engineer"
+  ],
+  "surfaces": [
+    "pnpm run agent:check -- --staged",
+    "pnpm run doctor"
+  ],
+  "reportOnly": false,
+  "passesCompleted": 2,
+  "stopPolicy": "true-plateau-only",
+  "hostAgent": "grok",
+  "createdAt": "2026-07-31T12:54:58.787Z",
+  "projects": [
+    "all"
+  ],
+  "features": [
+    "narrow-local-validation",
+    "cli-help-and-doctor",
+    "agent-check-staged"
+  ],
+  "priorRun": "20260731-dx-continue",
+  "lastImplementableFindings": 0
+}

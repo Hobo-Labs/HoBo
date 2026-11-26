@@ -1,0 +1,15 @@
+{
+  "name": "@hobo-draft/async-building-block-ports",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for hobo:queue, hobo:scheduler, and hobo:blob-events WIT port contracts.",
+  "scripts": {
+    "compile:stub": "tsc --noEmit --project tsconfig.guest-stub.json",
+    "generate": "tsx scripts/generate-types.ts",
+    "test": "npm run generate && npm run compile:stub && vitest run --root ."
+  },
+  "devDependencies": {
+    "@bytecodealliance/jco": "1.24.3"
+  }
+}

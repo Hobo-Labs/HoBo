@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "launch-site-ga-handoff-evidence-contract",
+  "experienceType": "cx",
+  "title": "Launch Site GA Handoff Evidence Contract",
+  "linear": "HOBO-479",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

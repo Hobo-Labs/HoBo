@@ -1,0 +1,11 @@
+{
+	"id": "opensaas",
+	"title": "OpenSaaS Kit",
+	"blurb": "wasp-lang/open-saas via b.web(waspApp(root)) + Postgres OCI — ship runs wasp in that root; optional SaaS keys via external connectors.",
+	"tags": ["saas", "wasp", "auth", "payments"],
+	"needs": ["http", "container"],
+	"ui": "saas",
+	"deployKind": "local-bridge",
+	"entry": "app.ts",
+	"sourcePath": "examples/try-site/apps/opensaas/app.ts"
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "EvalsTrainingPromotionGatesConsumer"
+  },
+  "provider": {
+    "name": "EvalsTrainingPromotionGatesBoundary"
+  },
+  "interactions": [
+    {
+      "description": "EvalsTrainingPromotionGates boundary returns contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/evals-training-promotion-gates-poc/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.evals_training_promotion_gates/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

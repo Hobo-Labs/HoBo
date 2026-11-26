@@ -1,0 +1,6 @@
+package wasi:clocks@0.2.0;
+
+interface monotonic-clock {
+  now: func() -> u64;
+  sleep-until: func(deadline: u64);
+}

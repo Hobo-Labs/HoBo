@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "v1-beta-pilot-private-beta-evidence",
+  "experienceType": "cx",
+  "title": "V1 Beta Pilot Private Beta Evidence",
+  "linear": "HOBO-463",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "SloPromotionGateContractConsumer"
+  },
+  "provider": {
+    "name": "SloPromotionGateContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Slo Promotion Gate Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/slo-promotion-gate-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.slo_promotion_gate_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

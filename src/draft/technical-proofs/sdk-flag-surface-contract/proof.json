@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "sdk-flag-surface-contract",
+  "title": "SDK Flag Surface Contract",
+  "linear": "HOBO-323",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/built-in-flag-store-contract",
+      "src/draft/technical-proofs/flag-event-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

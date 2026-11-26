@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "backup-restore-launch-drill-contract",
+  "experienceType": "dx",
+  "title": "Backup Restore Launch Drill Contract",
+  "linear": "HOBO-498",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

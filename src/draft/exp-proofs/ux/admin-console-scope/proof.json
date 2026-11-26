@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "admin-console-scope",
+  "experienceType": "ux",
+  "title": "Admin Console Scope POC",
+  "linear": "HOBO-425",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

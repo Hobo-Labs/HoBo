@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package hobo.draft.exp_proofs.cli_error_refusal_examples.v1;
+
+message CliJsonOutput {
+  string status = 1;
+  string code = 2;
+  string message = 3;
+  string remediation = 4;
+  string proof_mode = 5;
+  string fixture_id = 6;
+  string correlation_id = 7;
+  string fixture_proof_mode = 8;
+}
+
+message McpContent {
+  string type = 1;
+  string text = 2;
+}
+
+message McpMetadata {
+  string code = 1;
+  string proof_mode = 2;
+  string fixture_id = 3;
+  int32 exit_code = 4;
+  string redaction_class = 5;
+  string fixture_proof_mode = 6;
+}
+
+message McpToolResult {
+  string tool_name = 1;
+  string status = 2;
+  bool is_error = 3;
+  repeated McpContent content = 4;
+  McpMetadata metadata = 5;
+}
+
+message CliErrorRefusalExample {
+  string case_id = 1;
+  repeated string operations = 2;
+  string code = 3;
+  string title = 4;
+  repeated string human_terminal_copy = 5;
+  CliJsonOutput json_output = 6;
+  McpToolResult mcp_tool_result = 7;
+  string mcp_status = 8;
+  int32 exit_code = 9;
+  string proof_mode = 10;
+  string fixture_id = 11;
+  repeated string accessibility_notes = 12;
+  repeated string customer_safe_wording = 13;
+  string fixture_proof_mode = 14;
+}
+
+message ScopeBoundary {
+  repeated string in_scope = 1;
+  repeated string out_of_scope = 2;
+}
+
+message CliErrorRefusalCatalog {
+  string issue = 1;
+  string phase = 2;
+  string target_package = 3;
+  string proof_note = 4;
+  repeated string design_refs = 5;
+  repeated CliErrorRefusalExample examples = 6;
+  ScopeBoundary scope_boundary = 7;
+}

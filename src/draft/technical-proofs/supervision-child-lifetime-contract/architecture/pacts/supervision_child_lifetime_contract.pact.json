@@ -1,0 +1,30 @@
+{
+  "consumer": {
+    "name": "SdkDiagnosticsConsumer"
+  },
+  "provider": {
+    "name": "SupervisionChildLifetimeContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "supervision child lifetime boundary returns its conformance report",
+      "request": {
+        "method": "GET",
+        "path": "/supervision-child-lifetime/report"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "suite": "@hobo/conformance/sdk/supervision-child-lifetime",
+          "specVersion": "hobo.sdk.supervision-child-lifetime/v1",
+          "status": "passed"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

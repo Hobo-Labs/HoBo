@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PolicyGatedFlagFlipsContractConsumer"
+  },
+  "provider": {
+    "name": "PolicyGatedFlagFlipsContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Policy Gated Flag Flips Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/policy-gated-flag-flips-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.policy_gated_flag_flips_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

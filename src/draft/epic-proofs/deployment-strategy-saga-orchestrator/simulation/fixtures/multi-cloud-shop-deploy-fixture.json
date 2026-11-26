@@ -1,0 +1,69 @@
+{
+  "referenceApp": {
+    "id": "multi-cloud-shop",
+    "bindleDigest": "sha256:multi-cloud-shop-reference-v1",
+    "services": {
+      "web": {
+        "routeId": "multi-cloud-shop-web",
+        "strategy": "canary",
+        "fromVersion": "web@sha256:blue",
+        "toVersion": "web@sha256:green"
+      },
+      "jobs-worker": {
+        "routeId": "multi-cloud-shop-jobs",
+        "strategy": "progressive",
+        "fromVersion": "jobs@sha256:blue",
+        "toVersion": "jobs@sha256:green"
+      },
+      "session-cache": {
+        "routeId": "multi-cloud-shop-cache",
+        "strategy": "blue-green",
+        "fromVersion": "cache@sha256:blue",
+        "toVersion": "cache@sha256:green"
+      },
+      "orders-db-migrator": {
+        "routeId": "multi-cloud-shop-db",
+        "strategy": "recreate",
+        "fromVersion": "db@sha256:blue",
+        "toVersion": "db@sha256:green"
+      }
+    }
+  },
+  "scenarios": {
+    "healthyPromotion": {
+      "dataPlaneHealth": "healthy",
+      "providerHealth": "healthy",
+      "sloSnapshots": [
+        { "seq": 1, "verdict": "promote", "reason": "healthy", "burnRate": 0.3 },
+        { "seq": 2, "verdict": "promote", "reason": "healthy", "burnRate": 0.4 }
+      ],
+      "goldenSuite": { "status": "passed", "runId": "golden-healthy" }
+    },
+    "canaryRegression": {
+      "dataPlaneHealth": "healthy",
+      "providerHealth": "healthy",
+      "injectRegressionAtWeight": 50,
+      "sloSnapshots": [
+        { "seq": 10, "verdict": "promote", "reason": "healthy", "burnRate": 0.4 },
+        { "seq": 11, "verdict": "rollback", "reason": "slo-burn", "burnRate": 4.8 }
+      ],
+      "goldenSuite": { "status": "passed", "runId": "golden-11" }
+    },
+    "goldenSuiteFailure": {
+      "dataPlaneHealth": "healthy",
+      "providerHealth": "healthy",
+      "sloSnapshots": [
+        { "seq": 20, "verdict": "promote", "reason": "healthy", "burnRate": 0.2 }
+      ],
+      "goldenSuite": { "status": "failed", "runId": "golden-20", "failures": ["checkout-latency"] }
+    },
+    "providerUnhealthy": {
+      "dataPlaneHealth": "healthy",
+      "providerHealth": "unhealthy",
+      "sloSnapshots": [
+        { "seq": 30, "verdict": "promote", "reason": "healthy", "burnRate": 0.1 }
+      ],
+      "goldenSuite": { "status": "passed", "runId": "golden-30" }
+    }
+  }
+}

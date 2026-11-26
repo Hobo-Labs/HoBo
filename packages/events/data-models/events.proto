@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package hobo.events.v1;
+
+// Wire records for the @hobo/events reactive-streams + saga kernel (S1-15b).
+// Design source: docs/design/data-plane.md (Plan 32). Event bodies ride the
+// shared EventEnvelope from packages/core; these are the persisted subscription
+// and saga records plus the normalized change-feed fact.
+
+enum ChangeOp {
+  CHANGE_OP_UNSPECIFIED = 0;
+  CHANGE_OP_INSERT = 1;
+  CHANGE_OP_UPDATE = 2;
+  CHANGE_OP_DELETE = 3;
+}
+
+// A live subscription is itself a projection (rebuilds on Reactor failover): the
+// materialization it folds, its read-set, and the log position it has reached.
+message SubscriptionRecord {
+  string subscription_id = 1;
+  string materialization = 2;
+  repeated string read_set = 3;
+  uint64 last_seq = 4;
+  string principal = 5;
+}
+
+message SubscriptionOpenedData {
+  string subscription_id = 1;
+  string materialization = 2;
+  repeated string read_set = 3;
+}
+
+message SubscriptionRecomputedData {
+  string subscription_id = 1;
+  uint64 seq = 2;
+  string read_set_hash = 3;
+}
+
+message SubscriptionPushedData {
+  string subscription_id = 1;
+  uint64 seq = 2;
+  uint32 result_count = 3;
+}
+
+message SubscriptionClosedData {
+  string subscription_id = 1;
+  string reason = 2;
+}
+
+// A saga instance: the choreography name, its status, and the steps emitted.
+message SagaRecord {
+  string saga_id = 1;
+  string name = 2;
+  string status = 3;
+  repeated string steps = 4;
+}
+
+message SagaStartedData {
+  string saga_id = 1;
+  string name = 2;
+  string trigger_type = 3;
+}
+
+message SagaStepEmittedData {
+  string saga_id = 1;
+  string step = 2;
+  string emitted_type = 3;
+}
+
+message SagaCompensatedData {
+  string saga_id = 1;
+  string step = 2;
+  string reason = 3;
+}
+
+message SagaCompletedData {
+  string saga_id = 1;
+  string outcome = 2;
+}
+
+// Normalized sink change-feed fact (data-plane.md §Source of truth).
+message DataChangedData {
+  string resource = 1;
+  string key = 2;
+  ChangeOp op = 3;
+  uint64 source_seq = 4;
+}

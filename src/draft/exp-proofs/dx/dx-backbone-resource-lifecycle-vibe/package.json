@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/dx-backbone-resource-lifecycle-vibe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

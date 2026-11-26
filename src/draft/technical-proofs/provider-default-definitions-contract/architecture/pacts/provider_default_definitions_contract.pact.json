@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ProviderDefaultDefinitionsContractConsumer"
+  },
+  "provider": {
+    "name": "ProviderDefaultDefinitionsContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Provider Default Definitions Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/provider-default-definitions-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.provider_default_definitions_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "NetworkingReferenceArchitecture" },
+  "provider": { "name": "DomainValidationGate" },
+  "interactions": [
+    {
+      "description": "requires multi-vantage DNS, TTL, ACME, and endpoint-health checks",
+      "request": { "method": "POST", "path": "/domain/validation-gate" },
+      "response": { "status": 200, "body": { "status": "validated", "liveZoneUntouched": true } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

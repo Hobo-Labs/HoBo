@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Generic per-resource-class offering resolution (plan-25 Resource Definition
+// Matching), extracted from the traffic-routing negotiation (ADR-0143).
+// Vocabulary modules pin the id/provider unions per class; these records are
+// the language-neutral schema reference for the architecture guard.
+
+message ResourceOfferingRecord {
+  string id = 1;
+  string stability = 2; // stable | preview | experimental
+  string fidelity = 3;  // real | simulated | mocked | camp-only
+  repeated string features = 4;
+}
+
+message ResourceOfferingProfileRecord {
+  string provider = 1;
+  repeated ResourceOfferingRecord offerings = 2;
+  // Ordered fallback offering ids when native realization cannot cover the request.
+  repeated string fallbacks = 3;
+}
+
+message ResourceOfferingRequestRecord {
+  repeated string features = 1;
+  string negotiation = 2; // prefer | require
+}
+
+message ResourceOfferingMatchRecord {
+  string kind = 1; // full | partial | none
+  repeated string offerings = 2;
+  repeated string missing = 3;
+  repeated string fallbacks = 4;
+  string remediation = 5;
+}
+
+message ResourceOfferingResolveResultRecord {
+  string kind = 1; // resolved | unresolved
+  string provider = 2;
+  repeated string strategy = 3;
+  ResourceOfferingMatchRecord match = 4;
+  repeated string missing = 5;
+  string remediation = 6;
+}
+
+// Station-side registration of a provider profile for a resource class.
+message StationOfferingRegistrationRecord {
+  string station_id = 1;
+  string resource_class = 2; // e.g. traffic-routing | data-store
+  ResourceOfferingProfileRecord profile = 3;
+  string registered_at = 4;
+}

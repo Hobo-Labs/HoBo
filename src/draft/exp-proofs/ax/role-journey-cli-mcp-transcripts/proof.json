@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "role-journey-cli-mcp-transcripts",
+  "experienceType": "ax",
+  "title": "Role Journey CLI and MCP Transcripts",
+  "linear": "HOBO-557",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [
+      "src/draft/exp-proofs/dx/resource-lifecycle-quickstart-examples"
+    ],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

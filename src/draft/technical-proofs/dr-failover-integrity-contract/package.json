@@ -1,0 +1,11 @@
+{
+  "name": "@hobo/dr-failover-integrity-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/dr-failover-integrity.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

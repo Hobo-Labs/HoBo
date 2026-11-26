@@ -1,0 +1,9 @@
+{
+  "name": "@hobo/closure-builder-author-flow-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile:types": "tsc --noEmit --project tsconfig.json",
+    "test": "npm run compile:types && vitest run --root ."
+  }
+}

@@ -1,0 +1,598 @@
+{
+  "consumer": {
+    "name": "role-journey-cli-mcp-transcripts-consumer"
+  },
+  "provider": {
+    "name": "resource-lifecycle-quickstart-examples"
+  },
+  "interactions": [
+    {
+      "description": "renders six role journeys from accepted HOBO-577 quickstart fixture ids",
+      "providerStates": [
+        {
+          "name": "HOBO-577 quickstart fixture ids are published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "issue": "HOBO-557",
+          "phase": "M2",
+          "targetPackage": "src/draft/exp-proofs/ax/role-journey-cli-mcp-transcripts",
+          "proofNote": "docs/design/proofs/role-journey-cli-mcp-transcripts/README.md",
+          "sourceQuickstartIssue": "HOBO-577",
+          "sourceQuickstartProof": "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md",
+          "designRefs": [
+            "docs/design/developer-experience.md#plan-07",
+            "docs/design/cli-spec.md",
+            "docs/design/walkthrough.md",
+            "docs/design/proofs/dx-resource-lifecycle-scenario-matrix/README.md",
+            "docs/design/proofs/cli-mcp-parity-resource-lifecycle-contracts/README.md",
+            "docs/design/proofs/resource-lifecycle-quickstart-examples/README.md"
+          ],
+          "scopeOut": [
+            "production CLI implementation",
+            "live provider calls",
+            "real credentials",
+            "customer data",
+            "visual mockups that do not trace to the DX quickstart"
+          ],
+          "journeys": [
+            {
+              "role": "app-developer",
+              "title": "App developer deploys and verifies a first app",
+              "audience": "Application developer validating the resource lifecycle from code to proof.",
+              "intent": "Keep the first app path CLI-first while preserving SDK, API, and MCP parity through fixture ids.",
+              "primaryQuickstartFixtureId": "rlq-define-object-graph-v1",
+              "coverage": [
+                "deploy",
+                "support-handoff"
+              ],
+              "sequence": [
+                {
+                  "id": "app.define",
+                  "command": "hobo collect ./examples/shop-api --fixture rlq-define-object-graph-v1 --json",
+                  "expectedTerminalOutput": "ready: manifest fixture rlq-define-object-graph-v1 collected for plan preview",
+                  "quickstartFixtureId": "rlq-define-object-graph-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "ready",
+                    "fixtureId": "rlq-define-object-graph-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "ready: manifest fixture rlq-define-object-graph-v1 collected for plan preview",
+                    "supportHandoff": "Support handoff cites rlq-define-object-graph-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_collect",
+                    "status": "ready",
+                    "fixtureId": "rlq-define-object-graph-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-define-object-graph-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "app.plan",
+                  "command": "hobo plan --fixture rlq-collect-manifest-ir-v1 --camp preview --json",
+                  "expectedTerminalOutput": "ready: DeploymentPlan fixture includes Gatekeeper approval and support handoff",
+                  "quickstartFixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "ready",
+                    "fixtureId": "rlq-plan-safe-preview-v1",
+                    "proofMode": "simulated",
+                    "summary": "ready: DeploymentPlan fixture includes Gatekeeper approval and support handoff",
+                    "supportHandoff": "Support handoff cites rlq-plan-safe-preview-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_plan",
+                    "status": "ready",
+                    "fixtureId": "rlq-plan-safe-preview-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-plan-safe-preview-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "app.deploy",
+                  "command": "hobo up --plan-fixture rlq-plan-safe-preview-v1 --mode simulated --json",
+                  "expectedTerminalOutput": "deploy: simulated Deployment Set accepted; support handoff cites run fixture",
+                  "quickstartFixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "deploy",
+                    "fixtureId": "rlq-deploy-run-accepted-v1",
+                    "proofMode": "simulated",
+                    "summary": "deploy: simulated Deployment Set accepted; support handoff cites run fixture",
+                    "supportHandoff": "Support handoff cites rlq-deploy-run-accepted-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "deploy",
+                    "fixtureId": "rlq-deploy-run-accepted-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-deploy-run-accepted-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                }
+              ],
+              "negativePaths": [
+                "blocked",
+                "stale-or-unknown-evidence"
+              ]
+            },
+            {
+              "role": "platform-engineer",
+              "title": "Platform engineer manages provider readiness",
+              "audience": "Platform engineer reviewing readiness, stale evidence, and safe next action.",
+              "intent": "Show management through plan, inspect, and doctor commands without adding platform-only verbs.",
+              "primaryQuickstartFixtureId": "rlq-plan-safe-preview-v1",
+              "coverage": [
+                "manage",
+                "support-handoff"
+              ],
+              "sequence": [
+                {
+                  "id": "platform.plan",
+                  "command": "hobo plan ./platform --fixture rlq-plan-safe-preview-v1 --camp prod --json",
+                  "expectedTerminalOutput": "ready: plan groups provider match, cost, and policy evidence for review",
+                  "quickstartFixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "ready",
+                    "fixtureId": "rlq-plan-safe-preview-v1",
+                    "proofMode": "simulated",
+                    "summary": "ready: plan groups provider match, cost, and policy evidence for review",
+                    "supportHandoff": "Support handoff cites rlq-plan-safe-preview-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_plan",
+                    "status": "ready",
+                    "fixtureId": "rlq-plan-safe-preview-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-plan-safe-preview-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "platform.inspect",
+                  "command": "hobo inspect deployment-set --fixture rlq-inspect-event-projection-v1 --current --json",
+                  "expectedTerminalOutput": "stale: projection evidence is labelled before any readiness claim",
+                  "quickstartFixtureId": "rlq-inspect-event-projection-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "stale",
+                    "fixtureId": "rlq-inspect-event-projection-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "stale: projection evidence is labelled before any readiness claim",
+                    "supportHandoff": "Support handoff cites rlq-inspect-event-projection-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_inspect_deployment_set",
+                    "status": "stale",
+                    "fixtureId": "rlq-inspect-event-projection-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-inspect-event-projection-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "platform.doctor",
+                  "command": "hobo doctor --fixture rlq-manage-stale-evidence-v1 --focus stale-projection",
+                  "expectedTerminalOutput": "support: doctor routes stale evidence to platform owner and fixture refresh",
+                  "quickstartFixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "support",
+                    "fixtureId": "rlq-manage-stale-evidence-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "support: doctor routes stale evidence to platform owner and fixture refresh",
+                    "supportHandoff": "Support handoff cites rlq-manage-stale-evidence-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_doctor",
+                    "status": "support",
+                    "fixtureId": "rlq-manage-stale-evidence-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-manage-stale-evidence-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                }
+              ],
+              "negativePaths": [
+                "blocked",
+                "stale-or-unknown-evidence"
+              ]
+            },
+            {
+              "role": "gitops",
+              "title": "GitOps promotes and rolls back by Deployment Set",
+              "audience": "Release owner using CI transcripts for preview, promotion, and rollback.",
+              "intent": "Keep promotion and rollback under hobo up with deployment-set fixtures and no standalone verbs.",
+              "primaryQuickstartFixtureId": "rlq-deploy-run-accepted-v1",
+              "coverage": [
+                "deploy",
+                "rollback"
+              ],
+              "sequence": [
+                {
+                  "id": "gitops.preview",
+                  "command": "hobo up --camp pr-42 --plan-fixture rlq-plan-safe-preview-v1 --json",
+                  "expectedTerminalOutput": "deploy: preview camp accepted from simulated quickstart fixture",
+                  "quickstartFixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "deploy",
+                    "fixtureId": "rlq-deploy-run-accepted-v1",
+                    "proofMode": "simulated",
+                    "summary": "deploy: preview camp accepted from simulated quickstart fixture",
+                    "supportHandoff": "Support handoff cites rlq-deploy-run-accepted-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "deploy",
+                    "fixtureId": "rlq-deploy-run-accepted-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-deploy-run-accepted-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "gitops.promote",
+                  "command": "hobo up --camp prod --to git:main --fixture rlq-deploy-run-accepted-v1 --json",
+                  "expectedTerminalOutput": "ready: promotion uses existing Deployment Set evidence and Gatekeeper receipt",
+                  "quickstartFixtureId": "rlq-deploy-run-accepted-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "ready",
+                    "fixtureId": "rlq-deploy-run-accepted-v1",
+                    "proofMode": "simulated",
+                    "summary": "ready: promotion uses existing Deployment Set evidence and Gatekeeper receipt",
+                    "supportHandoff": "Support handoff cites rlq-deploy-run-accepted-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "ready",
+                    "fixtureId": "rlq-deploy-run-accepted-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-deploy-run-accepted-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "gitops.rollback",
+                  "command": "hobo up --camp prod --rollback deployment-set:previous --fixture rlq-recover-snapshot-restore-v1",
+                  "expectedTerminalOutput": "rollback: dry-run recovery preserves previous Deployment Set and support handoff",
+                  "quickstartFixtureId": "rlq-recover-snapshot-restore-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "rollback",
+                    "fixtureId": "rlq-recover-snapshot-restore-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "rollback: dry-run recovery preserves previous Deployment Set and support handoff",
+                    "supportHandoff": "Support handoff cites rlq-recover-snapshot-restore-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "rollback",
+                    "fixtureId": "rlq-recover-snapshot-restore-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-recover-snapshot-restore-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                }
+              ],
+              "negativePaths": [
+                "blocked",
+                "stale-or-unknown-evidence"
+              ]
+            },
+            {
+              "role": "secops",
+              "title": "SecOps reviews policy and contract refusal evidence",
+              "audience": "Security reviewer checking deny outcomes before sensitive changes proceed.",
+              "intent": "Expose policy and contract denial through CLI output and equivalent MCP result shapes.",
+              "primaryQuickstartFixtureId": "rlq-plan-safe-preview-v1",
+              "coverage": [
+                "policy-or-contract-denial",
+                "support-handoff"
+              ],
+              "sequence": [
+                {
+                  "id": "secops.can-deploy",
+                  "command": "hobo up --camp prod --plan-fixture rlq-plan-safe-preview-v1 --dry-run --json",
+                  "expectedTerminalOutput": "blocked: policy or contract denial returns Gatekeeper explanation",
+                  "quickstartFixtureId": "rlq-plan-safe-preview-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "blocked",
+                    "fixtureId": "rlq-plan-safe-preview-v1",
+                    "proofMode": "simulated",
+                    "summary": "blocked: policy or contract denial returns Gatekeeper explanation",
+                    "supportHandoff": "Support handoff cites rlq-plan-safe-preview-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "blocked",
+                    "fixtureId": "rlq-plan-safe-preview-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-plan-safe-preview-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "secops.doctor-policy",
+                  "command": "hobo doctor --fixture rlq-manage-stale-evidence-v1 --policy-pack platform",
+                  "expectedTerminalOutput": "support: customer-safe policy wording routes owner without exposing internals",
+                  "quickstartFixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "support",
+                    "fixtureId": "rlq-manage-stale-evidence-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "support: customer-safe policy wording routes owner without exposing internals",
+                    "supportHandoff": "Support handoff cites rlq-manage-stale-evidence-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_doctor",
+                    "status": "support",
+                    "fixtureId": "rlq-manage-stale-evidence-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-manage-stale-evidence-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "secops.scope-out",
+                  "command": "hobo quickstart-scope --fixture rlq-recover-scope-out-v1 --json",
+                  "expectedTerminalOutput": "blocked: scope-out prevents live credential or launch claim escalation",
+                  "quickstartFixtureId": "rlq-recover-scope-out-v1",
+                  "proofMode": "scope-out",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "blocked",
+                    "fixtureId": "rlq-recover-scope-out-v1",
+                    "proofMode": "scope-out",
+                    "summary": "blocked: scope-out prevents live credential or launch claim escalation",
+                    "supportHandoff": "Support handoff cites rlq-recover-scope-out-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_quickstart_scope_out",
+                    "status": "blocked",
+                    "fixtureId": "rlq-recover-scope-out-v1",
+                    "proofMode": "scope-out",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-recover-scope-out-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                }
+              ],
+              "negativePaths": [
+                "blocked",
+                "stale-or-unknown-evidence"
+              ]
+            },
+            {
+              "role": "devops",
+              "title": "DevOps migrates brownfield resources safely",
+              "audience": "DevOps operator previewing import, migration, and restore evidence.",
+              "intent": "Make migration a dry-run transcript that feeds plan before any deploy-like action.",
+              "primaryQuickstartFixtureId": "rlq-migrate-brownfield-preview-v1",
+              "coverage": [
+                "migrate",
+                "rollback",
+                "manage"
+              ],
+              "sequence": [
+                {
+                  "id": "devops.import",
+                  "command": "hobo import terraform ./infra --fixture rlq-migrate-brownfield-preview-v1 --dry-run --json",
+                  "expectedTerminalOutput": "migrate: dry-run import emits migration preview events without adoption authority",
+                  "quickstartFixtureId": "rlq-migrate-brownfield-preview-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "migrate",
+                    "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                    "proofMode": "simulated",
+                    "summary": "migrate: dry-run import emits migration preview events without adoption authority",
+                    "supportHandoff": "Support handoff cites rlq-migrate-brownfield-preview-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_import_terraform",
+                    "status": "migrate",
+                    "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-migrate-brownfield-preview-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "devops.plan",
+                  "command": "hobo plan --fixture rlq-migrate-brownfield-preview-v1 --camp prod --json",
+                  "expectedTerminalOutput": "blocked: destructive migration waits on Gatekeeper and Pact compatibility",
+                  "quickstartFixtureId": "rlq-migrate-brownfield-preview-v1",
+                  "proofMode": "simulated",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "blocked",
+                    "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                    "proofMode": "simulated",
+                    "summary": "blocked: destructive migration waits on Gatekeeper and Pact compatibility",
+                    "supportHandoff": "Support handoff cites rlq-migrate-brownfield-preview-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_plan",
+                    "status": "blocked",
+                    "fixtureId": "rlq-migrate-brownfield-preview-v1",
+                    "proofMode": "simulated",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-migrate-brownfield-preview-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "devops.restore",
+                  "command": "hobo up --rollback deployment-set:previous --fixture rlq-recover-snapshot-restore-v1 --dry-run",
+                  "expectedTerminalOutput": "rollback: restore preview names snapshot fixture and support handoff",
+                  "quickstartFixtureId": "rlq-recover-snapshot-restore-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "rollback",
+                    "fixtureId": "rlq-recover-snapshot-restore-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "rollback: restore preview names snapshot fixture and support handoff",
+                    "supportHandoff": "Support handoff cites rlq-recover-snapshot-restore-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "rollback",
+                    "fixtureId": "rlq-recover-snapshot-restore-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-recover-snapshot-restore-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                }
+              ],
+              "negativePaths": [
+                "blocked",
+                "stale-or-unknown-evidence"
+              ]
+            },
+            {
+              "role": "sre",
+              "title": "SRE diagnoses incident evidence and hands off safely",
+              "audience": "SRE reading projections, logs, rollback evidence, and support packets.",
+              "intent": "Keep incident diagnosis read-only until gated rollback evidence exists.",
+              "primaryQuickstartFixtureId": "rlq-inspect-event-projection-v1",
+              "coverage": [
+                "manage",
+                "rollback",
+                "support-handoff"
+              ],
+              "sequence": [
+                {
+                  "id": "sre.inspect",
+                  "command": "hobo inspect run --fixture rlq-inspect-event-projection-v1 --last --json",
+                  "expectedTerminalOutput": "stale: run projection labels unknown evidence before success wording",
+                  "quickstartFixtureId": "rlq-inspect-event-projection-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "stale",
+                    "fixtureId": "rlq-inspect-event-projection-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "stale: run projection labels unknown evidence before success wording",
+                    "supportHandoff": "Support handoff cites rlq-inspect-event-projection-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_inspect_run",
+                    "status": "stale",
+                    "fixtureId": "rlq-inspect-event-projection-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-inspect-event-projection-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "sre.logs",
+                  "command": "hobo logs --follow api --fixture rlq-manage-stale-evidence-v1 --since incident",
+                  "expectedTerminalOutput": "support: redacted log transcript points support to fixture refresh",
+                  "quickstartFixtureId": "rlq-manage-stale-evidence-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "support",
+                    "fixtureId": "rlq-manage-stale-evidence-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "support: redacted log transcript points support to fixture refresh",
+                    "supportHandoff": "Support handoff cites rlq-manage-stale-evidence-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_logs",
+                    "status": "support",
+                    "fixtureId": "rlq-manage-stale-evidence-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-manage-stale-evidence-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                },
+                {
+                  "id": "sre.rollback",
+                  "command": "hobo up --camp prod --rollback deployment-set:previous --fixture rlq-recover-snapshot-restore-v1",
+                  "expectedTerminalOutput": "rollback: rollback preview includes customer-safe support handoff",
+                  "quickstartFixtureId": "rlq-recover-snapshot-restore-v1",
+                  "proofMode": "reference-fixture",
+                  "jsonResult": {
+                    "schema": "hobo.role-journey-cli-mcp-result/v1",
+                    "status": "rollback",
+                    "fixtureId": "rlq-recover-snapshot-restore-v1",
+                    "proofMode": "reference-fixture",
+                    "summary": "rollback: rollback preview includes customer-safe support handoff",
+                    "supportHandoff": "Support handoff cites rlq-recover-snapshot-restore-v1 with customer-safe reproduction notes."
+                  },
+                  "mcpResult": {
+                    "tool": "hobo_up",
+                    "status": "rollback",
+                    "fixtureId": "rlq-recover-snapshot-restore-v1",
+                    "proofMode": "reference-fixture",
+                    "resultSchema": "hobo.role-journey-cli-mcp-result/v1"
+                  },
+                  "supportHandoff": "Support handoff cites rlq-recover-snapshot-restore-v1 with customer-safe reproduction notes.",
+                  "accessibilityNote": "Plain text terminal output uses stable headings, non-color status words, and screen reader friendly order."
+                }
+              ],
+              "negativePaths": [
+                "blocked",
+                "stale-or-unknown-evidence"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "hobo": {
+      "issue": "HOBO-557",
+      "source": "HOBO-577"
+    }
+  }
+}

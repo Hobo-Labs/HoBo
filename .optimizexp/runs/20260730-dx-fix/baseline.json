@@ -1,0 +1,12 @@
+{
+  "runId": "20260730-dx-fix",
+  "source": "prior judged outcomes (pre-reduce, no node_modules)",
+  "scoredAt": "2026-07-30T19:00:00.000Z",
+  "metric_total": 20,
+  "metric_max": 4,
+  "cells": [
+    { "persona": "product-app-developer", "surface": "pnpm run agent:check -- --staged", "harms": 0, "friction": 4, "uncertainty": 3 },
+    { "persona": "product-app-developer", "surface": "pnpm run doctor", "harms": 0, "friction": 4, "uncertainty": 2 },
+    { "persona": "junior-typescript-developer", "surface": "pnpm run agent:check -- --staged", "harms": 0, "friction": 4, "uncertainty": 3 }
+  ]
+}

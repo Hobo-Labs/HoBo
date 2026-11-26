@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "DeliveryExperimentAdapterConformanceSuiteConsumer"
+  },
+  "provider": {
+    "name": "DeliveryExperimentAdapterConformanceSuiteBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Delivery Experiment Adapter Conformance Suite boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/delivery-experiment-adapter-conformance-suite/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.delivery_experiment_adapter_conformance_suite/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

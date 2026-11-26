@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "non-ts-idiom-roundtrip-spike",
+  "title": "Non-TS Idiom Round Trip Spike",
+  "linear": "HOBO-398",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

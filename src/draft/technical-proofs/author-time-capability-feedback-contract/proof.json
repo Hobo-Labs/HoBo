@@ -1,0 +1,22 @@
+{
+  "layer": "technical",
+  "slug": "author-time-capability-feedback-contract",
+  "title": "HOBO-86 Author-Time Capability Feedback Contract",
+  "linear": "HOBO-86",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/adr/01-architecture-core.md",
+      "docs/design/control-plane.md",
+      "docs/design/platform-engineering.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

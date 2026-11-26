@@ -1,0 +1,9 @@
+/** @module Interface hobo:runtime/saga@0.1.0 **/
+export function on(filter: SubscriptionFilter): Subscription;
+export function emit(event: Event): bigint;
+export function compensate(compensation: Compensation): bigint;
+export type Compensation = import('./hobo-runtime-types.js').Compensation;
+export type Event = import('./hobo-runtime-types.js').Event;
+export type RuntimeError = import('./hobo-runtime-types.js').RuntimeError;
+export type Subscription = import('./hobo-runtime-types.js').Subscription;
+export type SubscriptionFilter = import('./hobo-runtime-types.js').SubscriptionFilter;

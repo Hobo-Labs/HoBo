@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Admin Console Scope
+// draft package reasons about. Documents the records/objects this package owns
+// so the architecture guard has a language-neutral schema reference. Not
+// compiled at runtime; this is a design-time contract artifact.
+
+enum AdminConsoleScopeEvidenceKind {
+  ADMIN_CONSOLE_SCOPE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  ADMIN_CONSOLE_SCOPE_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  ADMIN_CONSOLE_SCOPE_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  ADMIN_CONSOLE_SCOPE_EVIDENCE_KIND_AUDIT_FIXTURE = 3;
+  ADMIN_CONSOLE_SCOPE_EVIDENCE_KIND_SUPPORT_HANDOFF = 4;
+  ADMIN_CONSOLE_SCOPE_EVIDENCE_KIND_POLICY_FIXTURE = 5;
+}
+
+message AdminConsoleReadModelClass {
+  string id = 1;
+  string owner = 2;
+  bool customer_visible = 3;
+  bool launch_critical = 4;
+}
+
+message AdminConsoleScopeRecord {
+  string issue = 1;
+  string summary = 2;
+  repeated string personas = 3;
+  repeated AdminConsoleReadModelClass read_models = 4;
+  repeated string action_intents = 5;
+  repeated string evidence = 6;
+}

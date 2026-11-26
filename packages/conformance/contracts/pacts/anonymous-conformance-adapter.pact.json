@@ -1,0 +1,196 @@
+{
+	"consumer": { "name": "hobo-anonymous-conformance-runner" },
+	"provider": { "name": "hobo-anonymous-conformance-adapter" },
+	"interactions": [
+		{
+			"description": "a bootstrap attempt records consent before the effectful provisioning call",
+			"request": {
+				"method": "POST",
+				"path": "/anonymous/bootstrap/attempt",
+				"body": {
+					"caseId": "bootstrap/consent-recorded-before-effect",
+					"advertisedClass": "anonymous-claimable",
+					"consent": "granted",
+					"requestedResourceKind": "database",
+					"allowedResourceKinds": ["database", "object-store", "site"],
+					"proofOfWorkCeiling": 0,
+					"issuedAtMs": 1700000000000
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"caseId": "bootstrap/consent-recorded-before-effect",
+					"effectAttempted": true,
+					"consentRecordedAtMs": 1700000000000,
+					"effectStartedAtMs": 1700000000500,
+					"observedClass": "anonymous-claimable",
+					"leaseExpiry": {
+						"source": "provider-response",
+						"expiresAtMs": 1700003600000
+					}
+				}
+			}
+		},
+		{
+			"description": "a resource kind outside the allowlist is refused before any effect runs",
+			"request": {
+				"method": "POST",
+				"path": "/anonymous/bootstrap/attempt",
+				"body": {
+					"caseId": "bootstrap/allowlist-refuses-unlisted-kind",
+					"advertisedClass": "anonymous-claimable",
+					"consent": "granted",
+					"requestedResourceKind": "gpu-cluster",
+					"allowedResourceKinds": ["database", "object-store", "site"],
+					"proofOfWorkCeiling": 0,
+					"issuedAtMs": 1700000000000
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"caseId": "bootstrap/allowlist-refuses-unlisted-kind",
+					"effectAttempted": false,
+					"refusal": {
+						"code": "RESOURCE_NOT_ALLOWLISTED",
+						"detail": "gpu-cluster is not in the anonymous bootstrap allowlist"
+					}
+				}
+			}
+		},
+		{
+			"description": "observing a provider claim callback leaves the item observed, never completed",
+			"request": {
+				"method": "POST",
+				"path": "/anonymous/claim/step",
+				"body": {
+					"caseId": "claim/provider-callback-alone",
+					"step": "observe-provider-callback",
+					"subjectRef": "resource:conformance/claimable-1",
+					"requiredPostClaimActions": [
+						"rotate-binding",
+						"revoke-bootstrap-authority"
+					],
+					"completedPostClaimActions": []
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"caseId": "claim/provider-callback-alone",
+					"itemStatus": "observed",
+					"providerReportedClaimed": true,
+					"independentlyVerified": false,
+					"creatorAuthorityAfterClaim": "rotatable",
+					"outstandingPostClaimActions": [
+						"rotate-binding",
+						"revoke-bootstrap-authority"
+					]
+				}
+			}
+		},
+		{
+			"description": "a pre-claim credential is rejected by the claimed resource",
+			"request": {
+				"method": "POST",
+				"path": "/anonymous/claim/step",
+				"body": {
+					"caseId": "claim/pre-claim-credential-no-longer-works",
+					"step": "replay-pre-claim-credential",
+					"subjectRef": "resource:conformance/claimable-1",
+					"requiredPostClaimActions": [
+						"rotate-binding",
+						"revoke-bootstrap-authority"
+					],
+					"completedPostClaimActions": [
+						"rotate-binding",
+						"revoke-bootstrap-authority"
+					]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"caseId": "claim/pre-claim-credential-no-longer-works",
+					"itemStatus": "completed",
+					"providerReportedClaimed": true,
+					"independentlyVerified": true,
+					"creatorAuthorityAfterClaim": "absent",
+					"outstandingPostClaimActions": [],
+					"preClaimCredentialAccepted": false,
+					"evidenceRef": "evidence:conformance/ownership/claimable-1"
+				}
+			}
+		},
+		{
+			"description": "a produced binding exposes endpoints as addresses and credentials as references",
+			"request": {
+				"method": "POST",
+				"path": "/anonymous/binding/probe",
+				"body": {
+					"caseId": "binding/credentials-are-secret-references",
+					"step": "produce",
+					"resourceRef": "resource:conformance/claimable-1",
+					"capabilityProfileRef": "capability.relational-database/v1",
+					"nowMs": 1700000000000
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"caseId": "binding/credentials-are-secret-references",
+					"binding": {
+						"schemaVersion": "hobo.capability-binding/v1",
+						"id": "binding-claimable-1",
+						"resourceRef": "resource:conformance/claimable-1",
+						"capabilityProfileRef": "capability.relational-database/v1",
+						"bindingProfileRef": "binding.postgresql/v1",
+						"type": "postgresql",
+						"endpoints": [
+							{
+								"protocol": "postgresql",
+								"addressRef": {
+									"host": "db.conformance.example",
+									"port": 5432,
+									"tls": true
+								},
+								"role": "primary"
+							}
+						],
+						"credentialRef": "hobo-secret://tenant-1/conformance/claimable-1",
+						"renewable": true,
+						"rotationSupported": true,
+						"revocationSupported": true,
+						"producerEvidenceRef": "evidence:conformance/binding/claimable-1"
+					}
+				}
+			}
+		},
+		{
+			"description": "a failed import verifies nothing, commits no cutover, and leaves the source intact",
+			"request": {
+				"method": "POST",
+				"path": "/anonymous/migration/step",
+				"body": {
+					"caseId": "migration/source-survives-a-failed-import",
+					"step": "failed-import",
+					"sourceRef": "resource:conformance/claimable-1",
+					"destinationRef": "resource:conformance/destination-1"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"caseId": "migration/source-survives-a-failed-import",
+					"sourceRef": "resource:conformance/claimable-1",
+					"destinationRef": "resource:conformance/destination-1",
+					"verified": false,
+					"cutoverCommitted": false,
+					"sourceIntact": true,
+					"state": "Importing"
+				}
+			}
+		}
+	]
+}

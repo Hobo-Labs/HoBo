@@ -1,0 +1,38 @@
+{
+	"name": "@hobo/pack-postgres-oci",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "PostgreSQL as a HoBo implementation pack: a digest-pinned upstream PostgreSQL image that satisfies data.postgres/v1 and data.relational/v1 on generic compute, with mandatory persistent storage, credentials minted inside secret custody, a binding.postgresql/v1 output, and pg_dump/pg_restore backup and migration operations built as argv arrays.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@hobo/bindings": "workspace:*",
+		"@hobo/capability-profiles": "workspace:*",
+		"@hobo/pack-framework": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"typecheck:test": "tsc -p tsconfig.test.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run test/",
+		"test:unit": "vitest run test/"
+	}
+}

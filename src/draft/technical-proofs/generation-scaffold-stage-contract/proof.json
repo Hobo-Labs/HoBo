@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "generation-scaffold-stage-contract",
+  "title": "Generation Scaffold Stage Contract POC",
+  "linear": "HOBO-321",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/generation-pipeline-io-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

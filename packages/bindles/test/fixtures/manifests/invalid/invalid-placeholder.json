@@ -1,0 +1,16 @@
+{
+  "schema": "hobo.manifest/v1",
+  "componentHost": {
+    "kind": "wasmtime",
+    "version": "1.0.0"
+  },
+  "resources": {
+    "api": {
+      "type": "component.v1",
+      "runtime": "wasm",
+      "env": {
+        "BAD_REF": "${resources.data.postgres#missing.outputs.url}"
+      }
+    }
+  }
+}

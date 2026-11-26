@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "workspace-activation-telemetry-contract",
+  "experienceType": "cx",
+  "title": "Workspace Activation Telemetry Contract",
+  "linear": "HOBO-486",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

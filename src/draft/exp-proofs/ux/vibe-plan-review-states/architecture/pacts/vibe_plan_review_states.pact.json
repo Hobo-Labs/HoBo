@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "VibePlanReviewStatesConsumer"
+  },
+  "provider": {
+    "name": "VibePlanReviewStatesBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Vibe plan review states boundary returns accepted state fixture evidence",
+      "request": {
+        "method": "GET",
+        "path": "/vibe-plan-review-states/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "issue": "HOBO-542",
+          "schema": "hobo.draft.vibe_plan_review_states/v1",
+          "states": [
+            "create",
+            "update",
+            "no-op",
+            "destructive",
+            "blocked",
+            "stale",
+            "unknown-evidence"
+          ]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

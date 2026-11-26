@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/wrpc-deadline-propagation-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-24 deadline propagation across in-process wRPC links.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

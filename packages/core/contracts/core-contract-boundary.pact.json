@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "@hobo/runtime"
+  },
+  "provider": {
+    "name": "CoreContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Core contract boundary exposes parse-don't-validate envelope and manifest surfaces",
+      "request": {
+        "method": "GET",
+        "path": "/core/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.core/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence for the HOBO-549 pilot storyboard fixture.
+// This is design-time proof data, not generated production runtime code.
+
+enum VibeFirstCustomerPilotProofMode {
+  VIBE_FIRST_CUSTOMER_PILOT_PROOF_MODE_UNSPECIFIED = 0;
+  VIBE_FIRST_CUSTOMER_PILOT_PROOF_MODE_LIVE = 1;
+  VIBE_FIRST_CUSTOMER_PILOT_PROOF_MODE_SIMULATED = 2;
+  VIBE_FIRST_CUSTOMER_PILOT_PROOF_MODE_REFERENCE_FIXTURE = 3;
+  VIBE_FIRST_CUSTOMER_PILOT_PROOF_MODE_SCOPE_OUT = 4;
+}
+
+message VibeFirstCustomerPilotStoryboardStep {
+  string stage = 1;
+  string title = 2;
+  repeated string personas = 3;
+  string operating_question = 4;
+  string evidence_source = 5;
+}
+
+message VibeFirstCustomerPilotScriptArtifact {
+  string stage = 1;
+  string entry_criteria = 2;
+  string exit_criteria = 3;
+  string consent_state = 4;
+  VibeFirstCustomerPilotProofMode proof_mode = 5;
+  string blocker_category = 6;
+  string owner = 7;
+  string safe_next_action = 8;
+  string customer_safe_message = 9;
+}
+
+message VibeFirstCustomerPilotScenarioPath {
+  string id = 1;
+  repeated string stage_ids = 2;
+  string narrative = 3;
+  string safe_outcome = 4;
+}
+
+message VibeFirstCustomerPilotQuickstartFixtureReference {
+  string source_issue = 1;
+  string fixture_id = 2;
+  string pilot_use = 3;
+}
+
+message VibeFirstCustomerPilotStoryboardRecord {
+  string issue = 1;
+  string phase = 2;
+  string package_path = 3;
+  string proof_path = 4;
+  repeated string design_refs = 5;
+  repeated VibeFirstCustomerPilotQuickstartFixtureReference quickstart_fixture_refs = 6;
+  repeated string personas = 7;
+  repeated VibeFirstCustomerPilotStoryboardStep storyboard = 8;
+  repeated VibeFirstCustomerPilotScriptArtifact script_artifacts = 9;
+  repeated VibeFirstCustomerPilotScenarioPath scenario_paths = 10;
+  repeated string accessibility_notes = 11;
+  repeated string scope_out = 12;
+}

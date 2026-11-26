@@ -1,0 +1,17 @@
+{
+  "name": "@hobo/draft-ifc-handler-trigger-hobo-608",
+  "private": true,
+  "type": "module",
+  "description": "POC for HOBO-608: IfC handler/trigger attachment + local dispatch.",
+  "main": "./src/index.ts",
+  "types": "./src/triggers.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/triggers.d.mts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root . && tsc --noEmit -p tsconfig.types.json"
+  }
+}

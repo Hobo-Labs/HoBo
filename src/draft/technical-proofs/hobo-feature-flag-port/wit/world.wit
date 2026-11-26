@@ -1,0 +1,150 @@
+package hobo:feature-flag@0.1.0;
+
+interface types {
+  enum value-type {
+    boolean,
+    %string,
+    number,
+    %object,
+  }
+
+  enum evaluation-reason {
+    %static,
+    targeting-match,
+    split,
+    cached,
+    %default,
+    %error,
+    disabled,
+    unknown,
+  }
+
+  record evaluation-error {
+    code: string,
+    message: option<string>,
+  }
+
+  record json-value {
+    encoded-json: string,
+  }
+
+  variant attribute-value {
+    boolean(bool),
+    number(f64),
+    %string(string),
+    json(json-value),
+  }
+
+  record context-attribute {
+    key: string,
+    value: attribute-value,
+  }
+
+  record principal-ref {
+    kind: string,
+    id: string,
+    tenant: option<string>,
+    claims: list<context-attribute>,
+  }
+
+  record evaluation-context {
+    user: option<principal-ref>,
+    identity: option<principal-ref>,
+    attributes: list<context-attribute>,
+  }
+
+  record boolean-evaluation-details {
+    flag-key: string,
+    value: bool,
+    reason: evaluation-reason,
+    %variant: option<string>,
+    %error: option<evaluation-error>,
+  }
+
+  record string-evaluation-details {
+    flag-key: string,
+    value: string,
+    reason: evaluation-reason,
+    %variant: option<string>,
+    %error: option<evaluation-error>,
+  }
+
+  record number-evaluation-details {
+    flag-key: string,
+    value: f64,
+    reason: evaluation-reason,
+    %variant: option<string>,
+    %error: option<evaluation-error>,
+  }
+
+  record object-evaluation-details {
+    flag-key: string,
+    value: json-value,
+    reason: evaluation-reason,
+    %variant: option<string>,
+    %error: option<evaluation-error>,
+  }
+
+  variant evaluation-details {
+    boolean(boolean-evaluation-details),
+    %string(string-evaluation-details),
+    number(number-evaluation-details),
+    %object(object-evaluation-details),
+  }
+
+  record hook-invocation {
+    flag-key: string,
+    value-type: value-type,
+    default-value: json-value,
+    context: evaluation-context,
+  }
+}
+
+interface provider {
+  use types.{
+    boolean-evaluation-details,
+    evaluation-context,
+    json-value,
+    number-evaluation-details,
+    object-evaluation-details,
+    string-evaluation-details,
+  };
+
+  get-boolean-details: func(
+    key: string,
+    default-value: bool,
+    context: option<evaluation-context>,
+  ) -> boolean-evaluation-details;
+
+  get-string-details: func(
+    key: string,
+    default-value: string,
+    context: option<evaluation-context>,
+  ) -> string-evaluation-details;
+
+  get-number-details: func(
+    key: string,
+    default-value: f64,
+    context: option<evaluation-context>,
+  ) -> number-evaluation-details;
+
+  get-object-details: func(
+    key: string,
+    default-value: json-value,
+    context: option<evaluation-context>,
+  ) -> object-evaluation-details;
+}
+
+interface hooks {
+  use types.{evaluation-context, evaluation-details, evaluation-error, hook-invocation};
+
+  before: func(invocation: hook-invocation) -> option<evaluation-context>;
+  after: func(invocation: hook-invocation, details: evaluation-details);
+  on-error: func(invocation: hook-invocation, error: evaluation-error);
+  finally: func(invocation: hook-invocation);
+}
+
+world feature-flag {
+  export provider;
+  export hooks;
+}

@@ -1,0 +1,36 @@
+{
+	"name": "@hobo/runtime-wasm",
+	"version": "0.0.1",
+	"description": "Camp component host: Wasmtime OS-process sandboxes for private WASM components (kind: wasm).",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist",
+		"wit"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bytecodealliance/jco": "1.24.3",
+		"@hobo/core": "workspace:*",
+		"esbuild": "^0.25.0"
+	},
+	"devDependencies": {
+		"@types/node": ">=24.0.0"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"license": "MIT"
+}

@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "TierTwoCrossRegionNetworkContractConsumer"
+  },
+  "provider": {
+    "name": "TierTwoCrossRegionNetworkContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Tier Two Cross Region Network Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/tier-two-cross-region-network-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.tier_two_cross_region_network_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

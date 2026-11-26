@@ -1,0 +1,48 @@
+{
+  "consumer": { "name": "SupportRoutingProjection" },
+  "provider": { "name": "CompatibilityMatrixEventStore" },
+  "interactions": [
+    {
+      "description": "classifies an unsupported legacy browser report and routes it to support debug",
+      "request": {
+        "type": "message",
+        "body": {
+          "event": "UnsupportedEnvironmentClassified",
+          "browser": "Internet Explorer",
+          "os": "Windows",
+          "viewport_width": 1280
+        }
+      },
+      "response": {
+        "body": {
+          "support_level": "unsupported",
+          "route": "support-debug",
+          "release_note_class": "unsupported-browser"
+        }
+      }
+    },
+    {
+      "description": "projects a published matrix revision into the supported-environment read model",
+      "request": {
+        "type": "message",
+        "body": {
+          "event": "CompatibilityMatrixPublished",
+          "issue": "HOBO-511",
+          "browsers": ["Chrome", "Edge", "Firefox", "Safari"],
+          "platforms": ["macOS", "Linux", "Windows"]
+        }
+      },
+      "response": {
+        "body": {
+          "read_model": "supported-environment",
+          "published": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "issue": "HOBO-511",
+    "phase": "M0"
+  }
+}

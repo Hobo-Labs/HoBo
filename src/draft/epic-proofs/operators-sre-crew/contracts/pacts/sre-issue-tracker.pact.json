@@ -1,0 +1,40 @@
+{
+  "consumer": { "name": "SRE operator" },
+  "provider": { "name": "issue tracker port" },
+  "interactions": [
+    {
+      "description": "sync-incident-ticket",
+      "providerStates": [{ "name": "issue tracker adapter is configured" }],
+      "request": {
+        "method": "POST",
+        "path": "/ports/issue-tracker/incidents",
+        "body": {
+          "incidentId": "inc-crew-001",
+          "status": "resolved",
+          "replayHash": "sha256-provider-degraded-api-replay"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": { "externalKey": "OPS-1024", "synced": true }
+      }
+    },
+    {
+      "description": "file-runbook-follow-up",
+      "providerStates": [{ "name": "runbook requires human follow-up" }],
+      "request": {
+        "method": "POST",
+        "path": "/ports/issue-tracker/follow-ups",
+        "body": {
+          "incidentId": "inc-crew-003",
+          "title": "Revise drift runbook guard"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": { "externalKey": "OPS-1025", "created": true }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

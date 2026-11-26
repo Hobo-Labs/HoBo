@@ -1,0 +1,13 @@
+{
+  "runId": "20260731-no-iters",
+  "experiences": [
+    "dx"
+  ],
+  "personas": [],
+  "surfaces": [],
+  "reportOnly": false,
+  "passesCompleted": 0,
+  "stopPolicy": "true-plateau-only",
+  "hostAgent": "cross-agent",
+  "createdAt": "2026-07-31T12:54:14.269Z"
+}

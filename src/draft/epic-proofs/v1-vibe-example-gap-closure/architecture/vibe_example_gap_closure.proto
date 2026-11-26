@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hobo.draft.vibe_example_gap_closure.v1;
+
+message VibeChildIssue {
+  string id = 1;
+  string title = 2;
+  string project = 3;
+  string phase = 4;
+  uint32 estimate = 5;
+  string target_package_path = 6;
+  string proof_note_path = 7;
+  repeated string artifact_slices = 8;
+  repeated string required_scenarios = 9;
+  repeated string proof_modes = 10;
+  repeated string source_design_docs = 11;
+  repeated string scope_out = 12;
+}
+
+message VibeDxSliceIssue {
+  string id = 1;
+  string parent_id = 2;
+  string project = 3;
+  string phase = 4;
+  uint32 estimate = 5;
+  repeated string labels = 6;
+  string target_package_path = 7;
+  string proof_note_path = 8;
+  repeated string blocked_by = 9;
+  repeated string blocks = 10;
+  repeated string lifecycle_coverage = 11;
+  repeated string proof_modes = 12;
+  repeated string scope_out = 13;
+}
+
+message VibeDxBackboneGraph {
+  string parent_issue = 1;
+  string backbone_issue = 2;
+  repeated string backbone_labels = 3;
+  repeated VibeDxSliceIssue child_slices = 4;
+  repeated string quickstart_consumer_ids = 5;
+  string terminal_error_consumer = 6;
+}
+
+message VibeGapClosureBacklog {
+  string parent_issue = 1;
+  string parent_title = 2;
+  repeated VibeChildIssue child_issues = 3;
+  string unblock_rule = 4;
+  VibeDxBackboneGraph dx_backbone = 5;
+}
+
+message VibeGapClosureEvaluation {
+  bool ok = 1;
+  repeated string violations = 2;
+  string unblock_outcome = 3;
+}

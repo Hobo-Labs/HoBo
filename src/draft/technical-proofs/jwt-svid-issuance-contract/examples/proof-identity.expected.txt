@@ -1,0 +1,3 @@
+slug: jwt-svid-issuance-contract
+layer: technical
+proof-identity: ok

@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "Contract Engine"
+  },
+  "provider": {
+    "name": "Deployed State Projection"
+  },
+  "interactions": [
+    {
+      "description": "read running producer and consumer versions for compatibility matrix",
+      "providerStates": [
+        {
+          "name": "prod camp has recorded deployment.Running events"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/deployments/running",
+        "query": {
+          "target": "prod"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "events": "like:deployment-running-events"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "epic": "contracts-policy-governance",
+    "boundary": "Contract Engine to Deployed State Projection",
+    "status": "mocked_provider_unavailable",
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "hobo.ci.ado/v1",
+  "pool": "hobo-local",
+  "pipelinePath": ".hobo/pipeline.json",
+  "artifactPrefix": "hobo",
+  "environmentRefs": { "API_TOKEN": "CHECK_API_TOKEN" },
+  "runnerArgv": ["node", "tools/hobo-ci-ado/dist/cli.js"],
+  "bootstrapArgv": ["pnpm", "run", "prepare-hobo-ci"],
+  "verifyArtifacts": true
+}

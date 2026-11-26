@@ -1,0 +1,35 @@
+{
+  "layer": "epic",
+  "slug": "data-plane-event-sourcing-cqrs-reactivity",
+  "title": "Data Plane: Event Sourcing, CQRS & Reactivity",
+  "linear": "HOBO-42",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/auth-flag-readset-contract",
+      "src/draft/technical-proofs/cqrs-command-aggregate-contract",
+      "src/draft/technical-proofs/crypto-shred-erasure-contract",
+      "src/draft/technical-proofs/domain-event-body-contract",
+      "src/draft/technical-proofs/event-body-upcaster-gate",
+      "src/draft/technical-proofs/full-text-search-contract",
+      "src/draft/technical-proofs/graphql-facade-runtime-contract",
+      "src/draft/technical-proofs/materialization-subscription-contract",
+      "src/draft/technical-proofs/raw-driver-escape-hatch-contract",
+      "src/draft/technical-proofs/reactor-skeleton-contract",
+      "src/draft/technical-proofs/replay-live-equivalence-poc",
+      "src/draft/technical-proofs/search-extension-packages-contract",
+      "src/draft/technical-proofs/projection-consistency-reactivity-contract",
+      "src/draft/technical-proofs/projection-sink-change-feed-conformance-contract",
+      "src/draft/technical-proofs/reads-your-writes-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

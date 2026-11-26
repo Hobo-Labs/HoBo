@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "bootstrap-installer-scope-contract",
+  "experienceType": "dx",
+  "title": "Bootstrap Installer Scope Contract",
+  "linear": "HOBO-428",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/bootstrap-installer.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

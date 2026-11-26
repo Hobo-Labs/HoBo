@@ -1,0 +1,39 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "ReliabilityStatusRollup"
+  },
+  "interactions": [
+    {
+      "description": "publish degraded status when observed SLO breaches target",
+      "providerStates": [
+        {
+          "name": "SLO measurement is fresh and below objective"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/reliability/status-rollup",
+        "body": {
+          "targetId": "control-plane-availability-single-region",
+          "observedAvailability": 0.9986
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "environmentStatus": "degraded",
+          "publicStatus": "degraded",
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

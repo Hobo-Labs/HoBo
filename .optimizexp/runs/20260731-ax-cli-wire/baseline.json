@@ -1,0 +1,18 @@
+{
+  "runId": "20260731-ax-cli-wire",
+  "metric_total": 6,
+  "metric_max": 4,
+  "notes": "cli-help-and-doctor primaryCommand was pnpm run eval:agent:live (live, credentials, wrong seed). Doctor agent-tooling already in tree from prior pass; this run measures the miswired feature.",
+  "cells": [
+    {
+      "persona": "product-coding-agent",
+      "surface": "cli-help-and-doctor bindings → eval:agent:live",
+      "harms": 1,
+      "friction": 4,
+      "uncertainty": 3,
+      "total": 8,
+      "max": 4,
+      "notes": "Live eval as default feature path; violates offline doctor seed and testing policy."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@hobo/draft-built-in-flag-store-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

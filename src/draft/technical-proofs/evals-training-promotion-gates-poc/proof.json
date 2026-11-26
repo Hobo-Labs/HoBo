@@ -1,0 +1,26 @@
+{
+  "layer": "technical",
+  "slug": "evals-training-promotion-gates-poc",
+  "title": "Evals + Training Promotion Gates POC (HOBO-653)",
+  "linear": "HOBO-653",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/built-in-opto-training-engine-contract",
+      "src/draft/technical-proofs/champion-challenger-promotion-contract",
+      "src/draft/technical-proofs/eval-promotion-gate-contract",
+      "src/draft/technical-proofs/live-evals-runtime-contract",
+      "src/draft/technical-proofs/openinference-trajectory-capture-contract",
+      "src/draft/technical-proofs/training-engine-port-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

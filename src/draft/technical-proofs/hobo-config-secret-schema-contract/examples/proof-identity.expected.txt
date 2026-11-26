@@ -1,0 +1,3 @@
+slug: hobo-config-secret-schema-contract
+layer: technical
+proof-identity: ok

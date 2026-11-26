@@ -1,0 +1,18 @@
+{
+  "layer": "technical",
+  "slug": "alertmanager-routing-contract",
+  "title": "AlertManager routing contract POC",
+  "linear": "HOBO-281",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,21 @@
+{
+  "layer": "technical",
+  "slug": "flag-debt-auto-cleanup-contract",
+  "title": "Flag Debt Auto-Cleanup Contract",
+  "linear": "HOBO-381",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/flag-event-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

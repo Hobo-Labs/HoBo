@@ -1,0 +1,28 @@
+{
+	"consumer": { "name": "hobo-runtime" },
+	"provider": { "name": "hobo-wit" },
+	"interactions": [
+		{
+			"description": "fetch pinned WIT surface manifest for hobo:sdk aggregate",
+			"request": { "method": "GET", "path": "/wit/surface" },
+			"response": {
+				"status": 200,
+				"body": {
+					"package": "hobo:sdk@0.1.0",
+					"interfaces": [
+						"hobo:runtime/workflow@0.1.0@experimental",
+						"hobo:runtime/actor@0.1.0@experimental",
+						"hobo:runtime/saga@0.1.0@experimental",
+						"hobo:runtime/agent@0.1.0@experimental",
+						"hobo:runtime/command@0.1.0@experimental",
+						"hobo:runtime/subscribe@0.1.0@experimental",
+						"hobo:queue/queue@0.1.0@experimental",
+						"hobo:scheduler/scheduler@0.1.0@experimental",
+						"hobo:blob-events/blob-events@0.1.0@experimental"
+					]
+				}
+			}
+		}
+	],
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

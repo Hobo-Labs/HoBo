@@ -1,0 +1,21 @@
+{
+  "layer": "exp",
+  "slug": "marketplace-payout-hooks-scope-contract",
+  "experienceType": "cx",
+  "title": "Marketplace Payout Hooks Scope Contract",
+  "linear": "HOBO-420",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": [
+      "docs/design/marketplace-payout-hooks.md"
+    ]
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

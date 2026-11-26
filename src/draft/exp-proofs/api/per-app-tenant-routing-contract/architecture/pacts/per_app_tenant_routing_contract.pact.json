@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "PerAppTenantRoutingContractConsumer"
+  },
+  "provider": {
+    "name": "PerAppTenantRoutingContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Per App Tenant Routing Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/per-app-tenant-routing-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.per_app_tenant_routing_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

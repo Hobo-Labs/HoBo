@@ -1,0 +1,19 @@
+{
+  "layer": "technical",
+  "slug": "yard-receipt-consumption-contract",
+  "title": "Yard Receipt Consumption Contract",
+  "linear": "HOBO-523",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": [],
+    "bench": "bench"
+  },
+  "waivers": []
+}

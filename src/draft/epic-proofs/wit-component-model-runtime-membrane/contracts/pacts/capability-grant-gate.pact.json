@@ -1,0 +1,30 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "CapabilityLinkerMock" },
+  "interactions": [
+    {
+      "description": "deny an unlinked capability grant before provider invocation",
+      "request": {
+        "method": "POST",
+        "path": "/capability/authorize-link",
+        "body": {
+          "componentId": "checkout-workflow",
+          "capability": "wasi:blobstore",
+          "grant": null
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "allowed": false,
+          "reason": "grant-missing",
+          "providerInvoked": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "capability-grant-gate",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

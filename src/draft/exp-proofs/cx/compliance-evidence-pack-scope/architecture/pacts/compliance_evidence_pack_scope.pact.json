@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "ComplianceEvidencePackScopeConsumer"
+  },
+  "provider": {
+    "name": "ComplianceEvidencePackScopeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Compliance Evidence Pack Scope boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/compliance-evidence-pack-scope/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.compliance_evidence_pack_scope/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

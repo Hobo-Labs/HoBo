@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Design-time TriggerEdge record for HOBO-608 attachment + manifest IR.
+
+message DurableRuntimeLink {
+  string primitive = 1;
+  string interface = 2;
+  string handler = 3;
+}
+
+message TriggerEdge {
+  string id = 1;
+  string kind = 2;
+  string resource = 3;
+  string method = 4;
+  string path = 5;
+  string event = 6;
+  string cron = 7;
+  string every = 8;
+  string export_interface = 9;
+  string handler = 10;
+  repeated string inferred_permissions = 11;
+  DurableRuntimeLink durable_runtime = 12;
+}
+
+message TriggerFiredEvent {
+  string type = 1;
+  string trigger_id = 2;
+  string kind = 3;
+  string resource = 4;
+  string handler = 5;
+  bool success = 6;
+}

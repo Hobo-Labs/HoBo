@@ -1,0 +1,85 @@
+{
+	"consumer": { "name": "HoboConnectivity" },
+	"provider": { "name": "NetbirdManagementApi" },
+	"interactions": [
+		{
+			"description": "validate setup key enroll",
+			"request": {
+				"method": "POST",
+				"path": "/api/setup-keys/validate",
+				"body": { "key": "setup-key", "name": "j1" }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "peer-1",
+					"name": "j1",
+					"ip": "100.64.0.5",
+					"connected": true
+				}
+			}
+		},
+		{
+			"description": "list peers",
+			"request": {
+				"method": "GET",
+				"path": "/api/peers"
+			},
+			"response": {
+				"status": 200,
+				"body": [
+					{
+						"id": "peer-1",
+						"name": "j1",
+						"ip": "100.64.0.5",
+						"connected": true,
+						"dns_label": "j1.nb.local"
+					}
+				]
+			}
+		},
+		{
+			"description": "create dns nameserver group",
+			"request": {
+				"method": "POST",
+				"path": "/api/dns/nameservers",
+				"body": {
+					"name": "hobo-acme",
+					"domains": ["hobo.test"]
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"id": "dns-1",
+					"name": "hobo-acme",
+					"nameservers": [{ "ip": "100.100.100.100" }],
+					"domains": ["hobo.test"],
+					"enabled": true
+				}
+			}
+		},
+		{
+			"description": "list dns nameserver groups",
+			"request": {
+				"method": "GET",
+				"path": "/api/dns/nameservers"
+			},
+			"response": {
+				"status": 200,
+				"body": [
+					{
+						"id": "dns-1",
+						"name": "hobo-acme",
+						"nameservers": [{ "ip": "100.100.100.100" }],
+						"domains": ["hobo.test"],
+						"enabled": true
+					}
+				]
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}

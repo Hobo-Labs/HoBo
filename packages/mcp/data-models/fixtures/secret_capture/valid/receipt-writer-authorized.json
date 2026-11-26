@@ -1,0 +1,7 @@
+{
+	"ticketId": "cap_BBBBBBBBBBBBBBBBBBBBBB",
+	"name": "INFISICAL_WRITER_CLIENT_SECRET",
+	"stored": false,
+	"ref": "hobo-writer-session://writer-client",
+	"status": "authorized"
+}

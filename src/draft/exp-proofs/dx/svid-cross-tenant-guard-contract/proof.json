@@ -1,0 +1,24 @@
+{
+  "layer": "exp",
+  "slug": "svid-cross-tenant-guard-contract",
+  "experienceType": "dx",
+  "title": "SVID Cross-Tenant Guard Contract",
+  "linear": "HOBO-247",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/identity-event-contract",
+      "src/draft/technical-proofs/jwt-svid-issuance-contract",
+      "src/draft/technical-proofs/workload-attestation-intake-contract",
+      "src/draft/technical-proofs/yard-identity-issuer-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

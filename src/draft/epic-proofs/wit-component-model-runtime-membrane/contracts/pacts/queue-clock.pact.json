@@ -1,0 +1,29 @@
+{
+  "consumer": { "name": "wit-component-model-runtime-membrane-reference" },
+  "provider": { "name": "QueueClockPortMock" },
+  "interactions": [
+    {
+      "description": "handle an at-least-once queue message and deterministic timer",
+      "request": {
+        "method": "POST",
+        "path": "/runtime/queue-clock/handle",
+        "body": {
+          "messageId": "msg-001",
+          "dedupKey": "checkout-001",
+          "timerId": "retry-payment"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "deduplicated": true,
+          "timerReplayStable": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "boundaryId": "queue-clock",
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

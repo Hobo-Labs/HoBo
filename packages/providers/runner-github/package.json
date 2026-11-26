@@ -1,0 +1,27 @@
+{
+	"name": "@hobo/runner-github",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"description": "HoBo GitHub Actions execution-host adapter: real RunnerProvider (hobo:runner) + BuildMachineProvider (hobo:build-machine) with Dispatcher cost routing over declared free-minute facts (HOBO-718, ADR-0071)."
+}

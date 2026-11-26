@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "JunctionConnectivityInferenceSpikeConsumer"
+  },
+  "provider": {
+    "name": "JunctionConnectivityInferenceSpikeBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Junction Connectivity Inference Spike boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/junction-connectivity-inference-spike/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.junction_connectivity_inference_spike/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

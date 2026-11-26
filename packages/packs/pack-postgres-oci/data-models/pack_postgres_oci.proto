@@ -1,0 +1,111 @@
+// Wire records for the PostgreSQL implementation pack.
+//
+// These are the durable shapes: what a Yard recorded when it deployed the pack,
+// what an operation run produced, and what binding was handed to a workload.
+// Runtime values in `src/` are parsed derivations of these records — a branded
+// identifier or a `SecretRef` narrows a `string` field here, it never widens it.
+//
+// Credential material appears nowhere in this file. Every field that concerns a
+// credential is a locator (`*_secret_ref`), which is what makes these records
+// safe to append to an event store and replay.
+
+syntax = "proto3";
+
+package hobo.packs.postgres.v1;
+
+// The pinned image a deployment actually ran.
+message PostgresImagePinRecord {
+  // Fully qualified repository, e.g. docker.io/library/postgres.
+  string repository = 1;
+  // sha256:<64 hex>. Never a tag.
+  string digest = 2;
+  // OCI platform string, e.g. linux/amd64.
+  string architecture = 3;
+  // Tag the digest was resolved from, recorded as provenance only.
+  string resolved_from_tag = 4;
+  // Digest of the image index the per-platform digest came out of.
+  string index_digest = 5;
+  string server_version = 6;
+  uint32 server_major = 7;
+}
+
+// Durable storage bound to the pack's data volume.
+message PostgresVolumeBindingRecord {
+  string volume_name = 1;
+  string mount_path = 2;
+  // `local-volume` only: PGDATA cannot live on object storage.
+  string storage_kind = 3;
+  string volume_id = 4;
+  uint64 minimum_bytes = 5;
+}
+
+// The deployment description a Yard executor consumed.
+message PostgresDeploymentRecord {
+  string pack_id = 1;
+  string pack_version = 2;
+  string resource_ref = 3;
+  PostgresImagePinRecord image = 4;
+  PostgresVolumeBindingRecord data_volume = 5;
+  string database = 6;
+  string owner_role = 7;
+  uint32 max_connections = 8;
+  string host_auth_method = 9;
+  // Locator for the superuser password. Projected as a file, never as argv.
+  string superuser_secret_ref = 10;
+  // In-container path the credential file is mounted at.
+  string password_file_path = 11;
+}
+
+// One argv-array operation invocation.
+message PostgresOperationRecord {
+  string operation_id = 1;
+  string kind = 2;
+  // Migration/backup profile this invocation implements, when it has one.
+  string profile_ref = 3;
+  repeated string argv = 4;
+  // Non-secret environment only.
+  map<string, string> env = 5;
+  // Environment variable name -> secret locator, resolved at spawn time.
+  map<string, string> secret_env = 6;
+  uint32 timeout_ms = 7;
+  int32 exit_code = 8;
+  string artifact_path = 9;
+}
+
+// A dump/restore pair. Two commands, never a shell pipeline.
+message PostgresMigrationRecord {
+  string profile_ref = 1;
+  PostgresOperationRecord dump = 2;
+  PostgresOperationRecord restore = 3;
+  string artifact_path = 4;
+  string source_endpoint = 5;
+  string target_endpoint = 6;
+}
+
+// The binding.postgresql/v1 handed to a workload.
+message PostgresBindingRecord {
+  string binding_id = 1;
+  string resource_ref = 2;
+  string capability_profile_ref = 3;
+  string binding_profile_ref = 4;
+  string host = 5;
+  uint32 port = 6;
+  bool tls = 7;
+  string database = 8;
+  string role = 9;
+  string credential_secret_ref = 10;
+  string certificate_secret_ref = 11;
+  string image_digest = 12;
+  string producer_evidence_ref = 13;
+}
+
+// Recorded conformance evidence for one profile claim.
+message PostgresConformanceRecord {
+  string suite_ref = 1;
+  string profile_ref = 2;
+  string outcome = 3;
+  string evidence_checked_at = 4;
+  bool executed_against_container = 5;
+  string image_digest = 6;
+  string architecture = 7;
+}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package hobo.security_verification_scope.v1;
+
+message SecurityVerificationScope {
+  string issue = 1;
+  string project = 2;
+  SecurityVerificationState state = 3;
+  string goal = 4;
+  repeated SecurityVerificationPersona personas = 5;
+  repeated SecurityVerificationBoundary operating_boundaries = 6;
+  repeated SecurityVerificationEvidence m1_evidence = 7;
+  repeated string scope_in = 8;
+  repeated string scope_out = 9;
+}
+
+message SecurityVerificationPersona {
+  string id = 1;
+  string need = 2;
+}
+
+message SecurityVerificationBoundary {
+  string id = 1;
+  string owner = 2;
+  string promise = 3;
+}
+
+message SecurityVerificationEvidence {
+  string id = 1;
+  string owner = 2;
+  string minimum_proof = 3;
+}
+
+enum SecurityVerificationState {
+  SECURITY_VERIFICATION_STATE_UNSPECIFIED = 0;
+  SECURITY_VERIFICATION_STATE_SCOPE_DRAFT = 1;
+  SECURITY_VERIFICATION_STATE_SCOPE_ACCEPTED = 2;
+  SECURITY_VERIFICATION_STATE_FOLLOW_UP_BLOCKED = 3;
+}

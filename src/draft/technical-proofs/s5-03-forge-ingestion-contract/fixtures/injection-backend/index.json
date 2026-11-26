@@ -1,0 +1,14 @@
+{
+  "schema": "hobo.forge.fixture/v1",
+  "requestId": "forge-hobo-648-injection",
+  "artifactKind": "provider",
+  "targetWitPort": "hobo:database/postgres@0.1.0",
+  "providerId": "@hobo/provider-injection",
+  "conformanceSuiteId": "conformance.provider.database@0.1.0",
+  "sources": {
+    "capabilityManifest": "capability-manifest.json",
+    "openapi": "openapi-injection.json",
+    "terraformProvider": "terraform-provider.hcl",
+    "providerDocs": "provider-docs.md"
+  }
+}

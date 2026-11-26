@@ -1,0 +1,185 @@
+{
+  "consumer": {
+    "name": "@hobo/cloud-providers"
+  },
+  "provider": {
+    "name": "@hobo/provider-*"
+  },
+  "interactions": [
+    {
+      "description": "a provider publishes its allocatable catalog as flat rows sorted by (profile, productId, connectivityId)",
+      "request": {
+        "method": "GET",
+        "path": "/providers/azure/yard-spec"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "provider": "azure",
+          "regions": ["eastus", "westus2", "westeurope"],
+          "bindings": [
+            {
+              "profile": "data.postgres/v1",
+              "productId": "azure.postgres-flexible/v1",
+              "properties": {}
+            },
+            {
+              "profile": "web.hosted/v1",
+              "productId": "azure.aks/v1",
+              "properties": {}
+            },
+            {
+              "profile": "web.hosted/v1",
+              "productId": "azure.app-service/v1",
+              "properties": {}
+            },
+            {
+              "profile": "web.hosted/v1",
+              "productId": "azure.container-apps/v1",
+              "properties": {}
+            },
+            {
+              "profile": "web.static/v1",
+              "productId": "azure.static-web-apps/v1",
+              "properties": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "several offerings per capability is the normal case: a catalog is what CAN be allocated, never a selection",
+      "request": {
+        "method": "GET",
+        "path": "/providers/azure/yard-spec?profile=web.hosted/v1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "provider": "azure",
+          "profile": "web.hosted/v1",
+          "count": 3,
+          "productIds": [
+            "azure.aks/v1",
+            "azure.app-service/v1",
+            "azure.container-apps/v1"
+          ]
+        }
+      }
+    },
+    {
+      "description": "composition parses a published catalog into a Yard without narrowing it",
+      "request": {
+        "method": "POST",
+        "path": "/cloud-providers/compose",
+        "body": {
+          "name": "prod-eu",
+          "spec": {
+            "provider": "azure",
+            "regions": ["westeurope"],
+            "bindings": [
+              {
+                "profile": "web.hosted/v1",
+                "productId": "azure.container-apps/v1",
+                "properties": {}
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "kind": "yard",
+          "name": "prod-eu",
+          "providerId": "azure",
+          "regions": ["westeurope"],
+          "bindings": [
+            {
+              "contract": "hobo.yard-binding/v1",
+              "profile": "web.hosted/v1",
+              "productId": "azure.container-apps/v1",
+              "require": [],
+              "properties": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "refusal: a published row that constrains neither productId nor connectivityId is rejected, never silently kept",
+      "request": {
+        "method": "POST",
+        "path": "/cloud-providers/compose",
+        "body": {
+          "name": "prod-eu",
+          "spec": {
+            "provider": "azure",
+            "regions": ["westeurope"],
+            "bindings": [{ "profile": "kv.key-value/v1" }]
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "YARD_BINDING_EMPTY_CONSTRAINT",
+          "remediation": "name a productId, a connectivityId, or both; a row that constrains neither claims portability it does not provide"
+        }
+      }
+    },
+    {
+      "description": "refusal: a credential-shaped property on a published row is rejected at the parse boundary",
+      "request": {
+        "method": "POST",
+        "path": "/cloud-providers/compose",
+        "body": {
+          "name": "prod-eu",
+          "spec": {
+            "provider": "azure",
+            "regions": ["westeurope"],
+            "bindings": [
+              {
+                "profile": "web.hosted/v1",
+                "productId": "azure.container-apps/v1",
+                "properties": { "apiKey": "REDACTED" }
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "YARD_BINDING_CREDENTIAL_PROPERTY",
+          "remediation": "properties carry provider-native locators only; store the material in secret custody and reference it"
+        }
+      }
+    },
+    {
+      "description": "refusal: a duplicate (profile, productId, connectivityId) triple is rejected — rows are a set, not a list",
+      "request": {
+        "method": "POST",
+        "path": "/cloud-providers/compose",
+        "body": {
+          "name": "prod-eu",
+          "spec": {
+            "provider": "azure",
+            "regions": ["westeurope"],
+            "bindings": [
+              { "profile": "web.hosted/v1", "productId": "azure.container-apps/v1" },
+              { "profile": "web.hosted/v1", "productId": "azure.container-apps/v1" }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "YARD_BINDING_DUPLICATE",
+          "remediation": "declare each offering once; repetition carries no preference because selection is hard gates then lexicographic ranking"
+        }
+      }
+    }
+  ]
+}

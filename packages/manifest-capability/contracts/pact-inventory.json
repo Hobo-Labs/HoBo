@@ -1,0 +1,22 @@
+{
+  "shape": "hobo.manifest.capability.v1.CapabilityRequirement",
+  "note": "Read by test/round-trip.test.ts. Every interaction listed here has its request body projected onto CapabilityRequirementInput and driven through the wire codec, so a stale entry fails a test rather than rotting quietly.",
+  "crossesServiceBoundary": true,
+  "consumedBy": [
+    {
+      "pact": "packages/capability-profiles/contracts/pacts/catalog-selection.pact.json",
+      "consumer": "hobo-planner",
+      "provider": "hobo-capability-catalog",
+      "path": "POST /capabilities/select",
+      "carries": "the requirement inline in the request body, alongside selection-only fields (restrictToDefinitions) that are not part of this shape"
+    },
+    {
+      "pact": "packages/data-postgres/contracts/pacts/postgres-conformance.pact.json",
+      "consumer": "hobo-capability-matching",
+      "provider": "hobo-postgres-product",
+      "path": "POST /matching/resolve",
+      "carries": "the requirement inline in the request body, alongside candidateProfiles, which is not part of this shape"
+    }
+  ],
+  "notPublishedHere": "This package publishes no PACT of its own. It owns a data shape, not an endpoint; the two interactions above belong to the services that expose them, and duplicating them here would create a second copy to drift."
+}

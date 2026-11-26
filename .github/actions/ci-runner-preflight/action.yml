@@ -1,0 +1,139 @@
+name: CI runner preflight
+description: Fail fast when the hobo runner image is missing pinned toolchains (mise.lock + system packages).
+inputs:
+  browser:
+    description: >-
+      `true` for a job that runs browser tests. The runner image bakes the
+      headless shell in; a GitHub-hosted machine downloads the same pinned one.
+    required: false
+    default: "false"
+  install-toolchain:
+    description: >-
+      When `false`, skip the blanket `mise install --locked` on runners that
+      already carry the pinned toolchain (for example the fleet image on Main
+      workspace plan). The preflight script still installs, with --locked, only
+      tools mise reports missing, so a pin bumped before an image rebuild self-heals.
+    required: false
+    default: "true"
+  tools:
+    description: >-
+      The job-scoped mise tools this job runs (betterleaks, python, syft),
+      space-separated, or `all`. The core tools are always installed and
+      checked; a job-scoped tool the job does not name is neither downloaded
+      nor checked, so a fleet image that lags a new pin costs only the jobs
+      that use it.
+    required: false
+    default: ""
+  save-playwright-cache:
+    description: >-
+      When `true` on a GitHub-hosted browser job, persist the Playwright
+      headless-shell install after a cache miss. Matrix shards should set this
+      on shard 0 only so parallel saves do not race on a cold key.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: >-
+        Prune job disk on self-hosted when the docker data root or workspace
+        has less than HOBO_CI_RUNNER_DISK_HEADROOM_GB free (default 12 GiB)
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: |
+        set -euo pipefail
+        node --experimental-strip-types --no-warnings scripts/ci/runner-job-disk-prune.mts
+    # The daemon deletes the host-mounted work dir at job teardown; /tmp goes with
+    # the --rm container. Only untagged images over a day old are pruned here: the
+    # base build's layer cache and every tagged image stay, and so does a build in
+    # flight. Stopped containers are pruned only when they carry the job label and
+    # are past the moment a warm spare sits between create and start.
+    - name: Prune stale untagged images and stopped job containers
+      shell: bash
+      run: |
+        set -uo pipefail
+        git config --global http.version HTTP/1.1
+        if command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+          docker image prune -f --filter until=24h >/dev/null || echo "::warning::docker image prune failed"
+          docker container prune -f --filter label=hobo.ci/isolated=1 --filter until=10m >/dev/null \
+            || echo "::warning::docker container prune failed"
+          docker system df || true
+        fi
+    # The fleet image bakes the tool pins of whichever commit last built it into
+    # /etc/mise/config.toml. The checkout's mise.toml/mise.lock are the pins this
+    # job tests (as in build.sh), so the rest of the job ignores the baked file;
+    # otherwise a PR that swaps a tool fails `<tool> is not in the lockfile`.
+    - name: Use the checkout's mise pins
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml${MISE_IGNORED_CONFIG_PATHS:+:${MISE_IGNORED_CONFIG_PATHS}}" >> "$GITHUB_ENV"
+    # A job routed to a GitHub-hosted machine gets the pinned toolchain here;
+    # a no-op on the fleet's image. Its PATH additions reach the next step.
+    - name: Toolchain for a GitHub-hosted machine
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
+    - name: Restore Playwright headless shell (hosted)
+      if: inputs.browser == 'true' && runner.environment == 'github-hosted'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      id: playwright_browser_cache
+      with:
+        path: ${{ runner.temp }}/hobo-pw-browsers
+        key: playwright-chromium-headless-shell-${{ hashFiles('pnpm-lock.yaml', 'scripts/lib/ci-runner-contract.mts', 'scripts/lib/playwright-headless-shell-install.mts', 'scripts/lib/playwright-headless-shell-archive.mts', 'scripts/ci/install-hosted-playwright-browser.mts') }}-${{ runner.arch }}-v2
+        restore-keys: |
+          playwright-chromium-headless-shell-${{ hashFiles('pnpm-lock.yaml', 'scripts/lib/ci-runner-contract.mts', 'scripts/lib/playwright-headless-shell-install.mts', 'scripts/lib/playwright-headless-shell-archive.mts', 'scripts/ci/install-hosted-playwright-browser.mts') }}-${{ runner.arch }}-
+    - name: Install Playwright headless shell (hosted)
+      if: inputs.browser == 'true' && runner.environment == 'github-hosted'
+      shell: bash
+      env:
+        HOBO_CI_PLAYWRIGHT_BROWSERS_ROOT: ${{ runner.temp }}/hobo-pw-browsers
+      run: |
+        set -euo pipefail
+        export PLAYWRIGHT_BROWSERS_PATH="${HOBO_CI_PLAYWRIGHT_BROWSERS_ROOT}"
+        node --experimental-strip-types --no-warnings scripts/ci/install-hosted-playwright-browser.mts
+        echo "PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH}" >> "$GITHUB_ENV"
+        echo "hosted toolchain: Playwright headless shell at ${PLAYWRIGHT_BROWSERS_PATH}"
+    - name: Save Playwright headless shell (hosted)
+      if: inputs.browser == 'true' && inputs.save-playwright-cache == 'true' && runner.environment == 'github-hosted' && steps.playwright_browser_cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ runner.temp }}/hobo-pw-browsers
+        key: playwright-chromium-headless-shell-${{ hashFiles('pnpm-lock.yaml', 'scripts/lib/ci-runner-contract.mts', 'scripts/lib/playwright-headless-shell-install.mts', 'scripts/lib/playwright-headless-shell-archive.mts', 'scripts/ci/install-hosted-playwright-browser.mts') }}-${{ runner.arch }}-v2
+    - name: Scope the job's mise tools
+      shell: bash
+      env:
+        HOBO_CI_JOB_TOOLS: ${{ inputs.tools }}
+      run: |
+        set -euo pipefail
+        echo "HOBO_CI_JOB_TOOLS=${HOBO_CI_JOB_TOOLS}" >> "$GITHUB_ENV"
+        if [ "${HOBO_CI_JOB_TOOLS}" != "all" ]; then
+          echo "MISE_EXEC_AUTO_INSTALL=false" >> "$GITHUB_ENV"
+          echo "MISE_NOT_FOUND_AUTO_INSTALL=false" >> "$GITHUB_ENV"
+        fi
+    - shell: bash
+      if: inputs.install-toolchain == 'true'
+      run: |
+        set -euo pipefail
+        export MISE_EXPERIMENTAL=1
+        if command -v mise >/dev/null 2>&1; then
+          mise trust ./mise.toml
+          mapfile -t tools < <(node --no-warnings scripts/ci-runner-preflight.mts --print-job-tools)
+          mise install --locked "${tools[@]}"
+        fi
+    - shell: bash
+      run: |
+        set -euo pipefail
+        export MISE_EXPERIMENTAL=1
+        node --no-warnings scripts/ci-runner-preflight.mts
+        node --experimental-strip-types scripts/ci/memory-env.mts
+        # The live data-engine lane starts database servers beside the job. A job
+        # that is killed never removes them; they stop themselves, and this takes
+        # away what is left, whichever job starts next on the box.
+        if command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+          node --experimental-strip-types --no-warnings scripts/ci/data-live-servers.mts sweep \
+            || echo "::warning::data-live sweep failed"
+        fi
+        echo "HOBO_CUE_BIN=$(command -v cue)" >> "$GITHUB_ENV"

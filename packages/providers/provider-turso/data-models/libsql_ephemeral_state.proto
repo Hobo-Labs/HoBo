@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package hobo.provider.turso.v1;
+
+// The libSQL (Turso) binding of the ephemeral-state port. The port's own
+// records (entries, leases, ring windows) are hobo.core.v1 in
+// packages/core/data-models/ephemeral_state.proto; these are what is specific
+// to storing them in one libSQL table and to metering that table against
+// Turso's rows-read / rows-written allowance.
+
+// One stored row of the ephemeral-state table. The version token a caller
+// sees is "<incarnation>:<revision>".
+message LibsqlEphemeralRow {
+  string key = 1;
+  string value = 2;
+  // Chosen by the writer that created this incarnation of the key; never
+  // reused, so a version from a deleted or expired incarnation cannot match.
+  string incarnation = 3;
+  // 1 on create, +1 on every write of the same incarnation.
+  int64 revision = 4;
+  // Absolute expiry in milliseconds since the Unix epoch. A row with
+  // expires_at_ms <= now reads as absent.
+  int64 expires_at_ms = 5;
+}
+
+// What one port operation costs on libSQL: requests (round trips) sent, and
+// the most rows Turso can bill as read and written for it.
+message LibsqlOperationCost {
+  string operation = 1;
+  int32 requests = 2;
+  int32 rows_read_max = 3;
+  int32 rows_written_max = 4;
+  // True when rows_read_max is per key asked (getMany).
+  bool rows_read_per_key = 5;
+}
+
+// Requests counted at the client and rows estimated by the binding over a
+// period, for logging against a monthly allowance.
+message LibsqlUsage {
+  int64 requests = 1;
+  int64 rows_read = 2;
+  int64 rows_written = 3;
+  map<string, int64> requests_by_kind = 4;
+}
+
+// The environment variable names a Turso binding was configured from. Names
+// only: a value never reaches this record.
+message TursoEnvSource {
+  string url_variable = 1;
+  string token_variable = 2;
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "customer-onboarding-scope-acceptance",
+  "experienceType": "cx",
+  "title": "Customer Onboarding Scope Acceptance",
+  "linear": "HOBO-449",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

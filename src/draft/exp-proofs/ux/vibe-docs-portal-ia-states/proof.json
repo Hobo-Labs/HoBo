@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-docs-portal-ia-states",
+  "experienceType": "ux",
+  "title": "Vibe Docs Portal IA States",
+  "linear": "HOBO-551",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

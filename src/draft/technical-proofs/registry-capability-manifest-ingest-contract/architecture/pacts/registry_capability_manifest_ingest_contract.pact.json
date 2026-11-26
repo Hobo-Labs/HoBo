@@ -1,0 +1,34 @@
+{
+  "consumer": {
+    "name": "RegistryCapabilityManifestIngestConsumer"
+  },
+  "provider": {
+    "name": "RegistryCapabilityManifestIngestBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Registry ingests a signed well-known capability manifest and exposes capability search",
+      "request": {
+        "method": "POST",
+        "path": "/registry/capability-manifest/ingest",
+        "body": {
+          "providerId": "cloudflare",
+          "wellKnownPath": "/.well-known/capability-manifest/"
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "ok": true,
+          "schema": "hobo.registry-capability-manifest-ingest/v1",
+          "events": ["ProviderRegistered", "CapabilityManifestUpdated"]
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

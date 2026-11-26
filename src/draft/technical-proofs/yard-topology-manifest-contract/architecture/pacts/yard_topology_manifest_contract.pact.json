@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "YardTopologyManifestContractConsumer"
+  },
+  "provider": {
+    "name": "YardTopologyManifestContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Yard Topology Manifest Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/yard-topology-manifest-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.yard_topology_manifest_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

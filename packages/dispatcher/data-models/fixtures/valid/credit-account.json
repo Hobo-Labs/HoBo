@@ -1,0 +1,14 @@
+{
+  "provider_id": "cloud",
+  "dimension": "traffic.requests",
+  "currency": "USD",
+  "list_unit_cost": 1,
+  "free_headroom": 2,
+  "rate_headroom": 10,
+  "concurrency_headroom": 1,
+  "budget_cap": 10,
+  "spend_to_date": 3,
+  "reserved_cost": 2,
+  "reserved_units": 2,
+  "credits": [{ "credit_id": "grant", "free_headroom": 2, "expires_at": "2026-08-01T00:00:00Z" }]
+}

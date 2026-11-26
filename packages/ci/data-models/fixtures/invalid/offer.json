@@ -1,0 +1,1 @@
+{"id":"gh","provider":"github","providerAccountId":"operator-gh","enabled":true,"runsOn":"ubuntu-24.04","freeMinutes":-1,"priceMicrosPerMinute":6000,"budgetMicros":1000000,"spentMicros":0,"concurrency":1,"observedAt":"2026-10-26T00:00:00Z","validUntil":"2026-11-01T00:00:00Z","sourceUrl":"https://docs.github.com/billing","bridgeAcknowledged":true}

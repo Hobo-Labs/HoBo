@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+enum PortabilityConformanceEvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_NFR001_LANE = 1;
+  EVIDENCE_KIND_NFR020_LINT = 2;
+}
+
+message PortabilityConformanceRecord {
+  string issue = 1;
+  string fixture = 2;
+  repeated string target_providers = 3;
+  string bindle_digest = 4;
+}

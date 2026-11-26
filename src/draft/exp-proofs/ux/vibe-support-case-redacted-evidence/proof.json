@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "vibe-support-case-redacted-evidence",
+  "experienceType": "ux",
+  "title": "Vibe Support Case Redacted Evidence",
+  "linear": "HOBO-564",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

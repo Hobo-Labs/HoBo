@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "OfflineImportIntegrityContractConsumer"
+  },
+  "provider": {
+    "name": "OfflineImportIntegrityContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Offline Import Integrity Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/offline-import-integrity-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.offline_import_integrity_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "consumer": {
+    "name": "BetaPilotDogfoodAlphaEvidenceConsumer"
+  },
+  "provider": {
+    "name": "BetaPilotDogfoodAlphaEvidenceBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Beta pilot dogfood/alpha evidence boundary returns accepted gate evidence",
+      "request": {
+        "method": "GET",
+        "path": "/beta-pilot-dogfood-alpha-evidence/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.v1.beta_pilot_dogfood_alpha_evidence/2026-06-30",
+          "issue": "HOBO-456",
+          "phase": "M1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "seq": "fixture-2026-07-15T00:00:00Z",
+  "current": {
+    "HOBO_RUNNER_LINUX_SMALL": "ubuntu-latest",
+    "HOBO_RB_ENABLE_BLACKSMITH": "1",
+    "HOBO_RB_ENABLE_UBICLOUD": "1"
+  },
+  "usage": [
+    {
+      "providerId": "github_hosted",
+      "spendUsd": 13.2,
+      "unitsUsed": 2200,
+      "known": true,
+      "source": "github-billing-usage"
+    },
+    {
+      "providerId": "blacksmith",
+      "spendUsd": 0,
+      "unitsUsed": 400,
+      "known": true,
+      "source": "operator-declared-env"
+    },
+    {
+      "providerId": "ubicloud",
+      "spendUsd": 0,
+      "unitsUsed": 1250,
+      "known": true,
+      "source": "operator-declared-env"
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "provenance-retention-scope-acceptance",
+  "experienceType": "dx",
+  "title": "Provenance & Retention Scope POC",
+  "linear": "HOBO-447",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

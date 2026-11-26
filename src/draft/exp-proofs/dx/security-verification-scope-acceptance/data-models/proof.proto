@@ -1,0 +1,3 @@
+syntax = "proto3";
+package hobo.draft.security_verification_scope_acceptance;
+message ProofIdentity { string slug = 1; string layer = 2; }

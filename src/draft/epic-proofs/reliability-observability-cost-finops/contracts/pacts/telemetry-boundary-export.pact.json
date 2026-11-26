@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "ReliabilityReferenceApp"
+  },
+  "provider": {
+    "name": "TelemetryBoundaryExport"
+  },
+  "interactions": [
+    {
+      "description": "export policy decision telemetry as CloudEvents and OTLP",
+      "providerStates": [
+        {
+          "name": "rollback policy decision envelope is available"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/telemetry/export",
+        "body": {
+          "type": "policy.Decided",
+          "correlationId": "corr-reliability-rollup",
+          "traceparent": "00-11111111111111111111111111111111-2222222222222222-01"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "cloudEventType": "policy.Decided",
+          "otlpTraceId": "11111111111111111111111111111111",
+          "mocked": true
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

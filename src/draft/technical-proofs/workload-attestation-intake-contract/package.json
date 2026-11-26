@@ -1,0 +1,8 @@
+{
+  "name": "workload-attestation-intake-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

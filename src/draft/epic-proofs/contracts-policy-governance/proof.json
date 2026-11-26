@@ -1,0 +1,29 @@
+{
+  "layer": "epic",
+  "slug": "contracts-policy-governance",
+  "title": "Contracts, Policy & Governance Reference Implementation",
+  "references": {
+    "technicalProofs": [
+      "src/draft/technical-proofs/built-in-policy-engine-contract",
+      "src/draft/technical-proofs/can-deploy-compatibility-gate-contract",
+      "src/draft/technical-proofs/control-plane-action-taxonomy-contract",
+      "src/draft/technical-proofs/deny-ceiling-algebra-poc",
+      "src/draft/technical-proofs/gatekeeper-verify-contract",
+      "src/draft/technical-proofs/governance-conformance-suite-contract",
+      "src/draft/technical-proofs/hobo-contract-ir",
+      "src/draft/technical-proofs/obligation-engine-contract",
+      "src/draft/technical-proofs/policy-fail-closed-contract",
+      "src/draft/technical-proofs/rbac-role-binding-contract"
+    ],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "features": "features",
+    "diagrams": []
+  },
+  "waivers": []
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/s5-05-forge-signing-registry-certification-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for Forge signing, SLSA provenance, and Registry certification records (HOBO-650).",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

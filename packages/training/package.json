@@ -1,0 +1,32 @@
+{
+	"name": "@hobo/training",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.3",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"description": "HoBo built-in training engine: the OPTO-style propose → score → keep-best optimizer behind core's hobo:training-engine port (ADR-0025), with seeded-PRNG determinism and OpenInference-aligned trace capture into a drainable in-memory sink. Internal-only — never part of the app SDK surface."
+}

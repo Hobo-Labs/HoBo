@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package hobo.core.v1;
+
+// Canonical relational schema IR and phased migration plan (ADR-0160). The
+// invariants here are load-bearing for forward-only migrations: HoBo owns the
+// IR and the plan so a toolchain upgrade cannot silently change the SQL a
+// deploy runs, every step names the phase it belongs to (expand | backfill |
+// contract, the same three phases @hobo/trails executes), destructive work is
+// confined to the contract phase, and the plan digest covers the engine
+// version so an engine upgrade is a visible plan change.
+
+message SchemaColumnRecord {
+  string name = 1;
+  string type = 2; // SQL type token, e.g. "text", "varchar(64)", "numeric(10,2)"
+  bool nullable = 3;
+  bool primary_key = 4;
+  bool unique = 5;
+  // Optional SQL default expression; affects future inserts only.
+  string default_expression = 6;
+}
+
+message SchemaIndexRecord {
+  string name = 1;
+  // Ordered: a composite index on (a, b) is not the index on (b, a).
+  repeated string columns = 2;
+  bool unique = 3;
+}
+
+message SchemaTableRecord {
+  string name = 1;
+  repeated SchemaColumnRecord columns = 2;
+  repeated SchemaIndexRecord indexes = 3;
+}
+
+message SchemaIrRecord {
+  string contract = 1; // hobo.schema-ir/v1
+  string dialect = 2; // postgres
+  repeated SchemaTableRecord tables = 3;
+}
+
+// One unit of forward-only migration work. Never an inverse/down step
+// (ADR-0032): a rollback that drops a written-to column is data loss.
+message MigrationStepRecord {
+  string phase = 1; // expand | backfill | contract
+  string kind = 2; // create-table | add-column | add-index | widen-column | backfill-column | drop-column | drop-index | drop-table | narrow-column
+  string table = 3;
+  string column = 4; // set for column-scoped steps
+  string index = 5; // set for index-scoped steps
+  bool destructive = 6; // true only in the contract phase
+}
+
+message MigrationPlanRecord {
+  string contract = 1; // hobo.migration-plan/v1
+  repeated MigrationStepRecord steps = 2;
+  string engine_id = 3;
+  string engine_version = 4;
+  // Canonical-JSON sha256 over {steps, engine_id, engine_version}.
+  string digest = 5;
+}

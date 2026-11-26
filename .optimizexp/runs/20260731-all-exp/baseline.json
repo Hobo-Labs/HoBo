@@ -1,0 +1,91 @@
+{
+  "runId": "20260731-all-exp",
+  "phase": "baseline",
+  "scoredAt": "2026-07-31T14:55:00.000Z",
+  "notes": "Baseline before cycle-1 reductions in this bare all-exp run. Prior AX/DX plateaus left most cells at 0; residual miswires still open.",
+  "metric_total": 6,
+  "metric_max": 3,
+  "cells": [
+    {
+      "persona": "product-designer",
+      "feature": "design-system-contract",
+      "surface": "docs:design-lint (miswired primary)",
+      "experience": "ux",
+      "harms": 0,
+      "friction": 2,
+      "uncertainty": 3,
+      "total": 5,
+      "max": 3,
+      "note": "primaryCommand pointed at design-doc lint not DESIGN.md/designmd contract"
+    },
+    {
+      "persona": "product-coding-agent",
+      "feature": "agent-tooling-setup",
+      "surface": "steps README primary binding",
+      "experience": "ax",
+      "harms": 0,
+      "friction": 1,
+      "uncertainty": 2,
+      "total": 3,
+      "max": 2,
+      "note": "README claimed skills:mirror-check as primary vs setup --help"
+    },
+    {
+      "persona": "product-app-developer",
+      "feature": "narrow-local-validation",
+      "surface": "discovery gate:s1 high",
+      "experience": "dx",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 2,
+      "total": 2,
+      "max": 2,
+      "note": "gate:s1 ranked high on narrow-local discovery"
+    },
+    {
+      "persona": "product-app-developer",
+      "feature": "cli-help-and-doctor",
+      "surface": "pnpm run doctor",
+      "experience": "dx",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-end-user",
+      "feature": "public-site-first-impression",
+      "surface": "pnpm run docs:site-nav",
+      "experience": "ux",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "product-coding-agent",
+      "feature": "draft-experience-proof-navigation",
+      "surface": "exp-proofs _classification.md",
+      "experience": "ax",
+      "harms": 0,
+      "friction": 0,
+      "uncertainty": 0,
+      "total": 0,
+      "max": 0
+    },
+    {
+      "persona": "junior-typescript-developer",
+      "feature": "agent-check-staged",
+      "surface": "pnpm run agent:check -- --staged",
+      "experience": "dx",
+      "harms": 0,
+      "friction": 1,
+      "uncertainty": 0,
+      "total": 1,
+      "max": 1,
+      "note": "residual multi-gate wait when many scopes staged (known L from prior DX plateau)"
+    }
+  ]
+}

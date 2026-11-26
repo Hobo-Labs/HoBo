@@ -1,0 +1,167 @@
+---
+import { href } from "../lib/url";
+
+interface Props {
+	size?: string;
+	variant?: "idle" | "stand";
+	still?: "rest" | "blink" | number;
+	label?: string;
+	class?: string;
+}
+
+const {
+	size = "3.5rem",
+	variant = "idle",
+	still,
+	label,
+	class: extra,
+} = Astro.props;
+
+const SHEETS = {
+	idle: "/parallax/bo-idle.png",
+	stand: "/parallax/bo-stand.png",
+} as const;
+
+const FRAMES = 12;
+const FRAME_W = 207;
+const FRAME_H = 230;
+const FRAME_SECONDS = 0.095;
+const REST = 0;
+const BLINK = 11;
+
+const frozen =
+	still === undefined
+		? null
+		: still === "rest"
+			? REST
+			: still === "blink"
+				? BLINK
+				: still;
+
+const style = [
+	`--bo-h:${size}`,
+	`--bo-frames:${FRAMES}`,
+	`--bo-tick:${FRAME_SECONDS}s`,
+	`--bo-aspect:${FRAME_W / FRAME_H}`,
+	`--bo-sheet:url("${href(SHEETS[variant])}")`,
+	frozen !== null ? `--bo-still:${frozen}` : "",
+]
+	.filter(Boolean)
+	.join(";");
+---
+
+<span
+	class:list={["bo-idle", { "is-still": frozen !== null }, extra]}
+	style={style}
+	data-bo-idle={frozen === null ? "" : null}
+	role={label ? "img" : undefined}
+	aria-label={label}
+	aria-hidden={label ? undefined : "true"}></span>
+
+<style>
+	.bo-idle {
+		display: inline-block;
+		width: calc(var(--bo-h) * var(--bo-aspect));
+		height: var(--bo-h);
+		background-image: var(--bo-sheet);
+		background-repeat: no-repeat;
+		background-size: calc(var(--bo-h) * var(--bo-aspect) * var(--bo-frames)) 100%;
+		background-position-x: 0;
+		vertical-align: bottom;
+	}
+
+	.bo-idle.is-still {
+		background-position-x: calc(
+			var(--bo-h) * var(--bo-aspect) * var(--bo-still) * -1
+		);
+	}
+
+	:global(:root[data-theme="dark"]) .bo-idle {
+		filter: drop-shadow(1px 0 0 var(--ink)) drop-shadow(-1px 0 0 var(--ink))
+			drop-shadow(0 1px 0 var(--ink)) drop-shadow(0 -1px 0 var(--ink));
+	}
+
+	.bo-idle.is-bounce {
+		animation: bo-bounce calc(var(--bo-tick) * 10) steps(10) 1;
+	}
+
+	@keyframes bo-bounce {
+		from {
+			background-position-x: calc(var(--bo-h) * var(--bo-aspect) * -1);
+		}
+		to {
+			background-position-x: calc(var(--bo-h) * var(--bo-aspect) * -11);
+		}
+	}
+
+	.bo-idle.is-blink {
+		animation: bo-blink calc(var(--bo-tick) * 2) steps(1) 1;
+	}
+
+	@keyframes bo-blink {
+		from {
+			background-position-x: calc(var(--bo-h) * var(--bo-aspect) * -11);
+		}
+		to {
+			background-position-x: calc(var(--bo-h) * var(--bo-aspect) * -12);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.bo-idle {
+			animation: none !important;
+		}
+	}
+</style>
+
+<script is:inline>
+	(() => {
+		if (window.__boIdle) return;
+		window.__boIdle = true;
+
+		const still = matchMedia("(prefers-reduced-motion: reduce)");
+
+		const start = (el) => {
+			let asleep = false;
+			let timer = 0;
+
+			const play = (name) => {
+				if (el.dataset.playing) return;
+				el.dataset.playing = name;
+				el.classList.add(name);
+				el.addEventListener(
+					"animationend",
+					() => {
+						el.classList.remove(name);
+						delete el.dataset.playing;
+					},
+					{ once: true },
+				);
+			};
+
+			const next = () => {
+				if (!asleep && !still.matches) {
+					play(Math.random() < 0.22 ? "is-bounce" : "is-blink");
+				}
+				timer = setTimeout(next, 2200 + Math.random() * 5600);
+			};
+
+			timer = setTimeout(next, 600 + Math.random() * 4000);
+
+			const sleep = (on) => {
+				asleep = on;
+			};
+			document.addEventListener("visibilitychange", () =>
+				sleep(document.visibilityState === "hidden"),
+			);
+			if ("IntersectionObserver" in window) {
+				new IntersectionObserver(([e]) => sleep(!e.isIntersecting), {
+					rootMargin: "60px",
+				}).observe(el);
+			}
+			return () => clearTimeout(timer);
+		};
+
+		for (const el of document.querySelectorAll("[data-bo-idle]")) start(el);
+	})();
+</script>

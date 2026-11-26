@@ -1,0 +1,19 @@
+{
+  "consumer": { "name": "FoundationsReferenceApp" },
+  "provider": { "name": "CoreContractBoundary" },
+  "interactions": [
+    {
+      "description": "parse shared core manifest and map event envelope to boundary standards",
+      "request": { "method": "POST", "path": "/core/contract-surface" },
+      "response": {
+        "status": 200,
+        "body": {
+          "schemaVersion": "hobo.core/v1",
+          "eventMappings": { "cloudEventSpecversion": "1.0" },
+          "publicSurface": { "ok": true }
+        }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

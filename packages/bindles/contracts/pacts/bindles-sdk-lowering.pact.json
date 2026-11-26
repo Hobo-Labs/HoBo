@@ -1,0 +1,147 @@
+{
+  "consumer": {
+    "name": "@hobo/bindles"
+  },
+  "provider": {
+    "name": "hobo-sdk-collector"
+  },
+  "interactions": [
+    {
+      "description": "submit lowering descriptor batch",
+      "request": {
+        "method": "POST",
+        "path": "/lower",
+        "body": {
+          "schema": "hobo.bindles.lowering/v1",
+          "descriptors": [
+            {
+              "lowersTo": "hobo:sdk",
+              "kind": "kv",
+              "name": "todos",
+              "handleStableId": "kv:todos",
+              "portRef": [
+                "wasi:keyvalue"
+              ],
+              "verb": "get",
+              "args": [
+                "next"
+              ]
+            },
+            {
+              "lowersTo": "hobo:sdk",
+              "kind": "kv",
+              "name": "todos",
+              "handleStableId": "kv:todos",
+              "portRef": [
+                "wasi:keyvalue"
+              ],
+              "verb": "set",
+              "args": [
+                "next",
+                {
+                  "id": "1"
+                }
+              ]
+            },
+            {
+              "lowersTo": "hobo:sdk",
+              "kind": "data",
+              "name": "records",
+              "handleStableId": "data:records",
+              "portRef": [
+                "hobo:data"
+              ],
+              "verb": "query",
+              "args": [
+                {
+                  "text": "needle"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "accepted": 3
+        }
+      }
+    },
+    {
+      "description": "submit resource descriptor set",
+      "request": {
+        "method": "POST",
+        "path": "/resources",
+        "body": {
+          "schema": "hobo.bindles.resource/v1",
+          "descriptors": [
+            {
+              "kind": "kv",
+              "name": "todos",
+              "stableId": "kv:todos",
+              "portRef": [
+                "wasi:keyvalue"
+              ],
+              "allowVerbs": [
+                "get",
+                "set",
+                "delete"
+              ],
+              "declaredAllow": [
+                "get",
+                "set"
+              ]
+            },
+            {
+              "kind": "data",
+              "name": "records",
+              "stableId": "data:records",
+              "portRef": [
+                "hobo:data"
+              ],
+              "allowVerbs": [
+                "read",
+                "write",
+                "query",
+                "admin"
+              ],
+              "declaredAllow": []
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "accepted": 2
+        }
+      }
+    },
+    {
+      "description": "secretRef value reads are distinct from managed secret resources",
+      "request": {
+        "method": "POST",
+        "path": "/secret-ref",
+        "body": {
+          "kind": "secret-ref",
+          "ref": "STRIPE_API_KEY",
+          "stableId": "secret-ref:STRIPE_API_KEY",
+          "lowersTo": "hobo:sdk"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "kind": "secret-ref",
+          "lowersTo": "hobo:sdk"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

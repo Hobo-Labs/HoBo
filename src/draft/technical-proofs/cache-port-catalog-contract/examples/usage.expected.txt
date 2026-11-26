@@ -1,0 +1,8 @@
+kv durable read: Ada
+read#1 hit=false value=Ada
+read#2 hit=true value=Ada
+read#3 (post-TTL) hit=false value=Ada
+read#4 (post-evict) hit=false value=Ada
+post-flush: cache=MISS kv=Ada
+cold key: MISS
+CONTRACT HELD: cache is ephemeral/TTL/evictable; kv is durable/authoritative

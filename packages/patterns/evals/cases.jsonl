@@ -1,0 +1,8 @@
+{"id":"exact-web-api","query":"bindle.topology.web-api","expectedIds":["bindle.topology.web-api"]}
+{"id":"nl-frontend-api","query":"web frontend backed by an api","expectedIds":["bindle.topology.web-api"]}
+{"id":"nl-kv","query":"add storage","expectedIds":["bindle.resource.kv-read-write"]}
+{"id":"nl-queue","query":"orders queue","expectedIds":["bindle.resource.queue-producer"]}
+{"id":"nl-hono","query":"hono adapter","expectedIds":["adapter.hono.entrypoint"]}
+{"id":"nl-agent","query":"durable agent","expectedIds":["agent.declare"]}
+{"id":"nl-yard","query":"self hosted yard","expectedIds":["yard.self-hosted.open"]}
+{"id":"abstain-quantum","query":"quantum compiler backend","expectAbstain":true}

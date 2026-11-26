@@ -1,0 +1,19 @@
+{
+	"consumer": { "name": "@hobo/runtime" },
+	"provider": { "name": "RuntimeCelldBoundary" },
+	"metadata": { "pactSpecification": { "version": "3.0.0" } },
+	"interactions": [
+		{
+			"description": "doctor refuses public operator port",
+			"request": {
+				"method": "POST",
+				"path": "/runtime-host/doctor",
+				"body": { "kind": "celld", "operatorPortPublic": true }
+			},
+			"response": {
+				"status": 400,
+				"body": { "code": "OPERATOR_PORT_PUBLIC", "ready": false }
+			}
+		}
+	]
+}

@@ -1,0 +1,37 @@
+// MIRROR — single-sourced from packages/core/data-models/event_envelope.proto (GAPS IMPL-009).
+// Do not edit by hand: only the proto package line may differ from the core
+// original. Divergence fails packages/schema-tools/test/envelope-single-source.test.ts.
+syntax = "proto3";
+
+package hobo.runtime_local.v1;
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_USER = 1;
+  PRINCIPAL_KIND_AGENT = 2;
+  PRINCIPAL_KIND_SERVICE = 3;
+  PRINCIPAL_KIND_SYSTEM = 4;
+}
+
+message PrincipalRef {
+  PrincipalKind kind = 1;
+  string id = 2;
+  PrincipalRef delegated_by = 3;
+}
+
+message EventEnvelope {
+  string id = 1;
+  string type = 2;
+  int32 v = 3;
+  string stream_id = 4;
+  int64 seq = 5;
+  string ts = 6;
+  PrincipalRef actor = 7;
+  string tenant = 8;
+  optional string project = 9;
+  optional string causation_id = 10;
+  optional string correlation_id = 11;
+  optional string lane = 12;
+  bytes data = 13;
+  map<string, string> meta = 14;
+}

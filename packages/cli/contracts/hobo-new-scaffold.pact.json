@@ -1,0 +1,40 @@
+{
+	"consumer": {
+		"name": "@hobo/cli"
+	},
+	"provider": {
+		"name": "HoboNewScaffoldBoundary"
+	},
+	"interactions": [
+		{
+			"description": "hobo new scaffold boundary returns offline scaffold evidence",
+			"request": {
+				"operation": "scaffoldHoboProject",
+				"name": "snapshop",
+				"template": "api"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"ok": true,
+					"offline": true,
+					"createdFiles": [
+						".gitignore",
+						"app.test.ts",
+						"app.ts",
+						"hobo.bindle.json",
+						"package.json",
+						"src/_generated/hobo.d.ts",
+						"src/_generated/index.ts",
+						"tsconfig.json"
+					]
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

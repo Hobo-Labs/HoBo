@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hobo.dev/meta-cloud-broker-artifacts.v1.schema.json",
+  "title": "HoBo Meta-cloud Broker Artifact Contract",
+  "type": "object",
+  "required": ["kind", "schema", "version", "owner", "provenance", "payload"],
+  "properties": {
+    "kind": {
+      "enum": [
+        "contract-manifest",
+        "broker-environment",
+        "mapping-contract",
+        "broker-catalog-snapshot",
+        "resolution-receipt",
+        "resolution-rejection"
+      ]
+    },
+    "schema": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$" },
+    "owner": { "type": "string", "minLength": 1 },
+    "provenance": {
+      "type": "object",
+      "required": ["source", "proofMode", "signature"],
+      "properties": {
+        "source": {
+          "type": "object",
+          "required": ["issue", "refs"],
+          "properties": {
+            "issue": { "const": "HOBO-522" },
+            "refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "proofMode": {
+          "enum": ["schema-test", "contract-test", "negative-test", "policy-fixture"]
+        },
+        "signature": {
+          "type": "object",
+          "required": ["issuer", "algorithm", "digest"],
+          "properties": {
+            "issuer": { "type": "string", "minLength": 1 },
+            "algorithm": { "const": "ed25519" },
+            "digest": { "type": "string", "pattern": "^sha256:[a-zA-Z0-9._:-]+$" }
+          }
+        }
+      }
+    },
+    "payload": { "type": "object" }
+  }
+}

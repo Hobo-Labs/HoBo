@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "questions": [
+    {
+      "id": "q_excitement",
+      "prompt": "On a scale of 0–5, how excited are you to use this path again? Why?"
+    },
+    {
+      "id": "q_ease",
+      "prompt": "On a scale of 0–5, how easy was the happy path? What still felt heavier than it should?"
+    },
+    {
+      "id": "q_optimal",
+      "prompt": "On a scale of 0–5, how optimal does this feel vs how it should work? What is missing?"
+    },
+    {
+      "id": "q_delight",
+      "prompt": "What, if anything, delighted you?"
+    },
+    {
+      "id": "q_friction_feel",
+      "prompt": "Even if nothing broke, what felt annoying or dull?"
+    },
+    {
+      "id": "q_one_change",
+      "prompt": "If you could demand one change next week, what is it?"
+    },
+    {
+      "id": "q_never",
+      "prompt": "What should we never do on this path?"
+    },
+    {
+      "id": "q_recommend",
+      "prompt": "Would you recommend this experience to a peer? (yes/mixed/no + why)"
+    }
+  ],
+  "notes": "Fill templates with persona-voice answers; then aggregate + rank-backlog."
+}

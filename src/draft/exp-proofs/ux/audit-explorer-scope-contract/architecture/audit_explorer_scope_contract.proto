@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package hobo.draft.v1;
+
+// Architecture-guard evidence: protobuf data shapes the Audit Explorer Scope
+// draft package reasons about. Documents the records/objects this package owns
+// so the architecture guard has a language-neutral schema reference. Not
+// compiled at runtime; this is a design-time contract artifact.
+
+enum AuditExplorerScopeEvidenceKind {
+  AUDIT_EXPLORER_SCOPE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  AUDIT_EXPLORER_SCOPE_EVIDENCE_KIND_DESIGN_RECORD = 1;
+  AUDIT_EXPLORER_SCOPE_EVIDENCE_KIND_CONTRACT_TEST = 2;
+  AUDIT_EXPLORER_SCOPE_EVIDENCE_KIND_AUDIT_FIXTURE = 3;
+  AUDIT_EXPLORER_SCOPE_EVIDENCE_KIND_SUPPORT_HANDOFF = 4;
+  AUDIT_EXPLORER_SCOPE_EVIDENCE_KIND_POLICY_FIXTURE = 5;
+}
+
+message AuditExplorerAuditFactClass {
+  string id = 1;
+  string owner = 2;
+  repeated string event_families = 3;
+  bool customer_visible = 4;
+  bool redaction_required = 5;
+}
+
+message AuditExplorerExportEvidence {
+  string id = 1;
+  string owner = 2;
+  bool redacted = 3;
+  repeated string includes = 4;
+}
+
+message AuditExplorerScopeRecord {
+  string issue = 1;
+  string project = 2;
+  string phase = 3;
+  repeated string personas = 4;
+  repeated string scope_in = 5;
+  repeated string scope_out = 6;
+  repeated AuditExplorerAuditFactClass audit_fact_classes = 7;
+  repeated string query_filter_axes = 8;
+  repeated AuditExplorerExportEvidence export_evidence = 9;
+}

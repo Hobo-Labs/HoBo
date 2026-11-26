@@ -1,0 +1,10 @@
+{
+  "claim": {
+    "scope": { "dataset": "orders", "tenant": "" },
+    "operationId": "handover-1",
+    "routeDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "receiverKeyId": "route-receiver-1",
+    "fenceTokenDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "status": "unknown"
+}

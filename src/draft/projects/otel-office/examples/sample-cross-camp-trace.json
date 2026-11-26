@@ -1,0 +1,59 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "api-gateway" } },
+          { "key": "hobo.station", "value": { "stringValue": "station-local" } },
+          { "key": "hobo.yard", "value": { "stringValue": "yard-edge" } },
+          { "key": "hobo.camp", "value": { "stringValue": "camp-gateway" } },
+          { "key": "hobo.primitive", "value": { "stringValue": "bindle" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "example" },
+          "spans": [
+            {
+              "traceId": "7c9bb2a1d4f04e6a9b3c5d7e8f001122",
+              "spanId": "aa10000000000001",
+              "name": "POST /orders (call orders-api)",
+              "kind": 3,
+              "startTimeUnixNano": "1700000000000000000",
+              "endTimeUnixNano": "1700000008000000000",
+              "status": { "code": 1 }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "orders-api" } },
+          { "key": "hobo.station", "value": { "stringValue": "station-local" } },
+          { "key": "hobo.yard", "value": { "stringValue": "yard-platform" } },
+          { "key": "hobo.camp", "value": { "stringValue": "camp-orders" } },
+          { "key": "hobo.primitive", "value": { "stringValue": "bindle" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "example" },
+          "spans": [
+            {
+              "traceId": "7c9bb2a1d4f04e6a9b3c5d7e8f001122",
+              "spanId": "bb20000000000002",
+              "parentSpanId": "aa10000000000001",
+              "name": "POST /orders",
+              "kind": 2,
+              "startTimeUnixNano": "1700000001000000000",
+              "endTimeUnixNano": "1700000007500000000",
+              "status": { "code": 1 }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

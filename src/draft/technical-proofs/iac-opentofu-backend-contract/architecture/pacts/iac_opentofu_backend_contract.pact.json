@@ -1,0 +1,29 @@
+{
+  "consumer": {
+    "name": "IacOpentofuBackendContractConsumer"
+  },
+  "provider": {
+    "name": "IacOpentofuBackendContractBoundary"
+  },
+  "interactions": [
+    {
+      "description": "Iac Opentofu Backend Contract boundary returns its recorded contract evidence",
+      "request": {
+        "method": "GET",
+        "path": "/iac-opentofu-backend-contract/contract"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "ok": true,
+          "schema": "hobo.draft.iac_opentofu_backend_contract/v1"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

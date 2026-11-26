@@ -1,0 +1,19 @@
+{
+  "layer": "exp",
+  "slug": "dogfood-yard-ga-handoff-evidence-contract",
+  "experienceType": "dx",
+  "title": "Dogfood Yard GA Handoff Evidence Contract",
+  "linear": "HOBO-476",
+  "references": {
+    "technicalProofs": [],
+    "epicProofs": [],
+    "expProofs": [],
+    "designDocs": []
+  },
+  "artifacts": {
+    "examples": "examples",
+    "notebook": "notebook.ipynb",
+    "diagrams": []
+  },
+  "waivers": []
+}

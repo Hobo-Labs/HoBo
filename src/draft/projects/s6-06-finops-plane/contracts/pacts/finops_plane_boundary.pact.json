@@ -1,0 +1,55 @@
+{
+  "consumer": { "name": "FinOpsPlaneProject" },
+  "provider": { "name": "FinOpsPlaneBoundary" },
+  "interactions": [
+    {
+      "description": "plan returns projected cost from capability manifest cost.json",
+      "request": {
+        "type": "message",
+        "body": {
+          "operation": "estimatePlanCost",
+          "costJson": "hobo.cost/v1"
+        }
+      },
+      "response": {
+        "body": {
+          "schemaVersion": "hobo.finops.plan-estimate/v1",
+          "projectedMonthlyUsd": ">= 0",
+          "currency": "USD"
+        }
+      }
+    },
+    {
+      "description": "hard budget breach denies deploy gate",
+      "request": {
+        "type": "message",
+        "body": {
+          "operation": "evaluateFinOpsDeployGate",
+          "costEstimateUsd": 120
+        }
+      },
+      "response": {
+        "body": {
+          "effect": "deny",
+          "reason": "hard budget limit exceeded"
+        }
+      }
+    },
+    {
+      "description": "showback projection reconciles against MeteringView total",
+      "request": {
+        "type": "message",
+        "body": {
+          "operation": "reconcileShowback",
+          "events": "meter.UsageRecorded[]"
+        }
+      },
+      "response": {
+        "body": {
+          "reconciled": true,
+          "meteringTotalUsd": "showbackTotalUsd"
+        }
+      }
+    }
+  ]
+}

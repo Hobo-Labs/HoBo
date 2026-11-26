@@ -1,0 +1,58 @@
+{
+  "consumer": {
+    "name": "BetaPilotReadinessGate"
+  },
+  "provider": {
+    "name": "CustomerOnboardingScopeRecord"
+  },
+  "interactions": [
+    {
+      "description": "accepted M0 scope exposes customer onboarding readiness evidence",
+      "providerState": "HOBO-449 M0 scope is accepted",
+      "request": {
+        "method": "GET",
+        "path": "/customer-onboarding/scope/HOBO-449"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "issue": "HOBO-449",
+          "phase": "M0",
+          "state": "SCOPE_ACCEPTED",
+          "boundaries": ["service", "ux", "security", "support"],
+          "m1Evidence": [
+            "scope-record",
+            "pilot-script-fixture",
+            "success-criteria-register",
+            "persona-profile-fixture",
+            "safe-test-handoff",
+            "support-feedback-router"
+          ]
+        }
+      }
+    },
+    {
+      "description": "follow-up work is blocked before M0 acceptance",
+      "providerState": "HOBO-449 M0 scope is not accepted",
+      "request": {
+        "method": "POST",
+        "path": "/customer-onboarding/follow-up",
+        "body": {
+          "phase": "M1"
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "CUSTOMER_ONBOARDING_M0_REQUIRED",
+          "issue": "HOBO-449"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package hobo.broker_receipt_integrity.v1;
+
+message ResolutionReceipt {
+  ReceiptPayload payload = 1;
+  string digest = 2;
+  string signature = 3;
+  string signature_algorithm = 4;
+  string key_id = 5;
+}
+
+message ReceiptPayload {
+  string receipt_id = 1;
+  string issuer = 2;
+  uint32 schema_version = 3;
+  string tenant_id = 4;
+  string environment_id = 5;
+  string manifest_digest = 6;
+  string broker_snapshot_digest = 7;
+  string issued_at = 8;
+  string expires_at = 9;
+  string gatekeeper_boundary = 10;
+  repeated ReceiptResourceBinding resource_bindings = 11;
+}
+
+message ReceiptResourceBinding {
+  string resource_id = 1;
+  string provider_capability_digest = 2;
+  string mapping_digest = 3;
+}
+
+message ReceiptExpectation {
+  string tenant_id = 1;
+  string environment_id = 2;
+  string manifest_digest = 3;
+  string broker_snapshot_digest = 4;
+  uint32 min_schema_version = 5;
+}
+
+message SupportSafeReceiptEvidence {
+  string receipt_id = 1;
+  string tenant_id = 2;
+  string environment_id = 3;
+  string manifest_digest = 4;
+  string broker_snapshot_digest = 5;
+  bool support_safe = 6;
+}
+
+message ReceiptAccepted {
+  string receipt_id = 1;
+  string authority = 2;
+  string gatekeeper_boundary = 3;
+  SupportSafeReceiptEvidence debug_evidence = 4;
+}
+
+message ReceiptRejected {
+  ReceiptRejectionCode code = 1;
+  string message = 2;
+  SupportSafeReceiptEvidence debug_evidence = 3;
+}
+
+enum ReceiptRejectionCode {
+  RECEIPT_REJECTION_CODE_UNSPECIFIED = 0;
+  RECEIPT_REJECTION_CODE_INTEGRITY_FAILED = 1;
+  RECEIPT_REJECTION_CODE_EXPIRED = 2;
+  RECEIPT_REJECTION_CODE_DOWNGRADE_REFUSED = 3;
+  RECEIPT_REJECTION_CODE_TENANT_MISMATCH = 4;
+  RECEIPT_REJECTION_CODE_ENVIRONMENT_MISMATCH = 5;
+  RECEIPT_REJECTION_CODE_SNAPSHOT_MISMATCH = 6;
+  RECEIPT_REJECTION_CODE_MANIFEST_MISMATCH = 7;
+  RECEIPT_REJECTION_CODE_REPLAY_REFUSED = 8;
+  RECEIPT_REJECTION_CODE_GATEKEEPER_BOUNDARY_INVALID = 9;
+}

@@ -1,0 +1,10 @@
+{
+ "consumer":{"name":"HoboPortablePipeline"},
+ "provider":{"name":"DaggerSdkExecution"},
+ "metadata":{"pactSpecification":{"version":"4.0.0"},"evidence":"Hand-authored synchronous SDK interaction contract; local fake SDK port, no vendor verification."},
+ "interactions":[
+  {"type":"Synchronous/Messages","description":"execute the requested argv with GNU timeout and accept all command exit codes","request":{"contents":{"operation":"withExec","argv":["timeout","--signal=TERM","--kill-after=5s","30s","write","first"],"expect":"ANY"}},"response":[{"contents":{"exitCode":0,"stdout":"written\n","stderr":""}}]},
+  {"type":"Synchronous/Messages","description":"chain the source snapshot into the next clean environment","request":{"contents":{"operation":"withExec","argv":["timeout","--signal=TERM","--kill-after=5s","30s","read","second"],"expect":"ANY"}},"response":[{"contents":{"exitCode":0,"stdout":"first\n","stderr":""}}]},
+  {"type":"Synchronous/Messages","description":"preserve a command failure without throwing away its exit code","request":{"contents":{"operation":"withExec","argv":["timeout","--signal=TERM","--kill-after=5s","30s","fail"],"expect":"ANY"}},"response":[{"contents":{"exitCode":23,"stdout":"partial\n","stderr":"failure\n"}}]}
+ ]
+}

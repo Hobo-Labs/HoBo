@@ -1,0 +1,434 @@
+{
+  "scenarios": {
+    "greenDrill": {
+      "name": "stage-6-ga-green",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "success",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1100
+      },
+      "dr": {
+        "replayDurationMs": 540000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": true,
+        "pseudoLocPassed": true
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": false,
+          "quietHoursActive": true,
+          "eventSourced": true
+        },
+        "residency": {
+          "classification": "pii",
+          "regionEnforced": true,
+          "cryptoShredApplied": true
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": true
+        },
+        "registry": {
+          "listingCertified": true,
+          "installAllowed": true,
+          "uncertifiedListed": false
+        }
+      },
+      "priorGates": [
+        {
+          "stage": "S0",
+          "status": "pass",
+          "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness"
+        },
+        {
+          "stage": "S1",
+          "status": "pass",
+          "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution"
+        },
+        {
+          "stage": "S2",
+          "status": "pass",
+          "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters"
+        },
+        {
+          "stage": "S3",
+          "status": "pass",
+          "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa"
+        },
+        {
+          "stage": "S4",
+          "status": "pass",
+          "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution"
+        },
+        {
+          "stage": "S5",
+          "status": "pass",
+          "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety"
+        }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": true,
+        "planTimeCostTolerance": true,
+        "drRebuildRto": true,
+        "dashboardA11y": true,
+        "governancePlanes": true,
+        "priorGatesGreen": true,
+        "acceptanceRecordEvidence": true
+      }
+    },
+    "costOutOfTolerance": {
+      "name": "finops-cost-breach",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "success",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1300
+      },
+      "dr": {
+        "replayDurationMs": 540000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": true,
+        "pseudoLocPassed": true
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": true,
+          "quietHoursActive": false,
+          "eventSourced": true
+        },
+        "residency": {
+          "classification": "pii",
+          "regionEnforced": true,
+          "cryptoShredApplied": true
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": true
+        },
+        "registry": {
+          "listingCertified": true,
+          "installAllowed": true,
+          "uncertifiedListed": false
+        }
+      },
+      "priorGates": [
+        { "stage": "S0", "status": "pass", "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness" },
+        { "stage": "S1", "status": "pass", "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution" },
+        { "stage": "S2", "status": "pass", "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters" },
+        { "stage": "S3", "status": "pass", "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa" },
+        { "stage": "S4", "status": "pass", "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution" },
+        { "stage": "S5", "status": "pass", "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety" }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": true,
+        "planTimeCostTolerance": false,
+        "drRebuildRto": true,
+        "dashboardA11y": true,
+        "governancePlanes": true,
+        "priorGatesGreen": true,
+        "acceptanceRecordEvidence": false
+      }
+    },
+    "drRtoExceeded": {
+      "name": "dr-rto-breach",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "success",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1050
+      },
+      "dr": {
+        "replayDurationMs": 960000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": true,
+        "pseudoLocPassed": true
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": true,
+          "quietHoursActive": false,
+          "eventSourced": true
+        },
+        "residency": {
+          "classification": "pii",
+          "regionEnforced": true,
+          "cryptoShredApplied": true
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": true
+        },
+        "registry": {
+          "listingCertified": true,
+          "installAllowed": true,
+          "uncertifiedListed": false
+        }
+      },
+      "priorGates": [
+        { "stage": "S0", "status": "pass", "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness" },
+        { "stage": "S1", "status": "pass", "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution" },
+        { "stage": "S2", "status": "pass", "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters" },
+        { "stage": "S3", "status": "pass", "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa" },
+        { "stage": "S4", "status": "pass", "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution" },
+        { "stage": "S5", "status": "pass", "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety" }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": true,
+        "planTimeCostTolerance": true,
+        "drRebuildRto": false,
+        "dashboardA11y": true,
+        "governancePlanes": true,
+        "priorGatesGreen": true,
+        "acceptanceRecordEvidence": false
+      }
+    },
+    "governanceBypass": {
+      "name": "governance-bypass-attempt",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "success",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1000
+      },
+      "dr": {
+        "replayDurationMs": 300000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": true,
+        "pseudoLocPassed": true
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": false,
+          "quietHoursActive": false,
+          "eventSourced": false
+        },
+        "residency": {
+          "classification": "unclassified",
+          "regionEnforced": false,
+          "cryptoShredApplied": false
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": false
+        },
+        "registry": {
+          "listingCertified": false,
+          "installAllowed": true,
+          "uncertifiedListed": true
+        }
+      },
+      "priorGates": [
+        { "stage": "S0", "status": "pass", "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness" },
+        { "stage": "S1", "status": "pass", "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution" },
+        { "stage": "S2", "status": "pass", "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters" },
+        { "stage": "S3", "status": "pass", "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa" },
+        { "stage": "S4", "status": "pass", "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution" },
+        { "stage": "S5", "status": "pass", "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety" }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": true,
+        "planTimeCostTolerance": true,
+        "drRebuildRto": true,
+        "dashboardA11y": true,
+        "governancePlanes": false,
+        "priorGatesGreen": true,
+        "acceptanceRecordEvidence": false
+      }
+    },
+    "priorGateRegression": {
+      "name": "prior-gate-regression",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "success",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1000
+      },
+      "dr": {
+        "replayDurationMs": 300000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": true,
+        "pseudoLocPassed": true
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": true,
+          "quietHoursActive": false,
+          "eventSourced": true
+        },
+        "residency": {
+          "classification": "pii",
+          "regionEnforced": true,
+          "cryptoShredApplied": true
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": true
+        },
+        "registry": {
+          "listingCertified": true,
+          "installAllowed": true,
+          "uncertifiedListed": false
+        }
+      },
+      "priorGates": [
+        { "stage": "S0", "status": "pass", "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness" },
+        { "stage": "S1", "status": "pass", "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution" },
+        { "stage": "S2", "status": "pass", "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters" },
+        { "stage": "S3", "status": "fail", "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa" },
+        { "stage": "S4", "status": "pass", "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution" },
+        { "stage": "S5", "status": "pass", "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety" }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": true,
+        "planTimeCostTolerance": true,
+        "drRebuildRto": true,
+        "dashboardA11y": true,
+        "governancePlanes": true,
+        "priorGatesGreen": false,
+        "acceptanceRecordEvidence": false
+      }
+    },
+    "rollbackCompensationFailure": {
+      "name": "canary-rollback-failure",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "fail",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1000
+      },
+      "dr": {
+        "replayDurationMs": 300000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": true,
+        "pseudoLocPassed": true
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": true,
+          "quietHoursActive": false,
+          "eventSourced": true
+        },
+        "residency": {
+          "classification": "pii",
+          "regionEnforced": true,
+          "cryptoShredApplied": true
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": true
+        },
+        "registry": {
+          "listingCertified": true,
+          "installAllowed": true,
+          "uncertifiedListed": false
+        }
+      },
+      "priorGates": [
+        { "stage": "S0", "status": "pass", "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness" },
+        { "stage": "S1", "status": "pass", "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution" },
+        { "stage": "S2", "status": "pass", "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters" },
+        { "stage": "S3", "status": "pass", "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa" },
+        { "stage": "S4", "status": "pass", "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution" },
+        { "stage": "S5", "status": "pass", "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety" }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": false,
+        "planTimeCostTolerance": true,
+        "drRebuildRto": true,
+        "dashboardA11y": true,
+        "governancePlanes": true,
+        "priorGatesGreen": true,
+        "acceptanceRecordEvidence": false
+      }
+    },
+    "dashboardAuditFailure": {
+      "name": "dashboard-a11y-failure",
+      "canary": {
+        "healthRegressionInjected": true,
+        "rollbackMode": "success",
+        "autoRollbackTriggered": true
+      },
+      "finops": {
+        "fixtureCostUsd": 1000,
+        "planEstimateUsd": 1000
+      },
+      "dr": {
+        "replayDurationMs": 300000,
+        "projectionsByteIdentical": true
+      },
+      "dashboard": {
+        "wcag21aaPassed": false,
+        "pseudoLocPassed": false
+      },
+      "governance": {
+        "notify": {
+          "consentGranted": true,
+          "quietHoursActive": false,
+          "eventSourced": true
+        },
+        "residency": {
+          "classification": "pii",
+          "regionEnforced": true,
+          "cryptoShredApplied": true
+        },
+        "aiSafety": {
+          "modelOutputFlagged": true,
+          "guardrailBlocked": true
+        },
+        "registry": {
+          "listingCertified": true,
+          "installAllowed": true,
+          "uncertifiedListed": false
+        }
+      },
+      "priorGates": [
+        { "stage": "S0", "status": "pass", "evidenceRef": "src/draft/epic-proofs/foundations-build-conformance-harness" },
+        { "stage": "S1", "status": "pass", "evidenceRef": "src/draft/technical-proofs/s1-19-ctx-config-local-resolution" },
+        { "stage": "S2", "status": "pass", "evidenceRef": "src/draft/epic-proofs/providers-iac-build-adapters" },
+        { "stage": "S3", "status": "pass", "evidenceRef": "src/draft/epic-proofs/identity-auth-secrets-cross-app-access-xaa" },
+        { "stage": "S4", "status": "pass", "evidenceRef": "src/draft/epic-proofs/portability-registry-distribution" },
+        { "stage": "S5", "status": "pass", "evidenceRef": "src/draft/epic-proofs/generation-pipeline-training-ai-safety" }
+      ],
+      "v1GaChecklist": {
+        "canaryAutoRollback": true,
+        "planTimeCostTolerance": true,
+        "drRebuildRto": true,
+        "dashboardA11y": false,
+        "governancePlanes": true,
+        "priorGatesGreen": true,
+        "acceptanceRecordEvidence": false
+      }
+    }
+  }
+}

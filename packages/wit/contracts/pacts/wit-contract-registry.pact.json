@@ -1,0 +1,87 @@
+{
+  "consumer": {
+    "name": "WitBindingCodegenConsumer"
+  },
+  "provider": {
+    "name": "WitContractRegistry"
+  },
+  "interactions": [
+    {
+      "description": "fetch lock returns pinned interface list",
+      "request": {
+        "method": "GET",
+        "path": "/wit-contract-registry/lock"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "schema": "hobo.wit-toolchain-lock/v1",
+          "package": "hobo:sdk@0.1.0",
+          "witDeps": [
+            {
+              "id": "wasi:keyvalue/store@0.2.0@preview",
+              "sha256": "sha256:3cf309f0476533c780333aa2cb71ec5b8cb8a4b8a100c45734a00f146ea8623d"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "digest mismatch returns typed error envelope",
+      "request": {
+        "method": "POST",
+        "path": "/wit-contract-registry/verify",
+        "body": {
+          "pinId": "wasi:keyvalue/store@0.2.0@preview",
+          "expectedSha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "code": "wit.digest_mismatch",
+          "pinId": "wasi:keyvalue/store@0.2.0@preview",
+          "effect": "deny"
+        }
+      }
+    },
+    {
+      "description": "surface comparison returns parity report shape",
+      "request": {
+        "method": "POST",
+        "path": "/wit-contract-registry/compare-surfaces",
+        "body": {
+          "forward": {
+            "imports": ["workflow", "actor"]
+          },
+          "reverse": {
+            "imports": ["workflow", "crypto"]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "parity": "drifted",
+          "driftedImports": ["actor", "crypto"],
+          "driftedExports": [],
+          "driftedSignatures": []
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

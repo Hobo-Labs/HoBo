@@ -1,0 +1,16 @@
+{
+  "name": "@hobo-draft/projection-sink-change-feed-conformance-contract",
+  "private": true,
+  "type": "module",
+  "main": "./src/change-feed-conformance.ts",
+  "types": "./src/change-feed-conformance.d.mts",
+  "exports": {
+    ".": {
+      "types": "./src/change-feed-conformance.d.mts",
+      "import": "./src/change-feed-conformance.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

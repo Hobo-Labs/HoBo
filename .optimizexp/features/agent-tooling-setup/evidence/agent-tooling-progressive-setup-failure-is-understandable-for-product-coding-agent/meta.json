@@ -1,0 +1,32 @@
+{
+  "featureId": "agent-tooling-setup",
+  "scenarioSlug": "agent-tooling-progressive-setup-failure-is-understandable-for-product-coding-agent",
+  "personaIds": [
+    "product-app-developer",
+    "product-agent-operator",
+    "product-platform-engineer",
+    "product-coding-agent"
+  ],
+  "interface": "cli",
+  "driver": "cli",
+  "capturedAt": "2026-07-31T13:43:04.769Z",
+  "runId": "",
+  "screen": {
+    "cols": null,
+    "rows": null
+  },
+  "primary": {
+    "file": "primary.txt",
+    "kind": "transcript",
+    "bytes": 618,
+    "sha256": "0527b5829a3aab4d5ef15d3776ff440e8075882b8a99c9cf8486d9a6780aed08"
+  },
+  "frames": [],
+  "repro": {
+    "command": "bash scripts/agent-mcp-gbrain.sh; echo exit:$?",
+    "cwd": "."
+  },
+  "exitCode": 0,
+  "degraded": false,
+  "notes": []
+}

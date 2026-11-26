@@ -1,0 +1,10 @@
+{
+  "name": "@hobo-draft/wasi-interface-pins",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POC for vendored/pinned WASI interfaces and round-trip conformance fixtures.",
+  "scripts": {
+    "test": "vitest run --root ."
+  }
+}

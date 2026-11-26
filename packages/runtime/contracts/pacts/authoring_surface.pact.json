@@ -1,0 +1,59 @@
+{
+  "consumer": { "name": "RuntimeAuthoringSurface" },
+  "provider": { "name": "RuntimeJournal" },
+  "interactions": [
+    {
+      "description": "a completed durable workflow journals run.* in order",
+      "providerState": "a fresh run of a two-step workflow",
+      "request": {
+        "method": "START",
+        "path": "/workflows/checkout/runs"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "completed",
+          "eventTypes": [
+            "run.Started",
+            "run.StepScheduled",
+            "run.StepCompleted",
+            "run.StepScheduled",
+            "run.StepCompleted",
+            "run.Completed"
+          ]
+        }
+      }
+    },
+    {
+      "description": "resuming after a host restart does not re-run a journaled step",
+      "providerState": "a run whose first step already has run.StepCompleted",
+      "request": {
+        "method": "RESUME",
+        "path": "/workflows/checkout/runs/run-1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "completed",
+          "reservedInvocations": 1,
+          "finalEventType": "run.Completed"
+        }
+      }
+    },
+    {
+      "description": "an undeclared agent tool is denied by the capability membrane",
+      "providerState": "an agent whose ctx did not declare tool:secret",
+      "request": {
+        "method": "TOOL",
+        "path": "/agents/support/tools/secret"
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "code": "capability.denied",
+          "capability": "tool:secret"
+        }
+      }
+    }
+  ]
+}
