@@ -112,3 +112,6 @@ JavaScript, declarations and `runtimeModule` code-generation defaults to their
 public npm names, and adjusts generated source-map columns. It fails on ambiguous `require` bindings or unsupported
 source-map references. This does not publish packages or make an unmapped
 workspace dependency available to external installs.
+Staging pins the `ts-autocode-grounding` and `ts-autocode-training` workspace
+dependencies to the versions in their pinned sibling manifests. Those packages
+must be published or supplied separately before consumers can install them.

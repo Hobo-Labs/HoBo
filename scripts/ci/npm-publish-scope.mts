@@ -92,20 +92,34 @@ function remapDeps(
 }
 
 const WORKSPACE_RANGE = /^workspace:/;
+export const PINNED_EXTERNAL_WORKSPACE_VERSION =
+	/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
-/** Replace workspace ranges with the release semver for published @hobo-labs deps. */
 function pinReleaseDependencyRanges(
 	deps: Record<string, string> | undefined,
 	map: ScopeMap,
 	version: string,
+	externalWorkspaceVersions: Readonly<Record<string, string>>,
 ): Record<string, string> | undefined {
 	if (!deps) return deps;
 	const published = new Set(Object.values(map.packages));
 	const out: Record<string, string> = {};
 	for (const [name, range] of Object.entries(deps)) {
 		if (WORKSPACE_RANGE.test(range)) {
+			const externalVersion = Object.hasOwn(externalWorkspaceVersions, name)
+				? externalWorkspaceVersions[name]
+				: undefined;
 			if (published.has(name)) {
 				out[name] = version;
+			} else if (externalVersion !== undefined) {
+				if (
+					externalVersion.length > 128 ||
+					!PINNED_EXTERNAL_WORKSPACE_VERSION.test(externalVersion)
+				)
+					throw new Error(
+						`npm-scope-map: invalid external workspace version for ${name}`,
+					);
+				out[name] = externalVersion;
 			}
 			continue;
 		}
@@ -118,7 +132,10 @@ function pinReleaseDependencyRanges(
 export function applyScopeToManifest(
 	manifest: PackageJson,
 	map: ScopeMap = loadNpmScopeMap(),
-	options?: { version?: string },
+	options?: {
+		version?: string;
+		externalWorkspaceVersions?: Readonly<Record<string, string>>;
+	},
 ): PackageJson {
 	const out: PackageJson = {
 		...manifest,
@@ -135,10 +152,26 @@ export function applyScopeToManifest(
 	let peerDeps = remapDeps(manifest.peerDependencies, map);
 	let optDeps = remapDeps(manifest.optionalDependencies, map);
 	if (options?.version) {
-		deps = pinReleaseDependencyRanges(deps, map, options.version);
-		devDeps = pinReleaseDependencyRanges(devDeps, map, options.version);
-		peerDeps = pinReleaseDependencyRanges(peerDeps, map, options.version);
-		optDeps = pinReleaseDependencyRanges(optDeps, map, options.version);
+		const external = options.externalWorkspaceVersions ?? {};
+		deps = pinReleaseDependencyRanges(deps, map, options.version, external);
+		devDeps = pinReleaseDependencyRanges(
+			devDeps,
+			map,
+			options.version,
+			external,
+		);
+		peerDeps = pinReleaseDependencyRanges(
+			peerDeps,
+			map,
+			options.version,
+			external,
+		);
+		optDeps = pinReleaseDependencyRanges(
+			optDeps,
+			map,
+			options.version,
+			external,
+		);
 	}
 	if (deps) out.dependencies = deps;
 	else delete out.dependencies;

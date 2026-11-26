@@ -22,6 +22,7 @@ import {
 } from "../ci/rewrite-sdk-specifiers.mts";
 import {
 	orderedSdkTarballPaths,
+	readExternalSdkWorkspaceVersions,
 	releaseSdkTurboBuildArgv,
 	SDK_PACKAGES,
 } from "../ci/stage-sdk-artifacts.mts";
@@ -31,6 +32,45 @@ import {
 } from "../lib/release-hobo-path-filters.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("reads exact external SDK versions from pinned sibling manifests", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-sibling-"));
+		try {
+			for (const name of ["grounding", "training"]) {
+				const path = join(dir, "external", "ts-autocode", "packages", name);
+				mkdirSync(path, { recursive: true });
+				writeFileSync(
+					join(path, "package.json"),
+					JSON.stringify({ name: `ts-autocode-${name}`, version: "0.1.0" }),
+				);
+			}
+			expect(readExternalSdkWorkspaceVersions(dir)).toEqual({
+				"ts-autocode-grounding": "0.1.0",
+				"ts-autocode-training": "0.1.0",
+			});
+			for (const privateValue of [true, "true"]) {
+				writeFileSync(
+					join(
+						dir,
+						"external",
+						"ts-autocode",
+						"packages",
+						"grounding",
+						"package.json",
+					),
+					JSON.stringify({
+						name: "ts-autocode-grounding",
+						version: "0.1.0",
+						private: privateValue,
+					}),
+				);
+				expect(() => readExternalSdkWorkspaceVersions(dir)).toThrow(
+					"invalid pinned SDK dependency manifest",
+				);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 	it("runs release checks when the specifier rewrite changes", () => {
 		const filters = loadReleaseHoboPullRequestPathFilters(
 			join(import.meta.dirname, "..", ".."),

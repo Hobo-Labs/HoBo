@@ -14,7 +14,11 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
-import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
+import {
+	applyScopeToManifest,
+	loadNpmScopeMap,
+	PINNED_EXTERNAL_WORKSPACE_VERSION,
+} from "./npm-publish-scope.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 const require = createRequire(import.meta.url);
@@ -96,6 +100,40 @@ const SDK_PACKAGE_DIRS = {
 	"@hobo/runtime-local": "packages/runtimes/runtime-local",
 } satisfies Record<string, string>;
 
+const EXTERNAL_SDK_WORKSPACES = {
+	"ts-autocode-grounding":
+		"external/ts-autocode/packages/grounding/package.json",
+	"ts-autocode-training": "external/ts-autocode/packages/training/package.json",
+} as const;
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: pinned sibling manifests are checked before their versions enter release artifacts. */
+export function readExternalSdkWorkspaceVersions(
+	repoRoot: string,
+): Readonly<Record<string, string>> {
+	const versions: Record<string, string> = Object.create(null);
+	for (const [name, path] of Object.entries(EXTERNAL_SDK_WORKSPACES)) {
+		const value: unknown = JSON.parse(
+			readFileSync(join(repoRoot, path), "utf8"),
+		);
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			Array.isArray(value) ||
+			!("name" in value) ||
+			value.name !== name ||
+			!("version" in value) ||
+			typeof value.version !== "string" ||
+			value.version.length > 128 ||
+			!PINNED_EXTERNAL_WORKSPACE_VERSION.test(value.version) ||
+			("private" in value && value.private !== false)
+		)
+			throw new Error(`invalid pinned SDK dependency manifest: ${name}`);
+		versions[name] = value.version;
+	}
+	return Object.freeze(versions);
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
 function findPackageDir(name: string): string {
 	const nested = Object.entries(SDK_PACKAGE_DIRS).find(
 		([packageName]) => packageName === name,
@@ -123,6 +161,7 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 	mkdirSync(outDir, { recursive: true });
 	const map = loadNpmScopeMap();
 	const semver = releaseSemverFromEnv();
+	const externalWorkspaceVersions = readExternalSdkWorkspaceVersions(root);
 	const manifest: SdkArtifactManifest = {
 		version: semver,
 		packages: [],
@@ -137,6 +176,7 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 		// SAFETY: workspace package.json must declare `name` before pack staging.
 		const staged = applyScopeToManifest(rawPkg as WorkspaceManifest, map, {
 			version: semver,
+			externalWorkspaceVersions,
 		});
 		const pkgStaging = join(staging, workspaceName.replace("/", "_"));
 		rmSync(pkgStaging, { recursive: true, force: true });
