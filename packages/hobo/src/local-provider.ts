@@ -1,6 +1,5 @@
 import type { RegistrableProvider } from "@hobo/cloud";
 
-// region, it produces a real provider whose capabilities/cost/manifest are all
 export function createProviderFromPorts(
 	id: string,
 	ports: readonly string[],
@@ -48,7 +47,6 @@ export function createProviderFromPorts(
 	};
 }
 
-// public-contract: provider id for the default bare-metal / local-host yard.
 export const BARE_METAL_PROVIDER_ID = "local" as const;
 
 const BARE_METAL_PORTS = [
@@ -65,7 +63,6 @@ const BARE_METAL_PORTS = [
 	"compute",
 ] as const;
 
-// already runs on (kv + objectStore, one "local" region, zero cost). Installable
 export function createLocalProvider(): RegistrableProvider {
 	return createProviderFromPorts("local", ["kv", "objectStore"]);
 }

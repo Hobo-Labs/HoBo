@@ -17,7 +17,6 @@ import {
 	type JsonObject,
 } from "./json.js";
 
-// public-contract: the topology export that declares Station Rails.
 export const DECLARED_RAILS_EXPORT = "rails";
 
 // domain-view: one declared Rail as the catalog serves it.
