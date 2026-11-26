@@ -11,7 +11,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
 import {
@@ -134,6 +134,56 @@ export function readExternalSdkWorkspaceVersions(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: copied sibling manifests are checked again at the staging boundary. */
+export function bundleExternalSdkWorkspaces(
+	repoRoot: string,
+	packageDir: string,
+	manifest: {
+		dependencies?: Record<string, string>;
+		bundleDependencies?: string[];
+	},
+	versions: Readonly<Record<string, string>>,
+): void {
+	const bundled = [...(manifest.bundleDependencies ?? [])];
+	for (const [name, path] of Object.entries(EXTERNAL_SDK_WORKSPACES)) {
+		const version = manifest.dependencies?.[name];
+		if (version === undefined) continue;
+		if (
+			version !== versions[name] ||
+			!PINNED_EXTERNAL_WORKSPACE_VERSION.test(version)
+		)
+			throw new Error(`invalid SDK bundled dependency: ${name}`);
+		const source = join(repoRoot, dirname(path));
+		const target = join(packageDir, "node_modules", name);
+		const raw = readFileSync(join(source, "package.json"), "utf8");
+		const sibling: unknown = JSON.parse(raw);
+		if (
+			typeof sibling !== "object" ||
+			sibling === null ||
+			Array.isArray(sibling) ||
+			!("name" in sibling) ||
+			sibling.name !== name ||
+			!("version" in sibling) ||
+			sibling.version !== version ||
+			("private" in sibling && sibling.private !== false)
+		)
+			throw new Error(`invalid SDK bundled dependency: ${name}`);
+		if (!existsSync(join(source, "dist", "index.js")))
+			throw new Error(`SDK bundled dependency is not built: ${name}`);
+		rmSync(target, { recursive: true, force: true });
+		mkdirSync(target, { recursive: true });
+		cpSync(join(source, "dist"), join(target, "dist"), { recursive: true });
+		writeFileSync(join(target, "package.json"), raw);
+		cpSync(
+			join(repoRoot, "external/ts-autocode/LICENSE"),
+			join(target, "LICENSE"),
+		);
+		if (!bundled.includes(name)) bundled.push(name);
+	}
+	if (bundled.length > 0) manifest.bundleDependencies = bundled;
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
 function findPackageDir(name: string): string {
 	const nested = Object.entries(SDK_PACKAGE_DIRS).find(
 		([packageName]) => packageName === name,
@@ -180,8 +230,17 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 		});
 		const pkgStaging = join(staging, workspaceName.replace("/", "_"));
 		rmSync(pkgStaging, { recursive: true, force: true });
-		cpSync(pkgDir, pkgStaging, { recursive: true });
+		cpSync(pkgDir, pkgStaging, {
+			recursive: true,
+			filter: (source) => basename(source) !== "node_modules",
+		});
 		rewriteStagedSdkDirectory(join(pkgStaging, "dist"), map.packages);
+		bundleExternalSdkWorkspaces(
+			root,
+			pkgStaging,
+			staged,
+			externalWorkspaceVersions,
+		);
 		writeFileSync(
 			join(pkgStaging, "package.json"),
 			`${JSON.stringify(staged, null, "\t")}\n`,

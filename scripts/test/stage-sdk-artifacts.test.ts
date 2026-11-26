@@ -21,6 +21,7 @@ import {
 	rewriteStagedSdkDirectory,
 } from "../ci/rewrite-sdk-specifiers.mts";
 import {
+	bundleExternalSdkWorkspaces,
 	orderedSdkTarballPaths,
 	readExternalSdkWorkspaceVersions,
 	releaseSdkTurboBuildArgv,
@@ -32,6 +33,117 @@ import {
 } from "../lib/release-hobo-path-filters.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("packs pinned sibling dependencies so an offline consumer can import them", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-bundle-"));
+		try {
+			const sibling = join(dir, "external/ts-autocode/packages/grounding");
+			const staged = join(dir, "staged");
+			const consumer = join(dir, "consumer");
+			mkdirSync(join(sibling, "dist"), { recursive: true });
+			mkdirSync(join(staged, "dist"), { recursive: true });
+			mkdirSync(consumer, { recursive: true });
+			writeFileSync(join(dir, "external/ts-autocode/LICENSE"), "MIT fixture");
+			writeFileSync(
+				join(sibling, "package.json"),
+				JSON.stringify({
+					name: "ts-autocode-grounding",
+					version: "0.1.0",
+					type: "module",
+					main: "dist/index.js",
+				}),
+			);
+			writeFileSync(
+				join(sibling, "dist/index.js"),
+				"export const value = 42;\n",
+			);
+			writeFileSync(
+				join(staged, "dist/index.js"),
+				'export { value } from "ts-autocode-grounding";\n',
+			);
+			const bundled: string[] = [];
+			const manifest = {
+				name: "sdk-demo",
+				version: "1.0.0",
+				type: "module",
+				main: "dist/index.js",
+				files: ["dist"],
+				dependencies: { "ts-autocode-grounding": "0.1.0" },
+				bundleDependencies: bundled,
+			};
+			bundleExternalSdkWorkspaces(dir, staged, manifest, {
+				"ts-autocode-grounding": "0.1.0",
+			});
+			writeFileSync(join(staged, "package.json"), JSON.stringify(manifest));
+			const packed = spawnSync(
+				"npm",
+				[
+					"pack",
+					"--json",
+					"--ignore-scripts",
+					"--cache",
+					join(dir, "cache"),
+					"--pack-destination",
+					dir,
+				],
+				{ cwd: staged, encoding: "utf8" },
+			);
+			expect(packed.status, packed.stderr).toBe(0);
+			const archive = join(dir, JSON.parse(packed.stdout)[0].filename);
+			writeFileSync(
+				join(consumer, "package.json"),
+				'{"name":"consumer","version":"1.0.0","type":"module"}',
+			);
+			const installed = spawnSync(
+				"npm",
+				[
+					"install",
+					"--offline",
+					"--ignore-scripts",
+					"--package-lock=false",
+					"--cache",
+					join(dir, "cache"),
+					archive,
+				],
+				{ cwd: consumer, encoding: "utf8" },
+			);
+			expect(installed.status, installed.stderr).toBe(0);
+			const imported = spawnSync(
+				process.execPath,
+				[
+					"--input-type=module",
+					"-e",
+					'import { value } from "sdk-demo"; if (value !== 42) process.exit(1);',
+				],
+				{ cwd: consumer, encoding: "utf8" },
+			);
+			expect(imported.status, imported.stderr).toBe(0);
+			expect(
+				readFileSync(
+					join(
+						consumer,
+						"node_modules/sdk-demo/node_modules/ts-autocode-grounding/LICENSE",
+					),
+					"utf8",
+				),
+			).toBe("MIT fixture");
+			expect(() =>
+				bundleExternalSdkWorkspaces(dir, staged, manifest, {
+					"ts-autocode-grounding": "0.2.0",
+				}),
+			).toThrow("invalid SDK bundled dependency");
+			writeFileSync(
+				join(sibling, "package.json"),
+				JSON.stringify({ name: "ts-autocode-grounding", version: "0.2.0" }),
+			);
+			expect(() =>
+				bundleExternalSdkWorkspaces(dir, staged, manifest, {
+					"ts-autocode-grounding": "0.1.0",
+				}),
+			).toThrow("invalid SDK bundled dependency");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 	it("reads exact external SDK versions from pinned sibling manifests", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-sibling-"));
 		try {
