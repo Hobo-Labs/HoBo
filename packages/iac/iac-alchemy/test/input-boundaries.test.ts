@@ -26,6 +26,27 @@ import {
 	testStateOwnership,
 } from "./route-fixture.js";
 
+describe("bounded plan fingerprints", () => {
+	it("accepts and distinguishes generated source within the per-string limit", () => {
+		const source = "a".repeat(65_536);
+		expect(digestData({ source })).not.toBe(
+			digestData({ source: `${source.slice(0, -1)}b` }),
+		);
+		expect(() => digestData({ source: `${source}x` })).toThrow(
+			"PLAN_UNINSPECTABLE",
+		);
+	});
+	it("bounds the aggregate size of many individually valid strings", () => {
+		const source = "a".repeat(65_536);
+		expect(() =>
+			digestData(Array.from({ length: 32 }, () => source)),
+		).not.toThrow();
+		expect(() => digestData(Array.from({ length: 33 }, () => source))).toThrow(
+			"PLAN_UNINSPECTABLE",
+		);
+	});
+});
+
 type Widget = Resource<"Spec.Widget", Record<string, never>, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
 
