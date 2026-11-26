@@ -106,6 +106,10 @@
 		"./aws/http-runtime": {
 			"types": "./dist/aws-http-runtime.d.ts",
 			"default": "./dist/aws-http-runtime.js"
+		},
+		"./aws/http-source": {
+			"types": "./dist/aws-http-source.d.ts",
+			"default": "./dist/aws-http-source.js"
 		}
 	},
 	"dependencies": {

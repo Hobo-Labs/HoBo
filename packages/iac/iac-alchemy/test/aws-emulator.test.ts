@@ -29,6 +29,7 @@ import {
 	awsHttpBindings,
 	createAwsBindleApplication,
 } from "../src/aws-http-runtime.js";
+import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsDynamoKvStore } from "../src/aws-kv.js";
 import {
 	awsDynamoKvBindleMappers,
@@ -619,7 +620,28 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			const response = await app.fetch(new Request("https://app.test/"));
 			expect(response.status).toBe(200);
 			expect(await response.json()).toEqual({ value: [1, 2], body: [4, 5] });
+			const source = defineAwsHttpSource({
+				bindle: selected,
+				applicationName: "web",
+				environment: {
+					HOBO_RESOURCE_0: bucket.bucketName,
+					HOBO_RESOURCE_1: table.tableName,
+				},
+				resolveStores: () => ({ sessions: kv, objects: objectStore }),
+				verifyBinding: () => authorized,
+			});
+			const sourceResponse = await source.fetch(
+				new Request("https://app.test/"),
+			);
+			expect(sourceResponse.status).toBe(200);
+			expect(await sourceResponse.json()).toEqual({
+				value: [1, 2],
+				body: [4, 5],
+			});
 			authorized = false;
+			expect(
+				(await source.fetch(new Request("https://app.test/"))).status,
+			).toBe(503);
 			expect((await app.fetch(new Request("https://app.test/"))).status).toBe(
 				503,
 			);
