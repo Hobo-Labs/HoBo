@@ -217,7 +217,7 @@ export function awsHttpBindleMappers<Requirements>(
 					| Table["tableName"]
 					| Bucket["bucketName"]
 					| Secret["secretArn"]
-					| Topic["topicName"]
+					| Topic["topicArn"]
 					| Key["keyArn"]
 				> = {};
 				for (const binding of graph.bindings) {
@@ -249,7 +249,7 @@ export function awsHttpBindleMappers<Requirements>(
 							: binding.kind === "bucket"
 								? (dependency as Bucket).bucketName
 								: binding.kind === "notify"
-									? (dependency as Topic).topicName
+									? (dependency as Topic).topicArn
 									: binding.kind === "crypto"
 										? (dependency as Key).keyArn
 										: (dependency as Secret).secretArn;

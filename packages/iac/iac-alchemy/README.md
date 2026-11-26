@@ -1087,7 +1087,9 @@ The `@hobo/iac-alchemy/aws/notification` entrypoint provides a scoped publisher
 for the resulting topic. An AWS HTTP application can bind that publisher with
 `awsHttpBindings(context).notify(name)` when its declaration depends on the
 selected notification. The host supplies the exact topic grant, synchronous
-verifier, AWS transport and binding authorization. A valid
+verifier, AWS transport and binding authorization. The source compares the
+full mapped topic ARN, including partition, account and region, with the grant.
+A valid
 submission returns `accepted` only after SNS returns a receipt and the grant is
 still valid. Authorization or capacity rejection means no dispatch for that
 attempt; `unknown` can mean SNS accepted the message, and retry can duplicate

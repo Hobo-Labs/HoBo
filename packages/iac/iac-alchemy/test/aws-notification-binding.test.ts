@@ -15,6 +15,7 @@ import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsNotificationPublisher } from "../src/aws-notification.js";
 import { withAwsSnsNotification } from "../src/aws-notification-mapper.js";
 
+const topicArn = "arn:aws:sns:us-east-1:000000000000:alerts";
 const request = { attemptId: "abcdefghijklmnop", body: "Hello" };
 const response = () =>
 	new Response(
@@ -78,7 +79,7 @@ it("binds only the genuine publisher for the exact mapped topic", async () => {
 			resolveStores: () => ({ alerts: value }),
 			verifyBinding,
 		});
-	const accepted = await make("alerts", port).fetch(
+	const accepted = await make(topicArn, port).fetch(
 		new Request("https://app.test"),
 	);
 	expect(await accepted.json()).toEqual({
@@ -93,20 +94,27 @@ it("binds only the genuine publisher for the exact mapped topic", async () => {
 	expect(
 		(await make("other", port).fetch(new Request("https://app.test"))).status,
 	).toBe(503);
+	for (const arn of [
+		"arn:aws:sns:us-east-1:111111111111:alerts",
+		"arn:aws:sns:us-west-2:000000000000:alerts",
+	])
+		expect(
+			(await make(arn, port).fetch(new Request("https://app.test"))).status,
+		).toBe(503);
 	expect(
-		(await make("alerts", { ...port }).fetch(new Request("https://app.test")))
+		(await make(topicArn, { ...port }).fetch(new Request("https://app.test")))
 			.status,
 	).toBe(503);
 	expect(
 		(
-			await make("alerts", new Proxy(port, {})).fetch(
+			await make(topicArn, new Proxy(port, {})).fetch(
 				new Request("https://app.test"),
 			)
 		).status,
 	).toBe(503);
 	expect(
 		(
-			await make("alerts", port, () => false).fetch(
+			await make(topicArn, port, () => false).fetch(
 				new Request("https://app.test"),
 			)
 		).status,
@@ -188,7 +196,7 @@ it("refuses two declared notifications sharing one physical topic", () => {
 });
 
 it("stops notification dispatch when the source topic changes during a request", async () => {
-	const environment = { HOBO_RESOURCE_0: "alerts" };
+	const environment = { HOBO_RESOURCE_0: topicArn };
 	let calls = 0;
 	let result: Awaited<ReturnType<NotificationPort["send"]>> | undefined;
 	const store = publisher(async () => {

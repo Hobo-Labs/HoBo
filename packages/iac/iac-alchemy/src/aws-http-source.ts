@@ -202,7 +202,8 @@ export function defineAwsHttpSource<Requirements>(options: {
 										grant.bucketName !== binding.physicalName
 									: binding.kind === "notify"
 										? !("topicName" in grant) ||
-											grant.topicName !== binding.physicalName
+											`arn:${grant.partition}:sns:${grant.region}:${grant.accountId}:${grant.topicName}` !==
+												binding.physicalName
 										: binding.kind === "crypto"
 											? !("keyId" in grant) ||
 												`arn:${grant.partition}:kms:${grant.region}:${grant.accountId}:key/${grant.keyId}` !==
