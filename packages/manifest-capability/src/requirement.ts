@@ -81,7 +81,7 @@ export type CapabilityRequirementInput = {
 // parseProfileId, so a raw string can never reach selection unparsed. The wire
 // message carries a plain `string` because a brand has no encoding; recovering
 // it is what decoding through this package is for.
-// domain-view: profileId is the branded ProfileId, not a string. That brand is
+// domain-view:
 export type ProfileConstraint = {
 	readonly profileId: ProfileId;
 	readonly versionRange: string;
@@ -98,7 +98,7 @@ export type WeightedPreference = ProfileConstraint & {
 // runtime.required/trustRef stay exact-optional so absent never decays into
 // undefined. The wire message in data-models/capability_requirement.proto is
 // its encoding, not its definition.
-// domain-view: the parsed counterpart of CapabilityRequirementInput, and richer
+// domain-view:
 export type CapabilityRequirement = {
 	readonly requiredProfiles: readonly ProfileConstraint[];
 	readonly preferredProfiles: readonly WeightedPreference[];

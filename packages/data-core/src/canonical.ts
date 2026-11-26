@@ -52,14 +52,14 @@ export const CANONICAL_KEY_TYPES: readonly CanonicalType[] = Object.freeze([
 	"uuid",
 ]);
 
-// domain-view: parsed field; wire form is DatasetField in data-models/data_core.proto.
+// domain-view:
 export interface DatasetField {
 	readonly name: string;
 	readonly type: CanonicalType;
 	readonly nullable: boolean;
 }
 
-// domain-view: parsed schema, constructible only through parseDatasetSchema; wire form is DatasetSchema in data-models/data_core.proto.
+// domain-view:
 export interface DatasetSchema {
 	readonly contract: typeof DATASET_SCHEMA_CONTRACT;
 	readonly name: string;

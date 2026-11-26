@@ -68,7 +68,7 @@ export const MIGRATION_EVENTS = Object.freeze({
 export type MigrationEventType =
 	(typeof MIGRATION_EVENTS)[keyof typeof MIGRATION_EVENTS];
 
-// domain-view: in-process fact; each `data` body's wire form is the matching Migration*EventData message in data-models/data_core.proto.
+// domain-view:
 export interface MigrationFact {
 	readonly type: string;
 	readonly data: JsonObject;
@@ -212,7 +212,7 @@ export const MIGRATION_STATUSES = [
 ] as const;
 export type MigrationStatus = (typeof MIGRATION_STATUSES)[number];
 
-// domain-view: folded aggregate state; wire form is MigrationState in data-models/data_core.proto.
+// domain-view:
 export interface MigrationState {
 	readonly migrationId: string;
 	readonly status: MigrationStatus;

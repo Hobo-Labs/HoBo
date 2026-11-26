@@ -117,7 +117,7 @@ type ResourcePlanDraft = {
 
 declare const resourcePlanBrand: unique symbol;
 
-// domain-view: parsed plan node; wire form is ResourcePlan in data-models/resource_plan.proto.
+// domain-view:
 export type ResourcePlan = {
 	readonly name: string;
 	readonly port: string;
@@ -134,7 +134,7 @@ export type ResourcePlan = {
 
 declare const deploymentPlanBrand: unique symbol;
 
-// domain-view: parsed content-addressed plan DAG; wire form is DeploymentPlan in data-models/resource_plan.proto.
+// domain-view:
 export type DeploymentPlan = {
 	readonly schema: typeof DEPLOYMENT_PLAN_SCHEMA;
 	readonly resources: readonly ResourcePlan[];

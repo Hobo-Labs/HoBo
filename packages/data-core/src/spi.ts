@@ -81,13 +81,13 @@ export type SnapshotConsistency = (typeof SNAPSHOT_CONSISTENCIES)[number];
  * An engine-native fast path, named by the pattern it realizes. Declaring one
  * is a promise that the binding's `nativeTransfer` port can run it.
  */
-// domain-view: parsed profile reference; wire form is NativeMigrationProfile in data-models/data_core.proto.
+// domain-view:
 export interface NativeMigrationProfile {
 	readonly profile: string;
 	readonly pattern: string;
 }
 
-// domain-view: parsed declaration, constructible only through parseEngineDeclaration; wire form is EngineDeclaration in data-models/data_core.proto.
+// domain-view:
 export interface EngineDeclaration {
 	readonly contract: typeof ENGINE_DECLARATION_CONTRACT;
 	/** Engine id, e.g. `sqlite`, `postgres`, `mongodb`. */
@@ -462,7 +462,7 @@ export interface SchemaApplyPort {
 // ── native transfer (an engine's own bulk transport) ────────────────────────
 
 /** One native transfer, as either side of it is asked about it. */
-// domain-view: port request; wire form is NativeTransferRef in data-models/data_core.proto.
+// domain-view:
 export interface NativeTransferRef {
 	/** The native migration profile being realized. */
 	readonly profile: string;

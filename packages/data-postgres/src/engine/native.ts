@@ -150,7 +150,7 @@ const SUBSCRIPTION_NAME = /^hobo_n_[0-9a-f]{12}_[0-9a-f]{24}$/u;
 const OBJECT_IN_USE = "55006";
 const DUPLICATE_OBJECT = "42710";
 
-// domain-view: parsed ticket; wire form is PostgresNativeTicket in data-models/postgres_engine.proto.
+// domain-view:
 export interface PostgresNativeTicket {
 	readonly profile: typeof LOGICAL_COPY_PROFILE;
 	readonly publication: string;
