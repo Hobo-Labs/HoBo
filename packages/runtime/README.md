@@ -587,3 +587,9 @@ binding snapshot if caller-owned input changes during preparation.
 `createBindleTopicPreparation` shares concurrent and synchronously reentrant
 preparation attempts. Retries reuse the captured operation identities, which the
 caller must persist across restarts.
+
+The internal durable queue component boundary copies request bodies and
+attributes and checks operation identities, UTF-8 sizes, batches, and lease
+bounds before a future queue host dispatches them. This parser does not bind a
+queue provider, authorize a component, enforce delay or operation-window timing,
+or establish durable outcomes.
