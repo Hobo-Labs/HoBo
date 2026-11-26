@@ -166,12 +166,6 @@ function checkProductBinding(): string[] {
 	return problems;
 }
 
-/**
- * Lane (e): experience-catalog persona coverage. Project-local personas at or
- * above the coverage priority (default ≤10, lower = more important) must own
- * at least one catalog row — 11 of 13 personas in one project previously
- * never reached the catalog, so their P0s could not fail assert-complete.
- */
 function checkCatalogCoverage(): string[] {
 	const problems: string[] = [];
 	let personasChecked = 0;

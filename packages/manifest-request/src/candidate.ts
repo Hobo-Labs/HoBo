@@ -70,11 +70,9 @@ import {
 	type RealizationKind,
 } from "./vocabulary.js";
 
-/** Wire identity of this manifest. Bumped only by a breaking field change. */
 export const SELECTION_CANDIDATE_SCHEMA_VERSION =
 	"hobo.selection-candidate/v1" as const;
 
-/** Every refusal this module raises. The `path` names the offending field. */
 export class SelectionCandidateError extends Error {
 	readonly code = "INVALID_SELECTION_CANDIDATE" as const;
 	readonly path: string;
@@ -86,14 +84,12 @@ export class SelectionCandidateError extends Error {
 	}
 }
 
-/** A structured capability value. Objects are deliberately not admissible. */
 export type StructuredCapabilityValue =
 	| boolean
 	| number
 	| string
 	| readonly string[];
 
-/** A profile implementation claim made by a hosted product or pack. */
 export type ProfileImplementation = {
 	readonly profileId: string;
 	readonly versionRange: string;
@@ -127,7 +123,6 @@ export type SelectionCandidate = {
 	readonly producesBindingProfiles: readonly string[];
 	readonly migrationProfiles: readonly string[];
 	readonly providerClass: ProviderClass;
-	/** Evidence expiry as epoch milliseconds. Absent means no live evidence. */
 	readonly evidenceExpiresAtMs?: number;
 	readonly evidenceSignatureValid: boolean;
 	readonly creatorAuthorityAfterClaim: CreatorAuthorityAfterClaim;
@@ -137,7 +132,6 @@ export type SelectionCandidate = {
 	readonly supportsExport: boolean;
 	readonly supportsRotation: boolean;
 	readonly supportsRevocation: boolean;
-	/** Sponsor exposure in minor currency units. 0 for user-owned/anonymous. */
 	readonly sponsorExposureMinorUnits: number;
 	readonly hasRegisteredDriver: boolean;
 	readonly secretCustodyAvailable: boolean;
@@ -150,8 +144,7 @@ export type ParsedSelectionCandidate = SelectionCandidate & {
 	readonly [selectionCandidateBrand]: typeof SELECTION_CANDIDATE_SCHEMA_VERSION;
 };
 
-/** The wire record: snake_case, canonically ordered, digest-ready. */
-// parallel-type-allowed: hand-declared wire form of ProfileImplementationRecord in data-models/selection_candidate.proto; this package has no data-models/buf.yaml, so codegen produces no src/_generated/*_pb.ts to import — replace with the generated type when manifest packages opt into codegen.
+// parallel-type-allowed:
 export type ProfileImplementationRecord = {
 	readonly profile_id: string;
 	readonly version_range: string;
@@ -167,7 +160,7 @@ export type CandidateContinuityRecord = {
 	readonly credentials: CredentialContinuity;
 };
 
-// parallel-type-allowed: hand-declared wire form of SelectionCandidateRecord; the declaration order of its fields IS the canonical JSON key order a digest is taken over, which is a property this package must state rather than inherit from a generator it does not yet run.
+// parallel-type-allowed:
 export type SelectionCandidateRecord = {
 	readonly schema_version: typeof SELECTION_CANDIDATE_SCHEMA_VERSION;
 	readonly definition_id: string;
@@ -198,14 +191,6 @@ export type SelectionCandidateRecord = {
 const PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\/v[0-9]+$/u;
 const VERSION_RANGE_PATTERN =
 	/^(?:\*|[><]=?|=|\^|~)?\s*v?[0-9]+(?:\.[0-9]+){0,2}$/u;
-/**
- * Capability keys must not be array-index-shaped.
- *
- * JavaScript reorders integer-like own keys to the front of an object, so a
- * key of `"0"` would move ahead of the sorted keys in the canonical JSON and
- * quietly break byte-identity between two catalogs holding the same facts.
- * Requiring a leading letter is what makes the sort observable on the wire.
- */
 const CAPABILITY_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]*$/u;
 
 const CANDIDATE_FIELDS = [
@@ -265,7 +250,6 @@ const RECORD_FIELDS = [
 	"secret_custody_available",
 ] as const;
 
-/** Code-point order, never the host's collation locale. */
 function compareCodePoints(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -381,7 +365,6 @@ function assertNoDuplicates(values: readonly string[], path: string): void {
 	}
 }
 
-/** A set-valued field: no duplicates, canonically sorted by code point. */
 function parseStringSet(value: unknown, path: string): readonly string[] {
 	const entries = asArray(value, path).map((entry, index) =>
 		asNonEmptyString(entry, `${path}[${index}]`),
@@ -413,14 +396,9 @@ function parseCapabilityValue(
 				`must be a finite number, got ${String(value)}`,
 			);
 		}
-		// -0 serializes as `0`, so keeping it would make the round trip lossy in
-		// the domain object while looking byte-identical on the wire.
 		return Object.is(value, -0) ? 0 : value;
 	}
 	if (Array.isArray(value)) {
-		// A list value keeps its order: it is a value, not a set, and every
-		// operator that reads one (`one-of`, `includes-all`) is order-blind
-		// anyway, so reordering would lose information for no gain.
 		return value.map((entry, index) =>
 			asNonEmptyString(entry, `${path}[${index}]`),
 		);
@@ -496,14 +474,6 @@ function parseImplementation(
 	};
 }
 
-/**
- * Ordered, and never two claims for the same profile.
- *
- * Order is preserved because selection takes the first entry that satisfies a
- * required profile, so the list position decides which realization is chosen.
- * Two claims for one profile are refused for the same reason: the choice
- * between them would rest on position alone, with nothing to appeal to.
- */
 function parseImplementations(
 	value: unknown,
 	path: string,
@@ -532,16 +502,6 @@ function parseContinuity(value: unknown, path: string): CandidateContinuity {
 	};
 }
 
-/**
- * Absent, `null` and `undefined` are three different claims, and only the
- * first is admissible.
- *
- * `exactOptionalPropertyTypes` draws exactly this line in the type system: an
- * optional field and a field that may hold `undefined` are not the same field.
- * A producer that sets the key to `null` or `undefined` has asserted something
- * about the value; omitting the key asserts that no evidence was recorded, and
- * only that spelling reaches the evidence gate as a fail-closed fact.
- */
 function parseEvidenceExpiry(value: unknown, path: string): number {
 	if (value === null) {
 		throw new SelectionCandidateError(
@@ -564,13 +524,6 @@ function parseEvidenceExpiry(value: unknown, path: string): number {
 	return value;
 }
 
-/**
- * Parse-don't-validate boundary for a catalog offer.
- *
- * Unknown fields are refused rather than dropped: a producer that carries a
- * selection-relevant fact this schema does not model would otherwise have it
- * silently deleted from every digest taken downstream.
- */
 export function parseSelectionCandidate(
 	input: unknown,
 ): ParsedSelectionCandidate {
@@ -650,13 +603,6 @@ export function parseSelectionCandidate(
 	return candidate as ParsedSelectionCandidate;
 }
 
-/**
- * Encode to the canonical wire record.
- *
- * Parses first, so the output is canonical whatever the input's array order
- * or key order was. Key insertion order here IS the wire order — the record
- * is what a digest is taken over.
- */
 export function toSelectionCandidateRecord(
 	candidate: SelectionCandidate,
 ): SelectionCandidateRecord {
@@ -698,7 +644,6 @@ export function toSelectionCandidateRecord(
 	};
 }
 
-/** Decode a wire record. Refuses an unrecognized schema version outright. */
 export function fromSelectionCandidateRecord(
 	input: unknown,
 ): ParsedSelectionCandidate {

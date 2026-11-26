@@ -1,4 +1,3 @@
-// createSubscriptionDrivers (WP2): one SubscriptionDriver per SubscriptionKind.
 import type {
 	CdFactories,
 	CiArtifactReader,

@@ -5,10 +5,8 @@ import {
 	runCdAssertions,
 } from "./cd-kit.js";
 
-// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const CD_LOAD_SUITE = "hobo.cd.fanout-load/v1";
 
-// public-contract: the load lane's default shape.
 export const CD_FANOUT_LOAD_DEFAULTS = Object.freeze({
 	camps: 10_000,
 	p99TickBudgetMs: 1_000,

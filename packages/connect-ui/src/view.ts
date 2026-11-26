@@ -20,7 +20,6 @@ export interface ViewAction {
 	readonly action: ConnectActionName;
 	readonly label: string;
 	readonly variant: "primary" | "secondary";
-	/** Sends the view's field and choice values as the action's params. */
 	readonly submits: boolean;
 	/**
 	 * The sentence an agent must have a person confirm before pressing it
@@ -35,7 +34,6 @@ export interface StepView {
 	readonly title: string;
 	readonly description: string;
 	readonly tone: "neutral" | "success" | "error";
-	/** Paragraphs that explain the step; plain text. */
 	readonly explanation: readonly string[];
 	readonly fields: readonly ConfigField[];
 	readonly progress?: {
@@ -43,7 +41,6 @@ export interface StepView {
 		readonly max: number;
 		readonly label: string;
 	};
-	/** Store references (never values) a finished step shows. */
 	readonly references: readonly string[];
 	readonly link?: { readonly label: string; readonly href: string };
 	readonly actions: readonly ViewAction[];
@@ -56,7 +53,6 @@ const cancel: ViewAction = {
 	submits: false,
 };
 
-/** Generate the view for one step. */
 export function stepView(step: ConnectStep): StepView {
 	const provider = providerLabel(step.provider);
 	const base = {
@@ -214,7 +210,6 @@ export function stepView(step: ConnectStep): StepView {
 	}
 }
 
-/** Required fields a submit left empty, by name. */
 export function missingRequiredFields(
 	fields: readonly ConfigField[],
 	values: Readonly<Record<string, string>>,

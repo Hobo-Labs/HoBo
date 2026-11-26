@@ -58,12 +58,6 @@ export const GCP_DEFAULT_BINDINGS: GcpSlotCatalog = Object.freeze({
 	secretRef: Object.freeze([secretManager()]),
 });
 
-/**
- * The default GCP Yard as raw rows. `regions` defaults to the provider's
- * published regions; the catalog is not narrowed by region, because a Yard
- * declares what the provider can allocate, not what a particular region
- * happens to offer.
- */
 export function gcpYardSpec(options?: GcpYardSpecOptions): GcpYardSpec {
 	return Object.freeze({
 		provider: "gcp",

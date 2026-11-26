@@ -13,7 +13,6 @@ import {
 } from "./money.js";
 import { compareCodeUnits } from "./order.js";
 
-// public-contract: consumers pin the dispatcher wire schema by this id.
 export const DISPATCHER_SCHEMA_VERSION = "hobo.dispatcher/v1";
 
 export const DISPATCH_EVENTS = Object.freeze({

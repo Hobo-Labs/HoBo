@@ -40,7 +40,6 @@ export const CONVEX_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
-/** The I14 coverage document for Convex. */
 export const CONVEX_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "convex",
 	resolvedProductIds: CONVEX_RESOLVED_PRODUCT_IDS,

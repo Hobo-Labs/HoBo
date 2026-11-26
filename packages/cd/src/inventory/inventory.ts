@@ -1,15 +1,3 @@
-// CampInventory (D19): an event-sourced actor per Camp on
-// `cd-camp-inventory-<id>`, a Camp-set registry on `cd-campset-<name>`, and a
-// canonical snapshot whose digest placement decisions record (I18).
-//
-// Commands: observe, taint, untaint, manage, defineSet, tick.
-// Events:   camp.StatusChanged (full CampStatusRecord; the fold reads only
-//           this), camp.Tainted / camp.Untainted / camp.ManagementChanged
-//           (audit, appended atomically with the StatusChanged they explain),
-//           campset.Defined (CampSetRecord).
-// Projection: an in-memory per-Camp view caught up from the stream before
-//           every command (CAS on the stream revision, retried on conflict),
-//           so several Station replicas stay consistent.
 import {
 	create,
 	type JsonObject,
@@ -124,7 +112,6 @@ export function campMemberName(campId: string): string {
 	return token === "" ? "camp" : token;
 }
 
-/** Reconcile status events the Station appends on `cd-camp-status-<id>`: each is Station-observed contact. */
 const CONTACT_EVENTS: ReadonlySet<string> = new Set([
 	CD_EVENTS.ReconcileStarted,
 	CD_EVENTS.StatusObserved,
@@ -229,7 +216,6 @@ function canonicalTopology(topology: CampTopology): CampTopology {
 	return { ...topology, regions: [...topology.regions].sort() };
 }
 
-/** The view of a declared Camp with no recorded status: never contacted, hence NO_PLACE (fail closed). */
 function pristine(topology: CampTopology): CampStatusRecord {
 	const derived = deriveStatus({
 		previous: defaultStatus(topology),
@@ -595,8 +581,6 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 	async function scan(atMs: number): Promise<Set<string>> {
 		const active = new Set<string>();
 		if (!scanReady) {
-			// Cold start: activity already in the journal is not contact *now*;
-			// recorded contact comes from the last StatusChanged meta instead.
 			for await (const entry of d.store.readAll({ tenant: d.tenant }))
 				scanCursor = entry.position;
 			scanReady = true;
@@ -1158,7 +1142,6 @@ function noRunRefusal(detail: string): ReasonRecord {
 	);
 }
 
-/** Fold a Station-sourced report of a derived condition into contact state. */
 function stationReport(
 	contact: ContactState,
 	condition: CampConditionRecord,

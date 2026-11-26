@@ -106,23 +106,12 @@ import {
 
 export type PostgresEventStoreOptions = Readonly<{
 	config: PostgresStoreConfigInput;
-	/** Share an existing pool; the caller owns its lifecycle (`end()` leaves it open). */
 	pool?: PgPoolLike;
-	/** Factory for the dedicated LISTEN connection used by `subscribe`. */
 	listener?: () => PgListenerLike;
-	/** Injected clock (I8). Every stored timestamp and lease expiry comes from it. */
 	clock?: Clock;
 	telemetry?: StoreTelemetrySink;
-	/** Monotonic milliseconds for durations only; never used in decisions. */
 	monotonicMs?: () => number;
-	/** Immutable schema-wide stream prefixes requiring a live actor lease. */
 	protectedActorStreamPrefixes?: readonly string[];
-	/**
-	 * Runs first in every transaction, on its connection: a fleet member checks
-	 * here that it is still the writer, so a write commits only while the
-	 * member's register says so (see `createPostgresFleetEventStore`). Throwing
-	 * aborts the transaction, and it is not retried.
-	 */
 	writeFence?: (client: PgClientLike) => Promise<void>;
 }>;
 
@@ -133,12 +122,10 @@ export type StoreHealth = Readonly<{
 
 export type { SnapshotWriteOptions } from "@hobo/core";
 
-/** The PostgreSQL DurableEventStore. Every optional port method is present. */
 export interface PostgresEventStore extends DurableEventStore {
 	readonly schema: SchemaName;
 	readonly partitionId: string;
 	readonly config: PostgresStoreConfig;
-	/** Distributed lease host sharing this journal and its write fence. */
 	readonly actorLeaseHost: AsyncActorLeaseHost;
 	/** Read the installed policy from the primary; does not configure it. */
 	verifyActorStreamProtection(prefix: string): Promise<void>;
@@ -157,13 +144,11 @@ export interface PostgresEventStore extends DurableEventStore {
 			supervisorRole: string;
 		}>
 	>;
-	/** Connect and migrate (also done lazily by the first operation). */
 	ready(): Promise<MigrationReport>;
 	fold<S>(
 		streamId: string,
 		opts: { initialState: S; handlers: FoldHandlers<S>; fenceToken?: bigint },
 	): Promise<FoldResult<S>>;
-	/** A protected or leased stream refuses a snapshot without its live fence. */
 	snapshot(
 		streamId: string,
 		state: JsonValue,
@@ -171,7 +156,6 @@ export interface PostgresEventStore extends DurableEventStore {
 		opts?: SnapshotWriteOptions,
 	): Promise<SnapshotRecord>;
 	loadSnapshot<S>(streamId: string): Promise<SnapshotRecord<S> | undefined>;
-	/** Asynchronous stream head (the port's synchronous `getStreamHead` cannot reach a server). */
 	loadStreamHead(streamId: string): Promise<StreamHead | undefined>;
 	claimSubscription(
 		options: ClaimSubscriptionOptions,
@@ -195,17 +179,13 @@ export interface PostgresEventStore extends DurableEventStore {
 	resetCheckpoint(
 		options: ResetCheckpointOptions,
 	): Promise<SubscriptionCheckpoint>;
-	/** Audit log of every checkpoint movement for one subscription partition. */
 	checkpointLog(options: {
 		subscriptionId: string;
 		partitionId: string;
 	}): Promise<readonly CheckpointLogEntry[]>;
 	health(): Promise<StoreHealth>;
-	/** Wait for pending metric emissions. */
 	flushTelemetry(): Promise<void>;
-	/** Close without waiting (conformance factories need a synchronous close). */
 	close(): void;
-	/** Close and wait for the pool and listener to end. */
 	end(): Promise<void>;
 }
 
@@ -236,13 +216,6 @@ function cloneJson<T>(value: T): T {
 	return structuredClone(value);
 }
 
-/**
- * Create a PostgreSQL-backed DurableEventStore.
- *
- * Creation is synchronous; connecting and migrating happen on the first
- * operation (or `ready()`), so the store drops into factories that must
- * return synchronously.
- */
 export function createPostgresEventStore(
 	options: PostgresEventStoreOptions,
 ): PostgresEventStore {
@@ -410,8 +383,6 @@ export function createPostgresEventStore(
 			readyPromise = attempt;
 			attempt.catch((error) => {
 				countError(asError(error));
-				// Retry only transient failures; drift, schema-ahead and old
-				// servers stay refused for the life of this store.
 				if (
 					error instanceof StoragePostgresError &&
 					(error.failure === "unavailable" ||
@@ -424,7 +395,6 @@ export function createPostgresEventStore(
 		return readyPromise;
 	}
 
-	/** Run `fn` in one READ COMMITTED transaction; retry serialization/deadlock aborts. */
 	async function tx<T>(fn: (client: PgClientLike) => Promise<T>): Promise<T> {
 		await ready();
 		for (let attempt = 1; ; attempt += 1) {
@@ -639,7 +609,6 @@ SELECT EXISTS (
 						await requireActorPrimary(client);
 						await lockedActorPolicy(client);
 						await lockActorStream(client, key);
-						// A delayed release can never release a later holder.
 						await client.query(
 							`UPDATE ${s}.actor_leases SET released = true WHERE stream_id = $1 AND holder_id = $2 AND fence_token = $3`,
 							[key, holderId, grant.fenceToken.toString()],
@@ -650,7 +619,6 @@ SELECT EXISTS (
 		},
 	});
 
-	/** Run a read-only statement outside a transaction. */
 	async function read<T>(fn: (client: PgClientLike) => Promise<T>): Promise<T> {
 		await ready();
 		const client = await connect();
@@ -670,8 +638,6 @@ SELECT EXISTS (
 			client.release(broken);
 		}
 	}
-
-	// ── live wake (in-process handlers fed in position order) ──────────────
 
 	const live = new Set<LiveSub>();
 	let liveCursor: bigint | undefined;
@@ -760,9 +726,7 @@ SELECT EXISTS (
 					try {
 						const outcome = sub.handler(cloneJson(event));
 						if (outcome instanceof Promise) outcome.catch(() => undefined);
-					} catch {
-						// A failing live handler never fails the store or other handlers.
-					}
+					} catch {}
 				}
 			}
 		}
@@ -787,8 +751,6 @@ SELECT EXISTS (
 			}
 		})();
 	}
-
-	// ── reads ──────────────────────────────────────────────────────────────
 
 	function readAllPage(
 		options: ReadAllOptions = {},
@@ -880,8 +842,6 @@ SELECT EXISTS (
 			});
 		});
 	}
-
-	// ── commit ─────────────────────────────────────────────────────────────
 
 	function nextOwnerEpoch(
 		streamId: string,
@@ -1055,8 +1015,6 @@ SELECT EXISTS (
 				lastPositionRaw: undefined,
 			});
 		}
-		// Only new writes are fenced: a retry whose events already committed
-		// reads them back above, even after its lease has expired.
 		await checkActorWrite(
 			client,
 			actorPolicy,
@@ -1074,8 +1032,6 @@ SELECT EXISTS (
 			);
 		}
 
-		// Position allocation: the partition-head row lock is taken last and
-		// held to commit, so positions are gapless and visible in order.
 		const allocated = await client.query(
 			`UPDATE ${s}.partition_head SET last_position = last_position + $1
        WHERE id = 1 RETURNING last_position`,
@@ -1189,7 +1145,6 @@ SELECT EXISTS (
 		return undefined;
 	}
 
-	/** Measure an operation; count conflicts and errors by code. */
 	async function measured<T>(
 		operation: string,
 		fn: () => Promise<T>,
@@ -1295,8 +1250,6 @@ SELECT EXISTS (
 		});
 	}
 
-	// ── snapshots and fold ─────────────────────────────────────────────────
-
 	async function snapshot(
 		streamId: string,
 		state: JsonValue,
@@ -1330,7 +1283,6 @@ SELECT EXISTS (
          VALUES ($1, 0, 0, $2, $2) ON CONFLICT (stream_id) DO NOTHING`,
 				[id, savedAt],
 			);
-			// FOR UPDATE serialises against acquire's owner-epoch bump, as appends do.
 			const head = await client.query(
 				`SELECT revision, owner_epoch FROM ${s}.streams WHERE stream_id = $1 FOR UPDATE`,
 				[id],
@@ -1379,7 +1331,6 @@ SELECT EXISTS (
 			);
 			const row: PgRow | undefined = result.rows[0];
 			if (row === undefined) return undefined;
-			// SAFETY: the caller names the state type it snapshotted; the column holds that JSON.
 			const state = decodeJsonColumn(row, "state", "state_codec") as S;
 			return Object.freeze({
 				streamId: id,
@@ -1414,9 +1365,6 @@ SELECT EXISTS (
 		if (event.correlationId !== undefined) {
 			appendOptions.correlationId = event.correlationId;
 		}
-		// The stream head is observable state, not evidence that this caller
-		// holds its lease. Pass only the fence explicitly supplied by the caller;
-		// the regular commit boundary verifies it before writing the marker.
 		if (fenceToken !== undefined) appendOptions.fenceToken = fenceToken;
 		const aggregate = event.type.split(".")[0] ?? "event";
 		const result = await commit({
@@ -1508,8 +1456,6 @@ SELECT EXISTS (
 		});
 	}
 
-	// ── subscriptions ──────────────────────────────────────────────────────
-
 	function leaseClaimMetric(outcome: string): void {
 		metrics.emit([
 			{
@@ -1575,9 +1521,6 @@ SELECT EXISTS (
 						"required actor stream protection is not installed",
 					);
 				await requireActorCommitProtection(client);
-				// All reachable roles are considered, including NOINHERIT grants a
-				// session may explicitly assume with SET ROLE. PUBLIC grants are
-				// included by PostgreSQL's privilege predicates.
 				const result = await client.query(
 					`
 WITH application AS (

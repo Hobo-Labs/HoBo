@@ -13,10 +13,8 @@ import {
 	type SetRecordLike,
 } from "./cd-shapes.js";
 
-// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const PUBLISHER_SUITE = "hobo.cd.publisher/v1";
 
-// public-contract: assertion names of the PublisherPort suite.
 export const PUBLISHER_ASSERTIONS = Object.freeze([
 	"targetIsDeclared",
 	"publishReturnsRevision",

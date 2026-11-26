@@ -1,12 +1,3 @@
-/**
- * Statement text for the engine binding. Pure: a namespace and a schema in,
- * SQL out. Nothing here executes, so the exact text a dataset produces is
- * testable without a server.
- *
- * Two rules hold throughout. Every parameter is cast in the statement, so a
- * driver never has to guess a type. And every selected column is text, so a
- * driver never gets to reinterpret one.
- */
 import type { DatasetSchema } from "@hobo/data-core";
 import {
 	METADATA_TABLES,
@@ -26,19 +17,10 @@ export const TRUNCATE_TRIGGER = "hobo_truncate_guard";
 export const BOOTSTRAP_MARKER = "hobo-data-postgres bootstrap 3";
 const FENCE_RELEASE_TRIGGER = "hobo_fence_operation_release_guard";
 
-/**
- * The object whose comment says a namespace is bootstrapped, as text the
- * server resolves to a function — or to NULL when it does not exist yet.
- */
 export function bootstrapProbe(namespace: string): string {
 	return `${qualifiedName(namespace, TRUNCATE_TRIGGER)}()`;
 }
 
-/**
- * The statements that create the binding's metadata tables and functions.
- * Idempotent, and stamped last: a namespace carrying `BOOTSTRAP_MARKER` has
- * all of it, so a later binding can skip the DDL entirely.
- */
 export function bootstrapStatements(namespace: string): readonly string[] {
 	const meta = (name: string): string => qualifiedName(namespace, name);
 	const datasets = meta(METADATA_TABLES.datasets);
@@ -141,8 +123,6 @@ BEGIN
 	RETURN NEW;
 END
 $hobo$`,
-		// TRUNCATE fires no row trigger and carries no keys, so it would slip
-		// past the fence and could not be captured as record changes.
 		`CREATE OR REPLACE FUNCTION ${meta(TRUNCATE_TRIGGER)}() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $hobo$
 BEGIN
 	RAISE EXCEPTION 'dataset % cannot be truncated; delete its records so the change is fenced and captured', TG_TABLE_NAME
@@ -153,7 +133,6 @@ $hobo$`,
 	];
 }
 
-/** The statements that put a dataset table behind the fence. */
 export function guardStatements(
 	namespace: string,
 	dataset: string,
@@ -161,29 +140,17 @@ export function guardStatements(
 	const table = qualifiedName(namespace, dataset);
 	return [
 		`CREATE OR REPLACE TRIGGER ${quoteIdentifier(FENCE_TRIGGER)} BEFORE INSERT OR UPDATE OR DELETE ON ${table} FOR EACH ROW EXECUTE FUNCTION ${qualifiedName(namespace, FENCE_TRIGGER)}()`,
-		// ALWAYS: the fence also holds for a session in replica mode, which is
-		// how a native logical-replication apply worker writes.
 		`ALTER TABLE ${table} ENABLE ALWAYS TRIGGER ${quoteIdentifier(FENCE_TRIGGER)}`,
 		`CREATE OR REPLACE TRIGGER ${quoteIdentifier(TRUNCATE_TRIGGER)} BEFORE TRUNCATE ON ${table} FOR EACH STATEMENT EXECUTE FUNCTION ${qualifiedName(namespace, TRUNCATE_TRIGGER)}()`,
 		`ALTER TABLE ${table} ENABLE ALWAYS TRIGGER ${quoteIdentifier(TRUNCATE_TRIGGER)}`,
 	];
 }
 
-/** Every statement the record ports run against one dataset table. */
 export interface DatasetStatements {
-	/** Parameters: tenant, one per field in schema order, then the overflow object when the schema is open. */
 	readonly upsert: string;
-	/** Parameters: tenant, then one per key field. */
 	readonly remove: string;
-	/** Parameters: tenant, then one per key field. */
 	readonly readOne: string;
-	/**
-	 * One keyset page in primary-key order. Parameters: the tenant when
-	 * `scoped`; the previous page's last tenant and key values when
-	 * `resumed`; then the page size.
-	 */
 	scan(scoped: boolean, resumed: boolean): string;
-	/** Parameter: the tenant, when `scoped`. */
 	removeScope(scoped: boolean): string;
 }
 
@@ -242,10 +209,6 @@ export function datasetStatements(
 		remove: `DELETE FROM ${table} WHERE ${keyPredicate}`,
 		readOne: `SELECT ${selectList} FROM ${table} WHERE ${keyPredicate}`,
 		scan(scoped, resumed) {
-			// Columns are qualified with the row alias throughout. The select
-			// list re-uses each column's name for its text form, and an
-			// unqualified name in ORDER BY would pick that text — sorting an
-			// integer key as a string and breaking the keyset.
 			const row = (column: string): string => `r.${column}`;
 			let next = 1;
 			const predicates: string[] = [];
@@ -254,8 +217,6 @@ export function datasetStatements(
 				next += 1;
 			}
 			if (resumed) {
-				// Text bounds name the key collation explicitly, so the
-				// comparison can never fall back to the database default.
 				const bounds = [`$${next}::text COLLATE "C"`];
 				next += 1;
 				for (const key of keys) {

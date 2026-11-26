@@ -1,12 +1,3 @@
-/**
- * A committable rendering of a derived matrix.
- *
- * The output is a pure function of the matrix: fixed row and column order from
- * the grid, fixed field order inside every cell, and the only instant printed
- * is the one the caller passed to the generator. No wall clock is read, so
- * regenerating this file in CI produces an empty diff unless coverage actually
- * moved — which is what makes the diff readable as evidence.
- */
 import { BINDLE_PRIMITIVES, BINDLE_RUNTIMES } from "@hobo/capability-profiles";
 
 import { CANDIDATE_BUCKETS, type CandidateBucket } from "./candidate.js";
@@ -44,13 +35,6 @@ function cellsByKey(
 	return new Map(matrix.cells.map((cell) => [cell.key, cell]));
 }
 
-/**
- * Render the grid plus a per-cell breakdown.
- *
- * The table answers "where is there coverage"; the breakdown answers "of what
- * kind, and what is held back". They are separate sections because collapsing
- * them into one would require summing buckets that must not be summed.
- */
 export function renderCapabilityMatrixMarkdown(
 	matrix: CapabilityMatrix,
 ): string {
