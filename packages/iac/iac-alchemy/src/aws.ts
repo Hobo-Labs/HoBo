@@ -1,4 +1,5 @@
 import type { Providers } from "@alchemy.run/aws";
+import { UserPool } from "@alchemy.run/aws/Cognito";
 import { Table } from "@alchemy.run/aws/DynamoDB";
 import { Bucket } from "@alchemy.run/aws/S3";
 import { Secret } from "@alchemy.run/aws/SecretsManager";
@@ -113,5 +114,20 @@ export function awsBindleMappers<Entrypoint, Requirements>() {
 				return { primary, resources: [primary], boundDependencies: [] };
 			}),
 	};
-	return Object.freeze({ kv, bucket, queue, topic, secret });
+	const auth: Mapper = {
+		resourceTypes: ["AWS.Cognito.UserPool"],
+		operations: [],
+		annotations: [],
+		bindsEntrypoint: false,
+		limitations: [
+			"Cognito user pool infrastructure only; token verification, sessions, client configuration and application bindings are not implemented.",
+		],
+		validate: noDependencies,
+		build: (input) =>
+			Effect.gen(function* () {
+				const primary = yield* UserPool(input.declaration.name, {});
+				return { primary, resources: [primary], boundDependencies: [] };
+			}),
+	};
+	return Object.freeze({ kv, bucket, queue, topic, secret, auth });
 }

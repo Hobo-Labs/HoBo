@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { UserPool, UserPoolProvider } from "@alchemy.run/aws/Cognito";
 import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
 import * as Endpoint from "@alchemy.run/aws/Endpoint";
@@ -381,6 +382,70 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 	});
 
 	const official = process.env.HOBO_ALCHEMY_AWS_EMULATOR === "1" ? it : it.skip;
+	official(
+		"provisions the mapped auth user pool in the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			)
+				throw Error("AWS Emulator endpoint must be HTTPS loopback");
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw Error("AWS Emulator CA is required");
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca: await readFile(caPath), servername: "localhost" },
+				}),
+			);
+			const definition = bindle("shop", (b) => ({ identity: b.auth() }));
+			// SAFETY: this only registers constructors in an isolated test stack.
+			const mapped = await Effect.runPromise(
+				mapBindleToAlchemy(definition, awsBindleMappers(), {
+					assessRequirements: () => ({ status: "supported" }),
+				}).pipe(
+					Effect.provideService(StackContext, {
+						name: "shop",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+			);
+			const resource = mapped.primary.identity;
+			if (!resource || resource.Type !== UserPool.Type)
+				throw Error("user pool mapping missing");
+			// SAFETY: the resource type check and fixture provide the Alchemy lifecycle dependencies.
+			const pool = resource as UserPool;
+			// SAFETY: this supplies all services used by the user pool provider.
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const provider = yield* Provider.Provider<UserPool>(UserPool.Type);
+					return yield* provider.reconcile({
+						id: pool.LogicalId,
+						fqn: pool.FQN,
+						instanceId: randomUUID(),
+						session: noopSession,
+						bindings: [],
+						news: pool.Props,
+						olds: undefined,
+						output: undefined,
+					});
+				}).pipe(
+					Effect.provide(UserPoolProvider()),
+					Effect.provide(layer),
+				) as Effect.Effect<
+					UserPool["Attributes"],
+					Provider.ProviderError,
+					never
+				>,
+			);
+			expect(result.userPoolId).toBeTruthy();
+		},
+		30_000,
+	);
 	official(
 		"reconciles the mapped Secrets Manager resource through the official AWS Emulator",
 		async () => {

@@ -1066,8 +1066,12 @@ and clock correctness remain independently verified host responsibilities.
 
 ### AWS infrastructure and financial routing
 
-The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues
-and SNS topics for the corresponding HoBo declarations. This increment provides
+The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues,
+SNS topics, Secrets Manager secrets and Cognito user pools for the corresponding
+HoBo declarations. The user pool uses Alchemy's defaults; the host must configure
+identity policy and clients before use. The auth mapping does not implement token
+verification or session operations and rejects declarations that require them.
+The base mapper provides
 infrastructure only: runtime operations and application bindings are not yet
 supported, and unsupported operations are reported explicitly. Budget-based
 routing requires a complete supplied pricing model. An explicitly authorized

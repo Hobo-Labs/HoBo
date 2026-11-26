@@ -1,3 +1,4 @@
+import { UserPool } from "@alchemy.run/aws/Cognito";
 import { Table } from "@alchemy.run/aws/DynamoDB";
 import { Bucket } from "@alchemy.run/aws/S3";
 import { Secret } from "@alchemy.run/aws/SecretsManager";
@@ -46,6 +47,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			jobs: b.queue(),
 			events: b.topic(),
 			credentials: b.secret(),
+			identity: b.auth(),
 		}));
 		// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 		const mapped = await Effect.runPromise(
@@ -64,12 +66,14 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(mapped.primary.jobs?.Type).toBe(Queue.Type);
 		expect(mapped.primary.events?.Type).toBe(Topic.Type);
 		expect(mapped.primary.credentials?.Type).toBe(Secret.Type);
+		expect(mapped.primary.identity?.Type).toBe(UserPool.Type);
 		expect(mapped.primary.credentials?.Props).toEqual({
 			recoveryWindowInDays: 30,
 		});
 		expect(mapped.resources.map((resource) => resource.FQN).sort()).toEqual([
 			"credentials",
 			"events",
+			"identity",
 			"jobs",
 			"objects",
 			"sessions",
@@ -77,7 +81,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 	});
 	it("reports infrastructure-only support and rejects runtime claims", () => {
 		const report = describeAwsPrimitiveSupport(CATALOG_ROWS);
-		for (const kind of ["kv", "bucket", "queue", "topic", "secret"]) {
+		for (const kind of ["kv", "bucket", "queue", "topic", "secret", "auth"]) {
 			const item = report.find((entry) => entry.kind === kind);
 			expect(item?.status).toBe("partial");
 			expect(item?.supportedOperations).toEqual([]);
@@ -89,6 +93,14 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(() =>
 			mapBindleToAlchemy(unsupported, awsBindleMappers(), requirements),
 		).toThrow("PRIMITIVE_UNSUPPORTED");
+		for (const operation of ["verify", "session"] as const) {
+			const auth = bindle("shop", (b) => ({
+				identity: b.auth().allow(operation),
+			}));
+			expect(() =>
+				mapBindleToAlchemy(auth, awsBindleMappers(), requirements),
+			).toThrow("PRIMITIVE_UNSUPPORTED");
+		}
 	});
 	it("refuses declared dependencies that have no runtime binding", () => {
 		const definition = bindle("shop", (b) => {
@@ -97,6 +109,13 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		});
 		expect(() =>
 			mapBindleToAlchemy(definition, awsBindleMappers(), requirements),
+		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+		const auth = bindle("shop", (b) => {
+			const users = b.kv();
+			return { users, identity: b.auth().dependsOn(users) };
+		});
+		expect(() =>
+			mapBindleToAlchemy(auth, awsBindleMappers(), requirements),
 		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
 	});
 });
