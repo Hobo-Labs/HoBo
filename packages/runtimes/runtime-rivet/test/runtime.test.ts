@@ -63,7 +63,11 @@ describe("@hobo/runtime-rivet", () => {
 	});
 
 	it("ensure reports rivet kind and local-sqlite fidelity offline", async () => {
-		const bundle = createRivetRuntimeHost({ tenantId: "t1", campId: "c1" });
+		const bundle = createRivetRuntimeHost({
+			tenantId: "t1",
+			campId: "c1",
+			journalPath: ":memory:",
+		});
 		expect(bundle.host.kind).toBe("rivet");
 		const result = await bundle.host.ensure({ hoboHome: "/tmp", env: {} });
 		expect(result.kind).toBe("rivet");
@@ -73,13 +77,30 @@ describe("@hobo/runtime-rivet", () => {
 		bundle.journal.close();
 	});
 
+	it("requires an explicit journal path", () => {
+		expect(() =>
+			// @ts-expect-error
+			createRivetRuntimeHost({ tenantId: "t1", campId: "c1" }),
+		).toThrow(/journalPath/);
+		for (const journalPath of ["", "   "]) {
+			expect(() =>
+				createRivetRuntimeHost({ tenantId: "t1", campId: "c1", journalPath }),
+			).toThrow(/journalPath/);
+		}
+	});
+
 	it.each([
 		"runner",
 		"serverless",
 		"managed",
 	] as const)("rejects %s mode until a real Rivet-backed host exists", (mode) => {
 		expect(() =>
-			createRivetRuntimeHost({ tenantId: "t1", campId: "c1", mode }),
+			createRivetRuntimeHost({
+				tenantId: "t1",
+				campId: "c1",
+				mode,
+				journalPath: ":memory:",
+			}),
 		).toThrow(/only local-sqlite.*implemented/i);
 	});
 
@@ -100,7 +121,11 @@ describe("@hobo/runtime-rivet", () => {
 	});
 
 	it("actor host enforces single-writer and durable accept-before-ack", () => {
-		const bundle = createRivetRuntimeHost({ tenantId: "acme", campId: "shop" });
+		const bundle = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "shop",
+			journalPath: ":memory:",
+		});
 		const host = bundle.actors;
 		const lease = host.acquire("Cart/1", { holderId: "a" });
 		expect(lease.placement).toBe("rivet");
@@ -150,6 +175,7 @@ describe("@hobo/runtime-rivet", () => {
 				tenantId: "t",
 				campId: "c",
 				mode: "not-a-mode",
+				journalPath: ":memory:",
 			}),
 		).toThrow(/runtime mode/);
 	});

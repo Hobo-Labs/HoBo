@@ -254,14 +254,26 @@ test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /1 enabled workflow/);
 });
+const pullRequestTrigger = `  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+`;
+const routeWithDraftGate = `  route:
+    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: route
+        uses: ./.github/actions/route-runner
+`;
 test("authoritative CI workflows are an allowed enabled set", async () => {
 	const minimalHoboCi = `name: HoBo CI Fabric
 on:
   push:
     branches: [main]
-  pull_request:
-jobs:
-  pr-gate:
+${pullRequestTrigger}jobs:
+${routeWithDraftGate}  pr-gate:
     if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
@@ -408,9 +420,8 @@ test("authoritative CI jobs choose between hobo and the trunk label only", async
 on:
   push:
     branches: [main]
-  pull_request:
-jobs:
-  pr-gate:
+${pullRequestTrigger}jobs:
+${routeWithDraftGate}  pr-gate:
     if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
@@ -478,9 +489,8 @@ jobs:
 test("deps-image routing confines the unpromoted PR build to its approved runners", async () => {
 	const workflow = (runsOn: string, command: string) => `name: Routing
 on:
-  pull_request:
-jobs:
-  ci-deps-image:
+${pullRequestTrigger}jobs:
+${routeWithDraftGate}  ci-deps-image:
     needs: route
     if: \${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
     runs-on: ${runsOn}
@@ -549,13 +559,13 @@ jobs:
 test("trunk-label-routing requires plain hobo on PR-only jobs, including folded conditions", async () => {
 	const workflow = (runsOn: string) => `name: Routing
 on:
-  pull_request:
-  workflow_dispatch:
+${pullRequestTrigger}  workflow_dispatch:
 jobs:
-  build:
+  hello-bindle-fixture-quarantine:
     if: >-
       github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.labels.*.name, 'hobo/e2e')
+      (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) &&
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
     runs-on: ${runsOn}
     steps:
       - run: true
@@ -704,9 +714,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.equal(runsOn, depsImageRunsOn, `${file}: ci-deps-image`);
 				continue;
 			}
+			const quarantineCondition =
+				">- github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')";
 			const prOnly =
-				/github\.event_name == 'pull_request'/.test(condition) &&
-				!condition.includes("||");
+				(/github\.event_name == 'pull_request'/.test(condition) &&
+					!condition.includes("||")) ||
+				condition.replaceAll(/\s+/g, " ").trim() === quarantineCondition;
 			assert.equal(
 				runsOn,
 				prOnly ? "hobo" : trunkRunsOn,

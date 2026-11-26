@@ -69,6 +69,114 @@ return `invalid-argument`. A lost reply, timeout, thrown provider call or
 contradictory mutation response likewise returns `unknown`; none is treated as a
 definite rejection.
 
+`createDurableTopicPolicy` provides a provider-independent allow list for
+application topic access. Each grant names a topic, whether publishing is
+allowed, and the exact consumer groups and dead-letter destinations allowed
+for subscriptions. It denies topic creation, compaction and unfiltered audit
+reads. Its `verify` callback receives the current request and the captured
+grant on dispatch and disclosure; the host must authenticate the principal and
+independently verify the current subscription and dead-letter authority. The
+policy snapshots its bounded grants and `revoke()` permanently denies access.
+Use its `authorize` function as the host authorizer; revoke the limits grant and
+fence in-flight work separately. A denied mutation returns `unknown` for its
+operation ID because an earlier attempt could have committed.
+
+`compileBindleTopicGrants` derives those grants from a Bindle application's
+topic dependency edges and each topic's declared `publish` and `subscribe`
+permissions. Supply one explicit runtime topic binding for every topic edge,
+including the consumer groups and dead-letter destinations for subscriptions.
+It rejects missing or extra bindings, duplicate runtime topic names and
+unconfigured subscriptions. It returns each source resource name alongside its
+grant so the host can attest the exact source-to-provider mapping. It does not
+provision topics, authenticate the Bindle or verify the provider's state.
+
+
+```ts
+import { bindle } from "@hobo/bindles";
+import {
+  compileBindleTopicGrants,
+  createDurableMessagingWitImports,
+  createDurableTopicPolicy,
+} from "@hobo/runtime/durable-messaging-host";
+
+const shop = bindle("shop", (b) => {
+  const orders = b.topic().allow("publish", "subscribe");
+  return { orders, web: b.web().dependsOn(orders) };
+});
+const bindings = compileBindleTopicGrants({
+  applicationName: "web",
+  resources: shop.resources,
+  edges: shop.edges,
+  bindings: [{
+    resourceName: "orders",
+    topic: "orders",
+    subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
+  }],
+});
+const topicPolicy = createDurableTopicPolicy({
+  grants: bindings.map((binding) => binding.grant),
+  verify: (claim) => host.verifyTopicBindingAndCurrentSubscription(bindings, claim),
+});
+
+const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
+  lifecycle,
+  limitsGrant,
+  authorize: topicPolicy.authorize,
+});
+```
+
+`createBindleTopicWitHost` connects that mapping to the asynchronous WIT host
+for any `DurableMessaging` port. Its verifier receives the exact port, Bindle and
+application names, resource binding, request and, for subscriptions, the configured group and
+dead-letter destination. The trusted host must independently authenticate the
+application, mapping, port and current provider state; a callback that simply
+returns true does not establish those facts. Revoking the returned host policy
+does not cancel an in-flight provider operation or revoke other processes.
+The returned immutable `bindings` identify the runtime topic for each declared
+resource, so a host can supply the mapping to the authenticated application.
+
+```ts
+import { createBindleTopicWitHost } from "@hobo/runtime/durable-messaging-host";
+
+const topicHost = createBindleTopicWitHost(authorizedMessagingPort, {
+  bindleName: shop.name,
+  applicationName: "web",
+  resources: shop.resources,
+  edges: shop.edges,
+  bindings: [{
+    resourceName: "orders",
+    topic: "orders",
+    subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
+  }],
+}, {
+  lifecycle,
+  limitsGrant,
+  verify: (claim) => host.verifyTopicBindingAndCurrentSubscription(claim),
+});
+// Expose topicHost.host to the authenticated asynchronous component instance.
+// Call topicHost.revoke() when its authority is revoked.
+```
+
+For JavaScript application logic, the authenticated host can pass
+`topicHost.topic("orders")` as the application's topic capability. The client
+uses the declared runtime topic and configured dead-letter destination; the
+application supplies a permitted consumer group and cannot substitute either.
+Its asynchronous inputs and outcomes use the WIT types, including `bigint`
+operation expiries. Create a distinct operation for each logical mutation and
+reuse it only when retrying that mutation.
+
+```ts
+import { durableMessagingOperation } from "@hobo/core";
+
+const orders = topicHost.topic("orders");
+const operation = durableMessagingOperation(host.expiryMs, host.randomNonce);
+const result = await orders.publish({
+  operation: { id: operation.id, expiresAtMs: BigInt(operation.expiresAtMs) },
+  message: { id: "order-1", subject: "created", payload: new Uint8Array([1]), attributes: [] },
+});
+// result.tag is committed, rejected, unknown or expired.
+```
+
 ```ts
 import {
   createDurableMessagingLifecycle,

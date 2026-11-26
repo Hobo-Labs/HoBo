@@ -66,7 +66,11 @@ also relies on the host's clock not moving backward between observations.
 ```ts
 import { createRivetRuntimeHost } from "@hobo/runtime-rivet";
 
-const bundle = createRivetRuntimeHost({ tenantId: "acme", campId: "prod" });
+const bundle = createRivetRuntimeHost({
+  tenantId: "acme",
+  campId: "prod",
+  journalPath: "/var/lib/hobo/rivet.sqlite",
+});
 const accepted = bundle.actors.accept({
   identity: {
     tenantId: "acme",
@@ -81,6 +85,10 @@ const accepted = bundle.actors.accept({
   expectedRevision: 0,
 });
 ```
+
+Choose a persistent journal path to retain state and accepted commands across
+restarts. `journalPath: ":memory:"` is available for intentionally volatile
+sessions and tests.
 
 ## Actor state and leases
 

@@ -307,8 +307,6 @@ describe("the marker prefilter", () => {
 				expect(mayHoldMarkedClass(text), label).toBe(false);
 				expect(performance.now() - started, label).toBeLessThan(2_000);
 			}
-			// Each case reads in 18-120 ms; a quadratic reader fails here in seconds
-			// instead of holding the runner for ten minutes.
 		},
 		slow(30_000),
 	);

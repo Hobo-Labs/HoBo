@@ -1,5 +1,6 @@
 import { createRivetActorHost, type RivetActorHost } from "./actor-host.js";
 import { type ActorLocalJournal, createActorLocalJournal } from "./journal.js";
+import { cloneAsJson, isJsonString } from "./json.js";
 import { parseRivetRuntimeConfig } from "./parse.js";
 import {
 	type RivetDoctorReport,
@@ -12,7 +13,7 @@ export interface RivetRuntimeHostOptions {
 	readonly tenantId: string;
 	readonly campId: string;
 	readonly mode?: RivetRuntimeMode;
-	readonly journalPath?: string;
+	readonly journalPath: string;
 	readonly legacyEventPayloads?: "command" | "event";
 }
 
@@ -50,7 +51,14 @@ export function createRivetRuntimeHost(
 			`Rivet runtime mode ${config.mode} is unavailable; only local-sqlite is implemented`,
 		);
 	}
-	const journal = createActorLocalJournal(options.journalPath);
+	const journalPath = cloneAsJson(options.journalPath);
+	if (!isJsonString(journalPath) || !journalPath.trim()) {
+		throw new RivetJournalError(
+			"PARSE",
+			"Rivet runtime requires an explicit journalPath; use :memory: only for volatile state",
+		);
+	}
+	const journal = createActorLocalJournal(journalPath);
 	const actors = createRivetActorHost({
 		journal,
 		fidelity: "local-sqlite",
