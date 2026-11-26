@@ -412,12 +412,38 @@ describe("Actions runner policy", () => {
 
 	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
+		const mergeGroupTrunk =
+			"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
+		assert.equal(
+			lintJobs(
+				routeJob
+					.replace("runs-on: ubuntu-24.04", `runs-on: ${mergeGroupTrunk}`)
+					.replace(
+						"persist-credentials: false\n",
+						"persist-credentials: false\n          clean: false\n",
+					),
+			),
+			0,
+		);
 		assert.notEqual(
 			lintJobs(
 				routeJob.replace(
 					"runs-on: ubuntu-24.04",
-					"runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}",
+					`runs-on: ${mergeGroupTrunk}`,
 				),
+			),
+			0,
+			"a route job on the trunk fleet must keep its default-path checkout",
+		);
+		assert.equal(
+			lintJobs(
+				`  gate:\n    if: \${{ always() }}\n    runs-on: ${mergeGroupTrunk}\n    steps:\n      - run: echo ok\n`,
+			),
+			0,
+		);
+		assert.notEqual(
+			lintJobs(
+				`  build:\n    runs-on: ${mergeGroupTrunk}\n    steps:\n      - run: echo ok\n`,
 			),
 			0,
 		);

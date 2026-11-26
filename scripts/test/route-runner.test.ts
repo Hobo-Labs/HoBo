@@ -23,10 +23,10 @@ import {
 	chooseRunner,
 	confirmMergeGroupFabricFleet,
 	DEFAULT_LOCAL_RUNNER,
-	DEFAULT_TRUNK_LEND,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
 	DEFAULT_RUNNER_LABELS,
+	DEFAULT_TRUNK_LEND,
 	fleetLabelFor,
 	fleetPoolRunners,
 	HOBO_CI_NODE_CPU_PERCENT_VARIABLE,
@@ -4362,7 +4362,7 @@ describe("the workflows that route", () => {
 		);
 		assert.match(
 			ci,
-			/id: route\n\s+uses: .*route-runner\n\s+with:\n\s+token: \$\{\{ github\.token \}\}\n\s+route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/,
+			/id: route\n\s+uses: .*route-runner\n\s+with:\n\s+token: \$\{\{ github\.token \}\}\n\s+route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && 'fleet'\) \|\| 'auto' \}\}/,
 		);
 		assert.match(
 			ci,

@@ -131,20 +131,20 @@ describe("main full gate workspace sharding", () => {
 		// The finish job only adds up the other jobs' results, so like the two
 		// required gates it never asks the fleet for a runner (finding 154).
 		assert.equal(runsOn(job("main_gate_finish")), "ubuntu-24.04");
-		assert.match(job("main_gate_finish"), /^    permissions: \{\}$/mu);
+		assert.match(job("main_gate_finish"), /^ {4}permissions: \{\}$/mu);
 		assert.doesNotMatch(job("main_gate_finish"), /^\s+(- )?uses: /mu);
 		assert.match(
 			job("main-gate-plan"),
-			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.shard_runner \|\| needs\.route\.outputs\.shard_runner \}\}$/mu,
+			/^ {6}shard_runner: \$\{\{ steps\.reroute\.outputs\.shard_runner \|\| needs\.route\.outputs\.shard_runner \}\}$/mu,
 		);
-		assert.match(job("main-gate"), /^    needs: \[route, ci-runner-image\]$/mu);
+		assert.match(job("main-gate"), /^ {4}needs: \[route, ci-runner-image\]$/mu);
 	});
 
 	it("the re-ask runs after the full checkout and falls back to the run's route", () => {
 		const plan = job("main-gate-plan");
 		assert.match(
 			plan,
-			/^    permissions:\n      actions: read\n      contents: read$/mu,
+			/^ {4}permissions:\n {6}actions: read\n {6}contents: read$/mu,
 		);
 		const steps = plan.slice(plan.indexOf("    steps:"));
 		const full = steps.indexOf("          fetch-depth: 0");
@@ -186,10 +186,10 @@ describe("main full gate workspace sharding", () => {
 		// 154): the plan job looks at the layer, and only on the box worker, so a
 		// run the route sent to GitHub-hosted or a local box does nothing here.
 		const deps = job("ci-deps-image");
-		assert.match(deps, /^    needs: \[route\]$/mu);
+		assert.match(deps, /^ {4}needs: \[route\]$/mu);
 		assert.match(
 			deps,
-			/^    if: \$\{\{ !cancelled\(\) && needs\.route\.result == 'success' && github\.event_name == 'pull_request' \}\}$/mu,
+			/^ {4}if: \$\{\{ !cancelled\(\) && needs\.route\.result == 'success' && github\.event_name == 'pull_request' \}\}$/mu,
 		);
 		const plan = job("main-gate-plan");
 		const check = plan.slice(
@@ -218,11 +218,11 @@ describe("main full gate workspace sharding", () => {
 	it("can be pinned from a dispatch, which reaches the route script as an argument", () => {
 		assert.match(
 			workflow,
-			/^  workflow_dispatch:\n    inputs:\n      route:\n/mu,
+			/^ {2}workflow_dispatch:\n {4}inputs:\n {6}route:\n/mu,
 		);
 		assert.match(
 			job("route"),
-			/route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/u,
+			/route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && 'fleet'\) \|\| 'auto' \}\}/u,
 		);
 		assert.doesNotMatch(workflow, /vars\.HOBO_CI_/u);
 	});
@@ -239,11 +239,11 @@ function job(name: string): string {
 	const start = lines.indexOf(`  ${name}:`);
 	assert.ok(start > -1, name);
 	const next = lines.findIndex(
-		(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/u.test(line),
+		(line, index) => index > start && /^ {2}[A-Za-z0-9_-]+:$/u.test(line),
 	);
 	return lines.slice(start, next === -1 ? undefined : next).join("\n");
 }
 
 function runsOn(block: string): string | undefined {
-	return /^    runs-on: (.*)$/mu.exec(block)?.[1];
+	return /^ {4}runs-on: (.*)$/mu.exec(block)?.[1];
 }

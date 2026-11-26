@@ -109,7 +109,7 @@ function fabricJobBlock(workflow: string, job: string): string {
 	const start = lines.indexOf(`  ${job}:`);
 	assert.notEqual(start, -1, `missing job ${job}`);
 	const rest = lines.slice(start + 1);
-	const end = rest.findIndex((line) => /^  [A-Za-z0-9_-]+:$/u.test(line));
+	const end = rest.findIndex((line) => /^ {2}[A-Za-z0-9_-]+:$/u.test(line));
 	return lines
 		.slice(start, end < 0 ? lines.length : start + 1 + end)
 		.join("\n");
@@ -130,7 +130,7 @@ function assertFabricShardHostedPlaywrightPreflight(
 ): void {
 	const block = fabricJobBlock(workflow, job);
 	const match = block.match(
-		/- uses: \$\/\.github\/actions\/ci-runner-preflight\n        with:\n((?:          [^\n]+\n)+)/u,
+		/- uses: \$\/\.github\/actions\/ci-runner-preflight\n {8}with:\n((?: {10}[^\n]+\n)+)/u,
 	);
 	assert.ok(
 		match?.[1] && hostedPlaywrightPreflightWithInputs(match[1]),
@@ -197,7 +197,7 @@ test("Fabric shard Playwright preflight guard rejects missing browser or preflig
 		const stepRemoved = workflow.replace(
 			block,
 			block.replace(
-				/      - uses: \$\/\.github\/actions\/ci-runner-preflight\n        with:\n          browser: "true"\n          save-playwright-cache: \$\{\{ matrix\.shard == 0 && 'true' \|\| 'false' \}\}\n/,
+				/ {6}- uses: \$\/\.github\/actions\/ci-runner-preflight\n {8}with:\n {10}browser: "true"\n {10}save-playwright-cache: \$\{\{ matrix\.shard == 0 && 'true' \|\| 'false' \}\}\n/,
 				"",
 			),
 		);
@@ -606,7 +606,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			.map((line, index) => ({ line, index }))
 			.filter(
 				({ line, index }) =>
-					index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line),
+					index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(line),
 			)
 			.map(({ index }) => index);
 		assert.ok(starts.length > 0, file);
@@ -614,7 +614,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const block = lines
 				.slice(start, starts[position + 1] ?? lines.length)
 				.join("\n");
-			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
+			const runsOn = block.match(/^ {4}runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
 			if (
 				((file === "hobo-ci.yml" || file === "release-hobo.yml") &&
@@ -639,9 +639,15 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				continue;
 			}
 			const condition =
-				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
+				block.match(/^ {4}if:([^\n]*(?:\n {6}[^\n]*)*)/m)?.[1] ?? "";
+			const mergeGroupTrunkRunsOn =
+				"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
 			if ((lines[start] ?? "") === "  route:") {
-				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
+				assert.equal(
+					runsOn,
+					file === "hobo-ci.yml" ? mergeGroupTrunkRunsOn : "ubuntu-24.04",
+					`${file}: route`,
+				);
 				assert.match(
 					block,
 					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
@@ -651,7 +657,10 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			// A required gate runs no action on GitHub-hosted too. `always()` is for
 			// PR gates that still summarize upstream jobs; `!cancelled()` is for
 			// release train gates that must drop when the run is cancelled.
-			if (runsOn === "ubuntu-24.04") {
+			if (
+				runsOn === "ubuntu-24.04" ||
+				(file === "hobo-ci.yml" && runsOn === mergeGroupTrunkRunsOn)
+			) {
 				assert.match(
 					condition,
 					/always\(\)|!cancelled\(\)/,
@@ -665,7 +674,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			if (runsOn === routedRunsOn) {
 				assert.match(
 					block,
-					/^    needs: (route|\[route[,\]])/m,
+					/^ {4}needs: (route|\[route[,\]])/m,
 					`${file}:${lines[start]} must need route`,
 				);
 				continue;
@@ -676,28 +685,28 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
 				assert.match(
 					lines[start] ?? "",
-					/^  (main_workspace_tests|main_gate_finish):$/,
+					/^ {2}(main_workspace_tests|main_gate_finish):$/,
 				);
-				assert.match(block, /^    needs: \[route, [^\n]*main-gate-plan/m);
+				assert.match(block, /^ {4}needs: \[route, [^\n]*main-gate-plan/m);
 				continue;
 			}
 			if (runsOn === mergeShardRunsOn) {
 				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
 				assert.equal(lines[start], "  workspace_tests:");
-				assert.match(block, /^    needs: \[route, [^\n]*pr_gate_plan/m);
+				assert.match(block, /^ {4}needs: \[route, [^\n]*pr_gate_plan/m);
 				continue;
 			}
 			if (runsOn === releasePagesRunsOn) {
 				assert.equal(file, "release-hobo.yml", `${file}:${lines[start]}`);
 				assert.equal(lines[start], "  release-pages:");
-				assert.match(block, /^    needs: \[route,/m);
+				assert.match(block, /^ {4}needs: \[route,/m);
 				continue;
 			}
 			// The deps-image route chooses the box or a hosted Docker context.
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",
-					/^  ci-deps-image:$/,
+					/^ {2}ci-deps-image:$/,
 					`${file}:${lines[start]} is not routed`,
 				);
 			if ((lines[start] ?? "") === "  ci-deps-image:") {
@@ -802,7 +811,7 @@ test("the optional JIT smoke verifies runner identity without the full workflow 
 		4,
 	);
 	const match = template.match(
-		/      - name: Verify HoBo JIT runner\n[\s\S]+?        run: \|\n([\s\S]+?)      - uses: actions\/checkout@/,
+		/ {6}- name: Verify HoBo JIT runner\n[\s\S]+? {8}run: \|\n([\s\S]+?) {6}- uses: actions\/checkout@/,
 	);
 	assert.ok(match?.[1]);
 	const script = match[1]
@@ -862,7 +871,7 @@ async function smokeFixture() {
 	assert.equal(revision.status, 0, revision.stderr);
 	const sha = revision.stdout.trim();
 	const match = template.match(
-		/          node --input-type=module <<'NODE'\n([\s\S]+?)          NODE/,
+		/ {10}node --input-type=module <<'NODE'\n([\s\S]+?) {10}NODE/,
 	);
 	assert.ok(
 		match,

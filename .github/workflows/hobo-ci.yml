@@ -56,7 +56,7 @@ concurrency:
 jobs:
   route:
     name: Route runners
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: read
@@ -107,6 +107,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          clean: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -138,7 +139,7 @@ jobs:
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          route: ${{ (inputs.route || 'auto') }}
+          route: ${{ inputs.route || (github.event_name == 'merge_group' && 'fleet') || 'auto' }}
       - name: Record the tree this run tests
         id: tested
         if: github.event_name == 'pull_request'
@@ -1270,7 +1271,7 @@ jobs:
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read

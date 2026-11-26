@@ -255,12 +255,17 @@ describe("base-controlled attestation verification", () => {
 	});
 
 	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
-		it(`${workflow} keeps merge-group routing on hosted runners`, () => {
+		it(`${workflow} keeps merge-group routing on its pinned runners`, () => {
 			const doc = workflowDocument(
 				readFileSync(`.github/workflows/${workflow}`, "utf8"),
 			);
 			const route = asObject(asObject(doc.jobs)?.route);
-			assert.equal(route?.["runs-on"], "ubuntu-24.04");
+			assert.equal(
+				route?.["runs-on"],
+				workflow === "hobo-ci.yml"
+					? "${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}"
+					: "ubuntu-24.04",
+			);
 			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
 			const routeStep = asList(route?.steps)
 				?.map(asObject)
@@ -268,7 +273,9 @@ describe("base-controlled attestation verification", () => {
 			const withBlock = asObject(routeStep?.with);
 			assert.equal(
 				asText(withBlock?.route),
-				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
+				workflow === "hobo-ci.yml"
+					? "${{ inputs.route || (github.event_name == 'merge_group' && 'fleet') || 'auto' }}"
+					: "auto",
 			);
 		});
 	}
