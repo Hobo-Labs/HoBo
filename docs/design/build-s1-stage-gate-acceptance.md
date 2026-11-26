@@ -11,7 +11,7 @@ Source issue: [HOBO-615](https://linear.app/quickdeploy-ai/issue/HOBO-615) (S1-2
 S1 stage gate at production).
 
 This record supersedes the draft-proof gate captured in
-[`proofs/s1-stage-gate/index.md`](./proofs/s1-stage-gate/index.md): the standing lane
+[`proofs/s1-stage-gate/index.md`](https://linear.app/quickdeploy-ai/document/hobo-615-proof-record-archived-b715c5def222): the standing lane
 `.github/workflows/s1-stage-gate.yml` no longer runs `src/draft/technical-proofs/s1-stage-gate`.
 It now exercises the built production packages — `@hobo/conformance` against `@hobo/runtime-local`,
 and the `@hobo/cli` offline `hobo dev` loop — exactly as the S0 record
@@ -87,7 +87,7 @@ component.Loaded -> link.Established -> link.Called -> component.Invoked
 
 Promotion note: this gate replaces the draft proof
 `src/draft/technical-proofs/s1-stage-gate` referenced by
-[`proofs/s1-stage-gate/index.md`](./proofs/s1-stage-gate/index.md). The draft proof's index is kept
+[`proofs/s1-stage-gate/index.md`](https://linear.app/quickdeploy-ai/document/hobo-615-proof-record-archived-b715c5def222). The draft proof's index is kept
 as the originating record; its "Promotion Notes" table named these production targets. The offline
 lane runs the `@hobo/cli` `dev-verb` test rather than a packaged binary because the production
 `hobo dev` command boots an injected `DevRuntime` (runtime-local component host + Streamer) — the
