@@ -1160,5 +1160,5 @@ is not proof of a conflict or of no effect. Each queue requires a dedicated,
 exclusively owned table and host-verified resource epoch; deleting or recreating
 that table without fencing can lose receipts or permit an ABA revision. This
 storage layer does not yet implement queue messages, leases, the SQS mapping, or
-component bindings. The official AWS Emulator test checks conditional writes,
-reopening, and concurrent writers against an Alchemy-created table.
+component bindings. The official AWS Emulator test resets its test record and checks conditional
+writes, reopening, and concurrent writers against an Alchemy-created table.
