@@ -20,6 +20,7 @@ import { type AwsKvStore, createAwsDynamoKvStore } from "../src/aws-kv.js";
 import { withAwsDynamoKv } from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
 import { withAwsS3 } from "../src/aws-s3-mapper.js";
+import { snapshotData } from "../src/bindle.js";
 
 const sessionsArn = "arn:aws:dynamodb:us-east-1:000000000000:table/sessions";
 const body = new Uint8Array([4, 5]);
@@ -672,4 +673,114 @@ describe("AWS Bindle HTTP resource bindings", () => {
 			(await large.app.fetch(new Request("https://app.test/"))).status,
 		).toBe(503);
 	});
+});
+
+it("does not invoke source option accessors when array predicates are replaced", () => {
+	const f = fixture(() => () => new Response("ok"));
+	let reads = 0;
+	const options = {
+		bindle: f.options.bindle,
+		applicationName: "web",
+		get environment() {
+			reads++;
+			return {};
+		},
+		resolveStores: () => f.options.stores,
+		verifyBinding: () => true,
+	};
+	const some = Array.prototype.some;
+	let rejected = false;
+	try {
+		Array.prototype.some = () => false;
+		try {
+			defineAwsHttpSource(options);
+		} catch {
+			rejected = true;
+		}
+	} finally {
+		Array.prototype.some = some;
+	}
+	expect(rejected).toBe(true);
+	expect(reads).toBe(0);
+});
+
+it("retains graph validation when the entrypoint changes array predicates", () => {
+	const f = fixture(() => () => new Response("ok"));
+	const original = f.options.bindle;
+	const web = original.resources.web;
+	if (!web) throw Error("missing web declaration");
+	const some = Array.prototype.some;
+	const malformed = {
+		...original,
+		resources: {
+			...original.resources,
+			web: { ...web, dependsOn: ["kv", "kv"] },
+		},
+		entrypoint(name: string) {
+			Array.prototype.some = () => false;
+			return original.entrypoint(name);
+		},
+	};
+	let rejected = false;
+	try {
+		try {
+			captureAwsHttpGraph(malformed, "web");
+		} catch {
+			rejected = true;
+		}
+	} finally {
+		Array.prototype.some = some;
+	}
+	expect(rejected).toBe(true);
+});
+
+it("captures every dependency when the entrypoint changes array iteration and push", () => {
+	const f = fixture(() => () => new Response("ok"));
+	const original = f.options.bindle;
+	const push = Array.prototype.push;
+	const iterator = Array.prototype[Symbol.iterator];
+	const changed = {
+		...original,
+		entrypoint(name: string) {
+			Array.prototype.push = () => 0;
+			Array.prototype[Symbol.iterator] = () => iterator.call([]);
+			return original.entrypoint(name);
+		},
+	};
+	let names: readonly string[] | undefined;
+	try {
+		names = captureAwsHttpGraph(changed, "web").bindings.map(
+			(binding) => binding.name,
+		);
+	} finally {
+		Array.prototype.push = push;
+		Array.prototype[Symbol.iterator] = iterator;
+	}
+	expect(names).toEqual(["assets", "sessions"]);
+});
+
+it("copies bounded graph data even when array intrinsics are replaced", () => {
+	const originalSome = Array.prototype.some;
+	const originalPush = Array.prototype.push;
+	const originalIterator = Array.prototype[Symbol.iterator];
+	const malformed = Object.assign(["read"], { extra: "write" });
+	let copied: unknown;
+	let rejected = false;
+	try {
+		Array.prototype.some = () => false;
+		Array.prototype.push = () => 0;
+		Array.prototype[Symbol.iterator] = () => originalIterator.call([]);
+		copied = snapshotData({ allow: ["read", "write"] });
+		try {
+			snapshotData(malformed);
+		} catch {
+			rejected = true;
+		}
+	} finally {
+		Array.prototype.some = originalSome;
+		Array.prototype.push = originalPush;
+		Array.prototype[Symbol.iterator] = originalIterator;
+	}
+	expect(copied).toEqual({ allow: ["read", "write"] });
+	expect(rejected).toBe(true);
 });

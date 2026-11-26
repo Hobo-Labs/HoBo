@@ -42,6 +42,7 @@ const sources = new WeakMap<object, CapturedSource>();
 const weakGet = WeakMap.prototype.get;
 const weakSet = WeakMap.prototype.set;
 const apply = Reflect.apply;
+const arraySome = Array.prototype.some;
 const descriptor = Object.getOwnPropertyDescriptor;
 const own = Object.hasOwn;
 const freeze = Object.freeze;
@@ -88,16 +89,22 @@ export function defineAwsHttpSource<Requirements>(options: {
 		typeof options !== "object" ||
 		types.isProxy(options) ||
 		Reflect.ownKeys(options).length !== 5 ||
-		[
-			"bindle",
-			"applicationName",
-			"environment",
-			"resolveStores",
-			"verifyBinding",
-		].some((key) => {
-			const field = Object.getOwnPropertyDescriptor(options, key);
-			return !field || !Object.hasOwn(field, "value") || !field.enumerable;
-		}) ||
+		apply(
+			arraySome,
+			[
+				"bindle",
+				"applicationName",
+				"environment",
+				"resolveStores",
+				"verifyBinding",
+			],
+			[
+				(key: string) => {
+					const field = descriptor(options, key);
+					return !field || !own(field, "value") || !field.enumerable;
+				},
+			],
+		) ||
 		!options.environment ||
 		typeof options.environment !== "object" ||
 		types.isProxy(options.environment) ||

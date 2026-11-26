@@ -1302,3 +1302,8 @@ reachability witness shows that the source can change between the scoped check
 and provider dispatch. The model uses one
 operation, one irreversible source change and one revocation; it assumes the
 host verifier and transport behave as modeled and does not prove the code.
+
+AWS HTTP graph capture uses saved array and object operations to preserve the
+validated dependency and permission snapshot when application callbacks alter
+mutable JavaScript prototypes. Provider-side ownership and fencing checks remain
+necessary at dispatch.

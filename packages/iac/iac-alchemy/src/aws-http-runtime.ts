@@ -74,6 +74,7 @@ const contextBindings = new WeakMap<object, AwsHttpBindings>();
 const weakGet = WeakMap.prototype.get;
 const weakSet = WeakMap.prototype.set;
 const apply = Reflect.apply;
+const arraySome = Array.prototype.some;
 const define = Object.defineProperty;
 const freeze = Object.freeze;
 const schedule = setTimeout;
@@ -409,10 +410,16 @@ export function createAwsBindleApplication<Requirements>(options: {
 		!options ||
 		types.isProxy(options) ||
 		Reflect.ownKeys(options).length !== 4 ||
-		["bindle", "applicationName", "stores", "verifyBinding"].some((key) => {
-			const field = Object.getOwnPropertyDescriptor(options, key);
-			return !field || !Object.hasOwn(field, "value") || !field.enumerable;
-		}) ||
+		apply(
+			arraySome,
+			["bindle", "applicationName", "stores", "verifyBinding"],
+			[
+				(key: string) => {
+					const field = Object.getOwnPropertyDescriptor(options, key);
+					return !field || !Object.hasOwn(field, "value") || !field.enumerable;
+				},
+			],
+		) ||
 		!options.bindle ||
 		types.isProxy(options.bindle) ||
 		!options.stores ||
