@@ -19,7 +19,7 @@ route job's client, the box's reporter, the main gate's re-ask, the monitor
 and the retirement. Its operating record is
 [finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
 **Date:** 2026-11-12
-**Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
+**Amends:** [CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10), "Routing reads the mesh when
 it can" and "No hosted database in the job path";
 [CI fleet balancing](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/ci-fleet-balancing.md), "The route table".
 **Supersedes, for the route job:** the `HOBO_CI_FLEET_STATE` and
@@ -313,7 +313,7 @@ explanation against the code before this was chosen.
 
 ## Consequences
 
-- **Routing depends on the hosted relay only as advice.** [CI Relay Mesh](../ci-relay-mesh.md)
+- **Routing depends on the hosted relay only as advice.** [CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10)
   requires that taking a job from the queue to a runner never depends on the
   hosted relay. That still holds: a job already queued does not touch this
   route, and a route job the relay does not answer decides from the queue.

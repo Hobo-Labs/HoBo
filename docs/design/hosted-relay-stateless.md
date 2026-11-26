@@ -31,7 +31,7 @@ deployed or run against Vercel, Upstash, Infisical or GitHub.
 
 On 2026-11-10 the hosted relay's Postgres on Neon went over its plan quota and
 the relay answered 503 to everything, GitHub's webhook deliveries included
-([CI Relay Mesh](./ci-relay-mesh.md#no-hosted-database-in-the-job-path)). The
+([CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10#no-hosted-database-in-the-job-path)). The
 response so far has been to make the database more available: a store chosen
 among several attached ones, a relay database fleet across providers with a
 writer register and replication, a Drizzle schema with migrations, and a plan
@@ -284,7 +284,7 @@ again.
 - **Fail closed for money, open for free capacity.** When the in-flight index
   is missing (the cache was emptied), priced offers are paused until a rebuild
   pass has restored the holds; free and self-hosted offers keep admitting, as
-  the [mesh](./ci-relay-mesh.md#what-stays-consistent) does.
+  the [mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10#what-stays-consistent) does.
 - **Broker budget-policy accounts are not supported by the hosted relay.**
   They never were on Vercel: the PostgreSQL composition built its store without
   the shared-budget hooks, so such an account was refused there too. The
@@ -1145,7 +1145,7 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
   user workloads; the hosted relay only stops depending on it.
 - **The Broker budget ledger library.**
 - **The box worker's pull admission** and everything in
-  [CI Relay Mesh](./ci-relay-mesh.md) about nodes, claims and trust.
+  [CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10) about nodes, claims and trust.
 
 ## Open questions
 
@@ -1163,7 +1163,7 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
 ## Related
 
 [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179) ·
-[CI Relay Mesh](./ci-relay-mesh.md) ·
+[CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10) ·
 [`@hobo/ci-vercel`](../../packages/ci-vercel/README.md) ·
 [`@hobo/kv-redis-compatible`](../../packages/kv-redis-compatible/README.md) ·
 [Shared budget policy](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/shared-budget-policy.md)

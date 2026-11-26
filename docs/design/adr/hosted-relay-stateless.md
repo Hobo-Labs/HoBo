@@ -19,7 +19,7 @@ pulls deferred) and 7 (the PostgreSQL path removed); not yet deployed
 as the relay's store, the relay database fleet and store selection, the Drizzle
 relay schema and migrations, the Neon-hosted runtime-config broker, and the
 plan to move the relay's database to self-hosted Postgres (increment 7 of
-[CI Relay Mesh](../ci-relay-mesh.md#increments)).
+[CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10#increments)).
 **Amends:** [`packages/ci/ADR.md`](../../../packages/ci/ADR.md) and
 [`packages/ci-gh-actions/ADR.md`](../../../packages/ci-gh-actions/ADR.md) (the
 hosted host's store, the control API's configuration writes, and the Station

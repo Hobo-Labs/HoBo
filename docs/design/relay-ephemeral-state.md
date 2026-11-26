@@ -43,7 +43,7 @@ still needs between requests is small and rebuildable from GitHub and Vercel:
 Losing any of it costs a rebuild, not correctness, so a cache with TTL is the
 right store and a database is not. On 2026-11-10 the relay's hosted Postgres
 went over quota and the relay answered 503 to everything
-([CI Relay Mesh](./ci-relay-mesh.md#no-hosted-database-in-the-job-path)); a
+([CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10#no-hosted-database-in-the-job-path)); a
 store the relay can afford to lose does not have that failure mode.
 
 ## The port
@@ -170,7 +170,7 @@ claims durability.
 
 ## Related
 
-- [CI Relay Mesh](./ci-relay-mesh.md) — the relay this state serves.
+- [CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10) — the relay this state serves.
 - [`@hobo/provider-upstash`](../../packages/providers/provider-upstash/README.md) — the REST binding.
 - [`@hobo/provider-turso`](../../packages/providers/provider-turso/README.md) — the libSQL binding.
 - [`@hobo/core` architecture](../../packages/core/ARCHITECTURE.md) — the port contracts.
