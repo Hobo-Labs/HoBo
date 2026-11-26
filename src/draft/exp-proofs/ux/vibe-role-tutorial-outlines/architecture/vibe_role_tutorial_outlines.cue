@@ -41,7 +41,7 @@ package vibe_role_tutorial_outlines
 	issue: "HOBO-552"
 	phase: "M1"
 	packagePath: "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines"
-	proofPath: "docs/design/proofs/vibe-role-tutorial-outlines/README.md"
+	proofPath: "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1"
 	designRefs: #NonEmptyStringList
 	roles: [#Role, ...#Role]
 	quickstartFixtureRefs: [#TutorialQuickstartFixtureRef, ...#TutorialQuickstartFixtureRef]
