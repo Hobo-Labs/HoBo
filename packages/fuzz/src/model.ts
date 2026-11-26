@@ -613,7 +613,8 @@ function checkedVerbs(verbs: readonly Verb[]): Verb[] {
 }
 
 function parseVerbs(raw: string | undefined): Verb[] {
-	if (raw === undefined || raw === "") return [];
+	if (raw === undefined) throw new TypeError("missing capability verbs");
+	if (raw === "") return [];
 	const verbs = raw.split(",");
 	if (!verbs.every(isVerb)) throw new TypeError("invalid capability verb");
 	return verbs;

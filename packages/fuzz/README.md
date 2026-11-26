@@ -21,6 +21,8 @@ The in-process API surface is described by
 
 The reference model rejects unknown capability verbs and sparse verb arrays during
 creation and attenuation before changing its clock, state, or event history.
+Replay also refuses capability events with a missing verb list; an explicitly
+empty list remains valid.
 
 Trainable gold/silver: `fuzzTrainable(fn, seeds)` runs seed-holds,
 determinism, fail-closed, pollution, and bound checks against a live

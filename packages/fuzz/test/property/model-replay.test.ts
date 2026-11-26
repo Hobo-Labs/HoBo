@@ -320,6 +320,19 @@ describe("capability vocabulary", () => {
 		expect(model.events).toEqual([]);
 	});
 
+	it("rejects capability events that omit their verb list", () => {
+		for (const kind of ["capability.added", "capability.attenuated"] as const) {
+			const model = new ControlModel();
+			model.addCapability(TENANT, "c1", ["read"]);
+			if (kind === "capability.attenuated") model.attenuate(TENANT, "c1", []);
+			const index = model.events.findIndex((event) => event.kind === kind);
+			const event = model.events[index];
+			if (!event) throw new Error("missing capability event");
+			model.events[index] = { ...event, payload: { capabilityId: "c1" } };
+			expect(() => model.replay()).toThrow("missing capability verbs");
+		}
+	});
+
 	it("rejects invalid verbs in recorded history", () => {
 		const model = new ControlModel();
 		model.addCapability(TENANT, "c1", ["read"]);
