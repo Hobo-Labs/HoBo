@@ -82,6 +82,7 @@ async function mappedResources(
 			: b.kv(),
 		jobs: b.queue(),
 		events: b.topic(),
+		alerts: b.notify(),
 	}));
 	const kvSelected = nativeKv
 		? withAwsDynamoKv(definition, { sessions: true })
@@ -116,10 +117,13 @@ async function mappedResources(
 	const topic = mapped.primary.events;
 	if (!topic || topic.Type !== Topic.Type)
 		throw new Error("topic mapping missing");
+	const alerts = mapped.primary.alerts;
+	if (!alerts || alerts.Type !== Topic.Type)
+		throw new Error("notification mapping missing");
 	const table = mapped.primary.sessions;
 	if (!table || table.Type !== Table.Type)
 		throw new Error("key-value table mapping missing");
-	return { bucket, queue, topic, table };
+	return { bucket, queue, topic, alerts, table };
 }
 
 async function mappedDurableQueue() {
@@ -715,13 +719,18 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					connect: { ca, servername: "localhost" },
 				}),
 			);
-			const { topic } = await mappedResources();
+			const { topic, alerts } = await mappedResources();
 			const first = await reconcileTopic(topic, layer);
 			const second = await reconcileTopic(topic, layer);
+			const notification = await reconcileTopic(alerts, layer);
 			expect(first.topicArn).toBe(
 				`arn:aws:sns:us-east-1:000000000000:${first.topicName}`,
 			);
 			expect(second.topicArn).toBe(first.topicArn);
+			expect(notification.topicArn).toBe(
+				`arn:aws:sns:us-east-1:000000000000:${notification.topicName}`,
+			);
+			expect(notification.topicArn).not.toBe(first.topicArn);
 		},
 	);
 	official(

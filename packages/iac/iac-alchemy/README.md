@@ -1071,6 +1071,8 @@ SNS topics, Secrets Manager secrets and Cognito user pools for the corresponding
 HoBo declarations. The user pool uses Alchemy's defaults; the host must configure
 identity policy and clients before use. The auth mapping does not implement token
 verification or session operations and rejects declarations that require them.
+The notification declaration maps to its own SNS topic; sending, recipients and
+subscriptions are not implemented, so `notify().allow("send")` is rejected.
 The base mapper provides
 infrastructure only: runtime operations and application bindings are not yet
 supported, and unsupported operations are reported explicitly. Budget-based

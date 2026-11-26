@@ -48,6 +48,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			events: b.topic(),
 			credentials: b.secret(),
 			identity: b.auth(),
+			alerts: b.notify(),
 		}));
 		// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 		const mapped = await Effect.runPromise(
@@ -67,10 +68,12 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(mapped.primary.events?.Type).toBe(Topic.Type);
 		expect(mapped.primary.credentials?.Type).toBe(Secret.Type);
 		expect(mapped.primary.identity?.Type).toBe(UserPool.Type);
+		expect(mapped.primary.alerts?.Type).toBe(Topic.Type);
 		expect(mapped.primary.credentials?.Props).toEqual({
 			recoveryWindowInDays: 30,
 		});
 		expect(mapped.resources.map((resource) => resource.FQN).sort()).toEqual([
+			"alerts",
 			"credentials",
 			"events",
 			"identity",
@@ -81,7 +84,15 @@ describe("AWS Alchemy infrastructure mappings", () => {
 	});
 	it("reports infrastructure-only support and rejects runtime claims", () => {
 		const report = describeAwsPrimitiveSupport(CATALOG_ROWS);
-		for (const kind of ["kv", "bucket", "queue", "topic", "secret", "auth"]) {
+		for (const kind of [
+			"kv",
+			"bucket",
+			"queue",
+			"topic",
+			"secret",
+			"auth",
+			"notify",
+		]) {
 			const item = report.find((entry) => entry.kind === kind);
 			expect(item?.status).toBe("partial");
 			expect(item?.supportedOperations).toEqual([]);
@@ -101,6 +112,12 @@ describe("AWS Alchemy infrastructure mappings", () => {
 				mapBindleToAlchemy(auth, awsBindleMappers(), requirements),
 			).toThrow("PRIMITIVE_UNSUPPORTED");
 		}
+		const notify = bindle("shop", (b) => ({
+			alerts: b.notify().allow("send"),
+		}));
+		expect(() =>
+			mapBindleToAlchemy(notify, awsBindleMappers(), requirements),
+		).toThrow("PRIMITIVE_UNSUPPORTED");
 	});
 	it("refuses declared dependencies that have no runtime binding", () => {
 		const definition = bindle("shop", (b) => {
