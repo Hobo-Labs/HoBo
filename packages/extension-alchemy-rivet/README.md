@@ -144,8 +144,15 @@ const mappers = createRivetHttpTopicBusMappers({
 });
 ```
 
-The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. This composition does not yet map a Bindle topic dependency. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.
+The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.
 
 The HTTP topic adapter can prepare a Bindle-scoped asynchronous topic host
 before starting application logic. Provisioning uncertainty returns unavailable;
 the caller must persist operation identities for retries across restarts.
+Use `createRivetBindleTopicBusApplication` with
+`createRivetBindleTopicBusMappers` to map one HTTP application and its named
+topic dependencies to the verified Rivet pool. The mapper validates the complete
+graph and counts the shared `Rivet.DurableObject` once in the financial
+inventory. It rejects additional application dependencies and other dependents
+of those topics. Session replay must be disabled, and the host must attest the
+exact binding, source and exclusive pool before application startup.

@@ -717,7 +717,6 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 	});
 }
 
-/** Map one HTTP application and its named topics onto its verified Rivet pool. */
 export function createRivetBindleTopicBusMappers<Requirements>(
 	input: RivetHttpTopicBusMapperOptions,
 ): Readonly<
