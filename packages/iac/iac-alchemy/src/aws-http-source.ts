@@ -1,5 +1,6 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: the source joins host-supplied authorities to bounded application data. */
 import { types } from "node:util";
+import type { NotificationPort } from "@hobo/core/notification";
 import {
 	type DurableQueue,
 	inspectAtomicDurableQueue,
@@ -12,6 +13,7 @@ import {
 	createAwsBindleApplication,
 } from "./aws-http-runtime.js";
 import { type AwsKvStore, inspectAwsDynamoKvStore } from "./aws-kv.js";
+import { inspectAwsNotificationPublisher } from "./aws-notification.js";
 import { inspectAwsQueueAtomicStore } from "./aws-queue-atomic-store.js";
 import { type AwsS3Store, inspectAwsS3Store } from "./aws-s3.js";
 import { type AwsSecretStore, inspectAwsSecretStore } from "./aws-secret.js";
@@ -20,7 +22,7 @@ import { observeUnexpectedSynchronousResult } from "./synchronous-result.js";
 
 export interface AwsHttpResolvedDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket" | "secret" | "queue";
+	readonly kind: "kv" | "bucket" | "secret" | "queue" | "notify";
 	readonly physicalName: string;
 	readonly allow: readonly string[];
 }
@@ -64,7 +66,10 @@ export function defineAwsHttpSource<Requirements>(options: {
 	readonly resolveStores: (
 		bindings: readonly AwsHttpResolvedDependency[],
 	) => Readonly<
-		Record<string, AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue>
+		Record<
+			string,
+			AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue | NotificationPort
+		>
 	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
 }): AwsHttpSource {
@@ -164,7 +169,9 @@ export function defineAwsHttpSource<Requirements>(options: {
 									? inspectAwsDynamoKvStore(field.value)
 									: binding.kind === "bucket"
 										? inspectAwsS3Store(field.value)
-										: inspectAwsSecretStore(field.value);
+										: binding.kind === "notify"
+											? inspectAwsNotificationPublisher(field.value)
+											: inspectAwsSecretStore(field.value);
 						if (
 							!grant ||
 							(binding.kind === "kv" || binding.kind === "queue"
@@ -173,8 +180,11 @@ export function defineAwsHttpSource<Requirements>(options: {
 								: binding.kind === "bucket"
 									? !("bucketName" in grant) ||
 										grant.bucketName !== binding.physicalName
-									: !("secretArn" in grant) ||
-										grant.secretArn !== binding.physicalName)
+									: binding.kind === "notify"
+										? !("topicName" in grant) ||
+											grant.topicName !== binding.physicalName
+										: !("secretArn" in grant) ||
+											grant.secretArn !== binding.physicalName)
 						)
 							return unavailable();
 					}

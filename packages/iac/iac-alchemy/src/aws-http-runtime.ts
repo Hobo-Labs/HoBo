@@ -1,5 +1,6 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: host values and application handlers cross a checked runtime boundary. */
 import { types } from "node:util";
+import type { NotificationPort } from "@hobo/core/notification";
 import {
 	type DurableQueue,
 	type DurableQueueLimits,
@@ -18,6 +19,10 @@ import {
 	type AwsKvStore,
 	inspectAwsDynamoKvStore,
 } from "./aws-kv.js";
+import {
+	type AwsNotificationGrant,
+	inspectAwsNotificationPublisher,
+} from "./aws-notification.js";
 import { inspectAwsQueueAtomicStore } from "./aws-queue-atomic-store.js";
 import {
 	AwsS3Error,
@@ -25,6 +30,7 @@ import {
 	type AwsS3Store,
 	inspectAwsS3Store,
 } from "./aws-s3.js";
+import { scopeAwsNotification } from "./aws-scoped-notification.js";
 import { scopeAwsQueue } from "./aws-scoped-queue.js";
 import {
 	AwsSecretError,
@@ -130,6 +136,7 @@ export interface AwsHttpBindings {
 	bucket(name: string): AwsS3Store;
 	secret(name: string): AwsSecretStore;
 	queue(name: string): DurableQueue;
+	notify(name: string): NotificationPort;
 }
 export type AwsHttpEntrypoint = (
 	context?: AwsBindleContext,
@@ -139,6 +146,7 @@ export type AwsHttpBindingClaim = Readonly<
 		| { kind: "kv"; grant: AwsKvGrant }
 		| { kind: "bucket"; grant: AwsS3Grant }
 		| { kind: "secret"; grant: AwsSecretGrant }
+		| { kind: "notify"; grant: AwsNotificationGrant }
 		| {
 				kind: "queue";
 				grant: AwsKvGrant;
@@ -377,7 +385,10 @@ export function createAwsBindleApplication<Requirements>(options: {
 	readonly bindle: BindleForAlchemy<AwsHttpEntrypoint, Requirements>;
 	readonly applicationName: string;
 	readonly stores: Readonly<
-		Record<string, AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue>
+		Record<
+			string,
+			AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue | NotificationPort
+		>
 	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
 }): AwsBindleApplication {
@@ -411,7 +422,12 @@ export function createAwsBindleApplication<Requirements>(options: {
 	const entries: {
 		name: string;
 		claim: AwsHttpBindingClaim;
-		store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+		store:
+			| AwsKvStore
+			| AwsS3Store
+			| AwsSecretStore
+			| DurableQueue
+			| NotificationPort;
 	}[] = [];
 	for (let index = 0; index < graph.bindings.length; index++) {
 		const binding = graph.bindings[index];
@@ -423,6 +439,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 		const kv = inspectAwsDynamoKvStore(field.value);
 		const bucket = inspectAwsS3Store(field.value);
 		const secret = inspectAwsSecretStore(field.value);
+		const notification = inspectAwsNotificationPublisher(field.value);
 		const queue = inspectAtomicDurableQueue(field.value);
 		const queueGrant =
 			queue === undefined ? undefined : inspectAwsQueueAtomicStore(queue.store);
@@ -469,7 +486,17 @@ export function createAwsBindleApplication<Requirements>(options: {
 									limits: queue.limits,
 									allow: binding.allow,
 								})
-							: undefined;
+							: notification &&
+									binding.kind === "notify" &&
+									samePermissions(binding.allow, ["send"])
+								? Object.freeze({
+										bindleName: graph.bindleName,
+										applicationName,
+										resourceName: name,
+										kind: "notify" as const,
+										grant: notification,
+									})
+								: undefined;
 		if (!claim)
 			throw new Error("AWS store does not match its declared dependency");
 		const identity =
@@ -477,7 +504,9 @@ export function createAwsBindleApplication<Requirements>(options: {
 				? `kv|${claim.grant.partition}|${claim.grant.accountId}|${claim.grant.region}|${claim.grant.tableName}`
 				: claim.kind === "bucket"
 					? `bucket|${claim.grant.bucketName}`
-					: `secret|${claim.grant.secretArn}`;
+					: claim.kind === "notify"
+						? `sns|${claim.grant.partition}|${claim.grant.accountId}|${claim.grant.region}|${claim.grant.topicName}`
+						: `secret|${claim.grant.secretArn}`;
 		if (apply(setHas, physicalIdentities, [identity]))
 			throw new Error("AWS store identities must be unique");
 		apply(setAdd, physicalIdentities, [identity]);
@@ -514,8 +543,13 @@ export function createAwsBindleApplication<Requirements>(options: {
 			const scoped = new Map<
 				string,
 				{
-					kind: "kv" | "bucket" | "secret" | "queue";
-					store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+					kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+					store:
+						| AwsKvStore
+						| AwsS3Store
+						| AwsSecretStore
+						| DurableQueue
+						| NotificationPort;
 				}
 			>();
 			for (let index = 0; index < entries.length; index++) {
@@ -532,6 +566,16 @@ export function createAwsBindleApplication<Requirements>(options: {
 							store: scopeAwsQueue(store, claim.limits, claim.allow, () =>
 								live(claim),
 							),
+						},
+					]);
+				} else if (claim.kind === "notify") {
+					// SAFETY: the publisher brand and its exact topic grant were checked above.
+					const store = entry.store as NotificationPort;
+					apply(mapSet, scoped, [
+						entry.name,
+						{
+							kind: "notify",
+							store: scopeAwsNotification(store, () => live(claim)),
 						},
 					]);
 				} else if (claim.kind === "kv") {
@@ -690,8 +734,13 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								store:
+									| AwsKvStore
+									| AwsS3Store
+									| AwsSecretStore
+									| DurableQueue
+									| NotificationPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "kv")
@@ -703,8 +752,13 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								store:
+									| AwsKvStore
+									| AwsS3Store
+									| AwsSecretStore
+									| DurableQueue
+									| NotificationPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "bucket")
@@ -716,8 +770,13 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								store:
+									| AwsKvStore
+									| AwsS3Store
+									| AwsSecretStore
+									| DurableQueue
+									| NotificationPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "queue")
@@ -725,12 +784,35 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: the scoped entry's kind was checked above.
 					return item.store as DurableQueue;
 				},
+				notify(name: string) {
+					// SAFETY: scoped is the private map populated with checked entries.
+					const item:
+						| {
+								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								store:
+									| AwsKvStore
+									| AwsS3Store
+									| AwsSecretStore
+									| DurableQueue
+									| NotificationPort;
+						  }
+						| undefined = apply(mapGet, scoped, [name]);
+					if (!active || item?.kind !== "notify")
+						throw new Error("notification binding is unavailable");
+					// SAFETY: the scoped entry's kind was checked above.
+					return item.store as NotificationPort;
+				},
 				secret(name: string) {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								store:
+									| AwsKvStore
+									| AwsS3Store
+									| AwsSecretStore
+									| DurableQueue
+									| NotificationPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "secret")

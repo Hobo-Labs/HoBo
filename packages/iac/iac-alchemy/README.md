@@ -1077,8 +1077,10 @@ The notification declaration maps to its own SNS topic; the base mapper does not
 bind sends or subscriptions, so `notify().allow("send")` is rejected. `withAwsSnsNotification` and
 `awsSnsNotificationMappers` opt a declaration into a bounded SNS send mapping.
 The `@hobo/iac-alchemy/aws/notification` entrypoint provides a scoped publisher
-for the resulting topic. Its host supplies the exact topic grant, a synchronous verifier
-and AWS transport; it must connect the publisher to application logic. A valid
+for the resulting topic. An AWS HTTP application can bind that publisher with
+`awsHttpBindings(context).notify(name)` when its declaration depends on the
+selected notification. The host supplies the exact topic grant, synchronous
+verifier, AWS transport and binding authorization. A valid
 submission returns `accepted` only after SNS returns a receipt and the grant is
 still valid. Authorization or capacity rejection means no dispatch for that
 attempt; `unknown` can mean SNS accepted the message, and retry can duplicate

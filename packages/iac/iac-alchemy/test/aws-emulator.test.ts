@@ -871,10 +871,35 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				layer,
 			});
 			const body = `notification 🌎 ${randomUUID()}`;
-			const sent = await publisher.send({
-				attemptId: "abcdefghijklmnop",
-				body,
+			const definition = bindle("shop", (b) => {
+				const alerts = b.notify().allow("send");
+				return {
+					alerts,
+					web: b
+						.web(
+							(context) => async () =>
+								Response.json(
+									await awsHttpBindings(context)
+										.notify("alerts")
+										.send({ attemptId: "abcdefghijklmnop", body }),
+								),
+						)
+						.with(sessionReplay({ enabled: false }))
+						.dependsOn(alerts),
+				};
 			});
+			const app = defineAwsHttpSource({
+				bindle: withAwsSnsNotification(definition, { alerts: true }),
+				applicationName: "web",
+				environment: { HOBO_RESOURCE_0: notification.topicName },
+				resolveStores: () => ({ alerts: publisher }),
+				verifyBinding: (claim) =>
+					claim.kind === "notify" &&
+					claim.grant.topicName === notification.topicName,
+			});
+			const sent = await (
+				await app.fetch(new Request("https://app.test"))
+			).json();
 			expect(sent.status).toBe("accepted");
 			// SAFETY: the test layer supplies the emulator transport and credentials.
 			const received = await Effect.runPromise(
