@@ -2381,6 +2381,12 @@ importers:
       tsx:
         specifier: 4.22.4
         version: 4.22.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      typescript-patterns:
+        specifier: npm:typescript@6.0.3
+        version: typescript@6.0.3
       zod:
         specifier: ^4.1.13
         version: 4.4.3
