@@ -89,7 +89,7 @@ const VALID_PROOF_MODES = new Set<ProofMode>([
 const REQUIRED_DEPENDENCIES = [
   "docs/design/developer-experience.md#plan-07",
   "docs/design/developer-experience.md#plan-49",
-  "docs/design/workspace-activation-telemetry-contract.md",
+  "https://linear.app/quickdeploy-ai/document/workspace-activation-telemetry-contract-archived-0709315c4e70",
   "docs/design/admin-console.md",
   "docs/design/audit-explorer.md",
   "docs/design/support-sla-channels.md",
@@ -201,7 +201,7 @@ export const SUPPORT_DEBUG_TOOLS_SCOPE: SupportDebugToolsScope = {
       reason: "Defines operations dashboard, project/environment grouping, status surfaces, and incident/status projection discipline.",
     },
     {
-      source: "docs/design/workspace-activation-telemetry-contract.md",
+      source: "https://linear.app/quickdeploy-ai/document/workspace-activation-telemetry-contract-archived-0709315c4e70",
       reason: "Names first failure recovered as a Support & Debug Tools product question and recovery use.",
     },
     {

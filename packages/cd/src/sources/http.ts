@@ -1,8 +1,3 @@
-// One outbound read for every driver: bounded time and size, no redirects
-// (the HttpTransport contract), and every non-success mapped to a typed
-// refusal. Rate limits (429, 503 with Retry-After, GitHub-style 403 with an
-// exhausted quota) become `source-rate-limited` with the server's delay so the
-// source backs off instead of hammering the registry.
 import type {
 	HttpTransport,
 	TransportMethod,
@@ -14,7 +9,6 @@ import { rateLimited, refuse, SOURCE_REASON } from "./reasons.js";
 
 export const SOURCE_HTTP_TIMEOUT_MS = 30_000;
 export const SOURCE_HTTP_MAX_BYTES = 8 * 1024 * 1024;
-/** Upper bound for a package body hashed when the registry publishes no sha256. */
 export const SOURCE_HTTP_MAX_ARTIFACT_BYTES = 256 * 1024 * 1024;
 
 export type SourceRequest = Readonly<{
@@ -23,7 +17,6 @@ export type SourceRequest = Readonly<{
 	headers?: Readonly<Record<string, string>>;
 	body?: string;
 	maxResponseBytes?: number;
-	/** Statuses the caller handles itself (returned as ok). */
 	accept?: readonly number[];
 }>;
 
@@ -137,7 +130,6 @@ export async function fetchSource(
 	);
 }
 
-/** Decode a binary body; refuses a transport that is not byte-transparent. */
 export function bodyBytes(
 	response: TransportResponse,
 	where: string,

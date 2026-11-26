@@ -39,10 +39,6 @@ export interface PublicDnsConfig {
 	readonly provider: DnsProviderKind;
 	readonly zone?: string;
 	readonly credentials?: Readonly<Record<string, string>>;
-	/**
-	 * Allowed gateway host patterns for public records when managedBy=hobo.
-	 * Example: `*.ts.net`, `*.cloudflareaccess.com`, `*.cfargotunnel.com`.
-	 */
 	readonly allowedGatewaySuffixes?: readonly string[];
 }
 
@@ -60,7 +56,6 @@ export interface DnsProvider {
 
 export interface PublicDnsManager {
 	readonly config: PublicDnsConfig;
-	/** Reconcile entrypoint records when managedBy=hobo; no-op ownership otherwise. */
 	reconcileEntrypoint(input: {
 		readonly tenantId: TenantId;
 		readonly hostname: string;

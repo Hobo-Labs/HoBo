@@ -48,13 +48,6 @@ function sorted(value: PlanJsonValue): PlanJsonValue {
 	return value;
 }
 
-/**
- * The content address of what a resource is declared to be. Everything that
- * changes what the provider builds is in it: port, provider, product,
- * strategy, region, realization parameters and dependencies (sorted, since
- * order carries no meaning). `deploymentId` is not, so the same declaration
- * hashes the same in every Camp.
- */
 export function desiredSpecHash(resource: ResourcePlan): DesiredSpecHash {
 	const spec: DesiredSpecDocument = {
 		name: resource.name,

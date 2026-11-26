@@ -52,7 +52,6 @@ import {
 	webHosting,
 } from "./slots.js";
 
-/** Allocatable options per capability slot; a slot may hold several. */
 export type HostingerSlotCatalog = Readonly<
 	Partial<Record<CapabilitySlot, readonly SlotBinding[]>>
 >;
@@ -65,7 +64,6 @@ export interface HostingerYardBindingRow {
 	readonly properties: JsonObject;
 }
 
-/** Raw Yard shape: provider, regions, and the allocatable row set. */
 export interface HostingerYardSpec {
 	readonly provider: "hostinger";
 	readonly regions: readonly string[];
@@ -76,15 +74,6 @@ export interface HostingerYardSpecOptions {
 	readonly regions?: readonly string[];
 }
 
-/**
- * Everything the Hostinger factories can allocate, grouped by slot.
- *
- * `web` holds three entries under two profiles on purpose. `staticSite()`
- * satisfies the narrower `web.static/v1`; a VPS and shared/cloud web hosting
- * both satisfy `web.hosted/v1` through genuinely different means (a machine you
- * administer versus a managed PHP origin), so both are declared and selection
- * picks against what the app actually states.
- */
 export const HOSTINGER_DEFAULT_BINDINGS: HostingerSlotCatalog = Object.freeze({
 	web: Object.freeze([vps(), webHosting(), staticSite()]),
 	api: Object.freeze([dnsZone()]),
@@ -92,12 +81,6 @@ export const HOSTINGER_DEFAULT_BINDINGS: HostingerSlotCatalog = Object.freeze({
 	data: Object.freeze([mysql()]),
 });
 
-/**
- * The default Hostinger Yard as raw rows. `regions` defaults to the provider's
- * published data centres; the catalog is not narrowed by region, because a Yard
- * declares what the provider can allocate, not what a particular data centre
- * happens to offer.
- */
 export function hostingerYardSpec(
 	options?: HostingerYardSpecOptions,
 ): HostingerYardSpec {
@@ -143,7 +126,6 @@ function toRows(
 	return Object.freeze(rows);
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -11,5 +11,4 @@ export const firecrawl: ConnectorSymbol = defineConnector({
 	capabilities: ["search", "scrape", "map", "extract"] as const,
 });
 
-// public-contract: the package id consumers assert against.
 export const HOBO_CONNECTOR_FIRECRAWL_PACKAGE = "@hobo/connector-firecrawl";

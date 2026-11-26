@@ -15,18 +15,12 @@ export type RunnerTierSelection = Readonly<{
 	spilled: boolean;
 }>;
 
-/** Concrete GitHub-hosted default. Never ubuntu-latest. */
 export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
 
 const HOBO_JIT_LABELS = new Set(["hobo", "hobo-trunk"]);
 
-/** The label a local box registers with (the `local` provider kind's `runsOn`). */
 export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
 
-/**
- * Nearest first: capacity the operator already runs, then a workstation that
- * may or may not be connected, then GitHub's own machines, which always are.
- */
 const OVERFLOW_BACKEND_ORDER: readonly RunnerTier[] = [
 	"arc",
 	"local",
@@ -42,11 +36,6 @@ export function isGithubLatestLabel(runsOn: string): boolean {
 	return runsOn.trim().toLowerCase() === "ubuntu-latest";
 }
 
-/**
- * Overflow labels never enter hobo JIT admission.
- * True when the sole label is a concrete ARC scale-set name or GitHub-hosted
- * machine type (anything other than the hobo / hobo-trunk admission labels).
- */
 export function isOverflowRunnerLabel(labels: readonly string[]): boolean {
 	if (labels.length !== 1) return false;
 	const label = labels[0]?.trim().toLowerCase() ?? "";
@@ -70,12 +59,6 @@ function isOverflowBackend(backend: RunnerTier): boolean {
 	return backend !== "hobo";
 }
 
-/**
- * Prefer hobo when it has free slots; else the first enabled overflow member
- * with freeSlots > 0: ARC, then a local box, then GitHub-hosted.
- * Config off (no enabled overflow) → hobo, or undefined when hobo is also empty.
- * Already-bound overflow labels stay on that member (no re-relay back to hobo).
- */
 export function selectRunnerTier(input: {
 	members: readonly RunnerTierState[];
 	currentLabels: readonly string[];
@@ -156,7 +139,6 @@ export function agent37Capacity(
 	return { runsOn, runnerNamePrefix: pool.runnerNamePrefix, freeRunners };
 }
 
-/** A verification alternative, not a runner label or a GitHub Actions job. */
 export type RunnerVerificationSelection =
 	| Readonly<{ kind: "runner"; runner: RunnerTierSelection }>
 	| Readonly<{ kind: "local-signoff" }>

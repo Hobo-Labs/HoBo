@@ -39,13 +39,6 @@ export interface ComposedYardOptions
 	readonly name?: string;
 }
 
-/**
- * Build the `{ regions }` argument for a provider's `*YardSpec()` without
- * spelling `regions: undefined`. The repo compiles with
- * `exactOptionalPropertyTypes`, under which an explicit `undefined` is a
- * different thing from an absent key — and the providers mean "absent" to say
- * "keep your published regions".
- */
 export function regionOption(regions: readonly string[] | undefined): {
 	readonly regions?: readonly string[];
 } {

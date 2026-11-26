@@ -43,7 +43,7 @@ export type CandidateUnavailability = {
 	readonly detail: string;
 };
 
-// domain-view: parsed narrowing of CapabilityMatrixCandidateRecord in
+// domain-view:
 export type CapabilityMatrixCandidate = {
 	readonly primitive: BindlePrimitive;
 	readonly runtime: BindleRuntime;

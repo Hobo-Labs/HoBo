@@ -3,19 +3,11 @@ import type { ManifestV1 } from "@hobo/bindles";
 import { isJsonString } from "./json.js";
 import type { ResourceIntent } from "./plan-types.js";
 
-// Planner step 0 (control-plane.md): lower each `hobo.manifest/v1` resource node
-// to a provider-neutral ResourceIntent (capability class + required features +
-// bind-edge deps + routing objective). Provider names, SKUs, and regions enter
-// only later, after matching — this stage is deliberately provider-agnostic.
-
 export interface LowerOptions {
 	objective?: string;
 	region?: string;
 }
 
-// Capability-class + required-feature mapping per manifest resource shape. The
-// required features are the agnostic port contract; a provider Capability must
-// satisfy them (control-plane.md "capability negotiation").
 const DATA_PORT_RULES: ReadonlyArray<{
 	match: (port: string) => boolean;
 	capabilityPort: string;
@@ -41,7 +33,6 @@ interface LoweredDataPort {
 // advertises, so nothing a Bindle declared could ever be matched.
 const DATA_PARADIGM_PORTS = new Map<string, LoweredDataPort>([
 	["project", { capabilityPort: "project", require: [] }],
-	// SDK key-value declarations do not imply a consistency guarantee.
 	["key-value", { capabilityPort: "kv", require: [] }],
 	["object", { capabilityPort: "objectStore", require: ["durable"] }],
 	["relational", { capabilityPort: "database", require: [] }],
@@ -72,7 +63,6 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 	return { capabilityPort: bare, require: [] };
 }
 
-/** A five-field cron expression, as the cadence trait writes it. */
 function isCadence<T>(value: T): value is T & string {
 	return isJsonString(value) && /^\S+(\s+\S+){4}$/u.test(value);
 }
@@ -85,7 +75,6 @@ export function lowerManifest(
 	const resources = manifest.value.resources;
 	const intents: ResourceIntent[] = [];
 
-	// Deterministic order: sort resource ids so the plan DAG is byte-stable.
 	for (const name of Object.keys(resources).sort()) {
 		const resource = resources[name];
 		if (!resource) continue;
@@ -117,7 +106,6 @@ export function lowerManifest(
 				require = [];
 		}
 
-		// bind edges (control-plane.md step 1: collect `bind` edges into the DAG).
 		const deps = Array.isArray(resource.bind) ? [...resource.bind].sort() : [];
 
 		const intent: ResourceIntent = {

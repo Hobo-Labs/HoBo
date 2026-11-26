@@ -62,7 +62,6 @@ export function parseCelldRuntimeConfig(input: JsonValue): CelldRuntimeConfig {
 	if (!isJsonObject(input) || input === null) {
 		throw new CelldConfigError("PARSE", "celld config must be an object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const record = input as JsonObject;
 	if (record.operatorPortPublic === true) {
 		throw new CelldConfigError(

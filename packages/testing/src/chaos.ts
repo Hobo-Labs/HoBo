@@ -4,7 +4,6 @@ import type {
 	TransportResponse,
 } from "@hobo/core";
 
-// public-contract: the closed set of faults the chaos lane can inject; each names a real failure mode a provider API exhibits.
 export const CHAOS_FAULTS = Object.freeze([
 	"network-error",
 	"timeout",
