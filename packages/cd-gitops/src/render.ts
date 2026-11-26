@@ -120,6 +120,13 @@ export function renderPublication(
 		"hobo.dev/freight-id": set.freightId,
 		"hobo.dev/content-hash": set.contentHash,
 	};
+	const configMapAnnotations =
+		config.engine === GitopsEngine.ARGO_CD
+			? {
+					...annotations,
+					"argocd.argoproj.io/sync-wave": "0",
+				}
+			: annotations;
 	const configMap = {
 		apiVersion: "v1",
 		kind: "ConfigMap",
@@ -127,7 +134,7 @@ export function renderPublication(
 			name: k8sName("hobo-set", set.campId),
 			namespace: destination,
 			labels,
-			annotations,
+			annotations: configMapAnnotations,
 		},
 		data: { "resolved.json": resolvedBody, "set.json": setBody },
 	};

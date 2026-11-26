@@ -19,6 +19,14 @@ writeFileSync(
 	argo.files[1]?.content ?? "",
 );
 writeFileSync(
+	join(out, "hobo-set.configmap.argocd.golden"),
+	argo.files[1]?.content ?? "",
+);
+writeFileSync(
+	join(out, "hobo-set.configmap.flux.golden"),
+	flux.files[1]?.content ?? "",
+);
+writeFileSync(
 	join(out, "flux.kustomization.json.golden"),
 	flux.files[0]?.content ?? "",
 );
