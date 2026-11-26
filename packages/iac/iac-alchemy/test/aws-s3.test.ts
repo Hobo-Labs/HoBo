@@ -4,7 +4,7 @@ import * as Endpoint from "@alchemy.run/aws/Endpoint";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	AWS_S3_MAX_OBJECT_BYTES,
 	type AwsS3Grant,
@@ -82,6 +82,32 @@ describe("S3 bounded object runtime", () => {
 		}
 		await expect(call).rejects.toMatchObject({ code: "AWS_S3_DENIED" });
 		expect(calls()).toBe(0);
+	});
+	it("does not report a write before transport completion when Promise.race is replaced", async () => {
+		let release: ((response: Response) => void) | undefined;
+		const transport = new Promise<Response>((resolve) => {
+			release = resolve;
+		});
+		const f = fixture(() => transport);
+		const original = Promise.race;
+		let write: Promise<void>;
+		try {
+			// SAFETY: restore the intrinsic immediately after starting this request.
+			Promise.race = () => Promise.resolve({});
+			write = f.store.write(object);
+		} finally {
+			Promise.race = original;
+		}
+		await vi.waitFor(() => expect(f.calls()).toBe(1), { timeout: 5000 });
+		let completed = false;
+		void write.then(() => {
+			completed = true;
+		});
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(completed).toBe(false);
+		release?.(new Response(null, { status: 200 }));
+		await write;
+		expect(completed).toBe(true);
 	});
 	it("does not broaden a grant when Array.includes is replaced", async () => {
 		const f = fixture(
