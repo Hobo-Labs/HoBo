@@ -17,6 +17,7 @@ import {
 	type DurableMessagingAsyncImports,
 	type DurableTopicPolicyClaim,
 	instantiateDurableMessagingAsync,
+	prepareBindleTopicWitHost,
 	provisionBindleTopics,
 	supportsDurableMessagingAsync,
 } from "../src/durable-messaging-host.js";
@@ -2102,6 +2103,57 @@ describe("provider-neutral Bindle topic provisioning", () => {
 		expect(
 			vi.mocked(port.ensureTopic).mock.calls.map(([entry]) => entry.topic),
 		).toEqual(["orders", "orders-dead-a", "orders-dead-b"]);
+	});
+	it.each([
+		"rejected",
+		"unknown",
+		"expired",
+	] as const)("does not expose an application host after a %s provisioning outcome", async (status) => {
+		const { port } = fixture({
+			ensureTopic: async (input) =>
+				status === "rejected"
+					? { status, code: "capacity-exceeded" }
+					: { status, operation: input.operation },
+		});
+		const result = await prepareBindleTopicWitHost(
+			port,
+			{ ...binding, bindleName: "shop" },
+			operations,
+			{
+				provisioning: options(),
+				application: {
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					verify: () => true,
+				},
+			},
+		);
+		expect(result).toMatchObject({
+			status: "unavailable",
+			provisioning: { status: "incomplete", outcome: { tag: status } },
+		});
+		expect(result).not.toHaveProperty("application");
+		expect(port.publish).not.toHaveBeenCalled();
+	});
+	it("exposes only the compiled application topic after all journals are provisioned", async () => {
+		const { port } = fixture();
+		const result = await prepareBindleTopicWitHost(
+			port,
+			{ ...binding, bindleName: "shop" },
+			operations,
+			{
+				provisioning: options(),
+				application: {
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					verify: () => true,
+				},
+			},
+		);
+		expect(result.status).toBe("ready");
+		if (result.status !== "ready") throw new Error("host unavailable");
+		expect(result.application.topic("orders").publishEnabled).toBe(true);
+		expect(() => result.application.topic("other")).toThrow();
 	});
 	it.each([
 		"rejected",

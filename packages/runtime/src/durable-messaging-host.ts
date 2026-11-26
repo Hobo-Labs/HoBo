@@ -2051,6 +2051,69 @@ export async function provisionBindleTopics(
 	});
 }
 
+export async function prepareBindleTopicWitHost(
+	port: DurableMessaging,
+	bindle: Parameters<typeof createBindleTopicWitHost>[1],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: {
+		readonly provisioning: DurableMessagingWitHostOptions;
+		readonly application: Parameters<typeof createBindleTopicWitHost>[2];
+	},
+): Promise<
+	| {
+			readonly status: "ready";
+			readonly provisioning: Extract<
+				BindleTopicProvisionResult,
+				{ status: "complete" }
+			>;
+			readonly application: ReturnType<typeof createBindleTopicWitHost>;
+	  }
+	| {
+			readonly status: "unavailable";
+			readonly provisioning: Exclude<
+				BindleTopicProvisionResult,
+				{ status: "complete" }
+			>;
+	  }
+> {
+	const config = record(options, ["provisioning", "application"]);
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	// SAFETY: the host validates its options and snapshots the graph synchronously.
+	const application = createBindleTopicWitHost(
+		port,
+		bindle,
+		config.application as Parameters<typeof createBindleTopicWitHost>[2],
+	);
+	try {
+		// SAFETY: the provisioner validates the graph and options before awaiting.
+		const provisioning = await provisionBindleTopics(
+			port,
+			{
+				applicationName: source.applicationName,
+				resources: source.resources,
+				edges: source.edges,
+				bindings: source.bindings,
+			} as Parameters<typeof compileBindleTopicGrants>[0],
+			operations,
+			config.provisioning as DurableMessagingWitHostOptions,
+		);
+		if (provisioning.status !== "complete") {
+			application.revoke();
+			return Object.freeze({ status: "unavailable", provisioning });
+		}
+		return Object.freeze({ status: "ready", provisioning, application });
+	} catch (error) {
+		application.revoke();
+		throw error;
+	}
+}
+
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 export { DURABLE_MESSAGING_WIT_INTERFACE };

@@ -2,11 +2,10 @@ import { durableMessagingOperation } from "@hobo/core";
 import { expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import {
-	createBindleTopicWitHost,
 	createDurableMessagingLifecycle,
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingPortMetadataGrant,
-	provisionBindleTopics,
+	prepareBindleTopicWitHost,
 } from "../../../runtime/src/durable-messaging-host.js";
 import { createRivetDurableTopicClient } from "../src/durable-topic-client.js";
 import { createSqliteBusConformanceHost } from "./fixtures/durable-topic-bus-conformance.js";
@@ -37,9 +36,10 @@ it("uses the generic named topic client with the durable SQLite actor", async ()
 				],
 			},
 		];
-		const provisioned = await provisionBindleTopics(
+		const prepared = await prepareBindleTopicWitHost(
 			port,
 			{
+				bindleName: definition.name,
 				applicationName: "web",
 				resources: definition.resources,
 				edges: definition.edges,
@@ -50,35 +50,29 @@ it("uses the generic named topic client with the durable SQLite actor", async ()
 				{ topic: "orders-dlq", operation: op("topicdead1234567") },
 			],
 			{
-				lifecycle: createDurableMessagingLifecycle(),
-				limitsGrant: createDurableMessagingLimitsGrant(),
-				portMetadataGrant: metadata,
-				authorize: () => true,
+				provisioning: {
+					lifecycle: createDurableMessagingLifecycle(),
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					portMetadataGrant: metadata,
+					authorize: () => true,
+				},
+				application: {
+					lifecycle: createDurableMessagingLifecycle(),
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					portMetadataGrant: metadata,
+					verify: (claim) =>
+						claim.port === port &&
+						claim.bindleName === "shop" &&
+						claim.applicationName === "web" &&
+						claim.binding.resourceName === "orders" &&
+						(claim.subscription === undefined ||
+							claim.subscription.deadLetterTopic === "orders-dlq"),
+				},
 			},
 		);
-		expect(provisioned.status).toBe("complete");
-		const host = createBindleTopicWitHost(
-			port,
-			{
-				bindleName: definition.name,
-				applicationName: "web",
-				resources: definition.resources,
-				edges: definition.edges,
-				bindings,
-			},
-			{
-				lifecycle: createDurableMessagingLifecycle(),
-				limitsGrant: createDurableMessagingLimitsGrant(),
-				portMetadataGrant: metadata,
-				verify: (claim) =>
-					claim.port === port &&
-					claim.bindleName === "shop" &&
-					claim.applicationName === "web" &&
-					claim.binding.resourceName === "orders" &&
-					(claim.subscription === undefined ||
-						claim.subscription.deadLetterTopic === "orders-dlq"),
-			},
-		);
+		expect(prepared.status).toBe("ready");
+		if (prepared.status !== "ready") throw new Error("topic host unavailable");
+		const host = prepared.application;
 		const topic = host.topic("orders");
 		const operation = (nonce: string) => {
 			const value = op(nonce);
