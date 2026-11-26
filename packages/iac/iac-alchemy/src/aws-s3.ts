@@ -26,6 +26,7 @@ const getPrototype = Object.getPrototypeOf;
 const isArray = Array.isArray;
 const isProxy = types.isProxy;
 const define = Object.defineProperty;
+const accountPattern = /^\d{12}$/u;
 const bucketPattern = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/u;
 const ipPattern = /^\d+\.\d+\.\d+\.\d+$/u;
 const regionPattern = /^[a-z0-9-]{3,63}$/u;
@@ -52,6 +53,7 @@ const byteBuffer = Object.getOwnPropertyDescriptor(
 export type AwsS3Operation = "read" | "write" | "delete";
 export interface AwsS3Grant {
 	readonly bucketName: string;
+	readonly accountId: string;
 	readonly region: string;
 	readonly resourceEpoch: string;
 	readonly grantEpoch: string;
@@ -165,6 +167,7 @@ export function createAwsS3Store(options: {
 	if (
 		!ownData(input, [
 			"bucketName",
+			"accountId",
 			"region",
 			"resourceEpoch",
 			"grantEpoch",
@@ -176,6 +179,8 @@ export function createAwsS3Store(options: {
 		!matches(bucketPattern, input.bucketName) ||
 		apply(stringIncludes, input.bucketName, [".."]) ||
 		matches(ipPattern, input.bucketName) ||
+		typeof input.accountId !== "string" ||
+		!matches(accountPattern, input.accountId) ||
 		typeof input.region !== "string" ||
 		!matches(regionPattern, input.region) ||
 		typeof input.resourceEpoch !== "string" ||
@@ -207,6 +212,7 @@ export function createAwsS3Store(options: {
 	}
 	const grant: AwsS3Grant = Object.freeze({
 		bucketName: input.bucketName,
+		accountId: input.accountId,
 		region: input.region,
 		resourceEpoch: input.resourceEpoch,
 		grantEpoch: input.grantEpoch,
@@ -245,6 +251,7 @@ export function createAwsS3Store(options: {
 			const effect = Effect.gen(function* () {
 				const response = yield* S3.getObject({
 					Bucket: grant.bucketName,
+					ExpectedBucketOwner: grant.accountId,
 					Key: key,
 					region: grant.region,
 				}).pipe(Effect.catchTag("NoSuchKey", () => Effect.succeed(undefined)));
@@ -325,6 +332,7 @@ export function createAwsS3Store(options: {
 				key,
 				S3.putObject({
 					Bucket: grant.bucketName,
+					ExpectedBucketOwner: grant.accountId,
 					Key: key,
 					region: grant.region,
 					Body: value,
@@ -342,6 +350,7 @@ export function createAwsS3Store(options: {
 				key,
 				S3.deleteObject({
 					Bucket: grant.bucketName,
+					ExpectedBucketOwner: grant.accountId,
 					Key: key,
 					region: grant.region,
 				}),
