@@ -55,14 +55,34 @@ function fixture() {
 		proofRef: "host:test",
 		verify: () => authorized,
 	};
-	const mappers = awsHttpBindleMappers(
-		{
-			source,
-			main,
-			authType: "IamAuth",
-			sourceFence: fence,
-			verifySource: ({ source: value }) => sourceAuthorized && value === source,
+	const checks: {
+		authType: string;
+		maxEnvironments: number;
+		rateLimit: number;
+	}[] = [];
+	const options = {
+		source,
+		main,
+		authType: "IamAuth" as const,
+		maxEnvironments: 2,
+		rateLimit: 100,
+		sourceFence: fence,
+		verifySource: (claim: {
+			source: typeof source;
+			authType: string;
+			maxEnvironments: number;
+			rateLimit: number;
+		}) => {
+			checks.push({
+				authType: claim.authType,
+				maxEnvironments: claim.maxEnvironments,
+				rateLimit: claim.rateLimit,
+			});
+			return sourceAuthorized && claim.source === source;
 		},
+	};
+	const mappers = awsHttpBindleMappers(
+		options,
 		awsS3BindleMappers(awsDynamoKvBindleMappers()),
 	);
 	const stack = {
@@ -90,6 +110,8 @@ function fixture() {
 	return {
 		selected,
 		source,
+		options,
+		checks,
 		main,
 		run,
 		revoke: () => {
@@ -118,6 +140,8 @@ describe("AWS Alchemy HTTP application mapping", () => {
 			main: f.main,
 			authType: "IamAuth",
 			maxConcurrencyPerEnvironment: 32,
+			maxEnvironments: 2,
+			rateLimit: 100,
 		});
 		expect(Object.keys(web.Props.env).sort()).toEqual([
 			"HOBO_RESOURCE_0",
@@ -129,6 +153,15 @@ describe("AWS Alchemy HTTP application mapping", () => {
 		expect(
 			Object.keys(Output.resolveUpstream(web.Props.env.HOBO_RESOURCE_1)),
 		).toEqual(["sessions"]);
+		expect(f.checks.length).toBeGreaterThan(0);
+		expect(
+			f.checks.every(
+				(claim) =>
+					claim.authType === "IamAuth" &&
+					claim.maxEnvironments === 2 &&
+					claim.rateLimit === 100,
+			),
+		).toBe(true);
 		expect(alchemySourceFor(web)?.claim).toMatchObject(
 			awsWebFunctionSource("shop", "web", f.main),
 		);
@@ -145,6 +178,19 @@ describe("AWS Alchemy HTTP application mapping", () => {
 		if (!binding) throw new Error("missing source claim");
 		f.revokeSource();
 		expect(binding.verify(binding.claim)).toBe(false);
+	});
+	it("requires valid explicit endpoint scaling and rate limits", () => {
+		const f = fixture();
+		for (const maxEnvironments of [0, 1, 10_001, Number.POSITIVE_INFINITY]) {
+			expect(() =>
+				awsHttpBindleMappers({ ...f.options, maxEnvironments }),
+			).toThrow("scaling limits");
+		}
+		for (const rateLimit of [-1, 1, 101, 10_001, Number.NaN]) {
+			expect(() => awsHttpBindleMappers({ ...f.options, rateLimit })).toThrow(
+				"scaling limits",
+			);
+		}
 	});
 	it("refuses to map after source authority is revoked", async () => {
 		const f = fixture();

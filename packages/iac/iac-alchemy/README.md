@@ -62,6 +62,11 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
+The AWS mapper also maps a secret declaration with no requested operations to
+an Alchemy `AWS.SecretsManager.Secret`, with a 30-day deletion recovery window
+and no value in the IaC configuration. This is infrastructure-only: versioned
+secret operations and application bindings are not yet provided by this mapper.
+
 AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
 its provider choice outside the Bindle: pass the neutral Bindle through
 `withAwsDynamoKv(bindle, { cache: true })` and use
@@ -95,6 +100,8 @@ SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
+The runtime reports a successful write only after transport completion, even if
+application code replaces `Promise.race`.
 The bounded `AwsS3Objects` model uses one key and a collision-free abstract
 digest. It includes out-of-band objects with foreign metadata, oversized bodies
 and corrupted digests; it does not prove the hash implementation or provider.
@@ -152,12 +159,25 @@ const mappers = awsHttpBindleMappers({
   source,
   main,
   authType: "IamAuth",
+  maxEnvironments: 2,
+  rateLimit: 100,
   sourceFence: host.sourceFence,
   verifySource: (claim) => host.verifySource(claim),
 }, awsS3BindleMappers(awsDynamoKvBindleMappers()));
 // Pass selectedBindle and mappers to mapBindleToAlchemy and the normal
 // financial planning and admission flow.
 ```
+
+The required endpoint limits bound the advertised execution environments and
+request rate; they do not themselves enforce a monetary budget. A supplied
+financial model must cover the Web Function and all provider-managed effects,
+including its execution role, logs, code assets, requests and storage. The host
+must verify the inventory and model; unknown or unbounded liability remains
+subject to the policy plane's explicit unpriced decision.
+The financial preview checks the mapped Web Function, DynamoDB table and S3
+bucket together. Missing or incomplete pricing is rejected for budget-based
+routing; a fully covered quote can be ranked before any budget reservation or
+provider effect. The preview test uses stub providers.
 
 The mapper creates `AWS.Lambda.WebFunction`; the listener starts the attested
 source on its supplied endpoint. The source resolves the exact mapped resource
