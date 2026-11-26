@@ -77,8 +77,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `hobo ci fleet caches --apply`), which `scripts/ci/pnpm-install.mts` installs into when it is
   writable. A self-hosted runner with neither installs from the registry and the pnpm-store action warns
   `hobo-ci-cold-pnpm-store`: on `hobo-trunk` ARC pods that downloaded at 2–17 KiB/s per tarball and never
-  finished ([finding 160](../ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)). Only
-  GitHub-hosted runners use the `actions/cache` archive.
+  finished ([finding 160](../ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)).
+  GitHub-hosted runners use the `actions/cache` archive; the Pages smoke may
+  also attempt a bounded restore on a self-hosted runner with no shared store.
   **`hobo-ci-deps:local` must stay selectable after a worker toolchain promotion** — a label-only lag on
   `hobo.ci.toolchain` used to drop `HOBO_CI_DEPS_LAYER`, force a ~5m install, and leave S0 cold
   ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
@@ -94,6 +95,19 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) is a stall bound: pnpm's progress counters restart it, so
   an install that keeps downloading is never killed and restarted, and one that stops changing them for
   that long is killed and retried once with `--prefer-offline` against the store it already filled.
+- **Pages cold installs.** When no reusable deps layer is available, the browser-WIT
+  smoke installs the site closure, root tooling, pinned training dependencies,
+  try-site examples, and the runtime-Wasm toolchain. The job restores the most
+  recent main build's Turbo cache when available, builds the complete site
+  closure, and forces real componentization; a cache miss runs the same build.
+  Without a reusable deps layer or shared store, it attempts to restore the
+  main pnpm store for at most five minutes, then installs from the registry if
+  the cache is unavailable. A restored store is still checked by the frozen
+  lockfile install.
+  When the runner lacks zstd commands, it fetches a pinned Debian zstd package
+  for the cache restore. If the package is unavailable, the normal cache and
+  full-build fallback remain in effect. Node-local stores remain the preferred
+  way to avoid registry downloads.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
