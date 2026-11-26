@@ -458,11 +458,18 @@ const provider = createAlchemyIacProvider({
 const assessment = await provider.assessPricing(host.program);
 const providerCoverage = assessment.providerCoverage.providers;
 const budgetBeforeAdmission = assessment.budget;
+if (assessment.admissionPath.kind !== "bounded-budget") {
+  throw new Error(`No bounded budget route: ${assessment.admissionPath.kind}`);
+}
 const outcome = await provider.applyWithAdmission(host.program, host.persistedRequestId);
+const budgetAtAdmission = outcome.admission.budget;
 ```
 
 The coverage report identifies each provider as quoted, unavailable, incomplete,
-or unverified, and identifies the source of a quoted model. The quote scenario
+or unverified, and identifies the source of a quoted model. In this example,
+`budgetBeforeAdmission` says no budget was evaluated or reserved. The
+`bounded-budget` path requires evaluation; `budgetAtAdmission` reports the
+actual evaluation and held reservation after admission. The quote scenario
 must cover the declared inventory and its candidate indexes.
 The host must independently verify the scope and liability of its estimate.
 The host persists the request ID and reuses it for retries of the same
