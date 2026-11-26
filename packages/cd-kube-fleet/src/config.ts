@@ -18,7 +18,6 @@ import {
 } from "./_generated/kube_fleet_pb.js";
 import { KubeFleetError } from "./errors.js";
 
-// public-contract: configuration schema versions.
 export const KUBE_FLEET_SCHEMAS = Object.freeze({
 	hub: "hobo.cd-kube-fleet.hub/v1",
 	ocm: "hobo.cd-kube-fleet.ocm/v1",
@@ -26,7 +25,6 @@ export const KUBE_FLEET_SCHEMAS = Object.freeze({
 	clusterProfiles: "hobo.cd-kube-fleet.cluster-profiles/v1",
 } as const);
 
-// public-contract: per-call and watch defaults.
 export const KUBE_FLEET_DEFAULTS = Object.freeze({
 	callTimeoutMs: 15_000,
 	maxResponseBytes: 8_388_608,

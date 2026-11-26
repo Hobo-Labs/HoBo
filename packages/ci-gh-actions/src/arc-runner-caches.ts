@@ -1,15 +1,10 @@
 import { z } from "zod";
 
-// public-contract: the node directory ARC runner caches live under; a scale set already patched keeps pointing at it.
 export const NODE_CACHE_ROOT = "/var/lib/hobo-ci";
-// public-contract: the pod path of the shared pnpm store, named in HOBO_CI_PNPM_STORE_DIR for pnpm-install.mts.
 export const POD_PNPM_STORE = "/pnpm-store";
-// public-contract: the pod path of the image cache, named in HOBO_CI_IMAGE_CACHE_DIR for data-live-servers.mts.
 export const POD_IMAGE_CACHE = "/var/cache/hobo-ci/images";
 export const RUNNER_UID = 1000;
-// public-contract: the label every store prewarm Job carries, valued with its scale set's name; hobo ci fleet caches --status selects on it.
 export const STORE_PREWARM_LABEL = "hobo.ci/store-prewarm";
-// public-contract: the label naming the commit a store prewarm Job fetched the lockfile of.
 export const STORE_PREWARM_REF_LABEL = "hobo.ci/store-prewarm-ref";
 
 const NamedEntrySchema = z.looseObject({ name: z.string() });
@@ -80,7 +75,6 @@ const CACHES: readonly NodeCache[] = [
 	},
 ];
 
-// public-contract: the init container name the patch is idempotent on; renaming it adds a second one to patched scale sets.
 export const CACHE_OWNER_INIT = "hobo-cache-owner";
 
 type ListAddition = Readonly<{

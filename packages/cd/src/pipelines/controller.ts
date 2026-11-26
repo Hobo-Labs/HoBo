@@ -83,7 +83,6 @@ export type PipelineControllerDeps = CdBase & {
 	readonly placementContext?: PlacementContextResolver | undefined;
 };
 
-// public-contract: the idempotency key of an auto-promotion request.
 export function pipelineKey(
 	pipeline: string,
 	node: string,

@@ -23,7 +23,6 @@ import {
 } from "./json.js";
 import type { VercelResolverOptions } from "./resolvers.js";
 
-/** Immutable preview deployment, kept separate from mutable project settings. */
 export const VERCEL_STATIC_DEPLOY_PRODUCT_ID = "vercel.static-deploy/v1";
 const API = "https://api.vercel.com";
 const PAGE_LIMIT = 25;
@@ -76,7 +75,6 @@ function outcome(
 	};
 }
 
-/** POST is claimed once; a lost response is recovered by bounded metadata discovery. */
 export function createVercelStaticDeploymentResolver(
 	options: VercelResolverOptions,
 ): ResourceResolver {

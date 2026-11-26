@@ -42,15 +42,10 @@ import type {
 import { z } from "zod";
 import { reportRelayFailure } from "./failure-log.js";
 
-// public-contract: the scope every insight tool needs, and the only one.
 export const RELAY_MCP_INSIGHT_SCOPE = "policy:read";
-// public-contract: the most days of history an insight tool reads (the journal keeps 90).
 export const RELAY_MCP_INSIGHT_MAX_DAYS = 90;
-// public-contract: days of history an insight tool reads when the caller names none.
 export const RELAY_MCP_INSIGHT_DEFAULT_DAYS = 30;
-// public-contract: the most run attempts one insight tool reads.
 export const RELAY_MCP_INSIGHT_RUNS = 1_000;
-// public-contract: the most failed jobs `get_run_failures` diagnoses in one run.
 export const RELAY_MCP_DIAGNOSED_JOBS = 5;
 
 const DAY_MS = 86_400_000;

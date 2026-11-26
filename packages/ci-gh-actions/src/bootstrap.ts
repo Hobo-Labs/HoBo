@@ -7,17 +7,12 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 // Keep this source standalone: the relay copies it into connected repositories.
 // Official actions/runner release asset SHA-256, retrieved 2026-10-26.
-// public-contract: one pinned official release shared by standalone bridge and local installer.
 export const RUNNER_VERSION = "2.338.2";
-// public-contract: verify the same archive for hosted and local runners (linux x64).
 export const RUNNER_SHA256 =
 	"baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40";
-// public-contract: verify the same archive for hosted and local runners (linux arm64).
 export const RUNNER_SHA256_ARM64 =
 	"670adb2f268fe21dcbb58b3db0e0aa9d5b3bddfe2c651481336e561ff86de945";
-// public-contract: the checksum-pinned download endpoint used by both execution paths.
 export const RUNNER_URL = `https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz`;
-// public-contract: checksum-pinned download endpoint for linux arm64 runners.
 export const RUNNER_URL_ARM64 = `https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-arm64-${RUNNER_VERSION}.tar.gz`;
 
 export type RunnerDownload = { url: string; sha256: string };

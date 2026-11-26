@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-// public-contract: lease ids are derived under this namespace; rediscovery depends on it.
 export const RELAY_LEASE_NAMESPACE = "05b8d12d-78ba-5187-b4d2-f53efe23deb0";
 
 export const RELAY_MAX_GENERATION = 64;

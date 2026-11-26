@@ -19,7 +19,6 @@ const GATING_CHECK_NAMES = new Set([
 ]);
 const REQUIRED_CHECK_NAMES = ["started", "store", "step:sources"] as const;
 
-// public-contract: readiness report with private check names and details removed.
 export function sanitizedCdHealth(report: HealthReport): HealthReport {
 	const checks: { name: string; ok: boolean; detail: string }[] = [];
 	let reconcilers: boolean | undefined;

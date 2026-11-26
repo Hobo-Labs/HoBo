@@ -11,7 +11,6 @@ export type ServiceFailureSpec = Readonly<{
 	remediation: string;
 }>;
 
-// public-contract: refusal codes of `@hobo/cd/service` with HTTP status and remediation.
 export const SERVICE_FAILURES = Object.freeze({
 	"route-unknown": {
 		status: 404,

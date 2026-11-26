@@ -31,7 +31,6 @@ export interface JobExecutor {
 	run(job: MachineJobRun): Promise<MachineJobOutcome>;
 }
 
-// public-contract: the environment variable the runner reads its one-job configuration from.
 export const RUNNER_JIT_CONFIG_ENV = "ACTIONS_RUNNER_INPUT_JITCONFIG";
 
 export function containerJobEnvironment(
@@ -76,9 +75,7 @@ export function pause(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
-// public-contract: the image a machine's job container runs when none is named.
 export const DEFAULT_MACHINE_IMAGE = `ghcr.io/actions/actions-runner:${RUNNER_VERSION}`;
-// public-contract: a job container is stopped after GitHub's longest job time.
 export const MACHINE_JOB_TIMEOUT_MS = 360 * 60_000;
 
 export function containerExecutor(

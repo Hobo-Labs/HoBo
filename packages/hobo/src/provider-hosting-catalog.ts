@@ -1395,7 +1395,6 @@ function externalRegistry(
 // declares is resolved through the host's CredentialResolver at call time,
 // and no other locator is ever resolved for that Camp.
 
-// public-contract: Camp labels (binding) and Freight labels (directives) the catalog resolver realizer reads.
 export const CATALOG_REALIZER_LABELS = Object.freeze({
 	credentialRef: "hobo.cd/credential-ref",
 	/** Camp: `npmjs`, `github-packages` or a Verdaccio `https://` origin. */
@@ -1437,7 +1436,6 @@ export const CATALOG_REALIZER_LABELS = Object.freeze({
 	realizeMode: "hobo.cd/realize-mode",
 } as const);
 
-// public-contract: the typed refusal codes of the catalog resolver realizer.
 export const CATALOG_REALIZER_REFUSAL_CODES = Object.freeze([
 	/** A Camp label or a Freight artifact does not bind a valid target: always blocks. */
 	"catalog-binding-invalid",
@@ -1465,17 +1463,13 @@ export class CatalogRealizerError extends Error {
 
 export type CatalogRealizeMode = "converge" | "observe";
 
-// public-contract: blob-storage host GHCR may redirect cross-repository mounts to.
 export const GHCR_BLOB_REDIRECT_HOSTS = Object.freeze([
 	"pkg-containers.githubusercontent.com",
 ] as const);
 
-// public-contract: the largest image blob the OCI Camp moves from the artifact store.
 export const CATALOG_OCI_MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024;
-// public-contract: blobs past this size are uploaded in Content-Range chunks of it.
 export const CATALOG_OCI_CHUNK_BYTES = 32 * 1024 * 1024;
 
-// public-contract: the providers the catalog resolver realizer realizes, with their one product.
 export const CATALOG_REALIZED_PRODUCTS = Object.freeze({
 	npm: NPM_PACKAGE_VERSION_PRODUCT_ID,
 	"oci-registry": OCI_REGISTRY_IMAGE_PRODUCT_ID,

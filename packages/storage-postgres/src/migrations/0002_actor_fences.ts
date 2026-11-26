@@ -1,4 +1,3 @@
-// public-contract: persisted migration identity used to verify schema history.
 export const name = "actor_fences";
 
 export function sql(s: string): string {

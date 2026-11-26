@@ -51,7 +51,6 @@ const kind = (
 	namespaced = true,
 ): KindInfo => Object.freeze({ group, version, kind: k, resource, namespaced });
 
-// public-contract: built-in kinds the realizers render without extra hints.
 // Secret is deliberately absent: secrets never travel in a Set (I9).
 export const KNOWN_KINDS: Readonly<Record<string, KindInfo>> = Object.freeze({
 	Deployment: kind("apps", "v1", "Deployment", "deployments"),
@@ -379,7 +378,6 @@ export function digestOf(value: JsonValue): string {
 	return stableDigest(value);
 }
 
-// public-contract: labels and annotations HoBo writes on hub objects.
 export const HOBO_KEYS = Object.freeze({
 	managedBy: "app.kubernetes.io/managed-by",
 	managedByValue: "hobo",

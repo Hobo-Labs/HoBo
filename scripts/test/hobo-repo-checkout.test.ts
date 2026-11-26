@@ -37,6 +37,39 @@ describe("hobo-repo-checkout wiring", () => {
 		expect(block).toContain("submodules: recursive");
 	});
 
+	it("disables a prior sparse cone before remote checkout attempts", () => {
+		expect(action).toContain(
+			"Disable prior sparse cone before full remote checkout",
+		);
+		expect(action).toContain("--prepare-full-worktree");
+		const disableSparse = action.indexOf(
+			"Disable prior sparse cone before full remote checkout",
+		);
+		const remote = action.indexOf("Remote checkout (attempt 1)");
+		expect(disableSparse).toBeGreaterThan(-1);
+		expect(disableSparse).toBeLessThan(remote);
+	});
+
+	it("retries remote checkout when sparse prepare fails on a partial clone", () => {
+		expect(action).toMatch(
+			/id: prepare_full_worktree[\s\S]*?continue-on-error: true[\s\S]*?--prepare-full-worktree/,
+		);
+		expect(action).toContain("Reset partial clone after failed sparse prepare");
+		const prepare = action.indexOf("id: prepare_full_worktree");
+		const reset = action.indexOf(
+			"Reset partial clone after failed sparse prepare",
+		);
+		const remote = action.indexOf("Remote checkout (attempt 1)");
+		expect(prepare).toBeGreaterThan(-1);
+		expect(reset).toBeGreaterThan(prepare);
+		expect(remote).toBeGreaterThan(reset);
+		const resetBlock = action.slice(reset, remote);
+		expect(resetBlock).toContain(
+			"steps.prepare_full_worktree.outcome != 'success'",
+		);
+		expect(resetBlock).toContain("rm -rf .git");
+	});
+
 	it("clears mirror git config before remote retries after mirror failure", () => {
 		expect(action).toContain(
 			"Disable box git mirror after mirror checkout failure",

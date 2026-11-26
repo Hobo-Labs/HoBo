@@ -26,7 +26,6 @@ export function previewPromotionIdFor(
 	return `preview_${short({ tenant, key: idempotencyKey })}` as PromotionId;
 }
 
-// public-contract: separator between a source Camp id and a preview suffix.
 export const PREVIEW_CAMP_SEPARATOR = "--pv-" as const;
 
 export function previewCampIdFor(

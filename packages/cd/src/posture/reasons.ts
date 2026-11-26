@@ -1,6 +1,5 @@
 import { OWNERSHIP_CONFLICT, SHADOW_REQUIRED } from "../events.js";
 
-// public-contract: reason codes the posture module records or refuses with.
 export const POSTURE_REASON = Object.freeze({
 	notRail: "policy-bind-not-rail",
 	digestInvalid: "policy-bind-digest-invalid",
@@ -24,7 +23,6 @@ export const POSTURE_REASON = Object.freeze({
 	candidateUnresolved: "posture-candidate-unresolved",
 } as const);
 
-// public-contract: metric names the posture module emits through TelemetrySink.
 export const POSTURE_METRIC = Object.freeze({
 	noncompliantRatio: "hobo.cd.compliance.noncompliant_ratio",
 	shadowDivergence: "hobo.cd.policy.shadow_divergence",

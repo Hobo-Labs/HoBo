@@ -4,7 +4,6 @@ import {
 	type TrailStep,
 } from "./definition.js";
 
-// public-contract: platform recipe ids.
 export const PLATFORM_RECIPES = Object.freeze({
 	IdentityContinuous: "identity.continuous",
 	JunctionRebind: "junction.rebind",

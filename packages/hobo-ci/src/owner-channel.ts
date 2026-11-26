@@ -146,7 +146,6 @@ export function createOwnerJobs(
 	};
 }
 
-// public-contract: the prefix of a line asking the owner to hand one value to the waiting run.
 export const OWNER_CAPTURE_LINE_PREFIX = "HOBO_OWNER_CAPTURE";
 
 /**

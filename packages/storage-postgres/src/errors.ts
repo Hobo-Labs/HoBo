@@ -2,12 +2,6 @@ import { EventStoreError, type EventStoreErrorCode } from "@hobo/core";
 import { StoragePostgresErrorCode } from "./_generated/storage_postgres_pb.js";
 import { isJsonString } from "./json.js";
 
-/**
- * Failure classes this store adds to the core EventStore error vocabulary.
- * Each maps onto an existing `EventStoreErrorCode` so callers that switch on
- * `error.code` (reconcilers, runtimes) keep working; `failure` is the finer
- * label for operators and metrics, and `remediation` says what to do.
- */
 export type StoragePostgresFailure =
 	| "invalid-config"
 	| "invalid-input"
@@ -73,7 +67,6 @@ const WIRE_CODE_OF: Readonly<
 	closed: StoragePostgresErrorCode.CLOSED,
 });
 
-/** Wire enum (storage_postgres.proto) for a failure class. */
 export function storagePostgresErrorCode(
 	failure: StoragePostgresFailure,
 ): StoragePostgresErrorCode {
@@ -84,7 +77,6 @@ export function storagePostgresErrorCode(
 export class StoragePostgresError extends EventStoreError {
 	readonly failure: StoragePostgresFailure;
 	readonly remediation: string;
-	/** SQLSTATE of the underlying server error, when there was one. */
 	readonly sqlState: string | undefined;
 
 	constructor(
@@ -124,17 +116,14 @@ const CORE_REMEDIATION: Readonly<Partial<Record<EventStoreErrorCode, string>>> =
 			"The row was written with a codec this build cannot read; run the build that wrote it.",
 	});
 
-/** Remediation for any error this store can throw, or undefined for foreign errors. */
 export function remediationFor(error: Error): string | undefined {
 	if (error instanceof StoragePostgresError) return error.remediation;
 	if (error instanceof EventStoreError) return CORE_REMEDIATION[error.code];
 	return undefined;
 }
 
-/** SQLSTATEs whose transaction can be retried as a whole without effect. */
 const RETRYABLE_SQLSTATES = new Set(["40001", "40P01"]);
 
-/** SQLSTATE classes and codes that mean "the server is not usable right now". */
 function isUnavailableSqlState(state: string): boolean {
 	return (
 		state.startsWith("08") ||
@@ -163,17 +152,11 @@ function driverCode(error: Error): string | undefined {
 	return isJsonString(value) ? value : undefined;
 }
 
-/** True when the whole transaction may be retried (serialization/deadlock). */
 export function isRetryableTransactionError(error: Error): boolean {
 	const code = driverCode(error);
 	return code !== undefined && RETRYABLE_SQLSTATES.has(code);
 }
 
-/**
- * Translate a driver/server error into a typed store failure. Errors that are
- * already EventStore errors pass through unchanged; anything unrecognised is
- * returned as-is so a programming error is never disguised as an outage.
- */
 export function translatePgError(error: Error): Error {
 	if (error instanceof EventStoreError) return error;
 	const code = driverCode(error);
@@ -189,7 +172,6 @@ export function translatePgError(error: Error): Error {
 		}
 		return error;
 	}
-	// The deferred actor-commit trigger: the lease lapsed before COMMIT.
 	if (
 		code === "P0001" &&
 		error.message.includes("actor lease expired before protected commit")

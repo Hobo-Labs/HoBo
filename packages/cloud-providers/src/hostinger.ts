@@ -44,7 +44,6 @@ export {
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(hostinger, …).
 export const PROVIDER_ID = "hostinger";
 
-// public-contract: the name every default Hostinger Yard is registered under; changing it renames them all.
 export const DEFAULT_HOSTINGER_YARD_NAME = "hostinger";
 
 export interface HostingerYardOptions

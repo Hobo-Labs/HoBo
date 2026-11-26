@@ -20,7 +20,6 @@ export type ComponentizeOutput = {
 		readonly bytes: Buffer;
 		readonly witWorld: string;
 	};
-	// public-contract: optional OCI descriptor beside the component. Populated
 	readonly oci?: WasmOciDescriptor;
 };
 
@@ -45,7 +44,6 @@ export const defaultComponentize: ComponentizeFn = async (input) => {
 	};
 };
 
-// public-contract: adapts the @hobo/componentize real lane onto the CLI
 export function adaptRealComponentize(real: RealComponentize): ComponentizeFn {
 	return async (input) => {
 		const result = await real.componentize({

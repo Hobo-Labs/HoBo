@@ -21,7 +21,6 @@ export type ParsedScoreSnapshot = ScoreSnapshotRecord & {
 };
 
 export const SCORE_NAME = /^[a-z0-9][a-z0-9._-]{0,62}$/u;
-// public-contract: score-snapshot stream-name prefix within the placement stream family.
 export const SCORE_STREAM_PREFIX = "score-";
 export const SPREAD_KEYS = [
 	"yard",

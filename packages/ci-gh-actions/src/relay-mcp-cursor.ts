@@ -17,7 +17,6 @@ export type CursorCodec = Readonly<{
 }>;
 
 /** The one literal cursor: read from the start of the account's journal. */
-// public-contract: the documented cursor for reading an account's journal from its start.
 export const CURSOR_START = "0";
 
 const MARK = Buffer.from("hobo.cur", "ascii");

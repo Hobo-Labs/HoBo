@@ -3,7 +3,6 @@ import type { RunnerRouteDecision } from "../_generated/runner_route_pb.js";
 import { describeDecision, describeSkip } from "./decide.js";
 import type { RouteJournal } from "./ports.js";
 
-// public-contract: how an activity entry ended; `pending` was asked and has no answer yet.
 export const ACTIVITY_OUTCOMES = [
 	"routed",
 	"waiting",
@@ -12,9 +11,7 @@ export const ACTIVITY_OUTCOMES = [
 ] as const;
 export type ActivityOutcome = (typeof ACTIVITY_OUTCOMES)[number];
 
-// public-contract: entries in a page when the caller names no limit.
 export const ACTIVITY_PAGE_SIZE = 50;
-// public-contract: the most entries one page returns.
 export const ACTIVITY_PAGE_MAX = 500;
 export const ACTIVITY_JOURNAL_READ_LIMIT = 20_000;
 

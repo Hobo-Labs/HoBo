@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dashboardCsp, renderDashboardPage } from "./page.js";
 
-// public-contract: where a relay serves the dashboard unless told otherwise.
 export const DASHBOARD_BASE_PATH = "/dashboard";
 
 export type DashboardRouteOptions = Readonly<{

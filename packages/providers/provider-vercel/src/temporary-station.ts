@@ -1,5 +1,3 @@
-/** Vercel Drop is a browser ceremony. The account-backed Vercel CLI is not an
- * anonymous API and must never be launched as a temporary deployment fallback. */
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,8 +11,6 @@ import {
 } from "./json.js";
 import { PROVIDER_TARGET } from "./options.js";
 export const VERCEL_TEMPORARY_PROVIDER_ID = PROVIDER_TARGET;
-/** The SDK has no provider-documented anonymous API; account-backed REST
- * deployments are available through vercel.static-deploy/v1 instead. */
 export { supportsAnonymousTemporaryDeploy } from "./temporary-capability.js";
 export const VERCEL_DROP_URL = "https://vercel.com/drop";
 export type VercelDropFile = {
@@ -89,7 +85,6 @@ function fromJson(value: JsonObject): VercelDropDeployOutput | undefined {
 		...(isJsonString(name) && name ? { projectName: name } : undefined),
 	};
 }
-/** Native JSON identity is required; a hostname cannot stand in for an ID. */
 export function parseVercelDropDeployOutput(
 	stdout: string,
 ): VercelDropDeployOutput {
@@ -112,7 +107,6 @@ export function parseVercelDropDeployOutput(
 		"Vercel deployment output lacks observed JSON resource identity; refusing to invent an ID or claim URL",
 	);
 }
-/** Kept as a compatibility factory, with no subprocess or account side effect. */
 export function createVercelDropCliTransport(): VercelDropTransport {
 	return {
 		async deployDrop() {

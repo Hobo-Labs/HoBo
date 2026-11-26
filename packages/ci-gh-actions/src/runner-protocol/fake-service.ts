@@ -11,9 +11,7 @@ import { z } from "zod";
 import { readProtocolJson } from "./json.js";
 import { FORCE_TOKEN_REFRESH, RUNNER_JOB_REQUEST } from "./wire.js";
 
-// public-contract: the broker URL the fake serves and its configurations name.
 export const FAKE_BROKER_URL = "https://broker.actions.githubusercontent.com/";
-// public-contract: the run service URL the fake's job offers name.
 export const FAKE_RUN_SERVICE_URL =
 	"https://run-actions-3-azure-eastus.actions.githubusercontent.com/42/";
 const FAKE_TOKEN_HOST = "https://vstoken.actions.githubusercontent.com";

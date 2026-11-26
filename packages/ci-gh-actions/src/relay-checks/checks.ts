@@ -27,11 +27,9 @@ import {
 } from "./lint.js";
 import type { RelayCheckSource } from "./source.js";
 
-// public-contract: the checks a relay answers, by the end of their step's `uses:`.
 export const RELAY_CHECK_NAMES = ["pr-title", "lint"] as const;
 export type RelayCheckName = (typeof RELAY_CHECK_NAMES)[number];
 
-// public-contract: the event a relay emits for each check job it answers.
 export const CHECK_COMPLETED_EVENT = "check.completed";
 
 const CHECK_INPUTS: ReadonlyMap<RelayCheckName, readonly string[]> = new Map<

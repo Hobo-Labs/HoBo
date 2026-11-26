@@ -9,7 +9,6 @@ import { z } from "zod";
 import type { GithubTransport } from "../github.js";
 import { parseCiRunnerOrder } from "../runner-order-config.js";
 
-// public-contract: the one file relay mode reads from a repository.
 export const RELAY_CONFIG_PATH = ".hobo/ci.json";
 
 const Contents = z.object({

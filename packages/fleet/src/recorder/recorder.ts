@@ -77,7 +77,6 @@ const MAX_ATTEMPTS = 8;
 const FLEET_SCAN_MS = 5_000;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 
-// public-contract: the bus stream names recorded in each event's meta (§6.7 table).
 const BUS = {
 	offers: "FLEET_OFFERS",
 	claims: "FLEET_CLAIMS",

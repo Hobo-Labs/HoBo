@@ -1,9 +1,7 @@
 import type { HostedInboxStore } from "./hosted-runtime.js";
 
-// public-contract: inbox drain timeout for box worker poll decoupling.
 export const DEFAULT_INBOX_DELIVERY_TIMEOUT_MS = 5_000;
 
-// public-contract: inbox drain budget for box worker poll decoupling.
 export const DEFAULT_INBOX_DRAIN_BUDGET_MS = 30_000;
 
 export const DEFAULT_INBOX_DRAIN_CLAIM_MS = 120_000;

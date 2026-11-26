@@ -8,17 +8,12 @@ import {
 } from "./reader.js";
 import { NAMESPACE_DEFAULT_REGION } from "./subscription.js";
 
-// public-contract: the Namespace page the usage call was read from.
 export const NAMESPACE_USAGE_SOURCE =
 	"https://namespace.so/docs/reference/typescript-sdk/compute/usage";
-// public-contract: the Namespace page the unit-minute rate was read from.
 export const NAMESPACE_RATE_SOURCE =
 	"https://namespace.so/docs/workspaces/billing-and-limits";
-// public-contract: the day both pages were read.
 export const NAMESPACE_USAGE_OBSERVED_AT = "2026-11-17";
-// public-contract: US dollars per unit minute, Namespace's rate above a plan.
 export const NAMESPACE_USD_PER_UNIT_MINUTE = 0.0015;
-// public-contract: the read-only Connect procedure the Namespace reader calls.
 export const NAMESPACE_USAGE_PROCEDURE =
 	"/namespace.cloud.compute.v1beta.UsageService/GetUsage";
 

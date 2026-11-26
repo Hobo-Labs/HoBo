@@ -25,7 +25,6 @@ const BINDLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$/;
 const LABEL_KEY_PATTERN = /^[a-z0-9]([a-z0-9._/-]{0,62}[a-z0-9])?$/;
 const COMMIT_PATTERN = /^[0-9a-f]{7,64}$/;
 const CONTROL_CHARS = /\p{Cc}/u;
-// public-contract: artifact ecosystems a manifest may name (cd.proto ArtifactRef.ecosystem).
 export const ARTIFACT_ECOSYSTEMS = Object.freeze([
 	"oci",
 	"npm",

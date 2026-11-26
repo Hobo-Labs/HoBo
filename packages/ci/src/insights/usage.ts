@@ -22,7 +22,6 @@ export type UsageOptions = Readonly<{
 	publicRepositories: ReadonlySet<string>;
 }>;
 
-// public-contract: a billed job shorter than this wastes part of its first minute.
 export const DEFAULT_SHORT_JOB_MS = MS_PER_MINUTE;
 
 export type UsageTotals = Readonly<{
@@ -104,7 +103,6 @@ function zero(): Counts {
 	};
 }
 
-// public-contract: the runner group GitHub's own runners, larger runners included, report.
 export const GITHUB_HOSTED_RUNNER_GROUP = "GitHub Actions";
 
 const STANDARD_HOSTED_LABEL =

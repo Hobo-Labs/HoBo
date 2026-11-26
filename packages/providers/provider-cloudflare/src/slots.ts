@@ -25,16 +25,6 @@
  */
 import { capability, type SlotBinding, slotBinding } from "@hobo/core";
 
-/**
- * Forwards the caller's option bag to the parse boundary, dropping only keys
- * whose value is `undefined` (an omitted option must be absent, not an
- * explicit `undefined`, under `exactOptionalPropertyTypes` and JSON-safety).
- *
- * Every remaining key is passed through — including one the option types do
- * not declare — so a key smuggled past the types reaches `slotBinding()` and
- * is screened there. Cherry-picking the known keys instead would silently
- * swallow it, which is exactly the kind of quiet drop this repo refuses.
- */
 type AnySlotOptions =
 	| R2Options
 	| D1Options
@@ -52,7 +42,6 @@ function present(options: AnySlotOptions) {
 	return out;
 }
 
-/** R2 jurisdictions that restrict where objects may be stored. */
 export const R2_JURISDICTIONS = Object.freeze(["eu", "fedramp"] as const);
 
 export type R2Jurisdiction = (typeof R2_JURISDICTIONS)[number];
@@ -62,7 +51,6 @@ export interface R2Options {
 	readonly jurisdiction?: R2Jurisdiction;
 }
 
-/** Cloudflare R2 bucket — slot `bucket`, profile `bucket.s3-compatible/v1`. */
 export function r2(options?: R2Options): SlotBinding {
 	return slotBinding({
 		slot: "bucket",
@@ -76,7 +64,6 @@ export interface D1Options {
 	readonly readReplication?: boolean;
 }
 
-/** Cloudflare D1 database — slot `data`, profile `data.sqlite/v1`. */
 export function d1(options?: D1Options): SlotBinding {
 	return slotBinding({
 		slot: "data",
@@ -90,7 +77,6 @@ export interface KvOptions {
 	readonly ttlSeconds?: number;
 }
 
-/** Cloudflare Workers KV namespace — slot `kv`, profile `kv.key-value/v1`. */
 export function kv(options?: KvOptions): SlotBinding {
 	return slotBinding({
 		slot: "kv",
@@ -105,7 +91,6 @@ export interface QueuesOptions {
 	readonly maxRetries?: number;
 }
 
-/** Cloudflare Queues queue — slot `queue`, profile `queue.at-least-once/v1`. */
 export function queues(options?: QueuesOptions): SlotBinding {
 	return slotBinding({
 		slot: "queue",
@@ -116,11 +101,9 @@ export function queues(options?: QueuesOptions): SlotBinding {
 }
 
 export interface CronTriggersOptions {
-	/** The five-field cron expression; the plan's declared cadence otherwise. */
 	readonly cron?: string;
 }
 
-/** Cloudflare Cron Trigger on a Worker — slot `schedule`, profile `schedule.cron/v1`. */
 export function cronTriggers(options?: CronTriggersOptions): SlotBinding {
 	return slotBinding({
 		slot: "schedule",
@@ -131,13 +114,11 @@ export function cronTriggers(options?: CronTriggersOptions): SlotBinding {
 }
 
 export interface WorkersOptions {
-	/** Explicit public workers.dev exposure; absent preserves the observed setting. */
 	readonly workersDev?: boolean;
 	readonly compatibilityDate?: string;
 	readonly smartPlacement?: boolean;
 }
 
-/** Cloudflare Worker — slot `service`, profile `service.worker/v1`. */
 export function workers(options?: WorkersOptions): SlotBinding {
 	return slotBinding({
 		slot: "service",
@@ -151,7 +132,6 @@ export interface PagesOptions {
 	readonly productionBranch?: string;
 }
 
-/** Cloudflare Pages project — slot `web`, profile `web.hosted/v1`. */
 export function pages(options?: PagesOptions): SlotBinding {
 	return slotBinding({
 		slot: "web",

@@ -5,7 +5,6 @@ import { GithubCiFile, pullRequestOfRef } from "../relay-answer/ci-file.js";
 
 export const LINT_MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
 export const LINT_ARCHIVE_TIMEOUT_MS = 3 * 60_000;
-// public-contract: the one host GitHub sends archive downloads to; a redirect elsewhere is refused.
 export const ARCHIVE_DOWNLOAD_HOST = "codeload.github.com";
 
 export type RelayArchiveAccess = Readonly<{

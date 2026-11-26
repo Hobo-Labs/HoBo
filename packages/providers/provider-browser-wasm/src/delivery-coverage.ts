@@ -112,12 +112,6 @@ function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/**
- * Build a provider's frozen coverage document. Refuses (typed) a declaration
- * that would make I14 unverifiable: a product both resolved and refused, a
- * refusal with no remediation, a profile that does not parse at the core
- * boundary, or an offering that is neither present nor declared absent.
- */
 export function defineHostingCoverage(input: {
 	readonly providerId: string;
 	readonly resolvedProductIds: readonly string[];

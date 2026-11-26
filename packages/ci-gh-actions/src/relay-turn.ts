@@ -3,7 +3,6 @@ import { claimTurn, rankMembers } from "@hobo/fleet/observation";
 import { workDigest } from "@hobo/fleet/work";
 import type { RelayTurn } from "./relay-answer/answerer.js";
 
-// public-contract: the work kind a relay job's turn is ranked under.
 export const RELAY_TURN_KIND = "relay-job";
 
 export type RelayTurnPeer = Readonly<{

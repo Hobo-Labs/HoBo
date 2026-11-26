@@ -1,6 +1,4 @@
-// public-contract: the launchd label, also the plist's file name.
 export const LAUNCHD_LABEL = "dev.hobo.fleet";
-// public-contract: the systemd unit name and the scheduled task's name.
 export const SERVICE_NAME = "hobo-fleet";
 
 const AGENT_VARIABLES = [

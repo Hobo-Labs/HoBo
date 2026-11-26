@@ -26,7 +26,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: dry-run report schema id consumers pin.
 export const UPGRADE_DRY_RUN_SCHEMA = "hobo.upgrade-rollback-dry-run/v1";
 
 export type UpgradeDeploymentMode =
@@ -66,10 +65,8 @@ export interface CompatibilityInputs {
 	readonly manifestVersion: string;
 	readonly contractCompatibility: ContractCompatibilityResult;
 	readonly dataSchemaPosture: DataSchemaPosture;
-	/** Provider/IaC state dependency fact, or null when none. */
 	readonly providerStateDependency: string | null;
 	readonly backupPrerequisite: BackupPrerequisite;
-	/** Link to rollback evidence, or null when rollback is unavailable. */
 	readonly rollbackEvidenceRef: string | null;
 	readonly supportHandoffOwner: string;
 }
@@ -80,7 +77,6 @@ export type RollbackState =
 	| "required-before-execution"
 	| "recoverable";
 
-/** Rollback and recovery boundary evidence (#rollback-and-recovery-boundaries). */
 export interface RollbackEvidence {
 	readonly state: RollbackState;
 	readonly immutableSetRef: string | null;
@@ -263,7 +259,6 @@ export function parseRollbackEvidence(
 			: undefined),
 		escalationOwner: str(input.escalationOwner, `${path}.escalationOwner`),
 	};
-	// A path may only be called recoverable/available with concrete evidence.
 	if (
 		(state === "available" || state === "recoverable") &&
 		evidence.immutableSetRef === null &&
@@ -278,10 +273,6 @@ export function parseRollbackEvidence(
 	return Object.freeze(evidence);
 }
 
-/**
- * Compatibility-input-matrix reference fixture: one row per upgrade path
- * class (#upgrade-path-classes), each carrying the full 11-field input set.
- */
 export const COMPATIBILITY_INPUT_MATRIX: readonly CompatibilityInputs[] =
 	Object.freeze(
 		(
@@ -402,7 +393,6 @@ export const UPGRADE_SCOPE_BOUNDARIES = Object.freeze([
 const OUT_OF_SCOPE_PATTERN =
 	/\b(live migration|execute|runner|rollback executor|backup restore|provider state rewrite|support automation|support ticket|publish release notes)\b/i;
 
-/** Promoted scope guard: classify a decision as in/out of dry-run scope. */
 export function classifyUpgradeDryRunDecision(
 	decision: string,
 ): UpgradeDryRunDecision {
@@ -467,16 +457,10 @@ export interface UpgradeDryRunReport {
 	readonly releaseNotes: UpgradeDryRunRequest["releaseNotes"];
 	readonly supportHandoff: SupportHandoffRecord;
 	readonly unsupportedPath: UpgradeDryRunRequest["unsupportedPath"] | null;
-	/** Always empty: a dry-run must not mutate anything. */
 	readonly mutationCommands: readonly never[];
 	readonly digest: string;
 }
 
-/**
- * Evaluate an upgrade dry-run. Pure evidence: blocked on unsupported
- * compatibility or missing required backup; failed when the migration plan
- * itself records a failing phase. Never mutates live state.
- */
 export function evaluateUpgradeDryRun(
 	request: UpgradeDryRunRequest,
 ): UpgradeDryRunReport {
@@ -514,14 +498,11 @@ export function evaluateUpgradeDryRun(
 		releaseNotes: request.releaseNotes,
 		supportHandoff: request.support,
 		unsupportedPath: request.unsupportedPath ?? null,
-		// SAFETY: dry-run reports intentionally expose no executable mutations.
 		mutationCommands: Object.freeze([]) as readonly never[],
-		// SAFETY: JSON round-trip gives the digest the parsed boundary shape.
 		digest: stableDigest(JSON.parse(JSON.stringify(request)) as JsonObject),
 	});
 }
 
-/** Deterministic sha256 over a stable (key-sorted) JSON encoding. */
 export function stableDigest(value: JsonObject): string {
 	return createHash("sha256").update(stableStringify(value)).digest("hex");
 }
@@ -548,13 +529,6 @@ function matrixRow(mode: UpgradeDeploymentMode): CompatibilityInputs {
 	return row;
 }
 
-/**
- * The four deterministic dry-run fixtures promoted from HOBO-499:
- * clean, blocked, failed-migration, rollback-ready.
- */
-// eli5: annotated as Record<string, …> the known fixture names vanish from the
-// type, so every read needs a `!`. `satisfies` keeps the same checking and the
-// literal keys, which is what callers actually want.
 export const UPGRADE_DRY_RUN_FIXTURES = Object.freeze({
 	cleanUpgrade: Object.freeze({
 		id: "clean-upgrade",

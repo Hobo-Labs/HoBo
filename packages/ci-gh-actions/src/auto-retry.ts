@@ -28,7 +28,6 @@ import { type InsightJob, type InsightRun, ranSteps } from "@hobo/ci/insights";
 import { z } from "zod";
 import { type GithubTransport, rerunWorkflowJob } from "./github.js";
 
-// public-contract: the event type a retry row is sent as.
 export const JOB_RETRIED_EVENT = "job.retried";
 
 export const RETRY_RERUN_STATES = [
@@ -198,7 +197,6 @@ export interface RetryLedger {
 	countSince(accountId: string, sinceMs: number): Promise<number>;
 }
 
-// public-contract: how long a claimed retry may wait for GitHub's answer before another delivery takes it.
 export const RETRY_PENDING_LEASE_MS = 5 * 60_000;
 
 function reclaimable(row: JobRetried | undefined, nowMs: number): boolean {
@@ -608,11 +606,8 @@ export function githubRerunJob(
 
 const FAILED = new Set(["failure", "timed_out"]);
 
-// public-contract: clock slack between GitHub's run time and the relay's journal time.
 export const DECISION_LOOKBACK_MS = 10 * 60_000;
-// public-contract: the first page of route journal entries one retry reads.
 export const DECISION_READ_LIMIT = 500;
-// public-contract: the most route journal entries one retry reads.
 export const DECISION_READ_MAX = 32_000;
 
 export type AutoRetryDeps = Readonly<{

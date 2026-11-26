@@ -368,7 +368,6 @@ export async function orderVerdict(
 	return { ok: true, value: { order, trust, tier: order.sandboxTier } };
 }
 
-// public-contract: the work kind of submitted OCI commands (§6.9 table).
 export const OCI_COMMAND = "oci-command";
 
 export function fenceAllows(

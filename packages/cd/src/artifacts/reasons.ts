@@ -5,7 +5,6 @@ import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: refusal and error codes the artifact store and verifier return.
 export const ARTIFACT_REASON = Object.freeze({
 	digestInvalid: "artifact-digest-invalid",
 	corrupt: "artifact-corrupt",

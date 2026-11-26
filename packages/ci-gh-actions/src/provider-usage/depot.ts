@@ -7,14 +7,10 @@ import {
 	usableUsd,
 } from "./reader.js";
 
-// public-contract: the Depot page the usage call was read from.
 export const DEPOT_USAGE_SOURCE =
 	"https://depot.dev/docs/api/github-actions-api";
-// public-contract: the day that page and its OpenAPI description were read.
 export const DEPOT_USAGE_OBSERVED_AT = "2026-11-17";
-// public-contract: Depot's API origin.
 export const DEPOT_API_ORIGIN = "https://api.depot.dev";
-// public-contract: the read-only Connect procedure the Depot reader calls.
 export const DEPOT_USAGE_PROCEDURE =
 	"/depot.core.v1.GithubActionsService/GetGithubActionsUsageProjection";
 

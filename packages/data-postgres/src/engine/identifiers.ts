@@ -51,7 +51,7 @@ export function qualifiedName(namespace: string, name: string): string {
 	return `${quoteIdentifier(namespace)}.${quoteIdentifier(name)}`;
 }
 
-// domain-view: derived names; wire form is PostgresCaptureObjects in data-models/postgres_engine.proto.
+// domain-view:
 export interface PostgresCaptureObjects {
 	readonly slot: string;
 	readonly publication: string;

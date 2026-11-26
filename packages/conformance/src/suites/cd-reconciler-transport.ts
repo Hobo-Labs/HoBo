@@ -13,10 +13,8 @@ import type {
 	ReconcilerTransportLike,
 } from "./cd-shapes.js";
 
-// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const RECONCILER_TRANSPORT_SUITE = "hobo.cd.reconciler-transport/v1";
 
-// public-contract: assertion names of the ReconcilerTransport suite.
 export const RECONCILER_TRANSPORT_ASSERTIONS = Object.freeze([
 	"claimGrantsLease",
 	"oneWriterPerCamp",

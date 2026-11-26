@@ -35,7 +35,6 @@ import {
 	type RunnerStepKey,
 } from "./providers.js";
 
-// public-contract: every reason the walk gives for passing over a step.
 export const RUNNER_SKIP_REASONS = [
 	"not_configured",
 	"public_repository",

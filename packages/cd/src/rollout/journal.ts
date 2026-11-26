@@ -27,7 +27,6 @@ import {
 	text,
 } from "./json.js";
 
-// public-contract: the rollout ledger stream and its event names.
 export const ROLLOUT_LEDGER = Object.freeze({
 	stream: (rolloutId: string) => `cd-rollout-${rolloutId}`,
 	started: "rollout.RampStarted",

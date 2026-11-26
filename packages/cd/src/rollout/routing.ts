@@ -6,7 +6,6 @@ import {
 } from "@hobo/core";
 import type { CampId, RolloutId } from "../ports.js";
 
-// public-contract: cohort backend ids of a stage RoutingPlan.
 export const STAGE_BACKENDS = Object.freeze({
 	stable: "stable",
 	candidate: "candidate",

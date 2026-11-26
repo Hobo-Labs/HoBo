@@ -17,7 +17,6 @@ import {
 	worstComponentStatus,
 } from "./types.js";
 
-// public-contract: projection name registered in the data plane.
 export const STATUS_PAGE_PROJECTION = "status-page" as const;
 
 export const HISTORY_DAY_LIMIT = 90;
@@ -57,11 +56,6 @@ export interface StatusPageRow {
 }
 
 export interface StatusPageProjectionOptions {
-	/**
-	 * Row key per event. Default: `data.scopeKey` when the emitter targeted a
-	 * page explicitly, else `project:<project>` when the envelope carries the
-	 * ADR-0077 rollup dimension, else `tenant:<tenant>`.
-	 */
 	readonly scopeKey?: (event: EventEnvelope) => string;
 }
 

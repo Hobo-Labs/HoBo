@@ -70,7 +70,6 @@ import {
 	unreachableData,
 } from "./policy.js";
 
-// public-contract: saga name recorded in saga facts for every failover.
 export const FAILOVER_SAGA = "cd.failover" as const;
 
 export const FAILOVER_METRIC = Object.freeze({
@@ -104,7 +103,6 @@ export type FailoverControllerDeps = Parameters<
 			toCampId: string;
 		}>,
 	) => Promise<boolean>;
-	/** Residency region catalog override (tests, private regions). */
 	readonly regionCatalog?: Parameters<typeof evaluateResidency>[0]["catalog"];
 	readonly holderId?: string;
 	readonly leaseTtlMs?: number;

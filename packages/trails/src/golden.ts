@@ -1,7 +1,6 @@
 import type { JsonObject } from "./json.js";
 import type { TrailRunResult } from "./runner.js";
 
-// public-contract: trail golden oracle schema.
 export const TRAIL_GOLDEN_SCHEMA = "hobo.trail-golden/v1" as const;
 
 export type TrailGoldenOracleId =

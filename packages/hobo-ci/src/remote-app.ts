@@ -33,10 +33,8 @@ import type { OpenedSecretStore } from "./secret-stores.js";
  * settings so a restart of the agent or its MCP server does not lose it.
  */
 
-// public-contract: the static page that, in the owner's browser, posts the manifest to GitHub and shows GitHub's one-time code; it sends nothing anywhere.
 export const APP_HANDOFF_PAGE =
 	"https://tyler-r-kendrick.github.io/HoBo/github-app/";
-// public-contract: the capture name of the `code~state` the hand-off page shows.
 export const GITHUB_APP_CODE_CAPTURE = "GITHUB_APP_CODE";
 
 const STATE = "HOBO_CI_GITHUB_APP_STATE";

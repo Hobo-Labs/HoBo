@@ -2,7 +2,6 @@ import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: reason codes the compose module writes.
 export const COMPOSE_FAILURES = Object.freeze({
 	"compose-unbound":
 		"A module was called before composition finished binding it (a dependency cycle used too early). Call it only after composeContinuousDelivery returns.",

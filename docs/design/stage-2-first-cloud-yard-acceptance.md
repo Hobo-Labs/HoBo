@@ -11,7 +11,7 @@ Source issue: S2-01 (HOBO-616).
 
 Branch evidence:
 
-- [`S2-01 proof record`](./proofs/s2-01-stage-2-first-cloud-yard/README.md)
+- [`S2-01 proof record`](https://linear.app/quickdeploy-ai/document/hobo-616-proof-record-archived-9d2b732ed7d5)
 
 This M0 record defines the accepted productionization scope for Stage 2 (First Cloud + Yard).
 It does not build Yard runtime code, provider adapters, IaC apply, Postgres runtime ports, CLI
@@ -181,7 +181,6 @@ production layout convention in [`architecture.md`](./architecture.md).
 - Author this M0 acceptance record with decided open questions, owning lanes, promoted proofs, and
   runnable gate restatement.
 - Add one design-index row and four traceability rows.
-- Add proof README at `docs/design/proofs/s2-01-stage-2-first-cloud-yard/README.md`.
 - Document architecture obligations for S2-02..S2-11: PACT at every service boundary;
   protobuf-first records with CUE in package-local `data-models/`; parse-don't-validate derived
   types; CQRS/event-sourced state (actors emit events, never mutate read models).

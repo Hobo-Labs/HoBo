@@ -4,7 +4,6 @@ import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: verification reason codes and their remediations.
 export const VERIFICATION_REASONS = Object.freeze({
 	"verification-spec-invalid":
 		"Fix the named field of the VerificationSpec; data-models/verification.cue lists the constraints.",

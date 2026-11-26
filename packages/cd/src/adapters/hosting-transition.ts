@@ -47,7 +47,6 @@ export type HostingTransitionRealizerDeps = Readonly<{
 	maxSteps?: number;
 }>;
 
-// public-contract: resource kind reported for a hosting transition.
 export const HOSTING_TRANSITION_KIND = "hosting-transition" as const;
 
 function isRead(action: HostingTransitionAction | undefined): boolean {

@@ -9,7 +9,6 @@ import {
 } from "../events.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: refusal and failure codes the promotion saga records. Every
 export const PROMOTION_REASON = Object.freeze({
 	unauthorized: "promotion-unauthorized",
 	invalidRequest: "promotion-request-invalid",
@@ -54,7 +53,6 @@ export const PROMOTION_REASON = Object.freeze({
 export type PromotionReasonCode =
 	(typeof PROMOTION_REASON)[keyof typeof PROMOTION_REASON];
 
-// public-contract: metric names the promotion saga emits through TelemetrySink.
 export const PROMOTION_METRIC = Object.freeze({
 	requested: "hobo.cd.promotion.requested",
 	refused: "hobo.cd.promotion.refused",
