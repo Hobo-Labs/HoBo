@@ -5,10 +5,10 @@
 import { execFileSync } from "node:child_process";
 import { devNull } from "node:os";
 import {
-	type FleetMember,
-	type FleetVerificationSelection,
-	selectFleetVerification,
-} from "../../packages/ci/src/fleet-overflow.ts";
+	type RunnerTierState,
+	type RunnerVerificationSelection,
+	selectRunnerVerification,
+} from "../../packages/ci/src/runner-routing/tiers.ts";
 import { trustedGithubTarget } from "./github-target.mts";
 import {
 	askSlip,
@@ -31,7 +31,7 @@ import {
 } from "./runner-routing.mts";
 
 /** Allow at most 30 seconds of GitHub/operator clock skew, never reversed ordering. */
-export const FLEET_CLOCK_SKEW_MS = 30_000;
+export const SIGNOFF_CLOCK_SKEW_MS = 30_000;
 
 type PreciseUtc = Readonly<{ secondMs: number; nanosecond: number }>;
 
@@ -61,7 +61,7 @@ function compareUtc(first: PreciseUtc, second: PreciseUtc): number {
 function withinClockSkew(value: JsonValue | undefined, nowMs: number): boolean {
 	const timestamp = preciseUtc(value);
 	if (!timestamp) return false;
-	const boundMs = nowMs + FLEET_CLOCK_SKEW_MS;
+	const boundMs = nowMs + SIGNOFF_CLOCK_SKEW_MS;
 	const secondMs = Math.floor(boundMs / 1000) * 1000;
 	return (
 		compareUtc(timestamp, {
@@ -83,42 +83,42 @@ function orderedUtc(
 function validJobChronology(job: SeenJob, nowMs: number): boolean {
 	return (
 		Number.isFinite(job.createdAtMs) &&
-		job.createdAtMs <= nowMs + FLEET_CLOCK_SKEW_MS &&
+		job.createdAtMs <= nowMs + SIGNOFF_CLOCK_SKEW_MS &&
 		(job.startedAtMs === undefined ||
 			(Number.isFinite(job.startedAtMs) &&
 				job.startedAtMs >= job.createdAtMs &&
-				job.startedAtMs <= nowMs + FLEET_CLOCK_SKEW_MS))
+				job.startedAtMs <= nowMs + SIGNOFF_CLOCK_SKEW_MS))
 	);
 }
 
 /** An enabled provider outside the fleet/local/hosted routing labels. */
-export type FleetOverflowMember = Readonly<{
+export type RunnerOverflowMember = Readonly<{
 	id: string;
 	runsOn: string;
 	/** Is this a directly observable GitHub Actions runner label? */
 	observable: boolean;
 	/** Keep configured local and hosted providers in their normal order. */
-	backend?: "arc" | "local" | "github";
+	backend?: "arc" | "local" | "github" | "agent37";
 }>;
 
-export type FleetVerificationPlan =
+export type RunnerVerificationPlan =
 	| Readonly<{
 			kind: "runner";
 			tier: "fleet" | "overflow" | "local" | "github";
 			runner: string;
 	  }>
-	| Extract<FleetVerificationSelection, { kind: "local-signoff" | "wait" }>;
+	| Extract<RunnerVerificationSelection, { kind: "local-signoff" | "wait" }>;
 
 /** The base used for inventory must also be used for execution and signoff. */
-export type FleetVerificationObservation =
-	| Exclude<FleetVerificationPlan, { kind: "local-signoff" }>
+export type RunnerVerificationObservation =
+	| Exclude<RunnerVerificationPlan, { kind: "local-signoff" }>
 	| Readonly<{ kind: "invalid-provider-assertion"; provider: string }>
 	| Readonly<{ kind: "invalid-runner-assertion"; runner: string }>
 	| Readonly<{ kind: "local-signoff"; baseSha: string }>;
 
 /** Execute the selected fallback only; a failed local run cannot post a signoff. */
-export async function executeFleetVerification(input: {
-	choice: FleetVerificationPlan;
+export async function executeRunnerVerification(input: {
+	choice: RunnerVerificationPlan;
 	runLocal: () => Promise<number>;
 	signoffLocal: () => Promise<number>;
 }): Promise<number> {
@@ -129,13 +129,13 @@ export async function executeFleetVerification(input: {
 }
 
 /** Availability is unknown until a pickup or refusal is observed. */
-export async function planFleetVerification(input: {
+export async function planRunnerVerification(input: {
 	settings: RouteSettings;
 	localSignoffEnabled: boolean;
 	/** Operator observation for hosted jobs that fail without ever queueing. */
 	githubUnavailable?: boolean | undefined;
 	/** Extra enabled providers from the trusted base's declared inventory. */
-	overflow?: readonly FleetOverflowMember[] | undefined;
+	overflow?: readonly RunnerOverflowMember[] | undefined;
 	/** Independently observed outages of identified inventory members. */
 	providerUnavailable?: readonly string[] | undefined;
 	/** Independently observed outage of the fleet or enabled local tier. */
@@ -147,7 +147,7 @@ export async function planFleetVerification(input: {
 		overflowLabels: readonly string[],
 	) => Promise<QueueView>;
 	nowMs: number;
-}): Promise<FleetVerificationPlan> {
+}): Promise<RunnerVerificationPlan> {
 	const { settings } = input;
 	const { labels } = settings;
 	if (settings.pin !== "auto")
@@ -167,7 +167,15 @@ export async function planFleetVerification(input: {
 	if (slip.ok) {
 		const { tier, runner } = slip.decision;
 		const allowed =
-			tier === "fleet" ? [labels.fleet, labels.trunk] : [labels[tier]];
+			tier === "fleet"
+				? [labels.fleet, labels.trunk]
+				: tier === "local" || tier === "github"
+					? [labels[tier]]
+					: tier === "agent37"
+						? (input.overflow ?? [])
+								.filter((entry) => entry.id.startsWith("external-pool:"))
+								.map((entry) => entry.runsOn)
+						: [];
 		if (!allowed.some((label) => label.toLowerCase() === runner.toLowerCase()))
 			slip = { ok: false, why: "routing slip tier and label disagree" };
 	}
@@ -178,7 +186,7 @@ export async function planFleetVerification(input: {
 	)
 		return {
 			kind: "runner",
-			tier: slip.decision.tier,
+			tier: slip.decision.tier === "agent37" ? "overflow" : slip.decision.tier,
 			runner: slip.decision.runner,
 		};
 	if (!Number.isFinite(input.nowMs))
@@ -225,7 +233,7 @@ export async function planFleetVerification(input: {
 	const member = (
 		id: "fleet" | "local" | "github",
 		enabled: boolean,
-	): FleetMember => {
+	): RunnerTierState => {
 		const runnerLabel = id === "fleet" ? fleetLabel : labels[id];
 		const load = labelLoad(queue.jobs, runnerLabel.toLowerCase(), input.nowMs);
 		const limits =
@@ -260,7 +268,7 @@ export async function planFleetVerification(input: {
 			freeSlots: available ? 1 : 0,
 		};
 	};
-	const overflow = (input.overflow ?? []).map((entry): FleetMember => {
+	const overflow = (input.overflow ?? []).map((entry): RunnerTierState => {
 		const id = `overflow:${entry.id}`;
 		const load = labelLoad(queue.jobs, entry.runsOn.toLowerCase(), input.nowMs);
 		const backend = entry.backend ?? "arc";
@@ -289,7 +297,7 @@ export async function planFleetVerification(input: {
 			freeSlots: available ? 1 : 0,
 		};
 	});
-	const selection = selectFleetVerification({
+	const selection = selectRunnerVerification({
 		members: [
 			member("fleet", true),
 			...overflow,
@@ -308,7 +316,8 @@ export async function planFleetVerification(input: {
 		tier:
 			selection.runner.backend === "hobo"
 				? "fleet"
-				: selection.runner.backend === "arc"
+				: selection.runner.backend === "arc" ||
+						selection.runner.backend === "agent37"
 					? "overflow"
 					: selection.runner.backend === "local"
 						? "local"
@@ -323,9 +332,9 @@ export async function planFleetVerification(input: {
  * inventory. Non-inventory policy fields are not fully schema-validated here;
  * the operator must still compare this snapshot with the live account policy.
  */
-export function readFleetOverflowPolicy(
+export function readRunnerOverflowPolicy(
 	text: string | undefined,
-): readonly FleetOverflowMember[] | undefined {
+): readonly RunnerOverflowMember[] | undefined {
 	const root = text === undefined ? undefined : asObject(parseJson(text));
 	const routing = readRunnerRouting(text);
 	const environments = asObject(root?.environments);
@@ -354,13 +363,14 @@ export function readFleetOverflowPolicy(
 		"kubernetes",
 		"hobo-box-worker",
 		"vercel",
+		"agent37",
 	]);
-	const extras: FleetOverflowMember[] = [];
+	const extras: RunnerOverflowMember[] = [];
 	const add = (
 		id: string,
 		runsOn: string,
 		observable: boolean,
-		backend?: "local" | "github",
+		backend?: "local" | "github" | "agent37",
 	) => {
 		if (backend === undefined) extras.push({ id, runsOn, observable });
 		else extras.push({ id, runsOn, observable, backend });
@@ -418,13 +428,16 @@ export function readFleetOverflowPolicy(
 			const allowed = ["id", "kind", "runsOn", "connectionRef", "enabled"];
 			if (kind === "kubernetes") allowed.push("scaleSet", "engine");
 			if (kind === "vercel") allowed.push("location");
+			if (kind === "agent37") allowed.push("pool");
 			if (Object.keys(provider).some((key) => !allowed.includes(key)))
 				return undefined;
 			const scaleSet = asObject(provider.scaleSet);
 			const engine = asObject(provider.engine);
+			const pool = asObject(provider.pool);
 			if (
 				(provider.scaleSet !== undefined && !scaleSet) ||
 				(provider.engine !== undefined && !engine) ||
+				(provider.pool !== undefined && !pool) ||
 				(scaleSet && engine) ||
 				(kind === "local" && runsOn !== "hobo-local-host") ||
 				(kind === "github" && runsOn.toLowerCase() === "ubuntu-latest") ||
@@ -466,14 +479,18 @@ export function readFleetOverflowPolicy(
 					`${environmentName}:${id}`,
 					runsOn,
 					directKinds.has(kind) || !!scaleSet,
-					kind === "local" || kind === "github" ? kind : undefined,
+					kind === "local" || kind === "github"
+						? kind
+						: kind === "agent37"
+							? "agent37"
+							: undefined,
 				);
 		}
 	}
 	for (const [index, pool] of routing.externalPools.entries()) {
 		if (pool.maxRunners === 0) continue;
 		for (const runsOn of pool.labels)
-			add(`external-pool:${index}:${runsOn}`, runsOn, true);
+			add(`external-pool:${index}:${runsOn}`, runsOn, false);
 	}
 	if (root.integrations !== undefined) {
 		if (!Array.isArray(root.integrations) || root.integrations.length > 16)
@@ -512,7 +529,7 @@ export function readFleetOverflowPolicy(
 }
 
 /** Select from a local checkout; all GitHub reads use the existing gh login. */
-export async function observeFleetVerification(input: {
+export async function observeRunnerVerification(input: {
 	cwd: string;
 	env: NodeJS.ProcessEnv;
 	localSignoffEnabled: boolean;
@@ -525,7 +542,7 @@ export async function observeFleetVerification(input: {
 	providerUnavailable?: readonly string[] | undefined;
 	/** Operator observed that each named runner tier is unavailable. */
 	runnerUnavailable?: readonly string[] | undefined;
-}): Promise<FleetVerificationObservation> {
+}): Promise<RunnerVerificationObservation> {
 	const environment = { ...input.env };
 	for (const name of [
 		"GIT_DIR",
@@ -601,7 +618,7 @@ export async function observeFleetVerification(input: {
 	} catch {
 		return { kind: "wait", reason: "availability-unknown" };
 	}
-	const inventory = readFleetOverflowPolicy(config);
+	const inventory = readRunnerOverflowPolicy(config);
 	// Missing inventory must not prevent a pinned slip or an observed runner,
 	// but it is an unknown tier and can never establish fallback eligibility.
 	const overflow = inventory ?? [
@@ -714,7 +731,7 @@ export async function observeFleetVerification(input: {
 			return new Response(null, { status: 503 });
 		}
 	};
-	const choice = await planFleetVerification({
+	const choice = await planRunnerVerification({
 		settings,
 		localSignoffEnabled: input.localSignoffEnabled,
 		githubUnavailable: input.githubUnavailable,
@@ -775,3 +792,7 @@ export async function observeFleetVerification(input: {
 	}
 	return { ...choice, baseSha: base };
 }
+
+export const executeFleetVerification = executeRunnerVerification;
+export const observeFleetVerification = observeRunnerVerification;
+export const planFleetVerification = planRunnerVerification;

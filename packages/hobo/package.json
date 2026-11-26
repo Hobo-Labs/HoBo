@@ -123,6 +123,7 @@
 		"@antithesishq/bombadil": "0.7.10",
 		"@hobo/ci-agent": "workspace:*",
 		"@hobo/ci-vercel": "workspace:*",
+		"@hobo/provider-agent37": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
 		"@hobo/events": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",

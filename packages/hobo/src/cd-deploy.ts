@@ -985,7 +985,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			usage:
 				"hobo deploy agent token --camp-set <set> --camp <a,b> [--mode agent|publisher] [--ttl-ms <ms>]",
 			summary:
-				"Issue a single-use bootstrap token scoped to one Camp set (D19)",
+				"Issue a single-use bootstrap token scoped to one Camp set (D19); alias of `hobo fleet token create`",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent token"]?.usage ?? "";
 				const campSet = need(text(flags, "camp-set"), "--camp-set", usage);
@@ -1127,7 +1127,8 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent approve-key": {
 			usage: "hobo deploy agent approve-key <reconciler-id>",
-			summary: "Grant 1: the key belongs to a legitimate agent",
+			summary:
+				"Grant 1: the key belongs to a legitimate agent; alias of `hobo fleet member approve`",
 			run: async (host, args, _flags, format) => {
 				const id = need(
 					args[0],
@@ -1154,7 +1155,8 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent accept": {
 			usage: "hobo deploy agent accept <reconciler-id> --camp <a,b>",
-			summary: "Grant 2: the agent may serve these Camps",
+			summary:
+				"Grant 2: the agent may serve these Camps; alias of `hobo fleet member accept`",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent accept"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);
@@ -1176,7 +1178,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			usage:
 				"hobo deploy agent run --feed <https://station/v1/cd/> --reconciler <id> --key-file <private.jwk.json> --svid-file <svid> --camp <a,b>",
 			summary:
-				"Run this process as an agent-mode reconciler (outbound HTTPS only)",
+				"Run this process as an agent-mode reconciler (outbound HTTPS only); alias of `hobo fleet run`",
 			run: async (host, _args, flags, format) => {
 				if (!host.runAgent)
 					return moduleRefusal("agent run", format, {
@@ -1195,7 +1197,8 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent revoke": {
 			usage: "hobo deploy agent revoke <reconciler-id> --reason <text>",
-			summary: "Revoke an agent; refused on its next request",
+			summary:
+				"Revoke an agent; refused on its next request; alias of `hobo fleet member revoke`",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent revoke"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);

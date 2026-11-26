@@ -83,7 +83,7 @@ describe("application service emulators", () => {
 			expect(report.assertions).toEqual({
 				publishConsumeAck: "pass",
 				consumerGroupIsolation: "pass",
-				deadLetterMaxAttempts: "pass",
+				deadLetterMaxAttempts: "unsupported",
 				exactlyOnceCapabilityGate: "pass",
 			});
 		} finally {

@@ -30,7 +30,10 @@ async function fixture(options: {
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: { HOBO_HOME: home, HOBO_CI_ACCOUNT_TOKEN: accountToken },
+				env: { HOBO_HOME: home },
+				ownerCredentials: () => ({
+					resolve: async () => ({ token: accountToken }),
+				}),
 				interactive: options.interactive ?? true,
 				fetch: options.fetch,
 				git: async (args) =>

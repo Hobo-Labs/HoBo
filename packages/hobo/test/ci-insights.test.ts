@@ -1,7 +1,14 @@
+import type { CredentialResolver } from "@hobo/cd";
 import { describe, expect, it } from "vitest";
 import pact from "../contracts/ci-insights-github.pact.json";
 import { runCiInsights } from "../src/ci-insights.js";
-import { CiProcessError, type CiRunExec } from "../src/ci-runs.js";
+import {
+	FAKE_INSTALLATION_TOKEN,
+	githubRestFetch,
+	githubStatus,
+	installationCredentials,
+	refusingCredentials,
+} from "./support/github-app-fake.js";
 
 const minute = 60_000;
 const start = Date.parse("2026-11-10T10:00:00Z");
@@ -74,24 +81,27 @@ function run(
 	};
 }
 
-function github(responses: ReadonlyMap<string, string | CiProcessError>) {
-	const asked: string[] = [];
-	const execFile: CiRunExec = async (file, args, options) => {
-		expect(file).toBe("gh");
-		expect(args[0]).toBe("api");
-		expect(options.env?.HOBO_CI_ACCOUNT_TOKEN).toBeUndefined();
-		const path = args[1] ?? "";
-		asked.push(path);
-		const answer = responses.get(path);
-		if (answer === undefined && path.endsWith("/logs"))
-			return { stdout: "", stderr: "" };
-		if (answer === undefined && path.endsWith("/annotations?per_page=100"))
-			return { stdout: "[]", stderr: "" };
-		if (answer === undefined) throw new CiProcessError("failed", "gh", 404);
-		if (answer instanceof CiProcessError) throw answer;
-		return { stdout: answer, stderr: "" };
+type Reply = string | Response | Error;
+
+function github(responses: ReadonlyMap<string, Reply>) {
+	const rest = githubRestFetch((request) => {
+		const answer = responses.get(request.path);
+		if (answer === undefined && request.path.endsWith("/logs")) return "";
+		if (
+			answer === undefined &&
+			request.path.endsWith("/annotations?per_page=100")
+		)
+			return "[]";
+		if (answer instanceof Error) throw answer;
+		return answer;
+	});
+	return {
+		fetch: rest.fetch,
+		requests: rest.requests,
+		get asked() {
+			return rest.paths();
+		},
 	};
-	return { execFile, asked };
 }
 
 const repository = JSON.stringify({ private: true, default_branch: "main" });
@@ -103,15 +113,17 @@ const insights = (
 	fake: ReturnType<typeof github>,
 	args: readonly string[] = [],
 	options: Readonly<Record<string, string>> = {},
+	access: Readonly<{ credentials: CredentialResolver | undefined }> = {
+		credentials: installationCredentials(),
+	},
 ) =>
 	runCiInsights({
 		command,
 		repository: "acme/app",
-		cwd: "/work",
 		args,
 		options,
-		execFile: fake.execFile,
-		env: { HOBO_CI_ACCOUNT_TOKEN: "never-sent-to-gh" },
+		credentials: access.credentials,
+		fetch: fake.fetch,
 		now: () => start + 24 * 60 * minute,
 	});
 
@@ -237,19 +249,51 @@ describe("hobo ci signals", () => {
 		expect(result.code).toBe("HOBO_CLI_USAGE");
 	});
 
-	it("explains a missing GitHub CLI, a denial and a response that is not a run list", async () => {
-		const missing = await insights(
-			"signals",
-			github(
-				new Map([["repos/acme/app", new CiProcessError("missing", "gh")]]),
-			),
+	it.each([
+		["no owner store session", undefined],
+		["a store that cannot mint the installation token", refusingCredentials],
+	])("refuses to read GitHub with %s", async (_case, credentials) => {
+		const fake = github(new Map([["repos/acme/app", repository]]));
+		const result = await insights("signals", fake, [], {}, { credentials });
+		expect(result).toMatchObject({
+			ok: false,
+			status: "unauthenticated",
+			code: "HOBO_CI_GITHUB_APP_NEEDED",
+		});
+		expect(result.remediation?.join(" ")).toContain("choose_secret_store");
+		expect(result.remediation?.join(" ")).toContain("hobo ci app create");
+		expect(fake.requests).toEqual([]);
+	});
+
+	it("sends the installation token only to GitHub and never prints it", async () => {
+		const credentials = installationCredentials();
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				[
+					"repos/acme/app/actions/runs?per_page=50",
+					JSON.stringify({ workflow_runs: [] }),
+				],
+			]),
 		);
-		expect(missing.code).toBe("HOBO_CI_TOOL_REQUIRED");
+		const result = await insights("signals", fake, [], {}, { credentials });
+		expect(credentials.asked).toEqual(["github-app://acme/app"]);
+		expect(fake.requests.map((request) => request.authorization)).toEqual([
+			`Bearer ${FAKE_INSTALLATION_TOKEN}`,
+			`Bearer ${FAKE_INSTALLATION_TOKEN}`,
+		]);
+		expect(JSON.stringify(result)).not.toContain(FAKE_INSTALLATION_TOKEN);
 		const denied = await insights(
 			"signals",
-			github(
-				new Map([["repos/acme/app", new CiProcessError("failed", "gh", 403)]]),
-			),
+			github(new Map([["repos/acme/app", githubStatus(401)]])),
+		);
+		expect(JSON.stringify(denied)).not.toContain(FAKE_INSTALLATION_TOKEN);
+	});
+
+	it("explains a denial, a timeout and a response that is not a run list", async () => {
+		const denied = await insights(
+			"signals",
+			github(new Map([["repos/acme/app", githubStatus(403)]])),
 		);
 		expect(denied).toMatchObject({
 			ok: false,
@@ -259,7 +303,12 @@ describe("hobo ci signals", () => {
 		const timedOut = await insights(
 			"signals",
 			github(
-				new Map([["repos/acme/app", new CiProcessError("timeout", "gh")]]),
+				new Map([
+					[
+						"repos/acme/app",
+						new DOMException("The operation timed out.", "TimeoutError"),
+					],
+				]),
 			),
 		);
 		expect(timedOut.code).toBe("HOBO_CI_OPERATION_TIMEOUT");
@@ -453,15 +502,13 @@ describe("hobo ci diagnose", () => {
 						],
 					}),
 				],
+				[
+					"repos/acme/app/actions/jobs/71/logs",
+					"x".repeat(16 * 1024 * 1024 + 1),
+				],
 			]),
 		);
-		const execFile: CiRunExec = async (file, args, options) => {
-			const result = await fake.execFile(file, args, options);
-			return (args[1] ?? "").endsWith("/logs")
-				? { ...result, truncated: true }
-				: result;
-		};
-		const result = await insights("diagnose", { ...fake, execFile }, ["7"]);
+		const result = await insights("diagnose", fake, ["7"]);
 		expect(result.message).toContain(
 			"Log output was truncated; diagnosis may be incomplete.",
 		);
@@ -614,7 +661,7 @@ describe("hobo ci diagnose", () => {
 				? "repos/acme/app/actions/jobs/71/logs"
 				: "repos/acme/app/check-runs/1071/annotations?per_page=100";
 		const fake = github(
-			new Map<string, string | CiProcessError>([
+			new Map<string, Reply>([
 				["repos/acme/app", repository],
 				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
 				[
@@ -632,22 +679,22 @@ describe("hobo ci diagnose", () => {
 						],
 					}),
 				],
-				[path, new CiProcessError("failed", "gh", 500)],
+				[path, githubStatus(500)],
 			]),
 		);
 		const result = await insights("diagnose", fake, ["7"]);
 		expect(result).toMatchObject({ ok: false, code: "HOBO_CI_GITHUB_FAILED" });
 	});
 
-	it("validates the repository before constructing gh api paths", async () => {
+	it("validates the repository before constructing GitHub REST paths", async () => {
 		const fake = github(new Map());
 		const result = await runCiInsights({
 			command: "signals",
 			repository: "acme/app?unexpected=path",
-			cwd: "/work",
 			args: [],
 			options: {},
-			execFile: fake.execFile,
+			credentials: installationCredentials(),
+			fetch: fake.fetch,
 		});
 		expect(result).toMatchObject({ ok: false, code: "HOBO_CLI_USAGE" });
 		expect(fake.asked).toEqual([]);
@@ -709,9 +756,16 @@ describe("GitHub read contract", () => {
 			new Map(
 				interactions.map((interaction) => [
 					interaction.request.path,
-					interaction.response.headers
-						? String(interaction.response.body)
-						: JSON.stringify(interaction.response.body),
+					interaction.response.status === 302
+						? new Response(null, {
+								status: 302,
+								headers: {
+									location: interaction.response.headers?.Location ?? "",
+								},
+							})
+						: interaction.response.headers
+							? String(interaction.response.body)
+							: JSON.stringify(interaction.response.body),
 				]),
 			),
 		);
@@ -746,6 +800,14 @@ describe("GitHub read contract", () => {
 		const fake = fakeFor(interactions);
 		const result = await insights("diagnose", fake);
 		expectReads(fake, interactions);
+		const download = fake.requests.find((request) =>
+			request.url.startsWith("https://results-receiver."),
+		);
+		expect(download?.authorization).toBeNull();
+		expect(
+			fake.requests.find((request) => request.path.endsWith("/71/logs"))
+				?.redirect,
+		).toBe("manual");
 		expect(result.data).toMatchObject({
 			run: { id: 7, attempt: 1 },
 			jobs: [

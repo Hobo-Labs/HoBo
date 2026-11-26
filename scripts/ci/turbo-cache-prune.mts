@@ -106,6 +106,7 @@ export function planPrune(
 	tasks: readonly RunTask[],
 	nowMs: number,
 	keepDays: number,
+	incremental = false,
 ): PrunePlan {
 	if (tasks.length === 0) return { keep: [], drop: [], save: false };
 	const used = new Set(tasks.map((task) => task.hash));
@@ -117,7 +118,10 @@ export function planPrune(
 	const drop: string[] = [];
 	for (const file of files) {
 		const hash = entryHash(file.name);
-		if (used.has(hash)) keep.push(file.name);
+		if (incremental) {
+			if (missed.has(hash)) keep.push(file.name);
+			else drop.push(file.name);
+		} else if (used.has(hash)) keep.push(file.name);
 		else if (file.mtimeMs < cutoff) drop.push(file.name);
 	}
 	return {
@@ -154,6 +158,14 @@ export function localReadOnly(
 	return (env.TURBO_CACHE ?? "")
 		.split(",")
 		.some((part) => part.trim() === "local:r");
+}
+
+export function lacksRemoteTurboCacheTier(
+	env: Readonly<Record<string, string | undefined>>,
+): boolean {
+	return !(env.TURBO_CACHE ?? "")
+		.split(",")
+		.some((part) => part.trim().startsWith("remote:"));
 }
 
 /** `undefined` when another job's prune deleted the file first. */
@@ -206,7 +218,11 @@ function main(root: string): void {
 		if (mtimeMs !== undefined) files.push({ name, mtimeMs });
 	}
 	const now = Date.now();
-	const plan = planPrune(files, tasks, now, keepDays());
+	const incremental =
+		process.env.HOBO_TURBO_CACHE_RUN_SHARED === "1" &&
+		!shared &&
+		lacksRemoteTurboCacheTier(process.env);
+	const plan = planPrune(files, tasks, now, keepDays(), incremental);
 	const stamp = new Date(now);
 	for (const file of plan.keep) {
 		try {

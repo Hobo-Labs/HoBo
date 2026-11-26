@@ -17,7 +17,6 @@ import { ReconcilerMode } from "../../src/_generated/cd_pb.js";
 import {
 	AgentEgressError,
 	createHttpTransport,
-	generateAgentKey,
 	parseStationOrigin,
 	stationTransport,
 } from "../../src/agent/index.js";
@@ -28,6 +27,7 @@ import {
 	resolvedFor,
 } from "../feed/fakes.js";
 import { createStation, provisionAgent } from "../feed/harness.js";
+import { freshSignJwk } from "./fleet-fixture.js";
 
 const echo: HttpTransport = async () => ({
 	status: 200,
@@ -105,7 +105,7 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 			baseUrl: "https://station.test",
 			http: redirecting,
 			reconcilerId: asReconciler("agent-x"),
-			privateJwk: generateAgentKey().privateJwk,
+			privateJwk: freshSignJwk(),
 			svid: "",
 			now: createClock().now,
 		});
@@ -118,12 +118,56 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 		expect(claimed.ok ? "ok" : claimed.reasons[0]?.code).toBe("egress-refused");
 	});
 
+	it.each([
+		{
+			error: new AgentEgressError("synthetic-private-provider.invalid"),
+			code: "egress-refused",
+		},
+		{
+			error: new Error("synthetic-private-provider.invalid"),
+			code: "station-unavailable",
+		},
+		{
+			error: new Proxy(
+				{},
+				{
+					getPrototypeOf() {
+						throw new Error("synthetic-private-provider.invalid");
+					},
+				},
+			),
+			code: "station-unavailable",
+		},
+	])("redacts a $code transport error", async ({ error, code }) => {
+		const transport = createHttpTransport({
+			baseUrl: "https://station.test",
+			http: async () => {
+				throw error;
+			},
+			reconcilerId: asReconciler("agent-x"),
+			privateJwk: freshSignJwk(),
+			svid: "",
+			now: createClock().now,
+		});
+		const result = await transport.claim({
+			reconcilerId: asReconciler("agent-x"),
+			campId: asCamp("eu-1"),
+			holderId: "h",
+			ttlMs: 1,
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reasons[0]?.code).toBe(code);
+		expect(JSON.stringify(result)).not.toContain(
+			"synthetic-private-provider.invalid",
+		);
+	});
+
 	it("the agent exposes no inbound surface: the transport is client-only", () => {
 		const transport = createHttpTransport({
 			baseUrl: "https://station.test",
 			http: echo,
 			reconcilerId: asReconciler("agent-x"),
-			privateJwk: generateAgentKey().privateJwk,
+			privateJwk: freshSignJwk(),
 			svid: "",
 			now: createClock().now,
 		});
@@ -141,7 +185,7 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 
 describe("relay proof: governed deny-by-default", () => {
 	it("token issue is governed and agents cannot self-enroll or self-grant", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const denied = await station.enrollment.issueToken(
 			{
 				campSet: "fleet",
@@ -168,8 +212,8 @@ describe("relay proof: governed deny-by-default", () => {
 	});
 
 	it("unauthenticated, forged or foreign-issuer SVIDs are refused at the feed", async () => {
-		const station = createStation();
-		const other = createStation();
+		const station = await createStation();
+		const other = await createStation();
 		await other.desired.publish("eu-1", resolvedFor("eu-1"));
 		const foreign = await provisionAgent(other);
 		await foreign.transport.claim({
@@ -185,7 +229,7 @@ describe("relay proof: governed deny-by-default", () => {
 			baseUrl: "https://station.test",
 			http: station.http,
 			reconcilerId: foreign.reconcilerId,
-			privateJwk: foreign.key.privateJwk,
+			privateJwk: foreign.device.signPrivateJwk,
 			svid,
 			now: station.clock.now,
 		});
@@ -199,7 +243,7 @@ describe("relay proof: governed deny-by-default", () => {
 	});
 
 	it("work frames never carry credential material", async () => {
-		const station = createStation();
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = await transport.claim({

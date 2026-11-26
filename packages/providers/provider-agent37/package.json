@@ -26,6 +26,11 @@
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run test/"
 	},
+	"dependencies": {
+		"@hobo/core": "workspace:*",
+		"@hobo/provider-redaction": "workspace:*",
+		"zod": "^4.1.13"
+	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
 		"testcontainers": "11.8.1",

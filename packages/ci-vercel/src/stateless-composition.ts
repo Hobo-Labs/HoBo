@@ -19,10 +19,11 @@
  *   evidence on the cache (`worker-health-cache.ts`).
  */
 import { createHash, createPrivateKey } from "node:crypto";
-import { create } from "@bufbuild/protobuf";
+import { create, fromJsonString } from "@bufbuild/protobuf";
 import {
 	type Configuration,
 	ConfigurationStateSchema,
+	ControlCredentialsSchema,
 	parseConfiguration,
 } from "@hobo/ci";
 import {
@@ -36,6 +37,7 @@ import {
 	createQueuedJobRepair,
 	createRelayHandler,
 	createRelayMcp,
+	createRelayOwnerLogin,
 	createStatelessAppOnboarding,
 	createWebhookRepair,
 	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
@@ -46,6 +48,8 @@ import {
 	HostedRelay,
 	type IdentityVerifier,
 	parseFleetReporters,
+	RELAY_OWNER_LOGIN_PREFIX,
+	type RelayOwnerAccount,
 	reportRelayFailure,
 } from "@hobo/ci-gh-actions";
 import {
@@ -59,6 +63,7 @@ import {
 	rebuildInflight,
 	rebuildLease,
 } from "@hobo/ci-gh-actions/relay-cache";
+import type { OneActiveTick } from "@hobo/fleet";
 import { bootstrap, workflow } from "./_generated-assets/relay-assets.js";
 import {
 	cacheBindingEnv,
@@ -67,11 +72,7 @@ import {
 	type OpenedCacheBackend,
 	openCacheBackends,
 } from "./cache-backend.js";
-import {
-	type CacheFleetOptions,
-	type CacheFleetTick,
-	createCacheFleet,
-} from "./cache-fleet.js";
+import { type CacheFleetOptions, createCacheFleet } from "./cache-fleet.js";
 import { cacheOfferRateCards, parseCacheOffers } from "./cache-offers.js";
 import {
 	denyDirectSandboxEgress,
@@ -109,7 +110,7 @@ import type {
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
 import {
 	createSandboxComposition,
-	type VERCEL_SANDBOX_DRIVERS,
+	type SandboxDrivers,
 } from "./sandbox-composition.js";
 import { createSandboxProxyQuotaHandler } from "./sandbox-proxy-quota.js";
 import { createScheduledRepairHandler } from "./scheduled-repair.js";
@@ -157,12 +158,11 @@ export type StatelessRelayOptions = Readonly<{
 	>;
 	github?: GithubAppTransport;
 	identity?: IdentityVerifier;
-	/** Verifies a workflow's OIDC token for the fleet reporter status route. */
-	workflowIdentity?: GithubWorkflowVerifier;
-	sandboxDrivers?: typeof VERCEL_SANDBOX_DRIVERS;
+	sandboxDrivers?: SandboxDrivers;
 	fetch?: typeof fetch;
 	now?: () => string;
 	log?: StatelessRelayLog;
+	workflowIdentity?: GithubWorkflowVerifier;
 }>;
 
 export type StatelessRelayReadiness = Readonly<{
@@ -212,6 +212,24 @@ function publicOrigin(value: string): string {
 	)
 		throw new Error("relay public URL must be an HTTPS origin");
 	return url.origin;
+}
+
+export function relayOwnerAccount(
+	controlTokensJson: string,
+	accountId: string,
+): RelayOwnerAccount | undefined {
+	const credentials = fromJsonString(
+		ControlCredentialsSchema,
+		controlTokensJson,
+	).tokens.filter((credential) => credential.accountId === accountId);
+	if (credentials.length === 0) return undefined;
+	return {
+		accountId,
+		installationIds: [
+			...new Set(credentials.flatMap((entry) => entry.installationIds)),
+		],
+		scopes: [...new Set(credentials.flatMap((entry) => entry.scopes))],
+	};
 }
 
 /** A revision for a config document: stable across instances, nonzero, uint32. */
@@ -264,9 +282,14 @@ export async function composeStatelessRelay(
 	let parsedFrom: RelayRuntimeConfig | undefined;
 	let snapshot: RelayConfigSnapshot | undefined;
 	let authenticator: ControlAuthenticator | undefined;
+	let ownerAccount: RelayOwnerAccount | undefined;
 	async function current() {
 		const config = await options.config.load();
 		if (config !== parsedFrom || !snapshot || !authenticator) {
+			ownerAccount = relayOwnerAccount(
+				config.HOBO_CI_CONTROL_TOKENS_JSON,
+				config.HOBO_CI_BOOTSTRAP_ACCOUNT_ID,
+			);
 			const configuration: Configuration = parseConfiguration(
 				config.HOBO_CI_CONFIG_JSON,
 			);
@@ -284,7 +307,7 @@ export async function composeStatelessRelay(
 			);
 			parsedFrom = config;
 		}
-		return { snapshot, authenticator };
+		return { snapshot, authenticator, ownerAccount };
 	}
 	await current();
 	const configured: ControlAuthenticator = async (header) =>
@@ -381,12 +404,12 @@ export async function composeStatelessRelay(
 		onDiagnostic: (event, detail) => log({ event, ...detail }),
 	});
 
-	const github =
-		options.github ??
-		createGithubAppTransport({
-			appId: initial.HOBO_CI_GITHUB_APP_ID,
-			privateKey: initial.HOBO_CI_GITHUB_APP_PRIVATE_KEY,
-		});
+	const app = createGithubAppTransport({
+		appId: initial.HOBO_CI_GITHUB_APP_ID,
+		privateKey: initial.HOBO_CI_GITHUB_APP_PRIVATE_KEY,
+		...(options.fetch !== undefined ? { fetch: options.fetch } : undefined),
+	});
+	const github = options.github ?? app;
 	const identity = options.identity ?? createGithubOidcVerifier(origin);
 	const nowMs = () => Date.parse(now());
 
@@ -424,15 +447,25 @@ export async function composeStatelessRelay(
 		fetch: options.fetch ?? fetch,
 		now: nowMs,
 	});
-	const authenticate: ControlAuthenticator = (header) =>
-		onboarding.authenticate(header);
+	const ownerLogin = createRelayOwnerLogin({
+		publicOrigin: origin,
+		clientId: initial.HOBO_CI_GITHUB_APP_CLIENT_ID,
+		clientSecret: initial.HOBO_CI_GITHUB_APP_CLIENT_SECRET,
+		sealingKey: Buffer.from(initial.HOBO_CI_SESSION_KEY, "base64url"),
+		github,
+		installationToken: (installationId) =>
+			app.installationToken(installationId),
+		account: async () => (await current()).ownerAccount,
+		fetch: options.fetch ?? fetch,
+		now: nowMs,
+	});
+	const authenticate: ControlAuthenticator = async (header) =>
+		(await ownerLogin.authenticate(header)) ??
+		(await onboarding.authenticate(header));
 	const delegateOwnerControl = createOwnerControlDelegation({
 		publicOrigin: origin,
 		resolve: onboarding.trustedBootstrapControl,
 	});
-	// Fleet verdicts for runner routing (ADR-0180): kept, agreed and served
-	// here, decided on the box. The enrollment follows the config service and
-	// is parsed once per loaded copy.
 	let fleetSettingsFrom: RelayRuntimeConfig | undefined;
 	let fleetSettings: FleetVerdictSettings | undefined;
 	const fleetVerdicts: FleetVerdictService = {
@@ -445,7 +478,6 @@ export async function composeStatelessRelay(
 			const config = await options.config.load();
 			if (config !== fleetSettingsFrom || !fleetSettings) {
 				fleetSettings = {
-					// The schema has already refused an enrollment that is not one.
 					reporters: config.HOBO_CI_FLEET_REPORTERS_JSON
 						? (parseFleetReporters(config.HOBO_CI_FLEET_REPORTERS_JSON) ?? [])
 						: [],
@@ -637,7 +669,7 @@ export async function composeStatelessRelay(
 		await runtime.step(lease, step.step);
 	}
 
-	async function fleetTick(): Promise<CacheFleetTick | undefined> {
+	async function fleetTick(): Promise<OneActiveTick | undefined> {
 		try {
 			return await fleet.tick();
 		} catch (error) {
@@ -801,6 +833,11 @@ export async function composeStatelessRelay(
 			const deniedEgress = denyDirectSandboxEgress(request);
 			if (deniedEgress) return deniedEgress;
 			if (pathname === "/internal/tick") return scheduledRepair(request);
+			if (pathname.startsWith(RELAY_OWNER_LOGIN_PREFIX))
+				return (
+					(await ownerLogin.handle(request)) ??
+					Response.json({ error: "not found" }, { status: 404 })
+				);
 			// The owner's invitation; the relay's handler routes no such path.
 			if (pathname.startsWith("/v1/app-bootstrap/"))
 				try {

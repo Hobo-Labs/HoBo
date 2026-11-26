@@ -22,10 +22,16 @@ Account, leases and observed usage. `ci.cue` constrains policy fixtures.
 `parseCiPolicy` enforces cross-reference and duplicate checks at the protobuf
 JSON boundary; provider/Station authorization requires an external resolver.
 Only manual budget periods are accepted until automatic rollover is implemented.
-`CiPolicyProvider.capacity` is a oneof of a kubernetes-only ARC `scale_set` or
-Dagger `engine`; `location` is vercel-only. CUE and `parseCiPolicy` reject either
-on another kind; fixtures `desired-policy-kubernetes-shapes.json` and the
-`desired-policy-*-wrong-kind` / `scale-set-and-engine` invalids pin the rules.
+`CiPolicyProvider.capacity` is a oneof of a kubernetes-only ARC `scale_set`,
+Dagger `engine`, or Agent37 `pool`; `location` is vercel-only. CUE and
+`parseCiPolicy` reject either on another kind. Agent37 fixtures pin documented
+CPU/memory/disk shapes, region/type compatibility, immutable template revisions,
+idle TTL, the 32 GB memory ceiling and its explicit opt-in, 1–100 unique
+lowercase DNS network hostnames or leading-label wildcards (never IP addresses
+or wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`), labels, and monthly budget/create limits.
+Agent37 offers pair with `backend: "gh-actions"`. Existing kubernetes fixtures
+cover the ARC/Dagger rules.
 
 Azure DevOps offers pair `provider: "azure-devops"` with `backend: "ado"`;
 desired policy accepts the same provider kind. CUE and runtime configuration
@@ -37,13 +43,9 @@ parsing can discard that declared binding. The CUE fixture and runtime construct
 enforce the same rule across all backends; literal values and ordinary names such
 as `constructor` keep their normal meaning.
 
-`fleet_v2.proto` owns strict execution identity, profiles, demands, runner slots,
-claims, capacity, effects, outbox/delivery fences, observations, incarnations, and
-secret-free audit events. `fleet_v2.cue` closes states and execution classes;
-valid/invalid fleet fixtures cover positive attempts, fixed-capacity limits, Linux
-x64 profiles, and rejection of raw binding credentials. Store conformance protects
-the transactional boundary with SQLite and opt-in Testcontainers PostgreSQL lanes;
-these gates do not claim live-provider production readiness.
+Execution claims, offers, orders and receipts are not CI records: they are
+`@hobo/fleet/work` (claims through the `FLEET_CLAIMS` stream in
+`@hobo/fleet-nats`), so this package keeps no fleet data model.
 
 `runner_route.proto` owns the runner order (`RunnerOrder`, its steps and retry
 policy), one relay job's question (`RunnerRouteRequest`) and the answer
@@ -52,3 +54,24 @@ constrains them: a minutes limit only on `github`, a spend limit only on a
 hosted provider, and a decision whose fields agree with its outcome. Step
 uniqueness is a cross-element rule `parseRunnerOrder` enforces. Fixtures are
 under `fixtures/runner_route/`.
+
+`relay_job.proto` owns what a relay job carries between its parts:
+the message an answerer receives (`RelayJobMessage`), what it
+completes the job with (`RelayJobAnswer`), the route journal entry
+(`RunnerRouteEvent`), a machine's advert (`MachineAdvert`), a stored provider
+health record (`ProviderHealthRecord`) and one run attempt's facts (`RunFact`,
+`JobFact`, `StepFact`, field for field what the insight reports read).
+`relay_job.cue` constrains them: a failed answer carries an annotation saying
+why, and a decision is on `runner.route.Decided` and nowhere else. It imports
+`runner_route.proto`, so this folder's `buf.gen.yaml` generates `.js` import
+paths. Fixtures are under `fixtures/relay_job/`; the parsers are in
+`src/runner-order/relay-job.ts`.
+
+`job_retried.proto` owns the automatic retry row (`JobRetried`, event type
+`job.retried`): the relay writes it before it asks GitHub to re-run a relay
+job, one row per repository, run and attempt, and then records what became of
+the re-run (`pending`, `started`, `failed`, `refused`) with GitHub's status.
+`job_retried.cue` ties each state to its status: `started` only on 201,
+`failed` on no answer or a 5xx (a redelivery may ask again), `refused` on any
+other answer. Fixtures are under `fixtures/job_retried/`; the parser and the
+ledger are in `@hobo/ci-gh-actions` (`src/auto-retry.ts`).

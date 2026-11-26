@@ -15,10 +15,12 @@ import { canonicalManifestHash } from "@hobo/bindles";
 import {
 	ArtifactKind,
 	type CampId,
+	type CampMembers,
 	type CampReconciler,
 	type CampTopology,
 	type CdContext,
 	type CredentialResolver,
+	type DeliveryFleet,
 	DeltaRecordSchema,
 	type DesiredStateReader,
 	type FreightId,
@@ -59,7 +61,11 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-import { createDriftPolicy, releaseFreightRefusalOf } from "@hobo/cd/reconcile";
+import {
+	createDriftPolicy,
+	releaseFreightRefusalOf,
+	releaseFreightStructuredFromFields,
+} from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
 	RUNNER_FLEET_BINDLE,
@@ -81,10 +87,12 @@ import {
 	type JsonObject as CdJsonObject,
 	createBoundedFetchTransport,
 	type DurableEventStore,
+	GITHUB_APP_CREDENTIAL_SCHEME,
 	type HttpTransport,
 	type PrincipalRef,
 	ResolverError,
 } from "@hobo/core";
+import { GithubPagesRefusal } from "@hobo/provider-github";
 import type { Yard } from "@hobo/yards";
 import { agentRealizer } from "./cd-agent.js";
 import {
@@ -110,6 +118,10 @@ import {
 	TopologyConflictError,
 	yardTopology,
 } from "./cd-topology.js";
+import {
+	OWNER_CREDENTIAL_SCHEME,
+	OwnerCredentialUnavailable,
+} from "./owner-store-session.js";
 import {
 	CATALOG_REALIZED_PRODUCTS,
 	type CatalogCampBinding,
@@ -179,6 +191,8 @@ export type CdRuntimeOptions = Readonly<{
 	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
 	 */
 	onRunnerHostIngestError?: (error: Error) => void;
+	fleet?: DeliveryFleet;
+	members?: CampMembers;
 }>;
 
 export type CdRuntime = Readonly<{
@@ -217,6 +231,22 @@ export function envCredentials(
 					`credential ${ref} is not resolvable on this host (use env://<NAME>)`,
 				);
 			return { token: value };
+		},
+	};
+}
+
+export function hostCredentials(): CredentialResolver {
+	return {
+		async resolve(ref: string) {
+			throw new OwnerCredentialUnavailable(
+				ref,
+				ref.startsWith(OWNER_CREDENTIAL_SCHEME) ||
+					ref.startsWith(GITHUB_APP_CREDENTIAL_SCHEME)
+					? "no-session"
+					: ref.startsWith("env:")
+						? "environment-ref"
+						: "unsupported-ref",
+			);
 		},
 	};
 }
@@ -313,7 +343,7 @@ export async function openCdRuntime(
 	const http =
 		options.http ??
 		createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	const credentials = options.credentials ?? envCredentials(options.env);
+	const credentials = options.credentials ?? hostCredentials();
 	const kube = await openKubeFleet({
 		env: options.env,
 		cwd: options.cwd,
@@ -502,6 +532,10 @@ export async function openCdRuntime(
 		trustPolicy: options.trustPolicy ?? {},
 		policyPack,
 		topology,
+		...(options.fleet !== undefined ? { fleet: options.fleet } : undefined),
+		...(options.members !== undefined
+			? { members: options.members }
+			: undefined),
 		railCatalog,
 		readRailEvents: createJournalRailEventReader({ store }),
 		...(options.readCiEvents
@@ -886,7 +920,10 @@ export function withRunnerHostRealization(
 }
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
-function refusalOf(error: Error) {
+function refusalOf(
+	error: Error,
+	ctx?: Readonly<{ campId: string; credentialRef: string }>,
+) {
 	const refused = releaseFreightRefusalOf(error);
 	const code =
 		error instanceof ResolverError || error instanceof CatalogRealizerError
@@ -898,6 +935,16 @@ function refusalOf(error: Error) {
 			message: error.message,
 			structured: refused.structured,
 		};
+	}
+	if (error instanceof GithubPagesRefusal && ctx) {
+		const structured = releaseFreightStructuredFromFields({
+			credentialRef: ctx.credentialRef,
+			requestedScope: `cd-realize:${ctx.campId}`,
+			detailKind: error.reason,
+		});
+		if (structured) {
+			return { code, message: error.message, structured };
+		}
 	}
 	return { code, message: error.message };
 }
@@ -1094,7 +1141,10 @@ export function createCatalogResolverRealizer(
 		} catch (error) {
 			return blocked(
 				input,
-				refusalOf(error instanceof Error ? error : new Error(String(error))),
+				refusalOf(error instanceof Error ? error : new Error(String(error)), {
+					campId: input.campId,
+					credentialRef: binding.credentialRef,
+				}),
 				resources,
 			);
 		}
@@ -1137,6 +1187,7 @@ export function agentReconciler(
 		reconcilerId: string;
 		privateJwk: CdJsonObject;
 		svid: string;
+		credential?: () => Promise<string>;
 		campIds: readonly CampId[];
 		realizer: Realizer;
 		store: DurableEventStore;
@@ -1156,6 +1207,7 @@ export function agentReconciler(
 		reconcilerId,
 		privateJwk: input.privateJwk,
 		svid: input.svid,
+		credential: input.credential,
 		now: input.now,
 	});
 	return defaultCdFactories.createCampReconciler({
@@ -1376,6 +1428,8 @@ async function runAgentProcess(
 		// SAFETY: checked to be a JSON object above.
 		privateJwk: parsedKey as CdJsonObject,
 		svid,
+		credential: async () =>
+			(await readFile(resolve(input.cwd, svidFile), "utf8")).trim(),
 		// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
 		campIds: camps as CampId[],
 		realizer: input.realizer,

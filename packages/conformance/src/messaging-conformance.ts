@@ -7,6 +7,7 @@ import type { Messaging } from "@hobo/core";
 import {
 	assertDeliverySupported,
 	MessagingCapabilityError,
+	MessagingDeliveryExhaustedError,
 	parseConsumerGroupId,
 	parseTopicName,
 	type TenantId,
@@ -25,7 +26,10 @@ export type MessagingAssertionName =
 export type MessagingConformanceReport = {
 	readonly contract: typeof MESSAGING_CONFORMANCE_CONTRACT;
 	readonly backend: string;
-	readonly assertions: Record<MessagingAssertionName, "pass" | "fail">;
+	readonly assertions: Record<
+		MessagingAssertionName,
+		"pass" | "fail" | "unsupported"
+	>;
 };
 
 export type CreateMessagingFn = () => Messaging | Promise<Messaging>;
@@ -39,14 +43,19 @@ export async function runMessagingConformance(
 	}
 
 	// SAFETY: assertion to `{} as Record<MessagingAssertionName, "pass" | "fail">` is required at this boundary.
-	const assertions = {} as Record<MessagingAssertionName, "pass" | "fail">;
+	const assertions = {} as Record<
+		MessagingAssertionName,
+		"pass" | "fail" | "unsupported"
+	>;
 
 	const run = async (
 		name: MessagingAssertionName,
-		fn: () => boolean | Promise<boolean>,
+		fn: () => boolean | "unsupported" | Promise<boolean | "unsupported">,
 	) => {
 		try {
-			assertions[name] = (await fn()) ? "pass" : "fail";
+			const result = await fn();
+			assertions[name] =
+				result === "unsupported" ? result : result ? "pass" : "fail";
 		} catch {
 			assertions[name] = "fail";
 		}
@@ -88,12 +97,7 @@ async function provesPublishConsumeAck(
 		maxMessages: 5,
 	});
 	if (batch.length < 1) return false;
-	bus.ack(first(batch).messageId, first(batch).leaseId);
-	// SAFETY: assertion to `bus as Messaging & { flush?: () => Promise<void> }` is required at this boundary.
-	const flushable = bus as Messaging & { flush?: () => Promise<void> };
-	if (flushable.flush instanceof Function) {
-		await flushable.flush();
-	}
+	await bus.ack(first(batch).messageId, first(batch).leaseId);
 	const again = await bus.consume(topic, parseConsumerGroupId("cg"));
 	return again.length === 0;
 }
@@ -111,31 +115,88 @@ async function provesConsumerGroupIsolation(
 
 async function provesDeadLetterMaxAttempts(
 	create: CreateMessagingFn,
-): Promise<boolean> {
+): Promise<boolean | "unsupported"> {
 	const bus = await create();
 	const topic = parseTopicName("conf-dlq");
-	await bus.ensureSubscription({
+	const deadLetterTopic = parseTopicName("conf-dead");
+	const subscription = {
 		// SAFETY: assertion to `"s" as never` is required at this boundary.
 		name: "s" as never,
 		topic,
 		consumerGroup: parseConsumerGroupId("dlq"),
 		// SAFETY: assertion to `"conf" as TenantId` is required at this boundary.
 		tenantId: "conf" as TenantId,
-		delivery: "at-least-once",
+		delivery: "at-least-once" as const,
 		maxDeliveryAttempts: 2,
-	});
+	};
+	if (!bus.capabilities.deadLetter) {
+		try {
+			await bus.ensureTopic({
+				name: topic,
+				tenantId: subscription.tenantId,
+				delivery: "at-least-once",
+				deadLetterTopic,
+			});
+			return false;
+		} catch (error) {
+			if (!(error instanceof MessagingCapabilityError)) return false;
+		}
+		try {
+			await bus.ensureSubscription({ ...subscription, deadLetterTopic });
+			return false;
+		} catch (error) {
+			if (!(error instanceof MessagingCapabilityError)) return false;
+		}
+		if (bus.events().length !== 0) return false;
+	} else {
+		await bus.ensureTopic({
+			name: deadLetterTopic,
+			tenantId: subscription.tenantId,
+			delivery: "at-least-once",
+		});
+	}
+	await bus.ensureSubscription(
+		bus.capabilities.deadLetter
+			? { ...subscription, deadLetterTopic }
+			: subscription,
+	);
 	await bus.publish(topic, { fail: true });
 	await bus.subscribe(topic, parseConsumerGroupId("dlq"), async () => {
 		throw new Error("boom");
 	});
-	const r2 = await bus.subscribe(
-		topic,
-		parseConsumerGroupId("dlq"),
-		async () => {
-			throw new Error("boom");
-		},
-	);
-	return r2.deadLettered >= 1;
+	try {
+		const result = await bus.subscribe(
+			topic,
+			parseConsumerGroupId("dlq"),
+			async () => {
+				throw new Error("boom");
+			},
+		);
+		if (!bus.capabilities.deadLetter || result.deadLettered !== 1) return false;
+		const dead = await bus.consume(
+			deadLetterTopic,
+			parseConsumerGroupId("reader"),
+		);
+		return (
+			dead.length === 1 &&
+			JSON.stringify(dead[0]?.body) === JSON.stringify({ fail: true })
+		);
+	} catch (error) {
+		if (
+			bus.capabilities.deadLetter ||
+			!(error instanceof MessagingDeliveryExhaustedError)
+		)
+			return false;
+		if (bus.events().some((event) => event.type === "messaging.dead_lettered"))
+			return false;
+		await bus.nack(error.delivery.messageId, error.delivery.leaseId);
+		const replay = await bus.consume(topic, parseConsumerGroupId("dlq"));
+		return replay.some(
+			(message) => message.messageId === error.delivery.messageId,
+		)
+			? "unsupported"
+			: false;
+	}
 }
 
 async function provesExactlyOnceCapabilityGate(

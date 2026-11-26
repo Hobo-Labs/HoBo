@@ -227,7 +227,6 @@ describe("CI deps image push scope", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
-			"scripts-tests-build",
 			"scripts-tests",
 			"state-machine-verification",
 		]);
@@ -258,6 +257,7 @@ describe("CI deps image push scope", () => {
 			merge_scope: "${{ steps.merge-group-base.outputs.scope }}",
 			pr_base: "${{ steps.scm-base.outputs.base }}",
 			shards: "${{ steps.shard-plan.outputs.shards }}",
+			state_machines: "${{ steps.state-machine-scope.outputs.needed }}",
 		});
 		for (const name of [
 			"Resolve the merge group base and gate scope",

@@ -51,6 +51,7 @@ import {
 	assertNoBindleProviderSelection,
 	type BindleDefinition,
 } from "@hobo/bindles";
+import type { CredentialResolver } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS } from "@hobo/cd/compose";
 import {
 	BINDLE_SOURCE_CANDIDATES,
@@ -62,7 +63,6 @@ import type { IacOutputs, IacProgram } from "@hobo/cloud";
 import {
 	capability,
 	createBoundedFetchTransport,
-	createTrustedVault,
 	type HttpTransport,
 	type TrustedVault,
 } from "@hobo/core";
@@ -210,13 +210,10 @@ export interface CiRelayDeployInput {
 	readonly values: Readonly<
 		Record<string, string | boolean | string[] | undefined>
 	>;
-	// Non-secret settings only (`VERCEL_TEAM_ID`, verify origins) and a CI
-	// runner's own OIDC request variables. A `VERCEL_TOKEN` here is ignored:
-	// the token comes from the secret store, never the environment.
 	readonly env: NodeJS.ProcessEnv;
 	readonly credentials?: TrustedVault;
+	readonly ownerCredentials?: CredentialResolver;
 	readonly bindingStore?: SecretStoreBindingStore;
-	readonly readDeployCredential?: typeof readRelayDeployToken;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
@@ -883,42 +880,27 @@ export async function runCiRelayDeploy(
 		wait &&
 		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
 
-	const vault = createTrustedVault();
-	let deployCredentialAudience: string | undefined;
-	if (storeBinding !== undefined && env.ACTIONS_ID_TOKEN_REQUEST_URL) {
-		try {
-			const credential = await (
-				input.readDeployCredential ?? readRelayDeployToken
-			)({
-				binding: storeBinding,
-				env: {
-					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-				},
-			});
-			vault.put("VERCEL_TOKEN", credential.token);
-			deployCredentialAudience = credential.audience;
-			input.emitProgress(
-				`deploy token read from the deploy credential project as hobo-ci-deploy-reader, audience ${credential.audience}`,
-			);
-		} catch (error) {
-			return refused(
-				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
-				error instanceof Error
-					? error.message
-					: "Could not read the deploy token.",
-			);
-		}
-	}
-	const token = vault.reveal("VERCEL_TOKEN");
-	if (token === undefined || token === "")
+	const deployToken = await readRelayDeployToken({
+		...(input.ownerCredentials !== undefined
+			? { ownerCredentials: input.ownerCredentials }
+			: undefined),
+		...(input.credentials !== undefined
+			? { runVault: input.credentials }
+			: undefined),
+	});
+	if (!deployToken.ok)
 		return {
 			ok: false,
 			status: "authentication-required",
-			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
-			message:
-				"The deploy token is read from the secret store, never the environment: run with the owner's store session (HoBo MCP's choose_secret_store) in GitHub Actions with id-token: write, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.",
+			code: deployToken.code,
+			message: deployToken.message,
 		};
+	const token = deployToken.token;
+	input.emitProgress(
+		deployToken.source === "owner-store"
+			? "deploy token read from the owner's store session"
+			: "deploy token taken from this run's vault (read from the owner's store by hobo ci up)",
+	);
 	// Whatever a result says, it does not say the token: a Vercel answer is
 	// redacted where it is read, and this is the last line before the terminal.
 	const withoutToken = (value: string) => value.split(token).join("[redacted]");
@@ -1375,9 +1357,7 @@ export async function runCiRelayDeploy(
 				dryRun: false,
 				plan: planJson,
 				outputs: safe,
-				...(deployCredentialAudience !== undefined
-					? { deployCredentialAudience }
-					: undefined),
+				deployTokenSource: deployToken.source,
 				...deliveryData,
 			},
 		};

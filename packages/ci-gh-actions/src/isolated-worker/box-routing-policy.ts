@@ -81,7 +81,6 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 	externalPools: [],
 	retiredVariables: [
 		"HOBO_CI_FLEET_ROUTES",
-		"HOBO_CI_FLEET_STATE",
 		"HOBO_CI_FLEET_CAPACITY",
 		"HOBO_CI_ROUTE",
 		"HOBO_CI_LOCAL_RUNNER",

@@ -165,6 +165,7 @@ State labels follow the research contract.
 - [Verification](https://docs.kargo.io/user-guide/how-to-guides/verification) — analysis-based qualification
 - [v1.8.0 release notes](https://docs.kargo.io/release-notes/v1.8.0)
 - HoBo side: [continuous-delivery.md](../design/continuous-delivery.md)
+- Parity scorecard (living): [parity-gap-kargo-argocd.md](../cd/parity-gap-kargo-argocd.md)
 
 Install base, pricing of the hosted offering and the full promotion-step catalog were not verified
 in this pass and are not asserted.

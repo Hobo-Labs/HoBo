@@ -3,22 +3,41 @@
 // Station-only egress converges a target with no target credential at the
 // Station; SSE resumes without gaps or duplicates; inline vs digest-only
 // resolved sets; fenced leases, reports and checkpoints; enrollment gating.
-import { describe, expect, it } from "vitest";
+
+import { create, toJson } from "@bufbuild/protobuf";
+import { CredentialRequestSchema, parseMemberId } from "@hobo/fleet";
+import { describe, expect, it, vi } from "vitest";
 import {
 	CampManagement,
 	ConditionStatus,
+	ReasonRecordSchema,
 	ReconcileStatus,
 	SignalSource,
 } from "../../src/_generated/cd_pb.js";
-import { FeedRefusedError } from "../../src/agent/index.js";
 import {
-	CD_EVENTS,
-	CD_STREAMS,
-	ENROLLMENT_INCOMPLETE,
-} from "../../src/events.js";
-import type { Outcome, ReconcilerLease } from "../../src/ports.js";
-import { resolvedFor } from "./fakes.js";
+	createHttpTransport,
+	FeedRefusedError,
+} from "../../src/agent/index.js";
+import { createMeter } from "../../src/agent/metrics.js";
+import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import {
+	createDeliveryFeedHandler,
+	createFeedJournal,
+} from "../../src/feed/index.js";
+import type {
+	DesiredStateChange,
+	Outcome,
+	ReconcilerLease,
+} from "../../src/ports.js";
+import { FLEET_ORIGIN } from "../agent/fleet-fixture.js";
+import {
+	createFakePosture,
+	createFakeTopology,
+	resolvedFor,
+	TENANT,
+} from "./fakes.js";
+import {
+	BASE_URL,
 	camp,
 	collect,
 	createStation,
@@ -40,9 +59,551 @@ function must<T>(outcome: Outcome<T>): T {
 
 const signal = () => new AbortController().signal;
 
+describe("feed backend failures", () => {
+	it.each([
+		"dpop-url-mismatch",
+		"unknown",
+	] as const)("normalizes %s authentication refusals from the enrollment port", async (kind) => {
+		const station = await createStation();
+		const marker = "synthetic-private-enrollment.invalid";
+		const handler = createDeliveryFeedHandler({
+			store: station.store,
+			tenant: TENANT,
+			now: station.clock.now,
+			desired: station.desired,
+			enrollment: {
+				...station.enrollment,
+				verify: async () => ({
+					ok: false,
+					reasons: [
+						create(ReasonRecordSchema, {
+							code: kind === "unknown" ? marker : kind,
+							message: marker,
+							remediation: marker,
+							subject: marker,
+						}),
+					],
+				}),
+			},
+			artifacts: station.artifacts,
+			posture: createFakePosture([]),
+			inventory: station.inventory,
+			topology: createFakeTopology(station.camps, []),
+			telemetry: station.telemetry,
+		});
+		const response = await handler.handle(
+			{
+				method: "POST",
+				path: "/v1/cd/leases",
+				headers: {},
+				body: new TextEncoder().encode("{}"),
+			},
+			signal(),
+		);
+		if (!(response.body instanceof Uint8Array))
+			throw new Error("fixture refusal missing");
+		const body = new TextDecoder().decode(response.body);
+		expect(response.status).toBe(kind === "unknown" ? 503 : 401);
+		expect(JSON.parse(body).reasons[0].code).toBe(
+			kind === "unknown" ? "store-unavailable" : kind,
+		);
+		expect(body).not.toContain(marker);
+		expect(JSON.stringify(station.telemetry.points)).not.toContain(marker);
+	});
+
+	it("returns bounded authentication refusals without proof fields", async () => {
+		const station = await createStation();
+		const { device, transport, reconcilerId } = await provisionAgent(station);
+		must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		const authorization =
+			station.exchanges.at(-1)?.request.headers.authorization;
+		if (!authorization?.startsWith("DPoP "))
+			throw new Error("fixture SVID missing");
+		const marker = "synthetic-private-proof.invalid";
+		const path = "/v1/cd/leases";
+		const make = (method: string, url: string) =>
+			device.proof(method, url, authorization.slice(5));
+		const valid = await make("POST", `${BASE_URL}${path}`);
+		const [head, payload, signature] = valid.split(".");
+		const header = JSON.parse(
+			Buffer.from(head ?? "", "base64url").toString("utf8"),
+		);
+		const invalidAlg = Buffer.from(
+			JSON.stringify({ ...header, alg: marker }),
+		).toString("base64url");
+		const proofs = [
+			{
+				proof: await make(marker, `${BASE_URL}${path}`),
+				expected: "dpop-invalid",
+			},
+			{
+				proof: await make("POST", `https://${marker}/wrong`),
+				expected: "dpop-invalid",
+			},
+			{
+				proof: `${invalidAlg}.${payload}.${signature}`,
+				expected: "dpop-invalid",
+			},
+			{ proof: valid, expected: "request-invalid" },
+			{ proof: valid, expected: "dpop-replayed" },
+		];
+		for (const { proof, expected } of proofs) {
+			const response = await station.handler.handle(
+				{
+					method: "POST",
+					path,
+					headers: { authorization, dpop: proof },
+					body: new TextEncoder().encode("{}"),
+				},
+				signal(),
+			);
+			if (!(response.body instanceof Uint8Array))
+				throw new Error("fixture refusal missing");
+			const body = new TextDecoder().decode(response.body);
+			expect(JSON.parse(body).reasons[0].code).toBe(expected);
+			expect(body).not.toContain(marker);
+		}
+		expect(JSON.stringify(station.telemetry.points)).not.toContain(marker);
+	});
+
+	it("keeps unknown routes, methods, and malformed paths out of responses and telemetry", async () => {
+		const station = await createStation();
+		const marker = "synthetic-private-route.invalid";
+		for (const request of [
+			{
+				method: "GET",
+				path: `/v1/cd/${marker}`,
+				expected: 404,
+				label: "unknown",
+			},
+			{ method: marker, path: "/v1/cd/feed", expected: 405, label: "feed" },
+			{ method: "GET", path: "http://[", expected: 503, label: "unknown" },
+		]) {
+			const response = await station.handler.handle(
+				{ method: request.method, path: request.path, headers: {} },
+				signal(),
+			);
+			expect(response.status).toBe(request.expected);
+			if (!(response.body instanceof Uint8Array))
+				throw new Error("fixture refusal missing");
+			expect(new TextDecoder().decode(response.body)).not.toContain(marker);
+			const point = station.telemetry.points
+				.filter((item) => item.name === "hobo.cd.feed.requests")
+				.at(-1);
+			expect(point?.attributes.route).toBe(request.label);
+		}
+		expect(JSON.stringify(station.telemetry.points)).not.toContain(marker);
+	});
+
+	it("does not echo an untrusted blob identifier in an authenticated refusal", async () => {
+		const station = await createStation();
+		const { device, transport, reconcilerId } = await provisionAgent(station);
+		must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		const authorization =
+			station.exchanges.at(-1)?.request.headers.authorization;
+		if (!authorization?.startsWith("DPoP "))
+			throw new Error("fixture SVID missing");
+		const marker = "synthetic-private-blob.invalid";
+		const path = `/v1/cd/blobs/${marker}`;
+		const proof = await device.proof(
+			"GET",
+			`${BASE_URL}${path}`,
+			authorization.slice(5),
+		);
+		const response = await station.handler.handle(
+			{
+				method: "GET",
+				path: `${path}?camp=eu-1`,
+				headers: { authorization, dpop: proof },
+			},
+			signal(),
+		);
+		expect(response.status).toBe(403);
+		if (!(response.body instanceof Uint8Array))
+			throw new Error("fixture refusal missing");
+		expect(new TextDecoder().decode(response.body)).not.toContain(marker);
+		expect(JSON.stringify(station.telemetry.points)).not.toContain(marker);
+	});
+
+	it.each([
+		"claim",
+		"renew",
+		"report",
+		"checkpoint",
+	] as const)("redacts a %s journal refusal", async (phase) => {
+		const station = await createStation();
+		const { reconcilerId } = await provisionAgent(station);
+		const journal = createFeedJournal({
+			store: station.store,
+			tenant: "fixture",
+		});
+		const request = {
+			reconcilerId,
+			campId: camp("eu-1"),
+			holderId: "host-a",
+			ttlMs: 30_000,
+		};
+		const first = must(await journal.claim(request));
+		const marker = "synthetic-private-journal.invalid";
+		const fail = async () => {
+			throw new Error(marker);
+		};
+		let result: Awaited<
+			ReturnType<(typeof journal)["claim" | "renew" | "checkpoint" | "report"]>
+		>;
+		if (phase === "claim") {
+			station.store.claimSubscription = fail;
+			result = await journal.claim(request);
+		} else if (phase === "renew") {
+			station.store.renewSubscription = fail;
+			result = await journal.renew(first);
+		} else if (phase === "checkpoint") {
+			station.store.commitCheckpoint = fail;
+			result = await journal.checkpoint(first, 1n as never);
+		} else {
+			const set = await station.desired.publish(
+				"eu-1",
+				resolvedFor("eu-1", ["api"]),
+			);
+			station.store.append = fail;
+			result = await journal.report(
+				first,
+				observation(first, set, ReconcileStatus.BLOCKED),
+			);
+		}
+		expect(result.ok ? "ok" : result.reasons[0]?.code).toBe(
+			"store-unavailable",
+		);
+		if (!result.ok) expect(result.reasons[0]?.remediation).toBeTruthy();
+		expect(JSON.stringify(result)).not.toContain(marker);
+	});
+
+	it("redacts a journal claim failure in the authenticated feed response", async () => {
+		const station = await createStation();
+		const { transport, reconcilerId } = await provisionAgent(station);
+		const request = {
+			reconcilerId,
+			campId: camp("eu-1"),
+			holderId: "host-a",
+			ttlMs: 30_000,
+		};
+		const first = must(await transport.claim(request));
+		await transport.release(first);
+		station.store.claimSubscription = async () => {
+			throw new Error("synthetic-private-journal.invalid");
+		};
+		const result = await transport.claim(request);
+		expect(code(result)).toBe("store-unavailable");
+		expect(station.exchanges.at(-1)?.status).toBe(503);
+		expect(station.exchanges.at(-1)?.body).not.toContain(
+			"synthetic-private-journal.invalid",
+		);
+	});
+
+	it.each([
+		"read",
+		"cleanup",
+	] as const)("redacts a feed stream %s failure for a direct handler host", async (phase) => {
+		const station = await createStation();
+		const { device, transport, reconcilerId } = await provisionAgent(station);
+		must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		const authorization =
+			station.exchanges.at(-1)?.request.headers.authorization;
+		if (!authorization?.startsWith("DPoP "))
+			throw new Error("fixture SVID missing");
+		const accessToken = authorization.slice(5);
+		const proof = await device.proof(
+			"GET",
+			`${BASE_URL}/v1/cd/feed`,
+			accessToken,
+		);
+		station.desired.changes = () => ({
+			[Symbol.asyncIterator]: () => ({
+				async next(): Promise<IteratorResult<DesiredStateChange>> {
+					if (phase === "read")
+						throw new Error("synthetic-private-journal.invalid");
+					return { done: true, value: undefined };
+				},
+				async return(): Promise<IteratorResult<DesiredStateChange>> {
+					if (phase === "cleanup")
+						throw new Error("synthetic-private-journal.invalid");
+					return { done: true, value: undefined };
+				},
+			}),
+		});
+		const response = await station.handler.handle(
+			{
+				method: "GET",
+				path: "/v1/cd/feed?camp=eu-1",
+				headers: { authorization, dpop: proof },
+			},
+			signal(),
+		);
+		expect(response.status).toBe(200);
+		if (response.body instanceof Uint8Array)
+			throw new Error("fixture stream missing");
+		let failure: Error | undefined;
+		let wire = "";
+		try {
+			for await (const chunk of response.body)
+				wire += new TextDecoder().decode(chunk);
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+		}
+		expect(failure?.message).toBe("The CD delivery feed stream failed.");
+		expect(String(failure)).not.toContain("synthetic-private-journal.invalid");
+		expect(wire).not.toContain("synthetic-private-journal.invalid");
+		expect(wire).not.toContain("event: end");
+	});
+
+	it("bounds stuck stream cleanup without a success end frame", async () => {
+		const station = await createStation();
+		const { device, transport, reconcilerId } = await provisionAgent(station);
+		must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		const authorization =
+			station.exchanges.at(-1)?.request.headers.authorization;
+		if (!authorization?.startsWith("DPoP "))
+			throw new Error("fixture SVID missing");
+		const proof = await device.proof(
+			"GET",
+			`${BASE_URL}/v1/cd/feed`,
+			authorization.slice(5),
+		);
+		let entered = () => {};
+		const cleanupStarted = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		station.desired.changes = () => ({
+			[Symbol.asyncIterator]: () => ({
+				async next(): Promise<IteratorResult<DesiredStateChange>> {
+					return { done: true, value: undefined };
+				},
+				async return(): Promise<IteratorResult<DesiredStateChange>> {
+					entered();
+					return new Promise(() => {});
+				},
+			}),
+		});
+		const response = await station.handler.handle(
+			{
+				method: "GET",
+				path: "/v1/cd/feed?camp=eu-1",
+				headers: { authorization, dpop: proof },
+			},
+			signal(),
+		);
+		const body = response.body;
+		if (body instanceof Uint8Array) throw new Error("fixture stream missing");
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			let wire = "";
+			let failure: Error | undefined;
+			const processing = (async () => {
+				try {
+					for await (const chunk of body)
+						wire += new TextDecoder().decode(chunk);
+				} catch (error) {
+					if (error instanceof Error) failure = error;
+				}
+			})();
+			await cleanupStarted;
+			await vi.advanceTimersByTimeAsync(5_001);
+			await processing;
+			expect(failure?.message).toBe("The CD delivery feed stream failed.");
+			expect(wire).not.toContain("event: end");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		"closed",
+		"stuck",
+	] as const)("starts %s iterator cleanup immediately when a long poll is cancelled", async (cleanup) => {
+		const station = await createStation({
+			heartbeatMs: 60_000,
+			longPollMs: 120_000,
+		});
+		const { device, transport, reconcilerId } = await provisionAgent(station);
+		must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		const authorization =
+			station.exchanges.at(-1)?.request.headers.authorization;
+		if (!authorization?.startsWith("DPoP "))
+			throw new Error("fixture SVID missing");
+		const proof = await device.proof(
+			"GET",
+			`${BASE_URL}/v1/cd/feed`,
+			authorization.slice(5),
+		);
+		let nextStarted = () => {};
+		const reading = new Promise<void>((resolve) => {
+			nextStarted = resolve;
+		});
+		let cleanupStarted = false;
+		station.desired.changes = () => ({
+			[Symbol.asyncIterator]: () => ({
+				async next(): Promise<IteratorResult<DesiredStateChange>> {
+					nextStarted();
+					return new Promise(() => {});
+				},
+				async return(): Promise<IteratorResult<DesiredStateChange>> {
+					cleanupStarted = true;
+					if (cleanup === "stuck") return new Promise(() => {});
+					return { done: true, value: undefined };
+				},
+			}),
+		});
+		const controller = new AbortController();
+		const response = await station.handler.handle(
+			{
+				method: "GET",
+				path: "/v1/cd/feed?camp=eu-1",
+				headers: { authorization, dpop: proof },
+			},
+			controller.signal,
+		);
+		const body = response.body;
+		if (body instanceof Uint8Array) throw new Error("fixture stream missing");
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			let result: IteratorResult<Uint8Array> | undefined;
+			let failure: Error | undefined;
+			const processing = body[Symbol.asyncIterator]()
+				.next()
+				.then(
+					(value) => {
+						result = value;
+					},
+					(error) => {
+						if (error instanceof Error) failure = error;
+					},
+				);
+			await reading;
+			controller.abort();
+			await vi.advanceTimersByTimeAsync(5_001);
+			expect(cleanupStarted).toBe(true);
+			if (cleanup === "stuck")
+				expect(failure?.message).toBe("The CD delivery feed stream failed.");
+			else expect(result).toEqual({ value: undefined, done: true });
+			await processing;
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps synchronous telemetry failures advisory", async () => {
+		const station = await createStation();
+		station.telemetry.metrics = () => {
+			throw new Error("synthetic-private-provider.invalid");
+		};
+		const meter = createMeter(station.telemetry, station.clock.now);
+		expect(() => meter("fixture", 1)).not.toThrow();
+	});
+
+	it("does not read beyond the bounded feed head before delivering its final frame", async () => {
+		const station = await createStation();
+		const set = await station.desired.publish(
+			"eu-1",
+			resolvedFor("eu-1", ["api"]),
+		);
+		const { transport, reconcilerId } = await provisionAgent(station);
+		const lease = must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		const changes = station.desired.changes.bind(station.desired);
+		let calls = 0;
+		station.desired.changes = (input) => ({
+			[Symbol.asyncIterator]: () => {
+				const iterator = changes(input)[Symbol.asyncIterator]();
+				return {
+					next() {
+						calls += 1;
+						if (calls > 1) throw new Error("synthetic-private-journal.invalid");
+						return iterator.next();
+					},
+					async return(): Promise<IteratorResult<DesiredStateChange>> {
+						return iterator.return
+							? await iterator.return()
+							: { done: true, value: undefined };
+					},
+				};
+			},
+		});
+		const received = await collect(transport.feed({ lease, signal: signal() }));
+		expect(received.map((change) => change.set.setId)).toEqual([set.setId]);
+		expect(calls).toBe(1);
+	});
+
+	it("redacts an uncaught enrollment journal failure in the feed response", async () => {
+		const station = await createStation();
+		const { transport, reconcilerId } = await provisionAgent(station);
+		const lease = must(
+			await transport.claim({
+				reconcilerId,
+				campId: camp("eu-1"),
+				holderId: "host-a",
+				ttlMs: 30_000,
+			}),
+		);
+		station.store.read = () => ({
+			[Symbol.asyncIterator]: () => ({
+				async next() {
+					throw new Error("synthetic-private-journal.invalid");
+				},
+			}),
+		});
+		const result = await transport.renew(lease);
+		expect(code(result)).toBe("store-unavailable");
+		expect(station.exchanges.at(-1)?.status).toBe(503);
+		expect(station.exchanges.at(-1)?.body).not.toContain(
+			"synthetic-private-journal.invalid",
+		);
+	});
+});
+
 describe("Station-only egress (I3)", () => {
 	it("an agent with Station-only egress converges a target; the Station never holds a target credential", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const resolved = resolvedFor("eu-1", ["api", "db"]);
 		const set = await station.desired.publish("eu-1", resolved);
 		const { transport, reconcilerId } = await provisionAgent(station);
@@ -100,10 +661,11 @@ describe("Station-only egress (I3)", () => {
 		expect(plan.secretRefs).toEqual(["secretref://target/db-password"]);
 	});
 
-	it("the first request activates the SVID by key possession and later requests carry it", async () => {
-		const station = createStation();
+	it("every request carries the fleet member SVID and a fresh DPoP proof; there is no activation round-trip", async () => {
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
-		const { transport, reconcilerId } = await provisionAgent(station);
+		const before = station.exchanges.length;
+		const { transport, reconcilerId, svid } = await provisionAgent(station);
 		must(
 			await transport.claim({
 				reconcilerId,
@@ -112,20 +674,36 @@ describe("Station-only egress (I3)", () => {
 				ttlMs: 30_000,
 			}),
 		);
-		const [activation, claim] = station.exchanges.slice(-2);
-		expect(activation?.request.url).toBe(
-			"https://station.test/v1/cd/svid/refresh",
-		);
-		expect(activation?.request.headers.authorization).toBeUndefined();
-		expect(claim?.request.headers.authorization).toMatch(/^DPoP /);
-		expect(claim?.request.headers.dpop).toBeDefined();
+		const sent = station.exchanges.slice(before).map((x) => x.request);
+		expect(sent.map((r) => new URL(r.url).pathname)).toEqual([
+			"/v1/cd/enrollments",
+			"/v1/cd/leases",
+		]);
+		expect(sent[1]?.headers.authorization).toBe(`DPoP ${svid}`);
+		expect(sent[1]?.headers.dpop).toBeDefined();
 	});
 
-	it("refreshes the SVID before expiry and reports the new expiry to CampInventory", async () => {
-		const station = createStation();
+	it("reads a fresh SVID from the credential source and forwards an SVID refresh to the fleet", async () => {
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
-		const { transport, reconcilerId } = await provisionAgent(station);
-		const lease = must(
+		const { device, reconcilerId, svid } = await provisionAgent(station);
+		const rotated = await station.fleet.credentials(
+			device,
+			parseMemberId(reconcilerId),
+			1,
+		);
+		let current = svid;
+		const transport = createHttpTransport({
+			baseUrl: BASE_URL,
+			http: station.http,
+			reconcilerId,
+			privateJwk: device.signPrivateJwk,
+			svid,
+			credential: async () => current,
+			now: station.clock.now,
+		});
+		current = rotated;
+		must(
 			await transport.claim({
 				reconcilerId,
 				campId: camp("eu-1"),
@@ -133,29 +711,44 @@ describe("Station-only egress (I3)", () => {
 				ttlMs: 30_000,
 			}),
 		);
-		station.clock.advance(11 * 60_000);
-		must(
-			await transport
-				.renew(lease)
-				.then((r) => (r.ok ? r : { ok: true as const, value: lease })),
+		expect(station.exchanges.at(-1)?.request.headers.authorization).toBe(
+			`DPoP ${rotated}`,
 		);
-		const refreshes = station.exchanges.filter((x) =>
-			x.request.url.endsWith("/svid/refresh"),
-		);
-		expect(refreshes).toHaveLength(2);
-		expect(refreshes[1]?.request.headers.authorization).toMatch(/^DPoP /);
+		const url = `${FLEET_ORIGIN}/v1/fleet/members/${reconcilerId}/credentials`;
+		const refreshed = await station.http({
+			method: "POST",
+			url: `${BASE_URL}/v1/cd/svid/refresh`,
+			headers: {
+				"content-type": "application/json",
+				dpop: await device.proof("POST", url),
+			},
+			body: JSON.stringify({
+				memberId: reconcilerId,
+				request: toJson(
+					CredentialRequestSchema,
+					create(CredentialRequestSchema, {
+						generation: 2,
+						refreshNonce: new Uint8Array(16).fill(3),
+					}),
+				),
+			}),
+			timeoutMs: 1000,
+			maxResponseBytes: 1_000_000,
+		});
+		expect(refreshed.status).toBe(200);
+		expect(JSON.parse(refreshed.body).value.svid).toMatch(/\./u);
 		const credential = station.inventory.observed.filter(
 			(o) =>
 				o.source === SignalSource.STATION &&
 				o.conditions[0]?.status === ConditionStatus.TRUE,
 		);
-		expect(credential.length).toBeGreaterThanOrEqual(4);
+		expect(credential.length).toBeGreaterThanOrEqual(2);
 	});
 });
 
 describe("SSE feed", () => {
 	it("resumes without gaps or duplicates after a dropped connection", async () => {
-		const station = createStation({ maxFramesPerResponse: 100 });
+		const station = await createStation({ maxFramesPerResponse: 100 });
 		const sets = [];
 		for (let i = 0; i < 5; i += 1)
 			sets.push(
@@ -187,7 +780,7 @@ describe("SSE feed", () => {
 	});
 
 	it("resumes after the committed checkpoint: only newer changes, and the current one is re-delivered once per lease", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const first = await station.desired.publish(
 			"eu-1",
 			resolvedFor("eu-1", ["a"]),
@@ -235,7 +828,7 @@ describe("SSE feed", () => {
 	});
 
 	it("sends heartbeats while long-polling and ends with an explicit end event", async () => {
-		const station = createStation({ heartbeatMs: 5, longPollMs: 40 });
+		const station = await createStation({ heartbeatMs: 5, longPollMs: 40 });
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -259,7 +852,7 @@ describe("SSE feed", () => {
 	});
 
 	it("a change published during the long-poll is delivered at once", async () => {
-		const station = createStation({ heartbeatMs: 5, longPollMs: 2_000 });
+		const station = await createStation({ heartbeatMs: 5, longPollMs: 2_000 });
 		await station.desired.publish("eu-1", resolvedFor("eu-1", ["a"]));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -284,7 +877,7 @@ describe("SSE feed", () => {
 	});
 
 	it("bounds frames per response (back-pressure) and continues in the next response", async () => {
-		const station = createStation({ maxFramesPerResponse: 2 });
+		const station = await createStation({ maxFramesPerResponse: 2 });
 		for (let i = 0; i < 5; i += 1)
 			await station.desired.publish("eu-1", resolvedFor("eu-1", [`s${i}`]));
 		const { transport, reconcilerId } = await provisionAgent(station);
@@ -305,7 +898,7 @@ describe("SSE feed", () => {
 	});
 
 	it("inlines resolved sets up to 256 KiB and sends larger ones by digest", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const small = await station.desired.publish(
 			"eu-1",
 			resolvedFor("eu-1", ["a"]),
@@ -348,7 +941,7 @@ describe("SSE feed", () => {
 	});
 
 	it("a missing or corrupt blob is a typed refusal at the agent", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const missing = await station.desired.publish(
 			"eu-1",
 			resolvedFor("eu-1", ["a"], 300_000),
@@ -380,7 +973,7 @@ describe("SSE feed", () => {
 	});
 
 	it("OBSERVE_ONLY declared topology wins in the frame", async () => {
-		const station = createStation({ observeOnly: ["eu-1"] });
+		const station = await createStation({ observeOnly: ["eu-1"] });
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -399,7 +992,7 @@ describe("SSE feed", () => {
 
 describe("fenced leases, reports and checkpoints (I4)", () => {
 	it("two reconcilers, one Camp: one writer; the other is refused and a stale fence cannot write", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const a = await provisionAgent(station);
 		const b = await provisionAgent(station);
@@ -454,7 +1047,7 @@ describe("fenced leases, reports and checkpoints (I4)", () => {
 	});
 
 	it("checkpoints are monotonic and observations must carry the lease stamp and declared attributes only", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -502,7 +1095,7 @@ describe("fenced leases, reports and checkpoints (I4)", () => {
 	});
 
 	it("reports land on the status stream, never the spec stream", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -544,10 +1137,10 @@ describe("fenced leases, reports and checkpoints (I4)", () => {
 });
 
 describe("enrollment gating at the feed (I24)", () => {
-	it("a reconciler with only one enrollment grant is refused with enrollment-incomplete", async () => {
-		const station = createStation();
+	it("a reconciler with only one enrollment grant gets no member SVID, so the feed refuses it", async () => {
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
-		const { transport, reconcilerId } = await provisionAgent(station, {
+		const { transport, reconcilerId, device } = await provisionAgent(station, {
 			grants: "key-only",
 		});
 		expect(
@@ -559,12 +1152,13 @@ describe("enrollment gating at the feed (I24)", () => {
 					ttlMs: 30_000,
 				}),
 			),
-		).toBe(ENROLLMENT_INCOMPLETE);
-		expect(station.exchanges.at(-1)?.status).toBe(403);
+		).toBe("svid-required");
+		expect(station.exchanges.at(-1)?.status).toBe(401);
+		await expect(station.fleet.credentials(device)).rejects.toThrow();
 	});
 
 	it("a Camp the reconciler is not accepted for is refused", async () => {
-		const station = createStation({ camps: ["eu-1", "eu-2"] });
+		const station = await createStation({ camps: ["eu-1", "eu-2"] });
 		await station.desired.publish("eu-2", resolvedFor("eu-2"));
 		const { transport, reconcilerId } = await provisionAgent(station, {
 			campIds: ["eu-1"],
@@ -582,7 +1176,7 @@ describe("enrollment gating at the feed (I24)", () => {
 	});
 
 	it("a revoked agent mid-feed is refused on the next request", async () => {
-		const station = createStation();
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -608,7 +1202,7 @@ describe("enrollment gating at the feed (I24)", () => {
 	});
 
 	it("unauthenticated requests and unknown routes are refused with typed envelopes", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const send = (method: "GET" | "POST", path: string, body?: string) =>
 			station.http({
 				method,
@@ -636,11 +1230,11 @@ describe("enrollment gating at the feed (I24)", () => {
 					)
 				).body,
 			).reasons[0].code,
-		).toBe("jwk-invalid");
+		).toBe("request-invalid");
 	});
 
 	it("emits feed metrics through the TelemetrySink", async () => {
-		const station = createStation();
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
