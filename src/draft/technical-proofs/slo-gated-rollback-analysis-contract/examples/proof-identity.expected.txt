@@ -1,3 +1,0 @@
-slug: slo-gated-rollback-analysis-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: reliability-sla-rollup-contract
-layer: technical
-proof-identity: ok

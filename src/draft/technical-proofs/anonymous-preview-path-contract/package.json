@@ -1,9 +1,0 @@
-{
-  "name": "@hobo-draft/anonymous-preview-path-contract",
-  "private": true,
-  "type": "module",
-  "exports": "./src/anonymous-preview-path.ts",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-signed-artifact-publish-install-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

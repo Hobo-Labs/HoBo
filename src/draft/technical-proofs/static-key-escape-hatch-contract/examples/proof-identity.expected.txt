@@ -1,3 +1,0 @@
-slug: static-key-escape-hatch-contract
-layer: technical
-proof-identity: ok

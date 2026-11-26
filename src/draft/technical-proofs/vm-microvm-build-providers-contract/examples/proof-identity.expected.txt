@@ -1,3 +1,0 @@
-slug: vm-microvm-build-providers-contract
-layer: technical
-proof-identity: ok

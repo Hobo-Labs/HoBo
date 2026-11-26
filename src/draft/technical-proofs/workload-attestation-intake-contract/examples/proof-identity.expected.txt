@@ -1,3 +1,0 @@
-slug: workload-attestation-intake-contract
-layer: technical
-proof-identity: ok

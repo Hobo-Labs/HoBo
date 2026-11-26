@@ -1,3 +1,0 @@
-slug: deployment-strategy-saga-templates-contract
-layer: technical
-proof-identity: ok

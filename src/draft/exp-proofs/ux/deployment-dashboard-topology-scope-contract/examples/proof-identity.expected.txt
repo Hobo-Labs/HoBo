@@ -1,3 +1,0 @@
-slug: deployment-dashboard-topology-scope-contract
-layer: exp
-proof-identity: ok

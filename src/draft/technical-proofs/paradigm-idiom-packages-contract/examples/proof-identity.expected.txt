@@ -1,3 +1,0 @@
-slug: paradigm-idiom-packages-contract
-layer: technical
-proof-identity: ok

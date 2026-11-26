@@ -1,3 +1,0 @@
-slug: public-status-page-incident-communication-contract
-layer: technical
-proof-identity: ok

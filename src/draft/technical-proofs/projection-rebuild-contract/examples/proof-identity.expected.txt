@@ -1,3 +1,0 @@
-slug: projection-rebuild-contract
-layer: technical
-proof-identity: ok

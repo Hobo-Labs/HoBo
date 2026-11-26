@@ -1,3 +1,0 @@
-slug: deployment-plan-ir-contract
-layer: technical
-proof-identity: ok

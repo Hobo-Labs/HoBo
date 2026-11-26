@@ -1,3 +1,0 @@
-slug: region-objective-ranking-contract
-layer: technical
-proof-identity: ok

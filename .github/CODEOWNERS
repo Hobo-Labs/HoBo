@@ -1,4 +1,0 @@
-# Changes to the workflow lockfile change which commit of every action CI runs
-# (gh actions-lock; see packages/ci/README.md). Code-owner review applies when
-# the main ruleset requires review from code owners.
-/.github/workflows/actions.lock @Tyler-R-Kendrick

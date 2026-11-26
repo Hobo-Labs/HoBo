@@ -1,3 +1,0 @@
-slug: release-artifact-provenance-retention-contract
-layer: technical
-proof-identity: ok

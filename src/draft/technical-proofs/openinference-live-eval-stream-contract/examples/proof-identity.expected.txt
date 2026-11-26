@@ -1,3 +1,0 @@
-slug: openinference-live-eval-stream-contract
-layer: technical
-proof-identity: ok

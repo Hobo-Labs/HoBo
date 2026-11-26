@@ -1,3 +1,0 @@
-slug: legal-privacy-ga-handoff-evidence-contract
-layer: exp
-proof-identity: ok

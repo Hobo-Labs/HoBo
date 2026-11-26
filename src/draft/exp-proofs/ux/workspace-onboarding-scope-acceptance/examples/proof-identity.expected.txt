@@ -1,3 +1,0 @@
-slug: workspace-onboarding-scope-acceptance
-layer: exp
-proof-identity: ok

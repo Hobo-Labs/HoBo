@@ -1,8 +1,0 @@
-{
-  "name": "default-role-action-matrix-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

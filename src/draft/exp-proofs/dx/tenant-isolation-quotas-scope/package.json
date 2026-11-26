@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/tenant-isolation-quotas-scope",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

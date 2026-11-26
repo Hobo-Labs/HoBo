@@ -1,3 +1,0 @@
-slug: hobo-collect-cli-contract
-layer: technical
-proof-identity: ok

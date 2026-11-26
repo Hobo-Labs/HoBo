@@ -1,3 +1,0 @@
-slug: example-apps-scope-acceptance
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: iac-cdktf-import-only-contract
-layer: technical
-proof-identity: ok

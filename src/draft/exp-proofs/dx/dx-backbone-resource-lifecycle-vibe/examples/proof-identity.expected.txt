@@ -1,3 +1,0 @@
-slug: dx-backbone-resource-lifecycle-vibe
-layer: exp
-proof-identity: ok

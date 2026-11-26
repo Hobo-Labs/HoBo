@@ -1,3 +1,0 @@
-slug: v1-vibe-example-gap-closure
-layer: epic
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: credential-audit-projection-contract
-layer: technical
-proof-identity: ok

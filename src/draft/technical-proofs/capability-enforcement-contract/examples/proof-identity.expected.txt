@@ -1,3 +1,0 @@
-slug: capability-enforcement-contract
-layer: technical
-proof-identity: ok

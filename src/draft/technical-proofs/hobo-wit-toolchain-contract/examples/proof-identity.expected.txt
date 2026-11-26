@@ -1,3 +1,0 @@
-slug: hobo-wit-toolchain-contract
-layer: technical
-proof-identity: ok

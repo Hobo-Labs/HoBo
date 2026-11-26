@@ -1,3 +1,0 @@
-slug: slo-as-code-contract
-layer: technical
-proof-identity: ok

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-control-plane-policy-bypass-guard",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,3 +1,0 @@
-slug: accessibility-usability-launch-baseline-contract
-layer: exp
-proof-identity: ok

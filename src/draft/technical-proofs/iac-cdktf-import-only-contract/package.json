@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/iac-cdktf-import-only-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root . && tsc --noEmit -p tsconfig.types.json"
-  }
-}

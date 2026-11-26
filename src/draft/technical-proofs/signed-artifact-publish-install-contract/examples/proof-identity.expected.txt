@@ -1,3 +1,0 @@
-slug: signed-artifact-publish-install-contract
-layer: technical
-proof-identity: ok

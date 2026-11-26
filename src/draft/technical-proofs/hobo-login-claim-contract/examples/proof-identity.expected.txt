@@ -1,3 +1,0 @@
-slug: hobo-login-claim-contract
-layer: technical
-proof-identity: ok

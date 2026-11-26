@@ -1,3 +1,0 @@
-slug: durable-agent-primitive-contract
-layer: technical
-proof-identity: ok

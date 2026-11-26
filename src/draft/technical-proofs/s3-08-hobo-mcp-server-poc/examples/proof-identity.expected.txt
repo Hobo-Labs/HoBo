@@ -1,3 +1,0 @@
-slug: s3-08-hobo-mcp-server-poc
-layer: technical
-proof-identity: ok

@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/draft-componentize-artifact-trust-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root . contracts/consumer/",
-    "test:publish-verify": "vitest run --no-isolate test/publish-verify.test.ts"
-  }
-}

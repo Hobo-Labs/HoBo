@@ -1,3 +1,0 @@
-slug: deny-ceiling-algebra-poc
-layer: technical
-proof-identity: ok

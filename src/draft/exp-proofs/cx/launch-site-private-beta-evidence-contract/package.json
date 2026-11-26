@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-launch-site-private-beta-evidence-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

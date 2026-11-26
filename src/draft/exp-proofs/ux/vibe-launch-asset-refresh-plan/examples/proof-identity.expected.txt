@@ -1,3 +1,0 @@
-slug: vibe-launch-asset-refresh-plan
-layer: exp
-proof-identity: ok

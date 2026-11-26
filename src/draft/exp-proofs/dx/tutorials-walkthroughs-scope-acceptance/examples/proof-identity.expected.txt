@@ -1,3 +1,0 @@
-slug: tutorials-walkthroughs-scope-acceptance
-layer: exp
-proof-identity: ok

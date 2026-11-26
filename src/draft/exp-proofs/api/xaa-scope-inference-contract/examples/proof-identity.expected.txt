@@ -1,3 +1,0 @@
-slug: xaa-scope-inference-contract
-layer: exp
-proof-identity: ok

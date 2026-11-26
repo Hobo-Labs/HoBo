@@ -1,3 +1,0 @@
-slug: mapping-styles-planner-resolution
-layer: epic
-proof-identity: ok

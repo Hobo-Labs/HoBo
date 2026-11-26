@@ -1,3 +1,0 @@
-slug: entitlements-plan-limits-scope
-layer: exp
-proof-identity: ok

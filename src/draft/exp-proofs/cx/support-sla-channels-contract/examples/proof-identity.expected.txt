@@ -1,3 +1,0 @@
-slug: support-sla-channels-contract
-layer: exp
-proof-identity: ok

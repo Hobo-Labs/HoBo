@@ -1,3 +1,0 @@
-slug: version-pinning-drift-guard-contract
-layer: technical
-proof-identity: ok

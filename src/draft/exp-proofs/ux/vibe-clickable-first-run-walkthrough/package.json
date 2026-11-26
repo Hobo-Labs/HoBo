@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-vibe-clickable-first-run-walkthrough",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

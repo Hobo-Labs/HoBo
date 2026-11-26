@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/release-channels-scope",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

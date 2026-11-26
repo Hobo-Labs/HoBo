@@ -1,3 +1,0 @@
-slug: capability-indexed-discovery-contract
-layer: technical
-proof-identity: ok

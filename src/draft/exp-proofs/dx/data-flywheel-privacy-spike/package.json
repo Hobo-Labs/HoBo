@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-data-flywheel-privacy-spike",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

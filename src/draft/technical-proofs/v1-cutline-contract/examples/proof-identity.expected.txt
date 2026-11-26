@@ -1,3 +1,0 @@
-slug: v1-cutline-contract
-layer: technical
-proof-identity: ok

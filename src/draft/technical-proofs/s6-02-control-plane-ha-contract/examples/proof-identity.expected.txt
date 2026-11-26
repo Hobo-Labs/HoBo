@@ -1,3 +1,0 @@
-slug: s6-02-control-plane-ha-contract
-layer: technical
-proof-identity: ok

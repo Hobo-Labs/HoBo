@@ -1,3 +1,0 @@
-slug: launch-performance-capacity-envelope-contract
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: flag-event-contract
-layer: technical
-proof-identity: ok

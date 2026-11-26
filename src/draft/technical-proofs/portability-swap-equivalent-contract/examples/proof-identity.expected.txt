@@ -1,3 +1,0 @@
-slug: portability-swap-equivalent-contract
-layer: technical
-proof-identity: ok

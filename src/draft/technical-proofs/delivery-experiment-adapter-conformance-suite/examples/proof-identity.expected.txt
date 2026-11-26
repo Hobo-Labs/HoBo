@@ -1,3 +1,0 @@
-slug: delivery-experiment-adapter-conformance-suite
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: s1-19-ctx-config-local-resolution
-layer: technical
-proof-identity: ok

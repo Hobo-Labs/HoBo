@@ -1,3 +1,0 @@
-slug: hobo-policy-ir-contract
-layer: technical
-proof-identity: ok

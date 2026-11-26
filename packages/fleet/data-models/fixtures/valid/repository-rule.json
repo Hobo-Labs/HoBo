@@ -1,9 +1,0 @@
-{
-  "repository": "acme/app",
-  "refs": [
-    "refs/heads/*"
-  ],
-  "workflowDigests": [
-    "sha256:abababababababababababababababababababababababababababababababab"
-  ]
-}

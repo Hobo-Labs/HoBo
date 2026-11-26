@@ -1,3 +1,0 @@
-slug: vibe-role-tutorial-outlines
-layer: exp
-proof-identity: ok

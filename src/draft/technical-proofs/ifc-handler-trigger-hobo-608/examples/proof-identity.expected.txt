@@ -1,3 +1,0 @@
-slug: ifc-handler-trigger-hobo-608
-layer: technical
-proof-identity: ok

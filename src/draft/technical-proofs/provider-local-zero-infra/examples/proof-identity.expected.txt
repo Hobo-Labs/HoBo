@@ -1,3 +1,0 @@
-slug: provider-local-zero-infra
-layer: technical
-proof-identity: ok

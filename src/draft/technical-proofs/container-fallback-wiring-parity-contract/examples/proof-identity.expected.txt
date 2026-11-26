@@ -1,3 +1,0 @@
-slug: container-fallback-wiring-parity-contract
-layer: technical
-proof-identity: ok

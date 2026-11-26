@@ -1,3 +1,0 @@
-slug: resourceactor-reconcile-loop-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: hobo-package-namespace-map
-layer: technical
-proof-identity: ok

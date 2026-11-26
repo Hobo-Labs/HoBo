@@ -1,3 +1,0 @@
-slug: s5-02-wit-interface-conformance-coverage
-layer: technical
-proof-identity: ok

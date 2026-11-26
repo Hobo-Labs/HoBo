@@ -1,6 +1,0 @@
-package data_models
-
-#Widget: {
-	id:   string & !=""
-	size: int & >=0
-}

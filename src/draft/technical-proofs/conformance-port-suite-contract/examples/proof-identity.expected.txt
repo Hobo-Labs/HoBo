@@ -1,3 +1,0 @@
-slug: conformance-port-suite-contract
-layer: technical
-proof-identity: ok

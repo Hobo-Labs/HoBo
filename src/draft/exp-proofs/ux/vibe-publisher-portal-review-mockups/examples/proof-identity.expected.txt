@@ -1,3 +1,0 @@
-slug: vibe-publisher-portal-review-mockups
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: execution-host-provider-contract
-layer: technical
-proof-identity: ok

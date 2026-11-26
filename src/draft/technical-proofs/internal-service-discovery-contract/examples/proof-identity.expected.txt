@@ -1,3 +1,0 @@
-slug: internal-service-discovery-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: disaster-recovery-failover-contract
-layer: technical
-proof-identity: ok

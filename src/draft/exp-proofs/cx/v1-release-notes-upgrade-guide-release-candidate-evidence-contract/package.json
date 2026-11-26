@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-v1-release-notes-upgrade-guide-release-candidate-evidence-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

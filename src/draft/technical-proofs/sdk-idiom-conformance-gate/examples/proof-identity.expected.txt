@@ -1,3 +1,0 @@
-slug: sdk-idiom-conformance-gate
-layer: technical
-proof-identity: ok

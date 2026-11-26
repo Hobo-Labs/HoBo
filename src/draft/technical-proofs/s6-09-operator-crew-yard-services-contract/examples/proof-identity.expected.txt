@@ -1,3 +1,0 @@
-slug: s6-09-operator-crew-yard-services-contract
-layer: technical
-proof-identity: ok

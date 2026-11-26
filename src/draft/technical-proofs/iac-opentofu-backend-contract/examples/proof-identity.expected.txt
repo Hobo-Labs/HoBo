@@ -1,3 +1,0 @@
-slug: iac-opentofu-backend-contract
-layer: technical
-proof-identity: ok

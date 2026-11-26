@@ -1,3 +1,0 @@
-slug: sandboxed-executors-contract
-layer: technical
-proof-identity: ok

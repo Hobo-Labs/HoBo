@@ -1,3 +1,0 @@
-slug: junction-federated-domain-contract
-layer: technical
-proof-identity: ok

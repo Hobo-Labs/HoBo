@@ -1,3 +1,0 @@
-slug: preview-ephemeral-environments-contract
-layer: technical
-proof-identity: ok

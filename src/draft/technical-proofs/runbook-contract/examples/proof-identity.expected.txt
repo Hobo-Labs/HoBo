@@ -1,3 +1,0 @@
-slug: runbook-contract
-layer: technical
-proof-identity: ok

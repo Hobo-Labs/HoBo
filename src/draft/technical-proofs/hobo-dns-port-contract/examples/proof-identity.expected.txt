@@ -1,3 +1,0 @@
-slug: hobo-dns-port-contract
-layer: technical
-proof-identity: ok

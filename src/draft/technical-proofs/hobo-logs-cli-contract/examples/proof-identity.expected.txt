@@ -1,3 +1,0 @@
-slug: hobo-logs-cli-contract
-layer: technical
-proof-identity: ok

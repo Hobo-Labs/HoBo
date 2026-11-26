@@ -1,3 +1,0 @@
-slug: platform-engineer-flow-contract
-layer: technical
-proof-identity: ok

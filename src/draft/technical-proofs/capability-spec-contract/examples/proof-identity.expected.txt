@@ -1,3 +1,0 @@
-slug: capability-spec-contract
-layer: technical
-proof-identity: ok

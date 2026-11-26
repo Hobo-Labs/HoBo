@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package hobo.fleet_nats.v1;
-
-message FleetNatsConfig {
-  repeated string servers = 1;
-  string tenant = 2;
-  uint32 replicas = 3;
-}

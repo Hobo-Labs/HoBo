@@ -1,3 +1,0 @@
-slug: distributed-artifact-resolver-contract
-layer: technical
-proof-identity: ok

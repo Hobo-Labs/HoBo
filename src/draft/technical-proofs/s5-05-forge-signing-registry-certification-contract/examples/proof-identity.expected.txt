@@ -1,3 +1,0 @@
-slug: s5-05-forge-signing-registry-certification-contract
-layer: technical
-proof-identity: ok

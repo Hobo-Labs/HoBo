@@ -1,3 +1,0 @@
-slug: policy-supply-chain-trust-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: junction-registry-federation-contract
-layer: technical
-proof-identity: ok

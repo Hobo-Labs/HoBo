@@ -1,3 +1,0 @@
-slug: dogfood-yard-ga-handoff-evidence-contract
-layer: exp
-proof-identity: ok

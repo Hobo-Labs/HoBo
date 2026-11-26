@@ -1,3 +1,0 @@
-slug: cli-cloud-yard-path
-layer: exp
-proof-identity: ok

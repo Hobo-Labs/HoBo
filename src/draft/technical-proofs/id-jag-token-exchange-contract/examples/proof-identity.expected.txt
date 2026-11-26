@@ -1,3 +1,0 @@
-slug: id-jag-token-exchange-contract
-layer: technical
-proof-identity: ok

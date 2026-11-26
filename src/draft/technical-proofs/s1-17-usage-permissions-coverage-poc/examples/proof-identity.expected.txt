@@ -1,3 +1,0 @@
-slug: s1-17-usage-permissions-coverage-poc
-layer: technical
-proof-identity: ok

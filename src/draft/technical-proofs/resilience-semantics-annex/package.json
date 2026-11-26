@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/draft-resilience-semantics-annex",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "diagnostics": "node --import tsx src/local-diagnostics.mts",
-    "test": "vitest run --root ."
-  }
-}

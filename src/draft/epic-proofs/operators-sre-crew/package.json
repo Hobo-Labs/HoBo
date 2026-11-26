@@ -1,9 +1,0 @@
-{
-  "name": "@hobo-draft/operators-sre-crew-reference",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "simulate": "node simulation/run.ts",
-    "test": "vitest run --root ."
-  }
-}

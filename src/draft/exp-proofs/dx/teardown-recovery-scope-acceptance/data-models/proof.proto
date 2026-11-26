@@ -1,3 +1,0 @@
-syntax = "proto3";
-package hobo.draft.teardown_recovery_scope_acceptance;
-message ProofIdentity { string slug = 1; string layer = 2; }

@@ -1,3 +1,0 @@
-slug: cross-cloud-equivalence-model
-layer: technical
-proof-identity: ok

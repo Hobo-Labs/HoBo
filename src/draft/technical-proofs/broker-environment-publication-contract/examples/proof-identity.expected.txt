@@ -1,3 +1,0 @@
-slug: broker-environment-publication-contract
-layer: technical
-proof-identity: ok

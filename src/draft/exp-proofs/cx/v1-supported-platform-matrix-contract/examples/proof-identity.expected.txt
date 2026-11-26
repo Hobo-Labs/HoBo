@@ -1,3 +1,0 @@
-slug: v1-supported-platform-matrix-contract
-layer: exp
-proof-identity: ok

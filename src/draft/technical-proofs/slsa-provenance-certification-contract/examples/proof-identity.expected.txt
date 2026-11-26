@@ -1,3 +1,0 @@
-slug: slsa-provenance-certification-contract
-layer: technical
-proof-identity: ok

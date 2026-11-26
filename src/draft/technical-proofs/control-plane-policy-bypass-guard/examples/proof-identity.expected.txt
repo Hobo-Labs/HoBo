@@ -1,3 +1,0 @@
-slug: control-plane-policy-bypass-guard
-layer: technical
-proof-identity: ok

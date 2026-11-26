@@ -1,3 +1,0 @@
-slug: dns-validation-rebinding-guard-contract
-layer: technical
-proof-identity: ok

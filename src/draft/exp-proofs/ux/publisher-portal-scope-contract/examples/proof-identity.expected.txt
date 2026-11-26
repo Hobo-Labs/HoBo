@@ -1,3 +1,0 @@
-slug: publisher-portal-scope-contract
-layer: exp
-proof-identity: ok

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-provider-capability-conformance-suites",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

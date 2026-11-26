@@ -1,3 +1,0 @@
-slug: broker-admin-controls-contract
-layer: technical
-proof-identity: ok

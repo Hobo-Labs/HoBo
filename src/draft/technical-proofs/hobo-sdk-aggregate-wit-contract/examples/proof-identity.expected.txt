@@ -1,3 +1,0 @@
-slug: hobo-sdk-aggregate-wit-contract
-layer: technical
-proof-identity: ok

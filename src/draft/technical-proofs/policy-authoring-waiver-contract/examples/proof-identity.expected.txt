@@ -1,3 +1,0 @@
-slug: policy-authoring-waiver-contract
-layer: technical
-proof-identity: ok

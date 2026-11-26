@@ -1,3 +1,0 @@
-slug: dogfood-yard-release-candidate-contract
-layer: exp
-proof-identity: ok

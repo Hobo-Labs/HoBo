@@ -1,3 +1,0 @@
-slug: runaway-spend-circuit-breaker-contract
-layer: technical
-proof-identity: ok

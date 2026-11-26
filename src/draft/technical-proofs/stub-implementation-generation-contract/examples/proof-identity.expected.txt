@@ -1,3 +1,0 @@
-slug: stub-implementation-generation-contract
-layer: technical
-proof-identity: ok

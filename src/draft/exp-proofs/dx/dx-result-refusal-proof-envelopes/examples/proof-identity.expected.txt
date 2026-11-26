@@ -1,3 +1,0 @@
-slug: dx-result-refusal-proof-envelopes
-layer: exp
-proof-identity: ok

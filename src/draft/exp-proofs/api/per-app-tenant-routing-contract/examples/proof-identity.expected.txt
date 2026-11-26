@@ -1,3 +1,0 @@
-slug: per-app-tenant-routing-contract
-layer: exp
-proof-identity: ok

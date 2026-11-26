@@ -1,3 +1,0 @@
-slug: token-replay-resistance-contract
-layer: technical
-proof-identity: ok

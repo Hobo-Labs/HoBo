@@ -1,3 +1,0 @@
-slug: control-plane-event-schema-contract
-layer: technical
-proof-identity: ok

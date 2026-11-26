@@ -1,3 +1,0 @@
-slug: compliance-evidence-pack-scope
-layer: exp
-proof-identity: ok

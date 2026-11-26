@@ -1,3 +1,0 @@
-slug: performance-load-tests-scope-contract
-layer: exp
-proof-identity: ok

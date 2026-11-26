@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/v1-supported-platform-matrix-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,3 +1,0 @@
-slug: v1-release-notes-upgrade-guide-contract
-layer: technical
-proof-identity: ok

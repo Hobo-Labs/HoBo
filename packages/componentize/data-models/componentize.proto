@@ -1,7 +1,0 @@
-syntax = "proto3";
-package hobo.componentize.v1;
-
-message ComponentizeScaffoldRecord {
-  string package_name = 1;
-  string owner_issue = 2;
-}

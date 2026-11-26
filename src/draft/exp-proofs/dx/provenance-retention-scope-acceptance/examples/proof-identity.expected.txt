@@ -1,3 +1,0 @@
-slug: provenance-retention-scope-acceptance
-layer: exp
-proof-identity: ok

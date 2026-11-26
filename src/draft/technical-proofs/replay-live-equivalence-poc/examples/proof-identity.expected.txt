@@ -1,3 +1,0 @@
-slug: replay-live-equivalence-poc
-layer: technical
-proof-identity: ok

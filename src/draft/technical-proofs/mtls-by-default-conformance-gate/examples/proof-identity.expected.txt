@@ -1,3 +1,0 @@
-slug: mtls-by-default-conformance-gate
-layer: technical
-proof-identity: ok

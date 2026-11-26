@@ -1,3 +1,0 @@
-slug: hobo-dev-loop-contract
-layer: technical
-proof-identity: ok

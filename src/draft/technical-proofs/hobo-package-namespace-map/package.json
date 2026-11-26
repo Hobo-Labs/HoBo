@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/package-namespace-map",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

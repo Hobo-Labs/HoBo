@@ -1,3 +1,0 @@
-slug: gatekeeper-v1-policy-contracts
-layer: technical
-proof-identity: ok

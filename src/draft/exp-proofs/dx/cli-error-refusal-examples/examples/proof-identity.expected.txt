@@ -1,3 +1,0 @@
-slug: cli-error-refusal-examples
-layer: exp
-proof-identity: ok

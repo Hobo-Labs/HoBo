@@ -1,3 +1,0 @@
-slug: vibe-dashboard-freshness-rbac-fixtures
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: security-verification-scope-acceptance
-layer: exp
-proof-identity: ok

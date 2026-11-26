@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/budget-quota-policy-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

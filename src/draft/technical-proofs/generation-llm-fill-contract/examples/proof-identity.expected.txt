@@ -1,3 +1,0 @@
-slug: generation-llm-fill-contract
-layer: technical
-proof-identity: ok

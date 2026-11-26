@@ -1,3 +1,0 @@
-slug: launch-site-release-candidate-evidence-contract
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: junction-connectivity-inference-spike
-layer: technical
-proof-identity: ok

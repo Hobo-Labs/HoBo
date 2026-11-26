@@ -1,3 +1,0 @@
-slug: drift-reconciliation-scope-contract
-layer: exp
-proof-identity: ok

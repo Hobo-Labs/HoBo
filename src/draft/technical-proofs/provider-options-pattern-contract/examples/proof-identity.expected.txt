@@ -1,3 +1,0 @@
-slug: provider-options-pattern-contract
-layer: technical
-proof-identity: ok

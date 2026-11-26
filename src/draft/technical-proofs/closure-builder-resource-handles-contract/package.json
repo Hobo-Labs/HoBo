@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/closure-builder-resource-handles-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "compile:types": "tsc --noEmit --project tsconfig.json",
-    "test": "npm run compile:types && vitest run --root ."
-  }
-}

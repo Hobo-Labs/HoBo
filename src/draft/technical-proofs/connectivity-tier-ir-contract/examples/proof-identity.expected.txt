@@ -1,3 +1,0 @@
-slug: connectivity-tier-ir-contract
-layer: technical
-proof-identity: ok

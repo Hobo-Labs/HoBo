@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-registry-compromise-guard-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

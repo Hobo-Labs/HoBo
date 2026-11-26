@@ -1,3 +1,0 @@
-slug: live-fix-gated-candidate-contract
-layer: technical
-proof-identity: ok

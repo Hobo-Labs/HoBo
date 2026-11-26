@@ -1,3 +1,0 @@
-slug: marketplace-publisher-trust-evidence-contract
-layer: exp
-proof-identity: ok

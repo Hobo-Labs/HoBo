@@ -1,3 +1,0 @@
-slug: tier-three-private-interconnect-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: v1-outcome-activation-rail-contract
-layer: technical
-proof-identity: ok

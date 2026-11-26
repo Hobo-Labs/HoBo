@@ -1,3 +1,0 @@
-slug: generation-pipeline-io-contract
-layer: technical
-proof-identity: ok

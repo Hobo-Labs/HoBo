@@ -1,3 +1,0 @@
-slug: iac-crossplane-backend-contract
-layer: technical
-proof-identity: ok

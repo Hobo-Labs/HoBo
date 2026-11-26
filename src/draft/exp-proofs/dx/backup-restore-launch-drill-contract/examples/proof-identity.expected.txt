@@ -1,3 +1,0 @@
-slug: backup-restore-launch-drill-contract
-layer: exp
-proof-identity: ok

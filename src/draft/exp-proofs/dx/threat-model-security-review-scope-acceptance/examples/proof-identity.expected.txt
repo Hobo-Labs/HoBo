@@ -1,3 +1,0 @@
-slug: threat-model-security-review-scope-acceptance
-layer: exp
-proof-identity: ok

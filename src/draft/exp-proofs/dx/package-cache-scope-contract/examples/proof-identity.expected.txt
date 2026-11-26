@@ -1,3 +1,0 @@
-slug: package-cache-scope-contract
-layer: exp
-proof-identity: ok

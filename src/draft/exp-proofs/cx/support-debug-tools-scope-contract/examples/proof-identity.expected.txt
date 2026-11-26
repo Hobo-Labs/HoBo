@@ -1,3 +1,0 @@
-slug: support-debug-tools-scope-contract
-layer: exp
-proof-identity: ok

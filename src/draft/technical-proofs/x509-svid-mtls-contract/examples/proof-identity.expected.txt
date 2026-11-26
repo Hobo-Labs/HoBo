@@ -1,3 +1,0 @@
-slug: x509-svid-mtls-contract
-layer: technical
-proof-identity: ok

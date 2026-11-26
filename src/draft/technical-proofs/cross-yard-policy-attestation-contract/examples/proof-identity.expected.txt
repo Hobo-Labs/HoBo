@@ -1,3 +1,0 @@
-slug: cross-yard-policy-attestation-contract
-layer: technical
-proof-identity: ok

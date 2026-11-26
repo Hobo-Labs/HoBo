@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/tier-four-overlay-mesh-contract",
-  "private": true,
-  "type": "module",
-  "description": "POC for realizing tier 4 HoBo-managed WireGuard/eBPF overlay mesh links from HOBO-129.",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

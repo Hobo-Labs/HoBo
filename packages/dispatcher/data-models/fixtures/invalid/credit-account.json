@@ -1,7 +1,0 @@
-{
-  "provider_id": "cloud",
-  "dimension": "traffic.requests",
-  "budget_cap": 10,
-  "reserved_cost": -1,
-  "credits": []
-}

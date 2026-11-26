@@ -1,3 +1,0 @@
-slug: tax-currency-receipt-obligations-contract
-layer: technical
-proof-identity: ok

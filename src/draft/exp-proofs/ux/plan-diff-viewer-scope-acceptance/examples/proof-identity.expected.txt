@@ -1,3 +1,0 @@
-slug: plan-diff-viewer-scope-acceptance
-layer: exp
-proof-identity: ok

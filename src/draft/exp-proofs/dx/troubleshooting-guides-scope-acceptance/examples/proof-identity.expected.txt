@@ -1,3 +1,0 @@
-slug: troubleshooting-guides-scope-acceptance
-layer: exp
-proof-identity: ok

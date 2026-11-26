@@ -1,3 +1,0 @@
-slug: dogfood-yard-acceptance-contract
-layer: exp
-proof-identity: ok

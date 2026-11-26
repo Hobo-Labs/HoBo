@@ -1,3 +1,0 @@
-slug: provider-cloudflare-contract
-layer: technical
-proof-identity: ok

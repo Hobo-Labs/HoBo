@@ -1,5 +1,0 @@
-[modules.smoke]
-source = ".dagger/modules/smoke"
-
-[env.ci.modules.smoke.settings]
-mode = "ci"

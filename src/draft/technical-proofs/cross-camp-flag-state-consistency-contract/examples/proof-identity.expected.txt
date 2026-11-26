@@ -1,3 +1,0 @@
-slug: cross-camp-flag-state-consistency-contract
-layer: technical
-proof-identity: ok

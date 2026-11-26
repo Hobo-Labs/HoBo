@@ -1,3 +1,0 @@
-slug: role-journey-cli-mcp-transcripts
-layer: exp
-proof-identity: ok

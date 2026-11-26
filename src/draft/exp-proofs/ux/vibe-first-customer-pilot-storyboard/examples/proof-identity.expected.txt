@@ -1,3 +1,0 @@
-slug: vibe-first-customer-pilot-storyboard
-layer: exp
-proof-identity: ok

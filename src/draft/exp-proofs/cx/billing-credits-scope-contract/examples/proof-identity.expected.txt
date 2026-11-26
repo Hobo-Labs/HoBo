@@ -1,3 +1,0 @@
-slug: billing-credits-scope-contract
-layer: exp
-proof-identity: ok

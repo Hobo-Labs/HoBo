@@ -1,3 +1,0 @@
-slug: marketplace-ux-scope-contract
-layer: exp
-proof-identity: ok

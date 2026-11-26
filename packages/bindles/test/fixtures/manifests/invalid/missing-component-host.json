@@ -1,9 +1,0 @@
-{
-  "schema": "hobo.manifest/v1",
-  "resources": {
-    "db": {
-      "type": "data.v1",
-      "port": "hobo:data"
-    }
-  }
-}

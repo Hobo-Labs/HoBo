@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/system-failure-classifier-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

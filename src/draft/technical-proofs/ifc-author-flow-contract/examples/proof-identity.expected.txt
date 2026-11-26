@@ -1,3 +1,0 @@
-slug: ifc-author-flow-contract
-layer: technical
-proof-identity: ok

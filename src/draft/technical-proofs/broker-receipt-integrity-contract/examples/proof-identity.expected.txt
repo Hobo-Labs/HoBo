@@ -1,3 +1,0 @@
-slug: broker-receipt-integrity-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: vibe-representative-a11y-usability-checks
-layer: exp
-proof-identity: ok

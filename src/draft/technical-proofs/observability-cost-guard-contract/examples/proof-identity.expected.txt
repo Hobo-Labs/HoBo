@@ -1,3 +1,0 @@
-slug: observability-cost-guard-contract
-layer: technical
-proof-identity: ok

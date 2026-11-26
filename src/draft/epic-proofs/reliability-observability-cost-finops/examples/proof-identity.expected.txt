@@ -1,3 +1,0 @@
-slug: reliability-observability-cost-finops
-layer: epic
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: customer-assurance-evidence-packet-contract
-layer: exp
-proof-identity: ok

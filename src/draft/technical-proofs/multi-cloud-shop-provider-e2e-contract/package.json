@@ -1,8 +1,0 @@
-{
-  "name": "multi-cloud-shop-provider-e2e-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

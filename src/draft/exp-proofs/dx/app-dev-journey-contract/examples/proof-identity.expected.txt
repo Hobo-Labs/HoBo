@@ -1,3 +1,0 @@
-slug: app-dev-journey-contract
-layer: exp
-proof-identity: ok

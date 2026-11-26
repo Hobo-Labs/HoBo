@@ -1,3 +1,0 @@
-slug: generation-reference-run-contract
-layer: technical
-proof-identity: ok

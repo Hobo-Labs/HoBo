@@ -1,3 +1,0 @@
-slug: generation-material-sanitization-contract
-layer: technical
-proof-identity: ok

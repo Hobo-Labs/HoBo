@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package fixture.deep;
-
-message WorkOrder {
-  string id = 1;
-}

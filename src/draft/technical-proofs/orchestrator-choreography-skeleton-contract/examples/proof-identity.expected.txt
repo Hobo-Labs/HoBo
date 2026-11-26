@@ -1,3 +1,0 @@
-slug: orchestrator-choreography-skeleton-contract
-layer: technical
-proof-identity: ok

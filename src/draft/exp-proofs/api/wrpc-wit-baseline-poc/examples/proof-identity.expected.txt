@@ -1,3 +1,0 @@
-slug: wrpc-wit-baseline-poc
-layer: exp
-proof-identity: ok

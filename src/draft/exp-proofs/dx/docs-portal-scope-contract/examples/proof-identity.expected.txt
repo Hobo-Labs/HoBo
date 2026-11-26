@@ -1,3 +1,0 @@
-slug: docs-portal-scope-contract
-layer: exp
-proof-identity: ok

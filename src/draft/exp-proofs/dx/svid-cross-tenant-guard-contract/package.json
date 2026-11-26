@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-svid-cross-tenant-guard-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

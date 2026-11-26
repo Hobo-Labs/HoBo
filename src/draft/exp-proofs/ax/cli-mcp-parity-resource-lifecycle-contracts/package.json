@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-cli-mcp-parity-resource-lifecycle-contracts",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

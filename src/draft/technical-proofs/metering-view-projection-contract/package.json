@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/metering-view-projection-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,3 +1,0 @@
-slug: multi-region-dr-replay-contract
-layer: technical
-proof-identity: ok

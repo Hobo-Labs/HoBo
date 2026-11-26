@@ -1,3 +1,0 @@
-slug: search-extension-packages-contract
-layer: technical
-proof-identity: ok

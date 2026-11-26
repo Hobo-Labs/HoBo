@@ -1,3 +1,0 @@
-slug: runaway-remediation-guard-contract
-layer: technical
-proof-identity: ok

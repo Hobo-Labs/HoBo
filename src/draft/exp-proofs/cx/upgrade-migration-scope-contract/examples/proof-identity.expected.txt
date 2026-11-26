@@ -1,3 +1,0 @@
-slug: upgrade-migration-scope-contract
-layer: exp
-proof-identity: ok

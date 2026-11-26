@@ -1,3 +1,0 @@
-slug: executor-skeleton-contract
-layer: technical
-proof-identity: ok

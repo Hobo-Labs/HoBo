@@ -1,3 +1,0 @@
-slug: resilience-semantics-annex
-layer: technical
-proof-identity: ok

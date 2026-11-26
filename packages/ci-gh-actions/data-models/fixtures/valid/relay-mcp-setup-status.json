@@ -1,7 +1,0 @@
-{
-  "state": "not-configured",
-  "missing": ["HOBO_CI_CONFIG_JSON", "HOBO_CI_WEBHOOK_SECRET"],
-  "invalid": [],
-  "providable": ["HOBO_CI_CONFIG_JSON", "HOBO_CI_WEBHOOK_SECRET"],
-  "writable": true
-}

@@ -1,3 +1,0 @@
-slug: providers-iac-build-adapters
-layer: epic
-proof-identity: ok

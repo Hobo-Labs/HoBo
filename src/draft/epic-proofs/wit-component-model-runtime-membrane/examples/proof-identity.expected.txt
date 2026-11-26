@@ -1,3 +1,0 @@
-slug: wit-component-model-runtime-membrane
-layer: epic
-proof-identity: ok

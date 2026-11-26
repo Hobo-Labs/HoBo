@@ -1,3 +1,0 @@
-slug: wrpc-membrane-failure-contract
-layer: technical
-proof-identity: ok

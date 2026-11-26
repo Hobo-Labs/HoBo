@@ -1,1 +1,0 @@
-  {{fromName}}.dependsOn({{first}}, {{second}});

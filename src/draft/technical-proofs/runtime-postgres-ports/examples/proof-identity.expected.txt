@@ -1,3 +1,0 @@
-slug: runtime-postgres-ports
-layer: technical
-proof-identity: ok

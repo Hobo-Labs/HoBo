@@ -1,3 +1,0 @@
-slug: operations-manifests-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: repo-view-escape-hatches-contract
-layer: technical
-proof-identity: ok

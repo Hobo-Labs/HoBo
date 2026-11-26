@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/usage-to-invoice-reconciliation-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

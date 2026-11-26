@@ -1,3 +1,0 @@
-slug: hobo-auth-federate-verify-contract
-layer: technical
-proof-identity: ok

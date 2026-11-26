@@ -1,3 +1,0 @@
-slug: known-limitations-register-contract
-layer: exp
-proof-identity: ok

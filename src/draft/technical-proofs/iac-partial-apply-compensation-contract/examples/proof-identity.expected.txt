@@ -1,3 +1,0 @@
-slug: iac-partial-apply-compensation-contract
-layer: technical
-proof-identity: ok

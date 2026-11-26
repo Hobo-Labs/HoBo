@@ -1,3 +1,0 @@
-slug: operator-integration-ports-contract
-layer: technical
-proof-identity: ok

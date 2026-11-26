@@ -1,3 +1,0 @@
-slug: svid-cross-tenant-guard-contract
-layer: exp
-proof-identity: ok

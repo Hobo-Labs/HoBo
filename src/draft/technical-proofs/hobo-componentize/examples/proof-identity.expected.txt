@@ -1,3 +1,0 @@
-slug: hobo-componentize
-layer: technical
-proof-identity: ok

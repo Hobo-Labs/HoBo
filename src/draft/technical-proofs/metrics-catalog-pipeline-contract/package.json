@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/metrics-catalog-pipeline-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

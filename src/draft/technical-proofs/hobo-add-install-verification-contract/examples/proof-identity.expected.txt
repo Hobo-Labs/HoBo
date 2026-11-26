@@ -1,3 +1,0 @@
-slug: hobo-add-install-verification-contract
-layer: technical
-proof-identity: ok

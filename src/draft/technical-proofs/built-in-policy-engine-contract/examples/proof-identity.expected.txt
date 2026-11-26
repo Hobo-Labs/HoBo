@@ -1,3 +1,0 @@
-slug: built-in-policy-engine-contract
-layer: technical
-proof-identity: ok

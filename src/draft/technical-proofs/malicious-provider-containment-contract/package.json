@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-malicious-provider-containment-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

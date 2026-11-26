@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-role-journey-cli-mcp-transcripts",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,3 +1,0 @@
-slug: guardrail-policy-gate-contract
-layer: technical
-proof-identity: ok

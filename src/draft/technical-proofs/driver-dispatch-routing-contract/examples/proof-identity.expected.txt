@@ -1,3 +1,0 @@
-slug: driver-dispatch-routing-contract
-layer: technical
-proof-identity: ok

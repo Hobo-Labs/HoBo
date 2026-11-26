@@ -1,3 +1,0 @@
-slug: cross-camp-routing-policy-contract
-layer: technical
-proof-identity: ok

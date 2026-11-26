@@ -1,3 +1,0 @@
-slug: graphql-facade-generation-poc
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: membrane-deadline-backpressure-contract
-layer: technical
-proof-identity: ok

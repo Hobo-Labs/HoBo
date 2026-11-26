@@ -1,3 +1,0 @@
-slug: gated-autonomous-remediation-contract
-layer: technical
-proof-identity: ok

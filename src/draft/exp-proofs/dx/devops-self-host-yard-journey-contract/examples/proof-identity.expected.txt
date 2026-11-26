@@ -1,3 +1,0 @@
-slug: devops-self-host-yard-journey-contract
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: obligation-engine-contract
-layer: technical
-proof-identity: ok

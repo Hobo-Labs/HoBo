@@ -1,3 +1,0 @@
-slug: telemetry-envelope-contract
-layer: technical
-proof-identity: ok

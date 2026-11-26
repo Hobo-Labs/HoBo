@@ -1,3 +1,0 @@
-slug: v1-release-notes-dogfood-alpha-evidence
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: v1-release-notes-private-beta-evidence-contract
-layer: exp
-proof-identity: ok

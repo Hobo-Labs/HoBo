@@ -1,3 +1,0 @@
-slug: drift-detection-loop-contract
-layer: technical
-proof-identity: ok

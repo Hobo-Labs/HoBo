@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/epic-reference-control-plane",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root .",
-    "simulate": "node --import tsx simulation/run-simulation.ts"
-  }
-}

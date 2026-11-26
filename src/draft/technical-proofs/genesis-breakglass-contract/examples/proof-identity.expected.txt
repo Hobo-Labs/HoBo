@@ -1,3 +1,0 @@
-slug: genesis-breakglass-contract
-layer: technical
-proof-identity: ok

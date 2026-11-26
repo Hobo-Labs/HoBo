@@ -1,3 +1,0 @@
-slug: entitlement-abuse-rate-limit-policy-contract
-layer: technical
-proof-identity: ok

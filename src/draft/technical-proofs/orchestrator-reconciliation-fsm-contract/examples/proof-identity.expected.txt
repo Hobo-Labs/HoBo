@@ -1,3 +1,0 @@
-slug: orchestrator-reconciliation-fsm-contract
-layer: technical
-proof-identity: ok

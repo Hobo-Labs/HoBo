@@ -1,3 +1,0 @@
-slug: launch-demo-golden-path-contract
-layer: exp
-proof-identity: ok

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/upgrade-rollback-dry-run-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

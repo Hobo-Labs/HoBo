@@ -1,3 +1,0 @@
-slug: mcp-server-hardening-contract
-layer: technical
-proof-identity: ok

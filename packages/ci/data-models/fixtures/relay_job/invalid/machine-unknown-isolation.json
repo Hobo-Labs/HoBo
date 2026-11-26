@@ -1,1 +1,0 @@
-{"id":"m-1","name":"studio","runsOn":"hobo-machine-m-1","labels":["self-hosted","Linux","X64"],"os":"linux","arch":"x64","slots":2,"busy":1,"sharing":"only_me","ownerId":"42","ownerLogin":"octocat","lastSeenMs":1763337600000,"signerKeyId":"key-1","isolation":"vm","lastPickedAtMs":1763337000000,"accountId":"acct-1"}

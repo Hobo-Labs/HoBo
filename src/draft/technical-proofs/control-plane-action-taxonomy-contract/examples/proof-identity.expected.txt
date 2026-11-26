@@ -1,3 +1,0 @@
-slug: control-plane-action-taxonomy-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: generation-provider-loop-contract
-layer: technical
-proof-identity: ok

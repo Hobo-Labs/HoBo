@@ -1,6 +1,0 @@
-{
-	"code": "SECRET_STORE_NOT_CONNECTED",
-	"message": "No secret store is connected: the owner's secret store holds no relay binding.",
-	"nextStep": "Connect Infisical with OIDC Auth (the hobo-deploy skill walks through it), then capture again.",
-	"name": "HOBO_CI_WEBHOOK_SECRET"
-}

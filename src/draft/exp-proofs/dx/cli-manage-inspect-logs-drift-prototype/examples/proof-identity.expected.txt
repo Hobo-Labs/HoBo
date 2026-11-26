@@ -1,3 +1,0 @@
-slug: cli-manage-inspect-logs-drift-prototype
-layer: exp
-proof-identity: ok

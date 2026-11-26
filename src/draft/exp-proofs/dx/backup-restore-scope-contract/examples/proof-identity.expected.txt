@@ -1,3 +1,0 @@
-slug: backup-restore-scope-contract
-layer: exp
-proof-identity: ok

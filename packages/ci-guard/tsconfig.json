@@ -1,9 +1,0 @@
-{
-	"extends": "../../tsconfig.base.json",
-	"compilerOptions": {
-		"outDir": "dist",
-		"rootDir": ".",
-		"types": ["node"]
-	},
-	"include": ["src/**/*.ts", "bin/**/*.ts", "test/**/*.ts", "contracts/**/*.ts"]
-}

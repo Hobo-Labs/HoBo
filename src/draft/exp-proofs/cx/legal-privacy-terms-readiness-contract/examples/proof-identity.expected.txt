@@ -1,3 +1,0 @@
-slug: legal-privacy-terms-readiness-contract
-layer: exp
-proof-identity: ok

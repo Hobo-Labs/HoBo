@@ -1,3 +1,0 @@
-slug: golden-suite-chaos-verification-contract
-layer: technical
-proof-identity: ok

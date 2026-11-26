@@ -1,3 +1,0 @@
-slug: v1-beta-pilot-private-beta-evidence
-layer: exp
-proof-identity: ok

@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/rem-030-crew-mcp-autonomy-limitation",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

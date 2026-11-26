@@ -1,3 +1,0 @@
-slug: remediation-safety-gate-contract
-layer: technical
-proof-identity: ok

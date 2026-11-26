@@ -1,3 +1,0 @@
-slug: tier-one-private-network-contract
-layer: technical
-proof-identity: ok

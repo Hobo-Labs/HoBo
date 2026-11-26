@@ -1,5 +1,0 @@
-{
-  "outcome": "written",
-  "written": ["HOBO_CI_PUBLIC_URL"],
-  "values": {"HOBO_CI_PUBLIC_URL": "https://relay.example"}
-}

@@ -1,1 +1,0 @@
-Character side walk in place, facing right. Keep the same costume palette, silhouette, and stable side profile. No travel, no camera move, no background.

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-legal-privacy-ga-handoff-evidence-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

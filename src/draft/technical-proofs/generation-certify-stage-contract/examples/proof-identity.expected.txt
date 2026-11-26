@@ -1,3 +1,0 @@
-slug: generation-certify-stage-contract
-layer: technical
-proof-identity: ok

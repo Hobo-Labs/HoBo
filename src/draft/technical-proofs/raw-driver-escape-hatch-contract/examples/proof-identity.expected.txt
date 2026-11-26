@@ -1,3 +1,0 @@
-slug: raw-driver-escape-hatch-contract
-layer: technical
-proof-identity: ok

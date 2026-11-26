@@ -1,3 +1,0 @@
-slug: planner-dag-skeleton-contract
-layer: technical
-proof-identity: ok

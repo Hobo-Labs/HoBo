@@ -1,3 +1,0 @@
-slug: sre-mttd-mttr-postmortem-contract
-layer: technical
-proof-identity: ok

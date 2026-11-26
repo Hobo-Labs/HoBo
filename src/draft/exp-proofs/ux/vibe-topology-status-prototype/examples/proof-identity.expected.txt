@@ -1,3 +1,0 @@
-slug: vibe-topology-status-prototype
-layer: exp
-proof-identity: ok

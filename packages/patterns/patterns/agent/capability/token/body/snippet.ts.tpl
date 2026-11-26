@@ -1,1 +1,0 @@
-  capabilities: [tokenCapability("acme-cloud")],

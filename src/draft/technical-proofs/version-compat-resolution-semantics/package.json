@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-version-compat-resolution-semantics",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

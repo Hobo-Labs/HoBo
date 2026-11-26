@@ -1,3 +1,0 @@
-slug: vibe-docs-portal-ia-states
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: oci-artifact-storage-contract
-layer: technical
-proof-identity: ok

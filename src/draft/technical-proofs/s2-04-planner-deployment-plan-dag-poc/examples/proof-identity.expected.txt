@@ -1,3 +1,0 @@
-slug: s2-04-planner-deployment-plan-dag-poc
-layer: technical
-proof-identity: ok

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/document-projection-sink-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,3 +1,0 @@
-slug: componentize-artifact-trust-contract
-layer: technical
-proof-identity: ok

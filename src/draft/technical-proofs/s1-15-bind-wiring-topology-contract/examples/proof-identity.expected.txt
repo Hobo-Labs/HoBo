@@ -1,3 +1,0 @@
-slug: s1-15-bind-wiring-topology-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: vibe-support-case-redacted-evidence
-layer: exp
-proof-identity: ok

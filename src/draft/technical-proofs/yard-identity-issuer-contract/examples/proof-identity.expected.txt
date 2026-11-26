@@ -1,3 +1,0 @@
-slug: yard-identity-issuer-contract
-layer: technical
-proof-identity: ok

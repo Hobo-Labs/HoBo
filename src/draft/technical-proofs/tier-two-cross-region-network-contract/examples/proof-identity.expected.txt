@@ -1,3 +1,0 @@
-slug: tier-two-cross-region-network-contract
-layer: technical
-proof-identity: ok

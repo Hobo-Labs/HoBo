@@ -1,3 +1,0 @@
-slug: sdk-authoring-ifc-bindles
-layer: epic
-proof-identity: ok

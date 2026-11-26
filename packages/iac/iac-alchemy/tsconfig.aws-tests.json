@@ -1,8 +1,0 @@
-{
-	"extends": "../../../tsconfig.base.json",
-	"compilerOptions": {
-		"noEmit": true,
-		"types": ["node"]
-	},
-	"include": ["test/aws-mapping.test.ts", "test/aws-emulator.test.ts", "test/aws-budget-emulator.test.ts", "test/aws-vite.test.ts", "test/aws-vite-plan.test.ts"]
-}

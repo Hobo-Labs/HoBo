@@ -1,3 +1,0 @@
-slug: identity-event-contract
-layer: technical
-proof-identity: ok

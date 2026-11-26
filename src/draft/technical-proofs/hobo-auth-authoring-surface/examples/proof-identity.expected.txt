@@ -1,3 +1,0 @@
-slug: hobo-auth-authoring-surface
-layer: technical
-proof-identity: ok

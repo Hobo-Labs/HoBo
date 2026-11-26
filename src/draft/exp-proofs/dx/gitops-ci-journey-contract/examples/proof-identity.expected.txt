@@ -1,3 +1,0 @@
-slug: gitops-ci-journey-contract
-layer: exp
-proof-identity: ok

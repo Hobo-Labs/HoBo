@@ -1,3 +1,0 @@
-slug: vibe-marketplace-discovery-prototype
-layer: exp
-proof-identity: ok

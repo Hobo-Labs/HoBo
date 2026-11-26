@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/policy-pack-federation-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

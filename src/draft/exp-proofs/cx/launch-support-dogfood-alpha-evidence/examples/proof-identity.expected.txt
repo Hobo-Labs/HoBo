@@ -1,3 +1,0 @@
-slug: launch-support-dogfood-alpha-evidence
-layer: exp
-proof-identity: ok

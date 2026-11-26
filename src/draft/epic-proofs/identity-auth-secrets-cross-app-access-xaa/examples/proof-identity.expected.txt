@@ -1,3 +1,0 @@
-slug: identity-auth-secrets-cross-app-access-xaa
-layer: epic
-proof-identity: ok

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/sre-operator-skeleton-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

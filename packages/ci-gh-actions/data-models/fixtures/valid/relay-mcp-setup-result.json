@@ -1,6 +1,0 @@
-{
-  "outcome": "written",
-  "written": ["HOBO_CI_PUBLIC_URL"],
-  "refused": ["HOBO_CI_GITHUB_APP_ID"],
-  "remaining": ["HOBO_CI_GITHUB_APP_ID"]
-}

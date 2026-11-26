@@ -1,3 +1,0 @@
-slug: hobo-700-runtime-code-mutation-pattern-adr-contract
-layer: technical
-proof-identity: ok

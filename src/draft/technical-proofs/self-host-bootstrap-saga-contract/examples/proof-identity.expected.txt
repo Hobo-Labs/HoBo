@@ -1,3 +1,0 @@
-slug: self-host-bootstrap-saga-contract
-layer: technical
-proof-identity: ok

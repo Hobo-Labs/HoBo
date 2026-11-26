@@ -1,3 +1,0 @@
-slug: vscode-extension-contract
-layer: technical
-proof-identity: ok

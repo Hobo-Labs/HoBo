@@ -1,3 +1,0 @@
-slug: data-flywheel-privacy-spike
-layer: exp
-proof-identity: ok

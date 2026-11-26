@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/v1-outcome-activation-rail-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

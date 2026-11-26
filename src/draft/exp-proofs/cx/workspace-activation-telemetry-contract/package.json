@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-workspace-activation-telemetry-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

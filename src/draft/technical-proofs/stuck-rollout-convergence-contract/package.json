@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/stuck-rollout-convergence-contract",
-  "version": "0.0.0",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

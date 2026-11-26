@@ -1,8 +1,0 @@
-{
-  "fleet": "ci",
-  "name": "box-a",
-  "roles": [
-    "ROLE_EXECUTOR",
-    "ROLE_OBSERVER"
-  ]
-}

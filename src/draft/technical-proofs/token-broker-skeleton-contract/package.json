@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-token-broker-skeleton-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

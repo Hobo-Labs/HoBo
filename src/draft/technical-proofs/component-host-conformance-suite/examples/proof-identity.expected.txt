@@ -1,3 +1,0 @@
-slug: component-host-conformance-suite
-layer: technical
-proof-identity: ok

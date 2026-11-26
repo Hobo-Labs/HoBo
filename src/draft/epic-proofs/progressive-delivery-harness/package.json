@@ -1,9 +1,0 @@
-{
-  "name": "@hobo-draft/progressive-delivery-harness-reference",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root .",
-    "simulate": "node simulation/run-simulation.ts"
-  }
-}

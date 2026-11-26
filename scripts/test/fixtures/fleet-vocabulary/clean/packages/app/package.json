@@ -1,5 +1,0 @@
-{
-	"name": "fixture-app",
-	"private": true,
-	"dependencies": { "@hobo/fleet-agent": "workspace:*" }
-}

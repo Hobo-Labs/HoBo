@@ -1,3 +1,0 @@
-slug: legal-privacy-private-beta-evidence-contract
-layer: exp
-proof-identity: ok

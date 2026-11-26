@@ -1,3 +1,0 @@
-slug: dx-resource-lifecycle-scenario-matrix
-layer: exp
-proof-identity: ok

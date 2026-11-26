@@ -1,3 +1,0 @@
-slug: oidc-federation-sts-contract
-layer: technical
-proof-identity: ok

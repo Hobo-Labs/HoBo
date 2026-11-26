@@ -1,3 +1,0 @@
-slug: reactor-skeleton-contract
-layer: technical
-proof-identity: ok

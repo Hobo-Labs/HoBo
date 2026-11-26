@@ -1,3 +1,0 @@
-slug: cli-mcp-parity-resource-lifecycle-contracts
-layer: exp
-proof-identity: ok

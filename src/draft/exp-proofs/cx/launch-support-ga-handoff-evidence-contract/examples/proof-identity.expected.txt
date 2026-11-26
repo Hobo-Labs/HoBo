@@ -1,3 +1,0 @@
-slug: launch-support-ga-handoff-evidence-contract
-layer: exp
-proof-identity: ok

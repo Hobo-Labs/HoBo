@@ -1,3 +1,0 @@
-slug: member-rbac-administration-scope
-layer: exp
-proof-identity: ok

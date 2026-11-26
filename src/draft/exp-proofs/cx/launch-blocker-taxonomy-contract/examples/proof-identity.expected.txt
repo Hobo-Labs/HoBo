@@ -1,3 +1,0 @@
-slug: launch-blocker-taxonomy-contract
-layer: exp
-proof-identity: ok

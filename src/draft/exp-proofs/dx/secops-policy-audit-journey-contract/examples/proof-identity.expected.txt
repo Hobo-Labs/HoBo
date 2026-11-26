@@ -1,3 +1,0 @@
-slug: secops-policy-audit-journey-contract
-layer: exp
-proof-identity: ok

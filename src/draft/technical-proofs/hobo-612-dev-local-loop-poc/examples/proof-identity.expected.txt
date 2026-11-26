@@ -1,3 +1,0 @@
-slug: hobo-612-dev-local-loop-poc
-layer: technical
-proof-identity: ok

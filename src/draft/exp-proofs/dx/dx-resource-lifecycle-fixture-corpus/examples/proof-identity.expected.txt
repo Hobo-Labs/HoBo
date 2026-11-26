@@ -1,3 +1,0 @@
-slug: dx-resource-lifecycle-fixture-corpus
-layer: exp
-proof-identity: ok

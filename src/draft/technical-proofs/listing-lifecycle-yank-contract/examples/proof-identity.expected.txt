@@ -1,3 +1,0 @@
-slug: listing-lifecycle-yank-contract
-layer: technical
-proof-identity: ok

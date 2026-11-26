@@ -1,3 +1,0 @@
-slug: marketplace-payout-hooks-scope-contract
-layer: exp
-proof-identity: ok

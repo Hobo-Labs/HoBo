@@ -1,3 +1,0 @@
-slug: run-inspector-projection-contract
-layer: technical
-proof-identity: ok

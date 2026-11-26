@@ -1,3 +1,0 @@
-slug: inline-budget-authoring
-layer: exp
-proof-identity: ok

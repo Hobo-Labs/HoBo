@@ -1,3 +1,0 @@
-slug: slo-promotion-gate-contract
-layer: technical
-proof-identity: ok

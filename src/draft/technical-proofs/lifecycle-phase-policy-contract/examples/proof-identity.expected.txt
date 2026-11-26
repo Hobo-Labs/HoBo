@@ -1,3 +1,0 @@
-slug: lifecycle-phase-policy-contract
-layer: technical
-proof-identity: ok

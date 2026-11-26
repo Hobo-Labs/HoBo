@@ -1,8 +1,0 @@
-{
-  "name": "deny-ceiling-algebra-poc",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

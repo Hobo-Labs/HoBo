@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/actor-host-runtime-port-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

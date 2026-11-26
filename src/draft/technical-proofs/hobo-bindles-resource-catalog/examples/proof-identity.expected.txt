@@ -1,3 +1,0 @@
-slug: hobo-bindles-resource-catalog
-layer: technical
-proof-identity: ok

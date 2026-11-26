@@ -1,3 +1,0 @@
-slug: s3-05-allow-triple-effects-poc
-layer: technical
-proof-identity: ok

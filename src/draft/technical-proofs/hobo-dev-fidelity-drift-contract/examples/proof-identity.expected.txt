@@ -1,3 +1,0 @@
-slug: hobo-dev-fidelity-drift-contract
-layer: technical
-proof-identity: ok

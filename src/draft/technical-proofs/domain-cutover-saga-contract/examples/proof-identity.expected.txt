@@ -1,3 +1,0 @@
-slug: domain-cutover-saga-contract
-layer: technical
-proof-identity: ok

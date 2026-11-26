@@ -1,3 +1,0 @@
-slug: websocket-streamer-fanout-contract
-layer: technical
-proof-identity: ok

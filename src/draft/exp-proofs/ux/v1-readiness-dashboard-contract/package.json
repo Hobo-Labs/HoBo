@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-v1-readiness-dashboard-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

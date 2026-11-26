@@ -1,3 +1,0 @@
-slug: portability-registry-distribution
-layer: epic
-proof-identity: ok

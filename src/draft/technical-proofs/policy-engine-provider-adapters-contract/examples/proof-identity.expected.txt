@@ -1,3 +1,0 @@
-slug: policy-engine-provider-adapters-contract
-layer: technical
-proof-identity: ok

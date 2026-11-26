@@ -1,3 +1,0 @@
-slug: vibe-plan-review-states
-layer: exp
-proof-identity: ok

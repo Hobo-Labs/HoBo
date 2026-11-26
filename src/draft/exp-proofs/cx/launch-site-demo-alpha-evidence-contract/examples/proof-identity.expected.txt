@@ -1,3 +1,0 @@
-slug: launch-site-demo-alpha-evidence-contract
-layer: exp
-proof-identity: ok

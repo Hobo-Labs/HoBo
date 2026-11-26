@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/delivery-orchestrator-skeleton-contract",
-  "version": "0.0.0",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

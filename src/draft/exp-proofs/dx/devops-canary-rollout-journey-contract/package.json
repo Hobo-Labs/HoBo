@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/devops-canary-rollout-journey-contract",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

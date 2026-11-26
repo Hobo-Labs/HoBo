@@ -1,3 +1,0 @@
-slug: hobo-auth-json-contract
-layer: technical
-proof-identity: ok

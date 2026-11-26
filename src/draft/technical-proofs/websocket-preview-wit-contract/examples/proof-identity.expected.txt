@@ -1,3 +1,0 @@
-slug: websocket-preview-wit-contract
-layer: technical
-proof-identity: ok

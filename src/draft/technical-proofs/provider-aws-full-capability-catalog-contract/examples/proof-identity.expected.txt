@@ -1,3 +1,0 @@
-slug: provider-aws-full-capability-catalog-contract
-layer: technical
-proof-identity: ok

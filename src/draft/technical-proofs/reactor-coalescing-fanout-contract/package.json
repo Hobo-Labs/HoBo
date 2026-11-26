@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/reactor-coalescing-fanout-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

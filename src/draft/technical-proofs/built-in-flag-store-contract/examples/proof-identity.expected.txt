@@ -1,3 +1,0 @@
-slug: built-in-flag-store-contract
-layer: technical
-proof-identity: ok

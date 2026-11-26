@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-resource-lifecycle-quickstart-examples",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

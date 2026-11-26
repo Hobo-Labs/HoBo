@@ -1,3 +1,0 @@
-slug: billing-launch-policy-contract
-layer: exp
-proof-identity: ok

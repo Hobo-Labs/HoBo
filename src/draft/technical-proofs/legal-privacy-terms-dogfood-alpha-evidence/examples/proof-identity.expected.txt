@@ -1,3 +1,0 @@
-slug: legal-privacy-terms-dogfood-alpha-evidence
-layer: technical
-proof-identity: ok

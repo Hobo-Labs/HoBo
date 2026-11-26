@@ -1,3 +1,0 @@
-slug: crypto-shred-erasure-contract
-layer: technical
-proof-identity: ok

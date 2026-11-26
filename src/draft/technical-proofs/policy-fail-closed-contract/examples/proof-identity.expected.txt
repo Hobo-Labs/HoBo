@@ -1,3 +1,0 @@
-slug: policy-fail-closed-contract
-layer: technical
-proof-identity: ok

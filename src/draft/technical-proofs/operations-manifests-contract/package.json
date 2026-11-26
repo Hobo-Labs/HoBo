@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/draft-operations-manifests-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "generate": "tsx scripts/generate.ts",
-    "test": "vitest run --root ."
-  }
-}

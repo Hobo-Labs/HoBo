@@ -1,3 +1,0 @@
-slug: cross-cloud-junction-mtls-contract
-layer: technical
-proof-identity: ok

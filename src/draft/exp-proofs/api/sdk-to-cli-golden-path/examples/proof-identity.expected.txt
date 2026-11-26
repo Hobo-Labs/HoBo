@@ -1,3 +1,0 @@
-slug: sdk-to-cli-golden-path
-layer: exp
-proof-identity: ok

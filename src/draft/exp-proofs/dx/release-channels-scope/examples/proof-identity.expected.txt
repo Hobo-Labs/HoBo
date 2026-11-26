@@ -1,3 +1,0 @@
-slug: release-channels-scope
-layer: exp
-proof-identity: ok

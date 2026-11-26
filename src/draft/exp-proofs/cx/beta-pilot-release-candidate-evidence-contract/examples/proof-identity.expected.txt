@@ -1,3 +1,0 @@
-slug: beta-pilot-release-candidate-evidence-contract
-layer: exp
-proof-identity: ok

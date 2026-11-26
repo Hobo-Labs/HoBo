@@ -1,3 +1,0 @@
-slug: beta-pilot-dogfood-alpha-evidence-contract
-layer: exp
-proof-identity: ok

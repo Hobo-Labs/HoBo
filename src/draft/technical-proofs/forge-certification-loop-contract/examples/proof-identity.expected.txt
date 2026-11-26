@@ -1,3 +1,0 @@
-slug: forge-certification-loop-contract
-layer: technical
-proof-identity: ok

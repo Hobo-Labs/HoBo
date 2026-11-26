@@ -1,3 +1,0 @@
-slug: idiom-layer-lowering-contract
-layer: technical
-proof-identity: ok

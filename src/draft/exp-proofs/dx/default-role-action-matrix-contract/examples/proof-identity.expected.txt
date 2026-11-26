@@ -1,3 +1,0 @@
-slug: default-role-action-matrix-contract
-layer: exp
-proof-identity: ok

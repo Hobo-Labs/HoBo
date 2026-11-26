@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/draft-orchestrator-reconciliation-fsm-contract",
-  "private": true,
-  "type": "module",
-  "description": "S2-05 draft POC: Orchestrator + ResourceActor reconciliation FSM and compensation sagas (HOBO-620).",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

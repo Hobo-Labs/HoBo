@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-pre-launch-outcome-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

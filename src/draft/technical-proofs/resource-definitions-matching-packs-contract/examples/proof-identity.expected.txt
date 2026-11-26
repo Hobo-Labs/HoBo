@@ -1,3 +1,0 @@
-slug: resource-definitions-matching-packs-contract
-layer: technical
-proof-identity: ok

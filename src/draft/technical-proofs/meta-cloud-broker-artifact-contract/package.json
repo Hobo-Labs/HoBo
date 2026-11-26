@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/meta-cloud-broker-artifact-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

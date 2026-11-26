@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/split-horizon-partition-connectivity-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

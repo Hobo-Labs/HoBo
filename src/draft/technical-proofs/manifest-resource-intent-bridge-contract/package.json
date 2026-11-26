@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/manifest-resource-intent-bridge-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

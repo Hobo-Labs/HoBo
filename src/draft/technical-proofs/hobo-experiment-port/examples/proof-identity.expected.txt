@@ -1,3 +1,0 @@
-slug: hobo-experiment-port
-layer: technical
-proof-identity: ok

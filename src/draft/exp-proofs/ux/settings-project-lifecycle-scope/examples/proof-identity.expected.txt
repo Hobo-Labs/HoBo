@@ -1,3 +1,0 @@
-slug: settings-project-lifecycle-scope
-layer: exp
-proof-identity: ok

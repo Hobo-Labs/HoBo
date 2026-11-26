@@ -1,3 +1,0 @@
-slug: usage-inferred-permissions-contract
-layer: technical
-proof-identity: ok

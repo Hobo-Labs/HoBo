@@ -1,3 +1,0 @@
-slug: vibe-workspace-project-states
-layer: exp
-proof-identity: ok

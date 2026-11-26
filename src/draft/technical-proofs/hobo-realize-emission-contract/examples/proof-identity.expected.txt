@@ -1,3 +1,0 @@
-slug: hobo-realize-emission-contract
-layer: technical
-proof-identity: ok

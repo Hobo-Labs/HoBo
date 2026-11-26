@@ -1,3 +1,0 @@
-slug: hobo-jwt-svid-contract
-layer: technical
-proof-identity: ok

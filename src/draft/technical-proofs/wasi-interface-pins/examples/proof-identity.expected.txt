@@ -1,3 +1,0 @@
-slug: wasi-interface-pins
-layer: technical
-proof-identity: ok

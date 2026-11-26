@@ -1,3 +1,0 @@
-slug: s2-stage-gate-first-cloud-yard
-layer: epic
-proof-identity: ok

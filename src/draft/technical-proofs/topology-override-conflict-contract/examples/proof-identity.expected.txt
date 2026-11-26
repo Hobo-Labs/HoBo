@@ -1,3 +1,0 @@
-slug: topology-override-conflict-contract
-layer: technical
-proof-identity: ok

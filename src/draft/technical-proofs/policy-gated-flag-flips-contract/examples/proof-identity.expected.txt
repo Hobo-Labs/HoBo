@@ -1,3 +1,0 @@
-slug: policy-gated-flag-flips-contract
-layer: technical
-proof-identity: ok

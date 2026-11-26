@@ -1,5 +1,0 @@
-{
-	"vaultId": "abcdefghijklmnopqrstuvwxyz",
-	"authMode": "service-account",
-	"serviceAccountToken": "ops_synthetic"
-}

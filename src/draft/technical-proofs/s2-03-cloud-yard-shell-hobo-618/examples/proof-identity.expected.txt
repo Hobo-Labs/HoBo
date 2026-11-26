@@ -1,3 +1,0 @@
-slug: s2-03-cloud-yard-shell-hobo-618
-layer: technical
-proof-identity: ok

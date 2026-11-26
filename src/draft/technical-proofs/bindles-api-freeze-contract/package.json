@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-bindles-api-freeze-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

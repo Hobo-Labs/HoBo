@@ -1,3 +1,0 @@
-slug: ci-fabric-oidc-e2e-contract
-layer: technical
-proof-identity: ok

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/legal-privacy-terms-dogfood-alpha-evidence",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

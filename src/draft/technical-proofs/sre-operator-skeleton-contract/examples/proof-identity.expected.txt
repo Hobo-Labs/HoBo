@@ -1,3 +1,0 @@
-slug: sre-operator-skeleton-contract
-layer: technical
-proof-identity: ok

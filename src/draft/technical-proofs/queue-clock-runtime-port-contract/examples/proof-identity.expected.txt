@@ -1,3 +1,0 @@
-slug: queue-clock-runtime-port-contract
-layer: technical
-proof-identity: ok

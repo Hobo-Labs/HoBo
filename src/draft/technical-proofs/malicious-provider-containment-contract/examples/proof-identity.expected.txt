@@ -1,3 +1,0 @@
-slug: malicious-provider-containment-contract
-layer: technical
-proof-identity: ok

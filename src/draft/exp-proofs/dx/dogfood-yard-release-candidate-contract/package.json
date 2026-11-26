@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-dogfood-yard-release-candidate-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

@@ -1,3 +1,0 @@
-slug: runtime-local-execution-limits-contract
-layer: technical
-proof-identity: ok

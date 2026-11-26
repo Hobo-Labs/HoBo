@@ -1,3 +1,0 @@
-slug: hobo-mcp-server-contract
-layer: technical
-proof-identity: ok

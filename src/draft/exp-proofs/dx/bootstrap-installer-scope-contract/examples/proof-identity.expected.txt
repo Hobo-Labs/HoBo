@@ -1,3 +1,0 @@
-slug: bootstrap-installer-scope-contract
-layer: exp
-proof-identity: ok

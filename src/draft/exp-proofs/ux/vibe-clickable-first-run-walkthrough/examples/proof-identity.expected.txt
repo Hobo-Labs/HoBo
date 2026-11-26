@@ -1,3 +1,0 @@
-slug: vibe-clickable-first-run-walkthrough
-layer: exp
-proof-identity: ok

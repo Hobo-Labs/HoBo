@@ -1,3 +1,0 @@
-slug: control-plane-authz-cache-contract
-layer: technical
-proof-identity: ok

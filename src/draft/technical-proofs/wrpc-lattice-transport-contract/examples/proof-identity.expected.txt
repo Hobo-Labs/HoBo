@@ -1,3 +1,0 @@
-slug: wrpc-lattice-transport-contract
-layer: technical
-proof-identity: ok

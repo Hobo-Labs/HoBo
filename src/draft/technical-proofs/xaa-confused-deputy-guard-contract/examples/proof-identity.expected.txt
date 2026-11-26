@@ -1,3 +1,0 @@
-slug: xaa-confused-deputy-guard-contract
-layer: technical
-proof-identity: ok

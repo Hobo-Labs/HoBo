@@ -1,3 +1,0 @@
-slug: hobo-runtime-ts-primitives
-layer: technical
-proof-identity: ok

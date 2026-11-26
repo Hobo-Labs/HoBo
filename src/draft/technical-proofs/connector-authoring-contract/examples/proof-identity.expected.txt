@@ -1,3 +1,0 @@
-slug: connector-authoring-contract
-layer: technical
-proof-identity: ok

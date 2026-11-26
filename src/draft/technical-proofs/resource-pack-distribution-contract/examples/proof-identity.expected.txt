@@ -1,3 +1,0 @@
-slug: resource-pack-distribution-contract
-layer: technical
-proof-identity: ok

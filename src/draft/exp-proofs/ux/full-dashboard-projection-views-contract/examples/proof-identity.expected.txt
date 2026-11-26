@@ -1,3 +1,0 @@
-slug: full-dashboard-projection-views-contract
-layer: exp
-proof-identity: ok

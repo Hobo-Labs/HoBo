@@ -1,3 +1,0 @@
-slug: v1-readiness-dashboard-contract
-layer: exp
-proof-identity: ok

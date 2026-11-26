@@ -1,3 +1,0 @@
-slug: projection-sink-change-feed-conformance-contract
-layer: technical
-proof-identity: ok

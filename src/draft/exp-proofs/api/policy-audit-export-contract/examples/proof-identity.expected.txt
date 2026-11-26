@@ -1,3 +1,0 @@
-slug: policy-audit-export-contract
-layer: exp
-proof-identity: ok

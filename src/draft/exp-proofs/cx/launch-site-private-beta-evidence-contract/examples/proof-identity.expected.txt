@@ -1,3 +1,0 @@
-slug: launch-site-private-beta-evidence-contract
-layer: exp
-proof-identity: ok

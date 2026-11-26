@@ -1,3 +1,0 @@
-slug: hobo-auth-consumer-contract
-layer: technical
-proof-identity: ok

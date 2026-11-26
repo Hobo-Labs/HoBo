@@ -1,3 +1,0 @@
-slug: version-compat-resolution-semantics
-layer: technical
-proof-identity: ok

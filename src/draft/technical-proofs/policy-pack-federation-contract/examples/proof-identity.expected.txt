@@ -1,3 +1,0 @@
-slug: policy-pack-federation-contract
-layer: technical
-proof-identity: ok

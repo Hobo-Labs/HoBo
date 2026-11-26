@@ -1,3 +1,0 @@
-slug: workspace-activation-telemetry-contract
-layer: exp
-proof-identity: ok

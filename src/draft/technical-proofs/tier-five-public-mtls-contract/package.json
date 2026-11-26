@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/tier-five-public-mtls-contract",
-  "private": true,
-  "type": "module",
-  "description": "POC for realizing tier 5 public endpoints guarded by workload-SVID mutual TLS from HOBO-134.",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

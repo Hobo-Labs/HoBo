@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-dx-resource-lifecycle-scenario-matrix",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

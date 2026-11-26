@@ -1,3 +1,0 @@
-slug: control-plane-api-resource-lifecycle-shapes
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: provider-default-definitions-contract
-layer: technical
-proof-identity: ok

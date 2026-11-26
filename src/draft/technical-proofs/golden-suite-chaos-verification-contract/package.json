@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-golden-suite-chaos-verification-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

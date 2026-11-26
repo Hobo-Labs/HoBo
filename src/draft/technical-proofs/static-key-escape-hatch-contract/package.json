@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-static-key-escape-hatch-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

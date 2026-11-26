@@ -1,3 +1,0 @@
-slug: training-data-poisoning-guard-contract
-layer: technical
-proof-identity: ok

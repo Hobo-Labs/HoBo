@@ -1,3 +1,0 @@
-slug: runtime-local-component-host
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: go-no-go-decision-record-contract
-layer: technical
-proof-identity: ok

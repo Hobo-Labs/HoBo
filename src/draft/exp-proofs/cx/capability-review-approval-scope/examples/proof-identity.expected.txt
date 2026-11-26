@@ -1,3 +1,0 @@
-slug: capability-review-approval-scope
-layer: exp
-proof-identity: ok

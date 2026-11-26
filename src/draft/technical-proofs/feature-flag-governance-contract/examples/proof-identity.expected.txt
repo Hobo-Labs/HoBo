@@ -1,3 +1,0 @@
-slug: feature-flag-governance-contract
-layer: technical
-proof-identity: ok

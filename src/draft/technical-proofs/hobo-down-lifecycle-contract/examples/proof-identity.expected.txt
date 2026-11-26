@@ -1,3 +1,0 @@
-slug: hobo-down-lifecycle-contract
-layer: technical
-proof-identity: ok

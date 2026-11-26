@@ -1,3 +1,0 @@
-slug: dogfood-yard-private-beta-evidence-contract
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: vibe-deployment-dashboard-mockups
-layer: exp
-proof-identity: ok

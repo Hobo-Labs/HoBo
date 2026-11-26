@@ -1,3 +1,0 @@
-slug: hobo-principal-ref-contract
-layer: technical
-proof-identity: ok

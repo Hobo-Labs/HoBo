@@ -1,3 +1,0 @@
-slug: multi-cloud-shop-provider-e2e-contract
-layer: technical
-proof-identity: ok

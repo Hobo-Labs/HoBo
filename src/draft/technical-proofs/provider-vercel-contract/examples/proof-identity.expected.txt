@@ -1,3 +1,0 @@
-slug: provider-vercel-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: flag-debt-auto-cleanup-contract
-layer: technical
-proof-identity: ok

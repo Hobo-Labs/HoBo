@@ -1,3 +1,0 @@
-slug: sdk-object-graph-manifest-ir-shapes
-layer: exp
-proof-identity: ok

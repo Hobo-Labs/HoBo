@@ -1,7 +1,0 @@
-syntax = "proto3";
-package hobo.runtime.v1;
-
-message RuntimeScaffoldRecord {
-  string package_name = 1;
-  string owner_issue = 2;
-}

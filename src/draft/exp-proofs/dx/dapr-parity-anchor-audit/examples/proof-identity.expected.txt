@@ -1,3 +1,0 @@
-slug: dapr-parity-anchor-audit
-layer: exp
-proof-identity: ok

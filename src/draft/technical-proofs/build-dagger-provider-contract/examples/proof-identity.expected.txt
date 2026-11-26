@@ -1,3 +1,0 @@
-slug: build-dagger-provider-contract
-layer: technical
-proof-identity: ok

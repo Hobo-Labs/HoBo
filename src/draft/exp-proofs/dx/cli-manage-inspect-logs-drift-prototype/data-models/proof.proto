@@ -1,3 +1,0 @@
-syntax = "proto3";
-package hobo.draft.cli_manage_inspect_logs_drift_prototype;
-message ProofIdentity { string slug = 1; string layer = 2; }

@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-vibe-pilot-first-proof-walkthrough",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

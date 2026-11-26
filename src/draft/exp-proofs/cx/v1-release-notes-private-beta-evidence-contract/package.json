@@ -1,8 +1,0 @@
-{
-  "name": "v1-release-notes-private-beta-evidence-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

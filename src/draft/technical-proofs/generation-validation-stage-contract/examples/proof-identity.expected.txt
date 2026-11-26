@@ -1,3 +1,0 @@
-slug: generation-validation-stage-contract
-layer: technical
-proof-identity: ok

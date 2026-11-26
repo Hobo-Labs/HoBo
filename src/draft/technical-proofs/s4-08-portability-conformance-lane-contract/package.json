@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-s4-08-portability-conformance-lane-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

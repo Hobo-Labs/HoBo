@@ -1,8 +1,0 @@
-[
-	{
-		"id": "box",
-		"kind": "box-worker",
-		"runnerLabels": ["hobo", "hobo-trunk"],
-		"ring": "pilot"
-	}
-]

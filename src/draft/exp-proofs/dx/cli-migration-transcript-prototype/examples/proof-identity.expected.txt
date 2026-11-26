@@ -1,3 +1,0 @@
-slug: cli-migration-transcript-prototype
-layer: exp
-proof-identity: ok

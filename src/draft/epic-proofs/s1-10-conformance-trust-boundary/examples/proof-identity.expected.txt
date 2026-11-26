@@ -1,3 +1,0 @@
-slug: s1-10-conformance-trust-boundary
-layer: epic
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: launch-messaging-claim-register
-layer: exp
-proof-identity: ok

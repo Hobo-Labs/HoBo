@@ -1,3 +1,0 @@
-slug: generation-bounded-repair-loop-contract
-layer: technical
-proof-identity: ok

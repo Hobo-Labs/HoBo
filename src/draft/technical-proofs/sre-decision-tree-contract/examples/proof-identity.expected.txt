@@ -1,3 +1,0 @@
-slug: sre-decision-tree-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: tier-four-overlay-mesh-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: on-call-escalation-contract
-layer: technical
-proof-identity: ok

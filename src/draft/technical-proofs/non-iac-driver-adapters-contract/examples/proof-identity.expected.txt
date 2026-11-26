@@ -1,3 +1,0 @@
-slug: non-iac-driver-adapters-contract
-layer: technical
-proof-identity: ok

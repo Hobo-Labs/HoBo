@@ -1,3 +1,0 @@
-slug: s4-08-portability-conformance-lane-contract
-layer: technical
-proof-identity: ok

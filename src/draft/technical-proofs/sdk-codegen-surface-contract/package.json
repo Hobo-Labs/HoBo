@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/draft-sdk-codegen-surface-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root . && npm run test:types",
-    "test:types": "tsx scripts/write-type-fixture.ts && tsc --noEmit -p tsconfig.json"
-  }
-}

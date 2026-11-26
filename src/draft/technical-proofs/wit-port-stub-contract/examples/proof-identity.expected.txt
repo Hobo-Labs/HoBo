@@ -1,3 +1,0 @@
-slug: wit-port-stub-contract
-layer: technical
-proof-identity: ok

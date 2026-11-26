@@ -1,3 +1,0 @@
-slug: vibe-snapshop-launch-demo-storyboard
-layer: exp
-proof-identity: ok

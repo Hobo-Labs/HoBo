@@ -1,3 +1,0 @@
-slug: e2e-test-matrix-scope-acceptance
-layer: exp
-proof-identity: ok

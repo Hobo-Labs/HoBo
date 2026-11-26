@@ -1,3 +1,0 @@
-slug: component-host-oci-floor-contract
-layer: technical
-proof-identity: ok

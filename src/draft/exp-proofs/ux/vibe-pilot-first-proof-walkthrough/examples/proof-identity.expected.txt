@@ -1,3 +1,0 @@
-slug: vibe-pilot-first-proof-walkthrough
-layer: exp
-proof-identity: ok

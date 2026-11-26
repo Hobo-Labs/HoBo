@@ -1,3 +1,0 @@
-slug: tenant-isolation-quotas-scope
-layer: exp
-proof-identity: ok

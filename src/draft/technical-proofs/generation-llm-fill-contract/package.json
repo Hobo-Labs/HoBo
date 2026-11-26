@@ -1,9 +1,0 @@
-{
-  "name": "@hobo-draft/generation-llm-fill-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  },
-  "description": "POC for the generation pipeline LLM-fill stage contract."
-}

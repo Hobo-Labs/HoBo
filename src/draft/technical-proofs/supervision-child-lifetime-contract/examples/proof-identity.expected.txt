@@ -1,3 +1,0 @@
-slug: supervision-child-lifetime-contract
-layer: technical
-proof-identity: ok

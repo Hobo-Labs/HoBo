@@ -1,3 +1,0 @@
-slug: vibe-accessibility-usability-checklist
-layer: exp
-proof-identity: ok

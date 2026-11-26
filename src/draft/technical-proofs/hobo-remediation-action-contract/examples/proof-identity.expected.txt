@@ -1,3 +1,0 @@
-slug: hobo-remediation-action-contract
-layer: technical
-proof-identity: ok

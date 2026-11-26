@@ -1,3 +1,0 @@
-slug: gateway-realization-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: split-horizon-partition-connectivity-contract
-layer: technical
-proof-identity: ok

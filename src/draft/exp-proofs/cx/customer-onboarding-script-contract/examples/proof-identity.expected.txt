@@ -1,3 +1,0 @@
-slug: customer-onboarding-script-contract
-layer: exp
-proof-identity: ok

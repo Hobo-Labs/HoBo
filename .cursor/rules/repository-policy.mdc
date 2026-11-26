@@ -1,9 +1,0 @@
----
-description: Repository rules for self-documenting code and completed work
-alwaysApply: true
----
-
-Follow the repository-wide rules at the start of `AGENTS.md`. They apply to
-Cursor and all plugins and skills, including the completion discipline and the
-prohibition on explanatory comments, deferred-work markers, and planning or design
-documents.

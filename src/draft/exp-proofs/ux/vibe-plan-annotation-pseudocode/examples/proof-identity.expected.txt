@@ -1,3 +1,0 @@
-slug: vibe-plan-annotation-pseudocode
-layer: exp
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: vibe-marketplace-trust-copy-states
-layer: exp
-proof-identity: ok

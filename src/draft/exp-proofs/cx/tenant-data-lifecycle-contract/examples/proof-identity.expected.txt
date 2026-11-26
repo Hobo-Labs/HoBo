@@ -1,3 +1,0 @@
-slug: tenant-data-lifecycle-contract
-layer: exp
-proof-identity: ok

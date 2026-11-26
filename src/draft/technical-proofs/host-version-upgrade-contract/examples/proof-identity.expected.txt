@@ -1,3 +1,0 @@
-slug: host-version-upgrade-contract
-layer: technical
-proof-identity: ok

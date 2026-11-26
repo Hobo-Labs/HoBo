@@ -1,3 +1,0 @@
-slug: generation-eval-methodology-spike
-layer: technical
-proof-identity: ok

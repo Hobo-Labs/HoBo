@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-vibe-marketplace-trust-copy-states",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

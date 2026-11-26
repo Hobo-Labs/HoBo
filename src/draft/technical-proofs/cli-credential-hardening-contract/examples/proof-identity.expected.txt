@@ -1,3 +1,0 @@
-slug: cli-credential-hardening-contract
-layer: technical
-proof-identity: ok

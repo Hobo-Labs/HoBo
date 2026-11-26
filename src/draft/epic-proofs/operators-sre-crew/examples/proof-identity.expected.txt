@@ -1,3 +1,0 @@
-slug: operators-sre-crew
-layer: epic
-proof-identity: ok

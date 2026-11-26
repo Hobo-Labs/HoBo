@@ -1,9 +1,0 @@
-{
-  "name": "@hobo/epic-reference-wit-component-model-runtime-membrane",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root .",
-    "simulate": "node simulation/run-simulation.ts"
-  }
-}

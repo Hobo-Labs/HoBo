@@ -1,3 +1,0 @@
-slug: mtls-data-path-contract
-layer: technical
-proof-identity: ok

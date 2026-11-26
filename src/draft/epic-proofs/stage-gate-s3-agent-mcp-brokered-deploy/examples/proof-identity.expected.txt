@@ -1,3 +1,0 @@
-slug: stage-gate-s3-agent-mcp-brokered-deploy
-layer: epic
-proof-identity: ok

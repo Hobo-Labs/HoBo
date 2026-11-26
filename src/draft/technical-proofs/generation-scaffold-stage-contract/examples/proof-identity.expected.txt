@@ -1,3 +1,0 @@
-slug: generation-scaffold-stage-contract
-layer: technical
-proof-identity: ok

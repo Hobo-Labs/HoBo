@@ -1,3 +1,0 @@
-slug: inbound-xaa-resource-server-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: provider-authoring-contract
-layer: technical
-proof-identity: ok

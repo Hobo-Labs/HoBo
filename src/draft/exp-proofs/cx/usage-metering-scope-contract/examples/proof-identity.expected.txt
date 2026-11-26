@@ -1,3 +1,0 @@
-slug: usage-metering-scope-contract
-layer: exp
-proof-identity: ok

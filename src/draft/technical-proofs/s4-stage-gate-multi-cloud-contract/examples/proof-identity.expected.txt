@@ -1,3 +1,0 @@
-slug: s4-stage-gate-multi-cloud-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: s1-21-collect-codegen-cli-poc
-layer: technical
-proof-identity: ok

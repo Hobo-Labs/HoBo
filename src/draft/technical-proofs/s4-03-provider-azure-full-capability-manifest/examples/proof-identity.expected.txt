@@ -1,3 +1,0 @@
-slug: s4-03-provider-azure-full-capability-manifest
-layer: technical
-proof-identity: ok

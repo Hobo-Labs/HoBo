@@ -1,3 +1,0 @@
-slug: hobo-async-building-block-ports
-layer: technical
-proof-identity: ok

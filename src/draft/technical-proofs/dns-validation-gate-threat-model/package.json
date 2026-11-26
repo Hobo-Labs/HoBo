@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-dns-validation-gate-threat-model",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

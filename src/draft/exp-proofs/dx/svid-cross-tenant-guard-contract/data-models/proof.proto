@@ -1,3 +1,0 @@
-syntax = "proto3";
-package hobo.draft.svid_cross_tenant_guard_contract;
-message ProofIdentity { string slug = 1; string layer = 2; }

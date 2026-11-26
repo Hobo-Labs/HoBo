@@ -1,3 +1,0 @@
-slug: iac-state-model-contract
-layer: technical
-proof-identity: ok

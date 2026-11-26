@@ -1,3 +1,0 @@
-slug: federated-policy-pack-conflict-contract
-layer: technical
-proof-identity: ok

@@ -1,3 +1,0 @@
-slug: iac-drift-refresh-fidelity-contract
-layer: technical
-proof-identity: ok

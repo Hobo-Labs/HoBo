@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-id-jag-threat-model-spike",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

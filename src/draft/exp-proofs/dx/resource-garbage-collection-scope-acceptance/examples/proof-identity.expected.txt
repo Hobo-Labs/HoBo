@@ -1,3 +1,0 @@
-slug: resource-garbage-collection-scope-acceptance
-layer: exp
-proof-identity: ok

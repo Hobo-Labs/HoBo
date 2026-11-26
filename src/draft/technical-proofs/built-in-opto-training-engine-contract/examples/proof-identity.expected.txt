@@ -1,3 +1,0 @@
-slug: built-in-opto-training-engine-contract
-layer: technical
-proof-identity: ok

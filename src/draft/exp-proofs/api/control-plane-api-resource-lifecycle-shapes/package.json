@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-control-plane-api-resource-lifecycle-shapes",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

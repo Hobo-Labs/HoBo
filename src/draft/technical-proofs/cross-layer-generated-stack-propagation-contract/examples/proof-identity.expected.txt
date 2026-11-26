@@ -1,3 +1,0 @@
-slug: cross-layer-generated-stack-propagation-contract
-layer: technical
-proof-identity: ok

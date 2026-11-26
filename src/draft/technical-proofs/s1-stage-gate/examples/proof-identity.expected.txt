@@ -1,3 +1,0 @@
-slug: s1-stage-gate
-layer: technical
-proof-identity: ok

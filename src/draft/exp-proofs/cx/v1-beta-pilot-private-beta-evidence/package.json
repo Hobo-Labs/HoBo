@@ -1,8 +1,0 @@
-{
-  "name": "@hobo/draft-v1-beta-pilot-private-beta-evidence",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

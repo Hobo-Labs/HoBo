@@ -1,3 +1,0 @@
-slug: v1-critical-path-dependency-map-contract
-layer: exp
-proof-identity: ok

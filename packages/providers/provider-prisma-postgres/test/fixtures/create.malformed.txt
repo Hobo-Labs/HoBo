@@ -1,1 +1,0 @@
-{ "success": true, "connectionString": "postgresql://fake_user_000000:REDACTED@db.prisma.io:5432/postgres"

@@ -1,3 +1,0 @@
-slug: registry-dependency-confusion-guard-contract
-layer: technical
-proof-identity: ok
