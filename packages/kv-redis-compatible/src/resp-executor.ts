@@ -75,7 +75,6 @@ export function createRespExecutor(options: RespExecutorOptions): RespExecutor {
 	};
 }
 
-// public-contract: env names an operator sets to bind a self-hosted Valkey/Redis.
 export const REDIS_PROTOCOL_URL_ENV_NAMES = [
 	"VALKEY_URL",
 	"REDIS_URL",

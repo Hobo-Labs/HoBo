@@ -9,7 +9,6 @@ import {
 
 export const WASP_WEBAPP_METADATA = Symbol.for("hobo.webapp.wasp");
 export const WEBAPP_META = Symbol.for("hobo.webapp.meta");
-// public-contract: Bindle provider annotations use this stable option name.
 export const WEBAPP_OPTION = "webapp" as const;
 
 export type WaspWebAppMeta = {

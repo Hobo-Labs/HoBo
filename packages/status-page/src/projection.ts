@@ -56,11 +56,6 @@ export interface StatusPageRow {
 }
 
 export interface StatusPageProjectionOptions {
-	/**
-	 * Row key per event. Default: `data.scopeKey` when the emitter targeted a
-	 * page explicitly, else `project:<project>` when the envelope carries the
-	 * ADR-0077 rollup dimension, else `tenant:<tenant>`.
-	 */
 	readonly scopeKey?: (event: EventEnvelope) => string;
 }
 

@@ -207,7 +207,6 @@ class DurableActorState<S> implements ActorHostState<S> {
 	read() {
 		const snapshot = this.#stream.snapshot;
 		const snapshotSeq = snapshot?.seq ?? 0;
-		// SAFETY: assertion to `structuredClone(snapshot?.state ?? this.#initialState) as S` is required at this boundary.
 		let state = structuredClone(snapshot?.state ?? this.#initialState) as S;
 		const tail = this.#stream.events.filter(
 			(event) => Number(event.seq) > snapshotSeq,

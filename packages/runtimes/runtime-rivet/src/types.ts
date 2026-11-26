@@ -10,7 +10,7 @@ export type RivetInboxStatus =
 
 export type RivetFidelity = "local-sqlite" | "rivetkit" | "unsupported";
 
-// domain-view: parse-don't-validate parsed/derived type; wire form is RivetRuntimeConfig in data-models/runtime_rivet.proto.
+// domain-view:
 export interface RivetRuntimeConfig {
 	readonly campId: string;
 	readonly tenantId: string;
@@ -21,7 +21,7 @@ export interface RivetRuntimeConfig {
 	readonly svidBindingRef: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type; wire form is RivetDoctorReport in data-models/runtime_rivet.proto.
+// domain-view:
 export interface RivetDoctorReport {
 	readonly mode: RivetRuntimeMode;
 	readonly rivetkitAvailable: boolean;

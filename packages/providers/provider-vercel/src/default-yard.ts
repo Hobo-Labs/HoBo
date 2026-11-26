@@ -26,11 +26,6 @@ import {
 	type VercelStaticDeploySlotOptions,
 } from "./slots.js";
 
-/**
- * Vercel's documented default function region. It is a default *for the Yard
- * catalog*, not for any provider setting — a Yard has to say where it can
- * allocate, and this is the region Vercel itself defaults to.
- */
 export const VERCEL_DEFAULT_REGIONS = Object.freeze(["iad1"] as const);
 
 const REGION_PATTERN = /^[a-z0-9-]+$/u;
@@ -86,12 +81,6 @@ export const VERCEL_DEFAULT_BINDINGS: VercelSlotCatalog = Object.freeze({
 	kv: Object.freeze([edgeConfig()]),
 });
 
-/**
- * The default Vercel Yard as raw rows. `regions` defaults to the documented
- * default region; the catalog is not narrowed by region, because a Yard
- * declares what the provider can allocate, not what one region happens to
- * offer.
- */
 export function vercelYardSpec(
 	options: VercelYardSpecOptions = {},
 ): VercelYardSpec {
@@ -161,11 +150,6 @@ export function vercelYardRows(
 	return Object.freeze(rows);
 }
 
-/**
- * De-duplicate and sort, and refuse an empty or malformed region list rather
- * than silently falling back to the default — a Yard that claims a region it
- * cannot allocate in is a portability lie.
- */
 function canonicalRegions(
 	regions: readonly string[] | undefined,
 ): readonly string[] {

@@ -21,7 +21,6 @@ function readPrivate<K extends object, V>(
 	table: WeakMap<K, V>,
 	key: K,
 ): V | undefined {
-	// SAFETY: the private table determines the value type for this key.
 	return intrinsicApply(intrinsicWeakGet, table, [key]) as V | undefined;
 }
 function writePrivate<K extends object, V>(
@@ -411,7 +410,6 @@ function wireFallback(
 			const keys = Reflect.ownKeys(value);
 			if (keys.length > 256 || keys.some((key) => typeof key !== "string"))
 				return invalid();
-			// SAFETY: the preceding check establishes that every key is a string.
 			const names = (keys as string[]).sort();
 			const entries: Array<readonly [string, InvalidSnapshot]> = [];
 			for (const key of names) {
@@ -622,7 +620,6 @@ function canonical(
 	const keys = Reflect.ownKeys(value);
 	if (keys.length > 100_000 || keys.some((key) => typeof key !== "string"))
 		return invalid();
-	// SAFETY: the preceding check proves every own key is a string.
 	const names = (keys as string[]).sort();
 	return `{${names
 		.map((key) => {
@@ -1791,7 +1788,6 @@ export function createRivetDurableTopicClient(
 		},
 	};
 	Object.freeze(client);
-	// SAFETY: the constructor checked the metadata grant against the private grant registry.
 	const metadataGrant =
 		settings.metadataGrant as RivetDurableTopicMetadataGrant;
 	writePrivate(

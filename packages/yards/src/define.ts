@@ -107,7 +107,6 @@ export type YardSlots = {
 
 export type DefineYardConfig = YardSlots & {
 	readonly provider: string | { readonly id: string };
-	/** Sugar for `regions: [region]`. */
 	readonly region?: string;
 	readonly regions?: readonly string[];
 	readonly residency?: readonly string[];
@@ -135,16 +134,10 @@ export interface StationManifest {
 		airgap: boolean;
 		trustDomain: string;
 	}>;
-	/** Yard names, sorted. Registration, not containment (ADR-0131). */
 	readonly yardRefs: readonly string[];
 	readonly yards: readonly Yard[];
 }
 
-/**
- * Profile family → capability slot. The family is the profile's first
- * dot-segment (ADR-0151 grammar `<primitive-family>.<path>/v<major>`); it
- * equals the slot name except for the two ADR-0151 aliases below.
- */
 const SLOT_BY_PROFILE_FAMILY: ReadonlyMap<string, CapabilitySlot> = new Map<
 	string,
 	CapabilitySlot
@@ -157,11 +150,6 @@ const SLOT_BY_PROFILE_FAMILY: ReadonlyMap<string, CapabilitySlot> = new Map<
 	["realtime", "webhook"],
 ]);
 
-/**
- * Compiles slots to binding rows and returns a real `Yard` via the existing
- * `yard()` — no private construction path, so every refusal `yard()` makes
- * still fires here.
- */
 export function defineYard(name: string, config: DefineYardConfig): Yard {
 	requireName("yard name", name);
 	if (!isPlainObject(config)) {
@@ -200,12 +188,6 @@ export function defineYard(name: string, config: DefineYardConfig): Yard {
 	});
 }
 
-/**
- * The slot a Yard row came from, for diagnostics. Derived from the row's
- * profile family rather than remembered, so it answers for hand-written rows
- * too; `undefined` when the Yard has no row for that profile, or the profile's
- * family is outside the slot vocabulary.
- */
 export function slotOf(
 	yardObject: Yard,
 	profile: string,
@@ -274,8 +256,6 @@ export function defineStation(
 			trustDomain: isolation.trustDomain ?? `${name}.hobo.local`,
 		},
 		yardRefs: [...names].sort(),
-		// Sorted by name for the same reason the refs are: registration order is
-		// not information.
 		yards: [...yards].sort(compareYardNames),
 	});
 }
@@ -303,9 +283,6 @@ function compileSlotBinding(
 	if (!isJsonString(profile)) {
 		throw new TypeError(`slot binding for ${slot} must carry a profile string`);
 	}
-	// A malformed profile is left to `yard()` so the existing
-	// YARD_BINDING_PROFILE_INVALID refusal keeps naming it; only a well-formed
-	// profile can disagree with its slot.
 	if (YARD_BINDING_PROFILE_PATTERN.test(profile)) {
 		const expected = SLOT_BY_PROFILE_FAMILY.get(profileFamily(profile));
 		if (expected !== slot) {
@@ -329,7 +306,6 @@ function compileSlotBinding(
 	};
 }
 
-/** The profile's family: everything before the first `.` or `/`. */
 function profileFamily(profile: string): string {
 	const cut = profile.search(/[./]/u);
 	return cut === -1 ? profile : profile.slice(0, cut);

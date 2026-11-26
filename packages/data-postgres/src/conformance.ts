@@ -619,7 +619,7 @@ export type PostgresConformanceResultStatus =
 	| "not-run"
 	| "blocked";
 
-// parallel-type-allowed: the in-process result carries the closed status union this module folds over; the proto PostgresConformanceResult is the recorded wire projection of it.
+// parallel-type-allowed:
 export type PostgresConformanceResult = {
 	readonly caseId: string;
 	readonly capabilityKey: string;
@@ -629,7 +629,7 @@ export type PostgresConformanceResult = {
 
 export type PostgresConformanceOutcome = "pass" | "fail" | "unknown";
 
-// parallel-type-allowed: the run-time report also carries `skipped`, which is planning detail rather than recorded evidence; the proto PostgresConformanceReport is the durable subset.
+// parallel-type-allowed:
 export type PostgresConformanceReport = {
 	readonly suiteRef: string;
 	/** Matches `ProfileImplementation.conformance` exactly. */

@@ -33,7 +33,6 @@ export const BROWSER_WASM_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct
 		}),
 	]);
 
-/** The I14 coverage document for Browser WASM. */
 export const BROWSER_WASM_HOSTING_COVERAGE: HostingCoverage =
 	defineHostingCoverage({
 		providerId: "browser-wasm",
