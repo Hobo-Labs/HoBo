@@ -8,11 +8,11 @@ spans several files.
 
 When a Fabric workspace test shard lands on `ubuntu-24.04`, `ci-runner-preflight`
 with `browser: true` always restores or installs the lockfile-pinned chromium
-headless shell. The browser installation is cached with `actions/cache/restore`
-and `actions/cache/save` under a key derived from the lockfile and install
+headless shell. The zip is cached under `actions/cache/restore` and
+`actions/cache/save` keyed by the lockfile, ci-runner contract, and install
 scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
-`PLAYWRIGHT_BROWSERS_PATH` pointing at that directory. Self-hosted `hobo`
-runners keep the image-baked browsers under `/opt/pw-browsers`.
+`PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
+Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
 
 ## Routing
 
