@@ -1141,12 +1141,19 @@ export const COMPOSITE_STEP_UNSUPPORTED_KEYS = [
 	"container",
 	"permissions",
 	"outputs",
-	"defaults",
 ] as const;
 
 const COMPOSITE_STEP_UNSUPPORTED = new Set<string>(
 	COMPOSITE_STEP_UNSUPPORTED_KEYS,
 );
+
+function compositeStepKey(key: unknown): string | undefined {
+	if (typeof key === "string") return key;
+	if (typeof key !== "object" || key === null || !("value" in key))
+		return undefined;
+	const value = key.value;
+	return typeof value === "string" ? value : undefined;
+}
 
 export function lintCompositeStepFields(
 	errors: string[],
@@ -1161,33 +1168,15 @@ export function lintCompositeStepFields(
 	const using =
 		typeof usingNode === "string"
 			? usingNode
-			: (usingNode?.value as string | undefined);
+			: compositeStepKey(usingNode);
 	if (using !== "composite") return;
 	const steps = doc.get("runs")?.get("steps");
 	if (!steps || !Array.isArray(steps.items)) return;
 	for (const [index, step] of steps.items.entries()) {
 		if (!step?.items) continue;
 		for (const pair of step.items) {
-			const key =
-				typeof pair.key === "string"
-					? pair.key
-					: (pair.key?.value as string | undefined);
-			if (key === undefined) continue;
-			if (key === "continue-on-error") {
-				const valueNode = pair.value;
-				const valueText =
-					typeof valueNode === "string"
-						? valueNode
-						: typeof valueNode === "boolean"
-							? String(valueNode)
-							: (valueNode?.source as string | undefined);
-				if (valueText?.includes("${{"))
-					errors.push(
-						`${file}: composite step ${index + 1} must not set continue-on-error to an expression (unsupported in composite actions)`,
-					);
-				continue;
-			}
-			if (!COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
+			const key = compositeStepKey(pair.key);
+			if (key === undefined || !COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
 			errors.push(
 				`${file}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
 			);

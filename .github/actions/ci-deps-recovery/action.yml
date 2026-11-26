@@ -31,18 +31,21 @@ runs:
         timeout 480 node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts
         status=$?
         set -e
-        if [ "$status" -eq 0 ]; then
+        output_file="${GITHUB_OUTPUT:-}"
+        outputs_missing=0
+        if [ -z "$output_file" ] || [ ! -f "$output_file" ] || ! grep -q '^materialized=' "$output_file"; then
+          outputs_missing=1
+        fi
+        if [ "$status" -ne 0 ] && [ "$outputs_missing" -eq 1 ]; then
+          if [ "$status" -eq 124 ]; then
+            echo "::warning title=hobo-ci-deps-materialize-timeout::GHCR deps materialize exceeded 8 minutes"
+          fi
+          if [ -n "$output_file" ]; then
+            printf '%s\n' 'materialized=false' 'source=failed' 'install=false' >> "$output_file" || true
+          fi
           exit 0
         fi
-        if [ "$status" -eq 124 ]; then
-          echo "::warning title=hobo-ci-deps-materialize-timeout::GHCR deps materialize exceeded 8 minutes"
-        fi
-        if ! grep -q '^materialized=' "$GITHUB_OUTPUT"; then
-          echo "materialized=false" >> "$GITHUB_OUTPUT"
-          echo "source=failed" >> "$GITHUB_OUTPUT"
-          echo "install=false" >> "$GITHUB_OUTPUT"
-        fi
-        exit 0
+        exit "$status"
     - name: Link published GHCR deps layer
       if: steps.deps-materialize.outputs.materialized == 'true'
       shell: bash

@@ -219,3 +219,10 @@ The OCI image input key includes SDK bundling helpers for the SDK image. The CLI
 image key also depends on the SDK image key because CLI staging installs its npm
 artifacts; the MCP image depends on the CLI image. This prevents an unchanged image
 key from hiding a changed SDK artifact while leaving unrelated image keys independent.
+
+## Composite action lint
+
+`pnpm run actions:lint` walks `.github/actions/**/action.yml` and rejects
+composite steps that set workflow-only fields such as `timeout-minutes` (use a
+shell `timeout` instead) or `continue-on-error: ${{ ... }}`. Job timeout and
+retry policy belong on the workflow job, not inside the composite.
