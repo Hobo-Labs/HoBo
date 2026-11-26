@@ -607,6 +607,7 @@ f: /* TODO: remove block */`;
 			["notes/new.md", "---\ntype: Design\n---\n"],
 			["packages/example/ADR.md", "# Decision"],
 			["packages/example/ARCHITECTURE.md", "# Architecture"],
+			["notes/cache-architecture.md", "# Architecture"],
 			["docs/architecture/cache.md", "# Cache"],
 			["notes/new.md", "---\ntype: Architecture Evidence\n---\n"],
 			["docs/decisions/adr-001-cache.md", "# Decision"],

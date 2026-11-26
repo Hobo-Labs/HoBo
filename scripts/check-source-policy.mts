@@ -573,7 +573,7 @@ export function documentViolation(
 		/(?:^|\/)(?:design|roadmap|(?:implementation[-_])?plan)\.mdx?$/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)[^/]+[-_](?:design|roadmap|plan|adr|rfc|proposal)\.mdx?$/iu.test(
+		/(?:^|\/)[^/]+[-_](?:design|roadmap|plan|architecture|adr|rfc|proposal)\.mdx?$/iu.test(
 			sourceFile,
 		) ||
 		/(?:^|\/)(?:architecture|adr|rfc|proposal)(?:[-_][^/]*)?\.mdx?$/iu.test(
