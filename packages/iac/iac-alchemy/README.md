@@ -863,7 +863,7 @@ it does not prove those assumptions or the implementation.
 JSON queue actor in one Rivet program. The host must attest the registry, source,
 transport, pool and isolation domain. Admission and response authorization are
 separate decisions; an uncertain queue operation requires reconciliation. This
-does not implement the synchronous HoBo WIT queue or Bindle queue dependencies.
+does not implement the HoBo WIT queue or Bindle queue dependencies.
 The bounded `model/RivetHttpQueue.tla` checks one HTTP request and one enqueue
 under its stated host authority, fencing and draining assumptions; it does not
 prove those assumptions, the implementation or the provider.

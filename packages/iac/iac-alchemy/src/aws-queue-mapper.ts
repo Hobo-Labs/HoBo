@@ -43,7 +43,7 @@ export function awsDynamoDurableQueueMappers<Entrypoint, Requirements>(
 		annotations: ["aws:dynamodb-durable-queue"],
 		bindsEntrypoint: false,
 		limitations: [
-			"Node.js atomic queue has a 512-event segment and a 256-KiB record; host compaction is required. No automatic dead-letter export or native SQS queue; HTTP binding requires an explicitly configured source.",
+			"Node.js queue: 512-event segment, 256-KiB record; host compaction required. No automatic dead-letter export or native SQS queue. HTTP binding requires a configured source.",
 			"The host must fence the dedicated table, authorize the queue and reconcile unknown operations.",
 			"Supplied pricing must cover queue storage and requests; individual queue calls do not perform budget admission.",
 		],
