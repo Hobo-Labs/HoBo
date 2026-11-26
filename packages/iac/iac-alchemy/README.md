@@ -136,12 +136,21 @@ const mappers = awsHttpBindleMappers({
   source,
   main,
   authType: "IamAuth",
+  maxEnvironments: 2,
+  rateLimit: 100,
   sourceFence: host.sourceFence,
   verifySource: (claim) => host.verifySource(claim),
 }, awsS3BindleMappers(awsDynamoKvBindleMappers()));
 // Pass selectedBindle and mappers to mapBindleToAlchemy and the normal
 // financial planning and admission flow.
 ```
+
+The required endpoint limits bound the advertised execution environments and
+request rate; they do not themselves enforce a monetary budget. A supplied
+financial model must cover the Web Function and all provider-managed effects,
+including its execution role, logs, code assets, requests and storage. The host
+must verify the inventory and model; unknown or unbounded liability remains
+subject to the policy plane's explicit unpriced decision.
 
 The listener maps to `AWS.Lambda.WebFunction`; it resolves the exact mapped
 resource names from the function environment and fails closed if names or grants

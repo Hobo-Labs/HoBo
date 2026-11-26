@@ -47,9 +47,17 @@ export function awsHttpBindleMappers<Requirements>(
 		readonly source: AwsHttpSource;
 		readonly main: string;
 		readonly authType: "IamAuth" | "ApplicationManaged";
+		readonly maxEnvironments: number;
+		readonly rateLimit: number;
 		readonly sourceFence: AlchemySourceFence;
 		readonly verifySource: (
-			claim: Readonly<{ main: string; source: AwsHttpSource }>,
+			claim: Readonly<{
+				main: string;
+				source: AwsHttpSource;
+				authType: "IamAuth" | "ApplicationManaged";
+				maxEnvironments: number;
+				rateLimit: number;
+			}>,
 		) => boolean;
 	},
 	base = awsBindleMappers<AwsHttpEntrypoint, Requirements>(),
@@ -58,19 +66,26 @@ export function awsHttpBindleMappers<Requirements>(
 		!options ||
 		typeof options !== "object" ||
 		types.isProxy(options) ||
-		Reflect.ownKeys(options).length !== 5 ||
-		["source", "main", "authType", "sourceFence", "verifySource"].some(
-			(key) => {
-				const field = Object.getOwnPropertyDescriptor(options, key);
-				return !field || !Object.hasOwn(field, "value") || !field.enumerable;
-			},
-		)
+		Reflect.ownKeys(options).length !== 7 ||
+		[
+			"source",
+			"main",
+			"authType",
+			"maxEnvironments",
+			"rateLimit",
+			"sourceFence",
+			"verifySource",
+		].some((key) => {
+			const field = Object.getOwnPropertyDescriptor(options, key);
+			return !field || !Object.hasOwn(field, "value") || !field.enumerable;
+		})
 	)
 		throw new AlchemyIacError(
 			"ENTRYPOINT_UNSUPPORTED",
 			"AWS source options must be own data",
 		);
-	const { source, main, authType, verifySource } = options;
+	const { source, main, authType, maxEnvironments, rateLimit, verifySource } =
+		options;
 	const captured = inspectAwsHttpSource(source);
 	const fence = captureAlchemySourceFence(options.sourceFence);
 	if (
@@ -81,12 +96,19 @@ export function awsHttpBindleMappers<Requirements>(
 		main.length > 4096 ||
 		/[\p{Cc}]/u.test(main) ||
 		(authType !== "IamAuth" && authType !== "ApplicationManaged") ||
+		!Number.isInteger(maxEnvironments) ||
+		maxEnvironments < 2 ||
+		maxEnvironments > 10_000 ||
+		!Number.isInteger(rateLimit) ||
+		rateLimit < 0 ||
+		rateLimit > 10_000 ||
+		rateLimit % (rateLimit <= 1000 ? 100 : 1000) !== 0 ||
 		typeof verifySource !== "function" ||
 		types.isProxy(verifySource)
 	)
 		throw new AlchemyIacError(
 			"ENTRYPOINT_UNSUPPORTED",
-			"an attested AWS HTTP source and explicit endpoint authentication are required",
+			"an attested AWS HTTP source, explicit endpoint authentication and valid scaling limits are required",
 		);
 	let canonical: string;
 	try {
@@ -125,7 +147,15 @@ export function awsHttpBindleMappers<Requirements>(
 		try {
 			verified =
 				acceptSynchronousTrue(
-					verifySource(Object.freeze({ main: canonical, source })),
+					verifySource(
+						Object.freeze({
+							main: canonical,
+							source,
+							authType,
+							maxEnvironments,
+							rateLimit,
+						}),
+					),
 				) && verifyAlchemySourceFence(fence, claim);
 		} catch {}
 		if (!verified || !inspectAwsHttpSource(source))
@@ -207,6 +237,8 @@ export function awsHttpBindleMappers<Requirements>(
 					authType,
 					env,
 					maxConcurrencyPerEnvironment: 32,
+					maxEnvironments,
+					rateLimit,
 				});
 				if (
 					primary.FQN !== claim.resourceId ||
