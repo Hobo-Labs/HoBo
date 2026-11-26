@@ -58,6 +58,7 @@ export interface AlchemyPrimitiveMapper<Entrypoint, Requirements, Services> {
 	readonly bindsEntrypoint: boolean;
 
 	readonly limitations?: readonly string[];
+	readonly validateGraph?: (graph: AlchemyPrimitiveGraph<Requirements>) => void;
 	readonly validate?: (
 		input: AlchemyPrimitiveInput<Entrypoint, Requirements>,
 	) => void;
@@ -66,6 +67,20 @@ export interface AlchemyPrimitiveMapper<Entrypoint, Requirements, Services> {
 			readonly dependencies: Readonly<Record<string, ResourceLike>>;
 		},
 	) => Effect.Effect<AlchemyMappedPrimitive<Entrypoint>, never, Services>;
+}
+
+export interface AlchemyPrimitiveGraph<Requirements> {
+	readonly bindleName: string;
+	readonly requirements: Requirements;
+	readonly nodes: Readonly<
+		Record<
+			string,
+			Readonly<{
+				readonly declaration: PrimitiveDeclaration;
+				readonly dependencies: readonly string[];
+			}>
+		>
+	>;
 }
 
 export interface AlchemyPrimitiveInput<Entrypoint, Requirements> {
@@ -652,6 +667,8 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		if (candidate.limitations !== undefined)
 			mapper.limitations = Object.freeze([...candidate.limitations]);
 		if (candidate.validate !== undefined) mapper.validate = candidate.validate;
+		if (candidate.validateGraph !== undefined)
+			mapper.validateGraph = candidate.validateGraph;
 		Object.freeze(mapper);
 		if (
 			mapper.resourceTypes.length === 0 ||
@@ -761,7 +778,29 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			pending.delete(name);
 		}
 	}
+	const graphNodes: Record<
+		string,
+		AlchemyPrimitiveGraph<Requirements>["nodes"][string]
+	> = Object.create(null);
+	for (const [name, row] of rows)
+		graphNodes[name] = Object.freeze({
+			declaration: row.declaration,
+			dependencies: Object.freeze([...row.dependencies]),
+		});
+	const graph = Object.freeze({
+		bindleName,
+		requirements,
+		nodes: Object.freeze(graphNodes),
+	});
 	for (const row of order) {
+		const graphValidation: unknown = row.mapper.validateGraph?.(graph);
+		if (graphValidation !== undefined) {
+			observeUnexpectedSynchronousResult(graphValidation);
+			throw new AlchemyIacError(
+				"BINDLE_VALIDATION_UNAVAILABLE",
+				"graph validation must complete synchronously without a return value",
+			);
+		}
 		const dependencyDeclarations: Record<string, PrimitiveDeclaration> =
 			Object.create(null);
 		for (const name of row.dependencies) {
