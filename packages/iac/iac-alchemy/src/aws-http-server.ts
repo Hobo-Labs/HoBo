@@ -13,7 +13,6 @@ export interface AwsHttpServer {
 	close(): Promise<void>;
 }
 
-/** Start the attested source at the endpoint supplied by AWS Lambda Web Functions. */
 export async function startAwsHttpServer(
 	source: AwsHttpSource,
 	endpoint = process.env.AWS_LAMBDA_HTTP_ENDPOINT,
