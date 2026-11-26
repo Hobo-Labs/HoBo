@@ -47,7 +47,8 @@ export function awsKmsCryptographyMappers<Entrypoint, Requirements>(
 		annotations: ["aws:kms-cryptography"],
 		bindsEntrypoint: false,
 		limitations: [
-			"Node.js symmetric KMS encryption only; signing, verification and application bindings are not implemented.",
+			"Node.js symmetric KMS encryption only; signing and verification are not implemented.",
+			"Application bindings require a verified exact key grant and an explicitly selected AWS HTTP source.",
 			"The host must verify the exact key grant and reconcile unknown operations before retrying.",
 			"Supplied pricing must cover key and operation charges; individual operations do not perform budget admission.",
 		],

@@ -8,6 +8,10 @@ import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import {
+	awsKmsCryptographyMappers,
+	withAwsKmsCryptography,
+} from "../src/aws-cryptography-mapper.js";
+import {
 	awsHttpBindleMappers,
 	awsWebFunctionSource,
 } from "../src/aws-http-mapper.js";
@@ -200,6 +204,71 @@ describe("AWS Alchemy HTTP application mapping", () => {
 		expect(
 			Object.keys(Output.resolveUpstream(web.Props.env.HOBO_RESOURCE_0)),
 		).toEqual(["jobs"]);
+	});
+	it("connects a mapped cryptography key to its consuming WebFunction", async () => {
+		const definition = bindle("crypto-app", (b) => {
+			const key = b.crypto().allow("encrypt", "decrypt");
+			return {
+				key,
+				web: b
+					.web(() => () => new Response("ok"))
+					.with(sessionReplay({ enabled: false }))
+					.dependsOn(key),
+			};
+		});
+		const selected = withAwsKmsCryptography(definition, { key: true });
+		const source = defineAwsHttpSource({
+			bindle: selected,
+			applicationName: "web",
+			environment: {},
+			resolveStores: () => ({}),
+			verifyBinding: () => true,
+		});
+		const main = fileURLToPath(import.meta.url);
+		const mappers = awsHttpBindleMappers(
+			{
+				source,
+				main,
+				authType: "IamAuth",
+				maxEnvironments: 2,
+				rateLimit: 100,
+				sourceFence: {
+					sourceDigest: `sha256:${"a".repeat(64)}`,
+					environmentDigest: `sha256:${"b".repeat(64)}`,
+					proofRef: "host:test",
+					verify: () => true,
+				},
+				verifySource: () => true,
+			},
+			awsKmsCryptographyMappers(),
+		);
+		// SAFETY: the fixture supplies all Alchemy services required by these mapper constructors.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, {
+				assessRequirements: () => ({ status: "supported" as const }),
+			}).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+				Effect.provideService(Stage, "test"),
+				Effect.provideService(AlchemyContext, {
+					dotAlchemy: "/tmp",
+					dev: false,
+					adopt: false,
+				}),
+			) as Effect.Effect<AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.key?.Type).toBe("AWS.KMS.Key");
+		const web = mapped.primary.web;
+		if (!web) throw Error("missing web function");
+		expect(web.Type).toBe("AWS.Lambda.WebFunction");
+		expect(
+			Object.keys(Output.resolveUpstream(web.Props.env.HOBO_RESOURCE_0)),
+		).toEqual(["key"]);
 	});
 	it("connects a mapped notification topic to its consuming WebFunction", async () => {
 		const definition = bindle("alerts-app", (b) => {
