@@ -34,6 +34,7 @@ import {
 import { startAwsHttpServer } from "../src/aws-http-server.js";
 import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsDynamoKvStore } from "../src/aws-kv.js";
+import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
@@ -677,6 +678,55 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			expect(await store.exists("user:1")).toBe(true);
 			await store.delete("user:1");
 			expect(await store.exists("user:1")).toBe(false);
+
+			const atomicOptions = {
+				grant: {
+					tableName: result.tableName,
+					accountId: "000000000000",
+					partition: "aws",
+					region: "us-east-1",
+					resourceEpoch: `sha256:${"a".repeat(64)}`,
+					grantEpoch: `sha256:${"b".repeat(64)}`,
+					allow: ["get", "set"] as const,
+				},
+				verify: () => authorized,
+				layer,
+			};
+			const atomic = createAwsQueueAtomicStore(atomicOptions);
+			expect(await atomic.load()).toEqual({ status: "missing" });
+			expect(await atomic.compareAndSwap(0, new Uint8Array([1]))).toEqual({
+				status: "committed",
+			});
+			expect(await atomic.compareAndSwap(0, new Uint8Array([9]))).toEqual({
+				status: "unknown",
+			});
+			const reopened = createAwsQueueAtomicStore(atomicOptions);
+			expect(await reopened.load()).toEqual({
+				status: "available",
+				revision: 1,
+				bytes: new Uint8Array([1]),
+			});
+			const results = await Promise.all([
+				atomic.compareAndSwap(1, new Uint8Array([2])),
+				reopened.compareAndSwap(1, new Uint8Array([3])),
+			]);
+			expect(
+				results.filter((value) => value.status === "committed"),
+			).toHaveLength(1);
+			expect(
+				results.filter((value) => value.status === "unknown"),
+			).toHaveLength(1);
+			const final = await reopened.load();
+			expect(final.status).toBe("available");
+			if (final.status !== "available")
+				throw new Error("atomic state unavailable");
+			expect(final.revision).toBe(2);
+			expect([2, 3]).toContain(final.bytes[0]);
+			authorized = false;
+			expect(await atomic.load()).toEqual({ status: "unavailable" });
+			expect(await atomic.compareAndSwap(2, new Uint8Array([4]))).toEqual({
+				status: "unknown",
+			});
 		},
 		30_000,
 	);

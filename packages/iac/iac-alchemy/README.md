@@ -1150,3 +1150,15 @@ the bucket incarnation and IAM scope on each operation. Responses with invalid
 metadata or ranges consume at most one chunk so the stream scope closes;
 uncertain mutations require reconciliation. This runtime is not yet bound to
 applications.
+
+The internal AWS queue atomic store uses a strongly consistent read and a
+conditional DynamoDB write for one bounded state document. A failed conditional
+write, denied disclosure, timeout, or service error reports `unknown`: an
+underlying request may have committed before its response was lost. A caller
+must reconcile durable operation receipts before retrying; an `unknown` result
+is not proof of a conflict or of no effect. Each queue requires a dedicated,
+exclusively owned table and host-verified resource epoch; deleting or recreating
+that table without fencing can lose receipts or permit an ABA revision. This
+storage layer does not yet implement queue messages, leases, the SQS mapping, or
+component bindings. The official AWS Emulator test checks conditional writes,
+reopening, and concurrent writers against an Alchemy-created table.
