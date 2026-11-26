@@ -110,39 +110,13 @@ and append "..." to indicate truncation.
 ## Agent Brief
 
 **Category:** enhancement
-**Summary:** Add `.out-of-scope/` directory support for tracking rejected feature requests
+**Summary:** Filter issue lists by state
 
-**Current behavior:**
-When a feature request is rejected, the issue is closed with a `wontfix` label
-and a comment. There is no persistent record of the decision or reasoning.
-Future similar requests require the maintainer to recall or search for the
-prior discussion.
+**Current behavior:** The list command returns every issue.
 
-**Desired behavior:**
-Rejected feature requests should be documented in `.out-of-scope/<concept>.md`
-files that capture the decision, reasoning, and links to all issues that
-requested the feature. When triaging new issues, these files should be
-checked for matches.
+**Desired behavior:** An optional state filter returns only matching issues.
 
-**Key interfaces:**
-- Markdown file format in `.out-of-scope/` — each file should have a
-  `# Concept Name` heading, a `**Decision:**` line, a `**Reason:**` line,
-  and a `**Prior requests:**` list with issue links
-- The triage workflow should read all `.out-of-scope/*.md` files early
-  and match incoming issues against them by concept similarity
-
-**Acceptance criteria:**
-- [ ] Closing a feature as wontfix creates/updates a file in `.out-of-scope/`
-- [ ] The file includes the decision, reasoning, and link to the closed issue
-- [ ] If a matching `.out-of-scope/` file already exists, the new issue is
-      appended to its "Prior requests" list rather than creating a duplicate
-- [ ] During triage, existing `.out-of-scope/` files are checked and surfaced
-      when a new issue matches a prior rejection
-
-**Out of scope:**
-- Automated matching (human confirms the match)
-- Reopening previously rejected features
-- Bug reports (only enhancement rejections go to `.out-of-scope/`)
+**Acceptance criteria:** The unfiltered output is unchanged; a filter includes matching issues and excludes others.
 ```
 
 ### Good agent brief (PR)

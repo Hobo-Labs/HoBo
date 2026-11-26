@@ -19,7 +19,7 @@ Every comment or issue posted to the issue tracker during triage **must** start 
 ## Reference docs
 
 - [AGENT-BRIEF.md](AGENT-BRIEF.md) — how to write durable agent briefs
-- [OUT-OF-SCOPE.md](OUT-OF-SCOPE.md) — how the `.out-of-scope/` knowledge base works
+- [OUT-OF-SCOPE.md](OUT-OF-SCOPE.md) — how to record and find prior rejection decisions in Linear
 
 ## Roles
 
@@ -67,22 +67,22 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Triage a specific issue or PR
 
-1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using the project's domain glossary, respecting ADRs in the area. Run two checks against the codebase: (a) **redundancy** — search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 5). (b) **prior rejection** — read `.out-of-scope/*.md` and surface any that resembles this request.
+1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using its implemented behavior and terminology. Run two checks against the codebase: (a) **redundancy** — search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 5). (b) **prior rejection** — search Linear for prior rejected requests and surface any that resemble this request.
 
-2. **Recommend.** Tell the maintainer your category and state recommendation with reasoning, plus a brief codebase summary relevant to the request — including whether it's already implemented. Wait for direction.
+2. **Recommend.** Report the category and state recommendation with reasoning and relevant codebase evidence. Apply the requested outcome; ask only when a missing decision blocks the work.
 
 3. **Verify the claim.** Before any grilling, check that the claim holds up. For a bug, reproduce it from the reporter's steps. For a PR, confirm the diff does what it claims — check it out, run the relevant tests or commands. Report what happened: confirmed (with code path), failed, or insufficient detail (a strong `needs-info` signal). A confirmed verification makes a much stronger agent brief.
 
-4. **Grill (if needed).** If the request needs fleshing out, run the `/grilling` and `/domain-modeling` skills together — grill it into shape one question at a time, sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
+4. **Grill (if needed).** If the request needs fleshing out, run the `/grilling` and `/domain-modeling` skills together — clarify only the details needed to proceed, using existing domain terms and recording unfinished work in Linear.
 
 5. **Apply the outcome:**
    - `ready-for-agent` — post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).
    - `ready-for-human` — same structure as an agent brief, but note why it can't be delegated (judgment calls, external access, design decisions, manual testing).
    - `needs-info` — post triage notes (template below).
    - `wontfix` — close, with the comment depending on *why*:
-     - **Already implemented** — the change already exists in the codebase. Point to where it lives; do **not** write to `.out-of-scope/` (that KB is for *rejected* requests, not built ones).
+     - **Already implemented** — the change already exists in the codebase. Point to where it lives; do not record a rejection for an implemented feature.
      - **Rejected (bug)** — polite explanation, then close.
-     - **Rejected (enhancement)** — write to `.out-of-scope/`, link to it from a comment, then close ([OUT-OF-SCOPE.md](OUT-OF-SCOPE.md)).
+     - **Rejected (enhancement)** — record the decision in the authorized Linear issue, then close ([OUT-OF-SCOPE.md](OUT-OF-SCOPE.md)).
    - `needs-triage` — apply the role. Optional comment if there's partial progress.
 
 ## Quick state override
