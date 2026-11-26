@@ -1,8 +1,6 @@
 ------------------------ MODULE AwsSecretOrdering ------------------------
 EXTENDS Naturals, FiniteSets, TLC
 
-\* Provider creation timestamps are the only ordering evidence. A tie does not
-\* establish which secret version is newest.
 CONSTANTS Versions, Times
 VARIABLES timestamp, result, ordering
 vars == <<timestamp, result, ordering>>
