@@ -17,7 +17,15 @@ const { parseDocument, isScalar, isMap, isSeq, isPair, isNode } = yamlMod;
 if (parseDocument === undefined) {
 	throw new Error("yaml package missing parseDocument");
 }
-type YamlNode = import("yaml").Node;
+type YamlAstNode = Readonly<{
+	range?: readonly [number, number, number] | null;
+	value?: unknown;
+}>;
+
+function isYamlStringKey(key: YamlAstNode | string): key is string {
+	const coerced = `${key}`;
+	return coerced === key;
+}
 
 export type LintActionsResult = Readonly<{
 	exitCode: number;
@@ -1128,10 +1136,6 @@ function lintWorkflowYaml(
 	}
 }
 
-/**
- * Keys GitHub rejects on `runs.steps` inside composite actions (job-level
- * knobs and workflow step fields that only apply in workflows).
- */
 export const COMPOSITE_STEP_UNSUPPORTED_KEYS = [
 	"timeout-minutes",
 	"runs-on",
@@ -1157,30 +1161,32 @@ type YamlMapKey = Readonly<{
 
 function sourceLineFromNode(
 	text: string,
-	node: YamlNode,
+	node: YamlAstNode,
 ): YamlSourceLine | undefined {
 	const start = node.range?.[0];
 	if (start === undefined) return undefined;
 	return { line: text.slice(0, start).split("\n").length };
 }
 
-function mapKeyText(key: YamlNode | string): string | undefined {
-	if (isScalar(key)) {
-		const { value } = key;
-		const coerced = `${value}`;
-		return coerced === value ? coerced : undefined;
-	}
-	const coerced = `${key}`;
-	return coerced === key ? coerced : undefined;
+function mapKeyText(key: YamlAstNode | string): string | undefined {
+	if (isYamlStringKey(key)) return key;
+	if (!isScalar(key)) return undefined;
+	const { value } = key;
+	const coerced = `${value}`;
+	return coerced === value ? coerced : undefined;
 }
 
 function parseYamlMapKey(
-	key: YamlNode | string,
+	key: YamlAstNode | string,
 	text: string,
 ): YamlMapKey | undefined {
 	const keyText = mapKeyText(key);
 	if (keyText === undefined) return undefined;
-	const source = isNode(key) ? sourceLineFromNode(text, key) : undefined;
+	const source = isYamlStringKey(key)
+		? undefined
+		: isNode(key)
+			? sourceLineFromNode(text, key)
+			: undefined;
 	return { text: keyText, source };
 }
 
