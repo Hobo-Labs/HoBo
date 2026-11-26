@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	NBGV_MISE_DIR,
 	NBGV_MISE_TOML,
 	nbgvDotnetResolvable,
 	nbgvMiseExecEnv,
+	nbgvMiseExecPath,
 	nbgvMiseInstallArgv,
 	nbgvMiseReleaseDir,
 } from "../lib/nbgv-toolchain.mts";
@@ -30,6 +31,19 @@ describe("nbgv toolchain scope", () => {
 		expect(nbgvMiseExecEnv(root, {})).toMatchObject({
 			MISE_CONFIG_DIR: releaseDir,
 		});
+	});
+
+	it("prepends the host node directory when PATH has no node", () => {
+		const hostNodeExecPath = "/opt/self-hosted/node/bin/node";
+		const barePath = ["/usr/bin", "/bin"].join(delimiter);
+		const nodeDir = dirname(hostNodeExecPath);
+		expect(barePath.split(delimiter)).not.toContain(nodeDir);
+		expect(
+			nbgvMiseExecPath(barePath, hostNodeExecPath).split(delimiter)[0],
+		).toBe(nodeDir);
+		const env = nbgvMiseExecEnv(root, { PATH: barePath }, hostNodeExecPath);
+		expect(env.PATH?.split(delimiter)[0]).toBe(nodeDir);
+		expect(env.PATH).toBe([nodeDir, barePath].join(delimiter));
 	});
 
 	it("exec env ignores the repo root mise.toml", () => {
