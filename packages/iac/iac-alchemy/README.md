@@ -93,6 +93,12 @@ outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
 
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+The store captures its allowed operations at construction, so later changes to
+application array prototypes do not change the captured grant.
+
 A Node.js HTTP host can bind those two AWS stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
 from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
