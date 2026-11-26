@@ -1014,7 +1014,7 @@ jobs:
         if: env.HOBO_RELEASE_TURBO_BASE != ''
         run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:
@@ -1160,7 +1160,7 @@ jobs:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:

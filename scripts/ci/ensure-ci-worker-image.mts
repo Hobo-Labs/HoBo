@@ -110,6 +110,24 @@ export function remoteWorkerTag(repo: string, version: string): string {
 
 export const DEFAULT_WORKER_PULL_BUDGET_SEC = 540;
 
+export const WORKER_PULL_EXTRACT_BUDGET_SEC = 150;
+
+function runTimedDockerPull(remote: string, budgetSec: number): number | null {
+	return spawnSync("timeout", [String(budgetSec), "docker", "pull", remote], {
+		cwd: root,
+		stdio: "inherit",
+	}).status;
+}
+
+function resumeLeftoverWorkerLayers(remote: string): boolean {
+	if (dockerImagePresent(remote)) return true;
+	console.log(
+		`GHCR pull killed at the shared budget (timeout 124); resuming leftover layers for ${WORKER_PULL_EXTRACT_BUDGET_SEC}s`,
+	);
+	const status = runTimedDockerPull(remote, WORKER_PULL_EXTRACT_BUDGET_SEC);
+	return status === 0 || dockerImagePresent(remote);
+}
+
 export function workerPullBudgetSec(
 	raw: string | undefined = process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC,
 ): number {
@@ -185,15 +203,9 @@ export function pullWorkerFromGhcr(
 	for (let i = 1; i <= attempts; i++) {
 		const remainingMs = deadline - now();
 		if (remainingMs <= 0) break;
-		const result = spawnSync(
-			"timeout",
-			[String(Math.ceil(remainingMs / 1000)), "docker", "pull", remote],
-			{
-				cwd: root,
-				stdio: "inherit",
-			},
-		);
-		if (result.status === 0) return true;
+		const status = runTimedDockerPull(remote, Math.ceil(remainingMs / 1000));
+		if (status === 0) return true;
+		if (status === 124) return resumeLeftoverWorkerLayers(remote);
 		if (i < attempts) {
 			const backoffCap = Math.min(30, 5 * 2 ** (i - 1));
 			const backoff = Math.floor(random() * (backoffCap + 1));
