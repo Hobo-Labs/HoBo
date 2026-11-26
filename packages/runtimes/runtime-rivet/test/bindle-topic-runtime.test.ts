@@ -6,6 +6,7 @@ import {
 	createDurableMessagingLifecycle,
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingPortMetadataGrant,
+	provisionBindleTopics,
 } from "../../../runtime/src/durable-messaging-host.js";
 import { createRivetDurableTopicClient } from "../src/durable-topic-client.js";
 import { createSqliteBusConformanceHost } from "./fixtures/durable-topic-bus-conformance.js";
@@ -16,13 +17,6 @@ it("uses the generic named topic client with the durable SQLite actor", async ()
 		const options = await fixture.open("tenant-a");
 		const port = createRivetDurableTopicClient(options);
 		const op = (nonce: string) => durableMessagingOperation(10_000, nonce);
-		for (const [topic, nonce] of [
-			["orders", "topicorders12345"],
-			["orders-dlq", "topicdead1234567"],
-		] as const)
-			expect(
-				(await port.ensureTopic({ operation: op(nonce), topic })).status,
-			).toBe("committed");
 		const definition = bindle("shop", (b) => {
 			const orders = b.topic().allow("publish", "subscribe");
 			return { orders, web: b.web().dependsOn(orders) };
@@ -34,6 +28,35 @@ it("uses the generic named topic client with the durable SQLite actor", async ()
 				claim.port === port &&
 				JSON.stringify(claim.limits) === JSON.stringify(options.binding.limits),
 		});
+		const bindings = [
+			{
+				resourceName: "orders",
+				topic: "orders",
+				subscriptions: [
+					{ consumerGroup: "workers", deadLetterTopic: "orders-dlq" },
+				],
+			},
+		];
+		const provisioned = await provisionBindleTopics(
+			port,
+			{
+				applicationName: "web",
+				resources: definition.resources,
+				edges: definition.edges,
+				bindings,
+			},
+			[
+				{ topic: "orders", operation: op("topicorders12345") },
+				{ topic: "orders-dlq", operation: op("topicdead1234567") },
+			],
+			{
+				lifecycle: createDurableMessagingLifecycle(),
+				limitsGrant: createDurableMessagingLimitsGrant(),
+				portMetadataGrant: metadata,
+				authorize: () => true,
+			},
+		);
+		expect(provisioned.status).toBe("complete");
 		const host = createBindleTopicWitHost(
 			port,
 			{
@@ -41,15 +64,7 @@ it("uses the generic named topic client with the durable SQLite actor", async ()
 				applicationName: "web",
 				resources: definition.resources,
 				edges: definition.edges,
-				bindings: [
-					{
-						resourceName: "orders",
-						topic: "orders",
-						subscriptions: [
-							{ consumerGroup: "workers", deadLetterTopic: "orders-dlq" },
-						],
-					},
-				],
+				bindings,
 			},
 			{
 				lifecycle: createDurableMessagingLifecycle(),

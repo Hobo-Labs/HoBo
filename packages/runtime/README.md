@@ -566,3 +566,12 @@ stateDiagram-v2
   s2 --> s1: resume with recorded deadline
   s1 --> s3: recheck deadline
 ```
+
+### Durable topic provisioning
+
+The asynchronous messaging host provisions each declared topic and its
+dead-letter journals through a provider-neutral administrative port. It checks
+the full bounded request before dispatch and returns completed, uncertain and
+unattempted work explicitly. Callers must persist operation identities and
+reuse them when reconciling uncertain outcomes. The finite provisioning model
+assumes that the selected provider honors idempotent replay.
