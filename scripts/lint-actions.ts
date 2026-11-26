@@ -1127,6 +1127,74 @@ function lintWorkflowYaml(
 	}
 }
 
+/**
+ * Keys GitHub rejects on `runs.steps` inside composite actions (job-level
+ * knobs and workflow step fields that only apply in workflows).
+ */
+export const COMPOSITE_STEP_UNSUPPORTED_KEYS = [
+	"timeout-minutes",
+	"runs-on",
+	"needs",
+	"strategy",
+	"concurrency",
+	"services",
+	"container",
+	"permissions",
+	"outputs",
+	"defaults",
+] as const;
+
+const COMPOSITE_STEP_UNSUPPORTED = new Set<string>(
+	COMPOSITE_STEP_UNSUPPORTED_KEYS,
+);
+
+export function lintCompositeStepFields(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
+	const doc = parseDocument(text, { uniqueKeys: true });
+	for (const error of doc.errors) {
+		errors.push(`${file}: invalid action YAML: ${error.message.trim()}`);
+	}
+	const usingNode = doc.get("runs")?.get("using");
+	const using =
+		typeof usingNode === "string"
+			? usingNode
+			: (usingNode?.value as string | undefined);
+	if (using !== "composite") return;
+	const steps = doc.get("runs")?.get("steps");
+	if (!steps || !Array.isArray(steps.items)) return;
+	for (const [index, step] of steps.items.entries()) {
+		if (!step?.items) continue;
+		for (const pair of step.items) {
+			const key =
+				typeof pair.key === "string"
+					? pair.key
+					: (pair.key?.value as string | undefined);
+			if (key === undefined) continue;
+			if (key === "continue-on-error") {
+				const valueNode = pair.value;
+				const valueText =
+					typeof valueNode === "string"
+						? valueNode
+						: typeof valueNode === "boolean"
+							? String(valueNode)
+							: (valueNode?.source as string | undefined);
+				if (valueText?.includes("${{"))
+					errors.push(
+						`${file}: composite step ${index + 1} must not set continue-on-error to an expression (unsupported in composite actions)`,
+					);
+				continue;
+			}
+			if (!COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
+			errors.push(
+				`${file}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
+			);
+		}
+	}
+}
+
 function lintCompositeActions(errors: string[], githubRoot: string): void {
 	const actionsRoot = join(githubRoot, "actions");
 	if (!existsSync(actionsRoot)) return;
@@ -1143,6 +1211,7 @@ function lintCompositeActions(errors: string[], githubRoot: string): void {
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 			lintPinnedActionRefs(errors, rel, text);
 			lintRouting(errors, rel, text);
+			lintCompositeStepFields(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);

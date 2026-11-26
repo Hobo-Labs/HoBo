@@ -726,6 +726,39 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	it("rejects unsupported keys on composite action steps", () => {
+		const valid =
+			"name: fixture\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo ok\n";
+		assert.equal(lintAction(valid), 0);
+		for (const key of ["timeout-minutes", "runs-on", "permissions"]) {
+			assert.notEqual(
+				lintAction(
+					`name: fixture\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      ${key}: 1\n      run: echo ok\n`,
+				),
+				0,
+				key,
+			);
+		}
+		assert.notEqual(
+			lintAction(
+				"name: fixture\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      continue-on-error: ${{ true }}\n      run: echo ok\n",
+			),
+			0,
+		);
+		assert.equal(
+			lintAction(
+				"name: fixture\nruns:\n  using: composite\n  steps:\n    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      continue-on-error: true\n",
+			),
+			0,
+		);
+		assert.equal(
+			lintAction(
+				"name: fixture\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      env:\n        FOO: bar\n      run: echo ok\n",
+			),
+			0,
+		);
+	});
+
 	it("passes on this repository's own workflows", () => {
 		// The cases above lint fixtures. Nothing else in the commit or PR gates
 		// runs the lint on the real files, so a workflow edit that broke a rule

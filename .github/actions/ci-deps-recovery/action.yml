@@ -23,11 +23,26 @@ runs:
     - name: Materialize published GHCR deps layer
       id: deps-materialize
       if: steps.deps-layer.outputs.match != 'true'
-      timeout-minutes: 8
       shell: bash
       env:
         GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
-      run: node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts
+      run: |
+        set +e
+        timeout 480 node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts
+        status=$?
+        set -e
+        if [ "$status" -eq 0 ]; then
+          exit 0
+        fi
+        if [ "$status" -eq 124 ]; then
+          echo "::warning title=hobo-ci-deps-materialize-timeout::GHCR deps materialize exceeded 8 minutes"
+        fi
+        if ! grep -q '^materialized=' "$GITHUB_OUTPUT"; then
+          echo "materialized=false" >> "$GITHUB_OUTPUT"
+          echo "source=failed" >> "$GITHUB_OUTPUT"
+          echo "install=false" >> "$GITHUB_OUTPUT"
+        fi
+        exit 0
     - name: Link published GHCR deps layer
       if: steps.deps-materialize.outputs.materialized == 'true'
       shell: bash
