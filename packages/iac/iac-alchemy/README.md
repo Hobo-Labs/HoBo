@@ -101,6 +101,10 @@ verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
 headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host captures one bounded, deterministic graph for runtime binding and
+source registration; accessors, duplicate dependencies and missing edges fail
+before application logic runs. The source resolver must synchronously create
+branded stores for the exact provisioned names.
 For an Alchemy AWS Web Function, create a source in the application's entry
 module. The `host` below is your own authority: it creates the branded stores
 for the provided physical names, verifies each grant, and supplies AWS clients.
@@ -143,9 +147,10 @@ const mappers = awsHttpBindleMappers({
 // financial planning and admission flow.
 ```
 
-The listener maps to `AWS.Lambda.WebFunction`; it resolves the exact mapped
-resource names from the function environment and fails closed if names or grants
-change. `ApplicationManaged` is also available when the application itself
+The mapper creates `AWS.Lambda.WebFunction`; the listener starts the attested
+source on its supplied endpoint. The source resolves the exact mapped resource
+names from the function environment and fails closed if names or grants change.
+`ApplicationManaged` is also available when the application itself
 authenticates every request. The host must independently enforce IAM and fence
 in-flight AWS operations across grant or resource ownership changes. The listener buffers request bodies up to 1 MiB in at most 1,024 chunks before
 dispatch, accepts at most 32 concurrent ingress operations, and returns 408 on
@@ -154,7 +159,8 @@ cancellation settles; the application runtime independently retains its slot
 until a timed-out handler settles. These limits do not bound the HTTP parser,
 network connections or upstream services; the host must set its own ingress
 and network limits. The bounded `AwsHttpIngress` model covers dispatch,
-timeout and ingress slot retention with abstract body units; it treats the
+timeout and ingress slot retention with abstract body units, assuming the
+parser, transport, timers, cancellation and application behavior; it treats the
 application call as complete when its response promise settles, and assumes the
 parser, timer, cancellation and application behave as modeled. Streaming responses,
 connectors and session replay are not supported.
