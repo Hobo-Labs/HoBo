@@ -739,6 +739,8 @@ Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
 and verifies a pinned official package, starts an isolated loopback-only
 container, and removes it afterward. An existing copy of the same package may
 be supplied with `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
+The pricing workflow uses HoBo's routed CI runner for the simulator job, with
+the same hosted fallback as the other pricing checks.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
