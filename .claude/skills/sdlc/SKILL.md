@@ -18,17 +18,17 @@ Follow the repository rules in `AGENTS.md` for every task and harness.
 - A workstream has at most one open pull request, ready for review. A stack lands as one unit through the pull request for its top layer, based on `main`; do not open a pull request per layer.
 - Update a pushed branch by merging `origin/main` in (`git merge origin/main`). Never rebase a pushed branch and never force-push; `gh stack rebase` and `gh stack sync` are only for unpushed local layers.
 - Never squash and never rebase-merge. Land with a merge commit (`gh pr merge <n> --merge`, or the merge queue with the merge-commit method); lower layers then show as merged because their commits are in `main`.
-- Before opening a pull request and before landing, run the supersession check: when a head is already in `origin/main` or is an ancestor of another open pull request's head, close that pull request with `Superseded by #N` and keep the branch.
+- Before opening a pull request and before landing, check for supersession. Ancestry alone does not prove the carrier kept the work: compare the PR's changed paths and modes with the proposed carrier, and recheck both heads before closing. Keep distinct stack layers open for bottom-up review and merging, and keep any pull request open if the original changes cannot be established or the carrier differs.
 
 ```bash
-git merge-base --is-ancestor <head> origin/main && echo landed
-git merge-base --is-ancestor <head> <other-open-pr-head> && echo superseded
+git merge-base --is-ancestor <head> origin/main && echo 'ancestor of main; verify changes'
+git merge-base --is-ancestor <head> <other-open-pr-head> && echo 'ancestor of another head; verify changes'
 ```
 
 - List the session's workstreams before starting: one branch and one pull request each. The pre-tool hook refuses a fourth unlanded pull request from one session's branches.
 - Merge groups run on `merge_group` from a detached checkout with no `GITHUB_HEAD_REF`; PR CI runs its test shards the same way, so tests must not read the branch name. The queue's merge method is the owner's ruleset setting; local signoff accepts only a squash group commit on the current base. Never change the ruleset.
 - A group that passes the queue's time limit (`CI_TIMEOUT`) drops the pull request and is not rerun; re-queue it once the cause is fixed.
-- The supersession workflow closes a pull request whose head is in `main` or is an ancestor of another open pull request's head.
+- Automatic supersession runs report candidates without closing them. After reviewing the work and feedback, an explicitly non-dry-run manual dispatch considers exact-head duplicates or work demonstrably retained on `main`, checks that changed paths still match the carrier, and rechecks the snapshots. Distinct stack layers and empty or uncertain comparisons stay open.
 - Merges resolve the `scripts/ci/attestation.mts` pins and `docs/ci/errors.md` through the drivers `scripts/ensure-hooks-path.sh` registers. When a driver leaves one conflicted, resolve the rest, then run `node --experimental-strip-types --no-warnings scripts/ci/merge-driver.mts refresh`.
 - Merged pull requests do not finish a task; check the delivery goal in `PRODUCT.md` and its evidence.
 
