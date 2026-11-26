@@ -204,3 +204,6 @@ const program = mapBindleToAlchemy(
 ```
 
 The host must persist each provisioning operation ID across process restarts and reuse it when an outcome is unknown. The current mapping supports one captured HTTP application and its named topics; other application dependencies and topic dependents are rejected. It provisions journals before starting the handler and reports an unavailable response if provisioning is not confirmed.
+The mapper validates the complete graph and counts the shared
+`Rivet.DurableObject` once in the financial inventory. The host must attest the
+exact binding, source and exclusive pool before application startup.
