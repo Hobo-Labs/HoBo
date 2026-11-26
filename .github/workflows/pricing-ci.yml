@@ -181,6 +181,34 @@ jobs:
         with:
           mode: save
 
+  aws-emulator:
+    name: Alchemy AWS simulator and budget routing
+    needs: route
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+          clean: false
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build simulator test dependencies
+        run: |
+          pnpm exec turbo run build \
+            --filter=@hobo/iac-alchemy \
+            --filter=@hobo/pricing \
+            --filter=@hobo/broker \
+            --filter=@hobo/dispatcher \
+            --filter=@hobo/bindles \
+            --concurrency=1
+      - name: Exercise mapped resources and budget routing in AWS emulators
+        run: pnpm --filter @hobo/iac-alchemy run test:aws-emulator
+
   pricing-models:
     name: Check bounded IaC budget, routing, grant and pricing models
     needs: route
