@@ -141,7 +141,8 @@
 		}
 	},
 	"dependencies": {
-		"@bufbuild/protobuf": "2.12.1"
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/runtime": "workspace:*"
 	},
 	"peerDependencies": {
 		"@alchemy.run/aws": "2.0.0-beta.87",

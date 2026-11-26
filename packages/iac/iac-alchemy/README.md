@@ -1178,6 +1178,17 @@ segment and 256-KiB record bounds. Financial preview must cover that table or us
 an explicitly authorized unpriced path. A supplied model must account for
 the expected table storage, reads and writes; individual queue calls do not run
 budget admission or enforce the estimate. This is a DynamoDB queue, with no SQS
-integration, dead-lettering or automatic application binding. A trusted owner
+integration or dead-lettering. An AWS HTTP application can declare the queue as
+a dependency and access it with `awsHttpBindings(context).queue("jobs")`.
+Compose `awsHttpBindleMappers` with `awsDynamoDurableQueueMappers` and configure
+`defineAwsHttpSource` to resolve the mapped table name to a queue constructed
+with `createAwsQueueAtomicStore` and `createAtomicDurableQueue`. The source
+checks the factory identities and table name; the host must independently verify
+the account, table incarnation, IAM permissions, queue limits, application grant
+and pricing. The binding exposes only declared enqueue/dequeue operations and
+expires with the HTTP request. A denied or revoked operation returns `unknown`
+with its operation identity because an earlier attempt may have committed.
+The official AWS Emulator test exercises this binding against the Alchemy-created
+table, including changed table names and authorization. A trusted owner
 must authorize and call the provider's `compact()` operation when needed; its
 storage reads and writes must be included in the supplied pricing model.

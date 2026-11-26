@@ -118,6 +118,8 @@ try {
 			"run",
 			"test/aws-mapping.test.ts",
 			"test/aws-queue-plan.test.ts",
+			"test/aws-queue-binding.test.ts",
+			"test/aws-scoped-queue.test.ts",
 			"test/aws-queue-atomic-store.test.ts",
 			"test/aws-kv.test.ts",
 			"test/aws-s3.test.ts",

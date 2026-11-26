@@ -1,6 +1,11 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: host values and application handlers cross a checked runtime boundary. */
 import { types } from "node:util";
 import {
+	type DurableQueue,
+	type DurableQueueLimits,
+	inspectAtomicDurableQueue,
+} from "@hobo/runtime/atomic-durable-queue";
+import {
 	type BoundaryPending,
 	createBoundaryDeferred,
 	observeBoundary,
@@ -13,12 +18,14 @@ import {
 	type AwsKvStore,
 	inspectAwsDynamoKvStore,
 } from "./aws-kv.js";
+import { inspectAwsQueueAtomicStore } from "./aws-queue-atomic-store.js";
 import {
 	AwsS3Error,
 	type AwsS3Grant,
 	type AwsS3Store,
 	inspectAwsS3Store,
 } from "./aws-s3.js";
+import { scopeAwsQueue } from "./aws-scoped-queue.js";
 import {
 	AwsSecretError,
 	type AwsSecretGrant,
@@ -61,6 +68,10 @@ const schedule = setTimeout;
 const cancelTimer = clearTimeout;
 const mapGet = Map.prototype.get;
 const mapSet = Map.prototype.set;
+const setHas = Set.prototype.has;
+const setAdd = Set.prototype.add;
+const NativeSet = Set;
+const arrayPush = Array.prototype.push;
 const arrayIncludes = Array.prototype.includes;
 const responseStatus = Object.getOwnPropertyDescriptor(
 	Response.prototype,
@@ -118,6 +129,7 @@ export interface AwsHttpBindings {
 	kv(name: string): AwsKvStore;
 	bucket(name: string): AwsS3Store;
 	secret(name: string): AwsSecretStore;
+	queue(name: string): DurableQueue;
 }
 export type AwsHttpEntrypoint = (
 	context?: AwsBindleContext,
@@ -127,6 +139,12 @@ export type AwsHttpBindingClaim = Readonly<
 		| { kind: "kv"; grant: AwsKvGrant }
 		| { kind: "bucket"; grant: AwsS3Grant }
 		| { kind: "secret"; grant: AwsSecretGrant }
+		| {
+				kind: "queue";
+				grant: AwsKvGrant;
+				limits: DurableQueueLimits;
+				allow: readonly string[];
+		  }
 	)
 >;
 export interface AwsBindleApplication {
@@ -359,7 +377,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 	readonly bindle: BindleForAlchemy<AwsHttpEntrypoint, Requirements>;
 	readonly applicationName: string;
 	readonly stores: Readonly<
-		Record<string, AwsKvStore | AwsS3Store | AwsSecretStore>
+		Record<string, AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue>
 	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
 }): AwsBindleApplication {
@@ -389,13 +407,15 @@ export function createAwsBindleApplication<Requirements>(options: {
 		Reflect.ownKeys(options.stores).length !== graph.bindings.length
 	)
 		throw new Error("AWS application dependencies are incomplete");
-	const physicalIdentities = new Set<string>();
+	const physicalIdentities = new NativeSet<string>();
 	const entries: {
 		name: string;
 		claim: AwsHttpBindingClaim;
-		store: AwsKvStore | AwsS3Store | AwsSecretStore;
+		store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
 	}[] = [];
-	for (const binding of graph.bindings) {
+	for (let index = 0; index < graph.bindings.length; index++) {
+		const binding = graph.bindings[index];
+		if (!binding) throw new Error("AWS application dependency is invalid");
 		const { name } = binding;
 		const field = Object.getOwnPropertyDescriptor(options.stores, name);
 		if (!field || !Object.hasOwn(field, "value") || !field.enumerable)
@@ -403,6 +423,9 @@ export function createAwsBindleApplication<Requirements>(options: {
 		const kv = inspectAwsDynamoKvStore(field.value);
 		const bucket = inspectAwsS3Store(field.value);
 		const secret = inspectAwsSecretStore(field.value);
+		const queue = inspectAtomicDurableQueue(field.value);
+		const queueGrant =
+			queue === undefined ? undefined : inspectAwsQueueAtomicStore(queue.store);
 		const claim =
 			kv && binding.kind === "kv" && samePermissions(binding.allow, kv.allow)
 				? Object.freeze({
@@ -432,19 +455,33 @@ export function createAwsBindleApplication<Requirements>(options: {
 								kind: "secret" as const,
 								grant: secret,
 							})
-						: undefined;
+						: queue &&
+								queueGrant &&
+								binding.kind === "queue" &&
+								apply(arrayIncludes, queueGrant.allow, ["get"]) &&
+								apply(arrayIncludes, queueGrant.allow, ["set"])
+							? Object.freeze({
+									bindleName: graph.bindleName,
+									applicationName,
+									resourceName: name,
+									kind: "queue" as const,
+									grant: queueGrant,
+									limits: queue.limits,
+									allow: binding.allow,
+								})
+							: undefined;
 		if (!claim)
 			throw new Error("AWS store does not match its declared dependency");
 		const identity =
-			claim.kind === "kv"
+			claim.kind === "kv" || claim.kind === "queue"
 				? `kv|${claim.grant.partition}|${claim.grant.accountId}|${claim.grant.region}|${claim.grant.tableName}`
 				: claim.kind === "bucket"
 					? `bucket|${claim.grant.bucketName}`
 					: `secret|${claim.grant.secretArn}`;
-		if (physicalIdentities.has(identity))
+		if (apply(setHas, physicalIdentities, [identity]))
 			throw new Error("AWS store identities must be unique");
-		physicalIdentities.add(identity);
-		entries.push({ name, claim, store: field.value });
+		apply(setAdd, physicalIdentities, [identity]);
+		apply(arrayPush, entries, [{ name, claim, store: field.value }]);
 	}
 
 	const verified = (claim: AwsHttpBindingClaim) => {
@@ -477,15 +514,27 @@ export function createAwsBindleApplication<Requirements>(options: {
 			const scoped = new Map<
 				string,
 				{
-					kind: "kv" | "bucket" | "secret";
-					store: AwsKvStore | AwsS3Store | AwsSecretStore;
+					kind: "kv" | "bucket" | "secret" | "queue";
+					store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
 				}
 			>();
 			for (let index = 0; index < entries.length; index++) {
 				const entry = entries[index];
 				if (!entry) return unavailable();
 				const claim = entry.claim;
-				if (claim.kind === "kv") {
+				if (claim.kind === "queue") {
+					// SAFETY: the factory queue and its exact AWS store grant were checked above.
+					const store = entry.store as DurableQueue;
+					apply(mapSet, scoped, [
+						entry.name,
+						{
+							kind: "queue",
+							store: scopeAwsQueue(store, claim.limits, claim.allow, () =>
+								live(claim),
+							),
+						},
+					]);
+				} else if (claim.kind === "kv") {
 					// SAFETY: the store's KV brand and matching claim were checked at construction.
 					const store = entry.store as AwsKvStore;
 					const before = () => {
@@ -641,8 +690,8 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore;
+								kind: "kv" | "bucket" | "secret" | "queue";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "kv")
@@ -654,8 +703,8 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore;
+								kind: "kv" | "bucket" | "secret" | "queue";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "bucket")
@@ -663,12 +712,25 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: the scoped entry's kind was checked above.
 					return item.store as AwsS3Store;
 				},
+				queue(name: string) {
+					// SAFETY: scoped is the private map populated with checked entries.
+					const item:
+						| {
+								kind: "kv" | "bucket" | "secret" | "queue";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
+						  }
+						| undefined = apply(mapGet, scoped, [name]);
+					if (!active || item?.kind !== "queue")
+						throw new Error("queue binding is unavailable");
+					// SAFETY: the scoped entry's kind was checked above.
+					return item.store as DurableQueue;
+				},
 				secret(name: string) {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret";
-								store: AwsKvStore | AwsS3Store | AwsSecretStore;
+								kind: "kv" | "bucket" | "secret" | "queue";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "secret")
