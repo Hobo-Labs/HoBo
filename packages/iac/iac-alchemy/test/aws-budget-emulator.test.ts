@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { UserPool, UserPoolProvider } from "@alchemy.run/aws/Cognito";
 import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
 import * as Endpoint from "@alchemy.run/aws/Endpoint";
@@ -97,7 +98,7 @@ function fixture(
 	withPricing: boolean,
 	allowUnpriced = false,
 	official = false,
-	resource: "bucket" | "queue" = "bucket",
+	resource: "bucket" | "queue" | "auth" = "bucket",
 ) {
 	const server = createServer(awsPlugin, { baseUrl: "http://localhost:4566" });
 	const credentials = {
@@ -136,10 +137,16 @@ function fixture(
 			HttpClient.HttpClient,
 			HttpClient.tapRequest((req) =>
 				Effect.sync(() => {
+					const target = req.headers["x-amz-target"];
 					if (
 						req.method !== "GET" &&
 						req.method !== "HEAD" &&
-						req.headers["x-amz-target"] !== "DynamoDB_20120810.DescribeTable"
+						![
+							"DynamoDB_20120810.DescribeTable",
+							"AWSCognitoIdentityProviderService.ListUserPools",
+							"AWSCognitoIdentityProviderService.DescribeUserPool",
+							"AWSCognitoIdentityProviderService.ListTagsForResource",
+						].includes(target ?? "")
 					) {
 						mutationTargets.push(req.headers["x-amz-target"] ?? "");
 						if (
@@ -194,31 +201,38 @@ function fixture(
 		fetchLayers,
 	);
 	const definition =
-		resource === "queue"
+		resource === "auth"
 			? mapBindleToAlchemy(
-					withAwsDynamoDurableQueue(
-						bindle("shop", (b) => ({
-							objects: b.queue().allow("enqueue", "dequeue"),
-						})),
-						{ objects: true },
-					),
-					awsDynamoDurableQueueMappers(),
-					{ assessRequirements: () => ({ status: "supported" }) },
-				)
-			: mapBindleToAlchemy(
-					bindle("shop", (b) => ({ objects: b.bucket() })),
+					bindle("shop", (b) => ({ objects: b.auth() })),
 					awsBindleMappers(),
 					{ assessRequirements: () => ({ status: "supported" }) },
-				);
+				)
+			: resource === "queue"
+				? mapBindleToAlchemy(
+						withAwsDynamoDurableQueue(
+							bindle("shop", (b) => ({
+								objects: b.queue().allow("enqueue", "dequeue"),
+							})),
+							{ objects: true },
+						),
+						awsDynamoDurableQueueMappers(),
+						{ assessRequirements: () => ({ status: "supported" }) },
+					)
+				: mapBindleToAlchemy(
+						bindle("shop", (b) => ({ objects: b.bucket() })),
+						awsBindleMappers(),
+						{ assessRequirements: () => ({ status: "supported" }) },
+					);
 	const stack = Stack(
 		"Demo",
 		{
 			providers: Layer.effect(
 				Providers,
-				Provider.collection([Bucket, Table]),
+				Provider.collection([Bucket, Table, UserPool]),
 			).pipe(
 				Layer.provideMerge(BucketProvider()),
 				Layer.provideMerge(TableProvider()),
+				Layer.provideMerge(UserPoolProvider()),
 				Layer.provideMerge(awsLayers),
 			),
 			state: inMemoryState(),
@@ -361,7 +375,12 @@ function fixture(
 			resources: [
 				{
 					resourceId: "objects",
-					resourceType: resource === "queue" ? Table.Type : Bucket.Type,
+					resourceType:
+						resource === "queue"
+							? Table.Type
+							: resource === "auth"
+								? UserPool.Type
+								: Bucket.Type,
 					providerId: "sandbox",
 					providerAccountRef: "account-a",
 					productId: "sandbox",
@@ -576,6 +595,94 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 				});
 				expect(f.effects()).toBe(0);
 				expect(f.authority.read(NOW).unboundedExposureCount).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"reserves supplied pricing before creating a mapped Cognito pool",
+		async () => {
+			const f = fixture(true, false, true, "auth");
+			try {
+				const selected = await pricedSelection(f);
+				expect(f.effects()).toBe(0);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+					selected,
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "allowed", reservation: "held" },
+				});
+				expect(f.mutationTargets()).toContain(
+					"AWSCognitoIdentityProviderService.CreateUserPool",
+				);
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) =>
+								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
+						),
+				).toBe(true);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"denies a mapped Cognito pool without pricing or explicit unpriced policy",
+		async () => {
+			const f = fixture(false, false, true, "auth");
+			try {
+				const assessment = await f.provider.assessPricing(program);
+				expect(assessment).toMatchObject({
+					pricing: { state: { case: "unavailable" } },
+					budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				});
+				await expect(f.provider.apply(program)).rejects.toMatchObject({
+					code: "PRICING_MODEL_UNAVAILABLE",
+				});
+				expect(f.effects()).toBe(0);
+				expect(f.authority.read(NOW).unboundedExposureCount).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"records unbounded exposure before an authorized unpriced Cognito pool",
+		async () => {
+			const f = fixture(false, true, true, "auth");
+			try {
+				await f.provider.assessPricing(program);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "bypassed", reservation: "held" },
+				});
+				expect(f.mutationTargets()).toContain(
+					"AWSCognitoIdentityProviderService.CreateUserPool",
+				);
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) => entry.reservedMicros === 0 && entry.unbounded === 1,
+						),
+				).toBe(true);
+				expect(f.liabilityRequests()).toBe(0);
 			} finally {
 				f.authority.close();
 				f.routeAuthority.close();
