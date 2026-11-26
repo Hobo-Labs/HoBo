@@ -934,3 +934,5 @@ and fence in-flight work. Values are limited to 256 KiB to leave room for keys a
 attributes within DynamoDB's item limit. If completion observation cannot be
 established after an effect may have started, its capacity remains occupied.
 This slice does not yet map the runtime into applications.
+The shared transport boundary permits at most 32 concurrent operations per
+store and uses a ten-second deadline. A deadline does not stop the provider.
