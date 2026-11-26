@@ -69,6 +69,40 @@ return `invalid-argument`. A lost reply, timeout, thrown provider call or
 contradictory mutation response likewise returns `unknown`; none is treated as a
 definite rejection.
 
+`createDurableTopicPolicy` provides a provider-independent allow list for
+application topic access. Each grant names a topic, whether publishing is
+allowed, and the exact consumer groups and dead-letter destinations allowed
+for subscriptions. It denies topic creation, compaction and unfiltered audit
+reads. Its `verify` callback receives the current request and the captured
+grant on dispatch and disclosure; the host must authenticate the principal and
+independently verify the current subscription and dead-letter authority. The
+policy snapshots its bounded grants and `revoke()` permanently denies access.
+Use its `authorize` function as the host authorizer; revoke the limits grant and
+fence in-flight work separately. A denied mutation returns `unknown` for its
+operation ID because an earlier attempt could have committed.
+
+```ts
+import {
+  createDurableMessagingWitImports,
+  createDurableTopicPolicy,
+} from "@hobo/runtime/durable-messaging-host";
+
+const topicPolicy = createDurableTopicPolicy({
+  grants: [{
+    topic: "orders",
+    publish: true,
+    subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
+  }],
+  verify: (claim) => host.verifyTopicGrantAndCurrentSubscription(claim),
+});
+
+const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
+  lifecycle,
+  limitsGrant,
+  authorize: topicPolicy.authorize,
+});
+```
+
 ```ts
 import {
   createDurableMessagingLifecycle,

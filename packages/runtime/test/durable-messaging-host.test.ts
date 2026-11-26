@@ -6,9 +6,11 @@ import {
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingPortMetadataGrant,
 	createDurableMessagingWitHost,
+	createDurableTopicPolicy,
 	DURABLE_MESSAGING_WIT_INTERFACE,
 	type DurableMessagingAsyncComponent,
 	type DurableMessagingAsyncImports,
+	type DurableTopicPolicyClaim,
 	instantiateDurableMessagingAsync,
 	supportsDurableMessagingAsync,
 } from "../src/durable-messaging-host.js";
@@ -1810,5 +1812,235 @@ describe("durable messaging WIT host boundary", () => {
 			tag: "rejected",
 			val: "unavailable",
 		});
+	});
+});
+
+describe("provider-neutral topic policy", () => {
+	const source = [
+		{
+			topic: "orders",
+			publish: true,
+			subscriptions: [
+				{ consumerGroup: "workers", deadLetterTopic: "orders-dlq" },
+			],
+		},
+	];
+
+	it("allows only declared operations and verifies the subscription destination in both phases", async () => {
+		const verify = vi.fn((_claim: DurableTopicPolicyClaim) => true);
+		const policy = createDurableTopicPolicy({ grants: source, verify });
+		for (const phase of ["dispatch", "disclose"] as const) {
+			expect(
+				await policy.authorize({
+					phase,
+					method: "publish",
+					scope: "topic",
+					topic: "orders",
+				}),
+			).toBe(true);
+			expect(
+				await policy.authorize({
+					phase,
+					method: "publish",
+					scope: "topic",
+					topic: "other",
+				}),
+			).toBe(false);
+			expect(
+				await policy.authorize({
+					phase,
+					method: "ensureTopic",
+					scope: "topic",
+					topic: "orders",
+				}),
+			).toBe(false);
+			expect(
+				await policy.authorize({ phase, method: "events", scope: "instance" }),
+			).toBe(false);
+			expect(
+				await policy.authorize({
+					phase,
+					method: "ensureSubscription",
+					scope: "consumer-group-and-dead-letter",
+					topic: "orders",
+					consumerGroup: "workers",
+					deadLetterTopic: "other",
+				}),
+			).toBe(false);
+			expect(
+				await policy.authorize({
+					phase,
+					method: "ensureSubscription",
+					scope: "consumer-group-and-dead-letter",
+					topic: "orders",
+					consumerGroup: "workers",
+					deadLetterTopic: "orders-dlq",
+				}),
+			).toBe(true);
+			expect(
+				await policy.authorize({
+					phase,
+					method: "consume",
+					scope: "consumer-group-and-dead-letter",
+					topic: "orders",
+					consumerGroup: "workers",
+				}),
+			).toBe(true);
+			expect(
+				await policy.authorize({
+					phase,
+					method: "ack",
+					scope: "consumer-group",
+					topic: "orders",
+					consumerGroup: "other",
+				}),
+			).toBe(false);
+		}
+		expect(verify).toHaveBeenCalledTimes(6);
+		expect(verify.mock.calls[2]?.[0]).toMatchObject({
+			subscription: { consumerGroup: "workers", deadLetterTopic: "orders-dlq" },
+		});
+	});
+
+	it("snapshots grants and denies an authority revoked during verification", async () => {
+		let release: (value: boolean) => void = () => {};
+		const grants = [{ topic: "orders", publish: true, subscriptions: [] }];
+		const policy = createDurableTopicPolicy({
+			grants,
+			verify: () =>
+				new Promise<boolean>((resolve) => {
+					release = resolve;
+				}),
+		});
+		const initial = grants[0];
+		if (initial === undefined) throw new Error("missing grant");
+		initial.topic = "changed";
+		const pending = policy.authorize({
+			phase: "dispatch",
+			method: "publish",
+			scope: "topic",
+			topic: "orders",
+		});
+		policy.revoke();
+		release(true);
+		expect(await pending).toBe(false);
+		expect(
+			await policy.authorize({
+				phase: "dispatch",
+				method: "publish",
+				scope: "topic",
+				topic: "changed",
+			}),
+		).toBe(false);
+	});
+
+	it("keeps the original topic and subscription grant after the input changes", async () => {
+		const grants = [
+			{
+				topic: "orders",
+				publish: true,
+				subscriptions: [{ consumerGroup: "workers", deadLetterTopic: "dlq" }],
+			},
+		];
+		const policy = createDurableTopicPolicy({ grants, verify: () => true });
+		const original = grants[0];
+		if (original === undefined || original.subscriptions[0] === undefined)
+			throw new Error("missing grant");
+		original.topic = "other";
+		original.subscriptions[0].deadLetterTopic = "changed";
+		expect(
+			await policy.authorize({
+				phase: "dispatch",
+				method: "ensureSubscription",
+				scope: "consumer-group-and-dead-letter",
+				topic: "orders",
+				consumerGroup: "workers",
+				deadLetterTopic: "dlq",
+			}),
+		).toBe(true);
+		expect(
+			await policy.authorize({
+				phase: "dispatch",
+				method: "publish",
+				scope: "topic",
+				topic: "other",
+			}),
+		).toBe(false);
+	});
+
+	it("returns an unknown outcome when access is revoked after a provider starts", async () => {
+		let finish: (value: {
+			status: "committed";
+			value: { messageId: string; sequence: number };
+		}) => void = () => {};
+		let started: () => void = () => {};
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const port = fixture({
+			publish: vi.fn<DurableMessaging["publish"]>(
+				() =>
+					new Promise((resolve) => {
+						finish = resolve;
+						started();
+					}),
+			),
+		}).port;
+		const policy = createDurableTopicPolicy({
+			grants: source,
+			verify: () => true,
+		});
+		const host = createDurableMessagingWitHost(port, {
+			authorize: policy.authorize,
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+		});
+		const pending = host.publish({ operation, topic: "orders", message });
+		await entered;
+		policy.revoke();
+		finish({
+			status: "committed",
+			value: { messageId: message.id, sequence: 1 },
+		});
+		expect(await pending).toMatchObject({ tag: "unknown" });
+		expect(port.publish).toHaveBeenCalledTimes(1);
+	});
+
+	it("refuses duplicate and self-referential subscriptions", () => {
+		for (const subscriptions of [
+			[{ consumerGroup: "workers", deadLetterTopic: "orders" }],
+			[
+				{ consumerGroup: "workers", deadLetterTopic: "dlq" },
+				{ consumerGroup: "workers", deadLetterTopic: "other" },
+			],
+		])
+			expect(() =>
+				createDurableTopicPolicy({
+					grants: [{ topic: "orders", publish: true, subscriptions }],
+					verify: () => true,
+				}),
+			).toThrow();
+	});
+
+	it("denies an ungranted publish before either provider is called", async () => {
+		for (const port of [fixture().port, fixture().port]) {
+			const policy = createDurableTopicPolicy({
+				grants: source,
+				verify: () => true,
+			});
+			const host = createDurableMessagingWitHost(port, {
+				authorize: policy.authorize,
+				limitsGrant: createDurableMessagingLimitsGrant(),
+				lifecycle: createDurableMessagingLifecycle(),
+			});
+			expect(
+				await host.publish({ operation, topic: "other", message }),
+			).toMatchObject({ tag: "unknown" });
+			expect(port.publish).not.toHaveBeenCalled();
+			expect(
+				await host.publish({ operation, topic: "orders", message }),
+			).toMatchObject({ tag: "committed" });
+			expect(port.publish).toHaveBeenCalledTimes(1);
+		}
 	});
 });
