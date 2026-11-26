@@ -5,9 +5,7 @@ import {
 	type SpiPortName,
 } from "@hobo/data-core";
 
-// public-contract: engine id reported in the MongoDB engine declaration.
 export const MONGO_ENGINE_ID = "mongodb";
-// public-contract: capability profile id the MongoDB engine implements.
 export const MONGO_ENGINE_PROFILE = "data.mongodb/v1";
 
 export const MONGO_IMPEDANCE_CODES = [

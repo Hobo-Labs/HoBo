@@ -66,10 +66,8 @@ import { formatLsn, parseLsn } from "./lsn.js";
 import type { DatasetStore } from "./store.js";
 import { POSTGRES_ENGINE_ID } from "./types.js";
 
-// public-contract: transaction-local setting the source connection string is handed to the server in.
 export const NATIVE_SOURCE_SETTING = "hobo.native_source";
 
-// public-contract: prefix of the logical message a native transfer marks the source's log with.
 export const NATIVE_MARK_PREFIX = "hobo.native.mark";
 
 /** Why a native transfer was refused; carried as `detail.reason`. */
@@ -91,7 +89,6 @@ export type NativeRefusal = (typeof NATIVE_REFUSALS)[number];
  * parameter, into a setting that ends with the transaction. It answers a
  * boolean, never the value, so the secret does not come back in a result.
  */
-// public-contract: the one statement that carries the source connection string, as a bind parameter; recorded in the native-transfer pact.
 export const PRESENT_NATIVE_SOURCE = `SELECT (set_config('${NATIVE_SOURCE_SETTING}', $1::text, true) IS NOT NULL)::text AS presented`;
 
 /**
@@ -107,7 +104,6 @@ export const PRESENT_NATIVE_SOURCE = `SELECT (set_config('${NATIVE_SOURCE_SETTIN
  * keeps the parameter out of an error report. The first four need a superuser
  * or, from PostgreSQL 15, `GRANT SET ON PARAMETER`; the last any role may set.
  */
-// public-contract: the statement that silences statement logging for the transaction carrying the source connection string; recorded in the native-transfer pact.
 export const QUIET_NATIVE_LOGGING = `DO $hobo$
 BEGIN
 	BEGIN PERFORM set_config('log_parameter_max_length', '0', true); EXCEPTION WHEN OTHERS THEN NULL; END;
@@ -119,7 +115,6 @@ END
 $hobo$`;
 
 /** What the server will log for the rest of this transaction; null where the server has no such setting. */
-// public-contract: the read-back of the logging settings inside the transaction; recorded in the native-transfer pact.
 export const NATIVE_LOGGING_STATE =
 	"SELECT current_setting('log_statement', true) AS log_statement, current_setting('log_min_duration_statement', true) AS log_min_duration_statement, current_setting('log_min_duration_sample', true) AS log_min_duration_sample, current_setting('log_parameter_max_length', true) AS log_parameter_max_length, current_setting('log_parameter_max_length_on_error', true) AS log_parameter_max_length_on_error";
 
@@ -146,7 +141,6 @@ export function nativeLoggingIsQuiet(
 }
 
 /** Whether a subscription still has a worker attached, and so may still apply. */
-// public-contract: the target-side "is anything still applying" query a pause waits on; recorded in the native-transfer pact.
 export const NATIVE_SUBSCRIPTION_WORKERS =
 	"SELECT count(*)::text AS workers FROM pg_stat_subscription w JOIN pg_subscription s ON s.oid = w.subid WHERE s.subname = $1::name AND s.subdbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database()) AND w.pid IS NOT NULL";
 
@@ -269,7 +263,6 @@ $hobo$`;
 }
 
 /** Whether the initial copy is done: every table of the subscription ready. */
-// public-contract: the target-side readiness query; recorded in the native-transfer pact.
 export const NATIVE_SUBSCRIPTION_STATE = `SELECT count(DISTINCT s.oid)::text AS subscriptions, count(r.srrelid)::text AS tables, (count(r.srrelid) FILTER (WHERE r.srsubstate = 'r'))::text AS ready FROM pg_subscription s LEFT JOIN pg_subscription_rel r ON r.srsubid = s.oid WHERE s.subname = $1::name AND s.subdbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())`;
 
 /**
@@ -278,11 +271,9 @@ export const NATIVE_SUBSCRIPTION_STATE = `SELECT count(DISTINCT s.oid)::text AS 
  * slot's confirmed position is certain to pass it once the target is level —
  * even when no dataset change follows.
  */
-// public-contract: the source-side mark statement; recorded in the native-transfer pact.
 export const NATIVE_MARK = `SELECT pg_logical_emit_message(true, '${NATIVE_MARK_PREFIX}', $1::text)::text AS mark`;
 
 /** Whether the subscriber has durably applied everything up to a mark. */
-// public-contract: the source-side "reached the mark" query; recorded in the native-transfer pact.
 export const NATIVE_REACHED =
 	"SELECT (confirmed_flush_lsn >= $2::pg_lsn)::text AS reached FROM pg_replication_slots WHERE slot_name = $1::name";
 

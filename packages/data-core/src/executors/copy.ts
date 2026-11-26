@@ -437,7 +437,6 @@ function hasReverseTail(options: CopyMigrationOptions): boolean {
 	);
 }
 
-// public-contract: the durable name a migration's native transfer is published and subscribed under.
 export const NATIVE_TRANSFER_SUFFIX = "_native";
 
 /**
@@ -557,7 +556,6 @@ async function open(
 	};
 }
 
-// public-contract: the forward leg's position for an offline copy, which has no capture position to start from.
 export const OFFLINE_COPY_POSITION = "offline-copy";
 
 /** Where the forward leg starts: what its watermark holds before any tail. */
@@ -802,10 +800,8 @@ async function fenceSource(
 	return raiseOwnedFence(context, "source", "fence-and-flip", holdAt);
 }
 
-// public-contract: hold code for a fence this migration cannot prove it raised; it is neither adopted nor released.
 export const FENCE_NOT_OWNED = "FENCE_NOT_OWNED";
 
-// public-contract: impedance code of a rollback that could not fence, or stop the transfer on, an unreachable target.
 export const ROLLBACK_TARGET_UNREACHABLE = "ROLLBACK_TARGET_UNREACHABLE";
 
 /**

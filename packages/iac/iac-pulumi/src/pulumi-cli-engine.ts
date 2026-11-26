@@ -30,9 +30,7 @@ export { PulumiEngineUnavailableError } from "./pulumi-engine-errors.js";
 // CLI is missing — the composed default lane stays the in-memory engine
 // unless HOBO_PULUMI_LIVE opts in (see @hobo/hobo compose.ts).
 
-// public-contract: error code for a missing/broken pulumi CLI.
 export const PULUMI_CLI_MISSING = "pulumi-cli-missing";
-// public-contract: error code for a resource class with no real translation.
 export const PULUMI_UNSUPPORTED_RESOURCE = "pulumi-unsupported-resource-type";
 
 // The hobo resource classes provider realize() emits, mapped to real Pulumi

@@ -3,9 +3,7 @@ import { PostgresDataError } from "../errors.js";
 
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9_]{0,62}$/u;
 
-// public-contract: tenant column present on every dataset table; part of each primary key.
 export const TENANT_COLUMN = "tenant_id";
-// public-contract: overflow column holding the undeclared fields of an open dataset schema.
 export const OPEN_FIELDS_COLUMN = "hobo_extra";
 
 export const METADATA_TABLES = Object.freeze({
@@ -98,7 +96,6 @@ export function nativeSubscriptionName(
 	return `${nativeSubscriptionPrefix(namespace)}${sha256Hex(transfer).slice(0, 24)}`;
 }
 
-// public-contract: prefix of the hobo_data_subscriptions key a native transfer's source half is recorded under.
 export const NATIVE_TRANSFER_KEY_PREFIX = "native:";
 
 export function nativeTransferKey(transfer: string): string {

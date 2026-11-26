@@ -33,7 +33,6 @@ import { createSecretScanner } from "../secrets.js";
 
 export * from "./fakes.js";
 
-// public-contract: the conformance check ids, in run order.
 export const CONFORMANCE_CHECKS = Object.freeze([
 	"describe.matches-manifest",
 	"describe.deterministic",

@@ -27,7 +27,6 @@ import {
 	sha256Hex,
 } from "./json.js";
 
-// public-contract: the schema id a canonical dataset schema is published under.
 export const DATASET_SCHEMA_CONTRACT = "hobo.dataset-schema/v1";
 
 export const CANONICAL_TYPES = [

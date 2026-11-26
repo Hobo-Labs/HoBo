@@ -23,5 +23,4 @@ export {
 export type { IacProvider } from "./port.js";
 export { IAC_CROSSPLANE_INTERFACE, IAC_CROSSPLANE_PORT } from "./port.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_IAC_CROSSPLANE_PACKAGE = "@hobo/iac-crossplane";

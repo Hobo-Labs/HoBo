@@ -39,7 +39,6 @@ import { requireStatePassphrase, statePassphrase } from "./state-passphrase.js";
 // - pulumi engine binary unavailable    -> PULUMI_CLI_MISSING (the Automation
 //   API embeds the engine; a host without it cannot run workspaces)
 
-// public-contract: error code for a missing @pulumi/pulumi automation module.
 export const PULUMI_AUTOMATION_MODULE_MISSING =
 	"pulumi-automation-module-missing";
 

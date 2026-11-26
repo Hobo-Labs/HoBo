@@ -18,9 +18,7 @@ import {
 import { SqliteDataError } from "./errors.js";
 import { SqliteDatasetStore } from "./store.js";
 
-// public-contract: capability profile id the SQLite engine implements.
 export const SQLITE_ENGINE_PROFILE = "data.sqlite/v1";
-// public-contract: engine id reported in the SQLite engine declaration.
 export const SQLITE_ENGINE_ID = "sqlite";
 
 export const SQLITE_IMPEDANCE_CODES = [

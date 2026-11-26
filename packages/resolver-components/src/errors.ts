@@ -4,7 +4,6 @@
 // resolver-contract code they already know.
 import { ResolverError, type ResolverErrorCode } from "@hobo/core";
 
-// public-contract: every refusal the component host reports.
 export const RESOLVER_COMPONENT_ERROR_CODES = Object.freeze([
 	"component.manifest-invalid",
 	"component.bundle-unverified",

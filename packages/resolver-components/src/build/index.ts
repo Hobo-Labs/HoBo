@@ -25,9 +25,7 @@ import type { JsonObject } from "../json.js";
 import { type ComponentManifest, parseComponentManifest } from "../manifest.js";
 import { RESOLVER_WIT_WORLD } from "../wit.js";
 
-// public-contract: custom section carrying the contract metadata.
 export const RESOLVER_CONTRACT_SECTION = "hobo.resolver.contract" as const;
-// public-contract: schema id of the contract metadata.
 export const RESOLVER_CONTRACT_SCHEMA =
 	"hobo.resolver-components.contract/v1" as const;
 

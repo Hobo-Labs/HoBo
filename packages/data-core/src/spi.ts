@@ -37,7 +37,6 @@ import {
 
 export type Awaitable<T> = T | Promise<T>;
 
-// public-contract: the schema id an engine declaration is published under.
 export const ENGINE_DECLARATION_CONTRACT = "hobo.data-engine/v1";
 
 export const SPI_PORTS = [

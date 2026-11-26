@@ -396,7 +396,6 @@ export function createPostgresEngine(
 
 // ── conformance fixture ─────────────────────────────────────────────────────
 
-// public-contract: table the conformance schema fixture evolves; pass it as schemaTables.
 export const POSTGRES_SCHEMA_FIXTURE_TABLE = "hobo_evolve_accounts";
 
 const FIXTURE_PLAN: InPlaceEvolvePlan = Object.freeze({

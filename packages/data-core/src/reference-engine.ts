@@ -44,7 +44,6 @@ import {
 } from "./spi.js";
 import { type TypeMappingAnnex, typeMappingToJson } from "./type-mapping.js";
 
-// public-contract: capability profile id of the in-memory reference engine.
 export const REFERENCE_ENGINE_PROFILE = "data.reference/v1";
 
 /** Every canonical type, stored as-is: the reference engine is exact. */
@@ -77,7 +76,6 @@ export const REFERENCE_TYPE_MAPPING: TypeMappingAnnex = Object.freeze({
 	),
 });
 
-// public-contract: the reference engine's native migration profile; realizes both copy patterns.
 export const REFERENCE_NATIVE_PROFILE = "migration.reference.direct/v1";
 
 /** The patterns the reference engine's native profile realizes. */

@@ -23,7 +23,6 @@ import type {
 } from "../spi.js";
 import { failureReason } from "./runtime.js";
 
-// public-contract: the schema id an in-place-evolve result is published under.
 export const IN_PLACE_EVOLVE_CONTRACT = "hobo.in-place-evolve/v1";
 
 export interface CompatGateEvidence {
@@ -208,14 +207,11 @@ interface Outcome {
 	readonly violations?: readonly JsonObject[];
 }
 
-// public-contract: why a failed phase holds instead of restoring when no erasure replay is wired.
 export const NO_ERASURE_REPLAY_REASON =
 	"the snapshot was not restored: no erasure replay was supplied, and a restore without one would bring back every subject erased since the snapshot";
 
-// public-contract: hold code for a phase whose statements may or may not have committed.
 export const PHASE_OUTCOME_UNKNOWN = "PHASE_OUTCOME_UNKNOWN";
 
-// public-contract: hold code for a re-applied phase that failed; never answered by a restore.
 export const PHASE_REAPPLY_FAILED = "PHASE_REAPPLY_FAILED";
 
 const IN_PLACE_PATTERN = "in-place-evolve";

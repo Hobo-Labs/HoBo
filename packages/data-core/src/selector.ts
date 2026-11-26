@@ -26,7 +26,6 @@ import {
 	type MappingFinding,
 } from "./type-mapping.js";
 
-// public-contract: the schema id a migration decision is published under.
 export const MIGRATION_DECISION_CONTRACT = "hobo.migration-decision/v1";
 
 export const REALIZATIONS = MIGRATION_REALIZATIONS;

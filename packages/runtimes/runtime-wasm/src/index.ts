@@ -24,5 +24,4 @@ export {
 	type WasmtimeSandbox,
 } from "./sandbox.js";
 
-// public-contract: canonical package name used by host shims to locate the wasm runtime.
 export const HOBO_RUNTIME_WASM_PACKAGE = "@hobo/runtime-wasm";

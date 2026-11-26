@@ -73,7 +73,6 @@ import {
 } from "./extended-json.js";
 import { isJsonString } from "./json.js";
 
-// public-contract: default name of the metadata collection the binding keeps beside the datasets.
 export const MONGO_METADATA_COLLECTION = "_hobo_data_engine";
 
 export const MONGO_DEFAULT_SCAN_PAGE = 500;

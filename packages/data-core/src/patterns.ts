@@ -1,7 +1,6 @@
 import { digestOf, type JsonObject } from "./json.js";
 import type { SpiPortName } from "./spi.js";
 
-// public-contract: the schema id the pattern catalog is published under.
 export const PATTERN_CATALOG_CONTRACT = "hobo.migration-pattern-catalog/v1";
 
 export const AUTHORITIES = ["projected", "authoritative", "journal"] as const;

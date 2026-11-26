@@ -17,18 +17,12 @@ import {
 } from "./identifiers.js";
 import { keyFieldsOf, parameterExpression, selectExpression } from "./types.js";
 
-// public-contract: SQLSTATE the fence trigger raises; the binding maps it to FencedWriteError.
 export const FENCED_WRITE_SQLSTATE = "HB001";
-// public-contract: SQLSTATE the truncate guard raises on a dataset table.
 export const TRUNCATE_REFUSED_SQLSTATE = "HB002";
-// public-contract: session setting a migration authority presents its fence token in.
 export const FENCE_TOKEN_SETTING = "hobo.fence_token";
 
-// public-contract: name of the row trigger that enforces the write fence in the store.
 export const FENCE_TRIGGER = "hobo_fence_guard";
-// public-contract: name of the statement trigger that refuses TRUNCATE on a dataset table.
 export const TRUNCATE_TRIGGER = "hobo_truncate_guard";
-// public-contract: comment stamped on the last object the bootstrap creates; a binding that finds it skips the DDL.
 export const BOOTSTRAP_MARKER = "hobo-data-postgres bootstrap 3";
 const FENCE_RELEASE_TRIGGER = "hobo_fence_operation_release_guard";
 

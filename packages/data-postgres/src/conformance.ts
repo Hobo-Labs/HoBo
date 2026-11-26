@@ -25,7 +25,6 @@ import {
 } from "./capabilities.js";
 import { PostgresDataError } from "./errors.js";
 
-// public-contract: stable conformance-suite reference used by provider evidence.
 export const POSTGRES_CONFORMANCE_SUITE_REF =
 	"conformance.data.postgres/v1" as const;
 

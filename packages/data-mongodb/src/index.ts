@@ -107,5 +107,4 @@ export {
 	parseFindRequest,
 } from "./wire.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_DATA_MONGODB_PACKAGE = "@hobo/data-mongodb";

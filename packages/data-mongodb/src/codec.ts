@@ -37,7 +37,6 @@ import {
 	isWellFormedText,
 } from "./json.js";
 
-// public-contract: reserved document field holding an open schema's undeclared fields.
 export const MONGO_OPEN_FIELD = "_open";
 
 const MS_PER_DAY = 86_400_000;

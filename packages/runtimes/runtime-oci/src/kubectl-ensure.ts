@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isJsonString } from "./json.js";
 
-// public-contract: pinned kubectl client for oci host ensure.
 export const PINNED_KUBECTL_VERSION = "1.31.0" as const;
 
 export type KubectlBinary = Readonly<{

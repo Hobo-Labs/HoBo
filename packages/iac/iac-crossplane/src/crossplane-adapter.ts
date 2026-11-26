@@ -4,11 +4,8 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
-// public-contract: the IacProgram schema version validateIacProgram accepts.
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
-// public-contract: the claim apiVersion this adapter renders.
 export const CROSSPLANE_CLAIM_API_VERSION = "hobo.iac-crossplane/v1";
-// public-contract: the adapter id stamped on every report this package emits.
 export const ADAPTER_ID = "@hobo/iac-crossplane";
 
 const OUTPUT_REF =

@@ -405,7 +405,6 @@ export interface EventStoreJournalContext {
 	readonly actor: PrincipalRef;
 }
 
-// public-contract: stream id prefix a migration's facts are appended under.
 export const MIGRATION_STREAM_PREFIX = "migration:";
 
 /**
