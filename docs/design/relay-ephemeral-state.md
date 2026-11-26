@@ -173,4 +173,4 @@ claims durability.
 - [CI Relay Mesh](https://linear.app/quickdeploy-ai/document/ci-relay-mesh-design-archived-a4670b6c0c10) — the relay this state serves.
 - [`@hobo/provider-upstash`](../../packages/providers/provider-upstash/README.md) — the REST binding.
 - [`@hobo/provider-turso`](../../packages/providers/provider-turso/README.md) — the libSQL binding.
-- [`@hobo/core` architecture](../../packages/core/ARCHITECTURE.md) — the port contracts.
+- [`@hobo/core` architecture](https://linear.app/quickdeploy-ai/document/core-architecture-evidence-archived-7966aea9ca4b) — the port contracts.
