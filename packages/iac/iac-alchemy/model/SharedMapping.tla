@@ -1,8 +1,6 @@
 -------------------------- MODULE SharedMapping --------------------------
 EXTENDS Naturals, TLC
 
-\* Graph validation is a trusted synchronous mapper decision; this abstraction
-\* does not prove the provider-specific validator or implementation.
 VARIABLES external, owned, registered, reported, shared, shareProof, shareMode
 vars == <<external, owned, registered, reported, shared, shareProof, shareMode>>
 

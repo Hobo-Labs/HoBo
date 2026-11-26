@@ -159,3 +159,9 @@ for proxy invocations and the underlying KV operations as well as worker and
 storage costs; otherwise the normal unknown-pricing policy applies. The host
 is responsible for enforcing any usage bounds assumed by a quote. This adapter
 view does not change the application's normal routing or budget policy.
+
+The workerd integration test runs the Alchemy-bundled application with its
+mapped service binding and grant, reading an emulated KV namespace through the
+real proxy. It pins the simulator to Alchemy's Node compatibility defaults. The
+test uses simulated Alchemy providers and does not establish production
+Cloudflare behavior.
