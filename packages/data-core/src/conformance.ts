@@ -102,7 +102,7 @@ export const CONFORMANCE_STATUSES = [
 ] as const;
 export type ConformanceStatus = (typeof CONFORMANCE_STATUSES)[number];
 
-// domain-view: recorded result; wire form is EngineConformanceResult in data-models/data_core.proto.
+// domain-view:
 export interface EngineConformanceResult {
 	readonly caseId: string;
 	readonly status: ConformanceStatus;
@@ -110,7 +110,7 @@ export interface EngineConformanceResult {
 	readonly detail: string;
 }
 
-// domain-view: recorded report; wire form is EngineConformanceReport in data-models/data_core.proto.
+// domain-view:
 export interface EngineConformanceReport {
 	readonly suite: typeof ENGINE_CONFORMANCE_SUITE;
 	readonly engine: string;

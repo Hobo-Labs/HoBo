@@ -9,7 +9,6 @@ import {
 } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
 
-// public-contract: schema version of the messaging conformance suite definition.
 export const MESSAGING_CONFORMANCE_CONTRACT = "hobo.messaging-conformance/v1";
 
 export type MessagingAssertionName =

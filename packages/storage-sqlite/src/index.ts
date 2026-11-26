@@ -65,5 +65,4 @@ export {
 	SCHEMA_VERSION,
 } from "./schema.js";
 
-// public-contract: stable package identifier exposed to storage hosts.
 export const HOBO_STORAGE_SQLITE_PACKAGE = "@hobo/storage-sqlite";

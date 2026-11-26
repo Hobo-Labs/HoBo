@@ -1,9 +1,3 @@
-// The labelled `--simulate` fixture path (ADR-0182 C2).
-//
-// `--simulate` is the only way to reach a fixture. The simulated realizer
-// touches no target: it reports the desired Set as converged and labels every
-// observation with reason code `simulated`, so a simulated convergence can
-// never be mistaken for a real one in status, logs, CDEvents or DORA.
 import { create } from "@bufbuild/protobuf";
 import {
 	ReasonRecordSchema,
@@ -41,7 +35,6 @@ function observation(
 	});
 }
 
-/** A realizer that only labels. Available to the composition root under --simulate. */
 export function createSimulatedRealizer(): Realizer {
 	return Object.freeze({
 		async converge(input: RealizeInput, ctx: { now: () => number }) {
@@ -53,7 +46,6 @@ export function createSimulatedRealizer(): Realizer {
 	});
 }
 
-/** True when an observation came from the simulated realizer. */
 export function isSimulatedObservation(o: ReconcileObservationRecord): boolean {
 	return o.reasons.some((r) => r.code === SIMULATED_REASON.code);
 }

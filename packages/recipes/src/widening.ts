@@ -39,11 +39,9 @@ export type WideningNotice = {
 };
 
 export function isWideningKind(value: string): value is WideningKind {
-	// SAFETY: assertion to `DENING_KINDS as readonly string[]).` is required at this boundary.
 	return (WIDENING_KINDS as readonly string[]).includes(value);
 }
 
-/** Canonical order so two equal sets of notices serialize identically. */
 export function sortWidenings(
 	notices: readonly WideningNotice[],
 ): readonly WideningNotice[] {
@@ -61,10 +59,6 @@ const REALIZATION_LEVEL = {
 	bridge: 2,
 } as const;
 
-/**
- * Compare the semantics a caller asked for against the semantics a recipe
- * delivers. Each axis is independent; a downgrade on any of them is a notice.
- */
 export function detectSemanticWidenings(
 	requested: RecipeSemantics,
 	delivered: RecipeSemantics,
@@ -136,11 +130,6 @@ export function detectSemanticWidenings(
 	return sortWidenings(notices);
 }
 
-/**
- * A placement that promises an ancestor of the required profile satisfies the
- * *shape* but not the *semantics* — `data.relational/v1` where
- * `data.postgres/v1` was asked for is the canonical example.
- */
 export function detectProfileWidening(args: {
 	readonly requirement: CapabilityRequirement;
 	readonly satisfiesProfileId: string;
@@ -150,10 +139,8 @@ export function detectProfileWidening(args: {
 	const notices: WideningNotice[] = [];
 	for (const constraint of args.requirement.requiredProfiles) {
 		if (constraint.profileId === args.satisfiesProfileId) continue;
-		// The promise still covers the ask when the promised profile refines it.
 		if (args.registry.satisfies(args.satisfiesProfileId, constraint.profileId))
 			continue;
-		// The ask refines the promise: the recipe is offering the weaker parent.
 		if (!args.registry.satisfies(constraint.profileId, args.satisfiesProfileId))
 			continue;
 		const postgresToRelational =
@@ -171,11 +158,6 @@ export function detectProfileWidening(args: {
 	return sortWidenings(notices);
 }
 
-/**
- * The realization the product actually uses versus the strictest one the
- * requirement allows. `native` → `pack` → `bridge` each add a layer between
- * the workload and the thing it thinks it is talking to.
- */
 export function detectRealizationWidening(args: {
 	readonly requirement: CapabilityRequirement;
 	readonly implementation: ProfileImplementation;

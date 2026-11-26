@@ -264,7 +264,6 @@ const ROUTING_INSTANT =
 	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
 
 function brandAs<T>(value: string): T {
-	// SAFETY: the string was parsed at this routing-plan document boundary.
 	return value as T;
 }
 
@@ -279,7 +278,6 @@ export function parseRoutingPlanId(
 	value: JsonValue | undefined,
 	path = "planId",
 ): RoutingPlanId {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return text(value, path) as RoutingPlanId;
 }
 
@@ -294,7 +292,6 @@ export function parseRoutingWeight(
 	value: JsonValue | undefined,
 	path = "weight",
 ): RoutingWeight {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return positiveInteger(value, path, TrafficRoutingParseError, {
 		max: 100,
 	}) as RoutingWeight;
@@ -319,7 +316,6 @@ export function parseBackendRef(
 					locationHints: stringList(
 						input.locationHints,
 						`${path}.locationHints`,
-						// SAFETY: assertion required at this I/O or test boundary.
 					).map((entry) => brandAs<LocationHint>(entry)),
 				}
 			: undefined),
@@ -382,7 +378,6 @@ export function parseMinAvailabilitySpec(
 	return deepFreeze({
 		...(input.minHealthyBackends !== undefined
 			? {
-					// SAFETY: assertion required at this I/O or test boundary.
 					minHealthyBackends: positiveInteger(
 						input.minHealthyBackends,
 						`${path}.minHealthyBackends`,
@@ -392,7 +387,6 @@ export function parseMinAvailabilitySpec(
 			: undefined),
 		...(input.minDistinctLocations !== undefined
 			? {
-					// SAFETY: assertion required at this I/O or test boundary.
 					minDistinctLocations: positiveInteger(
 						input.minDistinctLocations,
 						`${path}.minDistinctLocations`,
@@ -405,7 +399,6 @@ export function parseMinAvailabilitySpec(
 					locationLabels: stringList(
 						input.locationLabels,
 						`${path}.locationLabels`,
-						// SAFETY: assertion required at this I/O or test boundary.
 					).map((entry) => brandAs<LocationHint>(entry)),
 				}
 			: undefined),
@@ -420,7 +413,6 @@ export function parseResiliencySpec(
 	return deepFreeze({
 		...(input.timeoutMs !== undefined
 			? {
-					// SAFETY: assertion required at this I/O or test boundary.
 					timeoutMs: positiveInteger(
 						input.timeoutMs,
 						`${path}.timeoutMs`,
@@ -430,7 +422,6 @@ export function parseResiliencySpec(
 			: undefined),
 		...(input.retries !== undefined
 			? {
-					// SAFETY: assertion required at this I/O or test boundary.
 					retries: nonNegativeInteger(
 						input.retries,
 						`${path}.retries`,
@@ -520,8 +511,7 @@ export function parseRoutingPlan(value: JsonValue | undefined): RoutingPlan {
 		intent,
 		backends,
 		...(input.stationId !== undefined
-			? // SAFETY: assertion required at this I/O or test boundary.
-				{
+			? {
 					stationId: brandAs<StationId>(
 						text(input.stationId, "plan.stationId"),
 					),
@@ -540,7 +530,6 @@ export function parseRoutingPlan(value: JsonValue | undefined): RoutingPlan {
 	});
 }
 
-/** Parse protobuf JSON or a generated TrafficRoutingPlanRecord into the domain view. */
 export function parseTrafficRoutingPlanRecord(
 	value: JsonValue | undefined,
 ): RoutingPlan {
@@ -620,7 +609,6 @@ export function parseTrafficRoutingPlanRecord(
 	);
 }
 
-/** Convert a parsed domain plan to its generated protobuf record. */
 export function toTrafficRoutingPlanRecord(
 	plan: RoutingPlan,
 ): TrafficRoutingPlanRecord {
@@ -690,7 +678,6 @@ export function parseApplyResult(value: JsonValue | undefined): ApplyResult {
 		notes: stringList(input.notes, "applyResult.notes"),
 		...(input.appliedRules !== undefined
 			? {
-					// SAFETY: assertion required at this I/O or test boundary.
 					appliedRules: nonNegativeInteger(
 						input.appliedRules,
 						"applyResult.appliedRules",
@@ -787,10 +774,8 @@ export function createTrafficRoutingMeteringEvent(
 	);
 	const planId = parseRoutingPlanId(input.planId, "meteringEvent.planId");
 	return deepFreeze(
-		// SAFETY: assertion required at this I/O or test boundary.
 		createUsageEvent({
 			tenantId: parseTenantId(text(input.tenantId, "meteringEvent.tenantId")),
-			// SAFETY: assertion required at this I/O or test boundary.
 			eventType: `routing.plan.${outcome}` as TrafficRoutingMeteringEventType,
 			resource: planId,
 			timestamp:
@@ -811,7 +796,6 @@ function parseService(
 	value: JsonValue | undefined,
 	path: string,
 ): RoutingService {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return text(value, path) as RoutingService;
 }
 
@@ -821,7 +805,6 @@ function parsePathPrefix(
 ): PathPrefix {
 	const parsed = text(value, path);
 	if (!parsed.startsWith("/")) fail(path, "path beginning with /", value);
-	// SAFETY: assertion required at this I/O or test boundary.
 	return parsed as PathPrefix;
 }
 
@@ -842,7 +825,6 @@ function parseEndpoint(
 	if (url.username || url.password || url.search || url.hash) {
 		fail(path, "HTTP(S) URL without credentials, query, or fragment", value);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return parsed as RoutingEndpoint;
 }
 
@@ -932,7 +914,6 @@ function weightStrategyToRecord(
 }
 
 function parseRailHash(value: JsonValue | undefined): RailHash {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return sha256Ref(
 		value,
 		"plan.railHash",
@@ -948,7 +929,6 @@ function parseInstant(
 	if (!ROUTING_INSTANT.test(parsed)) {
 		fail(path, "ISO timestamp with time and timezone", value);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return parsed as RoutingInstant;
 }
 

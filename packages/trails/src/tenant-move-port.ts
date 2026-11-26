@@ -2,7 +2,6 @@ import type { LiveDataDualPort } from "./data-dual-port.js";
 import type { JsonObject } from "./json.js";
 import { MIGRATION_EVENTS, type MigrationFact } from "./migration-executor.js";
 
-// public-contract: tenant move protocol schema id.
 export const TENANT_MOVE_SCHEMA = "hobo.tenant-move/v1";
 
 export type TenantFencePort = Readonly<{

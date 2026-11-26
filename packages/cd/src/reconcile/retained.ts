@@ -33,15 +33,15 @@ export function tableRetained(kind: string): readonly string[] {
 	return RETAINED_FIELDS[last] ?? [];
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: parse boundary for an untyped realizationParameters JSON value.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters
 export function parseRetainProperty(value: unknown): readonly string[] {
 	const raw =
-		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the property is either a comma list or a JSON string array.
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof
 		typeof value === "string"
 			? value.split(",")
 			: Array.isArray(value)
 				? value.filter(
-						// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: keep only string entries of the JSON array.
+						// oxlint-disable-next-line anti-slop/no-runtime-typeof
 						(item): item is string => typeof item === "string",
 					)
 				: [];

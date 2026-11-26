@@ -1,7 +1,3 @@
-// Parse, don't validate: a publisher configuration crosses one parser and
-// comes out as `PublisherConfig`, a branded generated record whose defaults
-// are filled and whose constraints (data-models/gitops.cue) hold.
-
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
 	type EngineEndpointRecord,
@@ -15,7 +11,6 @@ import { GitopsError } from "./errors.js";
 
 export const PUBLISHER_SCHEMA = "hobo.cd-gitops.publisher/v1" as const;
 
-/** A publisher configuration that passed every gitops.cue constraint. */
 export type PublisherConfig = GitopsPublisherRecord & {
 	readonly repository: GitRepositoryRecord;
 	readonly endpoint: EngineEndpointRecord;
@@ -128,6 +123,5 @@ export function parsePublisherConfig(input: JsonValue): PublisherConfig {
 			sourceRef: k8sName(endpoint.sourceRef, "endpoint.source_ref", "hobo"),
 		},
 	});
-	// SAFETY: every constraint of #GitopsPublisherRecord was checked above.
 	return parsed as PublisherConfig;
 }

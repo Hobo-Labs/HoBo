@@ -24,7 +24,7 @@ export interface StreamerRunResultRecord {
 	readonly reason: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface StreamerFrame<TChunk = unknown> {
 	readonly run_id: string;
 	readonly runId: RunId;
@@ -33,7 +33,7 @@ export interface StreamerFrame<TChunk = unknown> {
 	readonly chunk: TChunk;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface StreamerRunResult {
 	readonly run_id: string;
 	readonly runId: RunId;

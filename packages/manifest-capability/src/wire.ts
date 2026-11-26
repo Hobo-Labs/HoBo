@@ -41,7 +41,6 @@ import type {
 	WeightedPreference,
 } from "./requirement.js";
 
-/** Thrown when a value cannot cross the wire without losing something. */
 export class CapabilityWireError extends Error {
 	readonly code = "INVALID_CAPABILITY_WIRE" as const;
 
@@ -51,12 +50,6 @@ export class CapabilityWireError extends Error {
 	}
 }
 
-/**
- * The presence wrapper for a repeated field.
- *
- * `hobo.manifest.capability.v1.StringList`. Exists solely so `undefined` and
- * `[]` stay distinguishable across the wire.
- */
 export type WireStringList = { readonly values: readonly string[] };
 
 export type WireProfileConstraint = {
@@ -80,13 +73,6 @@ export type WireRealizationAllowance = {
 	readonly bridge: boolean;
 };
 
-/**
- * The `RequirementValue` oneof, as proto3 JSON encodes it: exactly one key.
- *
- * `int_value` is a decimal string, which is the proto3 JSON mapping for
- * `int64` and also the only encoding that does not quietly lose a value
- * outside the double-precision integer range on the way through a JSON parser.
- */
 export type WireRequirementValue =
 	| { readonly bool_value: boolean }
 	| { readonly int_value: string }
@@ -113,7 +99,6 @@ export type WirePortabilityRequirement = {
 	readonly required_migration_profiles: readonly string[];
 };
 
-/** `hobo.manifest.capability.v1.CapabilityRequirement`. */
 export type WireCapabilityRequirement = {
 	readonly required_profiles: readonly WireProfileConstraint[];
 	readonly preferred_profiles: readonly WireWeightedPreference[];
@@ -141,7 +126,6 @@ export type WireFeatureDescriptor = {
 
 export type WireGuaranteeDescriptor = WireFeatureDescriptor;
 
-/** `hobo.manifest.capability.v1.CapabilityProfileDescriptor`. */
 export type WireCapabilityProfileDescriptor = {
 	readonly schema_version: string;
 	readonly id: string;
@@ -159,14 +143,11 @@ export type WireCapabilityProfileDescriptor = {
 	readonly source_refs: readonly WireEvidenceSourceRef[];
 };
 
-/** `hobo.manifest.capability.v1.CapabilityProfileCatalog`. */
 export type WireCapabilityProfileCatalog = {
 	readonly schema_version: typeof CAPABILITY_PROFILE_CATALOG_SCHEMA_VERSION;
 	readonly profiles: readonly WireCapabilityProfileDescriptor[];
 };
 
-// public-contract: the catalog envelope's schema identity; consumers pin it to
-// detect a catalog shape change rather than a catalog content change.
 export const CAPABILITY_PROFILE_CATALOG_SCHEMA_VERSION =
 	"hobo.capability-profile-catalog/v1";
 
@@ -259,14 +240,6 @@ function fromStringList(
 	return textList(wrapper.values, `${field}.values`);
 }
 
-/**
- * Encode the value side of a structured predicate.
- *
- * The four TypeScript arms map to five wire arms because JavaScript has one
- * number type and protobuf does not. A non-finite number is refused rather
- * than encoded: JSON has no spelling for it, and a NaN threshold is not a
- * requirement anyone meant to write.
- */
 function toWireValue(
 	value: boolean | number | string | readonly string[],
 	field: string,
@@ -564,13 +537,6 @@ function toWireGuarantee(value: GuaranteeDescriptor): WireGuaranteeDescriptor {
 	};
 }
 
-/**
- * Encode a capability profile descriptor.
- *
- * Key order matches `standard-profiles.ts`'s own construction order, so a
- * decoded descriptor is byte-identical under `JSON.stringify` to the constant
- * it came from.
- */
 export function toCapabilityProfileDescriptorWire(
 	value: CapabilityProfileDescriptor,
 ): WireCapabilityProfileDescriptor {
@@ -594,7 +560,6 @@ export function toCapabilityProfileDescriptorWire(
 	};
 }
 
-/** Decode a capability profile descriptor. Never re-parses; see the module doc. */
 export function fromCapabilityProfileDescriptorWire(
 	wire: unknown,
 ): CapabilityProfileDescriptor {
@@ -696,7 +661,6 @@ export function fromCapabilityProfileDescriptorWire(
 	};
 }
 
-/** Encode the whole first-party catalog as one pinnable record. */
 export function toCapabilityProfileCatalogWire(
 	profiles: readonly CapabilityProfileDescriptor[],
 ): WireCapabilityProfileCatalog {
@@ -706,7 +670,6 @@ export function toCapabilityProfileCatalogWire(
 	};
 }
 
-/** Decode the whole first-party catalog. */
 export function fromCapabilityProfileCatalogWire(
 	wire: unknown,
 ): readonly CapabilityProfileDescriptor[] {

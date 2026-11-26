@@ -1,7 +1,3 @@
-// Alert rules and SLOs for the CD plane (WP19; handed to WP21 for the
-// operator docs). Vendor-neutral data over the metric names in semconv.ts: an
-// adapter renders them for whatever alerting backend a Station runs. Each
-// threshold comes from CD_DEFAULTS or the R12/R13 decisions, never a guess.
 import { CD_DEFAULTS } from "../events.js";
 import { CD_METRICS, CICD_METRICS } from "./semconv.js";
 
@@ -10,11 +6,9 @@ export type AlertSeverity = "page" | "ticket";
 export type CdAlertRule = Readonly<{
 	name: string;
 	metric: string;
-	/** Attribute filter applied before the comparison. */
 	where?: Readonly<Record<string, string>>;
 	op: ">" | ">=" | "<" | "<=";
 	threshold: number;
-	/** The condition must hold this long before firing. */
 	forMs: number;
 	severity: AlertSeverity;
 	summary: string;

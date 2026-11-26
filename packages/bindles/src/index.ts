@@ -240,7 +240,6 @@ export {
 	service as wiringService,
 } from "./wiring/index.js";
 
-// public-contract: package identity used by generated manifests and tooling.
 export const HOBO_BINDLES_PACKAGE = "@hobo/bindles";
 
 export type {

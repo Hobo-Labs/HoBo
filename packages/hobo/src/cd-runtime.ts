@@ -1266,7 +1266,6 @@ export function attachCdDelivery<R extends object, D>(
 	return Object.freeze({ ...yardRuntime, delivery });
 }
 
-// public-contract: env var naming the @hobo/cd-kube-fleet config file (D26).
 export const CD_KUBE_FLEET_ENV = "HOBO_CD_KUBE_FLEET";
 
 /**

@@ -1,4 +1,3 @@
-//   proto<->CUE type coverage, parallel-proto-type) inspect real artifacts
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
@@ -110,7 +109,7 @@ const REQUIRED_CHECKS = [
 	{
 		code: "parallel-proto-type",
 		message: (evidence) =>
-			`Import generated types from src/_generated/**_pb.ts instead of hand-declaring proto-shaped types (technical-standards.md); annotate deliberate exceptions with // parallel-type-allowed: <why>. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
+			`Import generated types from src/_generated/**_pb.ts instead of hand-declaring proto-shaped types (AGENTS.md); annotate deliberate exceptions with // parallel-type-allowed:. Offenders: ${evidence.parallelTypeDeclarations.join(", ")}`,
 		passes: (evidence) => evidence.parallelTypeDeclarations.length === 0,
 	},
 ];

@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-/**
- * anti-slop changed-file lane: runs the vendored Oxlint plugin
- * (tools/oxlint/anti-slop, configured in oxlint.config.ts) on just the files a
- * commit or PR touches, so the pre-existing repo-wide backlog does not block
- * commits but no new violations slip in. `--deny-warnings` keeps changed files
- * warning-clean as well (unused vars, useless spreads, …). Directory ignores
- * stay owned by oxlint.config.ts — explicitly passed paths still honor its
- * ignorePatterns.
- *
- * Usage:
- *   node --import tsx scripts/lint-slop-changed.mts --staged
- *   node --import tsx scripts/lint-slop-changed.mts --base=origin/main
- */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import process from "node:process";
@@ -63,7 +50,6 @@ function cannotLint(why: string): void {
 	console.error(`fail  lint:slop:changed — ${why}`);
 }
 
-/** Oxlint over `chunk`, or a refusal when it cannot run without pnpm. */
 function oxlint(chunk: string[]): CommandInvocation {
 	try {
 		const direct = withoutPackageManager("pnpm", [

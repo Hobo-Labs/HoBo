@@ -1,21 +1,3 @@
-/**
- * Parsing `create-db` output.
- *
- * Two modes, and the difference between them is the point:
- *
- * - `json` — the pinned CLI's `--json` flag prints exactly one
- *   `JSON.stringify(DatabaseResult | DatabaseError, null, 2)` document. That is
- *   a real machine contract and it is what this package uses.
- * - `human-v1` — a *narrow*, versioned reader for the pretty output, for hosts
- *   stuck on a CLI without `--json`. It requires the exact documented labels
- *   and refuses anything else. It does not go looking for a URI somewhere in
- *   the text: heuristic scraping is how a parser keeps "working" after the
- *   format changes, and a provisioning parser that keeps working while being
- *   wrong is worse than one that stops.
- *
- * Verified against https://docs.prisma.io/docs/postgres/npx-create-db and the
- * published `create-db@1.2.1` type declarations (both checked 2026-08-08).
- */
 import { PrismaProviderError, redactProviderText } from "./errors.js";
 import {
 	isJsonNumber,
@@ -71,7 +53,6 @@ export type PrismaCliFailure = {
 	readonly retryAfterMs?: number;
 };
 
-/** Map the CLI's own error taxonomy onto HoBo codes. */
 export function providerErrorForCliFailure(
 	failure: PrismaCliFailure,
 ): PrismaProviderError {
@@ -98,8 +79,6 @@ export function providerErrorForCliFailure(
 		});
 	}
 	if (failure.status !== undefined && failure.status >= 500) {
-		// The CLI reached the service and got a 5xx; it may or may not have
-		// created a project before failing.
 		return new PrismaProviderError("PROVIDER_OPERATION_AMBIGUOUS", message, {
 			detail,
 		});
@@ -167,13 +146,11 @@ function finishResult(
 		region: fields.region,
 		name: fields.name,
 		projectId: fields.projectId,
-		// Honest labelling: the pinned CLI derives this from its own clock.
 		expirySource: "cli-local-clock",
 		outputMode,
 	};
 }
 
-/** Parse the `--json` document. Exactly one JSON value, nothing else. */
 function requireRecordString(record: JsonObject, key: string): string {
 	const value = record[key];
 	if (!isJsonString(value) || value.length === 0) {
@@ -189,7 +166,6 @@ export function parseCreateDbJson(stdout: string): PrismaCreateResult {
 	}
 	let decoded: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		decoded = JSON.parse(trimmed) as JsonValue;
 	} catch {
 		contractError("create-db JSON mode did not emit a single JSON document", {
@@ -228,8 +204,6 @@ export function parseCreateDbJson(stdout: string): PrismaCreateResult {
 	const region = requireRecordString(record, "region");
 	const name = requireRecordString(record, "name");
 	const projectId = requireRecordString(record, "projectId");
-	// Nullable by contract when the CLI is asked not to print it, so absence
-	// and null are different: absence is a renamed field.
 	if (!("connectionString" in record)) {
 		contractError(
 			"create-db JSON mode is missing the field `connectionString`",
@@ -259,16 +233,6 @@ const HUMAN_CONNECTION_LABEL = "Connection String:";
 const HUMAN_CLAIM_HOST = PRISMA_CLAIM_HOSTS[0];
 const HUMAN_DELETION_LABEL = "will be deleted on";
 
-/**
- * `human-v1`: the documented pretty output, read by exact label.
- *
- * Requirements, all of which fail closed:
- * - exactly one `Connection String:` label, with the URI on the next
- *   non-empty line;
- * - exactly one `https://create-db.prisma.io…?projectID=proj_…` claim URL;
- * - a `will be deleted on <date> if not claimed` sentence, parsed with the
- *   caller's `referenceNow` only to resolve the CLI's locale-formatted date.
- */
 export function parseCreateDbHumanV1(
 	stdout: string,
 	options: { readonly region: string },
@@ -290,7 +254,6 @@ export function parseCreateDbHumanV1(
 			`create-db human output must contain exactly one "${HUMAN_CONNECTION_LABEL}" label, found ${labelIndexes.length}`,
 		);
 	}
-	// SAFETY: value was established by the surrounding parse or typed constructor.
 	const labelIndex = labelIndexes[0] as number;
 	const connectionLine = lines
 		.slice(labelIndex + 1, labelIndex + 3)
@@ -305,8 +268,6 @@ export function parseCreateDbHumanV1(
 		);
 	}
 
-	// Host equality, not prefix matching: `create-db.prisma.io.attacker.example`
-	// starts with the official prefix and is not the official host.
 	const claimLines = lines
 		.map((line) => line.trim())
 		.filter((line) => {
@@ -323,7 +284,6 @@ export function parseCreateDbHumanV1(
 			`create-db human output must contain exactly one ${HUMAN_CLAIM_HOST} claim URL, found ${claimLines.length}`,
 		);
 	}
-	// SAFETY: value was established by the surrounding parse or typed constructor.
 	const claimUrl = claimLines[0] as string;
 	const projectMatch = /[?&]projectID=(proj_[A-Za-z0-9_-]{1,120})/u.exec(
 		claimUrl,
@@ -350,7 +310,6 @@ export function parseCreateDbHumanV1(
 		);
 	}
 	const deletionMs = Date.parse(
-		// SAFETY: value was established by the surrounding parse or typed constructor.
 		(deletionMatch[1] as string).replace(/,\s+/u, " "),
 	);
 	if (!Number.isFinite(deletionMs)) {
@@ -365,10 +324,7 @@ export function parseCreateDbHumanV1(
 			claimUrl,
 			deletionDate: new Date(deletionMs).toISOString(),
 			region: options.region,
-			// The pretty output does not print the database name; the JSON
-			// document does. Naming the gap beats inventing a value.
 			name: "unnamed-human-output",
-			// SAFETY: value was established by the surrounding parse or typed constructor.
 			projectId: projectMatch[1] as string,
 		},
 		"human-v1",

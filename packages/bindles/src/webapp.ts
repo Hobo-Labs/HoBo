@@ -1,7 +1,6 @@
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 import type { ComponentBinding, ProviderAnnotation } from "./types.js";
 
-// public-contract: identifies framework-neutral web application annotations.
 export const WEBAPP_OPTION = "webapp" as const;
 export const WEBAPP_META = Symbol.for("hobo.webapp.meta");
 export const WASP_WEBAPP_METADATA = Symbol.for("hobo.webapp.wasp");

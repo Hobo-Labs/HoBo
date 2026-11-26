@@ -30,10 +30,8 @@ const DISABLED_FEATURES = Object.freeze([
 	"http",
 ] as const);
 
-// public-contract: minimum byte size for a REAL component. The synthetic
 export const REAL_COMPONENT_MIN_BYTES = 1024;
 
-// public-contract: typed fail-closed error for the real lane. Callers that
 export class ComponentizeToolchainError extends Error {
 	readonly code = "componentize.toolchain_unavailable";
 	readonly remediation: string;
@@ -50,7 +48,6 @@ export class ComponentizeToolchainError extends Error {
 	}
 }
 
-// public-contract: injected implementation seam. Mirrors the componentize-js
 export type RealComponentizeImpl = (
 	sourcePath: string,
 	opts: {
@@ -72,13 +69,11 @@ export interface RealComponentizeOptions {
 	};
 }
 
-// public-contract: input mirrors the CLI ComponentizeFn seam.
 export interface RealComponentizeInput {
 	readonly sourceRoot: string;
 	readonly sourceDateEpoch: string;
 }
 
-// public-contract: output mirrors the CLI ComponentizeFn seam plus the OCI
 export interface RealComponentizeResult {
 	readonly component: WasmComponentArtifact;
 	readonly oci: WasmOciDescriptor;
@@ -91,7 +86,6 @@ export interface RealComponentize {
 	) => Promise<RealComponentizeResult>;
 }
 
-// public-contract: factory for the real componentize lane. Probes the
 export async function createRealComponentize(
 	options: RealComponentizeOptions = {},
 ): Promise<RealComponentize> {
@@ -120,7 +114,6 @@ export async function createRealComponentize(
 	};
 }
 
-// public-contract: structural validation for REAL component binaries. Does not
 export interface RealWasmComponentSummary {
 	readonly format: "wasm-component";
 	readonly layer: 1;

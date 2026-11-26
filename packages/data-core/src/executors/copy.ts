@@ -93,7 +93,6 @@ import {
 	type PlannedDetails,
 } from "./runtime.js";
 
-/** Erasures recorded since an instant, as the deletes that re-apply them. */
 export interface ErasureLedger {
 	since(instant: string): Awaitable<readonly RecordMutation[]>;
 }
@@ -122,19 +121,13 @@ export interface CopyMigrationOptions {
 	readonly target: EngineBinding;
 	readonly schema: DatasetSchema;
 	readonly scope: DatasetScope;
-	/** Defaults to `scope`. */
 	readonly targetScope?: DatasetScope;
 	readonly chunkSize?: number;
 	readonly tailBatch?: number;
-	/**
-	 * Tail rounds — or, natively, progress polls — before a still-lagging
-	 * converge holds instead of spinning.
-	 */
 	readonly maxTailRounds?: number;
 	readonly buckets?: number;
 	readonly verifyRechecks?: number;
 	readonly rampSteps?: readonly number[];
-	/** Move a share of reads to the target. Reversible at any percentage. */
 	readonly shiftReads?: (percent: number) => Awaitable<void>;
 	/**
 	 * Move write authority. The router's contract has two halves:
@@ -153,31 +146,15 @@ export interface CopyMigrationOptions {
 	 * single driver; it does not protect against a late one.
 	 */
 	readonly flipAuthority: (flip: AuthorityFlip) => Awaitable<void>;
-	/**
-	 * Consulted in the soak window. Defaults to `finalize`. Once a rollback is
-	 * journaled it is not consulted again: the decision binds.
-	 */
 	readonly soakDecision?: () => Awaitable<SoakDecision>;
-	/**
-	 * Required for a `to-snapshot` rollback, so that it cannot resurrect a
-	 * subject. Without it such a rollback holds instead of proceeding: no
-	 * ledger is not the same as no erasures.
-	 */
 	readonly erasures?: ErasureLedger;
-	/**
-	 * How records travel: `hub` (the default) or `native`. Take it from the
-	 * selected candidate. It is recorded in the plan, and a run planned one
-	 * way cannot be resumed the other.
-	 */
 	readonly realization?: MigrationRealization;
-	/** The native migration profile to run; required when `realization` is `native`. */
 	readonly profile?: string;
 	readonly plan?: PlannedDetails;
 }
 
 type CopyPattern = "snapshot-and-tail" | "offline-copy";
 
-/** The two halves of a native transfer, as this run addresses them. */
 interface NativeLeg {
 	readonly profile: string;
 	readonly source: NativeTransferPort;
@@ -186,28 +163,11 @@ interface NativeLeg {
 	readonly targetRef: NativeTransferRef;
 }
 
-/**
- * The forward channel: how the target is brought level with the source. The
- * one seam between the two realizations — everything outside it is shared.
- */
 interface ForwardChannel {
-	/** `prepare`: open the channel. The answer is the phase checkpoint. */
 	open(): Promise<JsonObject>;
-	/** The initial copy: its checkpoint, or `undefined` while it still runs. */
 	seed(): Promise<JsonObject | undefined>;
-	/**
-	 * Take the channel for this driver, so that no driver with an older view
-	 * of the migration can still write through it. A native transfer has
-	 * nothing to take: the engine applies its own records, not this module.
-	 */
 	claim(): Promise<void>;
-	/** Bring the target level with everything the source has committed. */
 	drain(): Promise<DrainOutcome>;
-	/**
-	 * Drop the channel and the log it pinned. Idempotent. With
-	 * `targetBestEffort`, a target that cannot be asked does not stop the
-	 * source's half from being dropped; the answer is whether the target's was.
-	 */
 	close(options?: ChannelCloseOptions): Promise<boolean>;
 }
 
@@ -226,21 +186,17 @@ interface CopyContext {
 	readonly tailBatch: number;
 	readonly maxTailRounds: number;
 	readonly reverseTail: boolean;
-	/** Present exactly when the run's realization is `native`. */
 	readonly native?: NativeLeg;
 }
 
-/** One direction of the copy, as far as applying to it goes. */
 interface ApplyLeg {
 	readonly apply: ChangeApplyPort;
 	readonly into: string;
 	readonly subscription: string;
 	readonly fenceToken?: string;
-	/** The journal head of the driver applying: its fencing epoch. */
 	epoch(): number;
 }
 
-/** A leg that is also tailed from the other side's capture. */
 interface TailLeg extends ApplyLeg {
 	readonly capture: ChangeCapturePort;
 	readonly from: DatasetScope;
@@ -248,20 +204,11 @@ interface TailLeg extends ApplyLeg {
 
 interface DrainOutcome {
 	readonly position: Position;
-	/** Changes this module applied; absent when the engine applied them. */
 	readonly applied?: number;
 	readonly caughtUp: boolean;
 }
 
-/**
- * What a migration leg keeps as its watermark: the position it has applied
- * through, stamped with the journal head of the driver that wrote it —
- * `<head>@<position>`. The stamp is what a conditional apply compares, so two
- * drivers that both believe a leg is theirs cannot both write to it, and a
- * driver that finds a head newer than its own knows it has been superseded.
- */
 interface LegMark {
-	/** The watermark exactly as stored; what a conditional apply names. */
 	readonly raw: Position | undefined;
 	readonly epoch: number;
 	readonly position: Position | undefined;
@@ -276,12 +223,10 @@ function stamp(epoch: number, position: Position): Position {
 function legMarkOf(raw: Position | undefined): LegMark {
 	if (raw === undefined) return { raw, epoch: 0, position: undefined };
 	const match = LEG_MARK.exec(raw);
-	// A watermark written before legs were stamped is a bare position.
 	if (match === null) return { raw, epoch: 0, position: raw };
 	return { raw, epoch: Number(match[1]), position: match[2] ?? "" };
 }
 
-/** Read a leg's watermark; a head newer than this driver's ends the run. */
 async function readLeg(leg: ApplyLeg): Promise<LegMark> {
 	const mark = legMarkOf(
 		await leg.apply.watermark({ dataset: leg.into, source: leg.subscription }),
@@ -304,7 +249,6 @@ async function applyTo(
 		changes,
 		source: leg.subscription,
 		position: raw,
-		// The store compares and writes in one transaction: see `ApplyRequest`.
 		expectedWatermark: mark.raw ?? null,
 		...(leg.fenceToken === undefined
 			? undefined
@@ -315,12 +259,6 @@ async function applyTo(
 
 const CLAIM_ATTEMPTS = 8;
 
-/**
- * Stamp this driver's head on a leg without moving its position. After it, a
- * driver with an older view is refused by the store — its conditional apply
- * names a watermark that is gone — and one that reads the leg afresh sees a
- * head newer than its own and stops.
- */
 async function claim(leg: ApplyLeg, start: Position): Promise<void> {
 	for (let attempt = 1; ; attempt += 1) {
 		const mark = await readLeg(leg);
@@ -329,8 +267,6 @@ async function claim(leg: ApplyLeg, start: Position): Promise<void> {
 			await applyTo(leg, [], mark.position ?? start, mark);
 			return;
 		} catch (error) {
-			// Someone applied between the read and the stamp. Look again: either
-			// they outrank this driver, and the read says so, or the stamp lands.
 			if (!(error instanceof StaleApplyError) || attempt >= CLAIM_ATTEMPTS) {
 				throw error;
 			}
@@ -338,7 +274,6 @@ async function claim(leg: ApplyLeg, start: Position): Promise<void> {
 	}
 }
 
-/** Tail one leg until it is caught up or the round budget is spent. */
 async function drain(
 	leg: TailLeg,
 	start: Position,
@@ -355,10 +290,6 @@ async function drain(
 			after: position,
 			limit,
 		});
-		// A batch with nothing in scope still moves the resume point. Recording
-		// it keeps a quiet leg's durable position from falling out of the log
-		// the engine retains — a leg that was never behind must not come back
-		// from a long hold to a position that is gone.
 		if (batch.changes.length > 0 || batch.position !== position) {
 			mark = await applyTo(leg, batch.changes, batch.position, mark);
 			await leg.capture.acknowledge({
@@ -388,7 +319,6 @@ async function digests(
 	return { source, target };
 }
 
-/** The forward leg as the seed and the stamp use it: no capture needed. */
 function forwardApply(context: CopyContext): ApplyLeg {
 	const { options, targetScope, forward, run } = context;
 	return {
@@ -439,21 +369,10 @@ function hasReverseTail(options: CopyMigrationOptions): boolean {
 
 export const NATIVE_TRANSFER_SUFFIX = "_native";
 
-/**
- * The name a migration's native transfer goes by on both engines. Exported so
- * an operator abandoning a migration can `stop` its transfer by name.
- */
 export function nativeTransferName(migrationId: string): string {
 	return `hobo_migration_${migrationId}${NATIVE_TRANSFER_SUFFIX}`;
 }
 
-/**
- * Resolve the realization before anything is journaled. `hub` needs nothing.
- * `native` needs a named profile both engines declare for this pattern, the
- * port on both bindings, and the ports this module still drives itself. When
- * any of that is missing the run does not start: falling back to the hub would
- * carry out a different plan from the one that was decided and recorded.
- */
 function resolveNative(
 	options: CopyMigrationOptions,
 	pattern: CopyPattern,
@@ -507,7 +426,6 @@ function resolveNative(
 	if (sourcePort === undefined || targetPort === undefined) {
 		throw unavailable("a binding provides no nativeTransfer port");
 	}
-	// What this module still drives itself, whoever carries the records.
 	requirePort(source, "verify");
 	requirePort(source, "fence");
 	requirePort(source, "retire");
@@ -528,8 +446,6 @@ async function open(
 ): Promise<CopyContext> {
 	const targetScope = options.targetScope ?? options.scope;
 	const native = resolveNative(options, pattern, targetScope);
-	// A native transfer is torn down at the cutover and nothing tails back,
-	// so the old side goes stale there: the posture is `to-snapshot`.
 	const reverseTail = native === undefined && hasReverseTail(options);
 	const run = await MigrationRun.open(options.runtime, pattern, {
 		source: options.source.declaration.engine,
@@ -558,29 +474,18 @@ async function open(
 
 export const OFFLINE_COPY_POSITION = "offline-copy";
 
-/** Where the forward leg starts: what its watermark holds before any tail. */
 function forwardStart(context: CopyContext): Position {
 	return context.pattern === "offline-copy"
 		? OFFLINE_COPY_POSITION
 		: context.run.checkpointText("prepare", "startPosition");
 }
 
-/**
- * Copy the whole scope through the hub. Returns records applied.
- *
- * Every chunk is a conditional apply on the forward leg. The leg is read
- * *before* the scan opens, so whatever the scan returns is at least as new as
- * the watermark the chunks are conditional on — and once a tail has moved
- * that watermark, a chunk still in a slower driver's hands is refused instead
- * of landing on top of the changes that superseded it.
- */
 async function seed(context: CopyContext): Promise<number> {
 	const { options } = context;
 	const leg = forwardApply(context);
 	const position = forwardStart(context);
 	let mark = await readLeg(leg);
 	if (mark.position !== undefined && mark.position !== position) {
-		// The tail has moved the leg on: this seed is another driver's past.
 		throw new StaleApplyError(leg.into, leg.subscription);
 	}
 	const cursor = await requirePort(options.source, "snapshot").openSnapshot({
@@ -602,13 +507,10 @@ async function seed(context: CopyContext): Promise<number> {
 	return seeded;
 }
 
-/** The hub: scan, tail and apply canonical records over the ports. */
 function hubChannel(context: CopyContext): ForwardChannel {
 	const { options, forward, tailBatch, maxTailRounds } = context;
 	return {
 		async open() {
-			// Position first, scan second: this ordering is the correctness
-			// argument for a fuzzy seed.
 			const startPosition = await requirePort(options.source, "capture").start({
 				scope: options.scope,
 				subscription: forward,
@@ -633,23 +535,12 @@ function hubChannel(context: CopyContext): ForwardChannel {
 	};
 }
 
-/**
- * A native realization: the engine copies and tails its own records. This
- * module only opens the transfer, asks how far it has got, and closes it. It
- * never sleeps — each question may wait a bounded time inside the engine — and
- * it asks a bounded number of times before reporting that the copy lags.
- */
 function nativeChannel(
 	context: CopyContext,
 	native: NativeLeg,
 ): ForwardChannel {
 	const rounds = context.maxTailRounds;
 	let resumed = false;
-	/**
-	 * A transfer is paused whenever the run holds (see `pauseTransfer`), so the
-	 * first thing a phase that needs it does is let it deliver again. Only a
-	 * phase body calls this, and a phase body runs only behind a verdict.
-	 */
 	const resume = async (): Promise<void> => {
 		if (resumed) return;
 		await native.target.resume(native.targetRef);
@@ -679,8 +570,6 @@ function nativeChannel(
 		},
 		async claim() {},
 		async drain() {
-			// A mark, then the question "has the target applied up to it": the
-			// engine's own equivalent of tailing until caught up.
 			await resume();
 			const mark = await native.source.mark(native.sourceRef);
 			for (let round = 0; round < rounds; round += 1) {
@@ -691,7 +580,6 @@ function nativeChannel(
 			return { position: mark, caughtUp: false };
 		},
 		async close(closing = {}) {
-			// The target first: its side reads from what the source retains.
 			let targetStopped = true;
 			try {
 				await native.target.stop(native.targetRef);
@@ -699,21 +587,12 @@ function nativeChannel(
 				if (closing.targetBestEffort !== true) throw error;
 				targetStopped = false;
 			}
-			// Always: with the source's half gone, a target that comes back has
-			// nothing left to read from.
 			await native.source.stop(native.sourceRef);
 			return targetStopped;
 		},
 	};
 }
 
-/**
- * Stop a native transfer delivering while the run is held. A held migration
- * moves nothing: the hub is driven by this module and stops with it, and the
- * engine's own transport is told to. The one exception is a hold that only
- * says "the engine has not finished yet" (`MigrationHold.working`) — there the
- * transfer is the work, and it carries on under the verdict it started with.
- */
 async function pauseTransfer(
 	context: CopyContext,
 	hold: MigrationHold,
@@ -785,14 +664,6 @@ function cutOverCheckpoint(context: CopyContext): JsonObject {
 	return recorded;
 }
 
-/**
- * Journal that the source is about to be fenced, then fence it. The fact is
- * first, and conditional: a driver that has been superseded loses it and
- * never refuses a write on a store it no longer has any business with. Its
- * instant is also where erasure replay is windowed from — an erasure that
- * arrives while the source is fenced is dated before the cutover, yet never
- * reached the source.
- */
 async function fenceSource(
 	context: CopyContext,
 	holdAt: MigrationPhase,
@@ -886,7 +757,6 @@ async function compensate(
 		{ compensated: true },
 		working,
 	);
-	// Reads go home where a ramp moved them; an offline copy never did.
 	if (context.pattern === "snapshot-and-tail") await options.shiftReads?.(0);
 	await requirePort(options.source, "fence").release({
 		scope: options.scope,
@@ -924,8 +794,6 @@ async function completeFlip(
 	else await channel.close();
 	await context.options.flipAuthority({
 		migrationId: context.options.runtime.migrationId,
-		// The head of the journaled cutover: the same for the run that decided
-		// it and for every run that finishes it.
 		head: context.run.decisionHead(MIGRATION_EVENTS.CutOver),
 		direction: "to-target",
 		fenceToken,
@@ -956,8 +824,6 @@ async function flip(
 		});
 	}
 	await restoreReads(context);
-	// The first time this run asked for the source's fence: nothing the source
-	// refused since then can have reached it.
 	const fencedFrom = run.firstText(
 		MIGRATION_EVENTS.FenceRequested,
 		"requestedAt",
@@ -979,12 +845,6 @@ async function flip(
 	return decision;
 }
 
-/**
- * Finish a cutover an earlier run decided but did not complete. The flip is
- * idempotent at its head by contract, so repeating it is safe whether or not
- * it landed — and it carries the head of the decision, so a router that has
- * since applied a later one refuses it.
- */
 async function resumeFlip(
 	context: CopyContext,
 	decision: JsonObject,
@@ -1003,8 +863,6 @@ async function resumeFlip(
 async function releaseStrandedTargetFence(context: CopyContext): Promise<void> {
 	const { options, run, targetScope } = context;
 	const fence = options.target.fence;
-	// Only a fence this migration asked for can be one it stranded. With no
-	// request on record a fence on the target is somebody else's business.
 	const claim = run.fenceClaim("target");
 	if (fence === undefined || claim === undefined) return;
 	const status = await fence.status(targetScope);
@@ -1018,8 +876,6 @@ async function releaseStrandedTargetFence(context: CopyContext): Promise<void> {
 		!claim.pending &&
 		fenceTokenDigest(standing.fenceToken) !== claim.digest
 	) {
-		// Fenced, but not by the fence this migration recorded raising: it is
-		// someone else's, and is left exactly as it stands.
 		throw new MigrationHold(
 			"soak",
 			`${FENCE_NOT_OWNED}: the new authority is fenced, and not by a fence this migration can prove it raised; it was not released`,
@@ -1033,11 +889,8 @@ async function releaseStrandedTargetFence(context: CopyContext): Promise<void> {
 	throw hold;
 }
 
-/** What the run loop learned before the soak phase's body runs. */
 interface SoakEntry {
-	/** The soak decision, when it was already asked for. */
 	decision?: SoakDecision;
-	/** The negative verdict the phase is running under, when it is. */
 	denial?: PhaseDenial;
 }
 
@@ -1046,8 +899,6 @@ async function soak(
 	entry: SoakEntry = {},
 ): Promise<JsonObject> {
 	const { options, run, reverseTail, tailBatch, maxTailRounds } = context;
-	// A rollback an earlier run decided is finished, not reconsidered: the
-	// soak decision is not asked again.
 	const decided = run.rollbackDecision();
 	if (decided !== undefined) return finishRollback(context, decided);
 	const decision =
@@ -1096,14 +947,10 @@ function soakPhase(context: CopyContext): Promise<JsonObject> {
 	});
 }
 
-/** Where erasure replay is windowed from: before the source was fenced. */
 function erasureWindowStart(context: CopyContext): string {
 	const { run } = context;
 	const cutOver = cutOverCheckpoint(context);
 	if (isJsonString(cutOver.fencedFrom)) return cutOver.fencedFrom;
-	// A journal from before the fence request was a fact: the plan's instant
-	// is earlier than any fence, so the window is wider than needed, never
-	// narrower.
 	return (
 		run.firstText(MIGRATION_EVENTS.Planned, "plannedAt") ??
 		run.checkpointText("fence-and-flip", "cutOverAt")
@@ -1126,7 +973,6 @@ async function rollbackFromSoak(
 		context,
 		cutOverCheckpoint(context),
 	);
-	// The verdict the rollback was asked for under, when it was negative.
 	const underVerdict =
 		denial === undefined ? undefined : { policyFindings: [...denial.findings] };
 	if (reverseTail) {
@@ -1173,9 +1019,6 @@ async function rollbackFromSoak(
 		await run.emit(MIGRATION_EVENTS.RollbackDecided, decision);
 		return finishRollback(context, decision);
 	}
-	// No reverse tail: writes since the flip are lost, and the plan said so.
-	// What must not happen is an erased subject coming back with the stale
-	// source. That needs the ledger; without one the rollback does not start.
 	if (options.erasures === undefined) {
 		throw new MigrationHold(
 			"soak",
@@ -1216,11 +1059,6 @@ async function rollbackFromSoak(
 	return finishRollback(context, decision);
 }
 
-/**
- * Re-apply to the fenced source every erasure the ledger holds since the
- * rollback's window opened. Deletes are idempotent, so reading and applying
- * the whole window twice is harmless. Returns how many the ledger held.
- */
 async function replayErasures(
 	context: CopyContext,
 	decision: JsonObject,
@@ -1262,8 +1100,6 @@ async function finishRollback(
 	if (status.fenced) {
 		const fenceToken = await cutOverFenceToken(context, cutOver);
 		if (lossless) {
-			// Close the reverse leg before the source takes writes of its own:
-			// a driver still tailing with an older view is refused from here.
 			await claim(
 				reverseLeg(context, fenceToken),
 				run.checkpointText("fence-and-flip", "reversePosition"),
@@ -1329,9 +1165,6 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 		context,
 		cutOverCheckpoint(context),
 	);
-	// The reverse tail ends here: once the source is about to be retired there
-	// is nothing left for it to keep current. Its leg is stamped first, so a
-	// driver still tailing with an older view cannot write to a retired store.
 	if (reverseTail) {
 		await claim(
 			reverseLeg(context, fenceToken),
@@ -1339,10 +1172,6 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 		);
 		await requirePort(options.target, "capture").stop(context.reverse);
 	}
-	// The safety of deleting the source was proven at cutover, when both sides
-	// digested equal under the fence. What the retire port checks is narrower
-	// and still necessary: that the caller holds the fence, and that the source
-	// has not changed between this digest and the delete.
 	const expected = await requirePort(options.source, "verify").digest({
 		scope: options.scope,
 		buckets,
@@ -1352,10 +1181,6 @@ async function finalize(context: CopyContext): Promise<JsonObject> {
 	// otherwise hand them to whatever still reads that channel — and what
 	// reads it is the new authority.
 	await channelOf(context).close();
-	// An empty scope behind the migration's own fence was emptied by this
-	// migration: nothing else writes through that fence. So a run that died
-	// after the retire committed and before the phase was recorded finds the
-	// work done, instead of mistaking it for a source that changed.
 	const decided = cutOverCheckpoint(context).count;
 	if (expected.count === 0 && isJsonNumber(decided) && decided > 0) {
 		return { removed: 0, alreadyRetired: true };
@@ -1389,10 +1214,6 @@ function rollbackAt(
 	};
 }
 
-/**
- * `snapshot-and-tail`: online copy. Writes are refused only for the
- * fence-and-flip step.
- */
 export async function runSnapshotAndTail(
 	options: CopyMigrationOptions,
 ): Promise<MigrationRunResult> {
@@ -1463,8 +1284,6 @@ export async function runSnapshotAndTail(
 				const decided = run.cutOverDecision();
 				if (decided !== undefined) return resumeFlip(context, decided);
 				const fenceToken = await fenceSource(context, "shift-reads");
-				// This driver's head on the leg, before anything is compared: a
-				// driver with an older view can no longer apply to the target.
 				await channel.claim();
 				const drained = await channel.drain();
 				const pair = await digests(context);
@@ -1491,11 +1310,6 @@ export async function runSnapshotAndTail(
 	);
 }
 
-/**
- * `offline-copy`: fence, copy, verify, flip. Exact and simple, at the price of
- * refusing writes for the whole copy — which is why the selector only picks
- * it when the declared freeze budget covers the copy.
- */
 export async function runOfflineCopy(
 	options: CopyMigrationOptions,
 ): Promise<MigrationRunResult> {
@@ -1518,9 +1332,6 @@ export async function runOfflineCopy(
 					await channel.claim();
 					seeded = await seed(context);
 				} else {
-					// Opening is idempotent, so an attempt that ran out of time is
-					// continued by the next one rather than started again: the
-					// transfer is left in place when the fence is released.
 					await channel.open();
 					const copied = await channel.seed();
 					const level =

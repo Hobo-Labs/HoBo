@@ -1,8 +1,3 @@
-// OTLP/HTTP JSON encoding (opentelemetry-proto ExportTraceServiceRequest and
-// ExportMetricsServiceRequest, JSON mapping) for the frozen OtelSpan and
-// OtelMetricPoint shapes. No SDK dependency (D17): the wire form is small and
-// stable. Encoding is pure and deterministic.
-
 import { isText } from "../authz/json.js";
 import type { OtelAttributes, OtelMetricPoint, OtelSpan } from "../ports.js";
 import { CD_INSTRUMENTATION_SCOPE, SEMCONV } from "./semconv.js";
@@ -37,7 +32,6 @@ function value(v: string | number | boolean): OtlpAnyValue {
 	return Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v };
 }
 
-/** One span in OTLP JSON (opentelemetry-proto trace.v1.Span). */
 export interface OtlpSpanJson {
 	traceId: string;
 	spanId: string;
@@ -135,7 +129,6 @@ export function encodeMetrics(
 	points: readonly OtelMetricPoint[],
 	resourceAttributes: OtelAttributes,
 ) {
-	// Group by (name, kind, unit) in first-seen order: one OTLP metric each.
 	const groups = new Map<string, OtelMetricPoint[]>();
 	for (const p of points) {
 		const key = `${p.name}\u0000${p.kind}\u0000${p.unit}`;

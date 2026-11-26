@@ -7,7 +7,6 @@ import {
 } from "@hobo/pricing";
 import { isJsonObject, isJsonString } from "./json.js";
 
-// public-contract: the fact type pinned by PRICING_EVENT_CONTRACTS in @hobo/events.
 export const CATALOG_REGISTERED = "pricing.CatalogRegistered";
 
 export type CatalogRegisteredBody = {

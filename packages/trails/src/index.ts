@@ -155,5 +155,4 @@ export {
 	UpgradePreflightParseError,
 } from "./upgrade-preflight.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_TRAILS_PACKAGE = "@hobo/trails";

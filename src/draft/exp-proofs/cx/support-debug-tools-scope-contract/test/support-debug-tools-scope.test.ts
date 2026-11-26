@@ -37,7 +37,7 @@ test("M0 record maps dependencies to authoritative design and ADR sources", () =
     [
       "docs/design/developer-experience.md#plan-07",
       "docs/design/developer-experience.md#plan-49",
-      "docs/design/workspace-activation-telemetry-contract.md",
+      "https://linear.app/quickdeploy-ai/document/workspace-activation-telemetry-contract-archived-0709315c4e70",
       "docs/design/admin-console.md",
       "docs/design/audit-explorer.md",
       "docs/design/support-sla-channels.md",

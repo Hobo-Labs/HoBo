@@ -114,7 +114,7 @@ status, SLO state, severity, or incident id only when redacted and safe for supp
 - [developer-experience.md#plan-49](./developer-experience.md#plan-49) defines operations
   dashboard, project/environment grouping, status surfaces, and incident/status projection
   discipline.
-- [workspace-activation-telemetry-contract.md](./workspace-activation-telemetry-contract.md) names
+- [workspace-activation-telemetry-contract.md](https://linear.app/quickdeploy-ai/document/workspace-activation-telemetry-contract-archived-0709315c4e70) names
   first failure recovered as a Support & Debug Tools product question and recovery use.
 - [admin-console.md](./admin-console.md) defines admin-visible project, environment, entitlement,
   support, and security context consumed by support diagnostics.

@@ -27,7 +27,6 @@ const USAGE = [
 	"hobo incident open --camp <camp> --signal slo-burn|apply-failed|verification-failed [--reason <text>]",
 ] as const;
 
-// public-contract: promotion states an incident reports.
 export const INCIDENT_STATES = Object.freeze([
 	PromotionState.FAILED,
 	PromotionState.ROLLED_BACK,

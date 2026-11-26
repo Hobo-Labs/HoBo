@@ -52,7 +52,6 @@ import {
 	spaces,
 } from "./slots.js";
 
-/** Allocatable options per capability slot; a slot may hold several. */
 export type DigitalOceanSlotCatalog = Readonly<
 	Partial<Record<CapabilitySlot, readonly SlotBinding[]>>
 >;
@@ -65,7 +64,6 @@ export interface DigitalOceanYardBindingRow {
 	readonly properties: JsonObject;
 }
 
-/** Raw Yard shape: provider, regions, and the allocatable row set. */
 export interface DigitalOceanYardSpec {
 	readonly provider: "digitalocean";
 	readonly regions: readonly string[];
@@ -76,18 +74,6 @@ export interface DigitalOceanYardSpecOptions {
 	readonly regions?: readonly string[];
 }
 
-/**
- * Everything the DigitalOcean factories can allocate, grouped by slot. Several
- * entries per slot are the normal case, not a conflict to be resolved here:
- * DigitalOcean really does host a web capability on App Platform, a Droplet and
- * a DOKS node pool, and really does satisfy `data` with PostgreSQL, MySQL,
- * MongoDB and OpenSearch.
- *
- * `web` mixes two profiles on purpose. `appPlatform.staticSite()` satisfies the
- * narrower `web.static/v1`, the other three satisfy `web.hosted/v1`; a workload
- * that only needs static hosting can match either, and one that needs a running
- * server matches only the hosted rows.
- */
 export const DIGITALOCEAN_DEFAULT_BINDINGS: DigitalOceanSlotCatalog =
 	Object.freeze({
 		web: Object.freeze([
@@ -113,12 +99,6 @@ export const DIGITALOCEAN_DEFAULT_BINDINGS: DigitalOceanSlotCatalog =
 		bucket: Object.freeze([spaces(), blockStorage()]),
 	});
 
-/**
- * The default DigitalOcean Yard as raw rows. `regions` defaults to the
- * provider's published regions; the catalog is not narrowed by region, because
- * a Yard declares what the provider can allocate, not what a particular region
- * happens to offer.
- */
 export function digitaloceanYardSpec(
 	options?: DigitalOceanYardSpecOptions,
 ): DigitalOceanYardSpec {
@@ -164,7 +144,6 @@ function toRows(
 	return Object.freeze(rows);
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

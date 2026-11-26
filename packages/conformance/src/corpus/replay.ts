@@ -17,7 +17,6 @@ import {
 
 import { createSeededClock, createSeededUlid } from "./deterministic-seed.js";
 
-// public-contract: stable exported contract literal
 export const REPLAY_CORPUS_SEED = "hobo.s1-16.hello-bindle";
 
 export interface GreetingReadModel {

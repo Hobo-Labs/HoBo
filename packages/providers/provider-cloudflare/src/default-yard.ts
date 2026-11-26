@@ -49,22 +49,15 @@ export interface CloudflareYardBindingRow {
 	readonly properties: JsonObject;
 }
 
-/** Slot → the offerings that can serve it. */
 export type CloudflareYardOfferings = Readonly<
 	Partial<Record<CapabilitySlot, readonly SlotBinding[]>>
 >;
 
-/** The catalog `cloudflareYard()` returns. */
 export interface CloudflareYardCatalog {
 	readonly name: string;
 	readonly provider: string;
 	readonly regions: readonly string[];
-	/**
-	 * A slot with more than one entry is a genuine choice left to selection,
-	 * not an unfinished decision.
-	 */
 	readonly offerings: CloudflareYardOfferings;
-	/** The same catalog flattened into `YardBindingInput`-shaped rows. */
 	readonly bindings: readonly CloudflareYardBindingRow[];
 }
 
@@ -80,19 +73,9 @@ export interface CloudflareYardOptions {
 	readonly regions?: readonly string[];
 }
 
-/** Cloudflare's edge is global; the default region list says exactly that. */
 export const CLOUDFLARE_DEFAULT_YARD_NAME = "cloudflare";
 export const CLOUDFLARE_DEFAULT_REGIONS = Object.freeze(["global"] as const);
 
-/**
- * Re-target an offering onto another slot's profile.
- *
- * Workers serve the `service` slot natively, and they also serve web traffic.
- * Rather than retyping `web.hosted/v1` (a magic string that would then be free
- * to drift from what `pages()` emits), the profile is read off the offering
- * that owns the slot and the product id off the offering being added. Both
- * halves stay derived from `./slots.js`.
- */
 function alsoServes(
 	slot: CapabilitySlot,
 	slotExemplar: SlotBinding,
@@ -111,13 +94,6 @@ function alsoServes(
 	});
 }
 
-/**
- * Every capability Cloudflare can allocate, as a flat list of parsed bindings.
- * Each binding already carries the slot it serves, so nothing is keyed twice
- * and the grouping below cannot disagree with the binding it groups.
- *
- * `web` appears twice on purpose: Pages and Workers can both serve it.
- */
 function buildCatalog(): readonly SlotBinding[] {
 	const web = pages();
 	return Object.freeze([
@@ -125,7 +101,6 @@ function buildCatalog(): readonly SlotBinding[] {
 		d1(),
 		kv(),
 		queues(),
-		// A schedule runs as a Cron Trigger on the Worker it depends on.
 		cronTriggers(),
 		workers(),
 		web,
@@ -180,11 +155,6 @@ const CATALOG = buildCatalog();
 
 const OFFERINGS = groupBySlot(CATALOG);
 
-/**
- * The catalog flattened into rows, sorted and frozen. Exported as a constant
- * because it is a property of the provider, not of any one call: the rows do
- * not depend on the Yard's name or regions.
- */
 export const CLOUDFLARE_DEFAULT_BINDINGS: readonly CloudflareYardBindingRow[] =
 	Object.freeze(CATALOG.map(toRow).sort(compareRows));
 
@@ -213,13 +183,6 @@ function resolveName(name: string | undefined): string {
 	return name;
 }
 
-/**
- * The default exported Cloudflare Yard, as an allocatable catalog.
- *
- * The result is data, not a decision: `offerings.web` has two entries, and
- * which one an app gets is settled later by selection against its capability
- * requirement.
- */
 export function cloudflareYard(
 	options?: CloudflareYardOptions,
 ): CloudflareYardCatalog {

@@ -22,7 +22,7 @@ import { CD_DEFAULTS } from "../events.js";
 import type { Outcome } from "../ports.js";
 import { composeRefusal } from "./errors.js";
 
-// domain-view: parsed composition config (string unions); host-side only, never journaled.
+// domain-view:
 export type CdStoreSelection =
 	| Readonly<{ backend: "sqlite"; path: string }>
 	| Readonly<{
@@ -49,7 +49,7 @@ export type CdFleetMember = Readonly<{
 	plan?: string;
 }>;
 
-// domain-view: parsed artifact-store selection (the ArtifactStoreConfig minus live ports).
+// domain-view:
 export type CdArtifactSelection =
 	| Readonly<{ backend: "filesystem"; root: string }>
 	| Readonly<{
@@ -61,7 +61,7 @@ export type CdArtifactSelection =
 	  }>
 	| Readonly<{ backend: "memory"; simulated: true }>;
 
-// domain-view: parsed composition config.
+// domain-view:
 export type CdComposeConfig = Readonly<{
 	tenant: string;
 	stationId: string;
@@ -110,7 +110,6 @@ function positiveInt(
 const MEMBER_ID = /^[a-z][a-z0-9-]{0,39}$/u;
 const MEMBER_PLAN = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 
-/** The URL variable of one fleet member: `neon-eu` reads HOBO_CD_POSTGRES_URL_NEON_EU. */
 export function cdFleetMemberUrlVariable(id: string): string {
 	return `${CD_COMPOSE_ENV.postgresUrl}_${id.toUpperCase().replaceAll("-", "_")}`;
 }
@@ -124,7 +123,6 @@ function fleetMembers(
 		.map((id) => id.trim())
 		.filter((id) => id !== "");
 	const members: CdFleetMember[] = [];
-	// `id` or `id:plan` (`neon-eu:neon-claimable`): the plan names the member's cost model.
 	for (const entry of ids) {
 		const [id = "", plan, ...rest] = entry.split(":");
 		if (rest.length > 0 || (plan !== undefined && !MEMBER_PLAN.test(plan)))
@@ -153,7 +151,6 @@ function fleetMembers(
 	return { ok: true, value: members };
 }
 
-/** A connection string with a password in it. */
 function carriesPassword(url: string): boolean {
 	return (
 		/^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^@/\s]+@/iu.test(url) ||
@@ -165,10 +162,6 @@ function joinPath(home: string, ...parts: readonly string[]): string {
 	return [home.replace(/\/+$/, ""), ...parts].join("/");
 }
 
-/**
- * Parse composition config from the host environment. `home` is HOBO_HOME;
- * `simulate` is the `--simulate` flag, the only path to fixtures.
- */
 export function parseCdComposeConfig(
 	input: Readonly<{ env: CdComposeEnv; home: string; simulate: boolean }>,
 ): Outcome<CdComposeConfig> {
@@ -328,7 +321,6 @@ export function parseCdComposeConfig(
 	};
 }
 
-/** True when the selection is a fixture; fixtures need `--simulate`. */
 export function isSimulated(config: CdComposeConfig): boolean {
 	return (
 		config.store.backend === "memory" || config.artifacts.backend === "memory"

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { TrailStep } from "./definition.js";
 
-// public-contract: trail history schema.
 export const TRAIL_HISTORY_SCHEMA = "hobo.trail-history/v1" as const;
 
 export type TrailHistoryEntry = Readonly<{

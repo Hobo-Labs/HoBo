@@ -26,7 +26,6 @@ export const FLUX_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
-/** The I14 coverage document for Flux. */
 export const FLUX_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "flux",
 	resolvedProductIds: FLUX_RESOLVED_PRODUCT_IDS,

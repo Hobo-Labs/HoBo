@@ -6,10 +6,8 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: schema id every ingestable bundle manifest must carry.
 export const BUNDLE_MANIFEST_SCHEMA = "hobo.registry.bundle-manifest/v1";
 
-// public-contract: fact type appended when a bundle manifest ingests.
 export const REGISTRY_BUNDLE_IMPORTED = "registry.BundleImported";
 
 export type IngestErrorCode =

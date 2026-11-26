@@ -93,13 +93,11 @@ import {
 import { createPostgresEventStore, type PostgresEventStore } from "./store.js";
 
 export type PostgresFleetMember = Readonly<{
-	/** Stable id: the name the register records (`neon-eu`, `supabase`). */
 	id: string;
 	connectionString: string;
 }>;
 
 export type PostgresFleetEventStoreOptions = Readonly<{
-	/** In configured order; the first is the writer of an empty fleet. */
 	members: readonly PostgresFleetMember[];
 	/**
 	 * Members that hold only the assignment register, on other failure
@@ -114,53 +112,32 @@ export type PostgresFleetEventStoreOptions = Readonly<{
 	applicationName?: string;
 	/** How long a resolved writer is trusted (default 30 s). */
 	leaseMs?: number;
-	/** Added to a lease while a move waits for writers to stop (default 5 s). */
 	graceMs?: number;
-	/** Plans per member, in their billing units; none means cost-blind. */
 	models?: readonly FleetFinancialModel[];
 	checkBudget?: FleetBudgetCheck;
-	/**
-	 * Where scheduled backups are kept (the plan's `backups`): a database on a
-	 * failure domain the writer does not share. Defaults to the first witness;
-	 * with neither, the fleet takes no backups (`backupsPlaced()` is false,
-	 * which `continuityShortfalls` reports).
-	 */
 	backupTo?: PostgresFleetMember;
-	/** Identifies this process in the register. */
 	decidedBy: string;
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
 	log?: (event: string) => void;
-	/** Tests inject pools; otherwise one `pg.Pool` per member. */
 	pool?: (member: PostgresFleetMember, schema: string) => PgPoolLike;
 }>;
 
-/** A tick's report, with the scheduled backup it took or skipped. */
 export type PostgresFleetTickReport = PostgresFleetReconcileReport &
 	Readonly<{ backup: PostgresFleetBackupOutcome | undefined }>;
 
 export interface PostgresFleetEventStore extends DurableEventStore {
-	/** One fleet tick: settle, copy, decide, act, then back up when due. */
 	tick(): Promise<PostgresFleetTickReport>;
-	/** Whether the plan's backups have a member to be kept on. */
 	backupsPlaced(): boolean;
-	/** The scheduled backups held, newest first (none without a schedule). */
 	backups(): Promise<readonly PostgresFleetBackup[]>;
-	/**
-	 * Copy a backup (the newest by default) into a member's journal. The
-	 * member the register names writer is refused; restore to a standby first
-	 * so a concurrent write or promotion cannot be overwritten.
-	 */
 	restore(input: {
 		readonly into: string;
 		readonly name?: string;
 	}): Promise<PostgresFleetBackup>;
-	/** The writer the store last resolved, if any. */
 	writer(): string | undefined;
 	end(): Promise<void>;
 }
 
-/** A caller's subscription, re-attached to each new writer. */
 interface FollowedSubscription {
 	readonly filter: StreamFilter;
 	readonly handler: (event: EventEnvelope) => void | Promise<void>;
@@ -176,14 +153,12 @@ function memberPool(member: PostgresFleetMember, schema: string): PgPoolLike {
 		connectionString: member.connectionString,
 		max: POSTGRES_STORE_DEFAULTS.poolSize,
 		connectionTimeoutMillis: POSTGRES_STORE_DEFAULTS.connectionTimeoutMs,
-		// The fleet names its tables unqualified; the store qualifies its own.
 		options: `-c search_path=${schema}`,
 	});
 	pool.on("error", () => {});
 	return pool;
 }
 
-/** The fleet's SQL port over a pool: text in, text out, pinned sessions. */
 function executorOf(pool: PgPoolLike): SqlExecutor {
 	const asText = (rows: readonly PgRow[]) =>
 		rows.map((row) =>
@@ -230,7 +205,6 @@ function unavailable(message: string): StoragePostgresError {
 	return new StoragePostgresError("unavailable", message);
 }
 
-/** Open the fleet. Nothing connects until the first call or tick. */
 export function createPostgresFleetEventStore(
 	options: PostgresFleetEventStoreOptions,
 ): PostgresFleetEventStore {
@@ -302,8 +276,6 @@ export function createPostgresFleetEventStore(
 	const memberById = new Map(options.members.map((m) => [m.id, m]));
 
 	const registerTable = `${quoteSchema(schemaName)}.${layout.assignmentTable}`;
-	// The commit-boundary fence (see the module comment). The tick's own
-	// standby copies do not use a member's store, so they are not fenced.
 	const fenceWrite = async (client: PgClientLike, id: string) => {
 		await client.query(`LOCK TABLE ${registerTable} IN SHARE MODE`);
 		const newest = (
@@ -340,7 +312,6 @@ export function createPostgresFleetEventStore(
 				applicationName: options.applicationName ?? "hobo-fleet",
 			},
 			pool,
-			// LISTEN needs its own connection to this member, not the pool's.
 			listener: () =>
 				createPgListener(
 					parsePostgresStoreConfig({
@@ -410,18 +381,14 @@ export function createPostgresFleetEventStore(
 		for (const backend of backends) {
 			try {
 				await storeFor(backend.id).ready();
-			} catch {
-				// An unreachable member is the fleet's to judge, not the tick's.
-			}
+			} catch {}
 		}
 		for (const witness of witnesses) {
 			try {
 				await witness.executor.query(
 					`CREATE SCHEMA IF NOT EXISTS ${quoteSchema(schemaName)}`,
 				);
-			} catch {
-				// A silent witness is one fewer vote, not a failed tick.
-			}
+			} catch {}
 		}
 		const report = await reconcileFleet({
 			backends,
@@ -442,7 +409,6 @@ export function createPostgresFleetEventStore(
 				((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
 			log: (event) => options.log?.(event.kind),
 		});
-		// A tick may have moved the writer: re-resolve on the next call.
 		resolved = undefined;
 		const writer = report.assignment?.active;
 		const source = backends.find((backend) => backend.id === writer);
@@ -502,9 +468,6 @@ export function createPostgresFleetEventStore(
 					);
 					if (lock.rows[0]?.locked !== "true")
 						throw unavailable(`${into} is busy with another fleet operation`);
-					// All fleet writes take SHARE on this table before touching the
-					// journal. EXCLUSIVE waits for them and prevents new writes or
-					// a local promotion until the restore commits.
 					await to.query(`LOCK TABLE ${registerTable} IN EXCLUSIVE MODE`);
 					const local = (await readAssignmentRows(to, layout, 1)).at(-1);
 					if (

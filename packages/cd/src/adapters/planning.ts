@@ -43,7 +43,6 @@ export type Declaration = Parameters<typeof plan>[0];
 
 export type CampPlanning = Readonly<{
 	environment: string;
-	/** Same config `pureplan` builds: region, placement, Yard binding, budget evidence. */
 	config: Omit<PlanConfig, "deploymentId">;
 }>;
 

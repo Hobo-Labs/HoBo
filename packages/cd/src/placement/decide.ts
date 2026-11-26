@@ -123,7 +123,6 @@ function applicable(
 	);
 }
 
-/** First residency failure code over every declared region, or undefined. */
 function residencyFailure(
 	topology: CampTopology,
 	subject: PlacementSubject,

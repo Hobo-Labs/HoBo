@@ -31,11 +31,8 @@ export type PostgresCapabilityDescriptor = {
 	readonly key: string;
 	readonly description: string;
 	readonly valueKind: PostgresCapabilityValueKind;
-	/** Which axis of the profile this key belongs to. */
 	readonly axis: PostgresCapabilityAxis;
-	/** Closed value domain for `enum` and `string-set` keys. */
 	readonly domain?: readonly string[];
-	/** True when `data.postgres/v1` or its parent already declares this key. */
 	readonly declaredByProfile: boolean;
 };
 type MutablePostgresCapabilityDescriptor = {
@@ -68,7 +65,6 @@ export const POSTGRES_ISOLATION_LEVELS = [
 
 export type PostgresIsolationLevel = (typeof POSTGRES_ISOLATION_LEVELS)[number];
 
-/** Transports a client can reach the server over. */
 export const POSTGRES_CONNECTIVITY_TRANSPORTS = [
 	"tcp",
 	"tls-tcp",
@@ -79,11 +75,6 @@ export const POSTGRES_CONNECTIVITY_TRANSPORTS = [
 export type PostgresConnectivityTransport =
 	(typeof POSTGRES_CONNECTIVITY_TRANSPORTS)[number];
 
-/**
- * Migration tools whose compatibility is a *product* claim, not an inference.
- * Speaking the wire protocol does not imply a tool works: a serverless HTTP-only
- * endpoint speaks Postgres and still cannot run `pg_dump`.
- */
 export const POSTGRES_MIGRATION_TOOLS = [
 	"pg-dump",
 	"pg-restore",
@@ -131,10 +122,6 @@ const descriptor = (
 	return result;
 };
 
-/**
- * Guarantees: monotonic, boolean, and load-bearing. A product that cannot
- * assert one of these is not a PostgreSQL product for HoBo's purposes.
- */
 export const POSTGRES_GUARANTEES: readonly PostgresCapabilityDescriptor[] = [
 	descriptor(
 		"postgresWireProtocol",
@@ -186,7 +173,6 @@ export const POSTGRES_GUARANTEES: readonly PostgresCapabilityDescriptor[] = [
 	),
 ];
 
-/** Features: ranked, gated, and frequently unset. */
 export const POSTGRES_FEATURES: readonly PostgresCapabilityDescriptor[] = [
 	descriptor(
 		"serverVersion",
@@ -320,15 +306,9 @@ export function postgresCapability(
 	return BY_KEY.get(key);
 }
 
-/** Keys of every capability this package knows how to reason about. */
 export const POSTGRES_CAPABILITY_KEYS: readonly string[] =
 	POSTGRES_CAPABILITIES.map((entry) => entry.key);
 
-/**
- * The value shape a product records for each key. Deliberately not a partial
- * record of unions: a product declares only what it has proven, and everything
- * else stays absent.
- */
 export type PostgresStructuredCapabilities = Readonly<
 	Record<string, boolean | number | string | readonly string[]>
 >;

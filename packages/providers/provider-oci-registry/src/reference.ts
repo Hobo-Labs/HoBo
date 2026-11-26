@@ -6,7 +6,6 @@ export const OCI_REGISTRY_PROVIDER_ID = "oci-registry";
 
 const REPOSITORY_PATTERN =
 	/^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)*$/u;
-/** distribution-spec `<reference>` tag grammar. */
 const TAG_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/u;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const HOST_PATTERN =

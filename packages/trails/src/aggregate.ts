@@ -4,7 +4,6 @@ import type { TrailDefinition } from "./definition.js";
 import { createTrailEvent, TRAIL_EVENTS, type TrailEvent } from "./events.js";
 import type { JsonObject } from "./json.js";
 
-// public-contract: trail run state machine.
 export const TRAIL_RUN_STATES = Object.freeze([
 	"idle",
 	"planned",

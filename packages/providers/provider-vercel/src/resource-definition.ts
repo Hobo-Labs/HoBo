@@ -80,7 +80,6 @@ export type ResourceDefinitionSemanticsData = {
 	readonly secretCustodyAvailable: boolean;
 };
 
-/** A definition record shaped for catalog registration. Data only. */
 export type ProviderResourceDefinitionData = {
 	readonly id: string;
 	readonly providerId: string;

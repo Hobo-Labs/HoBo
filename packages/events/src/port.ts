@@ -1,7 +1,7 @@
 import type { PortDescriptor, ProviderPort } from "@hobo/core";
 import { createPortDescriptor } from "@hobo/core";
 
-export const SUBSCRIPTION_GATEWAY_INTERFACE = "hobo:subscription/gateway"; // public-contract: port interface id a subscription transport declares
+export const SUBSCRIPTION_GATEWAY_INTERFACE = "hobo:subscription/gateway";
 
 const subscriptionGatewayPort = createPortDescriptor({
 	kind: "provider",

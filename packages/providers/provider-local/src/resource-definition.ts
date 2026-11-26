@@ -80,7 +80,6 @@ export type LocalResourceSemantics = {
 	readonly secretCustodyAvailable: boolean;
 };
 
-/** A semantics-only definition record shaped for catalog registration. */
 export type LocalResourceDefinition = {
 	readonly id: string;
 	readonly providerId: string;
