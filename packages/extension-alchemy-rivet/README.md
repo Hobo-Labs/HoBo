@@ -212,3 +212,7 @@ The adapter derives its provisioning graph and mapper grant claims from the same
 captured topic bindings, so later changes to caller-owned graph data cannot
 change one independently of the other. The shared runtime uses its captured
 array mapping intrinsic while compiling the graph.
+
+The bounded `BindleTopicMapping` model assumes authoritative verifier claims,
+sequential provisioning and stable retry identities. It does not prove the
+TypeScript implementation or the external provider.
