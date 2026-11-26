@@ -125,7 +125,7 @@ describe("source policy", () => {
 
 	it("allows required tool directives but rejects deferred markers, including inside directives", () => {
 		const text = [
-			"// @ts-expect-error required by the compiler test",
+			"// @ts-expect-error",
 			"const x = 1;",
 			"// eslint-disable-next-line no-alert -- TODO implement alternative",
 			"alert(x);",
@@ -133,6 +133,36 @@ describe("source policy", () => {
 		assert.deepEqual(
 			commentViolations("x.ts", text, new Set([1, 3])).map((item) => item.line),
 			[3],
+		);
+	});
+
+	it("allows bare TypeScript directives but rejects explanatory text", () => {
+		const text = [
+			"// @ts-expect-error",
+			"// @ts-expect-error this explains the error",
+			"// @ts-ignore",
+			"// @ts-ignore this explains the error",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 2, 3, 4])).map(
+				(item) => item.line,
+			),
+			[2, 4],
+		);
+	});
+
+	it("allows bare architecture markers but rejects explanatory text", () => {
+		const text = [
+			"// domain-view:",
+			"// domain-view: this explains the type",
+			"/* parallel-type-allowed: */",
+			"/* parallel-type-allowed: this explains the type */",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 2, 3, 4])).map(
+				(item) => item.line,
+			),
+			[2, 4],
 		);
 	});
 

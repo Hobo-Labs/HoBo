@@ -48,7 +48,6 @@ import {
 	volume,
 } from "./slots.js";
 
-/** Allocatable options per capability slot; a slot may hold several. */
 export type HetznerSlotCatalog = Readonly<
 	Partial<Record<CapabilitySlot, readonly SlotBinding[]>>
 >;
@@ -61,7 +60,6 @@ export interface HetznerYardBindingRow {
 	readonly properties: JsonObject;
 }
 
-/** Raw Yard shape: provider, regions, and the allocatable row set. */
 export interface HetznerYardSpec {
 	readonly provider: "hetzner";
 	readonly regions: readonly string[];
@@ -72,17 +70,6 @@ export interface HetznerYardSpecOptions {
 	readonly regions?: readonly string[];
 }
 
-/**
- * Everything the Hetzner factories can allocate, grouped by slot.
- *
- * `bucket` holds three entries under three profiles on purpose, and each one is
- * the most specific profile that is true of it: Object Storage is
- * `bucket.s3-compatible/v1`, a Storage Box is the metadata-carrying share
- * `bucket.file-storage/v1`, and a Volume is a mounted `bucket.filesystem/v1`.
- * All three refine `bucket.object/v1`, so a workload asking for the general
- * profile matches all three and selection picks; a workload that needs S3
- * semantics matches only the first.
- */
 export const HETZNER_DEFAULT_BINDINGS: HetznerSlotCatalog = Object.freeze({
 	web: Object.freeze([cloudServer()]),
 	api: Object.freeze([loadBalancer()]),
@@ -90,12 +77,6 @@ export const HETZNER_DEFAULT_BINDINGS: HetznerSlotCatalog = Object.freeze({
 	bucket: Object.freeze([objectStorage(), storageBox(), volume()]),
 });
 
-/**
- * The default Hetzner Yard as raw rows. `regions` defaults to the provider's
- * published locations; the catalog is not narrowed by region, because a Yard
- * declares what the provider can allocate, not what a particular location
- * happens to offer.
- */
 export function hetznerYardSpec(
 	options?: HetznerYardSpecOptions,
 ): HetznerYardSpec {
@@ -139,7 +120,6 @@ function toRows(catalog: HetznerSlotCatalog): readonly HetznerYardBindingRow[] {
 	return Object.freeze(rows);
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -3,11 +3,6 @@ import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: FOCUS billing rows are parsed once at the provider billing JSON boundary. */
 
-/**
- * Provider billing port — lives outside the pure quote/rating path (§12 Phase 5).
- * Implementations must not perform live network I/O in unit tests; use fixture ports.
- */
-
 export type SyntheticProviderCredentials = Readonly<{
 	authorization: string;
 }>;

@@ -98,7 +98,6 @@ export const CD_FANOUT_STATE = Object.freeze({
 	SUPERSEDED: 5,
 } as const);
 
-// public-contract: refusal codes the CD suites expect by name.
 export const CD_REFUSAL = Object.freeze({
 	placementUnsatisfiable: "placement-unsatisfiable",
 	progressiveUnsupported: "progressive-unsupported",

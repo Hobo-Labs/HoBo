@@ -16,7 +16,6 @@
 import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 
-/** process.kill's shape (it throws what the kernel answers); a test passes one that answers as the kernel would. */
 export type Kill = (pid: number, signal: NodeJS.Signals | 0) => void;
 
 /** kill refused the signal: EPERM, EACCES, or another error that is not ESRCH. */
@@ -38,7 +37,6 @@ export type GroupProbe =
 	| { readonly kind: "live" }
 	| Refused;
 
-/** How a stop ended. */
 export type GroupStop =
 	| { readonly kind: "gone" }
 	| { readonly kind: "killed" }
@@ -46,38 +44,25 @@ export type GroupStop =
 
 /** A process group as a stop sees it: how to signal it, and how to ask what is left of it. */
 export interface StopTarget {
-	/** What the reasons name: "process group 1234". */
 	readonly label: string;
 	readonly signal: (signal: NodeJS.Signals) => GroupSignal;
 	readonly probe: () => GroupProbe;
 }
 
 export interface GroupSeams {
-	/** process.kill unless set. */
 	readonly kill?: Kill;
-	/** The process table to read (Linux); without one, a member the kernel finds is live. */
 	readonly procRoot?: string;
 }
 
-/** Between two probes of a group being stopped. */
 export const POLL_MS = 100;
-/** How long SIGKILL has to land before the stop says it cannot confirm the group ended. */
 export const KILL_CONFIRM_MS = 1000;
 
-/** The errno code of what kill or a read threw ("unknown" when it has none). */
 function codeOf(cause: unknown): string {
 	return cause instanceof Error && "code" in cause && cause.code !== undefined
 		? String(cause.code)
 		: "unknown";
 }
 
-/**
- * The fields of `<procRoot>/<pid>/stat` after its comm; "gone" once the
- * process is (ENOENT, ESRCH), and "unreadable" for any other error, which
- * cannot tell whether it is a member (EACCES for another user's process under
- * hidepid=1, EMFILE at the fd limit). "pid (comm) state ppid pgrp ...": comm
- * may hold spaces and parentheses, so the fields start after the last ")".
- */
 function statFields(
 	procRoot: string,
 	pid: string,
@@ -92,11 +77,6 @@ function statFields(
 	return stat.slice(stat.lastIndexOf(")") + 2).split(" ");
 }
 
-/**
- * Whether the table at `procRoot` is this process's PID namespace's: its
- * `self` names this process. Another namespace's shows pids of its own, and
- * nothing in it can be matched to ai-bdd's group.
- */
 function ownTable(procRoot: string): boolean {
 	try {
 		return readlinkSync(join(procRoot, "self")) === String(process.pid);
@@ -105,19 +85,6 @@ function ownTable(procRoot: string): boolean {
 	}
 }
 
-/**
- * What the process table at `procRoot` shows of `group`, counting as members
- * only the processes of its pgid that are in its session:
- * - "zombies" when it shows at least one member and every member it shows is
- *   a zombie of one thread (state Z, num_threads 1);
- * - "elsewhere" when it shows no member but processes of that pgid in another
- *   session: the group is gone and its number now leads a stranger's;
- * - "live" otherwise. A process whose main thread exited while its other
- *   threads run shows Z with num_threads above 1. An entry whose stat cannot
- *   be read may be a member it cannot see. A /proc of another PID namespace,
- *   or one that cannot be read, shows nothing that can be matched, although
- *   the kernel has just found a member.
- */
 export function scanGroup(
 	{ pgid, sid }: ProcessGroup,
 	procRoot: string,
@@ -135,7 +102,6 @@ export function scanGroup(
 		if (!/^\d+$/u.test(entry)) continue;
 		const fields = statFields(procRoot, entry);
 		if (fields === "unreadable") return "live";
-		// state is field 3, pgrp field 5, session field 6 and num_threads field 20 of the line.
 		if (fields === "gone" || Number(fields[2]) !== pgid) continue;
 		if (Number(fields[3]) !== sid) {
 			strangers += 1;
@@ -163,10 +129,8 @@ function signalPgid(
 	return { kind: "sent" };
 }
 
-/** A process group (POSIX), as ai-bdd's is when it is spawned. */
 export interface ProcessGroup {
 	readonly pgid: number;
-	/** The session it is in, recorded at spawn: a process that later takes the pgid's number is not in it. */
 	readonly sid: number;
 }
 
@@ -186,7 +150,6 @@ export function groupTarget(
 			if (asked.kind !== "sent") return asked;
 			if (procRoot === undefined) return { kind: "live" };
 			const scan = scanGroup(group, procRoot);
-			// The number is a stranger's now: none of ours is left, and nothing more is sent.
 			return scan === "elsewhere" ? { kind: "gone" } : { kind: scan };
 		},
 	};
@@ -211,7 +174,6 @@ function refusedStop(target: StopTarget, { code }: Refused): GroupStop {
 	};
 }
 
-/** SIGKILL to the group, then probes until it has landed, for KILL_CONFIRM_MS at most. */
 async function killGroup(target: StopTarget): Promise<GroupStop> {
 	const sent = target.signal("SIGKILL");
 	if (sent.kind === "gone") return { kind: "gone" };
@@ -226,8 +188,6 @@ async function killGroup(target: StopTarget): Promise<GroupStop> {
 		if (Date.now() >= deadline) {
 			return {
 				kind: "unconfirmed",
-				// Not "SIGKILL did not kill them": without CAP_KILL it skips another user's members, and
-				// with one of ours left a zombie beside them kill(-pgid, 0) never answers EPERM.
 				reason: `${target.label}: members were still running ${KILL_CONFIRM_MS} ms after SIGKILL was sent to the group (SIGKILL cannot reach another user's members unless the check has CAP_KILL, and may not have ended the rest yet)`,
 			};
 		}

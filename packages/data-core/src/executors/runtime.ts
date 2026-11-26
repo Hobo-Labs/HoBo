@@ -45,7 +45,7 @@ export const MIGRATION_RUN_STATUSES = [
 ] as const;
 export type MigrationRunStatus = (typeof MIGRATION_RUN_STATUSES)[number];
 
-// domain-view: executor result; wire form is MigrationRunResult in data-models/data_core.proto.
+// domain-view:
 export interface MigrationRunResult {
 	readonly migrationId: string;
 	readonly pattern: MigrationPatternId;

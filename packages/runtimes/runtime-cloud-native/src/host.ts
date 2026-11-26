@@ -29,10 +29,6 @@ export interface CloudNativeRuntimeHostOptions {
 	readonly defaultProvider?: CloudNativeProviderId;
 }
 
-/**
- * Mock provider for setup/parity tests — runs private components in-process
- * via supplied handlers (same mesh contract as local host).
- */
 export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 	return {
 		id: "mock",
@@ -55,7 +51,6 @@ export function createMockCloudNativeProvider(): CloudNativeHostProvider {
 				}
 				handlers.set(component.resourceName, component.handler);
 			}
-			// Apply bindle env for in-process handlers.
 			const previous: Record<string, string | undefined> = {};
 			for (const [key, value] of Object.entries(ctx.bindleEnv ?? {})) {
 				previous[key] = process.env[key];
@@ -118,10 +113,6 @@ export function defaultCloudNativeProviders(
 	];
 }
 
-/**
- * Multi-cloud Camp host registry. Default provider is `mock` for setup tests;
- * real aws/gcp/azure/vercel/cloudflare implementations land later.
- */
 export function createCloudNativeRuntimeHost(
 	options: CloudNativeRuntimeHostOptions = {},
 ): HoboRuntimeHost {

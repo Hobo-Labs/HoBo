@@ -59,7 +59,6 @@ import {
 	statefulSetWorker,
 } from "./slots.js";
 
-/** Allocatable options per capability slot; a slot may hold several. */
 export type KubernetesSlotCatalog = Readonly<
 	Partial<Record<CapabilitySlot, readonly SlotBinding[]>>
 >;
@@ -72,7 +71,6 @@ export interface KubernetesYardBindingRow {
 	readonly properties: JsonObject;
 }
 
-/** Raw Yard shape: provider, topology labels, and the allocatable row set. */
 export interface KubernetesYardSpec {
 	readonly provider: "kubernetes";
 	readonly regions: readonly string[];
@@ -83,20 +81,6 @@ export interface KubernetesYardSpecOptions {
 	readonly regions?: readonly string[];
 }
 
-/**
- * Everything the Kubernetes factories can allocate, grouped by slot.
- *
- * Several entries per slot is the normal case here, because a cluster really
- * does offer several distinct controllers for the same capability and a
- * workload picks between them for reasons only it knows. `web` holds a
- * Deployment and a StatefulSet — stable network identity and per-replica
- * storage are what a workload chooses the latter *for*. `service` holds five,
- * including a DaemonSet, whose one-pod-per-node placement no other controller
- * provides. `api` holds a Service and an Ingress: in-cluster addressing that
- * always works, and external routing that works only when a controller is
- * installed. Selection sorts all of that out per resource; this module does
- * not.
- */
 export const KUBERNETES_DEFAULT_BINDINGS: KubernetesSlotCatalog = Object.freeze(
 	{
 		web: Object.freeze([deployment(), statefulSet()]),
@@ -113,12 +97,6 @@ export const KUBERNETES_DEFAULT_BINDINGS: KubernetesSlotCatalog = Object.freeze(
 	},
 );
 
-/**
- * The default Kubernetes Yard as raw rows. `regions` defaults to the
- * provider's published topology labels; the catalog is not narrowed by them,
- * because a Yard declares what the provider can allocate, not what a
- * particular zone happens to offer.
- */
 export function kubernetesYardSpec(
 	options?: KubernetesYardSpecOptions,
 ): KubernetesYardSpec {
@@ -164,7 +142,6 @@ function toRows(
 	return Object.freeze(rows);
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

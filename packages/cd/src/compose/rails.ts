@@ -1,18 +1,4 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this module is the parse boundary for untrusted journal payloads (Station rail.* event bodies); every member is narrowed structurally here before it reaches a typed RailCatalogEntry. */
-// Rail readers composed from the journal (ADR-0182 D20/D24).
-//
-// - `createJournalRailCatalog` folds the Station Rail events (`rail.*`) into
-//   the Rails known per content digest and the active Rail per Station.
-// - `createJournalRailEventReader` is the frozen `RailEventReader` the
-//   HOBO_RAIL subscription driver reads: approved / active / retired facts,
-//   forward from a position cursor.
-// - `createRailDeliveryReader` parses a Rail's opaque `delivery` object as
-//   `RailDeliveryRecord` (parse, don't validate) and resolves a Camp's
-//   governing Rail: its enforced binding, else its Station's active Rail.
-//
-// An unparsable `delivery` object binds nothing (no Camp sets, so Placement
-// sees no candidates): the conservative reading. It is reported through
-// telemetry with code `rail-delivery-invalid`, never silently.
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import type { DurableEventStore, EventPosition, JsonObject } from "@hobo/core";
 import {
@@ -52,7 +38,6 @@ export type RailCatalogEntry = Readonly<{
 	railDigest: Digest;
 	stationId: string;
 	status: RailStatus;
-	/** The Rail's opaque `delivery` object, verbatim; absent when it has none. */
 	delivery?: JsonObject;
 }>;
 
@@ -91,7 +76,6 @@ function freeze(entry: Mutable): RailCatalogEntry {
 	return Object.freeze({ ...entry });
 }
 
-/** Apply one Station Rail event to the fold. Unknown or malformed events are skipped. */
 function applyRailEvent(fold: Fold, type: string, data: unknown): void {
 	if (!isObject(data)) return;
 	const hash = text(data.contentHash);
@@ -158,7 +142,6 @@ function applyRailEvent(fold: Fold, type: string, data: unknown): void {
 
 const RAIL_TYPES = new Set<string>(Object.values(RAIL_EVENT_TYPES));
 
-/** Incremental fold of the Station Rail events from the journal. */
 export function createJournalRailCatalog(
 	d: Readonly<{ store: DurableEventStore }>,
 ): RailCatalog {
@@ -178,7 +161,6 @@ export function createJournalRailCatalog(
 		}
 	}
 	async function current(): Promise<void> {
-		// One catch-up at a time; concurrent readers share it.
 		catchingUp ??= catchUp().finally(() => {
 			catchingUp = undefined;
 		});
@@ -202,21 +184,13 @@ export function createJournalRailCatalog(
 function parsePosition(cursor: string | undefined): EventPosition | undefined {
 	if (cursor === undefined || cursor === "") return undefined;
 	if (!/^\d+$/.test(cursor)) return undefined;
-	// SAFETY: a decimal journal position written by this reader.
 	return BigInt(cursor) as EventPosition;
 }
 
-/**
- * The frozen RailEventReader over the journal. The cursor is the decimal
- * journal position; approvals, activations and retirements are reported with
- * the Rail id and Station the Rail body names.
- */
 export function createJournalRailEventReader(
 	d: Readonly<{ store: DurableEventStore }>,
 ): RailEventReader {
 	return async function* readRailEvents(after, signal) {
-		// The fold must see every Rail body, including those before the
-		// cursor, to name the Rail and Station of an activation or retirement.
 		const fold: Fold = {
 			after: undefined,
 			byDigest: new Map(),
@@ -253,7 +227,6 @@ export function createJournalRailEventReader(
 	};
 }
 
-/** Parse a Rail's opaque `delivery` object as RailDeliveryRecord. */
 export function parseRailDelivery(
 	railDigest: Digest,
 	delivery: JsonObject | undefined,
@@ -265,7 +238,6 @@ export function parseRailDelivery(
 		};
 	}
 	try {
-		// SAFETY: JsonObject is a structural subset of protobuf's JsonValue.
 		const parsed = fromJson(RailDeliveryRecordSchema, delivery as JsonValue);
 		return { ok: true, value: { ...parsed, railDigest } };
 	} catch (error) {
@@ -277,10 +249,6 @@ export function parseRailDelivery(
 	}
 }
 
-/**
- * The frozen RailDeliveryReader: a Camp's enforced binding first, else its
- * Station's active Rail (D24: an unbound Camp keeps today's behavior).
- */
 export function createRailDeliveryReader(
 	d: Readonly<{
 		catalog: RailCatalog;
@@ -310,7 +278,6 @@ export function createRailDeliveryReader(
 					},
 				},
 			]);
-		// Binds nothing: no Camp sets, failover off, enrollment by grants.
 		return create(RailDeliveryRecordSchema, { railDigest: entry.railDigest });
 	}
 	async function forStation(stationId: string) {
@@ -323,8 +290,6 @@ export function createRailDeliveryReader(
 			const enforced = binding?.enforcedRailDigest;
 			if (enforced) {
 				const entry = await d.catalog.byDigest(enforced);
-				// An enforced Rail the journal does not know binds nothing; it
-				// never falls back to the Station's Rail (fail closed).
 				return entry
 					? toRecord(entry)
 					: create(RailDeliveryRecordSchema, { railDigest: enforced });

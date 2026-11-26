@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { checkArchitectureGuardrails } from "../../../../../../scripts/check-architecture-guardrails.mjs";
 import { test } from "vitest";
 
 import {
@@ -130,8 +132,7 @@ test("M0 scope proof cannot support production launch or go-live claims", () => 
   }
 });
 
-test("architecture evidence names customer-onboarding schema, parsed types, and event boundary", () => {
-  const architecture = readFileSync(new URL("../ARCHITECTURE.md", import.meta.url), "utf8");
+test("architecture evidence covers customer-onboarding schema, parsed types, and event boundary", async () => {
   const pact = JSON.parse(
     readFileSync(
       new URL("../contracts/pacts/customer-onboarding-scope.pact.json", import.meta.url),
@@ -159,13 +160,15 @@ test("architecture evidence names customer-onboarding schema, parsed types, and 
     assert.match(cue, new RegExp(`#${typeName}:`));
   }
 
-  assert.match(architecture, /parse, don't validate/i);
-  assert.match(architecture, /derived domain\s+types/i);
-  assert.match(architecture, /Command/i);
-  assert.match(architecture, /Events/i);
-  assert.match(architecture, /Actor/i);
-  assert.match(architecture, /event-store/i);
-  assert.match(architecture, /projection/i);
-  assert.match(architecture, /Snapshot/i);
-  assert.match(architecture, /read store/i);
+  const root = fileURLToPath(new URL("../../../../../../", import.meta.url));
+  const result = await checkArchitectureGuardrails({
+    root,
+    files: ["src/draft/exp-proofs/cx/customer-onboarding-scope-acceptance/src/customer-onboarding-scope.ts"],
+  });
+  assert.deepEqual(
+    result.problems.filter((problem) =>
+      ["missing-parse-derived-type", "missing-event-architecture"].includes(problem.code),
+    ),
+    [],
+  );
 });

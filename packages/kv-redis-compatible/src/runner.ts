@@ -17,7 +17,6 @@ import {
 	resolveFillSizes,
 } from "./protocol.js";
 
-// public-contract: suite id recorded on every report a catalog reads.
 export const KV_REDIS_CONFORMANCE_SUITE_REF =
 	"conformance.kv.redis-compatible/v1" as const;
 

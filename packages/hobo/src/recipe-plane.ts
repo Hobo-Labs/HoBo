@@ -60,7 +60,6 @@ import { stationEvidenceVerifier } from "./trust-root.js";
 // run that produced it.
 
 /** Where published trust evidence lives, relative to `HOBO_HOME`. */
-// public-contract: operators and evidence publishers share this directory name.
 export const EVIDENCE_DIRECTORY = "evidence";
 
 export class RecipePlaneError extends Error {

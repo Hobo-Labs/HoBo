@@ -19,7 +19,7 @@ export type Until =
 	| Readonly<{ kind: "instant"; ms: number }>
 	| Readonly<{ kind: "date"; date: CivilDate }>;
 
-// domain-view: parse-don't-validate derived type for the RRULE string field of ChangeWindowRecord (cd.proto); the string is the wire form.
+// domain-view:
 export type RecurrenceRule = Readonly<{
 	freq: Frequency;
 	interval: number;

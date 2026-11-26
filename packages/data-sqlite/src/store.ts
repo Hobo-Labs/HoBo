@@ -1,23 +1,3 @@
-/**
- * The SQLite dataset store: every operation the SPI needs, synchronously,
- * over one `node:sqlite` connection.
- *
- * SQLite is embedded and single-owner (ADR-0135: one partition, one writer),
- * and that shapes three decisions here, each of which the engine declaration
- * states rather than hides:
- *
- * - **Capture is a transactional outbox.** A change is journaled in the same
- *   transaction as the write that caused it. A write that bypasses this store
- *   is not captured. A journal row is kept only while a subscription has yet
- *   to acknowledge it: a subscription starts at the head, so with no
- *   subscription nobody is entitled to a change and none is retained.
- * - **The fence is enforced at the write entry point.** It is a durable row
- *   checked inside the write transaction — but a process with its own
- *   connection to the file is not stopped by it.
- * - **A scan is fuzzy.** It pages by key on the same connection; the
- *   executors take a capture position first and replay from it, which
- *   converges regardless.
- */
 import {
 	createHash,
 	createPublicKey,
@@ -66,7 +46,6 @@ const tagOf = Object.prototype.toString;
 
 type Row = Record<string, SQLOutputValue>;
 
-/** Column holding undeclared fields of an open schema, as one JSON object. */
 const EXTRA_COLUMN = "hobo_extra";
 const TENANT_COLUMN = "tenant_id";
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -79,7 +58,6 @@ const RESERVED_TABLE_PREFIXES: readonly string[] = Object.freeze([
 	"hobo_data_",
 	"sqlite_",
 ]);
-/** A journal position as this store mints it: a sequence number in decimal. */
 const POSITION = /^(0|[1-9][0-9]*)$/u;
 
 function assertNotReserved(dataset: string): void {
@@ -134,7 +112,6 @@ function isBigInt<T>(value: T): value is T & bigint {
 }
 
 function parseJson(text: string): JsonValue {
-	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }
 
@@ -151,12 +128,9 @@ function toNative(field: DatasetField, value: JsonValue): SQLInputValue {
 			return Buffer.from(String(value), "base64");
 		case "json":
 		case "encrypted":
-			// JSON text escapes U+0000, so it survives where raw text would not.
 			return canonicalEncode(value);
 		case "string": {
 			const text = String(value);
-			// SQLite's text API stops at the first NUL: the value would be stored
-			// truncated. Refusing is the only outcome that is not silent loss.
 			if (text.includes("\u0000")) {
 				throw new DataCoreError(
 					"INVALID_RECORD",
@@ -193,17 +167,14 @@ function fromNative(field: DatasetField, raw: SQLOutputValue): JsonValue {
 }
 
 export interface SqliteStoreOptions {
-	/** Store file path, or `:memory:`. */
 	readonly path: string;
 	readonly clock?: () => string;
-	/** Independently enrolled Ed25519 routing-receiver public keys. */
 	readonly operationReceivers?: ReadonlyMap<
 		string,
 		string | Buffer | KeyObject
 	>;
 }
 
-/** One page of a keyset scan, and the cursor to continue from. */
 export interface KeysetPage {
 	readonly rows: RecordMutation[];
 	readonly last: readonly SQLInputValue[] | undefined;
@@ -290,8 +261,6 @@ export class SqliteDatasetStore {
 	}
 
 	private bootstrap(): void {
-		// Erasure has to hold in the file, not only in its tables: without this
-		// a deleted row stays readable in the page it was freed from.
 		this.db.exec("PRAGMA secure_delete = ON");
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS hobo_data_datasets (
@@ -345,8 +314,6 @@ export class SqliteDatasetStore {
 				ack_position INTEGER NOT NULL
 			);
 		`);
-		// A subscription recorded before its tenant was kept gains the column;
-		// its row stays unbound and is bound by the next scope that names it.
 		const bound = this.db
 			.prepare(
 				"SELECT 1 AS present FROM pragma_table_info('hobo_data_subscriptions') WHERE name = 'tenant_id'",
@@ -357,8 +324,6 @@ export class SqliteDatasetStore {
 				"ALTER TABLE hobo_data_subscriptions ADD COLUMN tenant_id TEXT",
 			);
 		}
-		// A journal written before transactions were marked gains the column;
-		// its existing rows stay unmarked and read as one transaction each.
 		const marked = this.db
 			.prepare(
 				"SELECT 1 AS present FROM pragma_table_info('hobo_data_journal') WHERE name = 'tx'",
@@ -367,10 +332,6 @@ export class SqliteDatasetStore {
 		if (marked === undefined) {
 			this.db.exec("ALTER TABLE hobo_data_journal ADD COLUMN tx INTEGER");
 		}
-		// A store left by an earlier version may hold journal no reader is
-		// entitled to; it is released on open rather than at the next write.
-		// Looked for first, so that opening a store with nothing to release
-		// takes no write lock.
 		const unowed = this.get(
 			"SELECT seq FROM hobo_data_journal WHERE seq <= ? LIMIT 1",
 			this.journalFloor(),
@@ -378,12 +339,10 @@ export class SqliteDatasetStore {
 		if (unowed !== undefined) this.prune();
 	}
 
-	/** The raw connection, for the schema-apply port's arbitrary statements. */
 	connection(): DatabaseSync {
 		return this.db;
 	}
 
-	/** Swap the store file for a snapshot and reopen (schema-apply restore). */
 	reopen(replaceFile: () => void): void {
 		this.statements.clear();
 		this.schemas.clear();
@@ -402,19 +361,16 @@ export class SqliteDatasetStore {
 		const cached = this.statements.get(sql);
 		if (cached !== undefined) return cached;
 		const prepared = this.db.prepare(sql);
-		// 64-bit integers must survive the trip; a JS number cannot hold them.
 		prepared.setReadBigInts(true);
 		this.statements.set(sql, prepared);
 		return prepared;
 	}
 
 	private all(sql: string, ...params: SQLInputValue[]): Row[] {
-		// SAFETY: node:sqlite returns plain column-name → value rows.
 		return this.statement(sql).all(...params) as Row[];
 	}
 
 	private get(sql: string, ...params: SQLInputValue[]): Row | undefined {
-		// SAFETY: node:sqlite returns a plain column-name → value row or undefined.
 		return this.statement(sql).get(...params) as Row | undefined;
 	}
 
@@ -434,8 +390,6 @@ export class SqliteDatasetStore {
 		}
 	}
 
-	// ── datasets ──────────────────────────────────────────────────────────────
-
 	describe(name: string): DatasetSchema | undefined {
 		const cached = this.schemas.get(name);
 		if (cached !== undefined) return cached;
@@ -450,8 +404,6 @@ export class SqliteDatasetStore {
 	}
 
 	schema(name: string): DatasetSchema {
-		// Checked here as well as in `ensure`: a store that registered a
-		// reserved name before it was refused must not serve it either.
 		assertNotReserved(name);
 		const found = this.describe(name);
 		if (found === undefined) {
@@ -466,11 +418,6 @@ export class SqliteDatasetStore {
 		return found;
 	}
 
-	/**
-	 * Create the dataset table if absent. An existing table with the same name
-	 * is adopted: that is how a brownfield store written before this engine
-	 * existed comes under it without a copy.
-	 */
 	ensure(schema: DatasetSchema, serialized: JsonObject): boolean {
 		assertNotReserved(schema.name);
 		const existing = this.describe(schema.name);
@@ -507,8 +454,6 @@ export class SqliteDatasetStore {
 		return true;
 	}
 
-	// ── records ───────────────────────────────────────────────────────────────
-
 	private rowToRecord(schema: DatasetSchema, row: Row): CanonicalRecord {
 		// Entries, not property assignment or Object.assign: either would treat
 		// an undeclared field named `__proto__` as the prototype and drop it.
@@ -520,7 +465,6 @@ export class SqliteDatasetStore {
 		if (schema.open && isText(extra)) {
 			const parsed = parseJson(extra);
 			if (parsed !== null && tagOf.call(parsed) === "[object Object]") {
-				// SAFETY: the tag check above proves a JSON object.
 				entries.push(...Object.entries(parsed as JsonObject));
 			}
 		}
@@ -680,10 +624,6 @@ export class SqliteDatasetStore {
 		return { tenant: mutation.tenant, key, op: "upsert", record };
 	}
 
-	/**
-	 * The one write path. Fence check, the mutations, and their journal rows
-	 * are one transaction: a change is captured if and only if it landed.
-	 */
 	commit(
 		dataset: string,
 		requested: readonly RecordMutation[],
@@ -691,7 +631,6 @@ export class SqliteDatasetStore {
 		watermark?: {
 			readonly source: string;
 			readonly position: Position;
-			/** The watermark the batch is conditional on; absent is unconditional. */
 			readonly expected?: Position | null;
 		},
 	): Position {
@@ -703,9 +642,6 @@ export class SqliteDatasetStore {
 			this.assertWritable(dataset, mutations, fenceToken);
 			if (watermark !== undefined)
 				this.assertNoFenceOperation({ dataset, tenant: "" });
-			// A conditional apply: the comparison is inside the transaction that
-			// writes, so of two appliers naming one watermark only one lands,
-			// and a refusal rolls back with nothing written.
 			if (
 				watermark?.expected !== undefined &&
 				(this.watermark(dataset, watermark.source) ?? null) !==
@@ -713,8 +649,6 @@ export class SqliteDatasetStore {
 			) {
 				throw new StaleApplyError(dataset, watermark.source);
 			}
-			// Every row of this transaction carries the head it started from, so
-			// capture can tell where one transaction ends and the next begins.
 			const tx = this.head();
 			for (const mutation of mutations) {
 				this.applyMutation(schema, mutation);
@@ -739,8 +673,6 @@ export class SqliteDatasetStore {
 					watermark.position,
 				);
 			}
-			// With no subscription the rows just written are owed to nobody and
-			// leave with the transaction; the head they advanced stays.
 			this.prune();
 			return String(this.head());
 		});
@@ -755,8 +687,6 @@ export class SqliteDatasetStore {
 		return row === undefined ? undefined : String(row.position);
 	}
 
-	// ── journal / capture ─────────────────────────────────────────────────────
-
 	/** Highest journal sequence ever assigned, even after pruning. */
 	head(): number {
 		const row = this.get(
@@ -765,12 +695,6 @@ export class SqliteDatasetStore {
 		return row === undefined ? 0 : Number(row.seq);
 	}
 
-	/**
-	 * The position at or before which every change has been released: the
-	 * least any subscription has acknowledged, or the head when there is no
-	 * subscription — a subscription starts at the head, so none that starts
-	 * later is entitled to a change made before it.
-	 */
 	journalFloor(): number {
 		const head = this.head();
 		const row = this.get(
@@ -781,11 +705,8 @@ export class SqliteDatasetStore {
 			: Math.min(Number(row.floor), head);
 	}
 
-	/** The one constructor for a position this store minted. */
 	private parsePosition(position: Position, subscription = ""): number {
 		const head = this.head();
-		// A position past the head was minted by some other store, or by this
-		// one before it was restored; changes at or before it would be skipped.
 		if (!POSITION.test(position) || !(Number(position) <= head)) {
 			throw new CapturePositionError(
 				subscription,
@@ -795,7 +716,6 @@ export class SqliteDatasetStore {
 		return Number(position);
 	}
 
-	/** A position the journal can still be read from. */
 	private parseReadPosition(after: Position): number {
 		const from = this.parsePosition(after);
 		const floor = this.journalFloor();
@@ -808,7 +728,6 @@ export class SqliteDatasetStore {
 		return from;
 	}
 
-	/** Highest journal sequence still retained within a scope. */
 	headOf(scope: DatasetScope): number {
 		const row =
 			scope.tenant === ""
@@ -824,12 +743,6 @@ export class SqliteDatasetStore {
 		return row === undefined || row.head === null ? 0 : Number(row.head);
 	}
 
-	/**
-	 * A name is one reader of one scope. Started again on that scope it
-	 * answers its original position; named on another dataset or another
-	 * tenant it is refused — answering would start that reader at a position
-	 * it never asked for, with changes from before it existed.
-	 */
 	startSubscription(name: string, scope: DatasetScope): Position {
 		this.schema(scope.dataset);
 		return this.transaction(() => {
@@ -851,8 +764,6 @@ export class SqliteDatasetStore {
 					);
 				}
 				if (bound === null) {
-					// Recorded before tenants were kept: bound to the scope that
-					// names it now.
 					this.run(
 						"UPDATE hobo_data_subscriptions SET tenant_id = ? WHERE name = ? AND tenant_id IS NULL",
 						scope.tenant,
@@ -874,11 +785,6 @@ export class SqliteDatasetStore {
 		});
 	}
 
-	/**
-	 * Hold everything the journal still retains for a reader that keeps its
-	 * own cursor: from the floor, which is zero for a store that never had a
-	 * change released.
-	 */
 	pinJournal(name: string, dataset: string): void {
 		this.transaction(() => {
 			this.assertNoFenceOperation({ dataset, tenant: "" });
@@ -894,11 +800,6 @@ export class SqliteDatasetStore {
 		});
 	}
 
-	/**
-	 * Ordered changes in scope strictly after `after`. A batch never splits a
-	 * transaction: when the limit falls inside one, the rest of it is returned
-	 * too, so the batch may hold more than `limit` changes.
-	 */
 	readChanges(
 		scope: DatasetScope,
 		after: Position,
@@ -922,7 +823,6 @@ export class SqliteDatasetStore {
 		const boundary = page[page.length - 1];
 		const tx = boundary?.tx ?? null;
 		if (boundary !== undefined && tx !== null && rows[limit]?.tx === tx) {
-			// The limit fell inside a transaction; the rest of it comes too.
 			page = [
 				...page,
 				...this.all(
@@ -959,8 +859,6 @@ export class SqliteDatasetStore {
 		const last = page[page.length - 1];
 		return {
 			changes,
-			// Caught up means everything to the head was considered, including
-			// changes outside this scope; otherwise resume after the last row.
 			position: caughtUp
 				? String(this.head())
 				: String(last === undefined ? from : Number(last.seq)),
@@ -968,7 +866,6 @@ export class SqliteDatasetStore {
 		};
 	}
 
-	/** Changes in scope not yet behind a position. */
 	pending(scope: DatasetScope, after: Position): number {
 		const from = this.parseReadPosition(after);
 		const row =
@@ -987,7 +884,6 @@ export class SqliteDatasetStore {
 		return row === undefined ? 0 : Number(row.pending);
 	}
 
-	/** Record progress and release journal no subscription still needs. */
 	acknowledge(name: string, position: Position): void {
 		this.transaction(() => {
 			const subscription = this.get(
@@ -1008,7 +904,6 @@ export class SqliteDatasetStore {
 		});
 	}
 
-	/** Drop the subscription and release whatever journal only it was holding. */
 	stopSubscription(name: string): void {
 		this.transaction(() => {
 			const subscription = this.get(
@@ -1025,11 +920,6 @@ export class SqliteDatasetStore {
 		});
 	}
 
-	/**
-	 * Release every journal row at or before the floor. Run wherever the floor
-	 * can rise — a write with no subscription, an acknowledgement, a stop — so
-	 * a payload never outlives the last reader entitled to it.
-	 */
 	private prune(): void {
 		this.run(
 			`DELETE FROM hobo_data_journal WHERE seq <= ? AND NOT EXISTS (
@@ -1041,9 +931,6 @@ export class SqliteDatasetStore {
 		);
 	}
 
-	// ── scans ─────────────────────────────────────────────────────────────────
-
-	/** One keyset page of a scope, in (tenant, key) order. */
 	page(
 		scope: DatasetScope,
 		after: readonly SQLInputValue[] | undefined,
@@ -1087,7 +974,6 @@ export class SqliteDatasetStore {
 					? undefined
 					: [TENANT_COLUMN, ...schema.keyFields].map((name) => {
 							const value = lastRow[name] ?? null;
-							// A BLOB cannot be a key column; everything else binds as read.
 							return value instanceof Uint8Array ? null : value;
 						}),
 		};
@@ -1124,9 +1010,6 @@ export class SqliteDatasetStore {
 		return row === undefined ? 0 : Number(row.total);
 	}
 
-	// ── fence / retire ────────────────────────────────────────────────────────
-
-	/** Once enabled, file-replacement schema restores remain unavailable on reopen. */
 	operationFenceEnabled(): boolean {
 		return (
 			this.get("SELECT id FROM hobo_data_fence_policy WHERE id = 1") !==
@@ -1367,16 +1250,6 @@ export class SqliteDatasetStore {
 		);
 	}
 
-	/**
-	 * Destructive. Refused unless the caller holds the raised fence and the
-	 * scope still digests to the verified value. A physical reap, so it is not
-	 * journaled: nothing downstream should replay it as a logical delete.
-	 *
-	 * The scope's journal rows go in the same transaction — every version of
-	 * every record, and the keys of its deletes. Erasing the table while the
-	 * outbox still held the payloads would not be an erasure. A subscription
-	 * that had not read them yet never will.
-	 */
 	retire(
 		scope: DatasetScope,
 		fenceToken: string,
@@ -1395,8 +1268,6 @@ export class SqliteDatasetStore {
 				);
 			}
 			const current = this.digest(scope, expected.buckets.length);
-			// Redelivery: the scope is already empty behind the caller's own
-			// fence. There is nothing left to compare and nothing to remove.
 			if (current.count === 0) return 0;
 			if (
 				current.count !== expected.count ||

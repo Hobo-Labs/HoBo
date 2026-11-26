@@ -9,10 +9,8 @@ import {
 } from "./cd-kit.js";
 import type { TrafficShifterLike } from "./cd-shapes.js";
 
-// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const TRAFFIC_SHIFTER_SUITE = "hobo.cd.traffic-shifter/v1";
 
-// public-contract: assertion names of the TrafficShifter suite.
 export const TRAFFIC_SHIFTER_ASSERTIONS = Object.freeze([
 	"offeringsAreStable",
 	"shiftEchoesPlan",

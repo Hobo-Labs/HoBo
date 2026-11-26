@@ -33,7 +33,6 @@ export {
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(vercel, …).
 export const PROVIDER_ID = "vercel";
 
-// public-contract: the name every default Vercel Yard is registered under; changing it renames them all.
 export const DEFAULT_VERCEL_YARD_NAME = "vercel";
 
 export interface VercelYardOptions
