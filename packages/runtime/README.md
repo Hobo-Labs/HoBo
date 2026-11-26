@@ -575,3 +575,5 @@ the full bounded request before dispatch and returns completed, uncertain and
 unattempted work explicitly. Callers must persist operation identities and
 reuse them when reconciling uncertain outcomes. The finite provisioning model
 assumes that the selected provider honors idempotent replay.
+Its retry transition abstracts replay of previously confirmed operations before
+the operation whose outcome is unknown.
