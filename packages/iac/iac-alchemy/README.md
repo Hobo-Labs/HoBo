@@ -93,6 +93,19 @@ outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
 
+A Node.js HTTP host can bind those two AWS stores to a Bindle application with
+`createAwsBindleApplication` and read them through `awsHttpBindings(context)`
+from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
+Bindle, its application name, exactly the declared stores, and a synchronous
+verifier for each captured store grant. The runtime rejects forged stores,
+extra permissions and unverified bindings, and retires scoped handles when the
+request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
+headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host must authenticate HTTP requests, independently enforce IAM and fence
+in-flight AWS operations across grant or resource ownership changes. This host
+adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
+request bodies, stream responses, or provide connectors or session replay.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.

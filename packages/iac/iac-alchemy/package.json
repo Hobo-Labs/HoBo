@@ -102,6 +102,10 @@
 		"./aws/s3-mapper": {
 			"types": "./dist/aws-s3-mapper.d.ts",
 			"default": "./dist/aws-s3-mapper.js"
+		},
+		"./aws/http-runtime": {
+			"types": "./dist/aws-http-runtime.d.ts",
+			"default": "./dist/aws-http-runtime.js"
 		}
 	},
 	"dependencies": {
