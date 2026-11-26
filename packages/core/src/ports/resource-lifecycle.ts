@@ -47,7 +47,6 @@ export type ResourceLifecycleContext = ResourceLifecycleScope & {
 	readonly nowMs: number;
 	readonly maxAgeMs: number;
 	readonly physicalId?: string;
-	/** Expected independently observed artifact; this is never copied into proof. */
 	readonly artifactDigest?: string;
 };
 
@@ -57,10 +56,6 @@ export type ResourceLifecycleContext = ResourceLifecycleScope & {
 // domain-view: behavioral port; durable metadata is ResourceMutationJournalEntry.
 export interface ResourceMutationJournal {
 	readonly persistence: "durable-cas" | "memory";
-	/** Observe a claim without creating one. A nonterminal claim is uncertain:
-	 * it may have reached the provider even when no acknowledgement was saved.
-	 * Optional for existing journals; resolvers that recover a provider resource
-	 * by deterministic name must require it before adopting an unpinned ID. */
 	inspect?(input: {
 		readonly mutationId: string;
 		readonly requestDigest: string;
@@ -75,9 +70,6 @@ export interface ResourceMutationJournal {
 	uncertain(mutationId: string, requestDigest: string): Promise<void>;
 }
 
-/** A provider may use this only when it can prove no native mutation was sent.
- * Shared mutation scopes release their lock and rethrow the original refusal;
- * failures after any possible provider effect remain uncertain. */
 export class ResourceMutationNotSentError extends Error {
 	readonly refusal: unknown;
 	constructor(cause: unknown) {
@@ -89,7 +81,6 @@ export class ResourceMutationNotSentError extends Error {
 	}
 }
 
-/** Parse provider evidence at the external-data boundary, then bind its scope. */
 export function parseResourceLifecycleObservation<T>(
 	input: T,
 	context: ResourceLifecycleContext,
@@ -206,9 +197,6 @@ export function parseResourceLifecycleObservation<T>(
 	return { ...observation, settledMicros };
 }
 
-/** Drive the actual shipped resolver read. Missing records and DELETE acks do
- * not prove terminal absence. Only provider-observed fields become evidence;
- * business health and final billing are never inferred from CP readiness. */
 export async function observeResolverLifecycle(options: {
 	readonly resolver: ResourceResolver;
 	readonly request: ResolveRequest;
@@ -250,8 +238,6 @@ export async function observeResolverLifecycle(options: {
 	});
 	if (result) {
 		const outputs = result.outputs;
-		// Durable native receipts retain their actual observation time. Reading
-		// cached evidence cannot renew freshness without another provider probe.
 		if (outputs.observedAtMs !== undefined) {
 			if (
 				!isJsonNumber(outputs.observedAtMs) ||
@@ -289,7 +275,6 @@ export async function observeResolverLifecycle(options: {
 		observation.operationTerminal = true;
 		observation.observedAtMs = options.nowMs?.() ?? context.nowMs;
 	}
-	// Parse protobuf JSON rather than forwarding wire bookkeeping as user data.
 	const { $typeName: _wireType, ...record } = observation;
 	return parseResourceLifecycleObservation(record, {
 		...observedContext,
