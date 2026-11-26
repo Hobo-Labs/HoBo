@@ -41,7 +41,6 @@ export function awsWebFunctionSource(
 	});
 }
 
-/** Host verification attests that the reviewed source starts this exact source binding. */
 export function awsHttpBindleMappers<Requirements>(
 	options: {
 		readonly source: AwsHttpSource;

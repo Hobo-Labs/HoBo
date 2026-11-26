@@ -2,7 +2,6 @@ import { types } from "node:util";
 import type { BindleForAlchemy, PrimitiveDeclaration } from "./bindle.js";
 import { AlchemyIacError } from "./plan.js";
 
-/** Apply a provider choice to a detached target view, without changing the Bindle. */
 export function withAwsTargetSelection<Entrypoint, Requirements>(
 	bindle: BindleForAlchemy<Entrypoint, Requirements>,
 	choices: Readonly<Record<string, true>>,

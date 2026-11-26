@@ -10,7 +10,6 @@ const topicFallback = new NativeResponse(null, { status: 503 });
 defineResponse(topicFallback, "then", { value: undefined });
 Object.freeze(topicFallback);
 
-/** Return a failure status even if application code changes built-in prototypes. */
 export function rivetTopicUnavailable(reason: string): Response {
 	try {
 		// SAFETY: the captured native constructor returns an ordinary Response.
