@@ -4,7 +4,6 @@
 	"license": "MIT",
 	"description": "Optional Camp runtime realizing ActorHost over a HoBo-owned actor-local journal. RivetKit is the preferred engine; node:sqlite is the local/oracle driver.",
 	"type": "module",
-	"private": true,
 	"files": [
 		"LICENSE",
 		"dist"

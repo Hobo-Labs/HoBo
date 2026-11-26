@@ -1,5 +1,8 @@
 # `@hobo/runtime-rivet`
 
+SDK releases stage this package as `@hobo-labs/runtime-rivet`; the workspace
+name in the examples is `@hobo/runtime-rivet`.
+
 Optional **Camp runtime** with a HoBo-owned local journal and Rivet-compatible
 actor keys. The local host remains an oracle. The separate distributed journal
 uses a real RivetKit actor and an asynchronous lease host.

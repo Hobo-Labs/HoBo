@@ -33,6 +33,9 @@ export const SDK_PACKAGES = [
 	"@hobo/runtime-local",
 	"@hobo/storage-sqlite",
 	"@hobo/wit",
+	"@hobo/runtime-rivet",
+	"@hobo/iac-alchemy",
+	"@hobo/alchemy-rivet",
 	"@hobo/cli",
 ] as const;
 
@@ -98,6 +101,9 @@ export function orderedSdkTarballPaths(artifactsDir: string): string[] {
 
 const SDK_PACKAGE_DIRS = {
 	"@hobo/runtime-local": "packages/runtimes/runtime-local",
+	"@hobo/runtime-rivet": "packages/runtimes/runtime-rivet",
+	"@hobo/iac-alchemy": "packages/iac/iac-alchemy",
+	"@hobo/alchemy-rivet": "packages/extension-alchemy-rivet",
 } satisfies Record<string, string>;
 
 const EXTERNAL_SDK_WORKSPACES = {

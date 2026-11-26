@@ -3,13 +3,16 @@
 	"version": "0.0.1",
 	"license": "MIT",
 	"type": "module",
-	"private": true,
 	"engines": {
 		"node": ">=22.19.0"
 	},
 	"files": [
+		"LICENSE",
 		"dist"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
