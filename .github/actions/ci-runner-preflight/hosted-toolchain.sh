@@ -32,60 +32,6 @@ if [ -f mise.toml ] && [ -f scripts/lib/mise-path.sh ] && [ -f "${mise_version_f
 	echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
 	mise bin-paths >>"${GITHUB_PATH}"
 	echo "hosted toolchain: $(mise --version), tools from mise.lock"
-	# The headless shell the image bakes in, at the same path and from the same
-	# pins (the image's Dockerfile is their one source). Only jobs that run
-	# browser tests ask for it: it is a download the others do not need.
-	if [ "${HOBO_CI_HOSTED_BROWSER:-}" = "true" ]; then
-		dockerfile=packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile
-		pin() { sed -n "s/^ARG $1=//p" "${dockerfile}"; }
-		revision="$(pin PLAYWRIGHT_CHROMIUM_REVISION)"
-		case "$(uname -m)" in
-		aarch64 | arm64)
-			url="https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${revision}/chromium-headless-shell-linux-arm64.zip"
-			digest="$(pin PLAYWRIGHT_HEADLESS_SHELL_SHA256_ARM64)"
-			;;
-		*)
-			url="https://cdn.playwright.dev/builds/cft/$(pin PLAYWRIGHT_CHROMIUM_VERSION)/linux64/chrome-headless-shell-linux64.zip"
-			digest="$(pin PLAYWRIGHT_HEADLESS_SHELL_SHA256_X64)"
-			;;
-		esac
-		browsers=/opt/pw-browsers
-		cache="${HOBO_CI_PLAYWRIGHT_CACHE:-${HOME}/.cache/hobo-ci/playwright}"
-		mkdir -p "${cache}"
-		cache_name="chromium-headless-shell-$(uname -m)-${digest}.zip"
-		archive="${cache}/${cache_name}"
-		dir="${browsers}/chromium_headless_shell-${revision}"
-		if [ ! -f "${dir}/INSTALLATION_COMPLETE" ]; then
-			if [ ! -f "${archive}" ] || ! echo "${digest}  ${archive}" | sha256sum -c -; then
-				tmp="${archive}.partial"
-				attempt=1
-				max_attempts="${HOBO_CI_PLAYWRIGHT_DOWNLOAD_ATTEMPTS:-4}"
-				while [ "${attempt}" -le "${max_attempts}" ]; do
-					if curl -fsSL \
-						--connect-timeout "${HOBO_CI_PLAYWRIGHT_CONNECT_TIMEOUT:-15}" \
-						--max-time "${HOBO_CI_PLAYWRIGHT_PER_ATTEMPT_MAX:-90}" \
-						"${url}" -o "${tmp}" \
-						&& echo "${digest}  ${tmp}" | sha256sum -c -; then
-						mv -f "${tmp}" "${archive}"
-						break
-					fi
-					rm -f "${tmp}"
-					if [ "${attempt}" -ge "${max_attempts}" ]; then
-						echo "::error::playwright headless-shell download failed after ${max_attempts} attempts" >&2
-						exit 1
-					fi
-					sleep "$(( attempt * 2 < 30 ? attempt * 2 : 30 ))"
-					attempt=$(( attempt + 1 ))
-				done
-			fi
-			sudo mkdir -p "${dir}"
-			sudo chown -R "$(id -u):$(id -g)" "${browsers}"
-			unzip -q "${archive}" -d "${dir}"
-			touch "${dir}/INSTALLATION_COMPLETE" "${dir}/DEPENDENCIES_VALIDATED"
-		fi
-		echo "PLAYWRIGHT_BROWSERS_PATH=${browsers}" >>"${GITHUB_ENV}"
-		echo "hosted toolchain: headless shell ${revision} at ${dir}"
-	fi
 	exit 0
 fi
 
