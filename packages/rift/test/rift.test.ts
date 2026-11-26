@@ -421,20 +421,16 @@ describe("registry is a projection of the journal", () => {
 		expect(projectWorkspaces(events).map((w) => w.name)).toEqual(["two"]);
 	});
 
-	it("survives a torn snapshot by replaying the journal", () => {
+	it("keeps the journal readable and preserves a torn snapshot", () => {
 		const root = source();
 		createWorkspace({ root, name: "alive" });
 		// The crash shape: a half-written snapshot. It must cost time, not data.
 		writeFileSync(join(root, RIFT_DIR, "registry.json"), '{"root":"/x","works');
 		expect(readRegistry(root).workspaces.map((w) => w.name)).toEqual(["alive"]);
-		expect(rebuildRegistry(root).workspaces.map((w) => w.name)).toEqual([
-			"alive",
-		]);
-		// And the snapshot is valid again afterwards.
-		expect(
-			JSON.parse(readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8"))
-				.workspaces,
-		).toHaveLength(1);
+		expect(() => rebuildRegistry(root)).toThrow("invalid workspace snapshot");
+		expect(readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8")).toBe(
+			'{"root":"/x","works',
+		);
 	});
 
 	it("skips a truncated tail line rather than losing the whole journal", () => {
@@ -527,6 +523,10 @@ describe("crash windows", () => {
 			.split("\n")
 			.filter((l) => l.length > 0 && !l.includes('"WorkspaceCreated"'));
 		writeFileSync(journal, `${kept.join("\n")}\n`);
+		writeFileSync(
+			join(root, RIFT_DIR, "registry.json"),
+			JSON.stringify({ root, workspaces: [], eventCount: kept.length }),
+		);
 		expect(readRegistry(root).workspaces).toEqual([]);
 		// The name is reusable rather than poisoned.
 		const retry = createWorkspace({ root, name: "half" });
@@ -613,8 +613,11 @@ describe("create never destroys what it cannot prove is dead", () => {
 			must(made.workspace, "made.workspace").upper ??
 			must(made.workspace, "made.workspace").path;
 		writeFileSync(join(upper, "WORK.txt"), "UNCOMMITTED AGENT WORK\n");
-		// Lose the journal, exactly as external truncation would.
 		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
+		writeFileSync(
+			join(root, RIFT_DIR, "registry.json"),
+			JSON.stringify({ root, workspaces: [], eventCount: 0 }),
+		);
 
 		const again = createWorkspace({ root, name: "claude" });
 		expect(again.workspace).not.toBeNull();
@@ -686,6 +689,10 @@ describe("debris only accumulates when there is work to keep", () => {
 		createWorkspace({ root, name: "claude", capability });
 		for (let i = 0; i < 3; i += 1) {
 			writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
+			writeFileSync(
+				join(root, RIFT_DIR, "registry.json"),
+				JSON.stringify({ root, workspaces: [], eventCount: 0 }),
+			);
 			createWorkspace({ root, name: "claude", capability });
 		}
 		expect(listDebris(root)).toEqual([]);
@@ -701,6 +708,10 @@ describe("debris only accumulates when there is work to keep", () => {
 		const root = source();
 		createWorkspace({ root, name: "claude", capability });
 		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
+		writeFileSync(
+			join(root, RIFT_DIR, "registry.json"),
+			JSON.stringify({ root, workspaces: [], eventCount: 0 }),
+		);
 		const again = createWorkspace({ root, name: "claude", capability });
 		const parked = must(again.debris, "again.debris");
 		expect(listDebris(root)).toEqual([parked]);
@@ -717,6 +728,10 @@ describe("debris only accumulates when there is work to keep", () => {
 			"work",
 		);
 		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
+		writeFileSync(
+			join(root, RIFT_DIR, "registry.json"),
+			JSON.stringify({ root, workspaces: [], eventCount: 0 }),
+		);
 		const again = createWorkspace({ root, name: "claude" });
 		expect(again.debris).toBeDefined();
 		expect(listDebris(root)).toHaveLength(1);
