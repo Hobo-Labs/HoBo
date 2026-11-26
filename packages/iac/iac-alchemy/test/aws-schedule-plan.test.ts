@@ -181,6 +181,11 @@ it("requires pricing coverage for the mapped schedule and queue", async () => {
 		});
 		const partial = createIacFinancialServices({
 			...base,
+			unpriced: {
+				authorize: () => {
+					throw new Error("unexpected unpriced authorization");
+				},
+			},
 			pricing: {
 				modelId: "terms",
 				revision: "1",
@@ -190,6 +195,10 @@ it("requires pricing coverage for the mapped schedule and queue", async () => {
 		}).assess(plan);
 		expect(partial.quote).toMatchObject({
 			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+		expect(partial.admissionPath).toEqual({
+			kind: "unavailable",
 			code: "TARGET_PRICING_INCOMPLETE",
 		});
 		const complete = createIacFinancialServices({
