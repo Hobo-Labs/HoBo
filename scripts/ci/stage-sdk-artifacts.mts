@@ -10,12 +10,14 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 
 const root = join(import.meta.dirname, "..", "..");
+const require = createRequire(import.meta.url);
 
 export const SDK_PACKAGES = [
 	"@hobo/core",
@@ -114,6 +116,9 @@ function findPackageDir(name: string): string {
 }
 
 export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
+	// SAFETY: staging runs after dependency installation; bootstrap imports do not load this module.
+	const { rewriteStagedSdkDirectory } =
+		require("./rewrite-sdk-specifiers.mts") as typeof import("./rewrite-sdk-specifiers.mts");
 	buildReleaseSdkPackages();
 	mkdirSync(outDir, { recursive: true });
 	const map = loadNpmScopeMap();
@@ -136,6 +141,7 @@ export function stageSdkArtifactsDir(outDir: string): SdkArtifactManifest {
 		const pkgStaging = join(staging, workspaceName.replace("/", "_"));
 		rmSync(pkgStaging, { recursive: true, force: true });
 		cpSync(pkgDir, pkgStaging, { recursive: true });
+		rewriteStagedSdkDirectory(join(pkgStaging, "dist"), map.packages);
 		writeFileSync(
 			join(pkgStaging, "package.json"),
 			`${JSON.stringify(staged, null, "\t")}\n`,

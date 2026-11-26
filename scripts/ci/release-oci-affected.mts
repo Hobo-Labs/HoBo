@@ -57,7 +57,11 @@ const RELEASE_BUILD_INPUTS = [
 const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	[
 		"hobo-sdk",
-		["release/npm-scope-map.json", "scripts/ci/npm-publish-scope.mts"],
+		[
+			"release/npm-scope-map.json",
+			"scripts/ci/npm-publish-scope.mts",
+			"scripts/ci/rewrite-sdk-specifiers.mts",
+		],
 	],
 	[
 		"hobo-site",
@@ -68,6 +72,10 @@ const EXTRA_INPUTS = new Map<string, readonly string[]>([
 			"packages/runtimes/runtime-wasm/",
 		],
 	],
+]);
+const RELEASE_LAYER_SCRIPTS = new Set<string>([
+	...RELEASE_BUILD_INPUTS,
+	...[...EXTRA_INPUTS.values()].flat(),
 ]);
 
 /** Images built FROM another release image. */
@@ -210,11 +218,9 @@ export function isReleaseOciLayerNoise(path: string): boolean {
 	if (path.includes("/test/") || path.endsWith(".test.ts")) return true;
 	if (path.startsWith("docs/")) return true;
 	if (path.startsWith("scripts/test/")) return true;
-	// SAFETY: RELEASE_BUILD_INPUTS is a const string tuple; Array.includes requires readonly string[] to accept a general path.
-	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
-	if (path.startsWith("scripts/ci/") && !layerScripts.includes(path))
+	if (path.startsWith("scripts/ci/") && !RELEASE_LAYER_SCRIPTS.has(path))
 		return true;
-	if (path.startsWith("scripts/lib/") && !layerScripts.includes(path))
+	if (path.startsWith("scripts/lib/") && !RELEASE_LAYER_SCRIPTS.has(path))
 		return true;
 	return false;
 }

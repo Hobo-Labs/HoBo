@@ -106,3 +106,9 @@ resolution contracts are exercised in
 [`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
 Release `--resolve-digest` pins the worker only when `docker image inspect` lists
 exactly one matching `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:<64 lowercase hex>`.
+
+SDK artifact staging rewrites mapped `@hobo/*` module specifiers in the staged
+JavaScript, declarations and `runtimeModule` code-generation defaults to their
+public npm names, and adjusts generated source-map columns. It fails on ambiguous `require` bindings or unsupported
+source-map references. This does not publish packages or make an unmapped
+workspace dependency available to external installs.
