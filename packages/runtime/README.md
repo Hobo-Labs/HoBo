@@ -578,3 +578,6 @@ assumes that the selected provider honors idempotent replay.
 
 A scoped topic host is exposed only after all of its declared journals are
 confirmed. Rejected or uncertain provisioning leaves the host unavailable.
+
+Concurrent preparation calls share an attempt; retries reuse the captured
+operation identities, which the caller must persist across restarts.

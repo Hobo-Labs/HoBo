@@ -2117,6 +2117,117 @@ export async function prepareBindleTopicWitHost(
 	}
 }
 
+/** Capture a topic plan and reuse its operation IDs across concurrent attempts. */
+export function createBindleTopicPreparation(
+	port: DurableMessaging,
+	bindle: Parameters<typeof createBindleTopicWitHost>[1],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: Parameters<typeof prepareBindleTopicWitHost>[3],
+): () => ReturnType<typeof prepareBindleTopicWitHost> {
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const bindleName = text(
+		source.bindleName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const applicationName = text(
+		source.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	// SAFETY: the compiler validates and snapshots each graph field.
+	const grants = compileBindleTopicGrants({
+		applicationName,
+		resources: source.resources,
+		edges: source.edges,
+		bindings: source.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const resources: Record<
+		string,
+		{ kind: string; name: string; declaredAllow: string[]; dependsOn: string[] }
+	> = Object.create(null);
+	resources[applicationName] = {
+		kind: "application",
+		name: applicationName,
+		declaredAllow: [],
+		dependsOn: grants.map(() => "topic"),
+	};
+	const edges: { from: string; to: string }[] = [];
+	const bindings: DurableTopicBinding[] = [];
+	for (const { resourceName, grant } of grants) {
+		resources[resourceName] = {
+			kind: "topic",
+			name: resourceName,
+			declaredAllow: [
+				...(grant.publish ? ["publish"] : []),
+				...(grant.subscriptions.length ? ["subscribe"] : []),
+			],
+			dependsOn: [],
+		};
+		edges.push({ from: applicationName, to: resourceName });
+		bindings.push({
+			resourceName,
+			topic: grant.topic,
+			subscriptions: grant.subscriptions,
+		});
+	}
+	const snapshot = { bindleName, applicationName, resources, edges, bindings };
+	const captured = array(operations, DURABLE_MESSAGING_LIMITS.topics).map(
+		(entry) => {
+			const item = record(entry, ["topic", "operation"]);
+			return Object.freeze({
+				topic: text(item.topic, DURABLE_MESSAGING_LIMITS.nameBytes),
+				operation: providerOperation(item.operation),
+			});
+		},
+	);
+	const config = record(options, ["provisioning", "application"]);
+	const provisioning: unknown = Object.freeze(
+		record(
+			config.provisioning,
+			["authorize", "limitsGrant", "lifecycle"],
+			["timeoutMs", "portMetadataGrant"],
+		),
+	);
+	const application: unknown = Object.freeze(
+		record(
+			config.application,
+			["limitsGrant", "lifecycle", "verify"],
+			["timeoutMs", "portMetadataGrant"],
+		),
+	);
+	let pending: ReturnType<typeof prepareBindleTopicWitHost> | undefined;
+	let ready:
+		| Extract<
+				Awaited<ReturnType<typeof prepareBindleTopicWitHost>>,
+				{ status: "ready" }
+		  >
+		| undefined;
+	return () => {
+		if (ready !== undefined) return Promise.resolve(ready);
+		if (pending !== undefined) return pending;
+		// SAFETY: preparation validates both captured option records before use.
+		pending = prepareBindleTopicWitHost(port, snapshot, captured, {
+			provisioning: provisioning as DurableMessagingWitHostOptions,
+			application: application as Parameters<
+				typeof createBindleTopicWitHost
+			>[2],
+		})
+			.then((result) => {
+				if (result.status === "ready") ready = result;
+				return result;
+			})
+			.finally(() => {
+				pending = undefined;
+			});
+		return pending;
+	};
+}
+
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 export { DURABLE_MESSAGING_WIT_INTERFACE };
