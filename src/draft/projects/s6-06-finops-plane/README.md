@@ -49,7 +49,7 @@ pnpm --prefix src/draft/projects/s6-06-finops-plane test
 - `architecture/finops_plane.proto` + `finops_plane.cue`
 - `contracts/pacts/finops_plane_boundary.pact.json`
 - `features/finops-plane.feature`
-- `ADR.md`
+- [Architecture record](https://linear.app/quickdeploy-ai/document/hobo-661-architecture-record-archived-add3e6e64323)
 
 ## Cascade reconciliation (83d9b5c92)
 

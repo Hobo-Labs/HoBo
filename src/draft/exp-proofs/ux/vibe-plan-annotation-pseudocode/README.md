@@ -48,5 +48,5 @@ pnpm.cmd --dir src\draft\exp-proofs\vibe-plan-annotation-pseudocode test
 - `architecture/vibe_plan_annotation_pseudocode.cue` constrains proof modes, cases, grouping,
   evidence states, and missing-evidence behavior.
 - `architecture/pacts/vibe_plan_annotation_pseudocode.pact.json` pins the consumer/provider fixture.
-- `ADR.md` records why this stays pseudocode and reference fixture material.
+- [Architecture record](https://linear.app/quickdeploy-ai/document/hobo-543-architecture-record-archived-dea9bead6ebd) records why this stays pseudocode and reference fixture material.
 - `ARCHITECTURE.md` records parse-don't-validate and event architecture evidence.
