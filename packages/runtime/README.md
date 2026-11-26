@@ -583,3 +583,6 @@ confirmed. Rejected or uncertain provisioning leaves the host unavailable.
 `prepareBindleTopicWitHost` performs that preparation using the caller's
 persisted operation identities. The host and provisioner use the same validated
 binding snapshot if caller-owned input changes during preparation.
+
+Concurrent preparation calls share an attempt; retries reuse the captured
+operation identities, which the caller must persist across restarts.
