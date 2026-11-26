@@ -1,10 +1,8 @@
 import type { JsonObject } from "../json.js";
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
 
-// public-contract: extension-point id for provider plugins.
 export const CLOUD_PROVIDER_EXTENSION_POINT = "hobo.cloud-provider/v1";
 
-// public-contract: WIT-style interface id of the provider port.
 export const CLOUD_PROVIDER_PORT_INTERFACE = "hobo:cloud/provider@0.1.0";
 
 export const CLOUD_PROVIDER_PORT_DESCRIPTOR: PortDescriptor =
@@ -74,9 +72,7 @@ export interface IacResource {
 	outputs: string[];
 }
 
-// public-contract: IaC program wire-shape ids (hobo.iac-program/v1).
 export const IAC_PROGRAM_API_VERSION = "hobo.iac-program/v1";
-// public-contract: kind discriminator consumed by provider-neutral IaC executors.
 export const IAC_PROGRAM_KIND = "iac-program";
 
 export interface IacProgramDocument {

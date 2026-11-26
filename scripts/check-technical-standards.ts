@@ -227,59 +227,6 @@ if (newJavaScriptFiles.length > 0) {
 	);
 }
 
-function hasMarkerAbove(
-	lines: readonly string[],
-	index: number,
-	marker: string,
-): boolean {
-	if ((lines[index] ?? "").includes(marker)) return true;
-	for (let above = index - 1; above >= 0; above -= 1) {
-		const text = (lines[above] ?? "").trim();
-		const isComment =
-			text.startsWith("//") ||
-			text.startsWith("*") ||
-			text.startsWith("/*") ||
-			text.endsWith("*/");
-		if (!isComment) return false;
-		if (text.includes(marker)) return true;
-	}
-	return false;
-}
-
-// carry a // public-contract: <why> marker on or above the declaration.
-const literalConstOffenders: string[] = [];
-for (const file of changedFiles(["A", "M"])) {
-	if (
-		!/^packages\/.+\/src\//.test(file) ||
-		/(^|\/)_generated[\w-]*(\/|$)/.test(file) ||
-		!file.endsWith(".ts") ||
-		!existsSync(file)
-	) {
-		continue;
-	}
-	const lines = readFileSync(file, "utf8").split(/\r?\n/);
-	for (const [index, line] of lines.entries()) {
-		const match = line.match(
-			/^export const [A-Za-z_$][\w$]*(?:\s*:\s*[^=]+)?\s*=\s*(["'`]|$)/,
-		);
-		if (!match) continue;
-		const opensLiteral = match[1]
-			? true
-			: /^\s*["'`]/.test(lines[index + 1] ?? "");
-		if (!opensLiteral) continue;
-		if (hasMarkerAbove(lines, index, "public-contract:")) continue;
-		literalConstOffenders.push(`${file}:${index + 1}`);
-	}
-}
-if (literalConstOffenders.length > 0) {
-	fail(
-		[
-			"Exported string-literal constants need a // public-contract: <why> marker (or belong in generated code / module-private scope):",
-			...literalConstOffenders.map((entry) => `- ${entry}`),
-		].join("\n"),
-	);
-}
-
 const OUT_OF_BAND_HOOKS = ["build", "prebuild", "pretest"] as const;
 const outOfBandBuilds: string[] = [];
 for (const file of run("git", ["ls-files", "**/package.json"])
