@@ -136,6 +136,21 @@ describe("source policy", () => {
 		);
 	});
 
+	it("allows bare architecture markers but rejects explanatory text", () => {
+		const text = [
+			"// domain-view:",
+			"// domain-view: this explains the type",
+			"/* parallel-type-allowed: */",
+			"/* parallel-type-allowed: this explains the type */",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 2, 3, 4])).map(
+				(item) => item.line,
+			),
+			[2, 4],
+		);
+	});
+
 	it("rejects public-contract explanations on exported constants", () => {
 		const text = [
 			"// public-contract: the schema identifier",
