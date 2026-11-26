@@ -386,16 +386,54 @@ export function resolveWorkerDigestRefWhenPullable(
 	);
 }
 
-export function materializeCiWorkerImageOnly(): string | null {
+export type WorkerMaterializeFailure =
+	| Readonly<{
+			kind: "pull_failed";
+			remote: string;
+			budgetSec: number;
+	  }>
+	| Readonly<{
+			kind: "manifest_absent";
+			remote: string;
+	  }>;
+
+export type WorkerMaterializeResult =
+	| Readonly<{ ok: true; image: string }>
+	| Readonly<{ ok: false; failure: WorkerMaterializeFailure | null }>;
+
+function preferWorkerMaterializeFailure(
+	current: WorkerMaterializeFailure | null,
+	next: WorkerMaterializeFailure,
+): WorkerMaterializeFailure {
+	if (current?.kind === "pull_failed") return current;
+	if (next.kind === "pull_failed" || current === null) return next;
+	return current;
+}
+
+function tagWorkerImage(remote: string, candidate: string): void {
+	run("docker", ["tag", remote, candidate]);
+	run("docker", ["tag", remote, "hobo-ci-worker:local"]);
+}
+
+export function materializeCiWorkerImageResult(): WorkerMaterializeResult {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
 	if (dockerImagePresent(candidate)) {
 		run("docker", ["tag", candidate, "hobo-ci-worker:local"]);
 		console.log(`using pinned worker ${candidate}`);
-		return candidate;
+		return { ok: true, image: candidate };
 	}
 
 	const repo = process.env.GITHUB_REPOSITORY?.trim();
+	const suppliedDigest = repo
+		? validatedWorkerDigestRef(repo, process.env.HOBO_CI_WORKER_IMAGE_REF)
+		: null;
+	if (suppliedDigest && dockerImagePresent(suppliedDigest)) {
+		tagWorkerImage(suppliedDigest, candidate);
+		console.log(`using local worker digest ${suppliedDigest}`);
+		return { ok: true, image: candidate };
+	}
+
 	const event = process.env.GITHUB_EVENT_NAME ?? "";
 	const token = ghcrAuthToken();
 	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
@@ -414,34 +452,58 @@ export function materializeCiWorkerImageOnly(): string | null {
 		)
 			sources.push(pullRequestWorkerTag(repo, pullRequest, version));
 		dockerLoginGhcr(actor, token);
+		let failure: WorkerMaterializeFailure | null = null;
 		for (const remote of sources) {
 			if (!workerManifestReachable(remote, token)) {
 				console.log(`GHCR manifest absent for ${remote}`);
+				failure = preferWorkerMaterializeFailure(failure, {
+					kind: "manifest_absent",
+					remote,
+				});
 				continue;
 			}
 			console.log(`GHCR manifest present for ${remote}`);
 			if (pullWorkerFromGhcr(remote)) {
-				run("docker", ["tag", remote, candidate]);
-				run("docker", ["tag", remote, "hobo-ci-worker:local"]);
+				tagWorkerImage(remote, candidate);
 				console.log(`pulled worker ${remote}`);
-				return candidate;
+				return { ok: true, image: candidate };
 			}
 			console.error(`GHCR pull failed for ${remote}`);
+			failure = preferWorkerMaterializeFailure(failure, {
+				kind: "pull_failed",
+				remote,
+				budgetSec: workerPullBudgetSec(),
+			});
 		}
+		return { ok: false, failure };
 	}
-	return null;
+	return { ok: false, failure: null };
+}
+
+export function materializeCiWorkerImageOnly(): string | null {
+	const result = materializeCiWorkerImageResult();
+	return result.ok ? result.image : null;
 }
 
 export function ensureCiWorkerImage(): string {
-	const materialized = materializeCiWorkerImageOnly();
-	if (materialized) {
-		return materialized;
-	}
+	const materialized = materializeCiWorkerImageResult();
+	if (materialized.ok) return materialized.image;
 
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
 
 	if (releaseWorkerEnsurePath()) {
+		const { failure } = materialized;
+		if (failure?.kind === "pull_failed") {
+			throw new Error(
+				`GHCR manifest present for ${failure.remote} but pull failed (budgetSec=${failure.budgetSec}); release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
+			);
+		}
+		if (failure?.kind === "manifest_absent") {
+			throw new Error(
+				`GHCR manifest absent for ${failure.remote}; release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
+			);
+		}
 		throw new Error(
 			`release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
 		);

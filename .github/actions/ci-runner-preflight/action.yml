@@ -34,6 +34,15 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: >-
+        Prune job disk on self-hosted when the docker data root or workspace
+        has less than HOBO_CI_RUNNER_DISK_HEADROOM_GB free (default 12 GiB)
+      shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: |
+        set -euo pipefail
+        node --experimental-strip-types --no-warnings scripts/ci/runner-job-disk-prune.mts
     # The daemon deletes the host-mounted work dir at job teardown; /tmp goes with
     # the --rm container. Only untagged images over a day old are pruned here: the
     # base build's layer cache and every tagged image stay, and so does a build in

@@ -13,8 +13,10 @@ import { describe, it } from "node:test";
 import {
 	ciWorkerImagePublished,
 	DEFAULT_WORKER_PULL_BUDGET_SEC,
+	ensureCiWorkerImage,
 	ghcrWorkerPullable,
 	materializeCiWorkerImageOnly,
+	materializeCiWorkerImageResult,
 	pullRequestWorkerTag,
 	pullWorkerFromGhcr,
 	releaseWorkerEnsurePath,
@@ -773,5 +775,163 @@ describe("ensure-ci-worker-image", () => {
 		assert.equal(releaseWorkerEnsurePath(), false);
 		process.env.HOBO_RELEASE_VERSION = prev.ver;
 		process.env.GITHUB_REF = prev.ref;
+	});
+
+	function withReleaseProbe(
+		mode: "pull_failed" | "manifest_absent" | "local_digest",
+		digestRef: string | undefined,
+		run: (calls: string) => void,
+	) {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-release-"));
+		const calls = join(bin, "calls");
+		writeFileSync(
+			join(bin, "timeout"),
+			[
+				"#!/bin/sh",
+				`echo "timeout $*" >> "${calls}"`,
+				'case " $* " in *build.sh*) exit 99 ;; esac',
+				"shift",
+				'exec "$@"',
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(join(bin, "sleep"), ["#!/bin/sh", "exit 0", ""].join("\n"), {
+			mode: 0o755,
+		});
+		const manifestStatus = mode === "manifest_absent" ? 1 : 0;
+		const pullStatus = mode === "pull_failed" ? 1 : 0;
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
+				'if [ "$1 $2" = "image inspect" ]; then',
+				digestRef
+					? `  if [ "$3" = "${digestRef}" ]; then exit 0; fi`
+					: "  exit 1",
+				"  exit 1",
+				"fi",
+				`if [ "$1 $2" = "manifest inspect" ]; then exit ${manifestStatus}; fi`,
+				`if [ "$1" = pull ]; then exit ${pullStatus}; fi`,
+				"exit 0",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const keys = [
+			"PATH",
+			"GITHUB_REPOSITORY",
+			"GITHUB_TOKEN",
+			"GITHUB_EVENT_NAME",
+			"GITHUB_REF",
+			"HOBO_RELEASE_VERSION",
+			"HOBO_CI_SKIP_GHCR_PULL",
+			"HOBO_CI_WORKER_IMAGE_REF",
+			"HOBO_CI_WORKER_PULL_BUDGET_SEC",
+		] as const;
+		const prev = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		try {
+			process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+			process.env.GITHUB_REPOSITORY = "Hobo-Labs/HoBo";
+			process.env.GITHUB_TOKEN = "token-for-test";
+			process.env.GITHUB_EVENT_NAME = "push";
+			delete process.env.GITHUB_REF;
+			delete process.env.HOBO_CI_SKIP_GHCR_PULL;
+			process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC = "7";
+			if (mode === "local_digest") {
+				delete process.env.HOBO_RELEASE_VERSION;
+				if (digestRef) process.env.HOBO_CI_WORKER_IMAGE_REF = digestRef;
+			} else {
+				process.env.HOBO_RELEASE_VERSION = "0.0.0-alpha.94";
+				delete process.env.HOBO_CI_WORKER_IMAGE_REF;
+			}
+			run(calls);
+		} finally {
+			for (const key of keys) {
+				const value = prev[key];
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	it("names a release pull failure and a missing manifest differently", () => {
+		withReleaseProbe("pull_failed", undefined, (calls) => {
+			const materialized = materializeCiWorkerImageResult();
+			assert.equal(materialized.ok, false);
+			if (materialized.ok || materialized.failure?.kind !== "pull_failed") {
+				assert.fail(
+					`expected pull_failed, got ${JSON.stringify(materialized)}`,
+				);
+			}
+			assert.equal(materialized.failure.budgetSec, 7);
+			assert.match(
+				materialized.failure.remote,
+				/^ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v[0-9a-f]{12}$/u,
+			);
+			let thrown: Error | undefined;
+			try {
+				ensureCiWorkerImage();
+			} catch (error) {
+				if (!(error instanceof Error)) throw error;
+				thrown = error;
+			}
+			assert.ok(thrown, "release pull_failed must throw");
+			assert.match(thrown.message, /manifest present/u);
+			assert.match(thrown.message, /budgetSec=7/u);
+			assert.doesNotMatch(thrown.message, /manifest absent/u);
+			const recorded = readFileSync(calls, "utf8");
+			assert.match(recorded, /docker pull /u);
+			assert.doesNotMatch(recorded, /build\.sh/u);
+		});
+
+		withReleaseProbe("manifest_absent", undefined, (calls) => {
+			const materialized = materializeCiWorkerImageResult();
+			assert.equal(materialized.ok, false);
+			if (materialized.ok || materialized.failure?.kind !== "manifest_absent") {
+				assert.fail(
+					`expected manifest_absent, got ${JSON.stringify(materialized)}`,
+				);
+			}
+			assert.equal("budgetSec" in materialized.failure, false);
+			let thrown: Error | undefined;
+			try {
+				ensureCiWorkerImage();
+			} catch (error) {
+				if (!(error instanceof Error)) throw error;
+				thrown = error;
+			}
+			assert.ok(thrown, "release manifest_absent must throw");
+			assert.match(thrown.message, /GHCR manifest absent/u);
+			assert.doesNotMatch(thrown.message, /manifest present/u);
+			assert.doesNotMatch(thrown.message, /budgetSec=/u);
+			const recorded = readFileSync(calls, "utf8");
+			assert.doesNotMatch(recorded, /docker pull /u);
+			assert.doesNotMatch(recorded, /build\.sh/u);
+		});
+	});
+
+	it("reuses a local digest from HOBO_CI_WORKER_IMAGE_REF without pulling", () => {
+		const digestRef = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"d".repeat(64)}`;
+		withReleaseProbe("local_digest", digestRef, (calls) => {
+			const materialized = materializeCiWorkerImageResult();
+			assert.equal(materialized.ok, true);
+			if (!materialized.ok) return;
+			assert.match(materialized.image, /^hobo-ci-worker:v[0-9a-f]{12}$/u);
+			assert.equal(ensureCiWorkerImage(), materialized.image);
+			const recorded = readFileSync(calls, "utf8");
+			assert.ok(
+				recorded.includes(`docker tag ${digestRef} ${materialized.image}`),
+			);
+			assert.ok(
+				recorded.includes(`docker tag ${digestRef} hobo-ci-worker:local`),
+			);
+			assert.doesNotMatch(recorded, /docker pull /u);
+			assert.doesNotMatch(recorded, /manifest inspect/u);
+			assert.doesNotMatch(recorded, /build\.sh/u);
+		});
 	});
 });
