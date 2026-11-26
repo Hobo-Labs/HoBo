@@ -21,6 +21,7 @@
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/iac-alchemy": "workspace:*",
+		"@hobo/runtime": "workspace:*",
 		"@hobo/runtime-rivet": "workspace:*"
 	},
 	"peerDependencies": {
@@ -31,6 +32,7 @@
 	},
 	"devDependencies": {
 		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"@hobo/core": "workspace:*",
 		"@types/node": "^24.13.2",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",

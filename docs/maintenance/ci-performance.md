@@ -128,10 +128,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only when a warm store is mounted (`HOBO_CI_PNPM_STORE_MOUNTED=1`), `HOBO_CI_PNPM_STORE_DIR` is a
   non-empty directory, or `pnpm store path` already has entries. Otherwise the job fails with
   `hobo-ci-deps-layer-unavailable` while the 20-minute limit still has time, instead of a cold
-  registry install. Turbo-cache input `main-build: "true"`
+  registry install. Turbo-cache input   `main-build: "true"`
   restores the newest one before the job's own caches; PR impact validation, the workspace shards,
   PR affected package lanes and both scripts-test jobs set it. A merge-queue-reused push still runs
-  this job. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
+  this job. The release workflow's `release-pages-browser-wit-smoke` job uses the same
+  `ci-deps-recovery` composite (GHCR materialize, warm store, or fail closed) so an ARC pod without a
+  mounted layer does not spend the 20-minute ceiling on a cold registry install before the Pages
+  componentize step. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
   one per CPU, capped at 1024 MB per build after a 768 MB reserve (`HOBO_TURBO_BUILD_CONCURRENCY`
   overrides it), then the unchanged test calls at the memory-derived `HOBO_TURBO_CONCURRENCY`
   ([finding 162](../ci/findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)).

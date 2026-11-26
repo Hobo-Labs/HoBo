@@ -41,6 +41,18 @@ describe("release browser-wit runner smoke", () => {
 		expect(block).toContain("RELEASE_PAGES_MATERIALIZE_PATHS");
 		expect(block).toContain("build-release-browser-wit-on-runner.mts");
 		expect(block).not.toContain("XDG_CACHE_HOME");
+		expect(block).toContain("ci-deps-recovery");
+		expect(block).toMatch(/packages: read/);
+		const recovery = readFileSync(
+			join(
+				import.meta.dirname,
+				"..",
+				"..",
+				".github/actions/ci-deps-recovery/action.yml",
+			),
+			"utf8",
+		);
+		expect(recovery).toMatch(/materialize-ghcr-deps-layer\.mts/);
 	});
 
 	it("release PR gate requires browser-wit smoke on hobo runner", () => {

@@ -577,3 +577,17 @@ reuse them when reconciling uncertain outcomes. The finite provisioning model
 assumes that the selected provider honors idempotent replay.
 Its retry transition abstracts replay of previously confirmed operations before
 the operation whose outcome is unknown.
+
+A scoped topic host is exposed only after all of its declared journals are
+confirmed. Rejected or uncertain provisioning leaves the host unavailable.
+`prepareBindleTopicWitHost` performs that preparation using the caller's
+persisted operation identities. The host and provisioner use the same validated
+binding snapshot if caller-owned input changes during preparation.
+
+`createBindleTopicPreparation` shares concurrent and synchronously reentrant
+preparation attempts. Retries reuse the captured operation identities, which the
+caller must persist across restarts.
+
+The durable messaging boundary captures its array mapping intrinsic before
+processing Bindle graphs and provider results. Later changes to
+`Array.prototype.map` cannot change the grants or mapped message data.

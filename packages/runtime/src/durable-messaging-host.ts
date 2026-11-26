@@ -16,6 +16,14 @@ import type * as Wit from "@hobo/wit/durable-messaging";
 import { synchronousResult } from "./synchronous-result.js";
 
 const intrinsicApply = Reflect.apply;
+const intrinsicArrayMap = Array.prototype.map;
+function mapArray<T, U>(
+	items: readonly T[],
+	mapper: (value: T, index: number) => U,
+): U[] {
+	// SAFETY: the captured intrinsic maps this checked array with the supplied callback.
+	return intrinsicApply(intrinsicArrayMap, items, [mapper]) as U[];
+}
 const intrinsicWeakGet = WeakMap.prototype.get;
 const intrinsicWeakSet = WeakMap.prototype.set;
 
@@ -366,7 +374,8 @@ function message(
 	const data = record(value, ["id", "subject", "payload", "attributes"]);
 	const seen = new Set<string>();
 	let total = 0;
-	const attributes = array(data.attributes, bounds.attributeCount).map(
+	const attributes = mapArray(
+		array(data.attributes, bounds.attributeCount),
 		(entry) => {
 			const item = record(entry, ["key", "value"]);
 			const key = text(item.key, bounds.attributeBytes, false, true);
@@ -496,7 +505,7 @@ function deliveries(
 	const ids = new Set<string>();
 	const sequences = new Set<number>();
 	const leases = new Set<string>();
-	return array(value, maximum).map((item) => {
+	return mapArray(array(value, maximum), (item) => {
 		const data = record(
 			item,
 			[
@@ -637,7 +646,7 @@ function eventsResult(
 	);
 	const next = integer(data.nextAfterSequence);
 	if (typeof data.hasMore !== "boolean" || after < first - 1) return invalid();
-	const entries = array(data.events, maximum).map((entry) =>
+	const entries = mapArray(array(data.events, maximum), (entry) =>
 		event(entry, bounds),
 	);
 	for (let index = 0; index < entries.length; index++) {
@@ -811,10 +820,11 @@ export function compileBindleTopicGrants(input: {
 		);
 		if (resource.name !== name) return invalid();
 		const kind = text(resource.kind, DURABLE_MESSAGING_LIMITS.nameBytes);
-		const declaredAllow = array(resource.declaredAllow, 256).map((value) =>
-			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		const declaredAllow = mapArray(
+			array(resource.declaredAllow, 256),
+			(value) => text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
 		);
-		const dependsOn = array(resource.dependsOn, 256).map((value) =>
+		const dependsOn = mapArray(array(resource.dependsOn, 256), (value) =>
 			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
 		);
 		if (new Set(declaredAllow).size !== declaredAllow.length) return invalid();
@@ -867,28 +877,28 @@ export function compileBindleTopicGrants(input: {
 		)
 			return invalid();
 		const groups = new Set<string>();
-		const subscriptions = array(
-			binding.subscriptions,
-			DURABLE_MESSAGING_LIMITS.subscriptions,
-		).map((item) => {
-			const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
-			const consumerGroup = text(
-				entry.consumerGroup,
-				DURABLE_MESSAGING_LIMITS.nameBytes,
-			);
-			const deadLetterTopic = text(
-				entry.deadLetterTopic,
-				DURABLE_MESSAGING_LIMITS.nameBytes,
-			);
-			if (
-				groups.has(consumerGroup) ||
-				deadLetterTopic === topic ||
-				++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
-			)
-				return invalid();
-			groups.add(consumerGroup);
-			return Object.freeze({ consumerGroup, deadLetterTopic });
-		});
+		const subscriptions = mapArray(
+			array(binding.subscriptions, DURABLE_MESSAGING_LIMITS.subscriptions),
+			(item) => {
+				const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
+				const consumerGroup = text(
+					entry.consumerGroup,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				const deadLetterTopic = text(
+					entry.deadLetterTopic,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				if (
+					groups.has(consumerGroup) ||
+					deadLetterTopic === topic ||
+					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+				)
+					return invalid();
+				groups.add(consumerGroup);
+				return Object.freeze({ consumerGroup, deadLetterTopic });
+			},
+		);
 		if (
 			resource.declaredAllow.includes("subscribe") !==
 			subscriptions.length > 0
@@ -924,7 +934,8 @@ export function createDurableTopicPolicy(input: {
 	const verify = config.verify;
 	const topics = new Set<string>();
 	let subscriptionCount = 0;
-	const grants = array(config.grants, DURABLE_MESSAGING_LIMITS.topics).map(
+	const grants = mapArray(
+		array(config.grants, DURABLE_MESSAGING_LIMITS.topics),
 		(item) => {
 			const data = record(item, ["topic", "publish", "subscriptions"]);
 			const topic = text(data.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
@@ -935,28 +946,28 @@ export function createDurableTopicPolicy(input: {
 				return invalid();
 			topics.add(topic);
 			const groups = new Set<string>();
-			const subscriptions = array(
-				data.subscriptions,
-				DURABLE_MESSAGING_LIMITS.subscriptions,
-			).map((entry) => {
-				const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
-				const consumerGroup = text(
-					data.consumerGroup,
-					DURABLE_MESSAGING_LIMITS.nameBytes,
-				);
-				const deadLetterTopic = text(
-					data.deadLetterTopic,
-					DURABLE_MESSAGING_LIMITS.nameBytes,
-				);
-				if (
-					groups.has(consumerGroup) ||
-					deadLetterTopic === topic ||
-					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
-				)
-					return invalid();
-				groups.add(consumerGroup);
-				return Object.freeze({ consumerGroup, deadLetterTopic });
-			});
+			const subscriptions = mapArray(
+				array(data.subscriptions, DURABLE_MESSAGING_LIMITS.subscriptions),
+				(entry) => {
+					const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
+					const consumerGroup = text(
+						data.consumerGroup,
+						DURABLE_MESSAGING_LIMITS.nameBytes,
+					);
+					const deadLetterTopic = text(
+						data.deadLetterTopic,
+						DURABLE_MESSAGING_LIMITS.nameBytes,
+					);
+					if (
+						groups.has(consumerGroup) ||
+						deadLetterTopic === topic ||
+						++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+					)
+						return invalid();
+					groups.add(consumerGroup);
+					return Object.freeze({ consumerGroup, deadLetterTopic });
+				},
+			);
 			return Object.freeze({
 				topic,
 				publish: data.publish,
@@ -1743,10 +1754,10 @@ export function createBindleTopicWitHost(
 		bindings: source.bindings,
 	} as Parameters<typeof compileBindleTopicGrants>[0]);
 	const byTopic = new Map(
-		bindings.map((binding) => [binding.grant.topic, binding]),
+		mapArray(bindings, (binding) => [binding.grant.topic, binding]),
 	);
 	const policy = createDurableTopicPolicy({
-		grants: bindings.map((binding) => binding.grant),
+		grants: mapArray(bindings, (binding) => binding.grant),
 		verify: (claim) => {
 			const binding = byTopic.get(claim.grant.topic);
 			if (binding === undefined) return false;
@@ -1782,7 +1793,7 @@ export function createBindleTopicWitHost(
 		hostOptions as DurableMessagingWitHostOptions,
 	);
 	const byResource = new Map(
-		bindings.map((binding) => [binding.resourceName, binding]),
+		mapArray(bindings, (binding) => [binding.resourceName, binding]),
 	);
 	const topic = (resourceName: string): BindleTopicClient => {
 		const binding = byResource.get(
@@ -1958,7 +1969,20 @@ export async function provisionBindleTopics(
 	operations: readonly BindleTopicProvisionOperation[],
 	options: DurableMessagingWitHostOptions,
 ): Promise<BindleTopicProvisionResult> {
-	const grants = compileBindleTopicGrants(bindle);
+	return provisionCompiledBindleTopics(
+		port,
+		compileBindleTopicGrants(bindle),
+		operations,
+		options,
+	);
+}
+
+async function provisionCompiledBindleTopics(
+	port: DurableMessaging,
+	grants: readonly BindleTopicGrant[],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: DurableMessagingWitHostOptions,
+): Promise<BindleTopicProvisionResult> {
 	const topics = new Set<string>();
 	for (const binding of grants) {
 		topics.add(binding.grant.topic);
@@ -2051,6 +2075,171 @@ export async function provisionBindleTopics(
 	});
 }
 
+export async function prepareBindleTopicWitHost(
+	port: DurableMessaging,
+	bindle: Parameters<typeof createBindleTopicWitHost>[1],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: {
+		readonly provisioning: DurableMessagingWitHostOptions;
+		readonly application: Parameters<typeof createBindleTopicWitHost>[2];
+	},
+): Promise<
+	| {
+			readonly status: "ready";
+			readonly provisioning: Extract<
+				BindleTopicProvisionResult,
+				{ status: "complete" }
+			>;
+			readonly application: ReturnType<typeof createBindleTopicWitHost>;
+	  }
+	| {
+			readonly status: "unavailable";
+			readonly provisioning: Exclude<
+				BindleTopicProvisionResult,
+				{ status: "complete" }
+			>;
+	  }
+> {
+	const config = record(options, ["provisioning", "application"]);
+	// SAFETY: the host validates its options and snapshots the graph synchronously.
+	const application = createBindleTopicWitHost(
+		port,
+		bindle,
+		config.application as Parameters<typeof createBindleTopicWitHost>[2],
+	);
+	try {
+		// SAFETY: the provisioner validates the captured options before awaiting.
+		const provisioning = await provisionCompiledBindleTopics(
+			port,
+			application.bindings,
+			operations,
+			config.provisioning as DurableMessagingWitHostOptions,
+		);
+		if (provisioning.status !== "complete") {
+			application.revoke();
+			return Object.freeze({ status: "unavailable", provisioning });
+		}
+		return Object.freeze({ status: "ready", provisioning, application });
+	} catch (error) {
+		application.revoke();
+		throw error;
+	}
+}
+
+export function createBindleTopicPreparation(
+	port: DurableMessaging,
+	bindle: Parameters<typeof createBindleTopicWitHost>[1],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: Parameters<typeof prepareBindleTopicWitHost>[3],
+): () => ReturnType<typeof prepareBindleTopicWitHost> {
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const bindleName = text(
+		source.bindleName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const applicationName = text(
+		source.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	// SAFETY: the compiler validates and snapshots each graph field.
+	const grants = compileBindleTopicGrants({
+		applicationName,
+		resources: source.resources,
+		edges: source.edges,
+		bindings: source.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const resources: Record<
+		string,
+		{ kind: string; name: string; declaredAllow: string[]; dependsOn: string[] }
+	> = Object.create(null);
+	resources[applicationName] = {
+		kind: "application",
+		name: applicationName,
+		declaredAllow: [],
+		dependsOn: mapArray(grants, () => "topic"),
+	};
+	const edges: { from: string; to: string }[] = [];
+	const bindings: DurableTopicBinding[] = [];
+	for (const { resourceName, grant } of grants) {
+		resources[resourceName] = {
+			kind: "topic",
+			name: resourceName,
+			declaredAllow: [
+				...(grant.publish ? ["publish"] : []),
+				...(grant.subscriptions.length ? ["subscribe"] : []),
+			],
+			dependsOn: [],
+		};
+		edges.push({ from: applicationName, to: resourceName });
+		bindings.push({
+			resourceName,
+			topic: grant.topic,
+			subscriptions: grant.subscriptions,
+		});
+	}
+	const snapshot = { bindleName, applicationName, resources, edges, bindings };
+	const captured = mapArray(
+		array(operations, DURABLE_MESSAGING_LIMITS.topics),
+		(entry) => {
+			const item = record(entry, ["topic", "operation"]);
+			return Object.freeze({
+				topic: text(item.topic, DURABLE_MESSAGING_LIMITS.nameBytes),
+				operation: providerOperation(item.operation),
+			});
+		},
+	);
+	const config = record(options, ["provisioning", "application"]);
+	const provisioning: unknown = Object.freeze(
+		record(
+			config.provisioning,
+			["authorize", "limitsGrant", "lifecycle"],
+			["timeoutMs", "portMetadataGrant"],
+		),
+	);
+	const application: unknown = Object.freeze(
+		record(
+			config.application,
+			["limitsGrant", "lifecycle", "verify"],
+			["timeoutMs", "portMetadataGrant"],
+		),
+	);
+	let pending: ReturnType<typeof prepareBindleTopicWitHost> | undefined;
+	let ready:
+		| Extract<
+				Awaited<ReturnType<typeof prepareBindleTopicWitHost>>,
+				{ status: "ready" }
+		  >
+		| undefined;
+	return () => {
+		if (ready !== undefined) return Promise.resolve(ready);
+		if (pending !== undefined) return pending;
+		// SAFETY: preparation validates both captured option records before use.
+		pending = Promise.resolve()
+			.then(() =>
+				prepareBindleTopicWitHost(port, snapshot, captured, {
+					provisioning: provisioning as DurableMessagingWitHostOptions,
+					application: application as Parameters<
+						typeof createBindleTopicWitHost
+					>[2],
+				}),
+			)
+			.then((result) => {
+				if (result.status === "ready") ready = result;
+				return result;
+			})
+			.finally(() => {
+				pending = undefined;
+			});
+		return pending;
+	};
+}
+
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 export { DURABLE_MESSAGING_WIT_INTERFACE };
@@ -2124,7 +2313,9 @@ export async function instantiateDurableMessagingAsync<T>(
 	]);
 	const digest = text(component.digest, 71);
 	if (!/^sha256:[a-f0-9]{64}$/u.test(digest)) return invalid();
-	const imports = array(component.imports, 64).map((entry) => text(entry, 256));
+	const imports = mapArray(array(component.imports, 64), (entry) =>
+		text(entry, 256),
+	);
 	if (new Set(imports).size !== imports.length) return invalid();
 	const matching = imports.filter(
 		(entry) => entry.split("@")[0] === NATIVE_IMPORT_ALIAS,
