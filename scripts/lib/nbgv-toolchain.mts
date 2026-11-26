@@ -1,6 +1,6 @@
 /** Release-scoped mise toolchain for Nerdbank.GitVersioning (not in CI runner image). */
 import { spawn, spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export type NbgvToolchainLog = (line: string) => void;
 
@@ -19,9 +19,8 @@ export function nbgvMiseReleaseDir(repoRoot: string): string {
 	return join(repoRoot, NBGV_MISE_DIR);
 }
 
-/** argv for `mise -C <releaseDir> install --locked` (not deprecated `install --config`). */
 export function nbgvMiseInstallArgv(releaseDir: string): readonly string[] {
-	return ["-C", releaseDir, "install", "--locked"];
+	return ["-C", releaseDir, "install", "--locked", "dotnet"];
 }
 
 /**
@@ -32,7 +31,14 @@ export function nbgvMiseExecEnv(
 	repoRoot: string,
 	base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-	return { ...base, MISE_CONFIG_DIR: nbgvMiseReleaseDir(repoRoot) };
+	const rootMiseToml = resolve(repoRoot, "mise.toml");
+	const existing = base.MISE_IGNORED_CONFIG_PATHS;
+	const ignored = existing ? `${rootMiseToml}:${existing}` : rootMiseToml;
+	return {
+		...base,
+		MISE_CONFIG_DIR: nbgvMiseReleaseDir(repoRoot),
+		MISE_IGNORED_CONFIG_PATHS: ignored,
+	};
 }
 
 /** True when `mise which dotnet` resolves using `release/mise.toml`. */
