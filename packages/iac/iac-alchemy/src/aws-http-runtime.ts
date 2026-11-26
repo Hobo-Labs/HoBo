@@ -6,6 +6,7 @@ import {
 	observeBoundary,
 	raceBoundary,
 } from "./async-boundary.js";
+import { captureAwsHttpGraph } from "./aws-http-graph.js";
 import {
 	AwsKvError,
 	type AwsKvGrant,
@@ -372,48 +373,11 @@ export function createAwsBindleApplication<Requirements>(options: {
 	)
 		throw new Error("invalid AWS application options");
 	const { bindle, applicationName, verifyBinding } = options;
-	const declaration = Object.hasOwn(bindle.resources, applicationName)
-		? bindle.resources[applicationName]
-		: undefined;
-	const entrypoint = bindle.entrypoint(applicationName);
+	const graph = captureAwsHttpGraph(bindle, applicationName);
+	const { entrypoint } = graph;
 	if (
-		!declaration ||
-		typeof bindle.name !== "string" ||
-		bindle.name.length === 0 ||
-		bindle.name.length > 200 ||
-		typeof applicationName !== "string" ||
-		applicationName.length === 0 ||
-		applicationName.length > 200 ||
-		declaration.name !== applicationName ||
-		!["web", "api", "service"].includes(declaration.kind) ||
-		typeof entrypoint !== "function" ||
-		types.isProxy(entrypoint) ||
-		(bindle.connectors && Object.keys(bindle.connectors).length !== 0)
-	)
-		throw new Error("unsupported AWS HTTP application");
-	if (
-		declaration.annotations.length > 1 ||
-		declaration.annotations.some(
-			(annotation) =>
-				annotation.provider !== "hobo" ||
-				annotation.option !== "session-replay" ||
-				Object.getOwnPropertyDescriptor(annotation.config, "enabled")?.value !==
-					false ||
-				Object.keys(annotation.config).some(
-					(key) => !["enabled", "defaultSupply", "sampleRate"].includes(key),
-				),
-		)
-	)
-		throw new Error("session replay and HTTP annotations are unsupported");
-	const edges = bindle.edges
-		.filter((edge) => edge.from === applicationName)
-		.map((edge) => edge.to)
-		.sort();
-	if (
-		edges.length > 256 ||
-		new Set(edges).size !== edges.length ||
 		Object.getOwnPropertySymbols(options.stores).length !== 0 ||
-		Reflect.ownKeys(options.stores).length !== edges.length
+		Reflect.ownKeys(options.stores).length !== graph.bindings.length
 	)
 		throw new Error("AWS application dependencies are incomplete");
 	const physicalIdentities = new Set<string>();
@@ -422,65 +386,27 @@ export function createAwsBindleApplication<Requirements>(options: {
 		claim: AwsHttpBindingClaim;
 		store: AwsKvStore | AwsS3Store;
 	}[] = [];
-	for (const name of edges) {
-		const dependency = Object.hasOwn(bindle.resources, name)
-			? bindle.resources[name]
-			: undefined;
+	for (const binding of graph.bindings) {
+		const { name } = binding;
 		const field = Object.getOwnPropertyDescriptor(options.stores, name);
-		if (
-			!dependency ||
-			dependency.name !== name ||
-			dependency.stableId !== `${dependency.kind}:${name}` ||
-			!field ||
-			!Object.hasOwn(field, "value") ||
-			!field.enumerable
-		)
+		if (!field || !Object.hasOwn(field, "value") || !field.enumerable)
 			throw new Error("AWS application dependency is invalid");
-		if (
-			typeof name !== "string" ||
-			name.length === 0 ||
-			name.length > 200 ||
-			dependency.annotations.length !== 1
-		)
-			throw new Error("AWS application dependency is invalid");
-		const marker = dependency.annotations[0];
-		const markerFields = marker
-			? Object.getOwnPropertyDescriptors(marker.config)
-			: {};
-		const kvMarker =
-			marker?.provider === "aws" &&
-			marker.option === "dynamodb-kv" &&
-			Object.keys(markerFields).length === 3 &&
-			markerFields.runtime?.value === "node-js" &&
-			markerFields.consistency?.value === "strong" &&
-			markerFields.maxValueBytes?.value === 262_144;
-		const bucketMarker =
-			marker?.provider === "aws" &&
-			marker.option === "bounded-s3" &&
-			Object.keys(markerFields).length === 3 &&
-			markerFields.runtime?.value === "node-js" &&
-			markerFields.digest?.value === "sha256" &&
-			markerFields.maxObjectBytes?.value === 1_048_576;
 		const kv = inspectAwsDynamoKvStore(field.value);
 		const bucket = inspectAwsS3Store(field.value);
 		const claim =
-			kv &&
-			kvMarker &&
-			dependency.kind === "kv" &&
-			samePermissions(dependency.declaredAllow, kv.allow)
+			kv && binding.kind === "kv" && samePermissions(binding.allow, kv.allow)
 				? Object.freeze({
-						bindleName: bindle.name,
+						bindleName: graph.bindleName,
 						applicationName,
 						resourceName: name,
 						kind: "kv" as const,
 						grant: kv,
 					})
 				: bucket &&
-						bucketMarker &&
-						dependency.kind === "bucket" &&
-						samePermissions(dependency.declaredAllow, bucket.allow)
+						binding.kind === "bucket" &&
+						samePermissions(binding.allow, bucket.allow)
 					? Object.freeze({
-							bindleName: bindle.name,
+							bindleName: graph.bindleName,
 							applicationName,
 							resourceName: name,
 							kind: "bucket" as const,
@@ -498,13 +424,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 		physicalIdentities.add(identity);
 		entries.push({ name, claim, store: field.value });
 	}
-	const kinds = edges.map((name) => bindle.resources[name]?.kind).sort();
-	const declared = [...declaration.dependsOn].sort();
-	if (
-		kinds.length !== declared.length ||
-		kinds.some((kind, index) => kind !== declared[index])
-	)
-		throw new Error("AWS dependency graph is incomplete");
+
 	const verified = (claim: AwsHttpBindingClaim) => {
 		try {
 			return acceptSynchronousTrue(verifyBinding(claim));

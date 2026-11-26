@@ -368,7 +368,7 @@ function dataRecord(value: unknown): value is Record<string, unknown> {
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: bindle declarations are external data and are checked before they are copied. */
-function snapshotData<T>(input: T): T {
+export function snapshotData<T>(input: T): T {
 	const ancestors = new Set<object>();
 	let remaining = 16_384;
 	let characters = 0;

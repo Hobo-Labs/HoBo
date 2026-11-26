@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import type { BindleEntrypoint } from "../../../bindles/src/types.js";
+import { captureAwsHttpGraph } from "../src/aws-http-graph.js";
 import {
 	AWS_HTTP_MAX_IN_FLIGHT,
 	awsHttpBindings,
@@ -106,6 +107,61 @@ function fixture(
 		calls: () => calls,
 	};
 }
+
+describe("AWS application graph capture", () => {
+	it("captures sorted immutable bindings and rejects ambiguous graph data", () => {
+		const f = fixture(() => () => new Response("ok"));
+		const bindle = f.options.bindle;
+		const graph = captureAwsHttpGraph(bindle, "web");
+		expect(
+			graph.bindings.map(({ name, environment }) => [name, environment]),
+		).toEqual([
+			["assets", "HOBO_RESOURCE_0"],
+			["sessions", "HOBO_RESOURCE_1"],
+		]);
+		expect(Object.isFrozen(graph.bindings)).toBe(true);
+		expect(Object.isFrozen(graph.bindings[0]?.allow)).toBe(true);
+		let invoked = false;
+		const accessor = Object.defineProperty(
+			{ ...bindle.resources },
+			"sessions",
+			{
+				enumerable: true,
+				get() {
+					invoked = true;
+					throw new Error("getter invoked");
+				},
+			},
+		);
+		expect(() =>
+			captureAwsHttpGraph({ ...bindle, resources: accessor }, "web"),
+		).toThrow();
+		expect(invoked).toBe(false);
+		const sparse = [...bindle.edges];
+		delete sparse[0];
+		expect(() =>
+			captureAwsHttpGraph({ ...bindle, edges: sparse }, "web"),
+		).toThrow();
+		expect(() =>
+			captureAwsHttpGraph(
+				{ ...bindle, edges: [...bindle.edges, { from: "web", to: "missing" }] },
+				"web",
+			),
+		).toThrow();
+		expect(() =>
+			captureAwsHttpGraph(
+				{ ...bindle, edges: [...bindle.edges, ...bindle.edges] },
+				"web",
+			),
+		).toThrow();
+		expect(() =>
+			captureAwsHttpGraph(
+				{ ...bindle, resources: new Proxy(bindle.resources, {}) },
+				"web",
+			),
+		).toThrow();
+	});
+});
 
 describe("AWS Bindle HTTP resource bindings", () => {
 	it("keeps denied responses at 503 when array prototypes change", async () => {
