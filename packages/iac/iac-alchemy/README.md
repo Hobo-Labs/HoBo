@@ -463,7 +463,8 @@ or unverified, and identifies the source of a quoted model. The quote scenario
 must cover the declared inventory and its candidate indexes.
 The host must independently verify the scope and liability of its estimate.
 The host persists the request ID and reuses it for retries of the same
-operation; an uncertain outcome must be reconciled with its admission receipt.
+operation. Reconcile an uncertain route and any issued admission before
+attempting another provider effect.
 Destroy has its own price scenario; an apply quote is not assumed to cover it.
 To use an unpriced target, omit the pricing models and configure the broker's
 explicit unpriced policy and exposure authority. Admission otherwise refuses
