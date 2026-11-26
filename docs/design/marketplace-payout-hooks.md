@@ -12,7 +12,7 @@ Source issue: HOBO-420.
 Executable proof lives in
 [`src/draft/exp-proofs/cx/marketplace-payout-hooks-scope-contract`](../../src/draft/exp-proofs/cx/marketplace-payout-hooks-scope-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-420-marketplace-payout-hooks`](./proofs/hobo-420-marketplace-payout-hooks/README.md).
+[`proofs/hobo-420-marketplace-payout-hooks`](https://linear.app/quickdeploy-ai/document/hobo-420-proof-record-archived-aa4fd4040ce1).
 
 ## M0 Acceptance Record
 
