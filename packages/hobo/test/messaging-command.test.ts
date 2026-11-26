@@ -4,9 +4,7 @@ import { createMessagingCommand } from "../src/messaging-command.js";
 
 function runInput(args: string[] = []) {
 	return {
-		// SAFETY: assertion required at this I/O or test boundary.
 		context: {} as never,
-		// SAFETY: assertion required at this I/O or test boundary.
 		flags: {} as never,
 		args,
 		verb: "messaging",
@@ -51,13 +49,11 @@ describe("createMessagingCommand", () => {
 			runInput(["component-yaml", "fromBinding:kafka-bootstrap"]),
 		);
 		expect(result.ok).toBe(true);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const yaml = (result.data as { yaml: string }).yaml;
 		expect(yaml).toContain("pubsub.kafka");
 		expect(yaml).toContain("fromBinding:kafka-bootstrap");
 		expect(yaml).not.toMatch(/password\s*:/i);
 		expect(yaml).not.toMatch(/secretKey\s*:/i);
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((result.data as { secretless: boolean }).secretless).toBe(true);
 	});
 
@@ -65,13 +61,11 @@ describe("createMessagingCommand", () => {
 		const cmd = createMessagingCommand({ env: {}, tenantId: "acme" });
 		const result = await cmd.run(runInput(["realize", "orders"]));
 		expect(result.ok).toBe(true);
-		const realized =
-			// SAFETY: assertion required at this I/O or test boundary.
-			(
-				result.data as {
-					realized: { secretless: boolean; messagingBackend: string };
-				}
-			).realized;
+		const realized = (
+			result.data as {
+				realized: { secretless: boolean; messagingBackend: string };
+			}
+		).realized;
 		expect(realized.secretless).toBe(true);
 		expect(realized.messagingBackend).toBe("native-kafka");
 	});
