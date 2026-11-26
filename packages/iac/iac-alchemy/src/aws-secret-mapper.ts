@@ -4,7 +4,6 @@ import { withAwsTargetSelection } from "./aws-target-selection.js";
 import type { AlchemyPrimitiveMapper, BindleForAlchemy } from "./bindle.js";
 import { AlchemyIacError } from "./plan.js";
 
-/** Select bounded binary, versioned Node.js secret operations outside the Bindle. */
 export function awsVersionedSecret() {
 	return Object.freeze({
 		provider: "aws",

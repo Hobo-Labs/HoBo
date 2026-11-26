@@ -111,11 +111,7 @@ describe("AWS HTTP secret bindings", () => {
 						mutation = awsHttpBindings(context)
 							.secret("credentials")
 							.put(new Uint8Array([1]), id);
-						try {
-							await mutation;
-						} catch {
-							/* The application handles uncertain outcomes. */
-						}
+						await mutation.catch(() => undefined);
 						return new Response("done");
 					})
 					.with(sessionReplay({ enabled: false }))

@@ -141,7 +141,6 @@ function copyBytes(value: unknown): Uint8Array {
 	return result;
 }
 
-/** The host authenticates the exact secret incarnation and each operation. */
 export function createAwsSecretStore(options: {
 	readonly grant: AwsSecretGrant;
 	readonly verify: (

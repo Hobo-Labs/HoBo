@@ -52,7 +52,6 @@ const unavailable = () => {
 	}
 };
 
-/** The resolver must synchronously create branded stores for the exact names provisioned by Alchemy. */
 export function defineAwsHttpSource<Requirements>(options: {
 	readonly bindle: BindleForAlchemy<AwsHttpEntrypoint, Requirements>;
 	readonly applicationName: string;
@@ -193,7 +192,6 @@ export function defineAwsHttpSource<Requirements>(options: {
 	return source;
 }
 
-/** Provider-internal brand check; callers cannot manufacture a source binding. */
 export function inspectAwsHttpSource(
 	source: unknown,
 ): CapturedSource | undefined {
