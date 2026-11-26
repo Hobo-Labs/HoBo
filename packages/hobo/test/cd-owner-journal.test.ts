@@ -65,6 +65,30 @@ describe("withOwnerJournalFleet", () => {
 		expect(await withOwnerJournalFleet({}, tmpdir())).toEqual({ env: {} });
 	});
 
+	it("uses an explicitly selected SQLite journal without opening the owner store", async () => {
+		const env = { HOBO_CD_SQLITE_PATH: "/tmp/local-journal.sqlite" };
+		let opened = false;
+		const open = async () => {
+			opened = true;
+			throw new Error("offline");
+		};
+		expect(await withOwnerJournalFleet(env, tmpdir(), open)).toEqual({ env });
+		expect(opened).toBe(false);
+	});
+
+	it("does not treat a blank SQLite path as an explicit journal", async () => {
+		const env = { HOBO_CD_SQLITE_PATH: "  " };
+		let opened = false;
+		const open = async () => {
+			opened = true;
+			throw new Error("offline");
+		};
+		await expect(withOwnerJournalFleet(env, tmpdir(), open)).rejects.toThrow(
+			/cannot open the owner's secret store/i,
+		);
+		expect(opened).toBe(true);
+	});
+
 	it("refuses a configured store that cannot be opened instead of starting a different journal", async () => {
 		for (const open of [
 			async () => undefined,
