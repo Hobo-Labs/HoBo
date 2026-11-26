@@ -161,4 +161,5 @@ exact binding, source and exclusive pool before application startup.
 
 The adapter derives its provisioning graph and mapper grant claims from the same
 captured topic bindings, so later changes to caller-owned graph data cannot
-change one independently of the other.
+change one independently of the other. The shared runtime uses its captured
+array mapping intrinsic while compiling the graph.

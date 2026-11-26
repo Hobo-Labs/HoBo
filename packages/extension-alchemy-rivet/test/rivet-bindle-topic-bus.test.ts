@@ -63,6 +63,12 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 			},
 		};
 		let injected = false;
+		let publishMaps = 0;
+		const originalPush = Array.prototype.push;
+		const pushDescriptor = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"push",
+		);
 		const originalMap = Array.prototype.map;
 		const mapDescriptor = Object.getOwnPropertyDescriptor(
 			Array.prototype,
@@ -77,7 +83,18 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 				configurable: true,
 				writable: true,
 				value: function (this: unknown[], ...args: unknown[]) {
-					const first = this[0];
+					if (this.length === 1 && this[0] === "publish") {
+						publishMaps++;
+						return [];
+					}
+					return Reflect.apply(originalMap, this, args);
+				},
+			});
+			Object.defineProperty(Array.prototype, "push", {
+				configurable: true,
+				writable: true,
+				value: function (this: unknown[], ...args: unknown[]) {
+					const first = args[0];
 					if (
 						!injected &&
 						first &&
@@ -87,7 +104,7 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 						injected = true;
 						mutableResources.orders.declaredAllow.length = 0;
 					}
-					return Reflect.apply(originalMap, this, args);
+					return Reflect.apply(originalPush, this, args);
 				},
 			});
 			app = createRivetBindleTopicBusApplication({
@@ -162,10 +179,13 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 				},
 			});
 		} finally {
+			if (pushDescriptor)
+				Object.defineProperty(Array.prototype, "push", pushDescriptor);
 			if (mapDescriptor)
 				Object.defineProperty(Array.prototype, "map", mapDescriptor);
 		}
 		expect(injected).toBe(true);
+		expect(publishMaps).toBe(0);
 		const deployed = bindle("shop", (b) => {
 			const orders = b.topic().allow("publish");
 			const audit = b.topic().allow("publish");
