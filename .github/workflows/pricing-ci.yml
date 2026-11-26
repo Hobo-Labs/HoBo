@@ -254,6 +254,7 @@ jobs:
           node --experimental-strip-types packages/core/model/check-queue-inspection.mts
           node --experimental-strip-types packages/core/model/check-queue-export.mts
           node --experimental-strip-types packages/core/model/check-queue-pagination.mts
+          node --experimental-strip-types packages/core/model/check-queue-snapshot-time.mts
           node --experimental-strip-types packages/core/model/check-messaging-exhaustion.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-kv.mts

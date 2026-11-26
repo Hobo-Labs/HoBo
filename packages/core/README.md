@@ -247,3 +247,7 @@ not prove sink delivery, idempotency, the host or the implementation.
 The bounded `QueuePagination` model checks ordered message-ID scans and requires
 the caller to restart when the observed revision changes. It abstracts payloads
 and does not prove the implementation or enforce caller behavior.
+
+The bounded `QueueSnapshotTime` model checks that lease expiry during a paged
+scan does not admit messages outside the original observation time. It abstracts
+provider clocks and does not prove the implementation.

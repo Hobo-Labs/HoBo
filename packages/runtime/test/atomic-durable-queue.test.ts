@@ -461,15 +461,18 @@ describe("atomic durable queue provider", () => {
 		});
 		if (first.status !== "available" || !first.messages[0])
 			throw Error("missing exhausted message");
-		expect(first.nextCursor).toBe("m1");
-		expect(
-			await queue.inspectExhausted({ afterMessageId: first.nextCursor ?? "" }),
-		).toMatchObject({
+		expect(first.nextPage).toMatchObject({
+			afterMessageId: "m1",
+			revision: first.revision,
+			observedAtMs: 1010,
+		});
+		if (!first.nextPage) throw Error("missing next page");
+		expect(await queue.inspectExhausted(first.nextPage)).toMatchObject({
 			status: "available",
 			revision: first.revision,
 			messages: [{ messageId: "m2" }],
 			more: false,
-			nextCursor: null,
+			nextPage: null,
 		});
 		first.messages[0].body[0] = 99;
 		expect(await queue.inspectExhausted()).toMatchObject({
@@ -516,30 +519,54 @@ describe("atomic durable queue provider", () => {
 				visibilityTimeoutMs: 10,
 			});
 		clock = 1010;
+		const snapshot = await queue.inspectExhausted();
+		if (snapshot.status !== "available") throw Error("missing snapshot");
 		expect(
-			await queue.inspectExhausted({ afterMessageId: "m9" }),
+			await queue.inspectExhausted({
+				afterMessageId: "m9",
+				revision: snapshot.revision,
+				observedAtMs: snapshot.observedAtMs,
+			}),
 		).toMatchObject({
 			status: "available",
 			messages: [{ messageId: "m10" }],
 			more: false,
-			nextCursor: null,
+			nextPage: null,
 		});
-		expect(await queue.inspectExhausted({ afterMessageId: "m01" })).toEqual({
+		expect(
+			await queue.inspectExhausted({
+				afterMessageId: "m01",
+				revision: snapshot.revision,
+				observedAtMs: snapshot.observedAtMs,
+			}),
+		).toEqual({
 			status: "unknown",
 		});
 		let traps = 0;
-		const accessor = Object.defineProperty({}, "afterMessageId", {
-			enumerable: true,
-			get() {
-				traps++;
-				throw Error("getter");
+		const accessor = Object.defineProperty(
+			{
+				afterMessageId: "m1",
+				revision: snapshot.revision,
+				observedAtMs: snapshot.observedAtMs,
 			},
-		});
+			"afterMessageId",
+			{
+				enumerable: true,
+				get() {
+					traps++;
+					throw Error("getter");
+				},
+			},
+		);
 		expect(await queue.inspectExhausted(accessor)).toEqual({
 			status: "unknown",
 		});
 		const proxy = new Proxy(
-			{},
+			{
+				afterMessageId: "m1",
+				revision: snapshot.revision,
+				observedAtMs: snapshot.observedAtMs,
+			},
 			{
 				ownKeys() {
 					traps++;
@@ -549,6 +576,53 @@ describe("atomic durable queue provider", () => {
 		);
 		expect(await queue.inspectExhausted(proxy)).toEqual({ status: "unknown" });
 		expect(traps).toBe(0);
+	});
+
+	it("keeps one observation time across pages and reports changed revisions", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, batchSize: 1, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		for (let n = 1; n <= 3; n++) await queue.enqueue(message(n, `job-${n}`));
+		await queue.dequeue({
+			operation: op(4),
+			maxMessages: 1,
+			visibilityTimeoutMs: 20,
+		});
+		await queue.dequeue({
+			operation: op(5),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		await queue.dequeue({
+			operation: op(6),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		clock = 1010;
+		const first = await queue.inspectExhausted();
+		if (first.status !== "available" || !first.nextPage)
+			throw Error("missing page");
+		expect(first.messages).toMatchObject([{ messageId: "m2" }]);
+		clock = 1020;
+		expect(await queue.inspectExhausted(first.nextPage)).toMatchObject({
+			status: "available",
+			observedAtMs: 1010,
+			messages: [{ messageId: "m3" }],
+			nextPage: null,
+		});
+		expect(await queue.inspectExhausted()).toMatchObject({
+			status: "available",
+			observedAtMs: 1020,
+			messages: [{ messageId: "m1" }],
+		});
+		await queue.enqueue(message(7, "new"));
+		expect(await queue.inspectExhausted(first.nextPage)).toEqual({
+			status: "changed",
+		});
 	});
 
 	it("withholds exhausted payloads if read authorization is revoked before disclosure", async () => {
@@ -584,6 +658,14 @@ describe("atomic durable queue provider", () => {
 		});
 		revokeOnClock = true;
 		expect(await queue.inspectExhausted()).toEqual({ status: "unknown" });
+		authorized = true;
+		expect(
+			await queue.inspectExhausted({
+				afterMessageId: "m1",
+				revision: 0,
+				observedAtMs: clock,
+			}),
+		).toEqual({ status: "unknown" });
 	});
 
 	it("reports unknown if the queue changes before an inspection is disclosed", async () => {

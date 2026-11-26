@@ -1207,5 +1207,5 @@ idempotent destination and verify its receipt; an unknown destination or queue
 outcome requires reconciliation. Price the destination and the additional queue
 reads and writes when supplying the financial model.
 
-Owner inspection supports a message-ID cursor for advancing past blocked
-exhausted messages. Compare revisions across pages and restart when required.
+Owner inspection supports snapshot-bound pagination for advancing past blocked
+exhausted messages. A changed queue returns `changed` and requires a restart.
