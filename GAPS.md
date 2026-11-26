@@ -368,50 +368,6 @@ Historical remediation instructions: [Linear archive](https://linear.app/quickde
 
 Historical remediation instructions: [Linear archive](https://linear.app/quickdeploy-ai/document/rem-022-historical-remediation-plan-c20e73800c90).
 
-### Historical open-question ledger
-(heading must be exactly this text — the repo's slugifier produces the anchor `#historical-open-question-ledger`, which every re-pointed link below targets)
-- Intro paragraph (2-3 sentences): the 2026-06-22 competitor gap analysis (../competitors/gap-analysis.md) cited Plan 9's then-numbered open questions by stable IDs (Q3-Q23); the list above is the *current* unnumbered set. This ledger preserves the historical IDs as permanent citation targets. IDs are frozen — never renumber; IDs not cited by any surviving cross-reference (Q1-Q2, Q4-Q9, Q11, Q13-Q14) are deliberately not reconstructed.
-- Markdown table `| ID | Question (2026-06-22 snapshot) | Status | Resolution |` with exactly these 12 rows (all link targets verified to exist as headings):
-  - Q3 | Matching algorithm choice | Resolved | [ADR-0033](./adr/01-architecture-core.md#adr-0033)
-  - Q10 | wasm host-of-record for prod | Resolved | [ADR-0031](./adr/01-architecture-core.md#adr-0031)
-  - Q12 | Non-TS IfC parity | Still open | carried forward as the "IfC-by-default fidelity for non-TS languages" bullet above ([Plan 21](./authoring-resources-wiring.md#plan-21))
-  - Q15 | App-data schema evolution & migration | Resolved | [Plan 32](./data-plane.md#plan-32) / [ADR-0032](./adr/03-data-plane.md#adr-0032)
-  - Q16 | Cross-Camp stateful consistency | Resolved | [ADR-0040](./adr/01-architecture-core.md#adr-0040)
-  - Q17 | Local-dev fidelity + dev dashboard | Resolved | [ADR-0042](./adr/07-portability-extensibility.md#adr-0042)
-  - Q18 | Billing / quota / runaway-spend | Resolved | [ADR-0039](./adr/02-identity-security.md#adr-0039)
-  - Q19 | Migration / onboarding | Resolved | [ADR-0041](./adr/07-portability-extensibility.md#adr-0041)
-  - Q20 | Multi-Yard federation | Resolved (clarified: v1 single-Yard; the Junction designed) | [ADR-0043](./adr/07-portability-extensibility.md#adr-0043)
-  - Q21 | Reactive / live-query model | Resolved | [Plan 32](./data-plane.md#plan-32) / [ADR-0050](./adr/03-data-plane.md#adr-0050)
-  - Q22 | Vector & full-text search | Resolved | [ADR-0034](./adr/03-data-plane.md#adr-0034)
-  - Q23 | Custom domains / multi-cloud ingress | Resolved | [ADR-0035](./adr/07-portability-extensibility.md#adr-0035)
-  IMPORTANT: Q21 must link ADR-0050, NOT ADR-0029 — gap-analysis prose mentions "ADR-0029" but no `## ADR-0029` heading exists in any docs/design/adr/ theme file; a link to it fails the design-docs lint. Leave the plain-text "ADR-0029" mentions in gap-analysis prose untouched (historical trail, covered by the banners).
-
-FILE 2 — AMEND C:/src/hobo/docs/competitors/gap-analysis.md
-(a) §1 banner: directly under `## 1. Comparison matrix` (line 20), before the Legend line, add a blockquote mirroring §2's existing banner style: "> **Historical snapshot (2026-06-22) — markers not current.** The ◐/✗ cells record the original analysis; capabilities later closed in design are marked ✅ inline in §3/§5 and mapped in the [historical open-question ledger](../design/generated-stack.md#historical-open-question-ledger). Preserved as the reasoning trail, not as current state."
-(b) §C banner + citation: change the §C heading's citation `(competitor-confirmed priorities — see [09 §15–20](../design/generated-stack.md#plan-09))` (line 72) to `(competitor-confirmed priorities — see the [historical open-question ledger](../design/generated-stack.md#historical-open-question-ledger))`, and add a one-line blockquote under it: "> **Historical snapshot** — statuses as of the original analysis; strikethrough+✅ rows were closed later. Current status per ID: the ledger."
-(c) Re-point ONLY the Q-ID / question-number links whose fragment is `#plan-09` to `#historical-open-question-ledger` (path part unchanged): lines 28 [Q3], 31 [Q21], 34 [Q15], 35 [Q17], 36 [Q12], 54 [Q3], 55 [Q10], 56 [Q15], 63 [Q22], 67 [Q23], 69 [Q20], 132 [Q10], 133 [Q15], 134 [Q3], and the footer line 138 `[09](../design/generated-stack.md#plan-09)` (its sentence is about open questions #21–23). In the §C table (lines 75-81), turn each plain `#N` cell (#17, #12, #3, #10, #16, #15, #18) into `[#N](../design/generated-stack.md#historical-open-question-ledger)`. Do NOT retarget line 53's `[09](../design/generated-stack.md#plan-09)` — that one cites Plan 9's conformance gate, not a question ID.
-
-FILE 3 — AMEND C:/src/hobo/docs/competitors/index.md (line 21)
-Retarget `[open questions #21–23](../design/generated-stack.md#plan-09)` to `../design/generated-stack.md#historical-open-question-ledger` and append "(all since resolved — see the ledger)" after the link. index.md correctly has no frontmatter — do not add any.
-
-FILE 4 — AMEND C:/src/hobo/docs/design/data-plane.md (lines 556 [Q16], 601 [Q20]) and C:/src/hobo/docs/design/platform-engineering.md (line 229 [Q20])
-Same mechanical retarget: in those three `[Qn](./generated-stack.md#plan-09)` links, replace fragment `#plan-09` with `#historical-open-question-ledger`. Change nothing else on those lines.
-
-**Acceptance**
-
-Checklist (run from C:/src/hobo):
-1. `pnpm run docs:okf` — passes (no new docs created; both amended docs/ files already carry OKF frontmatter with non-empty `type:`; competitors/index.md must remain frontmatter-free).
-2. `pnpm run docs:design-lint` — passes; this is the gate that proves the new `#historical-open-question-ledger` anchor resolves (scripts/check-design-docs.ts slugifies headings via lowercase + strip non-[a-z0-9 space -] + spaces→hyphens, so the heading `### Historical open-question ledger` yields exactly that anchor) and that all 12 ledger Resolution links hit real `## ADR-XXXX` / `## Plan NN` headings.
-3. `pnpm agent:check -- --staged` — passes with all edits staged.
-4. Traceability gate (docs/design/ touched): `node --import tsx scripts/validate-traceability.ts` — passes. Note: there is NO package.json alias for this; agent:check auto-triggers it only for docs/design/adr/**, docs/design/traceability.md, docs/design/index.md, or docs/design/proofs/** changes (scripts/relevant-check-policy.ts line 74), so run it explicitly.
-5. Rot fully purged: `pnpm run search -- -n "\[Q[0-9]+\]\([^)]*#plan-09\)" docs` returns zero matches; `pnpm run search -- -n "#plan-09" docs/competitors` returns only gap-analysis.md line 53 (the conformance-gate citation).
-6. Cross-links updated (complete list): docs/competitors/gap-analysis.md (16 links + 7 §C cells + 2 banners), docs/competitors/index.md line 21, docs/design/data-plane.md lines 556/601, docs/design/platform-engineering.md line 229. No index/hub file needs a NEW link — the ledger is a subsection of an already-indexed doc (docs/design/index.md already links generated-stack.md).
-7. Diff hygiene: `git diff --stat` shows exactly 4 files changed, no ADR theme files touched, no heading in generated-stack.md above the new h3 modified.
-
-**Guardrails**
-
-Documentation-only; no code, no requirement changes, and the Nomad→wasmCloud pivot is untouched. Do NOT create a new ADR or edit any file under docs/design/adr/ (this is traceability repair, not a decision; existing ADR IDs are never renumbered). Do NOT renumber, reorder, reword, or delete the current unnumbered "Open design questions" bullets — the ledger sits after them. Do NOT reconstruct uncited historical IDs (Q1-Q2, Q4-Q9, Q11, Q13-Q14) or invent question text beyond what gap-analysis already records. Do NOT change any ✅/➕/◐/✗ matrix markers or the historical prose in gap-analysis §§2-5 — banners and link retargets only. Do NOT link ADR-0029 anywhere (no such heading exists; docs:design-lint will fail) and do not "fix" the plain-text ADR-0029 mentions. Do NOT retarget plan-semantics links to #plan-09 (gap-analysis line 53, and all intra-generated-stack.md `[9](#plan-09)` links). Keep all links relative `.md` links per repo norms; index.md files stay frontmatter-free.
-
 ### REM-024 (for GAP-016)
 
 - **Finding** (cand-29, L-CONS, LOW, votes uphold/uphold/uphold): The requirements suite and roadmap were moved under docs/archive/ without rewriting relative links: every ../design/* link in docs/archive/requirements/*.md resolves to the nonexistent docs/archive/design/, and both docs also reference design files that no longer exist under any path (adr/08-scope-and-requirements.md, forge-generated-stack.md, roadmap.md#plan-08, per-stage anchors), so intent->requirements->design tracing misroutes at every hop.
