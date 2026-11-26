@@ -150,7 +150,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.equal(scripts.name, "Scripts tests");
 		assert.ok(scripts.needs.includes("route"));
 		assert.ok(scripts.needs.includes("ci-runner-image"));
-		assert.equal(scripts.runsOn, ROUTED);
+		assert.equal(
+			scripts.runsOn,
+			`\${{ github.event_name == 'merge_group' && 'agent37' || (${ROUTED.slice(4, -3)}) }}`,
+		);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
 		assert.match(scripts.if, /github\.event_name == 'merge_group'/u);

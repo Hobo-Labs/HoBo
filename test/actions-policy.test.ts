@@ -659,7 +659,9 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			// release train gates that must drop when the run is cancelled.
 			if (
 				runsOn === "ubuntu-24.04" ||
-				(file === "hobo-ci.yml" && runsOn === mergeGroupTrunkRunsOn)
+				(file === "hobo-ci.yml" &&
+					runsOn === mergeGroupTrunkRunsOn &&
+					lines[start] === "  pr-gate:")
 			) {
 				assert.match(
 					condition,
@@ -671,7 +673,13 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			// A routed job asks for the label the route job chose, which is the
 			// trunk label for trunk events when the fleet is taking jobs.
-			if (runsOn === routedRunsOn) {
+			if (
+				runsOn === routedRunsOn ||
+				(file === "hobo-ci.yml" &&
+					lines[start] === "  scripts-tests:" &&
+					runsOn ===
+						"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}")
+			) {
 				assert.match(
 					block,
 					/^ {4}needs: (route|\[route[,\]])/m,

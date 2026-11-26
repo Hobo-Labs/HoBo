@@ -189,6 +189,9 @@ const TRUNK_RUNS_ON =
 const MERGE_GROUP_TRUNK_RUNS_ON =
 	"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
 
+const MERGE_GROUP_SCRIPTS_RUNS_ON =
+	"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
+
 const ROUTED_RUNS_ON =
 	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
@@ -332,9 +335,13 @@ function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
 	runsOn: string | undefined,
+	file = "",
 ): boolean {
 	const gateRunsOn =
-		runsOn === HOSTED_RUNS_ON || runsOn === MERGE_GROUP_TRUNK_RUNS_ON;
+		runsOn === HOSTED_RUNS_ON ||
+		(runsOn === MERGE_GROUP_TRUNK_RUNS_ON &&
+			file === "hobo-ci.yml" &&
+			/^ {2}(route|pr-gate):$/.test(jobLine));
 	if (/^ {2}route:$/.test(jobLine)) {
 		return (
 			gateRunsOn &&
@@ -792,7 +799,11 @@ function lintWorkflowYaml(
 			jobLine,
 			runsOn,
 		);
-		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
+		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn, file);
+		const mergeGroupScripts =
+			file === "hobo-ci.yml" &&
+			jobLine === "  scripts-tests:" &&
+			runsOn === MERGE_GROUP_SCRIPTS_RUNS_ON;
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -803,6 +814,7 @@ function lintWorkflowYaml(
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			!mergeGroupScripts &&
 			runsOn !== RELEASE_PAGES_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
@@ -821,7 +833,10 @@ function lintWorkflowYaml(
 			);
 		}
 		if (
-			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || depsRoute) &&
+			(runsOn === ROUTED_RUNS_ON ||
+				runsOn === SHARD_RUNS_ON ||
+				mergeGroupScripts ||
+				depsRoute) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -837,6 +852,7 @@ function lintWorkflowYaml(
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
 			runsOn === MERGE_GROUP_TRUNK_RUNS_ON ||
+			mergeGroupScripts ||
 			runsOn === ROUTED_RUNS_ON ||
 			runsOn === SHARD_RUNS_ON ||
 			depsRoute

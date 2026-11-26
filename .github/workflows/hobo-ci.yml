@@ -947,7 +947,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
-    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1269,8 +1269,6 @@ jobs:
     # local run covering that job, and the job was skipped for it.
     needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
-    # GitHub-hosted: it runs no repository code, and on the fleet a superseded
-    # run's gate held the next run until a runner was free.
     runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
