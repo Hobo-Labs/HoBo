@@ -254,6 +254,84 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
+	it("fails closed when a batch fleet pin cannot be verified", () => {
+		const workspace = mkdtempSync(join(tmpdir(), "hobo-fleet-pin-"));
+		try {
+			const action = workflowDocument(
+				readFileSync(".github/actions/route-runner/action.yml", "utf8"),
+			);
+			const steps = asList(asObject(action.runs)?.steps)?.map(asObject) ?? [];
+			const shell = asText(steps.find((step) => step?.id === "route")?.run)
+				?.replace(/^route='\$\{\{.*\}\}'$/mu, "route='fleet'")
+				.replace(
+					/^include_own_run='\$\{\{.*\}\}'$/mu,
+					"include_own_run='false'",
+				)
+				.replace(/^attested='\$\{\{.*\}\}'$/mu, "attested='false'");
+			assert.ok(shell);
+			const actionDir = join(workspace, ".github/actions/route-runner");
+			mkdirSync(actionDir, { recursive: true });
+			mkdirSync(join(workspace, "scripts/ci"), { recursive: true });
+			writeFileSync(
+				join(workspace, "scripts/ci/route-runner.mts"),
+				"process.exitCode = 1;\n",
+			);
+			const output = join(workspace, "output");
+			for (const event of [
+				"merge_group",
+				"pull_request",
+				"workflow_dispatch",
+			]) {
+				writeFileSync(output, "");
+				const child: SpawnSyncReturns<string> = spawnSync(
+					"bash",
+					["-c", shell],
+					{
+						cwd: workspace,
+						encoding: "utf8",
+						env: {
+							PATH: process.env.PATH ?? "",
+							GITHUB_ACTION_PATH: actionDir,
+							GITHUB_WORKSPACE: workspace,
+							GITHUB_OUTPUT: output,
+							GITHUB_EVENT_NAME: event,
+							GITHUB_WORKFLOW_REF:
+								"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+						},
+					},
+				);
+				const result = readFileSync(output, "utf8");
+				if (event === "workflow_dispatch") {
+					assert.equal(child.status, 0, child.stderr);
+					assert.match(result, /^runner=hobo-trunk$/mu);
+				} else {
+					assert.notEqual(child.status, 0, event);
+					assert.doesNotMatch(result, /^runner=/mu);
+				}
+			}
+			writeFileSync(
+				join(workspace, "scripts/ci/route-runner.mts"),
+				'import { appendFileSync } from "node:fs"; appendFileSync(process.env.GITHUB_OUTPUT, "runner=hobo-trunk\\n");',
+			);
+			writeFileSync(output, "");
+			const selected = spawnSync("bash", ["-c", shell], {
+				cwd: workspace,
+				encoding: "utf8",
+				env: {
+					PATH: process.env.PATH ?? "",
+					GITHUB_ACTION_PATH: actionDir,
+					GITHUB_WORKSPACE: workspace,
+					GITHUB_OUTPUT: output,
+					GITHUB_EVENT_NAME: "merge_group",
+				},
+			});
+			assert.equal(selected.status, 0, selected.stderr);
+			assert.match(readFileSync(output, "utf8"), /^runner=hobo-trunk$/mu);
+		} finally {
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	});
+
 	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
 		it(`${workflow} keeps merge-group routing on hosted runners`, () => {
 			const doc = workflowDocument(
