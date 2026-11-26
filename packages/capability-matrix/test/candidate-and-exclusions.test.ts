@@ -1,12 +1,3 @@
-/**
- * Candidate classification, ordering, and the claims that reach no cell.
- *
- * This package exists to stop one specific dishonesty: describing HoBo's own
- * budget or iron as market coverage. Every assertion below is written against
- * that — a bucket that absorbs a caveat, an ordering that lets registration
- * order change a published digest, or an exclusion that drops silently instead
- * of being reported all produce a matrix that *looks* like coverage and is not.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -70,7 +61,6 @@ describe("classifyCandidateBucket", () => {
 	});
 
 	it("puts sponsorship above everything else", () => {
-		// provider-native would describe HoBo's budget as market coverage — which
 		expect(
 			classifyCandidateBucket({
 				realization: "native",
@@ -91,7 +81,6 @@ describe("classifyCandidateBucket", () => {
 	});
 
 	it("treats zero and negative sponsor exposure as no sponsorship", () => {
-		// sponsored, and demoting it would understate real market coverage —
 		for (const sponsorExposureMinorUnits of [0, -1]) {
 			expect(
 				classifyCandidateBucket({
@@ -165,7 +154,6 @@ describe("compareCandidates", () => {
 			candidate({ bucket: "pack", definitionId: "b" }),
 			candidate({ bucket: "substrate", definitionId: "c" }),
 		].sort(compareCandidates);
-		// Strongest coverage first, so a reader of a cell sees the honest answer
 		expect(ranked.map((c) => c.bucket)).toEqual([
 			"native",
 			"pack",
@@ -237,7 +225,6 @@ describe("claims that reach no cell", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ definitions: [bad] }),
 		);
-		// claim would be published as the strongest kind of coverage.
 		const exclusion = matrix.excluded.find(
 			(entry) => entry.definitionId === "bad.realization/v1",
 		);
@@ -264,7 +251,6 @@ describe("claims that reach no cell", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ definitions: [bad] }),
 		);
-		// cell, and saying so is what stops it looking like coverage nobody can
 		expect(
 			matrix.excluded.find((entry) => entry.definitionId === "no.runtime/v1")
 				?.code,
@@ -292,7 +278,6 @@ describe("claims that reach no cell", () => {
 				trustEvidence: TRUST_EVIDENCE,
 			}),
 		);
-		// does cover `oci`, and dropping that would understate coverage.
 		expect(
 			matrix.excluded.find(
 				(entry) => entry.definitionId === "mixed.runtimes/v1",
@@ -352,7 +337,6 @@ describe("candidate availability", () => {
 		for (const cell of matrix.cells) {
 			for (const found of cell.candidates) {
 				const codes = found.unavailability.map((reason) => reason.code);
-				// coverage claim cannot tolerate.
 				expect([...codes].sort()).toEqual(codes);
 			}
 		}
@@ -362,7 +346,6 @@ describe("candidate availability", () => {
 		const matrix = generateCapabilityMatrix(matrixInput());
 		for (const cell of matrix.cells) {
 			for (const found of cell.candidates) {
-				// two could disagree, a cell could report coverage while naming the
 				expect(found.available, found.definitionId).toBe(
 					found.unavailability.length === 0,
 				);
@@ -393,7 +376,6 @@ describe("candidate availability", () => {
 			matrixInput({ nowMs: NOW + 5 * DAY }),
 		);
 		const key = cellKey("kv", "serverless_faas");
-		// availability changed. Removing it would hide that coverage was lost.
 		expect(cellOf(before, key)?.buckets.native.available).toContain(
 			"upstash.claimable-redis/v1",
 		);
@@ -410,7 +392,6 @@ describe("candidate availability", () => {
 
 describe("bucket membership", () => {
 	it("never lists one definition as both available and unavailable in a bucket", () => {
-		// columns would let a reader count the same product as coverage and as a
 		const twice = definition({
 			id: "twice.claiming/v1",
 			providerId: "twice",
@@ -482,7 +463,6 @@ describe("determinism", () => {
 	it("is byte-identical across two runs over the same input", () => {
 		const a = generateCapabilityMatrix(matrixInput());
 		const b = generateCapabilityMatrix(matrixInput());
-		// randomness — so a coverage claim can be re-derived years later and
 		expect(a.digest).toBe(b.digest);
 		expect(JSON.stringify(a)).toBe(JSON.stringify(b));
 	});
@@ -492,7 +472,6 @@ describe("determinism", () => {
 		const reversed = generateCapabilityMatrix(
 			matrixInput({ definitions: [...matrixInput().definitions].reverse() }),
 		);
-		// digest, two identical deployments would publish different coverage
 		expect(reversed.digest).toBe(forward.digest);
 	});
 

@@ -1,14 +1,3 @@
-/**
- * Trust-gate reporting, exclusion ordering, and the cell accessors.
- *
- * The matrix's whole value is that it can be re-derived and compared. That
- * makes ordering a correctness property rather than a cosmetic one: any list
- * whose order depends on input order makes two identical catalogs publish two
- * different digests, and a coverage claim that cannot be diffed cannot be
- * audited. The trust assertions guard the other half — a gate failure reported
- * as a freshness problem sends an operator to renew evidence that was never
- * the problem.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -113,7 +102,6 @@ describe("trust gate reporting", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ hoboOperatedProviderIds: undefined }),
 		);
-		// defaulting the other way would understate market coverage everywhere.
 		const substrateIds = matrix.cells.flatMap((cell) => [
 			...cell.buckets.substrate.available,
 			...cell.buckets.substrate.unavailable,
