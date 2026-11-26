@@ -117,9 +117,9 @@ Each subcommand takes exactly the flags its usage line names, plus `--format`,
 
 | Group | Subcommands |
 |---|---|
-| Freight | `freight record`, `freight list`, `freight show`, `freight yank`, `freight approve` |
+| Freight | `freight record`, `freight list`, `freight show`, `freight timeline`, `freight yank`, `freight approve` |
 | Sources | `source define`, `source list`, `source poll` |
-| Pipelines | `pipeline apply`, `pipeline show`, `pipeline list` |
+| Pipelines | `pipeline apply`, `pipeline show`, `pipeline graph`, `pipeline list` |
 | Windows | `window define`, `window list`, `window override` |
 | Promotion | `promote`, `status`, `logs`, `rollback`, `reconcile`, `preview create`, `preview list`, `verify show`, `metrics` |
 | Agents | `agent token`, `agent enroll`, `agent approve-key`, `agent accept`, `agent run`, `agent revoke` |
@@ -154,6 +154,7 @@ hobo deploy
 hobo deploy freight record --file freight-manifest.json
 hobo deploy freight list --bindle hobo-ci-relay --limit 20
 hobo deploy freight show hobo-ci-relay@1
+hobo deploy freight timeline hobo-ci-relay@1
 hobo deploy freight yank hobo-ci-relay@1 --reason cve-2026-0001
 hobo deploy freight approve hobo-ci-relay@1 --camp hobo-ci-relay/hobo-ci-relay/production --reason hotfix --ttl-ms 3600000
 hobo deploy source define --file packages/ci-vercel/deploy/delivery.ts
@@ -162,6 +163,7 @@ hobo deploy source poll hobo-ci-relay
 hobo deploy pipeline apply --file packages/ci-vercel/deploy/delivery.ts --yard packages/ci-vercel/deploy/yard.ts
 hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
 hobo deploy pipeline show hobo-ci-relay
+hobo deploy pipeline graph hobo-ci-relay
 hobo deploy pipeline list
 hobo deploy window define --file change-window.json
 hobo deploy window list

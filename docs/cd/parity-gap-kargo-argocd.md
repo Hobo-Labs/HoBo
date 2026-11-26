@@ -94,10 +94,10 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 | **Promotion template + steps** | Promotion saga + typed hooks | **met-differently** | No `git-clone`, `git-commit`, `argocd-update`, OCI copy, Helm, etc. Hooks: `RUNBOOK`, `NOTIFY`, `SUITE` only (ADR-0182 D4; `packages/cd/src/promotion/README.md`). |
 | **Stage / promotion variables + `${{ }}` expressions** | — | **intentional-gap** | Kargo Stage `spec.vars` and promotion expressions. HoBo has no expression runtime (ADR-0182 D4; rejected in ADR-0182 consequences). |
 | **PromotionTasks (reusable templates)** | — | **intentional-gap** | Kargo shared task CRDs. HoBo uses typed hooks + Delta saga instead. |
-| **Promotion UI / graph** | `GET /v1/cd/pipelines/*` graph API | **partial** | Service tests show per-node Freight (`packages/cd/test/service/control-api.test.ts`). No first-class promotion graph UI like Kargo's. |
+| **Promotion UI / graph** | `GET /v1/cd/pipelines/*` + `hobo deploy pipeline graph` | **partial** | Service tests + CLI graph command (P7); no embedded UI like Kargo's. |
 | **argocd-update / argocd-wait steps** | Git commit + publisher `observe()` | **partial** | Promotion ends in Git publish and **read-only** observation (`PublisherPort`); HoBo never calls Argo's write API (`packages/cd-gitops/README.md`). Does not mirror imperative `Application.operation` updates or multi-app label selection. |
 | **authorized-stage annotation** | Delivery authz at promote gate | **intentional-gap** | Kargo requires `kargo.akuity.io/authorized-stage` on Applications. HoBo authorizes `CdAction`s via `@hobo/cd/authz` and policy packs, not Application annotations. |
-| **Freight timeline UI** | `GET /v1/cd/freight/{id}` | **pass** | Service test covers timeline ordering. |
+| **Freight timeline UI** | `GET /v1/cd/freight/{id}` + `hobo deploy freight timeline` | **pass** | Service test + CLI timeline command (P7). |
 
 ### Kargo gaps that are intentional (document, do not “parity” blindly)
 
@@ -202,7 +202,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row — **implemented** (`auto-promotion.ts`, `promoteByOrigin`, `holds.test.ts`) |
 | **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row — **implemented** (`origin_slots`, `origin-slots.ts`) |
 | **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row — **implemented** (ConfigMap `sync-wave: "0"`) |
-| **P7** | CLI/MCP: promotion graph + freight timeline first-class | Promotion UI partial |
+| **P7** | CLI: `pipeline graph` + `freight timeline` | Promotion UI partial — **implemented** (CLI commands) |
 | **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
 | **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows |
 
