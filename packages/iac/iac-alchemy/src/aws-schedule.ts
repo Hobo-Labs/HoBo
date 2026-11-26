@@ -10,18 +10,38 @@ import type {
 } from "./bindle.js";
 import { AlchemyIacError } from "./plan.js";
 
+const apply = Reflect.apply;
+const ownKeys = Reflect.ownKeys;
+const descriptorOf = Object.getOwnPropertyDescriptor;
+const defineProperty = Object.defineProperty;
+const getPrototype = Object.getPrototypeOf;
+const hasOwn = Object.hasOwn;
+const keysOf = Object.keys;
+const freeze = Object.freeze;
+const create = Object.create;
+const objectPrototype = Object.prototype;
+const isProxy = types.isProxy;
+const execRegex = RegExp.prototype.exec;
+const stringIncludes = String.prototype.includes;
+const stringSlice = String.prototype.slice;
+const byteLength = Buffer.byteLength;
+const parseNumber = Number;
+
 export interface AwsStaticScheduleOptions {
 	readonly roleArn: string;
 	readonly input: string;
 }
 
-/* oxlint-disable anti-slop/no-runtime-typeof, eslint/no-control-regex -- SAFETY: caller-owned schedule data and SQS message characters are validated at the provider boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply, eslint/no-control-regex -- SAFETY: caller-owned data is validated using captured intrinsics before registration. */
 function cronField(value: string | undefined, max: number): boolean {
 	if (value === "*") return true;
 	if (value === undefined) return false;
-	const step = /^\*\/([1-9][0-9]?)$/u.exec(value);
-	if (step !== null) return Number(step[1]) <= max;
-	return /^(0|[1-9][0-9]?)$/u.test(value) && Number(value) <= max;
+	const step = apply(execRegex, /^\*\/([1-9][0-9]?)$/u, [value]);
+	if (step !== null) return parseNumber(step[1]) <= max;
+	return (
+		apply(execRegex, /^(0|[1-9][0-9]?)$/u, [value]) !== null &&
+		parseNumber(value) <= max
+	);
 }
 
 function awsCron(input: AlchemyPrimitiveInput<unknown, unknown>): string {
@@ -30,9 +50,9 @@ function awsCron(input: AlchemyPrimitiveInput<unknown, unknown>): string {
 	const descriptor =
 		annotation === undefined
 			? undefined
-			: Object.getOwnPropertyDescriptor(annotation.config, "cron");
+			: descriptorOf(annotation.config, "cron");
 	const expression =
-		descriptor !== undefined && Object.hasOwn(descriptor, "value")
+		descriptor !== undefined && hasOwn(descriptor, "value")
 			? descriptor.value
 			: undefined;
 	if (
@@ -41,13 +61,30 @@ function awsCron(input: AlchemyPrimitiveInput<unknown, unknown>): string {
 		annotation.option !== "cadence" ||
 		typeof expression !== "string" ||
 		expression.length > 100 ||
-		Object.keys(annotation.config).length !== 1
+		keysOf(annotation.config).length !== 1
 	)
 		throw new AlchemyIacError(
 			"PRIMITIVE_UNSUPPORTED",
 			"a single bounded cadence is required",
 		);
-	const fields = expression.split(/\s+/u);
+	const fields: string[] = [];
+	let start = 0;
+	for (let index = 0; index <= expression.length; index++) {
+		const character = expression[index];
+		if (
+			character === undefined ||
+			apply(execRegex, /\s/u, [character]) !== null
+		) {
+			if (index > start)
+				defineProperty(fields, fields.length, {
+					value: apply(stringSlice, expression, [start, index]),
+					enumerable: true,
+					writable: true,
+					configurable: true,
+				});
+			start = index + 1;
+		}
+	}
 	if (
 		fields.length !== 5 ||
 		!cronField(fields[0], 59) ||
@@ -68,73 +105,113 @@ export function awsStaticScheduleMappers<Entrypoint, Requirements>(
 	base = awsBindleMappers<Entrypoint, Requirements>(),
 	options: Readonly<Record<string, AwsStaticScheduleOptions>>,
 ) {
+	if (typeof base !== "object" || base === null || isProxy(base))
+		throw new AlchemyIacError(
+			"PRIMITIVE_UNSUPPORTED",
+			"invalid AWS mapper set",
+		);
+	const basePrototype = getPrototype(base);
+	const baseNames = ownKeys(base);
+	if (
+		(basePrototype !== objectPrototype && basePrototype !== null) ||
+		baseNames.length > 256
+	)
+		throw new AlchemyIacError(
+			"PRIMITIVE_UNSUPPORTED",
+			"invalid AWS mapper set",
+		);
+	const merged = create(null);
+	for (let index = 0; index < baseNames.length; index++) {
+		const name = baseNames[index];
+		if (typeof name !== "string" || name === "schedule")
+			throw new AlchemyIacError(
+				"PRIMITIVE_UNSUPPORTED",
+				"invalid AWS mapper name",
+			);
+		const field = descriptorOf(base, name);
+		if (!field || !field.enumerable || !hasOwn(field, "value"))
+			throw new AlchemyIacError(
+				"PRIMITIVE_UNSUPPORTED",
+				"AWS mappers must be own data",
+			);
+		defineProperty(merged, name, {
+			value: field.value,
+			enumerable: true,
+			configurable: true,
+			writable: true,
+		});
+	}
 	if (
 		typeof options !== "object" ||
 		options === null ||
-		types.isProxy(options) ||
-		Object.getPrototypeOf(options) !== Object.prototype ||
-		Reflect.ownKeys(options).length > 256
+		isProxy(options) ||
+		getPrototype(options) !== objectPrototype ||
+		ownKeys(options).length > 256
 	)
 		throw new AlchemyIacError(
 			"PRIMITIVE_UNSUPPORTED",
 			"invalid static schedule options",
 		);
-	const schedules: Record<string, AwsStaticScheduleOptions> =
-		Object.create(null);
-	for (const name of Reflect.ownKeys(options)) {
+	const schedules: Record<string, AwsStaticScheduleOptions> = create(null);
+	const optionNames = ownKeys(options);
+	for (let index = 0; index < optionNames.length; index++) {
+		const name = optionNames[index];
 		if (typeof name !== "string" || name.length === 0 || name.length > 200)
 			throw new AlchemyIacError(
 				"PRIMITIVE_UNSUPPORTED",
 				"invalid static schedule name",
 			);
-		const field = Object.getOwnPropertyDescriptor(options, name);
+		const field = descriptorOf(options, name);
 		const value =
-			field?.enumerable && Object.hasOwn(field, "value")
-				? field.value
-				: undefined;
+			field?.enumerable && hasOwn(field, "value") ? field.value : undefined;
 		if (
 			value === null ||
 			typeof value !== "object" ||
-			types.isProxy(value) ||
-			Object.getPrototypeOf(value) !== Object.prototype ||
-			Reflect.ownKeys(value).length !== 2
+			isProxy(value) ||
+			getPrototype(value) !== objectPrototype ||
+			ownKeys(value).length !== 2
 		)
 			throw new AlchemyIacError(
 				"PRIMITIVE_UNSUPPORTED",
 				"invalid static schedule options",
 			);
-		const role = Object.getOwnPropertyDescriptor(value, "roleArn");
-		const input = Object.getOwnPropertyDescriptor(value, "input");
+		const role = descriptorOf(value, "roleArn");
+		const input = descriptorOf(value, "input");
 		if (
 			!role ||
 			!input ||
 			!role.enumerable ||
 			!input.enumerable ||
-			!Object.hasOwn(role, "value") ||
-			!Object.hasOwn(input, "value") ||
+			!hasOwn(role, "value") ||
+			!hasOwn(input, "value") ||
 			typeof role.value !== "string" ||
 			role.value.length > 2048 ||
-			!/^arn:(aws|aws-us-gov|aws-cn):iam::[0-9]{12}:role\/[A-Za-z0-9+=,.@_/-]+$/u.test(
-				role.value,
-			) ||
+			apply(
+				execRegex,
+				/^arn:(aws|aws-us-gov|aws-cn):iam::[0-9]{12}:role\/[A-Za-z0-9+=,.@_/-]+$/u,
+				[role.value],
+			) === null ||
 			typeof input.value !== "string" ||
 			input.value.length === 0 ||
 			input.value.length > 65_536 ||
-			/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ud800-\udfff\ufffe\uffff]/u.test(
-				input.value,
-			) ||
-			Buffer.byteLength(input.value, "utf8") > 65_536
+			apply(
+				execRegex,
+				/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ud800-\udfff\ufffe\uffff]/u,
+				[input.value],
+			) !== null ||
+			apply(stringIncludes, input.value, ["<aws.scheduler."]) ||
+			byteLength(input.value, "utf8") > 65_536
 		)
 			throw new AlchemyIacError(
 				"PRIMITIVE_UNSUPPORTED",
 				"invalid static schedule role or input",
 			);
-		schedules[name] = Object.freeze({
+		schedules[name] = freeze({
 			roleArn: role.value,
 			input: input.value,
 		});
 	}
-	Object.freeze(schedules);
+	freeze(schedules);
 	const schedule: AlchemyPrimitiveMapper<Entrypoint, Requirements, Providers> =
 		{
 			resourceTypes: ["AWS.Scheduler.Schedule"],
@@ -145,7 +222,14 @@ export function awsStaticScheduleMappers<Entrypoint, Requirements>(
 				"Static UTC queue cadence only; the dynamic scheduler port and queue runtime are not bound. The host must authenticate the execution role and IAM scope.",
 			],
 			validateGraph(graph) {
-				for (const name of Object.keys(schedules)) {
+				const names = keysOf(schedules);
+				for (let index = 0; index < names.length; index++) {
+					const name = names[index];
+					if (name === undefined)
+						throw new AlchemyIacError(
+							"PRIMITIVE_UNSUPPORTED",
+							"schedule name is unavailable",
+						);
 					if (graph.nodes[name]?.declaration.kind !== "schedule")
 						throw new AlchemyIacError(
 							"PRIMITIVE_UNSUPPORTED",
@@ -155,12 +239,12 @@ export function awsStaticScheduleMappers<Entrypoint, Requirements>(
 			},
 			validate(input) {
 				awsCron(input);
-				const names = Object.keys(input.dependencyDeclarations);
+				const names = keysOf(input.dependencyDeclarations);
 				if (
 					names.length !== 1 ||
 					names[0] === undefined ||
 					input.dependencyDeclarations[names[0]]?.kind !== "queue" ||
-					!Object.hasOwn(schedules, input.declaration.name)
+					!hasOwn(schedules, input.declaration.name)
 				)
 					throw new AlchemyIacError(
 						"PRIMITIVE_UNSUPPORTED",
@@ -168,7 +252,7 @@ export function awsStaticScheduleMappers<Entrypoint, Requirements>(
 					);
 			},
 			build(input) {
-				const name = Object.keys(input.dependencies)[0];
+				const name = keysOf(input.dependencies)[0];
 				const queue = name === undefined ? undefined : input.dependencies[name];
 				const settings = schedules[input.declaration.name];
 				if (
@@ -197,6 +281,13 @@ export function awsStaticScheduleMappers<Entrypoint, Requirements>(
 				});
 			},
 		};
-	return Object.freeze({ ...base, schedule });
+	defineProperty(merged, "schedule", {
+		value: schedule,
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	});
+	// SAFETY: every base field was copied as own data and schedule is the checked mapper above.
+	return freeze(merged) as typeof base & { readonly schedule: typeof schedule };
 }
-/* oxlint-enable anti-slop/no-runtime-typeof, eslint/no-control-regex */
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply, eslint/no-control-regex */

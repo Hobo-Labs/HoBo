@@ -1029,6 +1029,10 @@ supports wildcard day and weekday fields, and numeric, wildcard or step minute,
 hour and month fields. It rejects other cron
 forms before registering resources. Supply a nonempty SQS message body and an
 existing Scheduler execution role for each declared schedule.
+Message bodies containing Scheduler's `<aws.scheduler.` substitution prefix are
+rejected so a configured body remains literal.
+The mapper composes with an AWS mapper set whose entries are own data properties
+and which does not already define a schedule mapper.
 
 ```ts
 import { bindle, cadence } from "@hobo/bindles";

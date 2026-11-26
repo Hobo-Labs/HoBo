@@ -147,6 +147,7 @@ describe("static AWS queue schedules", () => {
 		"",
 		"\u0000",
 		"\ud800",
+		"<aws.scheduler.scheduled-time>",
 		"a".repeat(65_537),
 	])("rejects invalid queue message bodies", (input) => {
 		expect(() =>
@@ -169,5 +170,44 @@ describe("static AWS queue schedules", () => {
 			awsStaticScheduleMappers(awsBindleMappers(), settings),
 		).toThrow();
 		expect(reads).toBe(0);
+	});
+
+	it("rejects accessor-backed mapper sets without invoking them", () => {
+		let reads = 0;
+		const base = { ...awsBindleMappers() };
+		Object.defineProperty(base, "queue", {
+			enumerable: true,
+			get() {
+				reads++;
+				throw new Error("unexpected mapper getter");
+			},
+		});
+		expect(() => awsStaticScheduleMappers(base, {})).toThrow(
+			"PRIMITIVE_UNSUPPORTED",
+		);
+		expect(reads).toBe(0);
+	});
+
+	it("does not let later regular-expression mutation bypass role validation", () => {
+		const base = awsBindleMappers();
+		const original = RegExp.prototype.exec;
+		const first: [string] = ["forged"];
+		const forged: RegExpExecArray = Object.assign(first, {
+			index: 0,
+			input: "invalid",
+		});
+		let acceptedInvalidRole = false;
+		try {
+			RegExp.prototype.exec = () => forged;
+			try {
+				awsStaticScheduleMappers(base, {
+					tick: { roleArn: "invalid", input: "tick" },
+				});
+				acceptedInvalidRole = true;
+			} catch {}
+		} finally {
+			RegExp.prototype.exec = original;
+		}
+		expect(acceptedInvalidRole).toBe(false);
 	});
 });
