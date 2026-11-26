@@ -130,6 +130,10 @@
 		"./aws/http-server": {
 			"types": "./dist/aws-http-server.d.ts",
 			"default": "./dist/aws-http-server.js"
+		},
+		"./aws/queue-store": {
+			"types": "./dist/aws-queue-atomic-store.d.ts",
+			"default": "./dist/aws-queue-atomic-store.js"
 		}
 	},
 	"dependencies": {

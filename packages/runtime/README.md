@@ -595,8 +595,9 @@ and disclosure, and reports an uncertain outcome when a call times out, access
 is denied, or a response cannot be trusted. Work that outlives a timeout keeps
 its per-host capacity slot until it settles; a repeated in-flight operation is
 not dispatched again by that host. Deadline observation and the in-flight guard
-use captured intrinsics; result variants have no inherited `then` property. The provider must durably bind operation IDs
-to exact requests, fence leases, and supply idempotent replay across hosts and
+use captured intrinsics; result variants have no inherited `then` property. The
+provider must durably bind operation IDs to exact requests, fence leases, and
+supply idempotent replay across hosts and
 restarts. The host creator must authenticate and scope the queue binding, attest
 the limits, supply a trusted clock and authorization callback, and bound the
 number of host instances. A synchronous blocked callback cannot be interrupted
@@ -606,9 +607,20 @@ The host does not itself implement or map a cloud queue.
 
 The internal atomic queue transition function records bounded operation receipts,
 message idempotency using canonical request fingerprints, lease generations,
-and explicit capacity, identifier exhaustion, and delivery
-exhaustion outcomes. Completed and exhausted messages remain retained; there is
+and explicit capacity, identifier exhaustion, and delivery exhaustion outcomes. Completed and exhausted messages remain retained; there is
 no compaction or dead-letter operation yet, so a finite queue eventually requires
 operator reconciliation. The transition requires validated inputs, a monotonic
-trusted clock, and an atomic durable state owner. It is not a queue provider until
-those pieces are connected and persisted.
+trusted clock, and an atomic durable state owner. The provider below supplies
+the storage connection.
+
+`createAtomicDurableQueue` from `@hobo/runtime/atomic-durable-queue` connects the
+transition function to an injected atomic store. The store must provide durable,
+linearizable reads and compare-and-swap over one exclusively owned, epoch-fenced
+record. The provider reconstructs state from a versioned log, checks its revision
+and declared limits, and returns unknown on an ambiguous write. All writers must
+use the same monotonic clock. The log retains at most 512 state-changing operations
+and 256 KiB for the lifetime of the record; it has no compaction, and returns
+unknown when full. Completed or exhausted messages remain retained. The storage
+owner and trusted deployment must fence old writers and preserve the record
+across restarts; deleting it destroys receipts and idempotency history. The log
+version must change when replay semantics change.
