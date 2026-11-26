@@ -1071,6 +1071,26 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			expect((await source.fetch(new Request("https://app.test"))).status).toBe(
 				503,
 			);
+			clock = 10000;
+			expect(await reopenedQueue.reclaimCompleted()).toMatchObject({
+				status: "reclaimed",
+				reclaimedMessages: 1,
+			});
+			const afterReclamation = createAtomicDurableQueue({
+				store: atomic,
+				limits: bounds,
+				now,
+			});
+			expect(
+				await afterReclamation.enqueue({
+					operation: { id: "v1.20000.abcdefghijklmn08", expiresAtMs: 20000 },
+					message: {
+						idempotencyKey: "job",
+						body: new Uint8Array([1, 2]),
+						attributes: [],
+					},
+				}),
+			).toMatchObject({ status: "committed", value: { messageId: "m3" } });
 		},
 		30000,
 	);

@@ -83,8 +83,17 @@ export type AtomicQueueCompactionOutcome =
 	| { readonly status: "compacted"; readonly prunedReceipts: number }
 	| { readonly status: "empty" }
 	| { readonly status: "unknown" };
+export type AtomicQueueReclamationOutcome =
+	| {
+			readonly status: "reclaimed";
+			readonly reclaimedMessages: number;
+			readonly prunedReceipts: number;
+	  }
+	| { readonly status: "empty" }
+	| { readonly status: "unknown" };
 export interface AtomicDurableQueue extends DurableQueue {
 	compact(): Promise<AtomicQueueCompactionOutcome>;
+	reclaimCompleted(): Promise<AtomicQueueReclamationOutcome>;
 }
 export interface AtomicDurableQueueOptions {
 	readonly store: AtomicQueueStore;
@@ -103,6 +112,10 @@ const identityProxy = types.isProxy;
 const identityDescriptor = Object.getOwnPropertyDescriptor;
 const identityOwnKeys = Reflect.ownKeys;
 const identityHasOwn = Object.hasOwn;
+const ReclamationSet = Set;
+const reclamationAdd = Set.prototype.add;
+const reclamationHas = Set.prototype.has;
+const reclamationArray = Array.isArray;
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: the identity is obtained only from a private factory registry. */
 export function inspectAtomicDurableQueue(
 	value: unknown,
@@ -248,7 +261,9 @@ export function createAtomicDurableQueue(
 			return uncertain(op);
 		}
 	};
-	const compact = async (): Promise<AtomicQueueCompactionOutcome> => {
+	const checkpoint = async (
+		reclaim: boolean,
+	): Promise<AtomicQueueReclamationOutcome> => {
 		try {
 			const loaded = await readState();
 			if (loaded === undefined) return outcome({ status: "unknown" });
@@ -260,17 +275,51 @@ export function createAtomicDurableQueue(
 				!isSafe(loaded.revision + 1)
 			)
 				return outcome({ status: "unknown" });
-			const bytes = encodeAtomicQueueCheckpoint(loaded.state, current, limits);
+			const referenced = new ReclamationSet<string>();
+			if (reclaim) {
+				for (let index = 0; index < loaded.state.receipts.length; index++) {
+					const receipt = loaded.state.receipts[index];
+					if (receipt === undefined) return outcome({ status: "unknown" });
+					if (
+						receipt.expiresAtMs <= current ||
+						receipt.result.status !== "committed"
+					)
+						continue;
+					const value = receipt.result.value;
+					if (reclamationArray(value)) {
+						for (let position = 0; position < value.length; position++) {
+							const delivery = value[position];
+							if (delivery === undefined) return outcome({ status: "unknown" });
+							identityApply(reclamationAdd, referenced, [delivery.messageId]);
+						}
+					} else if ("messageId" in value)
+						identityApply(reclamationAdd, referenced, [value.messageId]);
+					else return outcome({ status: "unknown" });
+				}
+			}
+			const retainedMessages: (typeof loaded.state.messages)[number][] = [];
+			for (let index = 0; index < loaded.state.messages.length; index++) {
+				const message = loaded.state.messages[index];
+				if (message === undefined) return outcome({ status: "unknown" });
+				if (
+					!reclaim ||
+					!message.completed ||
+					identityApply(reclamationHas, referenced, [message.messageId])
+				)
+					retainedMessages[retainedMessages.length] = message;
+			}
+			const candidate = { ...loaded.state, messages: retainedMessages };
+			const bytes = encodeAtomicQueueCheckpoint(candidate, current, limits);
 			const checked = decodeAtomicQueueCheckpoint(bytes, limits);
 			if (
 				checked.atMs !== current ||
 				checked.state.nextMessage !== loaded.state.nextMessage ||
 				checked.state.nextLease !== loaded.state.nextLease ||
-				checked.state.messages.length !== loaded.state.messages.length
+				checked.state.messages.length !== candidate.messages.length
 			)
 				return outcome({ status: "unknown" });
-			for (let index = 0; index < loaded.state.messages.length; index++) {
-				const before = loaded.state.messages[index];
+			for (let index = 0; index < candidate.messages.length; index++) {
+				const before = candidate.messages[index];
 				const after = checked.state.messages[index];
 				if (
 					before === undefined ||
@@ -318,7 +367,9 @@ export function createAtomicDurableQueue(
 			const written = await compareAndSwap(loaded.revision, encoded);
 			if (written.status !== "committed") return outcome({ status: "unknown" });
 			return outcome({
-				status: "compacted",
+				status: "reclaimed",
+				reclaimedMessages:
+					loaded.state.messages.length - candidate.messages.length,
 				prunedReceipts: loaded.state.receipts.length - live,
 			});
 		} catch {
@@ -333,7 +384,16 @@ export function createAtomicDurableQueue(
 		}
 	};
 	const port: AtomicDurableQueue = {
-		compact,
+		async compact() {
+			const result = await checkpoint(false);
+			return result.status === "reclaimed"
+				? outcome({
+						status: "compacted" as const,
+						prunedReceipts: result.prunedReceipts,
+					})
+				: result;
+		},
+		reclaimCompleted: () => checkpoint(true),
 		async limits() {
 			return outcome({ status: "available" as const, value: limits });
 		},
