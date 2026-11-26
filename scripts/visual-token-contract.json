@@ -39,19 +39,6 @@
 			{ "selector": ":root", "media": "(prefers-color-scheme: dark)" }
 		]
 	},
-	"control-yard": {
-		"project": "packages/control-yard",
-		"palette": "packages/control-yard/public/yard.css",
-		"format": "css",
-		"contrast": [
-			{ "foreground": "--ink", "background": "--paper" },
-			{ "foreground": "--ink", "background": "--cream" },
-			{ "foreground": "--mute", "background": "--paper" },
-			{ "foreground": "--mute", "background": "--cream" },
-			{ "foreground": "--faint", "background": "--paper" }
-		],
-		"themes": [{ "selector": ":root" }]
-	},
 	"mcp": {
 		"project": "packages/mcp",
 		"palette": "packages/mcp/src/secret-capture/html.ts",

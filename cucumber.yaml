@@ -8,7 +8,6 @@ default:
     - "src/draft/epic-proofs/*/features/**/*.feature"
     - "src/draft/projects/*/features/**/*.feature"
     - "features/fleet/*.feature"
-    - "features/control-yard-core-loop.feature"
     - "features/hobo-ci-parity/*.feature"
   import:
     - "src/draft/epic-proofs/*/features/steps/**/*.ts"
