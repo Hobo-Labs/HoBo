@@ -7,7 +7,6 @@ import {
 
 import { POSTGRES_SERVER_MAJOR, POSTGRES_SERVER_VERSION } from "./image.js";
 
-// public-contract: stable catalog definition identifier.
 export const POSTGRES_PACK_DEFINITION_ID = "hobo.pack.postgres-oci/v1" as const;
 
 export type PostgresCatalogOptions = {

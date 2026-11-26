@@ -16,10 +16,8 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-// public-contract: suite report schema id.
 export const CD_CONFORMANCE_REPORT_SCHEMA = "hobo.cd-conformance-report/v1";
 
-// public-contract: the metric every suite run emits per assertion.
 export const CD_CONFORMANCE_METRIC = "hobo.cd.conformance.assertions";
 
 export type CdAssertionStatus = "pass" | "fail";
