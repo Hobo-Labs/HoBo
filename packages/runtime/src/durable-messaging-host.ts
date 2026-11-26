@@ -1929,6 +1929,128 @@ export function createBindleTopicWitHost(
 	};
 	return Object.freeze({ host, bindings, topic, revoke: policy.revoke });
 }
+export interface BindleTopicProvisionOperation {
+	readonly topic: string;
+	readonly operation: DurableMessagingOperation;
+}
+
+export type BindleTopicProvisionResult =
+	| {
+			readonly status: "complete";
+			readonly completed: readonly BindleTopicProvisionOperation[];
+	  }
+	| { readonly status: "limits-unavailable"; readonly completed: readonly [] }
+	| { readonly status: "capacity-exceeded"; readonly completed: readonly [] }
+	| {
+			readonly status: "incomplete";
+			readonly completed: readonly BindleTopicProvisionOperation[];
+			readonly failed: BindleTopicProvisionOperation;
+			readonly outcome: Exclude<
+				Wit.TopicOutcome,
+				{ readonly tag: "committed" }
+			>;
+			readonly notAttempted: readonly string[];
+	  };
+
+export async function provisionBindleTopics(
+	port: DurableMessaging,
+	bindle: Parameters<typeof compileBindleTopicGrants>[0],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: DurableMessagingWitHostOptions,
+): Promise<BindleTopicProvisionResult> {
+	const grants = compileBindleTopicGrants(bindle);
+	const topics = new Set<string>();
+	for (const binding of grants) {
+		topics.add(binding.grant.topic);
+		for (const subscription of binding.grant.subscriptions)
+			topics.add(subscription.deadLetterTopic);
+	}
+	if (topics.size > DURABLE_MESSAGING_LIMITS.topics)
+		return Object.freeze({
+			status: "capacity-exceeded",
+			completed: Object.freeze([] as const),
+		});
+	const names = [...topics].sort();
+	const provided = array(operations, DURABLE_MESSAGING_LIMITS.topics);
+	if (provided.length !== names.length) return invalid();
+	const byTopic = new Map<string, BindleTopicProvisionOperation>();
+	const identifiers = new Set<string>();
+	for (const entry of provided) {
+		const item = record(entry, ["topic", "operation"]);
+		const topic = text(item.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const op = providerOperation(item.operation);
+		if (!topics.has(topic) || byTopic.has(topic) || identifiers.has(op.id))
+			return invalid();
+		identifiers.add(op.id);
+		byTopic.set(topic, Object.freeze({ topic, operation: op }));
+	}
+	const config = record(
+		options,
+		["authorize", "limitsGrant", "lifecycle"],
+		["timeoutMs", "portMetadataGrant"],
+	);
+	if (typeof config.authorize !== "function" || types.isProxy(config.authorize))
+		return invalid();
+	const authorize = config.authorize;
+	const hostConfig = {
+		...config,
+		authorize: (request: DurableMessagingAuthorization) =>
+			request.method === "ensureTopic" &&
+			request.scope === "topic" &&
+			request.topic !== undefined &&
+			topics.has(request.topic) &&
+			intrinsicApply(authorize, undefined, [request]),
+	};
+	// SAFETY: the host validates the captured capability fields and authority callback.
+	const host = createDurableMessagingWitHost(
+		port,
+		hostConfig as DurableMessagingWitHostOptions,
+	);
+	let bounds: Awaited<ReturnType<DurableMessagingWitHost["limits"]>>;
+	try {
+		bounds = await host.limits();
+	} catch {
+		return Object.freeze({
+			status: "limits-unavailable",
+			completed: Object.freeze([] as const),
+		});
+	}
+	if (
+		names.length > bounds.topics ||
+		names.some(
+			(name) => new TextEncoder().encode(name).length > bounds.nameBytes,
+		)
+	)
+		return Object.freeze({
+			status: "capacity-exceeded",
+			completed: Object.freeze([] as const),
+		});
+	const completed: BindleTopicProvisionOperation[] = [];
+	for (let index = 0; index < names.length; index++) {
+		const name = names[index];
+		if (name === undefined) return invalid();
+		const entry = byTopic.get(name);
+		if (!entry) return invalid();
+		const outcome = await host.ensureTopic({
+			topic: name,
+			operation: witOperation(entry.operation),
+		});
+		if (outcome.tag !== "committed")
+			return Object.freeze({
+				status: "incomplete",
+				completed: Object.freeze([...completed]),
+				failed: entry,
+				outcome,
+				notAttempted: Object.freeze(names.slice(index + 1)),
+			});
+		completed.push(entry);
+	}
+	return Object.freeze({
+		status: "complete",
+		completed: Object.freeze(completed),
+	});
+}
+
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 export { DURABLE_MESSAGING_WIT_INTERFACE };
