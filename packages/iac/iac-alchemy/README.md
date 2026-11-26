@@ -147,9 +147,17 @@ The listener maps to `AWS.Lambda.WebFunction`; it resolves the exact mapped
 resource names from the function environment and fails closed if names or grants
 change. `ApplicationManaged` is also available when the application itself
 authenticates every request. The host must independently enforce IAM and fence
-in-flight AWS operations across grant or resource ownership changes. Incoming
-request bodies are not bounded by this adapter; enforce ingress limits at the
-host. Streaming responses, connectors and session replay are not supported.
+in-flight AWS operations across grant or resource ownership changes. The listener buffers request bodies up to 1 MiB in at most 1,024 chunks before
+dispatch, accepts at most 32 concurrent ingress operations, and returns 408 on
+a 10-second deadline. A timed-out ingress read retains its slot until
+cancellation settles; the application runtime independently retains its slot
+until a timed-out handler settles. These limits do not bound the HTTP parser,
+network connections or upstream services; the host must set its own ingress
+and network limits. The bounded `AwsHttpIngress` model covers dispatch,
+timeout and ingress slot retention with abstract body units; it treats the
+application call as complete when its response promise settles, and assumes the
+parser, timer, cancellation and application behave as modeled. Streaming responses,
+connectors and session replay are not supported.
 The bounded `AwsHttpBindings` model checks request retirement, grant
 revalidation and timed-out capacity. It assumes host verification and transport
 behavior; it does not prove AWS, HTTP parsing, byte limits or liveness.

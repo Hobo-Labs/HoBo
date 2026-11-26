@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as HttpEffect from "effect/http/HttpEffect";
 import * as Scope from "effect/Scope";
+import { createAwsIngressHandler } from "./aws-http-ingress.js";
 import { type AwsHttpSource, inspectAwsHttpSource } from "./aws-http-source.js";
 
 export interface AwsHttpServer {
@@ -51,7 +52,7 @@ export async function startAwsHttpServer(
 	try {
 		const listener = await Effect.runPromise(
 			NodeHttpServer.makeHandler(
-				HttpEffect.fromWebHandler((request) => source.fetch(request)),
+				HttpEffect.fromWebHandler(createAwsIngressHandler(source)),
 				{ scope },
 			),
 		);
