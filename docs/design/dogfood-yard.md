@@ -173,7 +173,7 @@ Source issue: HOBO-476.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/dogfood-yard-ga-handoff-evidence-contract`](../../src/draft/exp-proofs/dx/dogfood-yard-ga-handoff-evidence-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-476-dogfood-yard-ga-handoff`](./proofs/hobo-476-dogfood-yard-ga-handoff/index.md).
+[`proofs/hobo-476-dogfood-yard-ga-handoff`](https://linear.app/quickdeploy-ai/document/hobo-476-proof-record-archived-39daceb5c2f1).
 
 The M4 gate records Dogfood Yard and hosted operations handoff evidence for:
 
