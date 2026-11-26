@@ -1,7 +1,6 @@
 import { isJsonObject, type JsonObject } from "./json.js";
 import type { BindleDefinition, ProviderAnnotation } from "./types.js";
 
-// public-contract: platform annotation option for the continuity trait.
 export const CONTINUITY_OPTION = "continuity" as const;
 
 export const CONTINUITY_TIERS = [

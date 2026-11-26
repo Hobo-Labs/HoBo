@@ -25,7 +25,6 @@ import {
 	TrustedPublisherRecordSchema,
 } from "@hobo/cd";
 
-// public-contract: the delivery module's export names and their record schemas.
 export const DELIVERY_MODULE_EXPORTS = Object.freeze({
 	sources: FreightSourceRecordSchema,
 	pipelines: PipelineRecordSchema,
@@ -35,7 +34,6 @@ export const DELIVERY_MODULE_EXPORTS = Object.freeze({
 	publishers: TrustedPublisherRecordSchema,
 } as const);
 
-// public-contract: the delivery module's topology export names.
 export const DELIVERY_MODULE_TOPOLOGY_EXPORTS = Object.freeze([
 	"yards",
 	"camps",

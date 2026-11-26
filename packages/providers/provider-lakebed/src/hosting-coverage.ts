@@ -47,7 +47,6 @@ export const LAKEBED_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
-/** The I14 coverage document for Lakebed. */
 export const LAKEBED_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "lakebed",
 	resolvedProductIds: LAKEBED_RESOLVED_PRODUCT_IDS,

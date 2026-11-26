@@ -8,7 +8,6 @@ import type {
 	Streamer,
 } from "@hobo/core";
 
-// public-contract: the address `hobo dev` serves the local Camp on.
 export const DEV_LOCAL_URL = "http://localhost:4000";
 
 export const DEV_COLD_BUDGET_MS = 60_000;

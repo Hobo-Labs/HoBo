@@ -86,7 +86,7 @@ export interface ClaimStepRequest {
 	readonly completedPostClaimActions: readonly PostClaimAction[];
 }
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ClaimStepOutcome {
 	readonly caseId: string;
 	readonly itemStatus: ClaimItemStatus;

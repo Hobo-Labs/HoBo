@@ -1,4 +1,3 @@
-// public-contract: schema version for EffectSpec declarations (ADR-0136).
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -7,9 +6,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: stable exported contract literal
 export const EFFECT_SPEC_SCHEMA_VERSION = "hobo.effect-spec/v1";
-// public-contract: schema version for captured EffectManifest exports (ADR-0136).
 export const EFFECT_MANIFEST_SCHEMA_VERSION = "hobo.effect-manifest/v1";
 
 export const PURITY_LEVELS = Object.freeze([
@@ -291,9 +288,7 @@ export function serializeEffectManifest(manifest: EffectManifest): string {
 	return JSON.stringify(manifest, null, 2);
 }
 
-// public-contract: fact name emitted when a contract effect is declared (ADR-0136).
 export const EFFECT_DECLARED_EVENT = "contract.EffectDeclared";
-// public-contract: fact name emitted when a declared effect is invoked (ADR-0136).
 export const EFFECT_INVOKED_EVENT = "contract.EffectInvoked";
 
 export interface EffectCaptureFact {

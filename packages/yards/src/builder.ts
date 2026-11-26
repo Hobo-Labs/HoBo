@@ -67,7 +67,6 @@ export function providerIdOf(provider: ProviderRef): string {
 	);
 }
 
-/** One variadic method per capability slot, generated from `CAPABILITY_SLOTS`. */
 export type YardSlotMethods = {
 	readonly [K in CapabilitySlot]: (...bindings: SlotBinding[]) => YardBuilder;
 };

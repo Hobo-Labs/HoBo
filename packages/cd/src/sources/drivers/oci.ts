@@ -55,7 +55,6 @@ export const OCI_ATTESTATION_TYPES = Object.freeze([
 ] as const);
 export const OCI_REVISION_ANNOTATION = "org.opencontainers.image.revision";
 export const OCI_CREATED_ANNOTATION = "org.opencontainers.image.created";
-/** Bounds per discovery: tag pages, manifest reads for NEWEST_BUILD, referrers. */
 export const OCI_MAX_TAG_PAGES = 50;
 export const OCI_MAX_MANIFEST_READS = 100;
 export const OCI_MAX_REFERRERS = 16;
@@ -130,7 +129,6 @@ export function parseChallenge(
 	};
 }
 
-/** Bytes of a body whose sha256 must equal `digest`: latin1 first, then UTF-8. */
 export function digestBytes(
 	body: string,
 	digest: string,
@@ -429,7 +427,6 @@ function annotation(document: JsonValue, key: string): string | undefined {
 	return text(field(document, "annotations"), key);
 }
 
-/** Statement bytes from a Sigstore bundle (DSSE payload) or a bare statement/envelope. */
 export function attestationOf(
 	bytes: Uint8Array,
 	artifactType: string,
@@ -487,7 +484,6 @@ export function createOciDriver(
 				);
 				for (const candidate of filtered.selected) {
 					const manifest = await registry.manifest(candidate.version);
-					// A tag deleted between list and read is simply not a candidate.
 					if (
 						!manifest.ok &&
 						manifest.reasons[0]?.code === SOURCE_REASON.notFound
@@ -516,8 +512,6 @@ export function createOciDriver(
 			const picked = selectCandidates(subscription, placeholders, input.cursor);
 			const artifacts = [];
 			for (const candidate of picked.selected) {
-				// The tag resolves to a digest by HEAD; the manifest is then read by that
-				// immutable digest (and must hash to it) for its revision annotation.
 				let read = documents.get(candidate.version);
 				if (!read) {
 					const head = await registry.manifestDigest(candidate.version);

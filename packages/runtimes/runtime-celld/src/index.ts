@@ -16,5 +16,4 @@ export {
 } from "./parse.js";
 export { CELLD_PIN } from "./upstream-pin.js";
 
-// public-contract: package id compose and Matching pin.
 export const HOBO_RUNTIME_CELLD_PACKAGE = "@hobo/runtime-celld";

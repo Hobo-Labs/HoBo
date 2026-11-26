@@ -6,7 +6,6 @@ import type {
 	StageGateCheck,
 } from "./types.js";
 
-// public-contract: the variable a check that `requires` others reads their evidence from (scripts/check-acceptance.mts does).
 export const REQUIRED_EVIDENCE_ENV = "HOBO_STAGE_GATE_REQUIRED_EVIDENCE";
 
 export const CHECK_OUTPUT_LIMIT = 16 * 1024 * 1024;

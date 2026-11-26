@@ -1,7 +1,5 @@
-// public-contract: schema tag on every status-page snapshot/model record.
 export const STATUS_PAGE_SCHEMA = "hobo.status-page/v1" as const;
 
-// public-contract: closed component status vocabulary (worst-of ordering below).
 export const COMPONENT_STATUSES = [
 	"operational",
 	"maintenance",
@@ -33,7 +31,6 @@ export function worstComponentStatus(
 	return worst;
 }
 
-// public-contract: customer-safe incident lifecycle (HOBO-497 vocabulary).
 export const INCIDENT_STATES = [
 	"investigating",
 	"identified",
@@ -49,11 +46,9 @@ export const INCIDENT_STATE_RANK = {
 	resolved: 3,
 };
 
-// public-contract: incident impact vocabulary (statuspage-v2 compatible).
 export const INCIDENT_IMPACTS = ["minor", "major", "critical"] as const;
 export type IncidentImpact = (typeof INCIDENT_IMPACTS)[number];
 
-// public-contract: maintenance lifecycle (HOBO-497 vocabulary).
 export const MAINTENANCE_STATES = [
 	"scheduled",
 	"in-progress",
@@ -69,7 +64,6 @@ const MAINTENANCE_STATE_RANK = {
 	canceled: 2,
 };
 
-// public-contract: the availability slices a page can project.
 export const STATUS_SCOPE_KINDS = [
 	"station",
 	"primitives",
@@ -78,7 +72,6 @@ export const STATUS_SCOPE_KINDS = [
 ] as const;
 export type StatusScopeKind = (typeof STATUS_SCOPE_KINDS)[number];
 
-// public-contract: overall page indicator (statuspage-v2 + `unknown`).
 export const OVERALL_INDICATORS = [
 	"none",
 	"minor",
@@ -111,14 +104,14 @@ export class StatusPageParseError extends TypeError {
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const INCIDENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface StatusScope {
 	readonly kind: StatusScopeKind;
 	readonly id: string;
 	readonly label: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ComponentSpec {
 	readonly id: string;
 	readonly label: string;
@@ -126,7 +119,7 @@ export interface ComponentSpec {
 	readonly description?: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface IncidentUpdateRecord {
 	readonly state: IncidentState;
 	readonly body: string;
@@ -134,7 +127,7 @@ export interface IncidentUpdateRecord {
 	readonly public: boolean;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface IncidentRecord {
 	readonly id: string;
 	readonly title: string;
@@ -147,7 +140,7 @@ export interface IncidentRecord {
 	readonly updates: readonly IncidentUpdateRecord[];
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface MaintenanceRecord {
 	readonly id: string;
 	readonly title: string;
@@ -185,14 +178,14 @@ type ParsedIncident = {
 	updates: readonly IncidentUpdateRecord[];
 };
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface DailyStatusRecord {
 	readonly date: string;
 	readonly worst: ComponentStatus;
 	readonly samples: number;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ComponentStatusRecord {
 	readonly spec: ComponentSpec;
 	readonly status: ComponentStatus;

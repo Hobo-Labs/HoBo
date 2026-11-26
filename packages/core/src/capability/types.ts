@@ -18,7 +18,7 @@ export type CapabilityDiagnosticCode =
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface CapabilityGrant {
 	componentId: string;
 	importInterface: string;
@@ -26,13 +26,13 @@ export interface CapabilityGrant {
 	operations: readonly string[];
 }
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface CapabilityUsage {
 	inferred: readonly string[];
 	source: "static-analysis";
 }
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface CapabilityDiagnostic {
 	code: CapabilityDiagnosticCode;
 	severity: DiagnosticSeverity;
@@ -59,7 +59,7 @@ export interface CapabilityUsageResult {
 	diagnostics: readonly CapabilityDiagnostic[];
 }
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface GrantEvaluation {
 	schema: "hobo.capability-enforcement/v1";
 	ok: boolean;

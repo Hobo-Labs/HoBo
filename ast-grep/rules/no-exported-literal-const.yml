@@ -3,7 +3,7 @@ language: TypeScript
 severity: warning
 message: >-
   Exported string-literal constants are usually schema ids or enum
-  vocabularies that belong in generated proto code (technical-standards.md,
+  vocabularies that belong in generated proto code (AGENTS.md,
   minimal public surface); keep them module-private unless the constant itself
   is the contract, in which case use a descriptive exported name.
 rule:

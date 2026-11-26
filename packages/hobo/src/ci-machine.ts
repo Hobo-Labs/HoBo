@@ -30,7 +30,6 @@ export type CiMachineDeps = Readonly<{
 	openRegistry?: (context: CiCommandContext) => Promise<OpenedMachineRegistry>;
 }>;
 
-// public-contract: the account a local node's registry uses when none is named.
 export const LOCAL_MACHINE_ACCOUNT = "local";
 
 const ACTIONS = ["status", "pause", "resume", "share", "remove"] as const;

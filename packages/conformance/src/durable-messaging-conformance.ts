@@ -18,7 +18,6 @@ import {
 	snapshotMutation,
 } from "./durable-messaging-shapes.js";
 
-// public-contract: version of the bounded durable-messaging conformance suite.
 export const DURABLE_MESSAGING_CONFORMANCE =
 	"hobo.durable-messaging-conformance/v1";
 const monotonicNow = performance.now.bind(performance);
@@ -2593,7 +2592,6 @@ const DURABLE_CASES = [
 	(harness: DurableMessagingConformanceHarness) => Promise<void>,
 ])[];
 
-// public-contract: exact names and execution order of the durable messaging cases.
 export const DURABLE_MESSAGING_CONFORMANCE_CASES = Object.freeze(
 	DURABLE_CASES.map(([name]) => name),
 );

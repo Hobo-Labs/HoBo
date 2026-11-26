@@ -64,7 +64,6 @@ const bool = (key: string, description: string) =>
 const integer = (key: string, description: string) =>
 	({ key, description, valueKind: "integer" }) as const;
 
-/** web */
 const WEB: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "web.project/v1",
@@ -108,7 +107,6 @@ const WEB: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** api */
 const API: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "api.http/v1",
@@ -133,7 +131,6 @@ const API: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** service */
 const SERVICE: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "service.worker/v1",
@@ -159,9 +156,6 @@ const SERVICE: readonly CapabilityProfileDescriptor[] = [
 		features: [bool("cronExpressions", "Accepts cron-syntax schedules.")],
 	}),
 	profile({
-		// The `schedule` slot's profile (core's capability.schedule.cron). Its
-		// primitive is `service`: a schedule invokes compute (a Worker, or the
-		// consumer of the queue it sends to); the primitive set stays closed.
 		id: "schedule.cron/v1",
 		primitive: "service",
 		displayName: "Cron schedule",
@@ -181,7 +175,6 @@ const SERVICE: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** data */
 const DATA: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "data.relational/v1",
@@ -367,7 +360,6 @@ const DATA: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** kv */
 const KV: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "kv.key-value/v1",
@@ -489,7 +481,6 @@ const KV: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** bucket */
 const BUCKET: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "bucket.object/v1",
@@ -533,7 +524,6 @@ const BUCKET: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** queue */
 const QUEUE: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "queue.at-least-once/v1",
@@ -568,7 +558,6 @@ const QUEUE: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** topic */
 const TOPIC: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "topic.pubsub/v1",
@@ -636,7 +625,6 @@ const SECRET_REF: readonly CapabilityProfileDescriptor[] = [
 	}),
 ];
 
-/** webhook + realtime */
 const WEBHOOK: readonly CapabilityProfileDescriptor[] = [
 	profile({
 		id: "webhook.inbound-http/v1",

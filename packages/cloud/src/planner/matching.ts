@@ -57,7 +57,6 @@ function rankByObjective(
 
 function pickRegion(intent: ResourceIntent, def: ResourceDefinition): string {
 	if (intent.region) return intent.region;
-	// advertised region (single-provider plans share a region set).
 	const regions = [...def.regions].sort();
 	return regions[0] ?? "";
 }

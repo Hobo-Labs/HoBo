@@ -44,28 +44,16 @@ export const MANIFEST_PATHS = Object.freeze({
 	cost: "/.well-known/capability-manifest/cost.json",
 } as const);
 
-/** Deterministic JSON: keys sorted at every depth, 2-space indent, trailing newline. */
 export function canonicalJson(value: JsonValue | undefined): string {
 	return `${JSON.stringify(sortKeys(value), null, 2)}\n`;
 }
 
-/**
- * Key-sorted at every depth, arrays left in order.
- *
- * Exported because it is the canonical form itself, not an implementation
- * detail of the writer: a caller that wants a deterministically-ordered
- * *object* (rather than a string) needs exactly this, and reimplementing it
- * is how the two spellings drift apart.
- */
 export function sortKeys<T>(value: T): T {
 	if (Array.isArray(value)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return value.map((item) => sortKeys(item)) as T;
 	}
 	if (value && isJsonObject(value)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return Object.fromEntries(
-			// SAFETY: assertion required at this I/O or test boundary.
 			Object.entries(value as JsonObject)
 				.sort(([left], [right]) => left.localeCompare(right))
 				.map(([key, child]) => [key, sortKeys(child)]),
@@ -74,26 +62,12 @@ export function sortKeys<T>(value: T): T {
 	return value;
 }
 
-/**
- * SHA-256 over the canonical form, for document-integrity references inside the
- * published bundle (the Registry hashes the index separately).
- *
- * Collision resistance is the point: the bundle is fetched from an origin the
- * provider controls, so a reference that only detects accidental corruption
- * lets a hostile origin serve a different document under the indexed digest.
- */
 export function stableDigest(value: JsonValue | undefined): string {
 	return `sha256:${createHash("sha256")
 		.update(JSON.stringify(sortKeys(value)))
 		.digest("hex")}`;
 }
 
-/**
- * A digest over a seed string, for cost-fact source references.
- *
- * The wrapping object is kept because it is what the providers already emit;
- * unwrapping it would change every reference for no gain.
- */
 export function digestRef(seed: string): string {
 	return stableDigest({ seed });
 }

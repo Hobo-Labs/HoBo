@@ -71,7 +71,6 @@ export function parseSelector(
 	return { ok: true, value: selector as ParsedSelector };
 }
 
-/** Jurisdictions of every declared region, sorted and unique. */
 export function campJurisdictions(
 	topology: CampTopology,
 ): readonly JurisdictionId[] {
@@ -83,12 +82,6 @@ export function campJurisdictions(
 	return [...all].sort();
 }
 
-/**
- * True when declared topology satisfies every non-empty selector field (AND
- * across fields). `jurisdictions` needs every declared region to sit in a
- * listed jurisdiction; a Camp with no declared region never matches it.
- * An empty selector matches every Camp.
- */
 export function matchesSelector(
 	selector: SelectorRecord | undefined,
 	topology: CampTopology,

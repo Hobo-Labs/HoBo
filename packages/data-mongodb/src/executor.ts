@@ -1,13 +1,13 @@
 import type { MongoDocument, MongoValue } from "./extended-json.js";
 
-// domain-view: request record of MongoExecutor.ensureCollection; wire form is MongoEnsureCollectionRequest in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoEnsureCollectionRequest {
 	readonly collection: string;
 	readonly validator?: MongoDocument;
 	readonly changeImages: boolean;
 }
 
-// domain-view: result record of MongoExecutor.ensureCollection; wire form is MongoEnsureCollectionResult in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoEnsureCollectionResult {
 	readonly created: boolean;
 }
@@ -23,17 +23,17 @@ export interface MongoIdRange {
 	readonly before?: MongoValue;
 }
 
-// domain-view: closed union over the wire record MongoIdSelector in data-models/data_mongodb.proto.
+// domain-view:
 export type MongoIdSelector = MongoIdSet | MongoIdRange;
 
-// domain-view: request record of MongoSession.find; wire form is MongoFindRequest in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoFindRequest {
 	readonly collection: string;
 	readonly select: MongoIdSelector;
 	readonly limit?: number;
 }
 
-// domain-view: result record of MongoSession.find; wire form is MongoFindResult in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoFindResult {
 	readonly documents: readonly MongoDocument[];
 }
@@ -59,27 +59,27 @@ export interface MongoDeleteRangeOperation {
 	readonly before?: MongoValue;
 }
 
-// domain-view: closed union over the wire record MongoWriteOperation in data-models/data_mongodb.proto.
+// domain-view:
 export type MongoWriteOperation =
 	| MongoInsertOperation
 	| MongoReplaceOperation
 	| MongoDeleteOperation
 	| MongoDeleteRangeOperation;
 
-// domain-view: request record of MongoSession.bulkWrite; wire form is MongoBulkWriteRequest in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoBulkWriteRequest {
 	readonly collection: string;
 	readonly operations: readonly MongoWriteOperation[];
 }
 
-// domain-view: result record of MongoSession.bulkWrite; wire form is MongoBulkWriteResult in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoBulkWriteResult {
 	readonly inserted: number;
 	readonly replaced: number;
 	readonly deleted: number;
 }
 
-// domain-view: request record of MongoExecutor.changeHead; wire form is MongoChangeHeadRequest in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoChangeHeadRequest {
 	readonly collection: string;
 }
@@ -89,13 +89,13 @@ export interface MongoChangeToken {
 	readonly token: string;
 }
 
-// domain-view: filter record of MongoChangeReadRequest; wire form is MongoKeyMatch in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoKeyMatch {
 	readonly path: string;
 	readonly equals: MongoValue;
 }
 
-// domain-view: request record of MongoExecutor.readChanges; wire form is MongoChangeReadRequest in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoChangeReadRequest {
 	readonly collection: string;
 	readonly after: string;
@@ -103,7 +103,7 @@ export interface MongoChangeReadRequest {
 	readonly where?: MongoKeyMatch;
 }
 
-// domain-view: one change-stream event; wire form is MongoChangeEvent in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoChangeEvent {
 	readonly token: string;
 	readonly operation: string;
@@ -112,14 +112,14 @@ export interface MongoChangeEvent {
 	readonly transaction?: string;
 }
 
-// domain-view: result record of MongoExecutor.readChanges; wire form is MongoChangeBatch in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoChangeBatch {
 	readonly events: readonly MongoChangeEvent[];
 	readonly token: string;
 	readonly drained: boolean;
 }
 
-// domain-view: request record of MongoExecutor.awaitTransactions; wire form is MongoAwaitTransactionsRequest in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoAwaitTransactionsRequest {
 	readonly collection: string;
 }

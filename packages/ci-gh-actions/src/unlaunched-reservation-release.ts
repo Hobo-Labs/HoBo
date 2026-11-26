@@ -85,7 +85,6 @@ export type UnlaunchedReleaseContext = Readonly<{
 	unlaunchedCount: number;
 	launchSlots: number;
 	liveContainerCount: number;
-	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
 	fleetWitness?: PeerCapacityWitness;
 	/** @deprecated use fleetWitness */
@@ -113,7 +112,6 @@ export function unlaunchedReleaseReason(
 	return undefined;
 }
 
-/** Oldest unlaunched reservations first so newer demand can still launch locally. */
 export function pickUnlaunchedReservationsToRelease(
 	leases: readonly UnlaunchedReservationLease[],
 	nowMs: number,

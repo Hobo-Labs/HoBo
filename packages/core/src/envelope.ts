@@ -12,14 +12,14 @@ import {
 
 export type PrincipalKind = "user" | "agent" | "service" | "system";
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface PrincipalRef {
 	kind: PrincipalKind;
 	id: string;
 	delegatedBy?: PrincipalRef;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface EventEnvelope<T = unknown> {
 	id: string;
 	type: string;
