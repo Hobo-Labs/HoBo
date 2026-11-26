@@ -351,7 +351,6 @@ const RESOLVE_SUFFIXES = [
 	"/index.js",
 ];
 
-/** The TypeScript sources a compiled extension stands for, as vite and TypeScript map them. */
 const SOURCES_FOR: readonly (readonly [RegExp, readonly string[]])[] = [
 	[/\.js$/u, [".ts", ".tsx"]],
 	[/\.jsx$/u, [".tsx"]],
@@ -397,11 +396,6 @@ function buildProjects(build: string | undefined): string[] {
 	return named.length > 0 ? named : ["tsconfig.json"];
 }
 
-/**
- * A package's build output directories, each one segment under it: the first
- * segment of the `outDir` of each tsconfig its build compiles with (following
- * `extends`), else `dist`, the default of tsc's configs here, vite and astro.
- */
 function outputDirs(
 	root: string,
 	dir: string,
