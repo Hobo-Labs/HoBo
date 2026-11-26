@@ -1930,6 +1930,9 @@ importers:
       '@hobo/iac-alchemy':
         specifier: workspace:*
         version: link:../iac/iac-alchemy
+      '@hobo/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@hobo/runtime-rivet':
         specifier: workspace:*
         version: link:../runtimes/runtime-rivet
@@ -1937,6 +1940,9 @@ importers:
       '@alchemy.run/rivet':
         specifier: 2.0.0-beta.87
         version: 2.0.0-beta.87(f39255bffb6bb0310d1339126f06aefe)
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.13.2
         version: 24.13.2
