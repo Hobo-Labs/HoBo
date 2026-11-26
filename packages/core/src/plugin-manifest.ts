@@ -12,7 +12,6 @@ import {
 	requiredArray,
 } from "./parse-utils.js";
 
-// public-contract: plugin manifest schema id.
 export const PLUGIN_MANIFEST_SCHEMA = "hobo.plugin/v1";
 
 export class PluginManifestParseError extends CoreParseError {

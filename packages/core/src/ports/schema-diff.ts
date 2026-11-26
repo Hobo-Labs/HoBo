@@ -10,13 +10,11 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract: the schema id a canonical schema IR is published under.
 export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
-// public-contract: the schema id a phased migration plan is published under.
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
-export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "1.0.0"; // public-contract: participates in every plan digest
+export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical";
+export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "1.0.0";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;

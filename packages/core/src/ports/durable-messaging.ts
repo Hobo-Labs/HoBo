@@ -1,8 +1,6 @@
 const hasOwn = Object.hasOwn;
 
-// public-contract: stable identifier for the asynchronous durable messaging port.
 export const DURABLE_MESSAGING_CONTRACT = "hobo.durable-messaging/v1";
-// public-contract: canonical WIT interface exported to SDK consumers.
 export const DURABLE_MESSAGING_WIT_INTERFACE =
 	"hobo:durable-messaging/messaging@0.1.0";
 

@@ -8,7 +8,6 @@ import {
 	positiveInteger,
 } from "../parse-utils.js";
 
-// public-contract: stable exported contract literal
 export const QUEUE_CLOCK_RUNTIME_PORT_CONTRACT_VERSION =
 	"hobo.queue-clock-runtime-port/v1";
 

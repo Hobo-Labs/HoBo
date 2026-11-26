@@ -5,7 +5,6 @@ import { deepFreeze, nonEmptyString, positiveInteger } from "../parse-utils.js";
 export type RunId = string & { readonly __brand: "RunId" };
 export type StreamName = string & { readonly __brand: "StreamName" };
 
-// public-contract: the streamer port default stream name (port contract).
 const DEFAULT_STREAM_NAME_VALUE = "default";
 const brandedDefaultStreamName = DEFAULT_STREAM_NAME_VALUE as StreamName;
 export const DEFAULT_STREAM_NAME = brandedDefaultStreamName;

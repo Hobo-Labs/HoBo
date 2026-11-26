@@ -40,7 +40,6 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract: the closed slot vocabulary provider packages bind against.
 export const CAPABILITY_SLOTS = Object.freeze([
 	"web",
 	"api",
@@ -56,7 +55,6 @@ export const CAPABILITY_SLOTS = Object.freeze([
 ] as const);
 export type CapabilitySlot = (typeof CAPABILITY_SLOTS)[number];
 
-// public-contract: versioned identity stamped on every parsed slot binding.
 export const SLOT_BINDING_CONTRACT = "hobo.slot-binding/v1";
 
 /** ADR-0151 profile grammar: `<family>.<path>/v<major>`. */

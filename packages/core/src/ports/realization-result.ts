@@ -26,7 +26,6 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract: the schema id every realization engine reports back under.
 export const REALIZATION_RESULT_SCHEMA = "hobo.realization-result/v1";
 
 /** Why a raw realization result was rejected. */

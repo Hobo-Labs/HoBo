@@ -215,11 +215,9 @@ const PROVIDERS = new Set<DataStoreProvider>([
 	"other",
 ]);
 
-// public-contract: every id the data-store vocabulary accepts, in declaration order.
 export const DATA_STORE_OFFERING_IDS: readonly DataStoreOfferingId[] =
 	Object.freeze([...OFFERINGS]);
 
-// public-contract: every provider id the data-store vocabulary accepts.
 export const DATA_STORE_PROVIDERS: readonly DataStoreProvider[] = Object.freeze(
 	[...PROVIDERS],
 );
@@ -230,7 +228,6 @@ export const DATA_STORE_PROVIDERS: readonly DataStoreProvider[] = Object.freeze(
  * ids absent here (Aurora, AlloyDB, every non-hyperscaler product) refine no
  * family that existed before them.
  */
-// public-contract: backward-compatibility map from product ids to the original family ids.
 export const DATA_STORE_PROVIDER_FAMILIES = Object.freeze({
 	"aws-rds-postgres": "aws-rds",
 	"gcp-cloudsql-postgres": "gcp-cloudsql",
@@ -259,7 +256,6 @@ export const DEFAULT_DATA_STORE_FALLBACKS: readonly DataStoreOfferingId[] = [
 	"migrate.dual-write",
 ];
 
-// public-contract: registry key consumers use to register/resolve this class.
 export const DATA_STORE_RESOURCE_CLASS = "data-store";
 
 export function parseDataStoreOfferingId(
