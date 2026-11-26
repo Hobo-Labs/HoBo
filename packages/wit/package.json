@@ -23,6 +23,9 @@
 		},
 		"./durable-messaging": {
 			"types": "./src/generated/durable-messaging-guest/interfaces/hobo-durable-messaging-messaging.d.ts"
+		},
+		"./queue": {
+			"types": "./src/generated/queue-guest/interfaces/hobo-queue-queue.d.ts"
 		}
 	},
 	"publishConfig": {

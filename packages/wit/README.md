@@ -57,6 +57,7 @@ those imports through their host.
   local test services. These are the vendored interfaces, not the full WASI APIs.
 - `data-models/` — protobuf + CUE records for lock, pins, surfaces, and parity reports.
 
+The queue guest bindings are available as the type-only `@hobo/wit/queue` export.
 The SDK world includes native asynchronous queue and durable messaging interfaces.
 Hosts that do not implement their semantics must reject components requiring them.
 
