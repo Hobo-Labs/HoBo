@@ -669,3 +669,15 @@ the store twice to recheck authorization and revision before disclosure. Hosts m
 revalidate and fence ownership before acting, protect payloads, and use an
 idempotent destination when exporting data. The component queue does not expose
 this inspection API.
+
+After an owner has independently confirmed a durable external dead-letter export,
+it can call `confirmExhaustedExport({ operation, messageId, expectedRevision,
+exportReceipt })` with the inspection revision and a bounded destination receipt.
+The queue records that receipt and marks the exhausted message completed using a
+conditional write. It does not send or verify the external export: the trusted
+host must authenticate the receipt, ensure destination durability and idempotency,
+and reconcile unknown sink and queue outcomes. A stale inspection or uncertain
+queue write returns `unknown` with the same operation ID. Retry the same request
+first; if the queue changed, inspect again and reconcile the sink before issuing
+a new operation. Completed-message reclamation is separate and waits for live
+receipts to expire.

@@ -9,6 +9,15 @@ import type {
 
 export type AtomicQueueRequest =
 	| {
+			readonly kind: "confirmExport";
+			readonly input: {
+				readonly operation: DurableQueueOperation;
+				readonly messageId: string;
+				readonly expectedRevision: number;
+				readonly exportReceipt: string;
+			};
+	  }
+	| {
 			readonly kind: "redrive";
 			readonly input: {
 				readonly operation: DurableQueueOperation;
@@ -122,6 +131,12 @@ export function messageSignature(
 }
 export function fingerprint(request: AtomicQueueRequest): string {
 	const input = request.input;
+	if (
+		request.kind === "confirmExport" &&
+		"messageId" in input &&
+		"exportReceipt" in input
+	)
+		return `q${field(input.messageId)}${input.expectedRevision};${field(input.exportReceipt)}`;
 	if (request.kind === "redrive" && "messageId" in input)
 		return `z${field(input.messageId)}`;
 	if (request.kind === "enqueue" && "message" in input)
@@ -178,6 +193,11 @@ function copyRequest(request: AtomicQueueRequest): AtomicQueueRequest {
 	if (request.kind === "dequeue")
 		return {
 			kind: "dequeue",
+			input: { ...request.input, operation: { ...request.input.operation } },
+		};
+	if (request.kind === "confirmExport")
+		return {
+			kind: "confirmExport",
 			input: { ...request.input, operation: { ...request.input.operation } },
 		};
 	if (request.kind === "redrive")
@@ -274,7 +294,7 @@ export function transitionAtomicQueue(
 	});
 	if (op.expiresAtMs - now > limits.operationWindowMs)
 		result = rejected("invalid-argument");
-	else if (request.kind === "redrive") {
+	else if (request.kind === "redrive" || request.kind === "confirmExport") {
 		let index = -1;
 		for (let position = 0; position < messages.length; position++)
 			if (messages[position]?.messageId === request.input.messageId) {
@@ -307,13 +327,16 @@ export function transitionAtomicQueue(
 		)
 			result = rejected("unavailable");
 		else {
-			messages[index] = {
-				...current,
-				deliveryAttempt: 0,
-				leaseId: null,
-				leaseExpiresAtMs: 0,
-				availableAtMs: now,
-			};
+			messages[index] =
+				request.kind === "confirmExport"
+					? { ...current, completed: true, leaseId: null, leaseExpiresAtMs: 0 }
+					: {
+							...current,
+							deliveryAttempt: 0,
+							leaseId: null,
+							leaseExpiresAtMs: 0,
+							availableAtMs: now,
+						};
 			result = {
 				status: "committed",
 				value: {

@@ -239,3 +239,7 @@ does not prove the queue implementation or external host authorization.
 The bounded `QueueInspection` model checks disclosure against revocation and a
 changed revision between reads. It assumes a truthful linearizable store and
 does not prove the implementation, payload content or later authorization.
+
+The bounded `QueueExport` model assumes a trusted host confirms a durable sink
+receipt and checks that confirmation uses an unchanged queue revision. It does
+not prove sink delivery, idempotency, the host or the implementation.

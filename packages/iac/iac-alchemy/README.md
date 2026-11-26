@@ -1194,8 +1194,15 @@ must authorize and call the provider's `compact()` and `reclaimCompleted()`
 operations when needed. Reclaiming a completed message ends its message-key
 deduplication after live receipts expire. These storage reads and writes must be
 included in the supplied pricing model; the owner can explicitly redrive exhausted messages after their live receipts
-and final lease expire. Dead-letter export is not implemented.
+and final lease expire. The owner can confirm an independently verified durable
+dead-letter export using the observed queue revision and destination receipt;
+HoBo does not send or authenticate that export automatically.
 
 The trusted queue owner can inspect a bounded batch of exhausted messages and
 then redrive them. The observation can become stale and does not prove that an
 external dead-letter export committed; the owner must fence and reconcile it.
+
+Dead-letter confirmation is an owner operation. The host must provide a durable,
+idempotent destination and verify its receipt; an unknown destination or queue
+outcome requires reconciliation. Price the destination and the additional queue
+reads and writes when supplying the financial model.
