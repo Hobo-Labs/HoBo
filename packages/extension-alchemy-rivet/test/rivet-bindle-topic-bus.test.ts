@@ -30,7 +30,29 @@ import {
 	createRivetBindleTopicBusApplication,
 	createRivetBindleTopicBusMappers,
 } from "../src/rivet-http-topic-bus.js";
+import { rivetTopicUnavailable } from "../src/rivet-topic-unavailable.js";
 import { testStateOwnership } from "./route-fixture.js";
+
+it("keeps topic failures unavailable when application code changes array prototypes", async () => {
+	const iterator = Array.prototype[Symbol.iterator];
+	const push = Array.prototype.push;
+	let response: Response;
+	try {
+		Reflect.set(Array.prototype, Symbol.iterator, function* () {});
+		Reflect.set(Array.prototype, "push", () => 0);
+		response = rivetTopicUnavailable("scope-unverified");
+	} finally {
+		Reflect.set(Array.prototype, Symbol.iterator, iterator);
+		Reflect.set(Array.prototype, "push", push);
+	}
+	expect(response.status).toBe(503);
+	const ordinary = rivetTopicUnavailable("scope-unverified");
+	expect(ordinary.status).toBe(503);
+	expect(await ordinary.json()).toEqual({
+		status: "topic-unavailable",
+		reason: "scope-unverified",
+	});
+});
 
 it("gates an HTTP application's scoped topic binding on real journal provisioning", async () => {
 	const fixture = await createSqliteBusConformanceHost();
