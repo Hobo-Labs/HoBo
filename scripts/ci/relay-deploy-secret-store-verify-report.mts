@@ -68,9 +68,9 @@ if (envelope !== undefined) {
 	for (const entry of checks) {
 		const check = asObject(entry);
 		if (check === undefined) continue;
-		const identity = asText(check.identity) ?? "identity";
-		const method = asText(check.method) ?? "method";
-		const result = asText(check.result) ?? "unknown";
+		const identity = redactNoise(asText(check.identity) ?? "identity");
+		const method = redactNoise(asText(check.method) ?? "method");
+		const result = redactNoise(asText(check.result) ?? "unknown");
 		const detail = redactNoise(asText(check.detail) ?? "");
 		lines.push(`- ${identity} (${method}): ${result} — ${detail}`);
 	}

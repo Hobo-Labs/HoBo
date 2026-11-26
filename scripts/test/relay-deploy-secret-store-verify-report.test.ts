@@ -61,6 +61,58 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 		}
 	});
 
+	it("keeps HoBo deploy error codes in relay-deploy redaction", () => {
+		for (const code of [
+			"HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+			"HOBO_CI_DEPLOY_BUDGET_EXHAUSTED",
+		]) {
+			const out = redactRelayDeployText(
+				`${code}: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig`,
+			);
+			assert.match(out, new RegExp(code, "u"));
+			assert.doesNotMatch(out, /eyJhbGciOiJIUzI1NiJ9/u);
+		}
+	});
+
+	it("keeps HoBo deploy refusal codes while redacting credentials in check rows", () => {
+		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
+		const json = join(dir, "out.json");
+		const err = join(dir, "err.txt");
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig";
+		try {
+			writeFileSync(
+				json,
+				`${JSON.stringify({
+					ok: false,
+					code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+					message: "verify failed",
+					data: {
+						checks: [
+							{
+								identity: `hobo-ci-writer Bearer ${jwt}`,
+								method: "GitHub Actions OIDC",
+								result: "fail",
+								detail: `nested ${jwt}`,
+							},
+						],
+					},
+				})}\n`,
+			);
+			writeFileSync(err, "");
+			const ran = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", "--no-warnings", report, json, err, "1"],
+				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /HOBO_CI_DEPLOY_ROLLBACK_FAILED/u);
+			assert.doesNotMatch(ran.stdout, /eyJhbGciOiJIUzI1NiJ9/u);
+			assert.match(ran.stdout, /\[redacted\]/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("redacts JWT-shaped text in check details", () => {
 		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
 		const json = join(dir, "out.json");

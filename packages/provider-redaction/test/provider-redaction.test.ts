@@ -371,6 +371,22 @@ describe("a provider profile", () => {
 		expect(redactProviderText("pw npg_abcd")).toBe("pw npg_abcd");
 	});
 
+	it("redacts glued and delimited bearer credentials through a full non-space run", () => {
+		const samples = [
+			"Bearer: xoxb-1234567890-abcdefghijklmnopqrstuvwx",
+			'Bearer="xoxb-1234567890-abcdefghijklmnopqrstuvwx"',
+			"Bearer=xoxb-1234567890-abcdefghijklmnopqrstuvwx",
+			'{"authorization":"Bearer xoxb-1234567890-abcdefghijklmnopqrstuvwx"}',
+			"**Bearer** xoxb-1234567890-abcdefghijklmnopqrstuvwx",
+			"Authorization: Digest x11223344556677889900",
+		];
+		for (const text of samples) {
+			expect(redactProviderText(text)).not.toContain("xoxb-");
+			expect(redactProviderText(text)).not.toContain("x11223344556677889900");
+			expect(redactProviderText(text)).toContain("[redacted]");
+		}
+	});
+
 	it("redacts a bearer scheme glued into a longer word, as the shared boundary cannot", () => {
 		const redact = createProviderRedactor({});
 		for (const redactor of [redact, redactProviderText]) {

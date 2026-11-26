@@ -124,9 +124,7 @@ export const JSON_JWT_PATTERN = redactionPattern(
  * boundary of its own: it starts at the literal scheme name and takes the
  * run of characters a bearer value holds, whole.
  */
-export const GLUED_BEARER_PATTERN = redactionPattern(
-	/bearer\s+[A-Za-z0-9._~+/=%\u017F\u212A-]+/gi,
-);
+export const GLUED_BEARER_PATTERN = redactionPattern(/bearer\s+\S+/gi);
 
 /**
  * Shapes every provider shares, in the order they are searched (the private
@@ -168,6 +166,7 @@ export const CREDENTIAL_PATTERNS: readonly RedactionPattern[] = Object.freeze([
 	),
 	// Inline credentials with no scheme in front of them.
 	redactionPattern(/\/\/[^/\s:@]+:[^/\s:@]+@/gu),
+	redactionPattern(/<password>[^<]+<\/password>/giu),
 	// A secret-named key and its value. The name may be prefixed
 	// (`NETLIFY_AUTH_TOKEN`, `pgpassword`, `x-api-key`), so the match starts
 	// where a run of name characters starts and reads it once. Quotes and
