@@ -17,6 +17,7 @@ export interface AwsHttpGraph {
 	readonly bindleName: string;
 	readonly applicationName: string;
 	readonly entrypoint: AwsHttpEntrypoint;
+	readonly bindle: BindleForAlchemy<AwsHttpEntrypoint, undefined>;
 	readonly bindings: readonly AwsHttpDependency[];
 }
 const arraySort = Array.prototype.sort;
@@ -230,10 +231,22 @@ export function captureAwsHttpGraph<Requirements>(
 		kinds.some((kind, index) => kind !== declared[index])
 	)
 		throw new Error("AWS dependency graph is incomplete");
+	const capturedBindle: BindleForAlchemy<AwsHttpEntrypoint, undefined> =
+		Object.freeze({
+			name: bindleName,
+			// SAFETY: snapshotData recursively copies and freezes the checked resource data.
+			resources: resources as Readonly<Record<string, PrimitiveDeclaration>>,
+			// SAFETY: each frozen edge was checked above for valid from and to names.
+			edges: edges as readonly { readonly from: string; readonly to: string }[],
+			requirements: undefined,
+			entrypoint: (requested: string) =>
+				requested === applicationName ? entrypoint : undefined,
+		});
 	return Object.freeze({
 		bindleName,
 		applicationName,
 		entrypoint,
+		bindle: capturedBindle,
 		bindings: Object.freeze(bindings),
 	});
 }

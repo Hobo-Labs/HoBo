@@ -14,6 +14,8 @@ import {
 	awsHttpBindings,
 	createAwsBindleApplication,
 } from "../src/aws-http-runtime.js";
+import { startAwsHttpServer } from "../src/aws-http-server.js";
+import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { type AwsKvStore, createAwsDynamoKvStore } from "../src/aws-kv.js";
 import { withAwsDynamoKv } from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
@@ -160,6 +162,162 @@ describe("AWS application graph capture", () => {
 				"web",
 			),
 		).toThrow();
+	});
+});
+
+describe("AWS HTTP source", () => {
+	it("resolves provisioned names once and fails closed on mismatches and revocation", async () => {
+		let authorized = true;
+		const f = fixture((context) => async () => {
+			const resources = awsHttpBindings(context);
+			return Response.json([
+				...((await resources.kv("sessions").get("key")) ?? []),
+			]);
+		});
+		const environment = {
+			HOBO_RESOURCE_0: "assets-bucket",
+			HOBO_RESOURCE_1: "sessions",
+		};
+		let resolutions = 0;
+		const source = defineAwsHttpSource({
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment,
+			resolveStores: (bindings) => {
+				resolutions++;
+				expect(bindings.map(({ physicalName }) => physicalName)).toEqual([
+					"assets-bucket",
+					"sessions",
+				]);
+				return f.options.stores;
+			},
+			verifyBinding: () => authorized,
+		});
+		const request = () => new Request("https://app.test/");
+		expect((await source.fetch(request())).status).toBe(200);
+		expect((await source.fetch(request())).status).toBe(200);
+		expect(resolutions).toBe(1);
+		environment.HOBO_RESOURCE_1 = "different-table";
+		expect((await source.fetch(request())).status).toBe(503);
+		environment.HOBO_RESOURCE_1 = "sessions";
+		authorized = false;
+		expect((await source.fetch(request())).status).toBe(503);
+	});
+	it("cannot skip environment checks by replacing array iteration or push", async () => {
+		let calls = 0;
+		const f = fixture(() => () => {
+			calls++;
+			return new Response("ok");
+		});
+		const environment = {
+			HOBO_RESOURCE_0: "assets-bucket",
+			HOBO_RESOURCE_1: "sessions",
+		};
+		const source = defineAwsHttpSource({
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment,
+			resolveStores: () => f.options.stores,
+			verifyBinding: () => true,
+		});
+		expect((await source.fetch(new Request("https://app.test/"))).status).toBe(
+			200,
+		);
+		environment.HOBO_RESOURCE_1 = "changed";
+		const iterator = Array.prototype[Symbol.iterator];
+		const push = Array.prototype.push;
+		const request = new Request("https://app.test/");
+		let result: Promise<Response>;
+		try {
+			Reflect.set(Array.prototype, Symbol.iterator, function* () {});
+			Reflect.set(Array.prototype, "push", () => 0);
+			result = source.fetch(request);
+		} finally {
+			Reflect.set(Array.prototype, Symbol.iterator, iterator);
+			Reflect.set(Array.prototype, "push", push);
+		}
+		expect((await result).status).toBe(503);
+		expect(calls).toBe(1);
+	});
+	it("rejects a resource name changed while the handler is in flight", async () => {
+		let finish: (() => void) | undefined;
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const f = fixture(() => async () => {
+			await pending;
+			return new Response("ok");
+		});
+		const environment = {
+			HOBO_RESOURCE_0: "assets-bucket",
+			HOBO_RESOURCE_1: "sessions",
+		};
+		const source = defineAwsHttpSource({
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment,
+			resolveStores: () => f.options.stores,
+			verifyBinding: () => true,
+		});
+		const result = source.fetch(new Request("https://app.test/"));
+		environment.HOBO_RESOURCE_1 = "changed";
+		finish?.();
+		expect((await result).status).toBe(503);
+	});
+	it("serves an HTTP request and rejects invalid listeners", async () => {
+		const f = fixture(
+			() => async (request) =>
+				new Response(
+					request.method === "POST"
+						? String((await request.arrayBuffer()).byteLength)
+						: "hello",
+				),
+		);
+		const source = defineAwsHttpSource({
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment: {
+				HOBO_RESOURCE_0: "assets-bucket",
+				HOBO_RESOURCE_1: "sessions",
+			},
+			resolveStores: () => f.options.stores,
+			verifyBinding: () => true,
+		});
+		await expect(
+			startAwsHttpServer(source, "localhost:99/path"),
+		).rejects.toThrow("endpoint");
+		const server = await startAwsHttpServer(source, "127.0.0.1:0");
+		try {
+			const response = await fetch(`http://127.0.0.1:${server.address.port}/`);
+			expect(response.status).toBe(200);
+			expect(await response.text()).toBe("hello");
+			const post = await fetch(`http://127.0.0.1:${server.address.port}/`, {
+				method: "POST",
+				body: "hello",
+			});
+			expect(await post.text()).toBe("5");
+			const oversized = await fetch(
+				`http://127.0.0.1:${server.address.port}/`,
+				{ method: "POST", body: "x".repeat(1_048_577) },
+			);
+			expect(oversized.status).toBe(413);
+		} finally {
+			await server.close();
+		}
+	});
+	it("does not bind a store with the wrong physical name", async () => {
+		const f = fixture(() => () => new Response("ok"));
+		const options = {
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment: { HOBO_RESOURCE_0: "wrong", HOBO_RESOURCE_1: "sessions" },
+			resolveStores: () => f.options.stores,
+			verifyBinding: () => true,
+		};
+		const response = await defineAwsHttpSource(options).fetch(
+			new Request("https://app.test/"),
+		);
+		expect(response.status).toBe(503);
 	});
 });
 
