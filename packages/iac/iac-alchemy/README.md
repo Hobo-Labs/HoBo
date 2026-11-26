@@ -316,6 +316,8 @@ dependency edge; it must return that primitive's exact primary resource and no
 additional resources, actions or bindings. The shared resource appears once
 in the mapped inventory; the mapper and host remain responsible for proving the
 application binding and for accounting for all usage of that resource.
+The bounded `SharedMapping` model treats graph validation as a trusted,
+synchronous decision; it does not prove a provider's validator or code.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
 coverage; it does not authenticate them, price their resources, or authorize
 routing. Hosts must attest the mapping and its execution environment.
