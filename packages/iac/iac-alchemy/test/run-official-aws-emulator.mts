@@ -18,10 +18,13 @@ const digest =
 	"c64018e81ed049e87ff393f90f8878c64e32d43710968686fce78f77111ea8c0";
 const image =
 	"debian@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e";
+const motoImage =
+	"motoserver/moto@sha256:0140f5b5ee7b7f1dd215c832736d284442c103a76df8741def7064e02d7d1c30";
 if (process.platform !== "linux" || process.arch !== "x64")
 	throw new Error("The pinned AWS emulator test requires Linux x64 and Docker");
 const scratch = mkdtempSync(join(tmpdir(), "hobo-official-aws-"));
 const name = `hobo-aws-test-${randomUUID()}`;
+const motoName = `hobo-kms-test-${randomUUID()}`;
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const vitest = join(
@@ -31,6 +34,7 @@ const vitest = join(
 const command = (file: string, args: string[]) =>
 	execFileSync(file, args, { encoding: "utf8", timeout: 120_000 }).trim();
 let attempted = false;
+let motoAttempted = false;
 try {
 	const cached = process.env.HOBO_AWS_EMULATOR_PACKAGE;
 	const archive = join(scratch, "aws-emulator.deb");
@@ -111,6 +115,45 @@ try {
 			throw new Error("AWS emulator did not become ready");
 		await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
 	}
+	motoAttempted = true;
+	command("docker", [
+		"run",
+		"-d",
+		"--rm",
+		"--name",
+		motoName,
+		"--read-only",
+		"--cap-drop",
+		"ALL",
+		"--security-opt",
+		"no-new-privileges",
+		"--user",
+		"65534:65534",
+		"--tmpfs",
+		"/tmp:rw,noexec,nosuid,size=128m",
+		"--env",
+		"PYTHONDONTWRITEBYTECODE=1",
+		"--publish",
+		"127.0.0.1::5000",
+		motoImage,
+	]);
+	const motoEndpoint = command("docker", ["port", motoName, "5000/tcp"]);
+	const motoPort = /^127\.0\.0\.1:(\d+)$/u.exec(motoEndpoint)?.[1];
+	if (!motoPort)
+		throw new Error("KMS emulator did not publish a loopback endpoint");
+	const motoUrl = `http://127.0.0.1:${motoPort}`;
+	const motoDeadline = Date.now() + 30_000;
+	while (true) {
+		try {
+			const response = await fetch(motoUrl, {
+				signal: AbortSignal.timeout(2_000),
+			});
+			if (response.ok) break;
+		} catch {}
+		if (Date.now() >= motoDeadline)
+			throw new Error("KMS emulator did not become ready");
+		await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+	}
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -148,6 +191,7 @@ try {
 				HOBO_ALCHEMY_AWS_EMULATOR: "1",
 				HOBO_ALCHEMY_AWS_ENDPOINT: `https://localhost:${port}`,
 				HOBO_ALCHEMY_AWS_CA: ca,
+				HOBO_ALCHEMY_KMS_EMULATOR: motoUrl,
 			},
 			timeout: 600_000,
 		},
@@ -155,6 +199,11 @@ try {
 	if (result.error || result.status !== 0)
 		throw new Error("AWS emulator tests failed", { cause: result.error });
 } finally {
+	if (motoAttempted) {
+		try {
+			command("docker", ["rm", "-f", motoName]);
+		} catch {}
+	}
 	if (attempted) {
 		try {
 			command("docker", ["rm", "-f", name]);

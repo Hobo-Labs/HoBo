@@ -1,6 +1,7 @@
 import { Api } from "@alchemy.run/aws/ApiGatewayV2";
 import { UserPool } from "@alchemy.run/aws/Cognito";
 import { Table } from "@alchemy.run/aws/DynamoDB";
+import { Key } from "@alchemy.run/aws/KMS";
 import { Bucket } from "@alchemy.run/aws/S3";
 import { Secret } from "@alchemy.run/aws/SecretsManager";
 import { Topic } from "@alchemy.run/aws/SNS";
@@ -94,6 +95,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			events: b.topic(),
 			credentials: b.secret(),
 			identity: b.auth(),
+			key: b.crypto(),
 			alerts: b.notify(),
 			socket: b.websocket().with(sessionReplay({ enabled: false })),
 		}));
@@ -115,6 +117,11 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(mapped.primary.events?.Type).toBe(Topic.Type);
 		expect(mapped.primary.credentials?.Type).toBe(Secret.Type);
 		expect(mapped.primary.identity?.Type).toBe(UserPool.Type);
+		expect(mapped.primary.key?.Type).toBe(Key.Type);
+		expect(mapped.primary.key?.Props).toEqual({
+			keyUsage: "ENCRYPT_DECRYPT",
+			keySpec: "SYMMETRIC_DEFAULT",
+		});
 		expect(mapped.primary.alerts?.Type).toBe(Topic.Type);
 		expect(mapped.primary.socket?.Type).toBe(Api.Type);
 		expect(mapped.primary.socket?.Props).toEqual({ protocolType: "WEBSOCKET" });
@@ -127,6 +134,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			"events",
 			"identity",
 			"jobs",
+			"key",
 			"objects",
 			"sessions",
 			"socket",
@@ -141,6 +149,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			"topic",
 			"secret",
 			"auth",
+			"crypto",
 			"notify",
 			"websocket",
 		]) {
@@ -161,6 +170,14 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			}));
 			expect(() =>
 				mapBindleToAlchemy(auth, awsBindleMappers(), requirements),
+			).toThrow("PRIMITIVE_UNSUPPORTED");
+		}
+		for (const operation of ["encrypt", "decrypt", "sign", "verify"] as const) {
+			const cryptography = bindle("shop", (b) => ({
+				key: b.crypto().allow(operation),
+			}));
+			expect(() =>
+				mapBindleToAlchemy(cryptography, awsBindleMappers(), requirements),
 			).toThrow("PRIMITIVE_UNSUPPORTED");
 		}
 		const notify = bindle("shop", (b) => ({
