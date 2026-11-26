@@ -103,7 +103,6 @@ function v1(
 	});
 }
 
-// public-contract: evolution contracts for set.Created and delta.* (golden corpus).
 export const SET_EVENT_CONTRACTS: readonly EventEvolutionContract[] =
 	Object.freeze([
 		v1(CD_EVENTS.SetCreated, SET_FIELDS, [

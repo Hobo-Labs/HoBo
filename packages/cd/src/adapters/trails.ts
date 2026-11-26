@@ -26,10 +26,8 @@ export interface TrailsMigrations {
 	): Promise<Outcome<DataMigrationRun>>;
 }
 
-// public-contract: Freight manifest label naming the Trails migration its
 export const MIGRATION_LABEL = "hobo.cd/data-migration" as const;
 
-// public-contract: refusal codes of the Trails adapter.
 export const TRAILS_REASON = Object.freeze({
 	held: "trails-migration-held",
 	failed: "trails-migration-failed",

@@ -249,7 +249,7 @@ export const ARTIFACT_STORE_SCOPE = Object.freeze({
     "docs/design/sbom-vulnerability-notice-evidence.md",
     "docs/design/platform-engineering.md#plan-25",
     "docs/design/contracts-policy-flags.md#plan-29",
-    "docs/design/technical-standards.md",
+    "AGENTS.md#hobo-implementation-architecture-rules",
   ]),
   adrRefs: Object.freeze([
     "docs/design/adr/07-portability-extensibility.md#adr-0062",

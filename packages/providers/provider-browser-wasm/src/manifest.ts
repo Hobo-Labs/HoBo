@@ -20,12 +20,9 @@ const WIT_ID =
 	/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?(@[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)?$/u;
 const SAME_ORIGIN_PATH = /^\/[A-Za-z0-9._~/-]{1,512}$/u;
 
-// public-contract: versions host capability manifests.
 export const HOST_CAPABILITIES_SCHEMA =
 	"hobo.browser-wasm.host-capabilities/v1";
-// public-contract: versions browser guest manifests.
 export const GUEST_MANIFEST_SCHEMA = "hobo.browser-wasm.guest-manifest/v1";
-// public-contract: versions browser host fault reports.
 export const HOST_FAULT_SCHEMA = "hobo.browser-wasm.host-fault/v1";
 
 export const PERSISTENCE_MODES = [
@@ -72,7 +69,6 @@ export const MAX_MEMORY_LIMIT_BYTES = 1024 * 1024 * 1024;
 export const MIN_COMPONENT_BYTES = 8;
 export const MAX_COMPONENT_BYTES = 64 * 1024 * 1024;
 
-// public-contract: accepted media type for guest components.
 export const COMPONENT_MEDIA_TYPE = "application/wasm";
 
 export type HostCapabilities = {

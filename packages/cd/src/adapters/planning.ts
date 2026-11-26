@@ -43,7 +43,6 @@ export type Declaration = Parameters<typeof plan>[0];
 
 export type CampPlanning = Readonly<{
 	environment: string;
-	/** Same config `pureplan` builds: region, placement, Yard binding, budget evidence. */
 	config: Omit<PlanConfig, "deploymentId">;
 }>;
 
@@ -58,7 +57,6 @@ export type PlanningDeps = CdBase & {
 	readonly dataPorts?: readonly string[];
 };
 
-// public-contract: refusal codes of the planning resolver.
 export const PLANNING_REASON = Object.freeze({
 	declarationMissing: "planning-declaration-missing",
 	declarationMismatch: "planning-declaration-mismatch",
@@ -67,7 +65,6 @@ export const PLANNING_REASON = Object.freeze({
 	sourceUnresolvable: "planning-source-unresolvable",
 } as const);
 
-// public-contract: the default ports whose resources keep their data on `depart`.
 export const DEFAULT_DATA_PORTS = Object.freeze([
 	"kv",
 	"sql",

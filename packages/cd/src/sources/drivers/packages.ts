@@ -1,12 +1,3 @@
-// PACKAGE_REGISTRY subscriptions through the `hobo:artifact-repo` ecosystems
-// (npm, PyPI, Maven, NuGet, crates, RubyGems). Versions come from each
-// registry's own metadata API. The digest is always sha256 over the package
-// bytes: taken from registry metadata where the registry publishes sha256
-// (PyPI, crates, RubyGems, a Maven .sha256 sidecar), otherwise computed by
-// reading the package (npm after its sha512 integrity check, NuGet, Maven).
-//
-// Locator: `<package>` on the public registry, or `<https base URL>|<package>`.
-// Maven packages are `group:artifact[:extension]`.
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import type { HttpTransport, JsonValue } from "@hobo/core";
@@ -43,7 +34,6 @@ import { refuse, SOURCE_REASON } from "../reasons.js";
 import { type Candidate, discovered, selectCandidates } from "./common.js";
 import { safeHttpsUrl } from "./http-index.js";
 
-// public-contract: package ecosystems a PACKAGE_REGISTRY subscription may name.
 export const PACKAGE_ECOSYSTEMS = Object.freeze([
 	"npm",
 	"pypi",
@@ -54,7 +44,6 @@ export const PACKAGE_ECOSYSTEMS = Object.freeze([
 ] as const);
 export type PackageEcosystem = (typeof PACKAGE_ECOSYSTEMS)[number];
 
-// public-contract: default public registry per ecosystem.
 export const PACKAGE_REGISTRY_DEFAULTS: Readonly<
 	Record<PackageEcosystem, string>
 > = Object.freeze({
@@ -279,7 +268,6 @@ async function listNpm(
 				const tarball = text(dist, "tarball");
 				if (!tarball || !safeHttpsUrl(tarball)) return [];
 				const check = integrityCheck(text(dist, "integrity"));
-				// Without a sha512 integrity there is nothing to check the read against.
 				if (!check) return [];
 				return [{ version, resolve: () => fetch.hash(tarball, check) }];
 			}),

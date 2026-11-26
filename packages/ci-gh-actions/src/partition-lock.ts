@@ -3,7 +3,6 @@ import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
-/** The open file description stays in the relay, even if its lock helper exits. */
 export async function acquirePartitionLock(databasePath: string): Promise<{
 	release(): Promise<void>;
 }> {
@@ -43,9 +42,7 @@ export async function acquirePartitionLock(databasePath: string): Promise<{
 		await handle.close();
 		throw new Error("partition lock helper pipes unavailable");
 	}
-	input.on("error", () => {
-		/* A dead helper cannot release the parent's descriptor. */
-	});
+	input.on("error", () => {});
 	const closed = new Promise<void>((resolveClosed) =>
 		child.once("close", () => resolveClosed()),
 	);
@@ -62,9 +59,7 @@ export async function acquirePartitionLock(databasePath: string): Promise<{
 							if (child.pid) {
 								try {
 									process.kill(-child.pid, "SIGKILL");
-								} catch {
-									/* Already stopped. */
-								}
+								} catch {}
 							}
 							reject(new Error("partition lock helper did not stop"));
 						}, 3000);

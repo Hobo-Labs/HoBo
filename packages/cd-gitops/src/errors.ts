@@ -1,8 +1,3 @@
-// Typed failure modes of the GitOps publisher, each with its remediation.
-// Publish failures are returned as a Refusal (ReasonRecord); observation
-// problems are reasons on a non-converged observation, never a throw.
-
-// public-contract: cd-gitops failure codes with remediation.
 export const GITOPS_FAILURES = Object.freeze({
 	"gitops-config-invalid": {
 		remediation:

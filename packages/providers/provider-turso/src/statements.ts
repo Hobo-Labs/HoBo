@@ -7,7 +7,6 @@ const MAX_SAFE = "9007199254740991";
 
 const TABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/u;
 
-// public-contract: table name a deployed database holds the relay cache in; renaming it strands live rows.
 export const DEFAULT_LIBSQL_EPHEMERAL_TABLE = "hobo_ephemeral_state";
 
 export const LIBSQL_GET_MANY_CHUNK = 256;

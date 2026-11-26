@@ -24,7 +24,6 @@ const WIT_ID =
 export const MAX_EPOCH_DEADLINE_MS = 300_000;
 export const DEFAULT_EPOCH_DEADLINE_MS = 5_000;
 export const DEFAULT_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
-// public-contract: default WIT world for browser-hosted guests.
 export const DEFAULT_WORLD = "hobo:guest/http-handler@0.1.0";
 
 export type RequestedPersistence = Extract<
@@ -170,5 +169,4 @@ export function guestManifestPath(guestId: string): string {
 	return `/_hobo/guests/${guestId}/manifest.json`;
 }
 
-// public-contract: host capability discovery endpoint.
 export const HOST_CAPABILITIES_PATH = "/_hobo/host/capabilities";

@@ -45,7 +45,6 @@ export type {
 	ResourcePlan,
 } from "./types.js";
 
-// public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_WEBERNETES_PACKAGE = "@hobo/provider-webernetes";
 export {
 	type AbsentTrafficOffering,

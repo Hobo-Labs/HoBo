@@ -12,7 +12,6 @@ import type {
 import { emitMetrics } from "../telemetry/advisory.js";
 import { composeRefusal } from "./errors.js";
 
-// public-contract: metric names the fail-closed adapters emit.
 export const FAIL_CLOSED_METRICS = Object.freeze({
 	refused: "hobo.cd.compose.unconfigured_refusals",
 	notifyDropped: "hobo.cd.compose.notify_dropped",

@@ -72,7 +72,6 @@ export function storedMachineJson(
 	return `${toJsonString(StoredMachineSchema, machine)}\n`;
 }
 
-// public-contract: every `type` a worker event may have.
 export const WORKER_EVENT_TYPES = [
 	"worker.advertised",
 	"worker.refused",

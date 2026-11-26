@@ -28,7 +28,6 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
-// public-contract: immutable static deployments are separate from the owning site.
 export const NETLIFY_STATIC_DEPLOY_PRODUCT_ID = "netlify.static-deploy/v1";
 export const NETLIFY_RESOLVED_PRODUCT_IDS = Object.freeze([
 	NETLIFY_AUTHENTICATED_SITE_DEFINITION_ID,

@@ -25,7 +25,7 @@ export const ANONYMOUS_FAILURE_CODES = [
 
 export type AnonymousFailureCode = (typeof ANONYMOUS_FAILURE_CODES)[number];
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface AnonymousCaseResult {
 	readonly caseId: string;
 	readonly check: string;
@@ -34,7 +34,7 @@ export interface AnonymousCaseResult {
 	readonly failureCode?: AnonymousFailureCode;
 }
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface AnonymousConformanceReport {
 	readonly schema: typeof ANONYMOUS_CONFORMANCE_SCHEMA;
 	readonly suiteId: string;

@@ -1,4 +1,3 @@
-// public-contract: per-operation Blob cost the relay meters against.
 export const VERCEL_BLOB_EPHEMERAL_COST = Object.freeze({
 	get: { simple: 1, advanced: 0, deletes: 0 },
 	getMany: { simple: 1, advanced: 0, deletes: 0, perKey: true },

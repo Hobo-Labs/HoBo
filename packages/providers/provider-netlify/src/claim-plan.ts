@@ -27,15 +27,11 @@ import {
 	NETLIFY_ANONYMOUS_CLAIM_WINDOW_MS,
 } from "./deploy-output.js";
 
-// public-contract: provider identifier used in offers and receipts.
 export const NETLIFY_PROVIDER_ID = "netlify" as const;
-// public-contract: claim strategy disclosed before deployment.
 export const NETLIFY_ANONYMOUS_CLAIM_STRATEGY_REF =
 	"netlify.anonymous-static-site/v1" as const;
-// public-contract: bootstrap strategy disclosed before deployment.
 export const NETLIFY_ANONYMOUS_BOOTSTRAP_STRATEGY_REF =
 	"bootstrap.netlify.anonymous-cli/v1" as const;
-// public-contract: ownership verification method used by claim plans.
 export const NETLIFY_SITE_VERIFICATION_REF =
 	"hobo.verification/netlify.site-claim/v1" as const;
 

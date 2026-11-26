@@ -6,7 +6,6 @@ import {
 import type { EventEnvelope } from "@hobo/core";
 import { isJsonObject, member, textMember } from "./json.js";
 
-// public-contract: the legacy event types this module folds (owned by @hobo/cloud).
 export const LEGACY_EVENTS = Object.freeze({
 	requested: CLOUD_EVENTS.DeploymentRequested,
 	matchDecided: CLOUD_EVENTS.MatchDecided,

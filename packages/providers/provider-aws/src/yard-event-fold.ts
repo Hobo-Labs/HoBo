@@ -1,6 +1,5 @@
 import { isJsonArray, type JsonObject } from "./json.js";
 
-// public-contract: the event-store fold this provider is addressed by. Stored
 export const AWS_EVENT_STORE_RESOLVER_ID = "aws.yard.event-store/v1" as const;
 
 export interface AwsProviderNativeSignal {

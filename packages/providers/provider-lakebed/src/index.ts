@@ -104,5 +104,4 @@ export type {
 	ResourcePlan,
 } from "./types.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_PROVIDER_LAKEBED_PACKAGE = "@hobo/provider-lakebed";

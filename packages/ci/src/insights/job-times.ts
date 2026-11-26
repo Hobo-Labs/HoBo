@@ -39,7 +39,6 @@ function successRateOf(
 	return successes.length / decided.length;
 }
 
-// public-contract: how long a job may sit queued before it counts as missed by its runner.
 export const DEFAULT_MISSED_AFTER_MS = 600_000;
 
 export type RunnerTimeOptions = Readonly<{
@@ -130,7 +129,6 @@ export type JobTimeOptions = Readonly<{
 	minSharedJobs: number;
 }>;
 
-// public-contract: the sampling and confidence limits a job-time report uses unless overridden.
 export const DEFAULT_JOB_TIME_OPTIONS: JobTimeOptions = {
 	sampleCap: 50,
 	enoughRuns: 20,

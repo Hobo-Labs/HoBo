@@ -27,7 +27,6 @@ import { LAKEBED_PROVIDER_TARGET } from "./options.js";
 
 export const LAKEBED_TEMPORARY_PROVIDER_ID = LAKEBED_PROVIDER_TARGET;
 export const supportsAnonymousTemporaryDeploy = true as const;
-// public-contract: audited CLI and SDK version used by anonymous capsule deployments.
 export const LAKEBED_CLI_VERSION = "0.0.41";
 const LAKEBED_STATION_HOST = /(?:^|\.)lakebed\.app$/u;
 const LAKEBED_CLAIM_HOSTS = ["lakebed.dev", "api.lakebed.dev"];

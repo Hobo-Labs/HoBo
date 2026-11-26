@@ -13,7 +13,6 @@ import type {
 import { githubBillsJob } from "@hobo/ci/insights/usage";
 import { z } from "zod";
 
-// public-contract: the event a run started from a job webhook has until its run webhook arrives.
 export const UNKNOWN_EVENT = "unknown";
 
 export interface InsightAttemptStore extends InsightStore {

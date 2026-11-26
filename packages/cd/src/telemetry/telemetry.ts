@@ -20,7 +20,6 @@ import { TelemetryError } from "./errors.js";
 import { type CampMetricSources, collectCampMetrics } from "./fleet.js";
 import { CD_METRICS, HOBO_ATTR } from "./semconv.js";
 
-// public-contract: default DORA window for collected gauges (30 days).
 export const DORA_DEFAULT_WINDOW_MS = 30 * DAY_MS;
 
 export type CdTelemetryDeps = CdBase &

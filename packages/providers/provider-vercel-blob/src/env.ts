@@ -30,7 +30,6 @@ import {
 } from "./ephemeral-state.js";
 import { vercelBlobSdk } from "./sdk.js";
 
-// public-contract: env names a connected Blob store and Vercel OIDC provide.
 export const VERCEL_BLOB_ENV_NAMES = Object.freeze({
 	storeId: "BLOB_STORE_ID",
 	oidcToken: "VERCEL_OIDC_TOKEN",

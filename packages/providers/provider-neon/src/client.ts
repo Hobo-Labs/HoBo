@@ -22,7 +22,6 @@ import {
 	type TransportPolicy,
 } from "./transport.js";
 
-// public-contract: documented Neon claim API endpoint used by adapters.
 export const NEON_CLAIMABLE_API_BASE = "https://neon.new/api/v1";
 
 export type IdempotencyState = "in-flight" | "created" | "failed";

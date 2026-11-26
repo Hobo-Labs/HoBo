@@ -20,7 +20,6 @@ export type ProviderHealthOptions = Readonly<{
 	trialTimeoutMs: number;
 }>;
 
-// public-contract: when a hosted runner type is tripped and how it is tried again.
 export const PROVIDER_HEALTH_DEFAULTS: ProviderHealthOptions = {
 	tripAfter: 3,
 	windowMs: 30 * 60_000,

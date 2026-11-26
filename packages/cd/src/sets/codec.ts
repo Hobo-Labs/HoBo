@@ -27,7 +27,6 @@ export type ParsedDelta = DeltaRecord & {
 	readonly [parsedDelta]: "cd.ParsedDelta";
 };
 
-// public-contract: Delta intents (DeltaRecord.intent), mirrors DeltaIntent in ports.ts.
 export const DELTA_INTENTS: readonly DeltaIntent[] = Object.freeze([
 	"promote",
 	"rollback",
@@ -202,7 +201,6 @@ export function parseObservation<T>(data: T): ReconcileObservationRecord {
 	);
 }
 
-// public-contract: schema id of the reconcile status envelope; equal to
 export const STATUS_ENVELOPE_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
 
 export function parseStatusBody<T>(

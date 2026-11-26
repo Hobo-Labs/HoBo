@@ -1,4 +1,3 @@
-// public-contract: the profile record schema id consumers pin.
 export const CAPABILITY_PROFILE_SCHEMA = "hobo.capability-profile/v1";
 
 export interface VerifiedSourceRef {
@@ -25,11 +24,8 @@ export interface ProfileNonRefinement {
 	readonly reason: string;
 }
 
-// public-contract: the Convex data profile id.
 export const DATA_CONVEX_PROFILE_ID = "data.convex/v1";
 
-// public-contract: the conformance suite a data.convex claim must clear.
-// public-contract: stable conformance evidence reference for selection.
 export const CONVEX_CONFORMANCE_SUITE_REF =
 	"hobo.conformance.convex-hosting/v1";
 

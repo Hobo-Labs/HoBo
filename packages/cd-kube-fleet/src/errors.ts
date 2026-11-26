@@ -5,7 +5,6 @@
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "@hobo/cd";
 
-// public-contract: cd-kube-fleet failure codes with remediation.
 export const KUBE_FLEET_FAILURES = Object.freeze({
 	"kube-fleet-config-invalid": {
 		remediation:
@@ -160,7 +159,6 @@ export class KubeFleetError extends Error {
 	}
 }
 
-/** A ReasonRecord for one failure code, with its remediation. */
 export function reason(
 	code: KubeFleetFailureCode,
 	message: string,
@@ -174,7 +172,6 @@ export function reason(
 	});
 }
 
-/** A ReasonRecord for a caught error; unknown errors map to kube-unavailable. */
 export function reasonOf(error: Error, subject = ""): ReasonRecord {
 	if (error instanceof KubeFleetError)
 		return reason(error.code, error.message, subject);

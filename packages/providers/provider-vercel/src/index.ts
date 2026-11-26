@@ -311,7 +311,6 @@ export type {
 	ResourcePlan,
 } from "./types.js";
 
-// public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_VERCEL_PACKAGE = "@hobo/provider-vercel";
 export {
 	type VercelPlannedResource,

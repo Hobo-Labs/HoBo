@@ -102,7 +102,6 @@ export type RunnerChoice = Readonly<{
 	quoteHash: string;
 }>;
 
-// public-contract: stable refusal codes callers and the docs site rely on.
 export const RUNNER_REFUSAL_CODES = {
 	"fleet.disabled": {
 		meaning: "The provider is not enabled in policy",

@@ -1,7 +1,6 @@
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import type { ReconcileObservationRecord } from "../_generated/cd_pb.js";
 
-// public-contract: plan ports whose resources hold data and never move (D23).
 export const DATA_PORTS: ReadonlySet<string> = new Set([
 	"database",
 	"db",

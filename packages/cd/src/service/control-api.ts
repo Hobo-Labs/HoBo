@@ -35,7 +35,6 @@ import {
 	type WireValue,
 } from "./wire.js";
 
-// public-contract: metric names the read API emits through TelemetrySink.
 export const CD_API_METRICS = Object.freeze({
 	requests: "hobo.cd.api.requests",
 	requestMs: "hobo.cd.api.request_ms",

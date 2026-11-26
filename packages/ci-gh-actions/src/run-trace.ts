@@ -19,7 +19,6 @@ import {
 	toOtlpTraces,
 } from "./relay-trace.js";
 
-// public-contract: the name of the span for the time a job waited for a runner.
 export const RUNNER_WAIT_SPAN_NAME = "waiting for a runner";
 
 const hash = (text: string, bytes: number): string =>
@@ -276,10 +275,8 @@ export type RunRoutes = (
 	run: InsightRun,
 ) => Promise<readonly RunnerRouteEvent[]>;
 
-// public-contract: how long before a run was created a decision about it is still read.
 export const ROUTE_LOOKBACK_MS = 60 * 60_000;
 
-// public-contract: the most journal entries read for one attempt's spans.
 export const ROUTE_READ_LIMIT = 500;
 
 export function journalRunRoutes(

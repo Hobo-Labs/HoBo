@@ -3,13 +3,12 @@ import type { CliFlags } from "../shell/parse.js";
 import type { CliContext } from "../types/envelope.js";
 import { BuildError } from "./errors.js";
 
-// public-contract: the manifest's `schema` version discriminator — the constant is the contract.
 export const BUILD_MANIFEST_SCHEMA = "hobo.build-manifest/v1" as const;
 const DEFAULT_SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 
 export type ArtifactKind = "wasm-component" | "oci-container" | "node-app";
 
-// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
+// domain-view:
 export type ServiceDeclaration = {
 	readonly name: string;
 	readonly language: string;
@@ -18,7 +17,7 @@ export type ServiceDeclaration = {
 	readonly entrypoint: string;
 };
 
-// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
+// domain-view:
 export type BuildArtifact = {
 	readonly service: string;
 	readonly kind: ArtifactKind;
@@ -31,7 +30,7 @@ export type BuildArtifact = {
 	readonly source: string;
 };
 
-// domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
+// domain-view:
 export type BuildManifest = {
 	readonly schema: typeof BUILD_MANIFEST_SCHEMA;
 	readonly generatedBy: "hobo build";

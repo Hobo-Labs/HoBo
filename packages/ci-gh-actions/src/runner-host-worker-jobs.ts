@@ -13,23 +13,15 @@ import type {
 	RunnerHostRegistration,
 } from "./runner-host-realizer.js";
 
-// public-contract: the marker file that closes a worker's admission while it exists.
 export const WORKER_ADMISSION_PAUSED_FILE = "admission-paused";
-// public-contract: the file the host's fleet agent rewrites with its own Observation after every beat.
 export const WORKER_OBSERVATION_FILE = "fleet-observation.json";
-// public-contract: the file a local runner's controller rewrites with its runner's GitHub presence.
 export const WORKER_RUNNER_PRESENCE_FILE = "runner-presence.json";
-// public-contract: the file the host's CD agent writes to ask the supervisor for a controller release.
 export const CONTROLLER_DESIRED_FILE = "controller-desired.json";
-// public-contract: the file the supervisor rewrites with the controller process it runs.
 export const CONTROLLER_STATUS_FILE = "controller-status.json";
-// public-contract: the directory of controller releases staged by digest (`<hex>.mjs`).
 export const CONTROLLER_RELEASES_DIR = "controller-releases";
 
-/** How long a runner presence report is believed: two missed refreshes. */
 export const RUNNER_PRESENCE_MAX_AGE_MS = 2 * 60_000;
 
-/** Where a worker and its host's CD agent meet: beside the worker's journal. */
 export type WorkerHostFiles = Readonly<{
 	database: string;
 	admissionPaused: string;
@@ -53,7 +45,6 @@ export function workerHostFiles(database: string): WorkerHostFiles {
 	});
 }
 
-/** Write a file whole or not at all: the other process may read it at any moment. */
 export async function writeFileAtomically(
 	path: string,
 	content: string | Uint8Array,
@@ -65,7 +56,6 @@ export async function writeFileAtomically(
 
 const CONTROLLER_DIGEST = /^sha256:[0-9a-f]{64}$/u;
 
-/** The controller digest a supervised worker was started at (`HOBO_CI_CONTROLLER_DIGEST`), if valid. */
 export function controllerDigestFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
@@ -73,7 +63,6 @@ export function controllerDigestFromEnv(
 	return digest && CONTROLLER_DIGEST.test(digest) ? digest : undefined;
 }
 
-/** Whether the host's CD agent has closed this worker's admission. */
 export function workerAdmissionPaused(files: WorkerHostFiles): boolean {
 	return existsSync(files.admissionPaused);
 }
@@ -90,7 +79,6 @@ export async function writeWorkerObservation(
 	);
 }
 
-/** One registered runner and its GitHub presence, as the local runner read it. */
 const RunnerPresence = z
 	.object({
 		observedAtMs: z.number().int().nonnegative(),
@@ -110,7 +98,6 @@ const RunnerPresence = z
 
 export type WorkerRunnerPresence = z.infer<typeof RunnerPresence>;
 
-/** Write the registered runners' GitHub presence for the host's CD agent; atomic. */
 export async function writeWorkerRunnerPresence(
 	files: WorkerHostFiles,
 	presence: WorkerRunnerPresence,
@@ -121,10 +108,6 @@ export async function writeWorkerRunnerPresence(
 	);
 }
 
-/**
- * The registered runners' presence, when the report is fresh at `nowMs`. A
- * missing, corrupt or stale report answers no runner: unknown is not online.
- */
 export async function readWorkerRunnerPresence(
 	files: WorkerHostFiles,
 	nowMs: number,
@@ -150,7 +133,6 @@ export async function readWorkerRunnerPresence(
 
 const Row = z.object({ body: z.string() });
 
-/** Active leases in the worker's journal, read without taking its writer lock. */
 export function readWorkerLeases(database: string): readonly Lease[] {
 	const db = new DatabaseSync(database, { readOnly: true });
 	try {
@@ -176,7 +158,6 @@ export function createWorkerHostJobs(
 	const now = input.now ?? Date.now;
 	const jobs: RunnerHostJobs = {
 		async leases() {
-			// A worker that has not started yet has no journal and no jobs.
 			return existsSync(files.database) ? readWorkerLeases(files.database) : [];
 		},
 		async observation() {

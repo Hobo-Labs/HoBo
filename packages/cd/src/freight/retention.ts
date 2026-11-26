@@ -1,6 +1,5 @@
 import { CD_DEFAULTS } from "../events.js";
 
-// public-contract: label key that always places Freight under legal hold, in
 export const LEGAL_HOLD_LABEL = "hobo.cd/legal-hold" as const;
 
 export type RetentionKeepReason =

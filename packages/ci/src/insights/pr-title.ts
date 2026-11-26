@@ -1,4 +1,3 @@
-// public-contract: the title types allowed unless the caller passes its own.
 export const DEFAULT_PULL_REQUEST_TITLE_TYPES: readonly string[] = [
 	"feat",
 	"fix",

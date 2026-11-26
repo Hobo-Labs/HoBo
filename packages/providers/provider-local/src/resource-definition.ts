@@ -18,7 +18,6 @@ import type {
 	SelectionCandidate,
 } from "@hobo/capability-profiles";
 
-// public-contract: schema identity shared with Resource Definition consumers.
 export const RESOURCE_DEFINITION_VNEXT_SCHEMA =
 	"hobo.resource-definition/vNext" as const;
 
@@ -81,7 +80,6 @@ export type LocalResourceSemantics = {
 	readonly secretCustodyAvailable: boolean;
 };
 
-/** A semantics-only definition record shaped for catalog registration. */
 export type LocalResourceDefinition = {
 	readonly id: string;
 	readonly providerId: string;

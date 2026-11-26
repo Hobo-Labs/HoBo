@@ -75,7 +75,6 @@ export function combineRoutes(routes: readonly DriftRoute[]): DriftRoute {
 	return out;
 }
 
-// public-contract: default drift routes per class.
 export const DEFAULT_DRIFT_ROUTES: Readonly<Record<DriftClass, DriftRoute>> =
 	Object.freeze({
 		modified: "reconcile",
@@ -85,7 +84,6 @@ export const DEFAULT_DRIFT_ROUTES: Readonly<Record<DriftClass, DriftRoute>> =
 		unknown: "escalate",
 	});
 
-// public-contract: default blast-radius budget (drifted resources per pass).
 export const DEFAULT_DRIFT_BLAST_RADIUS = 10 as const;
 
 export type DriftPolicyOptions = Readonly<{

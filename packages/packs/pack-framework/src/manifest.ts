@@ -35,7 +35,6 @@ import {
 	sha256Of,
 } from "./signature.js";
 
-// public-contract: versions serialized pack manifests.
 export const PACK_MANIFEST_SCHEMA_VERSION = "hobo.pack-manifest/v1" as const;
 
 declare const packIdBrand: unique symbol;

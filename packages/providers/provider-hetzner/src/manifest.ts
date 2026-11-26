@@ -22,7 +22,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const HETZNER_PROVIDER_ID = "@hobo/provider-hetzner";
 
 // Hetzner's location slugs (Falkenstein, Nuremberg, Helsinki, Ashburn,

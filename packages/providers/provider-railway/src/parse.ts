@@ -54,7 +54,6 @@ export type RailwayResourcePlan = {
 /** Deploy outputs handed back to `client()`: printable, single-line values. */
 export type RailwayBindings = Readonly<Record<string, string>>;
 
-// public-contract: stable parser error code exposed to callers.
 export const RAILWAY_REJECTED_CODE = "HOBO_RAILWAY_INPUT_REJECTED" as const;
 
 export class RailwayInputRejectedError extends Error {

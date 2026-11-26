@@ -31,7 +31,6 @@ export interface HostAssetTransport {
 	request(request: TransportRequest): Promise<TransportResponse>;
 }
 
-// public-contract: reserved browser-host transport prefix.
 export const HOST_ROUTE_PREFIX = "/_hobo/";
 
 export type TransportPolicy = {

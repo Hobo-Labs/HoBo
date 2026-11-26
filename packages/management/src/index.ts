@@ -55,5 +55,4 @@ export type {
 } from "./types.js";
 export { toPublicConnection, toRailPublicView } from "./types.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_MANAGEMENT_PACKAGE = "@hobo/management";

@@ -1,4 +1,3 @@
-// public-contract: per-operation libSQL cost the relay meters against Turso's rows allowance.
 export const LIBSQL_EPHEMERAL_COST = Object.freeze({
 	get: { requests: 1, rowsReadMax: 1, rowsWrittenMax: 0 },
 	getMany: { requests: 1, rowsReadMax: 1, rowsWrittenMax: 0, perKey: true },

@@ -59,7 +59,7 @@ export const BOOTSTRAP_EXPIRY_SOURCES = [
 
 export type BootstrapExpirySource = (typeof BOOTSTRAP_EXPIRY_SOURCES)[number];
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface BootstrapAttemptOutcome {
 	readonly caseId: string;
 	readonly effectAttempted: boolean;

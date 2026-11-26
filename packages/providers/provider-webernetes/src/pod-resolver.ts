@@ -40,7 +40,6 @@ import {
 	type WebernetesLocalEndpoint,
 } from "./parse.js";
 
-// public-contract: the local yard's hosting product id.
 export const WEBERNETES_POD_PRODUCT_ID = "webernetes.pod/v1";
 
 const PROVIDER_ID = "webernetes";

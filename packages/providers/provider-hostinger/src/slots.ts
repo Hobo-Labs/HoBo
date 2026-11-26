@@ -34,20 +34,13 @@
 import { capability, type SlotBinding, slotBinding } from "@hobo/core";
 
 export interface VpsOptions {
-	/** An OS template name such as `ubuntu-24-04`. */
 	readonly template?: string;
-	/** A plan name such as `kvm1`; Hostinger bills the plan, not the shape. */
 	readonly plan?: string;
 	readonly hostname?: string;
 	readonly backups?: boolean;
 	readonly monitoring?: boolean;
 }
 
-/**
- * Hostinger VPS — slot `web`, profile `web.hosted/v1`. A KVM virtual machine
- * with a public address is Hostinger's most capable web lane; nothing above it
- * is a container platform, and this row does not pretend otherwise.
- */
 export function vps(options?: VpsOptions): SlotBinding {
 	return slotBinding({
 		slot: "web",
@@ -57,12 +50,6 @@ export function vps(options?: VpsOptions): SlotBinding {
 	});
 }
 
-/**
- * The same VPS product reached through the `service` slot as a long-running
- * worker — slot `service`, profile `service.worker/v1`. Rows key on
- * `(profile, productId)`, so both coexist without colliding, and a workload
- * that needs a worker rather than a public origin matches only this one.
- */
 export function vpsWorker(options?: VpsOptions): SlotBinding {
 	return slotBinding({
 		slot: "service",
@@ -76,16 +63,9 @@ export interface WebHostingOptions {
 	readonly phpVersion?: string;
 	readonly ssl?: boolean;
 	readonly documentRoot?: string;
-	/** A plan name such as `premium` or `business`. */
 	readonly plan?: string;
 }
 
-/**
- * Hostinger shared/cloud web hosting — slot `web`, profile `web.hosted/v1`. It
- * serves a PHP application on a managed origin, which is the same capability
- * profile a VPS satisfies through very different means; both are declared and
- * selection picks.
- */
 export function webHosting(options?: WebHostingOptions): SlotBinding {
 	return slotBinding({
 		slot: "web",
@@ -101,12 +81,6 @@ export interface StaticSiteOptions {
 	readonly documentRoot?: string;
 }
 
-/**
- * Prebuilt assets on a hosting plan — slot `web`, profile `web.static/v1`. A
- * static site is a narrower profile than `web.hosted/v1`, so this sits beside
- * the hosted options rather than competing with them, and a workload that only
- * needs assets can match the cheaper row.
- */
 export function staticSite(options?: StaticSiteOptions): SlotBinding {
 	return slotBinding({
 		slot: "web",
@@ -123,11 +97,6 @@ export interface MysqlOptions {
 	readonly collation?: string;
 }
 
-/**
- * Hostinger managed MySQL — slot `data`, profile `data.mysql/v1`. The database
- * is included with a hosting plan rather than billed as its own product, which
- * is why its declared marginal cost is a genuine zero.
- */
 export function mysql(options?: MysqlOptions): SlotBinding {
 	return slotBinding({
 		slot: "data",
@@ -149,16 +118,6 @@ type AnySlotOptions =
 	| MysqlOptions
 	| DnsZoneOptions;
 
-/**
- * Forwards the caller's option bag to the parse boundary, dropping only keys
- * whose value is `undefined` (an omitted option must be absent, not an
- * explicit `undefined`, under `exactOptionalPropertyTypes` and JSON-safety).
- *
- * Every remaining key is passed through — including one the option types do
- * not declare — so a key smuggled past the types reaches `slotBinding()` and
- * is screened there. Cherry-picking the known keys instead would silently
- * swallow it, which is exactly the kind of quiet drop this repo refuses.
- */
 function present(options: AnySlotOptions) {
 	const out = {};
 	for (const [key, value] of Object.entries(options)) {
@@ -167,12 +126,6 @@ function present(options: AnySlotOptions) {
 	return out;
 }
 
-/**
- * A Hostinger-hosted DNS zone — slot `api`, profile `api.http/v1`. A zone is
- * how an HTTP surface on this provider becomes addressable; there is no load
- * balancer product to name here, and pretending there is one would be the
- * portability lie this catalog avoids.
- */
 export function dnsZone(options?: DnsZoneOptions): SlotBinding {
 	return slotBinding({
 		slot: "api",

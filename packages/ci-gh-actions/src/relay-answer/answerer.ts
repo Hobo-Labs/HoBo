@@ -21,7 +21,6 @@ import { GithubCiFile, parseRelayJobs, RELAY_CONFIG_PATH } from "./ci-file.js";
 
 export const RELAY_OFFER_WAIT_MS = 4 * 60_000;
 export const RELAY_MAX_ATTEMPTS = 4;
-// public-contract: the prefix of every one-job runner relay mode creates; the sweep deletes by it.
 export const RELAY_RUNNER_PREFIX = "hobo-relay-";
 const RELAY_RUNNER_NAME = /^hobo-relay-(\d+)-(\d+)-(\d+)$/u;
 const REMEMBERED_JOBS = 5_000;

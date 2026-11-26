@@ -28,7 +28,6 @@ import type {
 } from "../ports.js";
 import { feedRefusal } from "./errors.js";
 
-// public-contract: schema id of reconcile status event bodies (shared with WP7's in-process transport).
 export const RECONCILE_STATUS_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
 
 const MAX_ATTEMPTS = 3;

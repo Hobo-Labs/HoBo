@@ -41,8 +41,6 @@ export interface CiRoutingOptions {
 	onRefusal?: (refusal: CiRoutingRefusal) => void;
 }
 
-/** Shared by admission and pre-dispatch repricing. Negative means left wins.
- * A partly free job can still cost more than an entirely paid alternative. */
 export function compareCiRoutingCandidates(
 	left: CiRoutingCandidateCost,
 	right: CiRoutingCandidateCost,
@@ -82,9 +80,6 @@ export function compareCiRoutingCandidates(
 	return freeDifference;
 }
 
-// Timestamp-only snapshots cannot prove that a later completion at the same
-// clock tick was included. Count equality (and unknown timestamps) until a
-// strictly newer observation establishes coverage.
 export function shouldCountLocalUsage(
 	lease: Lease,
 	observedAt: string,
@@ -98,7 +93,6 @@ export function shouldCountLocalUsage(
 	);
 }
 
-/** Pure ranking input; availability is measured per customer-owned account. */
 export function route(
 	account: Account,
 	leases: readonly Lease[],
@@ -393,8 +387,6 @@ export function route(
 		(candidate) =>
 			compareCiRoutingCandidates(cost(candidate), cost(best), strategy) === 0,
 	);
-	// Dispatcher ranks the lowest-cost shortlist, retaining its native credit
-	// rationale and deterministic tie-breaking.
 	const decision = decideDispatch({
 		category: "runner",
 		dispatchId: "ci-route",

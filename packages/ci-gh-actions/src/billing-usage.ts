@@ -2,16 +2,12 @@ import type { JobFact, MinutesReader, MinutesUsage } from "@hobo/ci";
 import { isGithubHostedLabel } from "@hobo/ci";
 import { z } from "zod";
 
-// public-contract: the vendor page the included compute per plan was read from.
 export const GITHUB_INCLUDED_COMPUTE_SOURCE =
 	"https://docs.github.com/en/billing/concepts/product-billing/github-actions";
-// public-contract: the day that page was read.
 export const GITHUB_INCLUDED_COMPUTE_OBSERVED_AT = "2026-11-17";
 
-// public-contract: the price that turns included compute into Linux minutes.
 export const GITHUB_LINUX_USD_PER_MINUTE = 0.006;
 
-// public-contract: included Actions compute per plan, in US dollars a month.
 export const GITHUB_INCLUDED_COMPUTE_USD: ReadonlyMap<string, number> = new Map(
 	[
 		["free", 12],
@@ -80,10 +76,8 @@ export type GithubMinutesReaderDeps = Readonly<{
 	cacheMs: number;
 }>;
 
-// public-contract: the span the minutes burn is measured over.
 export const GITHUB_BURN_WINDOW_HOURS = 2;
 
-// public-contract: how long one billing reading is reused before GitHub is asked again.
 export const GITHUB_MINUTES_CACHE_MS = 5 * 60_000;
 
 type Reading = Readonly<{ atMs: number; usage: MinutesUsage | undefined }>;

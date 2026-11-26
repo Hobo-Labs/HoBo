@@ -1,4 +1,3 @@
-// public-contract: the hosted providers a runner order can name.
 export const HOSTED_RUNNER_PROVIDERS = [
 	"blacksmith",
 	"depot",
@@ -10,7 +9,6 @@ export const HOSTED_RUNNER_PROVIDERS = [
 ] as const;
 export type HostedRunnerProvider = (typeof HOSTED_RUNNER_PROVIDERS)[number];
 
-// public-contract: every key a runner-order step or a relay input can carry.
 export const RUNNER_STEP_KEYS = [
 	"fleet",
 	"machine",
@@ -31,10 +29,8 @@ export function isHostedRunnerProvider(
 	return HOSTED.has(key);
 }
 
-// public-contract: the machine sizes an `auto` relay input can ask for, in vCPUs.
 export const RUNNER_AUTO_SIZES = [2, 4, 8, 16, 32] as const;
 export type RunnerAutoSize = (typeof RUNNER_AUTO_SIZES)[number];
-// public-contract: the size `auto` means when the order names none.
 export const DEFAULT_RUNNER_AUTO_SIZE: RunnerAutoSize = 2;
 
 export function runnerAutoSize(vcpus: number): RunnerAutoSize | undefined {

@@ -1,6 +1,5 @@
 import type { EphemeralKey } from "@hobo/core";
 
-// public-contract: pathname prefix every relay instance must share to see one cache.
 export const DEFAULT_VERCEL_BLOB_NAMESPACE = "hobo-ephemeral";
 
 const NAMESPACE = /^[a-z0-9][a-z0-9_-]*(?:\/[a-z0-9][a-z0-9_-]*)*$/u;

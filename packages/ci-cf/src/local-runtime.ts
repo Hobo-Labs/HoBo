@@ -310,7 +310,6 @@ export async function verifyLocalResult(
 	return result;
 }
 
-/** Owns one native runtime, stops admission before cleanup, and never treats a trigger as a passing check. */
 export async function runLocal(
 	directory: string,
 	resumeId?: string,
@@ -648,7 +647,6 @@ async function stopResources(
 			error instanceof Error ? error.message : String(error),
 		);
 	}
-	// Always attempt container cleanup, even if the process verifier failed.
 	assertDockerIdentity(env, expectedDockerId);
 	const containers = await stopOwnedContainers(preparationId, env);
 	assertDockerIdentity(env, expectedDockerId);
@@ -665,8 +663,6 @@ function assertDockerIdentity(env: NodeJS.ProcessEnv, expected: string): void {
 		throw new Error("original local Docker daemon cannot be verified");
 }
 
-/** Linux flock stays attached to this open file description and releases on crash.
- * Never unlink the inode: doing so would allow a second independent lock. */
 export async function acquirePreparationLock(
 	directory: string,
 	id: string,

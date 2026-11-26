@@ -128,7 +128,6 @@ function parsedDecision(status: unknown, value: unknown): Decision | undefined {
 		return undefined;
 	if (status === "committed") return { status, value };
 	if (status === "rejected" && rejectionCodes.some((code) => code === value)) {
-		// SAFETY: membership in the frozen finite rejection vocabulary was checked.
 		return { status, code: value as DurableMessagingRejectionCode };
 	}
 	return undefined;

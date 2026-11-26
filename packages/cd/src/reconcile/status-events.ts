@@ -8,13 +8,11 @@ import {
 import { CD_EVENTS } from "../events.js";
 import { driftFindings } from "./drift.js";
 
-// public-contract: drift event names WP7 appends to the Camp status stream.
 export const RECONCILE_EVENTS = Object.freeze({
 	DriftDetected: "resource.DriftDetected",
 	DiffProposed: "drift.DiffProposed",
 } as const);
 
-// public-contract: schema id of reconcile status event bodies.
 export const RECONCILE_STATUS_SCHEMA = "hobo.cd.reconcile-status/v1" as const;
 
 export type StatusEventType =

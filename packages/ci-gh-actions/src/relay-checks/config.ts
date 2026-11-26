@@ -5,7 +5,6 @@ export type RelayChecksConfig = Readonly<{
 	lint: boolean;
 }>;
 
-// public-contract: the checks a repository gets when it writes none.
 export const DEFAULT_RELAY_CHECKS: RelayChecksConfig = Object.freeze({
 	titleTypes: Object.freeze([]),
 	lint: false,

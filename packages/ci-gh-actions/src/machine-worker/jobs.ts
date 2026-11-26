@@ -20,7 +20,6 @@ export interface MachineGithub {
 	): Promise<Response>;
 }
 
-// public-contract: GitHub's REST API origin.
 export const GITHUB_API_URL = "https://api.github.com";
 
 export function userGithub(
@@ -119,7 +118,6 @@ async function read<T>(
 	return parsed.success ? parsed.data : undefined;
 }
 
-// public-contract: how often a machine with no relay reads GitHub's queue.
 export const MACHINE_QUEUE_POLL_MS = 15_000;
 const OFFERED_FOR_MS = 10 * 60_000;
 

@@ -54,7 +54,6 @@ export function hoboCiSource(input: HoboCiSourceInput): FreightSourceRecord {
 	});
 }
 
-// public-contract: the HoBo CI components CD delivers for HoBo itself.
 export const HOBO_CI_COMPONENTS = Object.freeze({
 	relay: Object.freeze({
 		bindle: "hobo-ci-relay",

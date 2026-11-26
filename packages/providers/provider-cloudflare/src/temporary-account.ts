@@ -54,7 +54,6 @@ import {
 	solvePreviewChallenge,
 } from "./temporary-pow.js";
 
-// public-contract: Yard identity used in offers and receipts.
 export const CLOUDFLARE_TEMPORARY_ACCOUNT_YARD_ID =
 	"cloudflare.temporary-account-yard/v1" as const;
 
@@ -69,7 +68,6 @@ export const CLOUDFLARE_TEMPORARY_ACCOUNT_YARD_ID =
  * response it does not fully recognise with `PROVIDER_CONTRACT_CHANGED`, so a
  * wrong guess surfaces as a typed refusal rather than a half-parsed account.
  */
-// public-contract: documented temporary-account API endpoint.
 export const CLOUDFLARE_TEMPORARY_ACCOUNT_API_BASE =
 	"https://api.cloudflare.com/client/v4";
 

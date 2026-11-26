@@ -15,7 +15,6 @@ import {
 import { CD_EVENTS } from "../events.js";
 import type { DoraMetrics } from "../ports.js";
 
-// public-contract: milliseconds per day used by deployment frequency.
 export const DAY_MS = 86_400_000 as const;
 
 export type DoraDeployment = Readonly<{

@@ -17,11 +17,8 @@ import { PrismaProviderError } from "./errors.js";
  * `--json` output shape (`DatabaseResult`/`DatabaseError`) before you do.
  * Latest published version at review time (2026-08-08) was also 1.2.1.
  */
-// public-contract: audited create-db version used by the provider adapter.
 export const PINNED_CREATE_DB_VERSION = "1.2.1";
-// public-contract: package identity used in generated execution plans.
 export const CREATE_DB_PACKAGE = "create-db";
-// public-contract: immutable package specifier shown in offers and receipts.
 export const PINNED_CREATE_DB_SPECIFIER = `${CREATE_DB_PACKAGE}@${PINNED_CREATE_DB_VERSION}`;
 
 /** Regions the pinned CLI accepts. Anything else is rejected before spawning. */

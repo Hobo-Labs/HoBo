@@ -1,4 +1,3 @@
-// public-contract: telemetry failure codes with remediation.
 export const TELEMETRY_FAILURES = Object.freeze({
 	"otlp-endpoint-invalid": {
 		remediation:

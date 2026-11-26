@@ -1,7 +1,6 @@
 import type { VerifiedSourceRef } from "./sponsored-transfer.js";
 import { VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID } from "./sponsored-transfer.js";
 
-// public-contract: stable Vercel Drop Resource Definition identifier.
 export const VERCEL_DROP_DEFINITION_ID = "vercel.drop-station/v1";
 
 export type DropClassification = {

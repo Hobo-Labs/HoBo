@@ -19,7 +19,6 @@ import {
 } from "@hobo/core";
 import { AGENT_FAILURES } from "./errors.js";
 
-// public-contract: hosts an agent never dials.
 export const METADATA_HOSTS: ReadonlySet<string> = new Set([
 	"169.254.169.254",
 	"[fd00:ec2::254]",
@@ -27,9 +26,7 @@ export const METADATA_HOSTS: ReadonlySet<string> = new Set([
 	"metadata.google.internal",
 ]);
 
-// public-contract: response cap of one feed response at the agent.
 export const AGENT_MAX_RESPONSE_BYTES = 16_777_216 as const;
-// public-contract: longest agent request (long-poll plus margin).
 export const AGENT_MAX_TIMEOUT_MS = 120_000 as const;
 
 export class AgentEgressError extends Error {

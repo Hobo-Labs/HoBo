@@ -60,11 +60,9 @@ export type TransportPolicy = {
 };
 
 /** The one documented no-signup origin. */
-// public-contract: allowlisted control-plane host; widening it widens egress.
 export const UPSTASH_CONTROL_PLANE_HOST = "upstash.com" as const;
 
 /** Per-database REST origins are `<name>-<id>.upstash.io`. */
-// public-contract: allowlisted data-plane suffix; widening it widens egress.
 export const UPSTASH_DATA_PLANE_HOST_SUFFIX = ".upstash.io" as const;
 
 export const UPSTASH_CONTROL_PLANE_POLICY: TransportPolicy = {

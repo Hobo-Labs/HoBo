@@ -31,13 +31,9 @@ import {
 } from "./runner-fleet-delivery.js";
 
 export { RUNNER_HOST_PRODUCT_ID };
-// public-contract: the resolver identity the runner fleet's Camps resolve to.
 export const RUNNER_HOST_PROVIDER_ID = "hobo-ci";
-// public-contract: the controller container name prefix; the suffix is the image digest hex.
 export const RUNNER_CONTROLLER_CONTAINER_PREFIX = "hoboci-runner-controller-";
-// public-contract: realization parameters that say how to act, not what the controller is.
 export const RUNNER_HOST_DIRECTIVES = Object.freeze(["drainDeadlineMs"]);
-// public-contract: outputs that change with load on the host; never drift.
 export const RUNNER_HOST_RETAINED_FIELDS = Object.freeze([
 	"busyRunners",
 	"freeSlots",
@@ -121,7 +117,6 @@ export type RunnerControllerContainers = Pick<
 	Required<Pick<DockerDriver, "inspectImage" | "listWorkerContainers">> &
 	Pick<DepsImageDockerPort, "pull">;
 
-// public-contract: the label a host's observation carries its controller digest in (`hobo.ci/controller-digest=sha256:<hex>`).
 export const CONTROLLER_DIGEST_LABEL = "hobo.ci/controller-digest";
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
@@ -1241,7 +1236,6 @@ export type RunnerHostCampReport = Readonly<{
 	}>[];
 }>;
 
-// public-contract: the claims a runner host's CD agent reports about its own health.
 export const RUNNER_HOST_HEALTH_CLAIMS = Object.freeze({
 	advert: "hobo.ci/observation",
 	validUntil: "hobo.ci/observation-valid-until",

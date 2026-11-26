@@ -4,7 +4,6 @@ import {
 	type TransportResponse,
 } from "@hobo/core";
 
-// public-contract: the cross-package marker a latin1 (byte) transport carries.
 export const HTTP_TRANSPORT_BODY_ENCODING = Symbol.for(
 	"hobo.http-transport.body-encoding",
 );

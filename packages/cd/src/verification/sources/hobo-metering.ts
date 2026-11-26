@@ -19,7 +19,6 @@ import {
 	sampleValue,
 } from "./http.js";
 
-// public-contract: Station metering read API series path this source calls;
 // pinned by the hobo-metering PACT.
 export const METERING_SERIES_PATH = "/v1/metering/series";
 

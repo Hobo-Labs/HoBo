@@ -38,18 +38,14 @@ import {
  * ceremony backs three offers: a sponsored site, a sponsored HTTP API, and a
  * sponsored deployment handed over together with its marketplace database.
  */
-// public-contract: stable sponsored-web Resource Definition identifier.
 export const VERCEL_SPONSORED_WEB_DEFINITION_ID =
 	"vercel.sponsored-web/v1" as const;
-// public-contract: stable sponsored-API Resource Definition identifier.
 export const VERCEL_SPONSORED_API_DEFINITION_ID =
 	"vercel.sponsored-api/v1" as const;
-// public-contract: stable ownership-claim Resource Definition identifier.
 export const VERCEL_CLAIM_DEPLOYMENT_DEFINITION_ID =
 	"vercel.claim-deployment/v1" as const;
 
 /** Bootstrap strategy every sponsored Vercel product is provisioned through. */
-// public-contract: bootstrap strategy disclosed before deployment.
 export const VERCEL_BOOTSTRAP_STRATEGY_REF =
 	"bootstrap.vercel.sponsored/v1" as const;
 /** The transfer ceremony that claims them. */
@@ -57,7 +53,6 @@ export const VERCEL_CLAIM_STRATEGY_REF =
 	VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID;
 
 /** Date a human read the official sources listed in the README. */
-// public-contract: dates the provider evidence snapshot.
 export const VERCEL_EVIDENCE_CHECKED_AT = "2026-08-08";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;

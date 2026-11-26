@@ -13,7 +13,6 @@ export const GITHUB_PAGES_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile
 const NOT_ROUTABLE =
 	"a GitHub Pages site serves one published tree per repository from GitHub's CDN; publishing replaces it atomically and no request routing is exposed";
 
-// public-contract: every TrafficRouting offering, each declared absent for GitHub Pages.
 export const GITHUB_PAGES_TRAFFIC_ROUTING_ABSENT: readonly {
 	readonly offeringId: TrafficRoutingOfferingId;
 	readonly reason: string;

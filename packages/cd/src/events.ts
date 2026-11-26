@@ -1,6 +1,3 @@
-// public-contract: event names, stream ids and schema ids are wire contract
-
-// public-contract: every event family @hobo/cd appends.
 export const CD_EVENTS = Object.freeze({
 	FreightRecorded: "freight.Recorded",
 	FreightYanked: "freight.Yanked",
@@ -71,7 +68,6 @@ export const CD_EVENTS = Object.freeze({
 
 export type CdEventType = (typeof CD_EVENTS)[keyof typeof CD_EVENTS];
 
-// public-contract: stream ids. Desired state (spec) and observations (status)
 export const CD_STREAMS = Object.freeze({
 	freight: (freightId: string) => `cd-freight-${freightId}`,
 	source: (name: string) => `cd-source-${name}`,
@@ -92,7 +88,6 @@ export const CD_STREAMS = Object.freeze({
 	compliance: (campId: string) => `cd-compliance-${campId}`,
 });
 
-// public-contract: durable subscription ids. Leases are keyed by Camp so two
 export const CD_SUBSCRIPTIONS = Object.freeze({
 	camp: (campId: string) => `cd:camp:${campId}`,
 	source: (name: string) => `cd:source:${name}`,
@@ -102,51 +97,29 @@ export const CD_SUBSCRIPTIONS = Object.freeze({
 	inventory: (stationId: string) => `cd:inventory:${stationId}`,
 });
 
-// public-contract: schema ids.
 export const FREIGHT_MANIFEST_SCHEMA = "hobo.freight-manifest/v1" as const;
-// public-contract: schema ids.
 export const FREIGHT_SCHEMA = "hobo.cd.freight/v1" as const;
-// public-contract: schema ids.
 export const SOURCE_SCHEMA = "hobo.cd.source/v1" as const;
-// public-contract: schema ids.
 export const SET_SCHEMA = "hobo.cd.set/v1" as const;
-// public-contract: schema ids.
 export const DELTA_SCHEMA = "hobo.cd.delta/v1" as const;
-// public-contract: schema ids.
 export const PROMOTION_SCHEMA = "hobo.cd.promotion/v1" as const;
-// public-contract: schema ids.
 export const PIPELINE_SCHEMA = "hobo.cd.pipeline/v1" as const;
-// public-contract: schema ids.
 export const PLACEMENT_SCHEMA = "hobo.cd.placement/v1" as const;
-// public-contract: media type of a stored resolved-set blob.
 export const RESOLVED_SET_MEDIA_TYPE =
 	"application/vnd.hobo.resolved-set+json" as const;
-// public-contract: inline limit for resolved sets on the delivery feed.
 export const FEED_INLINE_LIMIT_BYTES = 262_144 as const;
-// public-contract: refusal codes.
 export const PROGRESSIVE_UNSUPPORTED = "progressive-unsupported" as const;
-// public-contract: refusal codes.
 export const LINEAGE_UNSATISFIED = "lineage-unsatisfied" as const;
-// public-contract: refusal codes.
 export const WINDOW_CLOSED = "window-closed" as const;
-// public-contract: refusal codes.
 export const UNVERIFIED_TRIGGER = "unverified-trigger" as const;
-// public-contract: refusal codes.
 export const PLACEMENT_UNSATISFIABLE = "placement-unsatisfiable" as const;
-// public-contract: refusal codes.
 export const FAILOVER_UNSAFE = "failover-unsafe" as const;
-// public-contract: refusal codes.
 export const OWNERSHIP_CONFLICT = "ownership-conflict" as const;
-// public-contract: refusal codes.
 export const ENROLLMENT_INCOMPLETE = "enrollment-incomplete" as const;
-// public-contract: refusal codes.
 export const FANOUT_BUDGET_EXCEEDED = "fanout-budget-exceeded" as const;
-// public-contract: refusal codes.
 export const SHADOW_REQUIRED = "shadow-required" as const;
-// public-contract: per-resource bound on reported posture attributes.
 export const OBSERVE_ATTRIBUTES_LIMIT_BYTES = 16_384 as const;
 
-// public-contract: every default value (Part I §I.9). Durations are milliseconds.
 export const CD_DEFAULTS = Object.freeze({
 	leaseTtlMs: 30_000,
 	leaseRenewMs: 10_000,
@@ -214,7 +187,6 @@ export const CD_DEFAULTS = Object.freeze({
 	postgresPoolSize: 10,
 } as const);
 
-// public-contract: the one set of ramp defaults (replaces three vocabularies).
 export const CD_RAMP_DEFAULTS = Object.freeze({
 	canary: Object.freeze([5, 25, 50, 100] as const),
 	blueGreen: Object.freeze([100] as const),

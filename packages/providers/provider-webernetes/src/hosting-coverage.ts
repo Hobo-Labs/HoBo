@@ -33,7 +33,6 @@ export const WEBERNETES_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[]
 		}),
 	]);
 
-/** The I14 coverage document for Webernetes. */
 export const WEBERNETES_HOSTING_COVERAGE: HostingCoverage =
 	defineHostingCoverage({
 		providerId: "webernetes",

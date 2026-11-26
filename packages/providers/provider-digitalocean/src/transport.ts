@@ -38,10 +38,8 @@ import {
 	type TransportGuardPolicy,
 } from "@hobo/core";
 
-// public-contract: the single host every DigitalOcean control-plane call reaches.
 export const DIGITALOCEAN_API_HOST = "api.digitalocean.com";
 
-// public-contract: the path allowlist for the DigitalOcean transport guard.
 export const DIGITALOCEAN_ALLOWED_PATH_PREFIXES = Object.freeze([
 	"/v2/",
 ] as const);
@@ -140,7 +138,6 @@ export function spacesUrl(region: string, path: string): string {
 const FUNCTIONS_HOST_PATTERN =
 	/^faas-[a-z]{2,4}[0-9]{1,2}-[0-9a-f]{4,32}\.doserverless\.co$/u;
 
-// public-contract: the path allowlist for a Functions namespace transport guard.
 export const DIGITALOCEAN_FUNCTIONS_ALLOWED_PATH_PREFIXES = Object.freeze([
 	"/api/v1/namespaces/",
 ] as const);

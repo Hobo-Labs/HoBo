@@ -13,19 +13,14 @@ import type {
 	PlanRemediation,
 } from "./plan-types.js";
 
-export const CLOUD_EVENT_SCHEMA_VERSION = "hobo.cloud-events/v1"; // public-contract: schemaVersion stamped on every cloud fact body
+export const CLOUD_EVENT_SCHEMA_VERSION = "hobo.cloud-events/v1";
 
-// Control-plane event catalog (control-plane.md + the epic reference
-// architecture). These are the only fact types the S2-01/S2-02 vertical emits.
 export const CLOUD_EVENTS = Object.freeze({
 	DeploymentRequested: "deployment.Requested",
 	MatchDecided: "match.Decided",
 	DeploymentPlanned: "deployment.Planned",
 	DeploymentPlanRejected: "deployment.PlanRejected",
 	ProviderRegistered: "provider.Registered",
-	// Operator approval of a registered provider. Only approved providers are
-	// matchable by the Planner (walkthrough Part 0/2: a cloud's "default
-	// providers approved" is a durable fact, not config).
 	ProviderApproved: "provider.Approved",
 	ResourcePlanning: "resource.Planning",
 	ResourceProvisioning: "resource.Provisioning",
@@ -41,18 +36,12 @@ export const CLOUD_EVENTS = Object.freeze({
 	DeploymentTransitionStarted: "deployment.TransitionStarted",
 	DeploymentTransitionCompleted: "deployment.TransitionCompleted",
 	DeploymentReopened: "deployment.Reopened",
-	// Ownership rebind: an anonymous `npx hobo up` deployment is bound to an
-	// account, preserving all provisioned state (resources, outputs, URL).
 	DeploymentClaimed: "deployment.Claimed",
 	// Crypto-shred erasure REQUEST for a data subject (HOBO-295). Append-only —
 	// historical events are never rewritten; projections redact the subject on
 	// rebuild.
 	SubjectErasureRequested: "subject.ErasureRequested",
-	// Adopt an existing estate in place: bring resources that ALREADY exist under
-	// HoBo management by recording them as a deployment, without provisioning.
 	DeploymentImported: "deployment.Imported",
-	// Derived-HoBo (fork) upgrade ceremony (ADR-0057): check the derivative.json
-	// descriptor, run pinned upcasters, rerun seam conformance.
 	DerivativeUpgradeStarted: "derivative.UpgradeStarted",
 	DerivativeUpgradeSucceeded: "derivative.UpgradeSucceeded",
 	DerivativeUpgradeFailed: "derivative.UpgradeFailed",
@@ -132,7 +121,6 @@ export function foldErasedSubjects(
 	const erased = new Set<string>();
 	for (const event of events) {
 		if (event.type === CLOUD_EVENTS.SubjectErasureRequested) {
-			// SAFETY: `const subject = (event.data as { subject?: unknown } | undefined)` is required at this I/O or test boundary.
 			const subject = (event.data as { subject?: unknown } | undefined)
 				?.subject;
 			if (isJsonString(subject) && subject.length > 0) {
@@ -209,18 +197,12 @@ export function providerApproved(data: {
 	return { type: CLOUD_EVENTS.ProviderApproved, data };
 }
 
-// ---- S2-03a/b: Orchestrator + ResourceActor FSM + Executor facts ----
-// Past-tense facts the provisioning path appends. The per-resource subject rides
-// the fact body's `resourceId`/`deploymentId` fields, never the type string.
-
 export interface ResourceProvisioningData {
 	deploymentId: string;
 	resourceId: string;
 	execId: string;
 	programHash: string;
-	/** `desiredSpecHash` of the resource being applied (upsert detection). */
 	specHash?: string;
-	/** Provider that may have received the apply; absent on legacy facts. */
 	providerId?: string;
 	operationGeneration?: string;
 }
@@ -236,7 +218,6 @@ export interface ResourceProvisionedData {
 	resourceId: string;
 	outputs: Record<string, string>;
 	execId: string;
-	/** `desiredSpecHash` the resource now matches; absent on legacy facts. */
 	specHash?: string;
 }
 

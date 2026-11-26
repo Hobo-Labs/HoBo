@@ -177,7 +177,6 @@ function parseApiKey(value: string): string {
 	return value;
 }
 
-// public-contract: the owner-store reference the Agent37 client reads its API key from; owners store it under this name.
 export const AGENT37_API_KEY_REF = "owner://AGENT37_API_KEY";
 const AGENT37_CREDENTIAL_SCOPE = "provider-agent37";
 

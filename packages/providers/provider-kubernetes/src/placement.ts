@@ -27,14 +27,10 @@ export const MAX_REPLICAS = 100;
 
 export const MAX_SURGE = 1;
 
-// public-contract: dispatcher resource class for Kubernetes placements.
 export const PROVIDER_RESOURCE_CLASS = "kubernetes:deployment";
 
-// public-contract: ownership label applied to managed resources.
 export const MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
-// public-contract: name label applied to managed resources.
 export const NAME_LABEL = "app.kubernetes.io/name";
-// public-contract: ownership label value used for cleanup fencing.
 export const MANAGED_BY_VALUE = "hobo";
 
 export type ResourceQuantity = {

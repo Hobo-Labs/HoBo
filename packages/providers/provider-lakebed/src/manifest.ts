@@ -22,7 +22,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const LAKEBED_PROVIDER_ID = "@hobo/provider-lakebed";
 
 export const DEFAULT_REGIONS = ["global"];

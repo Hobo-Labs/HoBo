@@ -6,13 +6,11 @@ import { isJsonNumber } from "./json.js";
 
 import type { VercelClient, VercelProjectDeployment } from "./vercel-client.js";
 
-// public-contract: the meta keys a HoBo-staged Vercel build carries.
 export const VERCEL_PREBUILT_META = Object.freeze({
 	freight: "hoboFreight",
 	sha: "hoboSha",
 } as const);
 
-// public-contract: typed refusals of the prebuilt Vercel delivery.
 export const VERCEL_PREBUILT_REFUSAL = Object.freeze({
 	checkoutMismatch: "HOBO_CI_DEPLOY_CHECKOUT_MISMATCH",
 	buildFailed: "HOBO_CI_DEPLOY_BUILD_FAILED",

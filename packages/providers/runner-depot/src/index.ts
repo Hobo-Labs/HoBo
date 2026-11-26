@@ -51,5 +51,4 @@ export {
 	type DepotRunnerProviderOptions,
 } from "./runner-provider.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_RUNNER_DEPOT_PACKAGE = "@hobo/runner-depot";

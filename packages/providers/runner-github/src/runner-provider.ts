@@ -11,9 +11,7 @@ import {
 	type RunnerResult,
 } from "./types.js";
 
-// public-contract: the default workflow file `run(job)` dispatches.
 export const RUNNER_WORKFLOW_DEFAULT = "hobo-runner.yml";
-// public-contract: the default git ref workflow_dispatch targets.
 export const RUNNER_REF_DEFAULT = "main";
 
 export interface RunTrackingOptions {

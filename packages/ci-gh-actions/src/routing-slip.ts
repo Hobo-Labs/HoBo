@@ -6,7 +6,6 @@ import {
 } from "./_generated/routing_slip_pb.js";
 import { GENERIC_RUNNER_LABELS } from "./runner-routing.js";
 
-// public-contract: the git ref the box relay writes the routing slip to.
 export const ROUTING_SLIP_REF = "refs/hobo/routing-slip";
 export const ROUTING_SLIP_VERSION = 1;
 export const ROUTING_SLIP_LIFETIME_MS = 10 * 60_000;

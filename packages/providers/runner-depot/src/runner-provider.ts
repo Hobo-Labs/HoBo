@@ -14,7 +14,6 @@ import {
 	executionHostManifest,
 } from "./manifest.js";
 
-// public-contract: the default workflow file `run(job)` dispatches.
 export const DEPOT_RUNNER_WORKFLOW_DEFAULT = "hobo-runner-depot.yml";
 
 export interface DepotRunnerProviderOptions {

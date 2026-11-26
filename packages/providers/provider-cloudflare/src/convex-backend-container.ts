@@ -20,7 +20,6 @@ import {
 	type TemporaryPreviewAccount,
 } from "./temporary-station.js";
 
-// public-contract: digest-pinned backend image disclosed in deployment plans.
 export const CONVEX_BACKEND_OCI_IMAGE =
 	"ghcr.io/get-convex/convex-backend:latest" as const;
 

@@ -1,7 +1,6 @@
 import { AGENT_FAILURES, type FailureSpec, reasonOf } from "../agent/errors.js";
 import type { Refusal } from "../ports.js";
 
-// public-contract: refusal codes of `@hobo/cd/feed` with HTTP status and remediation.
 export const FEED_FAILURES = Object.freeze({
 	"request-invalid": {
 		status: 400,

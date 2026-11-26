@@ -1,6 +1,5 @@
 import { WorkOrigin } from "@hobo/fleet";
 
-// public-contract: events whose runs only the repository's writers start (shared with the pre-job hook).
 export const INTERNAL_EVENTS: readonly string[] = [
 	"push",
 	"schedule",
@@ -10,7 +9,6 @@ export const INTERNAL_EVENTS: readonly string[] = [
 	"release",
 ];
 
-// public-contract: pull-request events whose head repository decides the origin (shared with the pre-job hook).
 export const PULL_REQUEST_EVENTS: readonly string[] = [
 	"pull_request",
 	"pull_request_target",

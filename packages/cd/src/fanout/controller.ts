@@ -72,7 +72,6 @@ import {
 	statusOf,
 } from "./state.js";
 
-// public-contract: saga name recorded in saga facts for every fan-out.
 export const FANOUT_SAGA = "cd.fanout" as const;
 
 export const FANOUT_METRIC = Object.freeze({

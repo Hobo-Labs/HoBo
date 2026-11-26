@@ -40,7 +40,6 @@ export type TrunkWaitState = Readonly<{
 
 export type TrunkWaitCache = Map<string, TrunkWaitState>;
 
-// public-contract: bounds box memory hold without lowering standard class sizes.
 export const DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS = 45_000;
 
 export const PEER_PRESENT_TRUNK_HEADROOM_FLEET_DEFER_MS = 5_000;

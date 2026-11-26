@@ -6,7 +6,7 @@ import type { ResourceLifecycle } from "./deployment-view.js";
 
 export type TopologyNodeKind = "bindle" | "resource" | "yard";
 
-// domain-view: parsed app-graph node; wire form is TopologyNode in data-models/cloud.proto.
+// domain-view:
 export interface TopologyNode {
 	id: string;
 	kind: TopologyNodeKind;
@@ -22,7 +22,7 @@ export interface TopologyNode {
 
 export type TopologyEdgeKind = "binding" | "placement";
 
-// domain-view: parsed app-graph edge; wire form is TopologyEdge in data-models/cloud.proto.
+// domain-view:
 export interface TopologyEdge {
 	from: string;
 	to: string;
@@ -30,7 +30,7 @@ export interface TopologyEdge {
 	region?: string;
 }
 
-// domain-view: parsed app-graph row; wire form is TopologyViewRow in data-models/cloud.proto.
+// domain-view:
 export interface TopologyViewRow {
 	deploymentId: string;
 	bindleHash?: string;

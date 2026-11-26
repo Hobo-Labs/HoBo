@@ -28,12 +28,10 @@ import {
 	PRISMA_PROVIDER_ID,
 } from "./driver.js";
 
-// public-contract: dates the provider documentation evidence snapshot.
 export const PRISMA_EVIDENCE_CHECKED_AT = "2026-08-08";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
-// public-contract: stable conformance evidence reference for selection.
 export const PRISMA_CONFORMANCE_REF =
 	"hobo.conformance/data.postgres/v1#prisma.claimable-postgres@2026-08-08";
 

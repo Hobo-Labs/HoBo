@@ -16,13 +16,10 @@ import {
 	type YAMLSeq,
 } from "yaml";
 
-// public-contract: the fleet labels a job may already be routed to.
 export const HOBO_RUNNER_LABELS = ["hobo", "hobo-trunk", "hobo-box"] as const;
 
-// public-contract: the label a job is given when the caller names none.
 export const DEFAULT_FLEET_LABEL = "hobo";
 
-// public-contract: every reason a job is left as it is.
 export const WORKFLOW_SKIP_REASONS = [
 	"reusable_workflow",
 	"expression",
@@ -36,7 +33,6 @@ export const WORKFLOW_SKIP_REASONS = [
 ] as const;
 export type WorkflowSkipReason = (typeof WORKFLOW_SKIP_REASONS)[number];
 
-// public-contract: every caution attached to a job that is ready to move.
 export const WORKFLOW_WARNINGS = [
 	"needs_docker",
 	"installs_packages",

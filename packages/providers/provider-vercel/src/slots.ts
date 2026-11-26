@@ -38,18 +38,12 @@ import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
 import { VERCEL_GIT_FUNCTION_PRODUCT_ID } from "./git-function-resolver.js";
 import { VERCEL_SANDBOX_HOST_PRODUCT_ID } from "./sandbox-host-resolver.js";
 
-// public-contract: product ids the Vercel catalog registers for these offerings.
 export const VERCEL_PROJECT_PRODUCT_ID = "vercel.project/v1";
-// public-contract: product id the Yard catalog and the resolver registry are both keyed by; they must not drift.
 export const VERCEL_EDGE_FUNCTION_PRODUCT_ID = "vercel.edge-function/v1";
-// public-contract: product id the Yard catalog and the resolver registry are both keyed by; they must not drift.
 export const VERCEL_BLOB_PRODUCT_ID = "vercel.blob/v1";
-// public-contract: product id the Yard catalog and the resolver registry are both keyed by; they must not drift.
 export const VERCEL_EDGE_CONFIG_PRODUCT_ID = "vercel.edge-config/v1";
 
-// public-contract: capability profiles these offerings claim to satisfy.
 export const VERCEL_PROJECT_PROFILE = "web.project/v1";
-// public-contract: hosted-web capability profile advertised by the static deployment slot.
 export const VERCEL_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
 export type VercelStaticDeploySlotOptions = { readonly projectId?: string };
 export type VercelGitFunctionSlotOptions = {
@@ -92,11 +86,8 @@ export function staticDeployment(
 		properties: definedProperties(options),
 	});
 }
-// public-contract: capability profile this offering satisfies; changing it re-targets the slot.
 export const VERCEL_EDGE_FUNCTION_PROFILE = "service.worker/v1";
-// public-contract: capability profile this offering satisfies; changing it re-targets the slot.
 export const VERCEL_BLOB_PROFILE = "bucket.object/v1";
-// public-contract: capability profile this offering satisfies; changing it re-targets the slot.
 export const VERCEL_EDGE_CONFIG_PROFILE = "kv.key-value/v1";
 
 /** Vercel project settings, as documented on `POST /v9/projects`. */

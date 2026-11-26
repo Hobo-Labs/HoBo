@@ -29,7 +29,6 @@ import {
 } from "./http.js";
 import { signV4 } from "./sigv4.js";
 
-// public-contract: X-Amz-Target header value for the CloudWatch GetMetricData
 // JSON API; pinned by the cloudwatch PACT and exported for consumers.
 export const CLOUDWATCH_TARGET = "GraniteServiceVersion20100801.GetMetricData";
 const REGIONAL_HOST =

@@ -91,7 +91,6 @@ const CONTINUITY_PRESERVED = {
  * binding-profile namespace: D1, KV, Durable Objects, and Queues reach the
  * workload as a Worker binding, not as a network endpoint with a credential.
  */
-// public-contract: binding profile advertised by Worker definitions.
 export const CLOUDFLARE_WORKER_BINDING_PROFILE =
 	"binding.cloudflare-worker-binding/v1" as const;
 

@@ -210,7 +210,6 @@ function clientOptions(input: unknown): RivetDurableTopicClientOptions {
 				raw.maxInFlight > 128))
 	)
 		return invalid("the bus client callbacks and bounds are invalid");
-	// SAFETY: the runtime validates the private metadata brand and each captured callback.
 	const result: RivetDurableTopicClientOptions = {
 		binding: scope,
 		metadataGrant:
@@ -280,7 +279,6 @@ function matchesApplication(
 		if (typeof input !== "object" || input === null || isProxy(input))
 			return false;
 		const data = fields(input, ["http", "bus", "client"]);
-		// SAFETY: the private map contains only application records created by this module.
 		const captured = apply(weakGet, applications, [input]) as ReturnType<
 			typeof applications.get
 		>;
@@ -313,7 +311,6 @@ export function createRivetHttpTopicBusApplication(
 		],
 		["authorizationTimeoutMs"],
 	);
-	// SAFETY: the bus brand check refuses unregistered objects before accessing actor fields.
 	if (
 		!name(data.actorName) ||
 		typeof data.bus !== "object" ||
@@ -330,7 +327,6 @@ export function createRivetHttpTopicBusApplication(
 		return invalid(
 			"a branded bus, client options and host authorities are required",
 		);
-	// SAFETY: the preceding guard accepted the private bus brand.
 	const bus = data.bus as RivetDurableTopicBusBinding;
 	const expected = clientOptions(data.clientOptions);
 	if (
@@ -382,7 +378,6 @@ export function createRivetHttpTopicBusApplication(
 			throw new TypeError(
 				"the application must return a synchronous HTTP handler",
 			);
-		// SAFETY: the host factory returned a synchronous non-proxy function.
 		return handler as (request: Request) => Response | Promise<Response>;
 	};
 	const permit = (
@@ -472,11 +467,9 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 			"a verified application and pool are required",
 		);
 	const application = data.application;
-	// SAFETY: the source parser validates and snapshots this external value.
 	const source = bindRivetHttpSource(
 		data.source as RivetPoolSource<RivetHttpEntrypoint>["source"],
 	);
-	// SAFETY: the multi-pool mapper validates the host capability before use.
 	const pool = Object.freeze({
 		source,
 		poolDigest: data.poolDigest,

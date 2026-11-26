@@ -5,7 +5,6 @@
 import type { OtelAttributes, TelemetrySink } from "../ports.js";
 import { emitMetrics } from "../telemetry/advisory.js";
 
-// public-contract: metric names WP3 emits through TelemetrySink.
 export const ARTIFACT_METRICS = Object.freeze({
 	stored: "hobo.cd.artifact.stored",
 	storedBytes: "hobo.cd.artifact.stored.bytes",

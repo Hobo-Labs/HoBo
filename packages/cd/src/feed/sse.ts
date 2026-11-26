@@ -1,10 +1,8 @@
-// public-contract: SSE event names of the delivery feed.
 export const FEED_SSE_EVENTS = Object.freeze({
 	frame: "frame",
 	end: "end",
 } as const);
 
-// public-contract: reasons a feed response ends cleanly.
 export const FEED_END_REASONS = Object.freeze([
 	"caught-up",
 	"long-poll",

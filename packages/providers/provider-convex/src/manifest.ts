@@ -23,7 +23,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const CONVEX_PROVIDER_ID = "@hobo/provider-convex";
 
 export const DEFAULT_REGIONS = ["us"];
