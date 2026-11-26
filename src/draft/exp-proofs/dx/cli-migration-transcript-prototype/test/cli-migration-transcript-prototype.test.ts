@@ -25,7 +25,7 @@ test("HOBO-575 transcript prototype covers every required migration story beat",
   );
   assert.equal(
     prototype.proofNote,
-    "docs/design/proofs/cli-migration-transcript-prototype/README.md",
+    "https://linear.app/quickdeploy-ai/document/hobo-575-migration-transcript-proof-record-archived-db1febb344a9",
   );
   assert.deepEqual(
     prototype.transcriptSteps.map((step) => step.case),

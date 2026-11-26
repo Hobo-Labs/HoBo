@@ -1,22 +1,3 @@
-/**
- * Placement criteria are HARD filters applied between capability negotiation and
- * objective ranking. That position is the whole point: they narrow the candidate
- * set without touching the lexicographic `specificity → priority → objective →
- * id` ranking among the survivors. Two consequences make this code worth testing
- * exhaustively rather than by example.
- *
- * First, a filter that is too *loose* silently places a workload somewhere the
- * operator forbade — anti-affinity that fails to exclude is indistinguishable
- * from no rule at all, right up until both replicas die with the same yard.
- * Second, a filter that is too *tight* empties the candidate set and turns a
- * deployable request into an unplaceable one, which is why several branches here
- * deliberately decline to narrow: a rule with no decided target yet is vacuously
- * satisfied, and a region filter that would leave nothing keeps what it had.
- *
- * Both failure directions are invisible on a single well-formed example, so this
- * file drives every selector operator, both affinity modes at both scopes, and
- * the "declines to narrow" branches explicitly.
- */
 import { describe, expect, test } from "vitest";
 
 import type {
@@ -179,8 +160,6 @@ describe("selector operators", () => {
 	});
 
 	test("ne requires every advertised value to differ", () => {
-		// one would let a candidate advertising the forbidden region through
-		// because some other region also matched.
 		expect(
 			selectorRejection(def, selector("ne", "region", ["ap-south"])),
 		).toBeUndefined();
@@ -374,7 +353,6 @@ describe("affinity at yard scope", () => {
 	});
 
 	test("yard-scope rules ignore regions entirely", () => {
-		// a different region is still colocated.
 		expect(
 			affinityRejection(
 				def,
@@ -389,7 +367,6 @@ describe("affinity at region scope", () => {
 	const def = definition({ regions: ["us-east", "eu-west"] });
 
 	test("targets with no concrete region are ignored", () => {
-		// A placement whose region was never resolved carries no information; a
 		const ctx = context(placed("other", ""));
 		expect(
 			affinityRejection(def, rule("affinity", "region"), ctx),
@@ -417,8 +394,6 @@ describe("affinity at region scope", () => {
 	});
 
 	test("anti-affinity requires an escape region, not merely a non-overlap", () => {
-		// forbidden region has nowhere to go and must be rejected, but one that
-		// also advertises another region is fine — the concrete choice is made
 		const single = definition({ regions: ["us-east"] });
 		expect(
 			affinityRejection(
@@ -525,7 +500,6 @@ describe("spreadSurvivors", () => {
 	});
 
 	test("a spread on another dimension is not applied here", () => {
-		// Region spread is handled in pickPlacementRegion, not by filtering
 		const withRegionSpread = intent({
 			placement: criteria({ spread: { dimension: "region" } }),
 		} as Partial<ResourceIntent>);
@@ -723,7 +697,6 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("affinity narrowing runs before the spread", () => {
-		// Order matters: spreading first could pick a region the affinity then
 		const both = intent({
 			placement: criteria({
 				affinities: [rule("affinity", "region")],

@@ -48,7 +48,7 @@ export type CheckOutcome = (typeof CHECK_OUTCOMES)[number];
 
 declare const roundTripReportBrand: unique symbol;
 
-// domain-view: parsed decomposition check; wire form is ManifestCheck in data-models/round_trip_report.proto.
+// domain-view:
 export type ManifestCheck = {
 	readonly shape: string;
 	/** The package that owns it now, e.g. `@hobo/manifest-declaration`. */
@@ -58,7 +58,7 @@ export type ManifestCheck = {
 	readonly detail: string;
 };
 
-// domain-view: parsed decomposition report; wire form is RoundTripReport in data-models/round_trip_report.proto.
+// domain-view:
 export type RoundTripReport = {
 	readonly schema: typeof ROUND_TRIP_REPORT_SCHEMA;
 	readonly checks: readonly ManifestCheck[];

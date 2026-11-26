@@ -105,7 +105,7 @@ const ALL_PORTS: readonly SpiPortName[] = [
 	"schema",
 ];
 
-// domain-view: parsed options; wire form is PostgresEngineOptions in data-models/postgres_engine.proto.
+// domain-view:
 export interface PostgresEngineOptions {
 	/** How the server is reached. The binding never closes it. */
 	readonly executor: PostgresExecutor;

@@ -84,7 +84,7 @@ type VibeRoleTutorialOutlines = {
   readonly issue: "HOBO-552";
   readonly phase: "M1";
   readonly packagePath: "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines";
-  readonly proofPath: "docs/design/proofs/vibe-role-tutorial-outlines/README.md";
+  readonly proofPath: "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1";
   readonly designRefs: readonly string[];
   readonly roles: readonly TutorialRole[];
   readonly quickstartFixtureRefs: readonly TutorialQuickstartFixtureRef[];
@@ -121,7 +121,7 @@ export const VIBE_ROLE_TUTORIAL_OUTLINES: VibeRoleTutorialOutlines = {
   issue: "HOBO-552",
   phase: "M1",
   packagePath: "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines",
-  proofPath: "docs/design/proofs/vibe-role-tutorial-outlines/README.md",
+  proofPath: "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1",
   designRefs: [
     "https://linear.app/quickdeploy-ai/document/tutorials-and-walkthroughs-scope-and-acceptance-archived-08c16563db7f",
     "docs/design/walkthrough.md",
@@ -492,7 +492,7 @@ export function validateVibeRoleTutorialOutlines(
   if (outlines.packagePath !== "src/draft/exp-proofs/ux/vibe-role-tutorial-outlines") {
     errors.push({ code: "wrong-package-path", message: "target package path drifted" });
   }
-  if (outlines.proofPath !== "docs/design/proofs/vibe-role-tutorial-outlines/README.md") {
+  if (outlines.proofPath !== "https://linear.app/quickdeploy-ai/document/hobo-552-tutorial-outlines-proof-record-archived-ef2471c44aa1") {
     errors.push({ code: "wrong-proof-path", message: "target proof path drifted" });
   }
   if (!arraysEqual(outlines.roles, REQUIRED_TUTORIAL_ROLES)) {

@@ -10,7 +10,6 @@ import type {
 import type { CdContext, Outcome, SubscriptionDriver } from "../ports.js";
 
 export type AttestationMaterial = Readonly<{
-	/** in-toto Statement v1 bytes (DSSE payload when it came from a bundle). */
 	statement: Uint8Array;
 	/** Sigstore bundle bytes, when the attestation is a bundle. */
 	bundle?: Uint8Array;

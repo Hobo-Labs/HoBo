@@ -1,12 +1,3 @@
-/**
- * Parsed capability-profile identity.
- *
- * Profile IDs are open namespaced strings with an explicit major version
- * (`data.postgres/v1`). They are deliberately NOT a closed enum: a provider or
- * capability package registers new profiles without editing a central switch.
- */
-
-/** Bindle-level capability primitives (ADR: primitives are closed, profiles are open). */
 export const BINDLE_PRIMITIVES = [
 	"web",
 	"api",
@@ -22,7 +13,6 @@ export const BINDLE_PRIMITIVES = [
 
 export type BindlePrimitive = (typeof BINDLE_PRIMITIVES)[number];
 
-/** Runtime realization models a primitive may request. */
 export const BINDLE_RUNTIMES = [
 	"wasm",
 	"oci",
@@ -33,7 +23,6 @@ export const BINDLE_RUNTIMES = [
 
 export type BindleRuntime = (typeof BINDLE_RUNTIMES)[number];
 
-/** How a product satisfies a profile. Not a claimability axis. */
 export const REALIZATION_KINDS = ["native", "pack", "bridge"] as const;
 
 export type RealizationKind = (typeof REALIZATION_KINDS)[number];
@@ -65,28 +54,14 @@ const SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const PRIMITIVE_BY_SEGMENT = new Map<string, BindlePrimitive>(
 	BINDLE_PRIMITIVES.map((primitive) => [primitive.toLowerCase(), primitive]),
 );
-// Semantic families that are not literally named after their primitive.
 const PRIMITIVE_ALIASES = new Map<string, BindlePrimitive>([
 	["realtime", "webhook"],
 	["secret-ref", "secretRef"],
-	// A lease lifecycle driver (`lifecycle.lease-driver/v1`, ADR-0179) delivers
-	// a lease's delayed steps: a queue, whether Vercel Queues or a Workflow run.
 	["lifecycle", "queue"],
-	// A cron schedule (`schedule.cron/v1`, core's `schedule` slot) invokes
-	// compute: a Cron Trigger on a Worker, or the consumer of the queue it
-	// sends to.
 	["schedule", "service"],
 ]);
 
-/**
- * Parse and canonicalize `<primitive-family>.<path>/v<major>`.
- *
- * Canonical form is lowercase for every segment; the version keeps its `v`
- * prefix. Anything else is rejected rather than coerced.
- */
 export function parseProfileId(input: string): ParsedProfileId {
-	// `String(input) !== input` holds for anything but a string: a JavaScript
-	// caller can still pass one.
 	if (String(input) !== input || input.length === 0) {
 		throw new ProfileIdError(String(input), "must be a non-empty string");
 	}
@@ -137,7 +112,6 @@ export function parseProfileId(input: string): ParsedProfileId {
 		);
 	}
 	return {
-		// SAFETY: every check above passed; this is the brand's only constructor.
 		id: input as ProfileId,
 		primitive,
 		path,
@@ -145,7 +119,6 @@ export function parseProfileId(input: string): ParsedProfileId {
 	};
 }
 
-/** Non-throwing variant for candidate filtering. */
 export function tryParseProfileId(input: string): ParsedProfileId | undefined {
 	try {
 		return parseProfileId(input);

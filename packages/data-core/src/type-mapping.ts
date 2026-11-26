@@ -21,7 +21,7 @@ export const MAPPING_FIDELITIES = [
 
 export type MappingFidelity = (typeof MAPPING_FIDELITIES)[number];
 
-// domain-view: parsed annex entry; wire form is TypeMappingEdge in data-models/data_core.proto.
+// domain-view:
 export interface TypeMappingEdge {
 	readonly canonical: CanonicalType;
 	readonly native: string;
@@ -30,7 +30,7 @@ export interface TypeMappingEdge {
 	readonly note: string;
 }
 
-// domain-view: parsed annex; wire form is TypeMappingAnnex in data-models/data_core.proto.
+// domain-view:
 export interface TypeMappingAnnex {
 	readonly engine: string;
 	readonly edges: readonly TypeMappingEdge[];
@@ -45,7 +45,7 @@ export const MAPPING_FINDING_CODES = [
 
 export type MappingFindingCode = (typeof MAPPING_FINDING_CODES)[number];
 
-// domain-view: computed finding; wire form is MappingFinding in data-models/data_core.proto.
+// domain-view:
 export interface MappingFinding {
 	readonly code: MappingFindingCode;
 	readonly field: string;
