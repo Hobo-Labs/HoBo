@@ -1544,6 +1544,8 @@ const SKIPPED_ACTION_DEPENDENCIES = {
 		"scripts/lib/ci-runner-contract.mts",
 		"scripts/ci/memory-env.mts",
 		"scripts/ci/data-live-servers.mts",
+		"scripts/ci/runner-job-disk-prune.mts",
+		"scripts/lib/runner-job-disk-prune.mts",
 		"packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts",
 		".mise/locks/turbo",
 	],

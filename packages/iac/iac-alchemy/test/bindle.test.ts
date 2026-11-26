@@ -117,6 +117,49 @@ function mappers(observed: string[]) {
 }
 
 describe("explicit Alchemy primitive mapping", () => {
+	it("validates a frozen whole graph before any mapper can register resources", () => {
+		const observed: string[] = [];
+		const selected = mappers(observed);
+		const graphCheck = (graph: {
+			nodes: Readonly<Record<string, { dependencies: readonly string[] }>>;
+		}) => {
+			expect(Object.isFrozen(graph.nodes)).toBe(true);
+			expect(Object.isFrozen(graph.nodes.web?.dependencies)).toBe(true);
+			expect(graph.nodes.web?.dependencies).toEqual(["store", "queue"]);
+			throw new Error("invalid shared graph");
+		};
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...selected,
+					bucket: { ...selected.bucket, validateGraph: graphCheck },
+				},
+				supportedRequirements,
+			),
+		).toThrow("invalid shared graph");
+		expect(observed).toEqual([]);
+	});
+
+	it("rejects and observes asynchronous graph validators before provider effects", async () => {
+		const observed: string[] = [];
+		const selected = mappers(observed);
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...selected,
+					bucket: {
+						...selected.bucket,
+						validateGraph: () => Promise.reject(new Error("rejected")),
+					},
+				},
+				supportedRequirements,
+			),
+		).toThrow("BINDLE_VALIDATION_UNAVAILABLE");
+		expect(observed).toEqual([]);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
 	it("refuses and observes an accidental rejected requirements Promise", async () => {
 		const observed: string[] = [];
 		expect(() =>

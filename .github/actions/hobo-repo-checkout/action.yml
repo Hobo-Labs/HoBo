@@ -106,6 +106,7 @@ runs:
         sparse-checkout-cone-mode: true
     - name: Checkout from bare mirror (alternates)
       id: mirror_checkout
+      continue-on-error: true
       if: env.HOBO_CI_GIT_MIRROR_RESOLVED != ''
       shell: bash
       env:
@@ -139,8 +140,22 @@ runs:
         rm -f "${GIT_CONFIG_SYSTEM}"
         echo "GIT_CONFIG_SYSTEM=" >> "$GITHUB_ENV"
         echo "HOBO_CI_GIT_MIRROR_RESOLVED=" >> "$GITHUB_ENV"
+    - name: Disable prior sparse cone before full remote checkout
+      id: prepare_full_worktree
+      if: steps.mirror_checkout.outcome != 'success'
+      continue-on-error: true
+      shell: bash
+      run: |
+        set -euo pipefail
+        node --experimental-strip-types --no-warnings \
+          "${GITHUB_ACTION_PATH}/../hobo-checkout/repo-checkout.mts" \
+          --prepare-full-worktree
+    - name: Reset partial clone after failed sparse prepare
+      if: steps.mirror_checkout.outcome != 'success' && steps.prepare_full_worktree.outcome != 'success'
+      shell: bash
+      run: rm -rf .git
     - name: Backoff before remote checkout retry
-      if: env.HOBO_CI_GIT_MIRROR_RESOLVED == '' || steps.mirror_checkout.outcome != 'success'
+      if: steps.mirror_checkout.outcome == 'failure'
       shell: bash
       run: sleep 8
     - name: Remote checkout (attempt 1)
@@ -154,17 +169,29 @@ runs:
         fetch-depth: ${{ inputs.fetch-depth }}
         fetch-tags: false
         submodules: ${{ inputs.submodules }}
+    - name: Verify remote checkout (attempt 1)
+      id: verify_remote1
+      if: steps.remote1.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        CHECKOUT_MARKER: ${{ inputs.marker }}
+      run: |
+        if [ -n "${CHECKOUT_MARKER}" ] && [ ! -f "${CHECKOUT_MARKER}" ]; then
+          echo "::warning::checkout succeeded but marker ${CHECKOUT_MARKER} is missing"
+          exit 1
+        fi
     - name: Reset after failed remote checkout
-      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success'
+      if: steps.mirror_checkout.outcome != 'success' && steps.verify_remote1.outcome != 'success'
       shell: bash
       run: rm -rf .git
     - name: Backoff before remote checkout retry (2)
-      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success'
+      if: steps.mirror_checkout.outcome != 'success' && steps.verify_remote1.outcome != 'success'
       shell: bash
       run: sleep 8
     - name: Remote checkout (attempt 2)
       id: remote2
-      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success'
+      if: steps.mirror_checkout.outcome != 'success' && steps.verify_remote1.outcome != 'success'
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       continue-on-error: true
       with:
@@ -173,17 +200,29 @@ runs:
         fetch-depth: ${{ inputs.fetch-depth }}
         fetch-tags: false
         submodules: ${{ inputs.submodules }}
+    - name: Verify remote checkout (attempt 2)
+      id: verify_remote2
+      if: steps.remote2.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        CHECKOUT_MARKER: ${{ inputs.marker }}
+      run: |
+        if [ -n "${CHECKOUT_MARKER}" ] && [ ! -f "${CHECKOUT_MARKER}" ]; then
+          echo "::warning::checkout succeeded but marker ${CHECKOUT_MARKER} is missing"
+          exit 1
+        fi
     - name: Reset after failed remote checkout (attempt 2)
-      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success' && steps.remote2.outcome != 'success'
+      if: steps.mirror_checkout.outcome != 'success' && steps.verify_remote1.outcome != 'success' && steps.verify_remote2.outcome != 'success'
       shell: bash
       run: rm -rf .git
     - name: Backoff before remote checkout retry (3)
-      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success' && steps.remote2.outcome != 'success'
+      if: steps.mirror_checkout.outcome != 'success' && steps.verify_remote1.outcome != 'success' && steps.verify_remote2.outcome != 'success'
       shell: bash
       run: sleep 8
     - name: Remote checkout (attempt 3)
       id: remote3
-      if: steps.mirror_checkout.outcome != 'success' && steps.remote1.outcome != 'success' && steps.remote2.outcome != 'success'
+      if: steps.mirror_checkout.outcome != 'success' && steps.verify_remote1.outcome != 'success' && steps.verify_remote2.outcome != 'success'
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         ref: ${{ inputs.ref }}
@@ -198,8 +237,8 @@ runs:
       run: |
         set -euo pipefail
         if [ "${{ steps.mirror_checkout.outcome }}" = "success" ] \
-          || [ "${{ steps.remote1.outcome }}" = "success" ] \
-          || [ "${{ steps.remote2.outcome }}" = "success" ] \
+          || [ "${{ steps.verify_remote1.outcome }}" = "success" ] \
+          || [ "${{ steps.verify_remote2.outcome }}" = "success" ] \
           || [ "${{ steps.remote3.outcome }}" = "success" ]; then
           if [ -n "${CHECKOUT_MARKER}" ] && [ ! -f "${CHECKOUT_MARKER}" ]; then
             echo "::error::checkout succeeded but marker ${CHECKOUT_MARKER} is missing"

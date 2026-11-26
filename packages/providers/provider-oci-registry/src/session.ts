@@ -36,6 +36,7 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
+import { refuse } from "./errors.js";
 import { isJsonString, parseJsonObject } from "./json.js";
 import { OCI_REGISTRY_IMAGE_PRODUCT_ID, rejected } from "./reference.js";
 
@@ -333,8 +334,10 @@ export function openSession(options: {
 			else if (challenge.scheme === "basic") {
 				const basic = basicHeader();
 				if (basic === undefined)
-					rejected(
-						`registry ${host} demands basic authentication and no basic credential was resolved`,
+					refuse(
+						"oci-credential-refused",
+						"registry-basic",
+						"registry demands basic authentication and no basic credential was resolved",
 						"bind a credential locator that resolves to a basic credential for this registry",
 					);
 				authorization = basic;
@@ -343,8 +346,10 @@ export function openSession(options: {
 			authorizations.set(key, authorization);
 			const second = await attempt(request, authorization);
 			if (second.status === 401)
-				rejected(
-					`registry ${host} refused the credential for ${key || "this request"}`,
+				refuse(
+					"oci-credential-refused",
+					"registry-token",
+					"registry refused the credential after authentication",
 					"grant the credential behind the locator pull/push on the repository",
 				);
 			return second;
