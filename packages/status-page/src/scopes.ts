@@ -150,7 +150,6 @@ export interface ProjectStatusPlan {
 	readonly scope: StatusScope;
 	readonly project: string;
 	readonly bindles: readonly BindleStatusPlan[];
-	/** One rollup component per Bindle plus deduplicated dependencies. */
 	readonly components: readonly ComponentSpec[];
 }
 

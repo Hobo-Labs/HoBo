@@ -60,19 +60,10 @@ export type ResolverAction = (typeof RESOLVER_ACTIONS)[number];
 
 /** Author-facing id grammar: stable across deploys, safe in a path segment. */
 const LOGICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
-/** Provider/product id grammar, bounded so an id cannot smuggle a payload. */
 const RESOLVER_ID_PATTERN = /^[a-z0-9][a-z0-9._/-]{0,127}$/u;
-/** A directive names one realization parameter: a bounded identifier. */
 const DIRECTIVE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/u;
-/**
- * A locator names where material lives; it never carries the material. The
- * body is the RFC 3986 character set minus `@`, so whitespace, control
- * characters, and embedded userinfo are all excluded by construction rather
- * than by a screen that could be reordered away.
- */
 const CREDENTIAL_LOCATOR_PATTERN =
 	/^[a-z][a-z0-9+.-]*:\/\/[A-Za-z0-9\-._~:/?#[\]!$&'()*+,;=%]+$/u;
-/** Longest locator accepted: past this a "ref" is carrying a payload. */
 const MAX_CREDENTIAL_REF_LENGTH = 512;
 /** Property keys that read as a secret value rather than a locator. */
 const CREDENTIAL_KEY_PATTERN =
@@ -95,9 +86,7 @@ export interface ResolvedResourceRef {
 // domain-view: parse-time derived type; wire form is ResolveRequestRecord in data-models/resource_resolver.proto.
 export interface ResolveRequest {
 	readonly ref: ResolvedResourceRef;
-	/** Realization parameters: the desired state, non-sensitive only. */
 	readonly desired: JsonObject;
-	/** Last known provider outputs, when the caller has them. */
 	readonly observed?: JsonObject;
 	/** LOCATOR only, never a value. See the module note on the credential law. */
 	readonly credentialRef: string;
@@ -112,40 +101,19 @@ export interface ResolveOutcome {
 	readonly diagnostics: readonly string[];
 }
 
-/**
- * One provider product's resolver. Implementations live in provider packages;
- * this package owns only the shape and the parse boundaries around it.
- */
 export interface ResourceResolver {
 	readonly providerId: string;
 	readonly productId: string;
-	/**
-	 * The realization parameters this resolver reads as directives: they say
-	 * how `reconcile` or `delete` acts on the resource (`forceDelete`,
-	 * `restoreScheduled`), never what the resource is, so `read()` normally has
-	 * nothing to report for one. A caller comparing what a plan declares with
-	 * what `read()` observed leaves a declared directive out only when `read()`
-	 * reports no value under that key; a key `read()` does report is compared
-	 * like any other, so this list can never hide drift `read()` observes
-	 * (ADR-0175). Absent means the resolver reads none. This is metadata about
-	 * the resolver's parameters, not a trait and not an attach point.
-	 */
 	readonly directives?: readonly string[];
-	/** Convergent and idempotent: running twice must yield the same outcome
-	 *  and one resource. */
 	reconcile(
 		request: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<ResolveOutcome>;
 	delete(request: ResolveRequest, transport: HttpTransport): Promise<void>;
-	/** Does it exist and is it ours? Powers adoption and state recovery. */
 	read?(
 		request: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<ResolveOutcome | undefined>;
-	/** Confirm that the exact recorded physical resource is absent. A missing
-	 * read alone is not proof: providers must distinguish a scoped 404 from an
-	 * incomplete lookup or unavailable observation. */
 	observeAbsence?(
 		request: ResolveRequest,
 		transport: HttpTransport,
@@ -161,11 +129,6 @@ export const RESOLVER_ERROR_CODES = Object.freeze([
 ] as const);
 export type ResolverErrorCode = (typeof RESOLVER_ERROR_CODES)[number];
 
-/**
- * Refusal from a resolver or one of its parse boundaries. Always carries a
- * code; `productId` is set when the refusal happened after the product was
- * recognized, so remediation can name the resolver to fix.
- */
 export class ResolverError extends Error {
 	readonly code: ResolverErrorCode;
 	readonly productId?: string;
@@ -241,7 +204,6 @@ export function parseResolveOutcome(
 	const action = source.action;
 	if (
 		!isJsonString(action) ||
-		// SAFETY: assertion required at this I/O or test boundary.
 		!(RESOLVER_ACTIONS as readonly string[]).includes(action)
 	) {
 		throw new ResolverError(
@@ -266,7 +228,6 @@ export function parseResolveOutcome(
 
 	return deepFreeze({
 		contract: RESOLVER_CONTRACT,
-		// SAFETY: assertion required at this I/O or test boundary.
 		action: action as ResolverAction,
 		physicalId,
 		outputs,
@@ -274,19 +235,6 @@ export function parseResolveOutcome(
 	});
 }
 
-/**
- * Index resolvers by product. Listing is id-sorted rather than registration
- * ordered so a catalog dump is a function of its contents; a duplicate
- * `productId` is refused rather than last-write-wins, because a silently
- * shadowed resolver is a deploy calling a provider nobody reviewed.
- *
- * Identity: `get(id)` and `list()` return the registered object itself for a
- * resolver that declares no directives. For one that does, they return a
- * frozen view, not the registered object: it carries the directive list as
- * parsed at registration (read once) and delegates every call to the
- * resolver. So a later change to the resolver's list, or a getter answering
- * differently, changes nothing the registry hands out.
- */
 export function createResolverRegistry(
 	resolvers: readonly ResourceResolver[],
 ): {
@@ -355,33 +303,19 @@ function assertResolverContract(value: ResourceResolver): void {
 	}
 }
 
-/** The directives of a resolver that names none. */
 const NO_DIRECTIVES: readonly string[] = Object.freeze([]);
 
-/**
- * A resolver's directives, parsed: a frozen copy of its list, or an empty
- * list when it names none. The list decides which declared keys a caller may
- * leave out of a desired-versus-observed comparison, so anything but a list of
- * distinct parameter names (a string, a number, an empty or repeated name) is
- * refused with a typed `RESOLVER_PRODUCT_UNSUPPORTED`, never iterated as
- * whatever it happens to be. `createResolverRegistry` registers this copy, and
- * a caller holding a resolver from anywhere else reads it through here too, so
- * mutating the array a resolver was built with changes nothing afterwards.
- */
 export function parseResolverDirectives(
 	resolver: ResourceResolver,
 ): readonly string[] {
 	return directiveList(resolver.directives, resolver.productId);
 }
 
-/** A directive list already read off its resolver, parsed (see above). */
 function directiveList(
 	directives: ResourceResolver["directives"],
 	productId: string,
 ): readonly string[] {
 	if (directives === undefined) return NO_DIRECTIVES;
-	// By index, not with every(): every() skips the holes of a sparse array,
-	// and a list with a hole names nothing in that slot.
 	const names: string[] = [];
 	let wellFormed = isJsonArray(directives);
 	const length = isJsonArray(directives) ? directives.length : 0;
@@ -405,12 +339,6 @@ function directiveList(
 	return Object.freeze(names);
 }
 
-/**
- * The resolver as registered: unchanged when it names no directives, else a
- * frozen view that carries the parsed copy and delegates every call to it.
- * `directives` is read off the resolver exactly once, here, so a getter cannot
- * answer the check one list and the registry another.
- */
 function registered(resolver: ResourceResolver): ResourceResolver {
 	const declared = resolver.directives;
 	if (declared === undefined) return resolver;
@@ -453,7 +381,6 @@ function parseResolvedResourceRef(
 	const slot = source.slot;
 	if (
 		!isJsonString(slot) ||
-		// SAFETY: assertion required at this I/O or test boundary.
 		!(CAPABILITY_SLOTS as readonly string[]).includes(slot)
 	) {
 		throw new ResolverError(
@@ -489,7 +416,6 @@ function parseResolvedResourceRef(
 	}
 
 	return {
-		// SAFETY: assertion required at this I/O or test boundary.
 		slot: slot as CapabilitySlot,
 		productId,
 		logicalId,
@@ -521,8 +447,6 @@ function parseCredentialRef(
 	}
 	const reason = credentialValueLayout(value);
 	if (reason !== undefined) {
-		// The offending value is never echoed: this refusal exists precisely
-		// because the value is material.
 		throw new ResolverError(
 			"RESOLVER_CREDENTIAL_NOT_A_REF",
 			`credentialRef: ${reason} — pass a scheme://… locator the host resolves at call time, never the material itself`,
@@ -532,7 +456,6 @@ function parseCredentialRef(
 	return value;
 }
 
-/** Returns why a string reads as material, or `undefined` if it is a locator. */
 function credentialValueLayout(value: string): string | undefined {
 	if (value.length > MAX_CREDENTIAL_REF_LENGTH) {
 		return `it is ${value.length} characters, past the ${MAX_CREDENTIAL_REF_LENGTH}-character locator bound`;
@@ -581,8 +504,6 @@ function parseDiagnostics(value: JsonValue | undefined): readonly string[] {
 		}
 		out.push(entry);
 	}
-	// Order is preserved, not sorted: diagnostics narrate a sequence, and a
-	// sorted narrative is a scrambled one.
 	return Object.freeze(out);
 }
 
@@ -606,7 +527,6 @@ function canonicalizeBag(
 		);
 	}
 	return canonicalizeRecord(
-		// SAFETY: assertion required at this I/O or test boundary.
 		value as JsonObject,
 		field,
 		productId,
@@ -717,11 +637,9 @@ function expectRecord(
 			`${label}: expected an object, received ${describe(value)}`,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return value as JsonObject;
 }
 
-/** Plain data only: a class instance carries behavior a record cannot serialize. */
 function isPlainObject(value: JsonValue | undefined): value is JsonObject {
 	if (value === null || !isJsonObject(value)) return false;
 	const prototype: unknown = Object.getPrototypeOf(value);
@@ -739,7 +657,6 @@ function describe(value: JsonValue | undefined): string {
 	return `a ${Object.prototype.toString.call(value)}`;
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
