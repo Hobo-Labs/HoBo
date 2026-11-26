@@ -312,19 +312,31 @@ function mirrorCheckoutOptionsFromParsed(
 	return options satisfies MirrorCheckoutOptions;
 }
 
+export function prepareFullWorktree(
+	cwd: string,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	const inside = git(cwd, ["rev-parse", "--is-inside-work-tree"], env);
+	if (!inside.ok || inside.stdout.trim() !== "true") return false;
+	if (sparseCheckoutEnabled(cwd, env)) {
+		const branch = git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"], env);
+		if (!branch.ok) return false;
+		if (
+			branch.stdout.trim() !== "HEAD" &&
+			!git(cwd, ["checkout", "--detach", "--quiet"], env).ok
+		) {
+			return false;
+		}
+	}
+	return clearSparseCheckoutConfig(cwd, env);
+}
+
 function runCli(args: readonly string[]): number {
 	const parsed = parseArgs(args);
 	if (parsed.prepareFullWorktree) {
 		const workDir = resolve(parsed.workDir);
-		const inside = git(workDir, ["rev-parse", "--is-inside-work-tree"], {
-			...process.env,
-		});
-		if (!inside.ok || inside.stdout.trim() !== "true") {
-			console.log("hobo_ci_sparse_disable=fail");
-			return 1;
-		}
 		const wasActive = sparseCheckoutEnabled(workDir);
-		if (!clearSparseCheckoutConfig(workDir)) {
+		if (!prepareFullWorktree(workDir)) {
 			console.log("hobo_ci_sparse_disable=fail");
 			return 1;
 		}
