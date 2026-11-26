@@ -21,7 +21,6 @@ import { acquireLocalDeploymentLock } from "./local-deployment-lock.js";
 
 const RECEIPT_FILE = "local-deployment.json";
 const TOKEN_FILE = "local-deployment.token";
-// public-contract: persistent local deployment receipt schema shared by worker and control client.
 export const LOCAL_DEPLOYMENT_SCHEMA = "hobo.local-deployment/v1";
 
 function directory(projectDir: string) {
@@ -317,7 +316,6 @@ export function createLocalDeploymentDownCommand(
 							message: "No local deployment is running",
 							data: { command: "down" },
 						};
-			// `down --what-if`: name what would stop, stop nothing.
 			if (input.flags.whatIf)
 				return {
 					ok: true,

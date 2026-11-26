@@ -27,26 +27,17 @@ import type { PulumiAutomationAdapter } from "./pulumi-iac-provider.js";
 import type { VercelFetch } from "./vercel-client.js";
 
 export interface DriftCommandDeps {
-	// The shared Yard runtime whose event log names the deployment and lists the
-	// provisioned resources to refresh. The composed CLI injects the same runtime
-	// `up`/`down` use.
 	readonly runtime?: YardRuntime;
 	// The realize()-capable CloudProviders the IaC bridge drives. Defaults to the
 	// same @hobo/provider-cloudflare the default runtime registers.
 	readonly providers?: readonly CloudProvider[];
-	// Explicit environment snapshot for tests or an embedding host. Without one,
-	// use the same filtered process environment as the composed `hobo up`.
 	readonly env?: Record<string, string | undefined>;
-	// Explicit Pulumi adapter override (tests): forces the Pulumi lane and reads
-	// the estate from THIS adapter's state backend.
 	readonly adapter?: PulumiAutomationAdapter;
 	readonly vercelFetch?: VercelFetch;
 	readonly cloudflareFetch?: CloudflareFetch;
 }
 
-// public-contract: drift-check fact `hobo drift` appends to the deployment stream (family.PastTenseFact).
 export const DRIFT_CHECKED_EVENT = "drift.Checked";
-// public-contract: per-resource drift finding fact; the kind (missing|orphaned|diverged) rides the body.
 export const DRIFT_DETECTED_EVENT = "drift.Detected";
 
 // domain-view: one per-resource drift verdict derived by comparing the declared
@@ -66,23 +57,6 @@ function isEngineUnavailable(error: Error): error is Error & { code: string } {
 	);
 }
 
-// `hobo drift` — REAL drift detection: compare the declared Bindle manifest's
-// desired resources against the state the selected IaC backend actually holds,
-// and report per-resource verdicts:
-//   missing  — declared but absent from the backend's state,
-//   orphaned — held in state but no longer declared,
-//   diverged — present in both but the per-resource-stack refresh (through the
-//              IacProvider port's engine seam) reports a mismatch.
-// The estate is read from the SHARED Pulumi adapter's state backend on the
-// Pulumi lanes (the in-memory backend a prior `hobo up` seeded, or the real
-// CLI engine's per-resource stacks under HOBO_PULUMI_LIVE=1 — binary-gated,
-// failing closed with a typed error when the pulumi CLI is missing) and from
-// the DeploymentView's recorded resources on the Cloudflare/Vercel deploy
-// lanes. Every run appends a `drift.Checked` fact (plus one `drift.Detected`
-// per finding) to the durable deployment stream.
-// HONEST SCOPE: `diverged` comes from the backend's refresh/preview diff of
-// the STORED plan vs held state; config edits made only in the local bindle
-// (never planned) surface after the next `hobo plan`/`hobo up`, not here.
 export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 	return {
 		run: async ({ context, flags, emitProgress }) => {
@@ -128,7 +102,6 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 			);
 			const row = deploymentViewProjection.get(snapshot, deploymentId);
 
-			// Read the estate: the resource state the backend actually holds.
 			const adapter = selectPulumiEstateAdapter({
 				store: runtime.store,
 				env,
@@ -139,10 +112,7 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 				estate =
 					adapter !== undefined
 						? readPulumiEstate(adapter, deploymentId)
-						: // Deploy-provider lanes (Cloudflare/Vercel) hold no enumerable IaC
-							// state backend; the DeploymentView's recorded resources ARE the
-							// state HoBo holds for them.
-							Object.entries(row?.resources ?? {})
+						: Object.entries(row?.resources ?? {})
 								.filter(([, lifecycle]) => lifecycle === "provisioned")
 								.map(([resource]) =>
 									Object.freeze({
@@ -204,7 +174,6 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 					: undefined),
 			});
 
-			// resourceId -> providerId, from the recorded match decisions.
 			const providerFor = new Map<string, string>();
 			for (const decision of row?.decisions ?? []) {
 				providerFor.set(decision.resource, decision.providerId);
@@ -217,8 +186,6 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 					emitProgress(`${resource}: missing (declared but not in state)`);
 					continue;
 				}
-				// Declared AND held: ask the backend whether the per-resource stack
-				// still matches — a refresh/preview through the engine seam.
 				const providerId = providerFor.get(resource) ?? "";
 				const program: IacProgram = {
 					programId: `drift-${resource}`,
@@ -226,7 +193,6 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 					resourceId: resource,
 					provider: providerId,
 					driver: providerId,
-					// refresh() ignores `action`; use the read-only value.
 					action: "preview",
 					stackName: `${deploymentId}-${resource}`,
 				};
@@ -277,7 +243,6 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 			const drifted = [...missing, ...orphaned, ...diverged].sort();
 			const inSync = drifted.length === 0;
 
-			// Record the check as durable facts on the deployment stream.
 			const events: EventInput[] = [
 				{
 					type: DRIFT_CHECKED_EVENT,
@@ -304,9 +269,6 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 					),
 			];
 			const existing = await collectStream(runtime.store, stream);
-			// The deployment stream is fenced once `up` writes through an
-			// aggregate/leased actor; choreography writers continue it with the
-			// current owner epoch instead of bypassing the fence.
 			const fenceToken = currentFenceToken(runtime.store, stream);
 			await runtime.store.append(stream, events, {
 				expectedSeq:

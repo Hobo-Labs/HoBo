@@ -11,8 +11,6 @@ import {
 } from "@hobo/core";
 import { isJsonObject, isJsonString, parseJsonValue } from "./json.js";
 
-/** Provider codecs validate their own generated records. They must serialize
- * custody references, never connection strings, passwords or claim URLs. */
 export function createDurableHostingResourceRepository<T>(options: {
 	readonly store: DurableEventStore;
 	readonly scope: {

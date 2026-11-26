@@ -10,7 +10,6 @@ import type {
 } from "@hobo/core";
 import type { JsonValue } from "../../json.js";
 
-// public-contract: stable exported contract literal
 export const RUNTIME_PORT_CONFORMANCE_VERSION =
 	"hobo.runtime-port-conformance/v1";
 

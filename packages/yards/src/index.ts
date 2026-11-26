@@ -61,5 +61,4 @@ export {
 	yardToContract,
 } from "./yard.js";
 
-// public-contract: package identity for boundary contracts.
 export const HOBO_YARDS_PACKAGE = "@hobo/yards";

@@ -1,10 +1,3 @@
-/**
- * Capability requirements as declared by a Bindle primitive.
- *
- * A requirement never names a provider or a product. That distinction is what
- * keeps Bindles portable: `postgres.database({ version: ">=16" })` is a
- * semantic ask, not a Neon pin.
- */
 import {
 	type BindleRuntime,
 	isBindleRuntime,
@@ -24,12 +17,10 @@ export class CapabilityRequirementError extends Error {
 
 export type ProfileConstraintInput = {
 	readonly profileId: string;
-	/** Semver-style range over the profile major version, e.g. ">=1". */
 	readonly versionRange?: string;
 };
 
 export type WeightedPreferenceInput = ProfileConstraintInput & {
-	/** Integer weight; higher means stronger preference. Ranking only. */
 	readonly weight: number;
 };
 
@@ -81,7 +72,7 @@ export type CapabilityRequirementInput = {
 // parseProfileId, so a raw string can never reach selection unparsed. The wire
 // message carries a plain `string` because a brand has no encoding; recovering
 // it is what decoding through this package is for.
-// domain-view: profileId is the branded ProfileId, not a string. That brand is
+// domain-view:
 export type ProfileConstraint = {
 	readonly profileId: ProfileId;
 	readonly versionRange: string;
@@ -98,7 +89,7 @@ export type WeightedPreference = ProfileConstraint & {
 // runtime.required/trustRef stay exact-optional so absent never decays into
 // undefined. The wire message in data-models/capability_requirement.proto is
 // its encoding, not its definition.
-// domain-view: the parsed counterpart of CapabilityRequirementInput, and richer
+// domain-view:
 export type CapabilityRequirement = {
 	readonly requiredProfiles: readonly ProfileConstraint[];
 	readonly preferredProfiles: readonly WeightedPreference[];
@@ -193,7 +184,6 @@ export function parseCapabilityRequirement(
 		}
 		return { ...parseConstraint(entry), weight: entry.weight };
 	});
-	// Deterministic: strongest preference first, then stable by profile id.
 	preferred.sort(
 		(a, b) => b.weight - a.weight || a.profileId.localeCompare(b.profileId),
 	);

@@ -1,4 +1,3 @@
-// public-contract: version tag for the topology object model shared across bindle/camp/yard parsing.
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these are the established legacy provider-selection and public CampShape compatibility contracts. */
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 

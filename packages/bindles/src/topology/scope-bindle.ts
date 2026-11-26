@@ -1,6 +1,5 @@
 import { isJsonObject, isJsonString, type JsonObject } from "../json.js";
 
-// public-contract: stable exported contract literal
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 export interface ProviderSelection {

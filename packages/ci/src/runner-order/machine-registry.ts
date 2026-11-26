@@ -18,7 +18,6 @@ import {
 	RelayRecordRejection,
 } from "./relay-job.js";
 
-// public-contract: an advert older than this is offline; a machine renews well inside it.
 export const MACHINE_ADVERT_TTL_MS = 90_000;
 
 // public-contract: the domain separator of a signed machine advert; a change to what is signed needs a new one.

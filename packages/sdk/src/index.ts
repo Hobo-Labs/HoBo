@@ -64,7 +64,6 @@ export {
 } from "./schema.js";
 export { type WaiverDeclaration, type WaiverSpec, waiver } from "./waiver.js";
 
-// public-contract: package id consumers assert against.
 export const HOBO_SDK_PACKAGE = "@hobo/sdk";
 
 export type * from "./provider-runner-execution.js";

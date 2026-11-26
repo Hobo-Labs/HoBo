@@ -56,7 +56,6 @@ import {
 // journal's fleet and the owner's config service. Neither is registered here,
 // so a plan without them rejects `cd-journal` and `cd-config`.
 
-/** `base` with each Yard's offerings added; the base's live view is kept. */
 export function withYardOfferings(
 	base: PlannerRegistry,
 	yards: readonly Yard[],
@@ -65,7 +64,6 @@ export function withYardOfferings(
 		yards.map((yard) => relayYardRegistryProvider(yard)),
 	);
 	return {
-		// A getter: a base that refreshes changes its hash.
 		get catalogHash() {
 			return createHash("sha256")
 				.update(base.catalogHash)
@@ -84,7 +82,6 @@ export function withYardOfferings(
 	};
 }
 
-/** The runtime `hobo cd plan|up` place the CD project with. */
 export function cdPlacementRuntime<R extends YardRuntime>(runtime: R): R {
 	return {
 		...runtime,
@@ -92,20 +89,11 @@ export function cdPlacementRuntime<R extends YardRuntime>(runtime: R): R {
 	};
 }
 
-/** The specific resources the prepare step makes on its reserved Yards. */
 const PREPARED_RESOURCES: ReadonlyMap<string, string> = new Map([
 	[`yard:${cdJournalYard.name}`, "cd-journal"],
 	[`yard:${cdConfigYard.name}`, "cd-config"],
 ]);
 
-/**
- * `next`, except for a resource placed on a Yard `prepare` makes (the
- * journal's fleet, the owner's config service): `prepare` created it in this
- * run, before the plan, and refused the run if it could not. Applying it
- * records that; nothing is deployed for it. Destroying it does nothing: the
- * journal holds CD's history and the store is the owner's, so `hobo cd down`
- * never drops either.
- */
 export function routePreparedPlacements(next: IacProvider): IacProvider {
 	const prepared = (program: IacProgram) => {
 		const resource = PREPARED_RESOURCES.get(program.provider);
@@ -141,7 +129,6 @@ export function routePreparedPlacements(next: IacProvider): IacProvider {
 	};
 }
 
-/** Keep prepared resources out of the generic teardown provider. */
 export function retainPreparedOnDown(next: Executor): Executor {
 	const unexpected = async () => {
 		throw new Error("resource was not prepared by hobo cd up");
@@ -227,7 +214,6 @@ function refusedUp(
 	};
 }
 
-// public-contract: typed refusals of hobo cd up's prebuilt delivery.
 export const CD_UP_REFUSAL = Object.freeze({
 	storeSessionRequired: "HOBO_CD_UP_STORE_SESSION_REQUIRED",
 	noCheckout: "HOBO_CD_UP_NO_CHECKOUT",

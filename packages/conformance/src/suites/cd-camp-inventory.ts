@@ -15,10 +15,8 @@ import {
 	type Outcome,
 } from "./cd-shapes.js";
 
-// public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const CAMP_INVENTORY_SUITE = "hobo.cd.camp-inventory/v1";
 
-// public-contract: assertion names of the CampInventory suite.
 export const CAMP_INVENTORY_ASSERTIONS = Object.freeze([
 	"agentSelfReportNeverAddsNoRun",
 	"agentCannotTaintNoRun",

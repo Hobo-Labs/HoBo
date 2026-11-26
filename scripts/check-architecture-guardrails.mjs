@@ -1,4 +1,3 @@
-//   proto<->CUE type coverage, parallel-proto-type) inspect real artifacts
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";

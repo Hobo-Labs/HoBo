@@ -7,7 +7,9 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports. Preserve comments used as input
+  dynamic imports. Required `domain-view:` and `parallel-type-allowed:` markers
+  and TypeScript directives must contain no explanatory text. Preserve comments
+  used as input
   by comment-driven training and its executable fixtures. Independent
   submodules follow their own rules unless their work is explicitly requested.
 - Treat TODOs and other deferred markers as flags. Resolve a small in-scope

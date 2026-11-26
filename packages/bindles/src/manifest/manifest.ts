@@ -8,7 +8,6 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-// public-contract: manifest discriminator included in canonical deployment hashes.
 export const MANIFEST_SCHEMA = "hobo.manifest/v1" as const;
 
 const RESOURCE_TYPES = new Set(["data.v1", "component.v1", "website.v1"]);

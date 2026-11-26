@@ -7,7 +7,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: bindle features schema version.
 export const BINDLE_FEATURES_SCHEMA = "hobo.bindle-features/v1" as const;
 
 export type FeatureState = "ENABLED" | "DISABLED";

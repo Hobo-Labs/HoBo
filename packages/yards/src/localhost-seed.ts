@@ -30,9 +30,7 @@ import { deepFreeze, isPlainObject } from "./canonical.js";
 import { isJsonBoolean, isJsonString } from "./json.js";
 import { type Yard, yard } from "./yard.js";
 
-// public-contract: the name the auto-discovered localhost Yard registers under; a Station's yard refs and every local placement decision resolve through it, so changing it orphans existing local topologies.
 export const LOCALHOST_YARD_NAME = "yard:local";
-// public-contract: the provider id stamped on every locally-discovered substrate row; resolvers and capability-coverage reports key on it, so changing it makes local Yards look like an unknown provider.
 export const LOCALHOST_PROVIDER_ID = "local";
 
 export type SeedProvenance = "default" | "discovered" | "declared";

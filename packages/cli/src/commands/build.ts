@@ -43,7 +43,6 @@ export {
 	writeBuildFixtureProject,
 } from "../build/run-build.js";
 
-// public-contract: build artifact kind -> Freight ArtifactKind (cd.proto).
 export const FREIGHT_ARTIFACT_KIND: Readonly<
 	Record<BuildArtifactKind, ArtifactKind>
 > = Object.freeze({
@@ -52,7 +51,6 @@ export const FREIGHT_ARTIFACT_KIND: Readonly<
 	"node-app": ArtifactKind.FUNCTION_BUNDLE,
 });
 
-// public-contract: typed refusals of the Freight step of `hobo build`.
 export const BUILD_FREIGHT_REFUSAL = Object.freeze({
 	digestMismatch: "HOBO_BUILD_FREIGHT_DIGEST_MISMATCH",
 	unreadable: "HOBO_BUILD_FREIGHT_ARTIFACT_UNREADABLE",

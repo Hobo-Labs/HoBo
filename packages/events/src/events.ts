@@ -1,4 +1,4 @@
-export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1"; // public-contract: schemaVersion stamped on every reactive fact body
+export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1";
 
 type FactValue = string | number | readonly string[];
 type FactData = Record<string, FactValue>;

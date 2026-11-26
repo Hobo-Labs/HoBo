@@ -356,11 +356,11 @@ describe("shared budget threshold identity", () => {
 		).toThrow();
 	});
 	it("does not coerce absent or numeric JS identifiers into strings", () => {
-		// @ts-expect-error JS callers may omit scope fields; the runtime guard must refuse.
+		// @ts-expect-error
 		expect(() =>
 			budgetScopeIdentityKey({ ...identity, tenantId: undefined }),
 		).toThrow();
-		// @ts-expect-error A numeric provider/customer ID is not a canonical budget identity.
+		// @ts-expect-error
 		expect(() =>
 			budgetScopeIdentityKey({ ...identity, budgetId: 123 }),
 		).toThrow();

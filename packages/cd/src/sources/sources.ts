@@ -96,7 +96,6 @@ export type FreightSourcesDeps = CdBase & {
 	readonly provenance: ProvenanceVerifier;
 	readonly authorizer: CdAuthorizer;
 	readonly webhookSecrets: CredentialResolver;
-	/** Optional: metrics (WP19 composes the OTLP sink). */
 	readonly telemetry?: TelemetrySink;
 };
 
@@ -104,7 +103,6 @@ type SourceState = Readonly<{
 	seq: number;
 	definition?: FreightSourceRecord;
 	cursors: ReadonlyMap<string, string>;
-	/** Discovered artifacts eligible for assembly (recorded/deferred), oldest first. */
 	history: readonly DiscoveredArtifactRecord[];
 	seen: ReadonlySet<string>;
 }>;
@@ -151,7 +149,6 @@ function definitionKey(source: FreightSourceRecord): string {
 
 function decodeSource(event: EventEnvelope): FreightSourceRecord | undefined {
 	try {
-		// SAFETY: event data is the protobuf JSON this module appended.
 		return fromJson(FreightSourceRecordSchema, event.data as ProtoJson);
 	} catch {
 		return undefined;
@@ -162,7 +159,6 @@ function decodeDiscovered(
 	event: EventEnvelope,
 ): DiscoveredArtifactRecord | undefined {
 	try {
-		// SAFETY: event data is the protobuf JSON this module appended.
 		return fromJson(DiscoveredArtifactRecordSchema, event.data as ProtoJson, {
 			ignoreUnknownFields: true,
 		});
@@ -192,9 +188,7 @@ export function createFreightSources(d: FreightSourcesDeps): FreightSources {
 					atMs: d.now(),
 				})),
 			);
-		} catch {
-			// Telemetry never fails a discovery.
-		}
+		} catch {}
 	}
 
 	async function load(name: string): Promise<SourceState> {
@@ -319,7 +313,6 @@ export function createFreightSources(d: FreightSourcesDeps): FreightSources {
 				[
 					{
 						type: CD_EVENTS.SourceDefined,
-						// SAFETY: protobuf JSON is a JSON value.
 						data: toJson(FreightSourceRecordSchema, source) as JsonValue,
 						meta: {
 							idempotencyKey: definitionKey(source),
@@ -703,7 +696,6 @@ export function createFreightSources(d: FreightSourcesDeps): FreightSources {
 					CD_STREAMS.source(name),
 					events.map((event) => ({
 						type: CD_EVENTS.SourceArtifactDiscovered,
-						// SAFETY: protobuf JSON is a JSON value.
 						data: toJson(
 							DiscoveredArtifactRecordSchema,
 							event.record,
@@ -720,9 +712,6 @@ export function createFreightSources(d: FreightSourcesDeps): FreightSources {
 					{ expectedSeq: state.seq, actor: ctx.principal, tenant: d.tenant },
 				);
 			} catch (error) {
-				// A concurrent poll of the same source won the CAS. The Freight it and we
-				// recorded is content-addressed, so nothing is lost; the next poll resumes
-				// from the winner's cursor.
 				return refuse(
 					SOURCE_REASON.unreachable,
 					`discoveries for ${name} could not be appended: ${error instanceof Error ? error.message : "store failure"}`,
@@ -836,8 +825,6 @@ export function createFreightSources(d: FreightSourcesDeps): FreightSources {
 	return { define, list, poll, nudge, schedule, tick };
 }
 
-/** Read the outcome and reasons recorded with one `source.ArtifactDiscovered`. */
-/** The outcome, reasons and Freight ids recorded with one discovery. */
 export type DiscoveryOutcomeView = Readonly<{
 	outcome: string;
 	reasons: readonly ReasonRecord[];

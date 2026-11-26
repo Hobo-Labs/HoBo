@@ -1,7 +1,3 @@
-/**
- * Discover Open SaaS / Wasp env + dep hints from a real app tree.
- * Source of truth: https://docs.opensaas.sh/guides/deploying/ (+ .env.*.example).
- */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -16,7 +12,6 @@ import {
 	type WaspEnvKey,
 } from "./parse.js";
 
-/** General vars required for any Open SaaS deploy (docs). */
 export const OPENSAAS_GENERAL_ENV = Object.freeze([
 	"DATABASE_URL",
 	"JWT_SECRET",
@@ -24,9 +19,8 @@ export const OPENSAAS_GENERAL_ENV = Object.freeze([
 	"WASP_SERVER_URL",
 ] as const);
 
-/** Map env key prefixes → Bindle resource kind for Matching / connectors. */
 export const ENV_TO_BINDLE_KIND = Object.freeze({
-	DATABASE_URL: "container", // or external BYO Postgres
+	DATABASE_URL: "container",
 	STRIPE_: "external",
 	LEMONSQUEEZY_: "external",
 	POLAR_: "external",
@@ -42,16 +36,7 @@ export const ENV_TO_BINDLE_KIND = Object.freeze({
 	REACT_APP_: "env",
 } as const);
 
-/**
- * The filesystem seam.
- *
- * Discovery is the only effectful thing this package does, and it is one call:
- * read a declaration file, or report that it is absent. Injecting it is what
- * lets `contracts/wasp-app-source-tree.pact.json` be replayed without an app
- * tree on disk.
- */
 export type WaspSourceReader = {
-	/** Resolve to the file contents, or `undefined` when the file is absent. */
 	readFile(absolutePath: string): Promise<string | undefined>;
 };
 
@@ -60,8 +45,6 @@ export const nodeWaspSourceReader: WaspSourceReader = {
 		try {
 			return await readFile(absolutePath, "utf8");
 		} catch {
-			// Both example files are optional: an app may be checked out before
-			// it has either, and that is a discovery with no keys, not an error.
 			return undefined;
 		}
 	},
@@ -129,18 +112,10 @@ function suggestDeps(
 	);
 }
 
-/** Resolve repo-relative waspApp(root) against a repo root. */
 export function resolveWaspRoot(repoRoot: string, root: string): string {
 	return parseWaspAppRoot(repoRoot, root).absolute;
 }
 
-/**
- * Read `.env.server.example` / `.env.client.example` under the Wasp app and
- * combine with Open SaaS general deploy vars from the docs.
- *
- * What comes back holds declared **keys** only. The reader hands over file
- * text; `parseWaspEnvExample` drops every value unread.
- */
 export async function discoverWaspEnv(
 	repoRoot: string,
 	root: string,

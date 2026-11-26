@@ -75,20 +75,11 @@ export interface PulumiAutomationAdapter {
 	apply(program: IacProgramDocument): Promise<PulumiApplyOutputs>;
 	destroy(program: IacProgramDocument): Promise<JsonValue>;
 	refresh(program: IacProgramDocument): Promise<PulumiDriftReport>;
-	// Estate discovery seam (optional — spy/test adapters may omit it): the full
-	// per-resource-stack state the adapter's backend holds, `{ [stackKey]:
-	// { resources } }`. Drives `hobo drift`/`hobo import`; the real CLI engine
-	// fails closed with a typed PulumiEngineUnavailableError when the pulumi
-	// binary is missing.
 	snapshotState?(): JsonObject;
 }
 
 export interface PulumiBackedIacProviderOptions {
-	// The durable event store the Orchestrator writes `deployment.Planned` to. The
-	// bridge reads the stored DeploymentPlan back to resolve each resource's plan.
 	readonly store: EventStore;
-	// The real CloudProviders whose `realize()` lowers a ResourcePlan to a shape-B
-	// program. Keyed by `provider.id` (matches the shape-A program's `provider`).
 	readonly providers: readonly CloudProvider[];
 	// The real @hobo/iac-pulumi adapter. Defaults to a fresh in-memory-backed
 	// adapter; injectable so tests can spy on the adapter the deploy path drives.
@@ -101,16 +92,12 @@ function planFromStream(
 	let plan: DeploymentPlan | undefined;
 	for (const event of events) {
 		if (event.type === CLOUD_EVENTS.DeploymentPlanned) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			plan = (event.data as { plan: DeploymentPlan }).plan;
 		}
 	}
 	return plan;
 }
 
-// Flatten the adapter's per-resource-stack apply result into the kernel's flat
-// `IacOutputs` (Record<string, string>): the resolved stack outputs plus the
-// resource/output bindings the adapter publishes (both already string-valued).
 function toIacOutputs(result: PulumiApplyOutputs): IacOutputs {
 	const outputs: IacOutputs = {};
 	for (const [key, value] of Object.entries(result.stackOutputs ?? {})) {
@@ -128,25 +115,12 @@ export function createPulumiBackedIacProvider(
 	const { store } = options;
 	let adapter = options.adapter;
 	if (adapter === undefined) {
-		// SAFETY: the in-memory automation adapter implements PulumiAutomationAdapter.
 		adapter = createPulumiAutomationAdapter() as PulumiAutomationAdapter;
 	}
 	const providersById = new Map<string, CloudProvider>(
 		options.providers.map((provider) => [provider.id, provider]),
 	);
 
-	// Resolve the shape-A execution descriptor into the shape-B declarative program
-	// the real adapter consumes: read the stored plan, find this resource's real
-	// ResourcePlan, and lower it via the REAL provider.realize(). Thread the
-	// shape-A deploymentId so the adapter's per-resource stack key is stable across
-	// preview/apply/destroy for this resource.
-	//
-	// Returns `undefined` when the plan/resource cannot be resolved from the store.
-	// That only happens on a teardown against a store that never observed this
-	// deployment's `deployment.Planned` fact (e.g. a fresh-process `hobo down`
-	// whose in-memory Pulumi state is likewise empty) — there is genuinely nothing
-	// to realize, so the mutating paths no-op rather than fabricate a plan. The
-	// apply path REQUIRES a resolved plan and rejects `undefined`.
 	async function realizeFor(
 		program: IacProgram,
 	): Promise<IacProgramDocument | undefined> {
@@ -171,7 +145,6 @@ export function createPulumiBackedIacProvider(
 		const resourcePlan: ResourcePlan = {
 			...planned,
 			deploymentId: program.deploymentId,
-			// Re-parsed at the port: the plan's JSON type is its own package's.
 			...(realizationParameters !== undefined
 				? {
 						realizationParameters: parseJsonObject(

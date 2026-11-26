@@ -182,7 +182,6 @@ export function parseTrafficRoutingProviderProfile(
 	});
 }
 
-// public-contract: registry key consumers use to register/resolve this class.
 export const TRAFFIC_ROUTING_RESOURCE_CLASS = "traffic-routing";
 
 export function matchTrafficRoutingOfferings(
