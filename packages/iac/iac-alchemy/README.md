@@ -903,3 +903,11 @@ nine-resource graph, and its source and plan fences must verify before apply.
 Application dependencies and server-side rendering are not supported by this
 mapping. The emulator test exercises the mapped CloudFront key-value store;
 it does not deploy the complete site.
+
+### Bounded AWS key-value runtime
+
+The optional Node.js DynamoDB runtime supports bounded get, set and delete
+operations with explicit grants. A timed-out request retains capacity until
+its transport settles; uncertain mutations require reconciliation. The host
+must authenticate the table incarnation, enforce AWS permissions and fence
+in-flight work. This slice does not yet map the runtime into applications.
