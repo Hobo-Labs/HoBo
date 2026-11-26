@@ -34,10 +34,8 @@ export const CD_RESOURCES = Object.freeze({
 	config: "cd-config",
 } as const);
 
-/** Intended PostgreSQL requirement; not yet attached to the journal resource. */
 export const cdJournal = postgres.database({ version: ">=16" });
 
-/** Intended cadence; not yet attached to the schedule resource. */
 export const CD_TICK_SCHEDULE = Object.freeze({
 	name: CD_RESOURCES.tick,
 	cron: "*/5 * * * *",

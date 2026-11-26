@@ -81,26 +81,14 @@ const METADATA_NAME_PATTERN = /^_[a-z0-9_]{1,62}$/u;
 const OPERATION_PATTERN = /^[A-Za-z]{1,64}$/u;
 
 export interface MongoEngineOptions {
-	/** The executor every operation goes through. The binding owns its close. */
 	readonly executor: MongoExecutor;
-	/**
-	 * Change streams need a replica set or a sharded cluster. Pass `false` for
-	 * a deployment that cannot open them: the binding then has no `capture`
-	 * port and its declaration says so. Defaults to `true`.
-	 */
 	readonly capture?: boolean;
-	/**
-	 * Name of the metadata collection. It must start with `_`, which no
-	 * dataset name can, so it can never collide with a dataset's collection.
-	 */
 	readonly metadataCollection?: string;
-	/** Documents per round trip when digesting or retiring a scope. */
 	readonly scanPageSize?: number;
 	/** Mints a fence token. Defaults to a random, unguessable one. */
 	readonly mintFenceToken?: () => string;
 }
 
-/** Engine options after the one parse: every field present and in range. */
 // domain-view: parsed options, constructible only through parseMongoEngineOptions; the wire record MongoEngineSettings in data-models/data_mongodb.proto carries its non-secret fields, never the executor.
 export interface MongoEngineSettings {
 	readonly executor: MongoExecutor;
@@ -116,7 +104,6 @@ function invalidOptions(message: string, field: string): never {
 	});
 }
 
-/** The one constructor for `MongoEngineSettings`. Invalid options throw. */
 export function parseMongoEngineOptions(
 	options: MongoEngineOptions,
 ): MongoEngineSettings {
@@ -153,7 +140,6 @@ function positiveInteger(value: number, field: string): number {
 		: invalidRequest(`${field} must be a positive integer`, field);
 }
 
-/** Refused commands become errors a caller can act on; the rest pass through. */
 async function mapped<T>(action: () => Promise<T>): Promise<T> {
 	try {
 		return await action();
@@ -163,11 +149,7 @@ async function mapped<T>(action: () => Promise<T>): Promise<T> {
 	}
 }
 
-// ── metadata entries ────────────────────────────────────────────────────────
-
 function metadataId(kind: string, ...parts: readonly string[]): string {
-	// Dataset names are identifiers and never contain `:`, so the id parses
-	// unambiguously even when a tenant or a source name does.
 	return [kind, ...parts.map((part) => storableText(part, kind, "key"))].join(
 		":",
 	);
@@ -181,7 +163,6 @@ function textField(
 	return isJsonString(value) ? value : undefined;
 }
 
-/** The `_id` range that is exactly one scope, optionally past a cursor. */
 function scopeRange(scope: DatasetScope, after?: MongoValue): MongoIdRange {
 	if (scope.tenant === "") {
 		return after === undefined ? { kind: "range" } : { kind: "range", after };
@@ -194,7 +175,6 @@ function scopeRange(scope: DatasetScope, after?: MongoValue): MongoIdRange {
 	};
 }
 
-/** True when two consecutive events were committed by one transaction. */
 function sameTransaction(
 	earlier: MongoChangeEvent | undefined,
 	later: MongoChangeEvent | undefined,
@@ -239,7 +219,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 		return documents[0];
 	};
 
-	/** Insert a metadata entry; false when another writer got there first. */
 	const insertEntry = async (document: MongoDocument): Promise<boolean> => {
 		try {
 			await executor.bulkWrite({
@@ -263,10 +242,7 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 			"schema",
 		);
 		if (text === undefined) return undefined;
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		const schema = parseDatasetSchema(JSON.parse(text) as JsonValue);
-		// A stored schema never changes — a differing one is refused — so the
-		// cache cannot go stale.
 		schemas.set(name, schema);
 		return schema;
 	};
@@ -283,10 +259,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 		return schema;
 	};
 
-	/**
-	 * The fence check. It runs as the first statement of the transaction that
-	 * carries the write, so the write and the check see one snapshot.
-	 */
 	const assertWritable = async (
 		session: MongoSession,
 		dataset: string,
@@ -324,10 +296,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 	): MongoWriteOperation[] =>
 		mutations.map((mutation): MongoWriteOperation => {
 			if (mutation.op === "delete") {
-				// A record's `_id` holds its canonical key as text, so a key in
-				// any other spelling matches no document: the delete would
-				// succeed and delete nothing, while an engine that parses keys
-				// deleted the record. It is refused instead.
 				if (
 					encodeRecordKey(schema, decodeRecordKey(schema, mutation.key)) !==
 					mutation.key
@@ -352,8 +320,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 					},
 				);
 			}
-			// A whole-document replace: its change event carries the document
-			// as of this change without any lookup.
 			return {
 				kind: "replace",
 				document: encodeDocument(
@@ -365,7 +331,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 			};
 		});
 
-	/** Fold a scope into a digest, a page at a time, through any reader. */
 	const digestScope = async (
 		reader: MongoSession,
 		schema: DatasetSchema,
@@ -405,9 +370,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 			next: () =>
 				mapped(async () => {
 					if (done) return undefined;
-					// A keyset scan: each chunk resumes after the last `_id` seen,
-					// so a concurrent write can neither repeat nor skip a record
-					// that was present throughout. It is still a fuzzy image.
 					const { documents } = await executor.find({
 						collection: scope.dataset,
 						select: scopeRange(scope, after),
@@ -440,13 +402,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 		start,
 	});
 
-	/**
-	 * The start of a stored subscription, for the scope it was started on. A
-	 * subscription is one reader of one scope: the same name on another
-	 * dataset or tenant is refused, because handing back the first scope's
-	 * position would start the second reader at a point that means nothing to
-	 * it.
-	 */
 	const startOf = (
 		stored: MongoDocument | undefined,
 		scope: DatasetScope,
@@ -477,8 +432,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 		after: string,
 		limit: number,
 	): Promise<MongoChangeBatch> => {
-		// One event more than asked for: in the usual case it is the proof
-		// that the page may end where the limit says.
 		const size = limit + 1;
 		const events: MongoChangeEvent[] = [];
 		let from = after;
@@ -507,8 +460,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 					drained: false,
 				};
 			}
-			// Everything read is returned. Only a full page can have stopped
-			// inside a transaction; anything shorter ended between two.
 			if (batch.drained || batch.events.length < size) {
 				return { events, token: batch.token, drained: batch.drained };
 			}
@@ -523,8 +474,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 				const existing = startOf(await entry(executor, id), request.scope);
 				if (existing !== undefined) return existing;
 				await requireDataset(request.scope.dataset);
-				// The stream's current resume point. Everything committed before
-				// it is in the snapshot's past; everything after it is replayed.
 				const { token } = await executor.changeHead({
 					collection: request.scope.dataset,
 				});
@@ -535,7 +484,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 				) {
 					return token;
 				}
-				// Lost a race to start the same subscription: its position wins.
 				return startOf(await entry(executor, id), request.scope) ?? token;
 			}),
 		read: (request) =>
@@ -565,11 +513,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 							event.token,
 						);
 					}
-					// A drop, a rename, an invalidate — or an update an executor
-					// delivered without its post-image: not a record change this
-					// contract can carry, and not something to skip silently.
-					// An operation type is a word. Anything else an executor put
-					// there is not quoted back.
 					const operation = OPERATION_PATTERN.test(event.operation)
 						? event.operation
 						: "unnamed";
@@ -585,8 +528,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 					caughtUp: batch.drained,
 				};
 			}),
-		// MongoDB keeps no per-reader log: retention is the oplog window, and
-		// nothing an acknowledgement could release.
 		acknowledge: async () => undefined,
 		stop: (subscription) =>
 			mapped(async () => {
@@ -619,9 +560,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 						refuseDifferent(existing);
 						return { dataset: schema.name, created: false };
 					}
-					// Collection first, entry second: a crash between the two
-					// leaves a collection with no entry, which the next call
-					// converges, never an entry that points at nothing.
 					await executor.ensureCollection({
 						collection: schema.name,
 						validator: datasetValidator(schema),
@@ -647,8 +585,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 			write: (request) =>
 				mapped(async () => {
 					const schema = await requireDataset(request.dataset);
-					// Encoded before the transaction opens: a value the store
-					// cannot hold is refused before anything is written.
 					const operations = operationsFor(schema, request.mutations);
 					if (operations.length === 0) return { applied: 0 };
 					await executor.transaction(async (session) => {
@@ -697,8 +633,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 				mapped(async () => {
 					const schema = await requireDataset(request.dataset);
 					const operations = operationsFor(schema, request.changes);
-					// Changes and watermark commit together or not at all, so a
-					// redelivered batch finds either both or neither.
 					await executor.transaction(async (session) => {
 						await assertWritable(
 							session,
@@ -706,11 +640,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 							request.changes,
 							request.fenceToken,
 						);
-						// A conditional apply reads the watermark inside the
-						// transaction that replaces it. Two appliers naming the
-						// same watermark both write that one entry, so the
-						// server lets one commit and makes the other run again
-						// — and the second reading finds the watermark moved.
 						if (request.expectedWatermark !== undefined) {
 							const recorded =
 								textField(
@@ -796,9 +725,6 @@ export function createMongoEngine(options: MongoEngineOptions): EngineBinding {
 							? minted
 							: (textField(await entry(executor, id), "token") ?? minted);
 					}
-					// A writer that read "not fenced" just before the fence
-					// committed may still be in flight. Wait it out, so that
-					// once raise returns no unfenced write can land.
 					await executor.awaitTransactions({ collection: metadataCollection });
 					return { fenceToken };
 				}),

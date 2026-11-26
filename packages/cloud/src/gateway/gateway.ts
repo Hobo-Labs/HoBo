@@ -47,7 +47,6 @@ export interface DeployCommand {
 		objective?: string;
 		region?: string;
 		budgetId?: string;
-		/** Providers observed unavailable; Matching routes around them. */
 		unavailableProviders?: string[];
 	};
 }
@@ -99,13 +98,6 @@ interface DeploymentState {
 	requested: boolean;
 }
 
-// The write-model aggregate behind the deployment stream: a single-writer actor
-// (ActorHost lease + fencing). Admission is generational: a
-// `deployment.Requested` opens a generation and its `deployment.Planned` or
-// `deployment.PlanRejected` closes it. Its one invariant is that a generation
-// is never opened while another is pending; a completed one does not bind the
-// deployment forever, because a changed declaration (or a re-plan around an
-// unavailable provider) is simply the next desired state.
 const deploymentAggregate: Aggregate<
 	DeploymentState,
 	DeployCommand & { bindleHash: string; tenant: string }
@@ -134,7 +126,6 @@ const deploymentAggregate: Aggregate<
 			tenant: command.tenant,
 			config: command.config ?? {},
 		});
-		// SAFETY: DeploymentRequested payload is JSON event data.
 		emitter.emit("deployment.Requested", requested.data as JsonObject);
 	},
 });
@@ -193,7 +184,6 @@ export async function deploy(
 	}
 	const original = prior.find((event) => event.type === "deployment.Requested");
 	if (original && isJsonObject(original.data)) {
-		// Ownership is bound by the first request, for every generation.
 		if (original.data.tenant !== context.tenant)
 			throw new UnauthorizedCommandError(
 				"deployment belongs to a different tenant",
@@ -203,7 +193,6 @@ export async function deploy(
 				"deployment belongs to a different principal",
 			);
 	}
-	// The current generation: the latest request and whether it completed.
 	let latestIndex = -1;
 	for (const [index, event] of prior.entries())
 		if (event.type === "deployment.Requested") latestIndex = index;
@@ -227,9 +216,6 @@ export async function deploy(
 		throw new AggregateInvariantError(
 			"deployment is pending with different input; reconcile its recorded effects before retrying admission",
 		);
-	// A budgeted deployment holds a financial reservation: a new generation
-	// would reserve again while the first is still held. Its input stays bound;
-	// changes go through the hosting transition model instead.
 	if (
 		latest !== undefined &&
 		!sameInput &&
@@ -238,8 +224,6 @@ export async function deploy(
 		throw new AggregateInvariantError(
 			"deployment ID was already bound to different input (a budgeted deployment changes through a hosting transition)",
 		);
-	// The same input as the current generation replays it (idempotent); a
-	// different input after it completed opens the next generation below.
 	if (latest !== undefined && sameInput) {
 		const completed = prior
 			.slice(latestIndex + 1)
@@ -251,7 +235,6 @@ export async function deploy(
 			);
 		if (completed && isJsonObject(completed.data)) {
 			if (completed.type === "deployment.Planned") {
-				// SAFETY: this writer's durable event carries the previously typed plan.
 				const data = (
 					completed as EventEnvelope<{ plan: DeploymentPlan; planHash: string }>
 				).data;
@@ -259,7 +242,6 @@ export async function deploy(
 					.slice(latestIndex + 1)
 					.filter((event) => event.type === "match.Decided")
 					.map((event) => {
-						// SAFETY: match.Decided was emitted by the pure planner on this stream.
 						return event.data as MatchDecided;
 					});
 				const reservation = prior
@@ -282,7 +264,6 @@ export async function deploy(
 					replay.hostingReservationId = reservationId;
 				return replay;
 			}
-			// SAFETY: deployment.PlanRejected was produced by this gateway.
 			const rejected = (
 				completed as EventEnvelope<{
 					reason: string;
@@ -302,7 +283,6 @@ export async function deploy(
 		);
 	}
 
-	// 1. Command -> fact: append deployment.Requested under the single-writer lease.
 	const requested = await deploymentAggregate.execute(
 		{ store: deps.store, actorHost: deps.actorHost },
 		streamId,
@@ -316,7 +296,6 @@ export async function deploy(
 		},
 	);
 
-	// 2. Run the pure Planner and append its facts (choreography fan-out path).
 	const planConfig: PlanConfig = { deploymentId: command.deploymentId };
 	if (command.config?.objective !== undefined)
 		planConfig.objective = command.config.objective;

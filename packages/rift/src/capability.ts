@@ -16,7 +16,7 @@ export interface RiftContract {
 	readonly namespaceMarker: boolean;
 }
 
-// domain-view: wire form is hobo.rift.v1.Capability; src/wire.ts converts.
+// domain-view:
 export interface Capability {
 	readonly tier: CowTier;
 	readonly available: readonly CowTier[];

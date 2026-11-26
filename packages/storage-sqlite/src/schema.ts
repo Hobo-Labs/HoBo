@@ -1,13 +1,7 @@
-/** Current SQLite schema version stored in PRAGMA user_version. */
 export const SCHEMA_VERSION = 2;
 
-/** Schema version of the pre-migration runtime-local events/snapshots layout. */
 export const LEGACY_SCHEMA_VERSION = 1;
 
-/**
- * Native connection pragmas. Browser adapters must NOT copy WAL blindly —
- * use the OPFS VFS journal/locking mode documented for that VFS.
- */
 export const NATIVE_PRAGMAS = Object.freeze({
 	journal_mode: "WAL",
 	synchronous: "FULL",
@@ -17,10 +11,6 @@ export const NATIVE_PRAGMAS = Object.freeze({
 	// recursive_triggers off by default
 });
 
-/**
- * Schema v2 — stream heads, positioned events, durable journal tables.
- * STRICT tables when the runtime supports them; applied after version check.
- */
 export const SCHEMA_V2_SQL = `
 CREATE TABLE IF NOT EXISTS streams (
   stream_id        TEXT PRIMARY KEY,
@@ -177,10 +167,6 @@ CREATE TABLE IF NOT EXISTS actor_leases (
 ) STRICT;
 `;
 
-/**
- * Legacy v1 schema as created by runtime-local before this package.
- * Used only to build migration fixtures and detect v1 databases.
- */
 export const LEGACY_V1_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS events (
   stream_id TEXT NOT NULL,

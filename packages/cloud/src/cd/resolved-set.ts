@@ -1,7 +1,3 @@
-/**
- * Gatekeeper-approved, post-Matching resolved Deployment Set (CD plane input).
- * The CD plane never re-renders raw Git/Helm under high privilege.
- */
 import { createHash } from "node:crypto";
 import { cloneAsJson, isJsonObject, type JsonValue } from "../json.js";
 import {
@@ -37,12 +33,9 @@ export type ResolvedDeploymentSet = Readonly<{
 	tenant: string;
 	environment: string;
 	campId: string;
-	/** Content-addressed post-Matching plan DAG. */
 	plan: DeploymentPlan;
 	planHash: `sha256:${string}`;
-	/** Matching selections already decided (not re-selected by CD plane). */
 	matches: readonly MatchSelection[];
-	/** Gatekeeper-approved — CD plane refuses unapproved sets. */
 	gatekeeper: GatekeeperApproval;
 	/** Opaque secret references only (never plaintext values). */
 	secretRefs: readonly string[];
@@ -110,7 +103,6 @@ export function createResolvedDeploymentSet(input: {
 	});
 }
 
-/** Resource plan + matching provider for a named resource. */
 export function providerForResource(
 	set: ResolvedDeploymentSet,
 	resourceName: string,
