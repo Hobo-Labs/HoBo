@@ -1,5 +1,3 @@
-// Typed failure modes of the desired-state module (WP4). Every refusal carries a
-// stable code and a remediation an operator or agent can act on.
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
@@ -50,7 +48,6 @@ export const SETS_FAILURES = Object.freeze({
 
 export type SetsFailureCode = keyof typeof SETS_FAILURES;
 
-/** Thrown where a port returns a value rather than an Outcome (resolved(), reject(), folds). */
 export class DesiredStateError extends Error {
 	readonly code: SetsFailureCode;
 	readonly remediation: string;

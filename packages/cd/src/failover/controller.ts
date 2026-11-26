@@ -103,7 +103,6 @@ export type FailoverControllerDeps = Parameters<
 			toCampId: string;
 		}>,
 	) => Promise<boolean>;
-	/** Residency region catalog override (tests, private regions). */
 	readonly regionCatalog?: Parameters<typeof evaluateResidency>[0]["catalog"];
 	readonly holderId?: string;
 	readonly leaseTtlMs?: number;

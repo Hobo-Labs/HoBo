@@ -2,7 +2,6 @@ import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";
 
-// carries a remediation an operator can act on.
 export const FREIGHT_REASON = Object.freeze({
 	manifestInvalid: "freight-manifest-invalid",
 	secretInRecord: "freight-secret-in-record",
@@ -44,7 +43,6 @@ export function refuse(
 	return { ok: false, reasons: [reason(code, message, remediation, subject)] };
 }
 
-/** A refusal whose first reason is the ledger's own code, followed by the cause's reasons. */
 export function refuseWith(
 	head: ReasonRecord,
 	causes: readonly ReasonRecord[],

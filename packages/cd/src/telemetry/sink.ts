@@ -1,9 +1,3 @@
-// `createTelemetrySink` (WP19, D17): an OTLP/HTTP JSON exporter over the core
-// `HttpTransport` port — no OpenTelemetry SDK dependency. Each call exports
-// its spans or points in batches of at most `maxBatch`, retrying retryable
-// failures (429, 502, 503, 504, transport errors) with capped exponential
-// backoff that honours `Retry-After`, per the OTLP/HTTP specification.
-// Backoff has no jitter so tests and replays are deterministic.
 import type { HttpTransport, JsonValue, TransportResponse } from "@hobo/core";
 import {
 	isFiniteNumber,
@@ -38,7 +32,6 @@ export type TelemetrySinkOptions = Readonly<{
 	endpoint?: string;
 	http: HttpTransport;
 	headers?: Readonly<Record<string, string>>;
-	/** OTLP resource attributes; default `service.name=hobo-cd`. */
 	resource?: OtelAttributes;
 	maxBatch?: number;
 	maxAttempts?: number;
@@ -71,7 +64,6 @@ type MutableStats = {
 export type OtlpTelemetrySink = TelemetrySink &
 	Readonly<{ endpoint: string; stats(): ExportStats }>;
 
-/** Parse the endpoint once; an invalid one is a construction-time error. */
 export function parseOtlpEndpoint(raw: string): string {
 	let url: URL;
 	try {
@@ -122,12 +114,10 @@ function retryAfterMs(response: TransportResponse): number | undefined {
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : undefined;
 }
 
-/** The OTLP `partialSuccess` member of an export response, parsed. */
 type PartialSuccess = Readonly<{ rejected: number }>;
 
 const NO_PARTIAL: PartialSuccess = { rejected: 0 };
 
-/** OTLP JSON encodes int64 counts as strings or numbers. */
 function count(value: JsonValue | undefined): number {
 	const n = isText(value) ? Number(value) : isFiniteNumber(value) ? value : 0;
 	return Number.isFinite(n) && n > 0 ? n : 0;

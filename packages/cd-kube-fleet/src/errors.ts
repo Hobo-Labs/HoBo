@@ -159,7 +159,6 @@ export class KubeFleetError extends Error {
 	}
 }
 
-/** A ReasonRecord for one failure code, with its remediation. */
 export function reason(
 	code: KubeFleetFailureCode,
 	message: string,
@@ -173,7 +172,6 @@ export function reason(
 	});
 }
 
-/** A ReasonRecord for a caught error; unknown errors map to kube-unavailable. */
 export function reasonOf(error: Error, subject = ""): ReasonRecord {
 	if (error instanceof KubeFleetError)
 		return reason(error.code, error.message, subject);

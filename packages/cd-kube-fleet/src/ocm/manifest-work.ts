@@ -1,7 +1,3 @@
-// Open Cluster Management ManifestWork (work.open-cluster-management.io/v1):
-// rendering one single-cluster work per Camp and parsing its status. Never a
-// ManifestWorkReplicaSet, never an OCM Placement (D26): HoBo places, fans out
-// and rolls out; the hub only transports.
 import { DepartureAction } from "@hobo/cd";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
@@ -23,24 +19,20 @@ import {
 
 export const OCM_WORK_API = "/apis/work.open-cluster-management.io/v1" as const;
 
-/** Collection of ManifestWorks in one cluster namespace. */
 export function worksPath(cluster: string): string {
 	return `${OCM_WORK_API}/namespaces/${encodeURIComponent(cluster)}/manifestworks`;
 }
 
-/** `hobo-<camp>-<setdigest8>`: one ManifestWork per Camp and Set. */
 export function workName(campId: string, setDigest: string): string {
 	return `hobo-${campSlug(campId)}-${digest8(setDigest)}`;
 }
 
-/** Status fields an observe field can ask OCM to feed back (`status.*` only). */
 export function feedbackPath(field: string): string | undefined {
 	return field.startsWith("status.") && field.length > 7
 		? `.${field.slice(7)}`
 		: undefined;
 }
 
-// Kinds with an OCM WellKnownStatus feedback rule.
 export const WELL_KNOWN: ReadonlySet<string> = new Set([
 	"Deployment",
 	"Job",
@@ -88,12 +80,10 @@ export type WorkSpecInput = Readonly<{
 	keep: ReadonlySet<string>;
 }>;
 
-/** The manifests array: canonical object bodies in resource order. */
 export function manifestsOf(objects: readonly KubeObject[]): JsonValue[] {
 	return objects.map((o) => o.body);
 }
 
-/** The full desired ManifestWork for one Camp. */
 export function renderManifestWork(input: WorkSpecInput): JsonObject {
 	const manifests = manifestsOf(input.objects);
 	const statusPaths = input.observeFields
@@ -143,8 +133,6 @@ export function renderManifestWork(input: WorkSpecInput): JsonObject {
 		},
 	};
 }
-
-// ── Status ────────────────────────────────────────────────────────────────
 
 export type Condition = Readonly<{
 	type: string;
@@ -217,7 +205,6 @@ function feedbackValue(fieldValue: JsonValue | undefined): string | undefined {
 	return undefined;
 }
 
-/** Parse a ManifestWork the hub returned. Missing status parses as empty. */
 export function parseWorkStatus(work: JsonObject): WorkStatus {
 	const metadata = objectAt(work, "metadata");
 	const annotations = objectAt(metadata, "annotations");
