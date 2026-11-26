@@ -48,3 +48,21 @@ import "strings"
 	}
 	parsed_config: #BetterAuthParsedConfigRecord
 }
+
+#BetterAuthRelationalMigrationRecord: {
+	pack_id:                 #PackId
+	relational_bindle:       #BindleName
+	database_profile:        =~"^data\\.(relational|postgres)/v1$"
+	migration_plan_contract: "hobo.migration-plan/v1"
+	migration_plan_digest:   =~"^sha256:[0-9a-f]{64}$"
+	expand_step_count:       int & >=0
+}
+
+#IsoDateTime: =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+
+#BetterAuthSigningSecretWireRecord: {
+	secret_ref:      #SigningSecretRef
+	secret_scheme:   =~"^[a-z0-9-]+$"
+	secrets_port_id: string & !=""
+	resolved_at_iso: #IsoDateTime
+}

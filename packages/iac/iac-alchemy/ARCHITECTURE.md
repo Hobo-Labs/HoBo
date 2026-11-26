@@ -29,3 +29,8 @@ not in the Alchemy state snapshot.
 dispatcher route authority, ranked execution, Rivet Alchemy resources, and the
 RivetKit 3 runtime package. The suite is the regression gate when routing,
 admission, or provider pins change on `main`.
+
+`test/better-auth-host-harness.test.ts` is the incremental Alchemy-auth stack
+fixture: construction-time `HOBO_AUTH_*` dotenv-shaped config, in-memory Alchemy
+state, local SQLite posture (`:memory:`), and `@hobo/pack-better-auth` planning
+plus camp `SecretsPort` broker wire — no live Worker/D1 deploy yet.
