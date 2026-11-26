@@ -97,6 +97,8 @@ SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
+The runtime reports a successful write only after transport completion, even if
+application code replaces `Promise.race`.
 
 A Node.js HTTP host can bind those two AWS stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
