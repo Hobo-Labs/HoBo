@@ -404,6 +404,23 @@ describe("releaseBlockedRealizerMessage", () => {
 			]),
 		).toBe("RESOLVER_PROVIDER_REJECTED");
 	});
+
+	it("formats structured oci-registry refusals for release logs", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					structured: {
+						credentialRef: "owner://GHCR_PUBLISH",
+						requestedScope: "POST:403",
+						detailKind: "oci-http-status",
+					},
+				},
+			]),
+		).toBe(
+			"RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-http-status credential=owner://GHCR_PUBLISH http=POST:403",
+		);
+	});
 });
 
 describe("release credential scope during catalog realizes", () => {

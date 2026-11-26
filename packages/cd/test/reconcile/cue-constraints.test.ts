@@ -182,6 +182,18 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 				toJson(ReasonStructuredDetailSchema, pagesReject),
 			).ok,
 		).toBe(true);
+		const ociReject = validateReasonStructuredDetail({
+			credentialRef: "owner://GHCR_PUBLISH",
+			requestedScope: "POST:403",
+			detailKind: "oci-http-status",
+		});
+		if (!ociReject) throw new Error("expected oci structured fixture");
+		expect(
+			vet(
+				"ReasonStructuredDetail",
+				toJson(ReasonStructuredDetailSchema, ociReject),
+			).ok,
+		).toBe(true);
 	});
 
 	it("rejects a BLOCKED observation without a reason and a malformed drift kind", () => {

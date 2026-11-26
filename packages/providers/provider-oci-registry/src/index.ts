@@ -4,6 +4,11 @@
  * `ResourceResolver` port. See `resolver.ts` for the convergence contract.
  */
 export {
+	OciRegistryRefusal,
+	type OciRegistryRefusalReason,
+	OCI_REGISTRY_REFUSAL_REASONS,
+} from "./errors.js";
+export {
 	createLatin1FetchTransport,
 	declareLatin1Transport,
 	HTTP_TRANSPORT_BODY_ENCODING,

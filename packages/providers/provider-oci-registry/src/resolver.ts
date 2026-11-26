@@ -48,12 +48,16 @@ import {
 	ResolverError,
 	type ResourceResolver,
 	TransportGuardError,
+	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
 import {
 	instrumentResolvers,
 	type ResolverTelemetryOptions,
 } from "./delivery-coverage.js";
+import {
+	refuse,
+} from "./errors.js";
 import {
 	isJsonArray,
 	isJsonBoolean,
@@ -176,7 +180,11 @@ type ManifestState =
 	| { readonly present: false };
 
 /** An HTTP status the realizer did not expect, as a typed refusal. */
-function unexpected(response: TransportResponse, what: string): never {
+function unexpected(
+	response: TransportResponse,
+	method: TransportMethod,
+	what: string,
+): never {
 	const body = parseJsonObject(response.body);
 	const codes = isJsonArray(body.errors)
 		? body.errors
@@ -186,9 +194,11 @@ function unexpected(response: TransportResponse, what: string): never {
 						isJsonString(code) && /^[A-Z_]{1,64}$/u.test(code),
 				)
 		: [];
-	// Only the spec's error-code enumeration is echoed; never a body or header.
-	return rejected(
-		`${what} answered HTTP ${response.status}${codes.length ? ` (${codes.join(", ")})` : ""}`,
+	const summary = `${what} answered HTTP ${response.status}${codes.length ? ` (${codes.join(", ")})` : ""}`;
+	return refuse(
+		"oci-http-status",
+		`${method}:${response.status}`,
+		summary,
 		response.status === 403
 			? "grant the credential behind the locator the needed repository permission"
 			: undefined,
@@ -408,7 +418,7 @@ export function createOciRegistryResolvers(
 		});
 		if (response.status === 404) return { present: false };
 		if (response.status !== 200)
-			unexpected(response, `HEAD manifest ${reference}`);
+			unexpected(response, "HEAD", `HEAD manifest ${reference}`);
 		const reported = header(response, "docker-content-digest");
 		if (reported !== undefined) {
 			if (!isDigest(reported))
@@ -446,7 +456,7 @@ export function createOciRegistryResolvers(
 		});
 		if (response.status === 404) return undefined;
 		if (response.status !== 200)
-			unexpected(response, `GET manifest ${reference}`);
+			unexpected(response, "GET", `GET manifest ${reference}`);
 		const bytes = decodeBody(response.body, encoding);
 		const digest = digestOf(bytes);
 		if (isDigest(reference) && digest !== reference)
@@ -512,7 +522,7 @@ export function createOciRegistryResolvers(
 		});
 		if (response.status === 404) return false;
 		if (response.status === 200) return true;
-		return unexpected(response, `HEAD blob ${digest}`);
+		return unexpected(response, "HEAD", `HEAD blob ${digest}`);
 	}
 
 	async function readBlob(copy: Copy, blob: Descriptor): Promise<Uint8Array> {
@@ -548,7 +558,7 @@ export function createOciRegistryResolvers(
 				);
 			}
 			if (response.status !== 200)
-				unexpected(response, `GET blob ${blob.digest}`);
+				unexpected(response, "GET", `GET blob ${blob.digest}`);
 			bytes = decodeBody(response.body, encoding);
 		}
 		if (bytes.byteLength !== blob.size || digestOf(bytes) !== blob.digest)
@@ -581,7 +591,9 @@ export function createOciRegistryResolvers(
 			(url.port !== "" && url.port !== "443") ||
 			url.hash !== ""
 		)
-			rejected(
+			refuse(
+				"oci-upload-foreign-host",
+				url.hostname,
 				"registry handed an upload session on a foreign host",
 				"uploads to a foreign host would carry the registry credential there",
 			);
@@ -597,7 +609,9 @@ export function createOciRegistryResolvers(
 		].find((candidate) => url.pathname.startsWith(candidate));
 		const id = prefix === undefined ? "" : url.pathname.slice(prefix.length);
 		if (traversal || id === "" || id.includes("/"))
-			rejected(
+			refuse(
+				"oci-upload-path",
+				"blob-upload-path",
 				"registry handed an upload session outside its own blob upload path",
 			);
 		return `${url.pathname}${url.search}`;
@@ -622,7 +636,8 @@ export function createOciRegistryResolvers(
 				scopes,
 				headers: { "content-length": "0" },
 			});
-			if (started.status !== 202) unexpected(started, "start blob upload");
+			if (started.status !== 202)
+				unexpected(started, "POST", "start blob upload");
 			location = repositoryUploadLocation(copy, started);
 		}
 		if (bytes.byteLength <= chunkBytes) {
@@ -642,7 +657,7 @@ export function createOciRegistryResolvers(
 				},
 				body,
 			});
-			if (done.status !== 201) unexpected(done, `upload blob ${blob.digest}`);
+			if (done.status !== 201) unexpected(done, "PUT", "upload blob");
 			return;
 		}
 		if (encoding !== "latin1")
@@ -666,8 +681,7 @@ export function createOciRegistryResolvers(
 				},
 				body: Buffer.from(chunk).toString("latin1"),
 			});
-			if (patched.status !== 202)
-				unexpected(patched, `upload chunk of ${blob.digest}`);
+			if (patched.status !== 202) unexpected(patched, "PATCH", "upload chunk");
 			location = repositoryUploadLocation(copy, patched);
 		}
 		const closed = await copy.target.send({
@@ -676,8 +690,7 @@ export function createOciRegistryResolvers(
 			scopes,
 			headers: { "content-length": "0" },
 		});
-		if (closed.status !== 201)
-			unexpected(closed, `close upload of ${blob.digest}`);
+		if (closed.status !== 201) unexpected(closed, "PUT", "close upload");
 	}
 
 	/**
@@ -733,8 +746,10 @@ export function createOciRegistryResolvers(
 					session = repositoryUploadLocation(copy, mounted);
 			}
 			if (blob.size > maxBlobBytes)
-				rejected(
-					`blob ${blob.digest} is ${blob.size} bytes, over the ${maxBlobBytes}-byte transport bound`,
+				refuse(
+					"oci-blob-size",
+					"over-transport-bound",
+					"blob exceeds the transport byte bound",
 					"mount it from the same registry, or raise maxBlobBytes on a byte transport",
 				);
 			await upload(copy, blob, await readBlob(copy, blob), session);
@@ -743,8 +758,10 @@ export function createOciRegistryResolvers(
 			// Ambiguous: resolve by observation, never by a blind retry.
 		}
 		if (!(await blobPresent(copy, blob.digest)))
-			rejected(
-				`blob ${blob.digest} is not observed at the target after upload`,
+			refuse(
+				"oci-blob-not-observed",
+				"post-upload",
+				"blob is not observed at the target after upload",
 				"re-run reconcile; content-addressed uploads are safe to repeat",
 			);
 		copy.stats.blobsUploaded++;
@@ -777,7 +794,7 @@ export function createOciRegistryResolvers(
 		}
 		if (response !== undefined) {
 			if (response.status !== 201)
-				unexpected(response, `PUT manifest ${reference}`);
+				unexpected(response, "PUT", `PUT manifest ${reference}`);
 			const reported = header(response, "docker-content-digest");
 			if (reported !== undefined && reported !== digest)
 				rejected(
@@ -843,7 +860,7 @@ export function createOciRegistryResolvers(
 		});
 		if (response.status === 200) return parseReferrers(textOf(response.body));
 		if (response.status !== 404)
-			unexpected(response, `GET referrers of ${digest}`);
+			unexpected(response, "GET", `GET referrers of ${digest}`);
 		const fallback = await getManifest(
 			source.session,
 			source.repository,
@@ -867,7 +884,7 @@ export function createOciRegistryResolvers(
 		});
 		if (response.status === 404) return false;
 		if (response.status !== 200)
-			unexpected(response, `GET referrers of ${subject}`);
+			unexpected(response, "GET", `GET referrers of ${subject}`);
 		const listed = new Set(
 			parseReferrers(textOf(response.body)).map((entry) => entry.digest),
 		);
@@ -1071,7 +1088,7 @@ export function createOciRegistryResolvers(
 						response !== undefined &&
 						![200, 202, 204, 404].includes(response.status)
 					)
-						unexpected(response, `DELETE ${reference}`);
+						unexpected(response, "DELETE", `DELETE ${reference}`);
 				};
 				for (const tag of target.tags) {
 					const state = await headManifest(

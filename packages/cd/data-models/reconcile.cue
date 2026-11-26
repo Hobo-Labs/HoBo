@@ -46,10 +46,26 @@ package cd
 	detailKind: "github-credential-rejected" | "github-permission-missing" | "github-rate-limited" | "github-pages-disabled" | "github-pages-source-mismatch" | "github-ref-not-fast-forward" | "github-pages-build-errored" | "github-pages-deployment-failed" | "github-pages-artifact-unavailable"
 }
 
+#ociRegistryHost: string & !~"[\\r\\n]" & =~"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
+#ociHttpStatusScope: string & !~"[\\r\\n]" & =~"^(GET|HEAD|POST|PUT|PATCH|DELETE):[1-5][0-9]{2}$"
+
+#reconcileReasonStructuredOci: {
+	credentialRef: #releaseFreightCredentialRef
+	requestedScope:
+		#ociRegistryHost |
+		"blob-upload-path" |
+		#ociHttpStatusScope |
+		"over-transport-bound" |
+		"post-upload" |
+		#releaseFreightScope
+	detailKind: "oci-upload-foreign-host" | "oci-upload-path" | "oci-http-status" | "oci-blob-size" | "oci-blob-not-observed" | "oci-credential-refused"
+}
+
 #reconcileReasonStructured:
 	#reconcileReasonStructuredScope |
 	#reconcileReasonStructuredRepositoryMismatch |
-	#reconcileReasonStructuredGithubPages
+	#reconcileReasonStructuredGithubPages |
+	#reconcileReasonStructuredOci
 
 ReasonStructuredDetail: #reconcileReasonStructured
 
