@@ -877,3 +877,12 @@ exposure; uncertain partial applies retain exposure for reconciliation. The
 mapping and budget outcomes are exercised against the Vercel Labs emulator and
 the opt-in official AWS Emulator; these tests do not establish production
 deployment or IAM behavior.
+
+### AWS Vite websites
+
+The AWS Vite mapper maps an assets-only web application to Alchemy's
+`AWS.Website.Vite` composite. Its financial inventory includes the complete
+nine-resource graph, and its source and plan fences must verify before apply.
+Application dependencies and server-side rendering are not supported by this
+mapping. The emulator test exercises the mapped CloudFront key-value store;
+it does not deploy the complete site.

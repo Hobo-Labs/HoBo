@@ -23,6 +23,10 @@
 			"types": "./dist/aws.d.ts",
 			"default": "./dist/aws.js"
 		},
+		"./aws/vite": {
+			"types": "./dist/aws-vite.d.ts",
+			"default": "./dist/aws-vite.js"
+		},
 		"./cloudflare/runtime": {
 			"types": "./dist/cloudflare-runtime.d.ts",
 			"default": "./dist/cloudflare-runtime.js"
