@@ -101,13 +101,58 @@ verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
 headers; a stalled handler keeps one of 32 capacity slots until it settles.
-The host must authenticate HTTP requests, independently enforce IAM and fence
-in-flight AWS operations across grant or resource ownership changes. This host
-adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
-request bodies, stream responses, or provide connectors or session replay. The
-bounded `AwsHttpBindings` model checks request retirement, grant revalidation
-and timed-out capacity. It assumes host verification and transport behavior;
-it does not prove AWS, HTTP parsing, byte limits or liveness.
+For an Alchemy AWS Web Function, create a source in the application's entry
+module. The `host` below is your own authority: it creates the branded stores
+for the provided physical names, verifies each grant, and supplies AWS clients.
+
+```ts
+import { defineAwsHttpSource } from "@hobo/iac-alchemy/aws/http-source";
+import { startAwsHttpServer } from "@hobo/iac-alchemy/aws/http-server";
+
+export const source = defineAwsHttpSource({
+  bindle: selectedBindle, // withAwsDynamoKv and withAwsS3 already applied
+  applicationName: "web",
+  environment: process.env,
+  resolveStores: (bindings) => host.resolveStores(bindings),
+  verifyBinding: (claim) => host.verifyBinding(claim),
+});
+
+if (process.env.AWS_LAMBDA_HTTP_ENDPOINT) {
+  await startAwsHttpServer(source);
+}
+```
+
+Use the same source when mapping the Bindle. `main` must be the existing
+canonical absolute path to that entry module. The host must verify that the
+reviewed module starts this exact source, and fence the source and its complete
+dependency closure throughout planning and deployment.
+
+```ts
+import { awsDynamoKvBindleMappers } from "@hobo/iac-alchemy/aws/kv-mapper";
+import { awsS3BindleMappers } from "@hobo/iac-alchemy/aws/s3-mapper";
+import { awsHttpBindleMappers } from "@hobo/iac-alchemy/aws/http-mapper";
+
+const mappers = awsHttpBindleMappers({
+  source,
+  main,
+  authType: "IamAuth",
+  sourceFence: host.sourceFence,
+  verifySource: (claim) => host.verifySource(claim),
+}, awsS3BindleMappers(awsDynamoKvBindleMappers()));
+// Pass selectedBindle and mappers to mapBindleToAlchemy and the normal
+// financial planning and admission flow.
+```
+
+The listener maps to `AWS.Lambda.WebFunction`; it resolves the exact mapped
+resource names from the function environment and fails closed if names or grants
+change. `ApplicationManaged` is also available when the application itself
+authenticates every request. The host must independently enforce IAM and fence
+in-flight AWS operations across grant or resource ownership changes. Incoming
+request bodies are not bounded by this adapter; enforce ingress limits at the
+host. Streaming responses, connectors and session replay are not supported.
+The bounded `AwsHttpBindings` model checks request retirement, grant
+revalidation and timed-out capacity. It assumes host verification and transport
+behavior; it does not prove AWS, HTTP parsing, byte limits or liveness.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application

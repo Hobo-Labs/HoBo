@@ -14,6 +14,7 @@ import {
 	awsHttpBindings,
 	createAwsBindleApplication,
 } from "../src/aws-http-runtime.js";
+import { startAwsHttpServer } from "../src/aws-http-server.js";
 import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { type AwsKvStore, createAwsDynamoKvStore } from "../src/aws-kv.js";
 import { withAwsDynamoKv } from "../src/aws-kv-mapper.js";
@@ -262,6 +263,30 @@ describe("AWS HTTP source", () => {
 		environment.HOBO_RESOURCE_1 = "changed";
 		finish?.();
 		expect((await result).status).toBe(503);
+	});
+	it("serves an HTTP request and rejects invalid listeners", async () => {
+		const f = fixture(() => () => new Response("hello"));
+		const source = defineAwsHttpSource({
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment: {
+				HOBO_RESOURCE_0: "assets-bucket",
+				HOBO_RESOURCE_1: "sessions",
+			},
+			resolveStores: () => f.options.stores,
+			verifyBinding: () => true,
+		});
+		await expect(
+			startAwsHttpServer(source, "localhost:99/path"),
+		).rejects.toThrow("endpoint");
+		const server = await startAwsHttpServer(source, "127.0.0.1:0");
+		try {
+			const response = await fetch(`http://127.0.0.1:${server.address.port}/`);
+			expect(response.status).toBe(200);
+			expect(await response.text()).toBe("hello");
+		} finally {
+			await server.close();
+		}
 	});
 	it("does not bind a store with the wrong physical name", async () => {
 		const f = fixture(() => () => new Response("ok"));

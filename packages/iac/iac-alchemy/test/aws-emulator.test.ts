@@ -29,6 +29,7 @@ import {
 	awsHttpBindings,
 	createAwsBindleApplication,
 } from "../src/aws-http-runtime.js";
+import { startAwsHttpServer } from "../src/aws-http-server.js";
 import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsDynamoKvStore } from "../src/aws-kv.js";
 import {
@@ -638,6 +639,19 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				value: [1, 2],
 				body: [4, 5],
 			});
+			const server = await startAwsHttpServer(source, "127.0.0.1:0");
+			try {
+				const httpResponse = await fetch(
+					`http://127.0.0.1:${server.address.port}/`,
+				);
+				expect(httpResponse.status).toBe(200);
+				expect(await httpResponse.json()).toEqual({
+					value: [1, 2],
+					body: [4, 5],
+				});
+			} finally {
+				await server.close();
+			}
 			authorized = false;
 			expect(
 				(await source.fetch(new Request("https://app.test/"))).status,

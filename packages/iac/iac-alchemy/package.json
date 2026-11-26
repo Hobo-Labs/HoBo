@@ -114,6 +114,10 @@
 		"./aws/http-mapper": {
 			"types": "./dist/aws-http-mapper.d.ts",
 			"default": "./dist/aws-http-mapper.js"
+		},
+		"./aws/http-server": {
+			"types": "./dist/aws-http-server.d.ts",
+			"default": "./dist/aws-http-server.js"
 		}
 	},
 	"dependencies": {
