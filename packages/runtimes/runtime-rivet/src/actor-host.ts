@@ -366,8 +366,12 @@ export function createRivetActorHost(options: {
 				return completeCommittedCommand(journal, streamId, claimed);
 			const facts = journal.readFacts(streamId);
 			const replayedRevision = facts.at(-1)?.seq ?? 0;
-			if (replayedRevision !== claimed.expectedRevision)
+			if (claimed.expectedRevision < replayedRevision)
 				return rejectStaleCommand(journal, streamId, claimed, replayedRevision);
+			if (claimed.expectedRevision > replayedRevision) {
+				journal.releaseClaim(streamId, claimed.commandId);
+				return undefined;
+			}
 			const state = foldJournalFacts(
 				journal,
 				streamId,
