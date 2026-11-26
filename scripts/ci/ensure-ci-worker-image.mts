@@ -251,6 +251,7 @@ export function ghcrWorkerManifestReachable(
 }
 
 const WORKER_PUBLISH_PROBE_BUDGET_SEC = 120;
+const PUBLISHED_WORKER_PULL_BUDGET_SEC = DEFAULT_WORKER_PULL_BUDGET_SEC;
 
 type WorkerPublicationProbe =
 	| "pullable"
@@ -258,6 +259,26 @@ type WorkerPublicationProbe =
 	| "manifest-unavailable"
 	| "pull-failed"
 	| "login-failed";
+
+function probeWorkerPull(
+	remote: string,
+	budgetSec: number,
+): "pullable" | "missing" | "unknown" {
+	const result = spawnSync(
+		"timeout",
+		[String(budgetSec), "docker", "pull", remote],
+		{ cwd: root, encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] },
+	);
+	if (result.status === 0) return "pullable";
+	if (
+		result.status === 1 &&
+		/(?:^|\n)(?:no such manifest:|manifest unknown\b|Error response from daemon: manifest for \S+ not found: manifest unknown\b)/iu.test(
+			result.stderr ?? "",
+		)
+	)
+		return "missing";
+	return "unknown";
+}
 
 function probeWorkerPublication(
 	repo: string,
@@ -277,18 +298,17 @@ function probeWorkerPublication(
 	const manifestBudget = Math.min(45, remainingSec());
 	if (manifestBudget <= 0) return "pull-failed";
 	const manifestStatus = workerManifestStatus(remote, token, manifestBudget);
-	const pullBudget = remainingSec();
-	if (pullBudget <= 0) return "pull-failed";
-	return pullWorkerFromGhcr(remote, {
-		attempts: 1,
-		budgetSec: pullBudget,
-	})
-		? "pullable"
+	const pullBudget = options
+		? remainingSec()
 		: manifestStatus === "present"
-			? "pull-failed"
-			: manifestStatus === "missing"
-				? "missing"
-				: "manifest-unavailable";
+			? PUBLISHED_WORKER_PULL_BUDGET_SEC
+			: WORKER_PUBLISH_PROBE_BUDGET_SEC;
+	if (pullBudget <= 0) return "pull-failed";
+	const pullStatus = probeWorkerPull(remote, pullBudget);
+	if (pullStatus === "pullable") return "pullable";
+	if (manifestStatus === "missing" && pullStatus === "missing")
+		return "missing";
+	return manifestStatus === "unknown" ? "manifest-unavailable" : "pull-failed";
 }
 
 export function ghcrWorkerPullable(
