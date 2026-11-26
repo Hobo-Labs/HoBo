@@ -712,6 +712,134 @@ export interface DurableMessagingAuthorization {
 	readonly reason?: string;
 }
 
+export interface DurableTopicSubscriptionGrant {
+	readonly consumerGroup: string;
+	readonly deadLetterTopic: string;
+}
+
+export interface DurableTopicGrant {
+	readonly topic: string;
+	readonly publish: boolean;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+}
+
+export interface DurableTopicPolicyClaim {
+	readonly request: DurableMessagingAuthorization;
+	readonly grant: DurableTopicGrant;
+	readonly subscription?: DurableTopicSubscriptionGrant;
+}
+
+export interface DurableTopicPolicy {
+	readonly authorize: (
+		request: DurableMessagingAuthorization,
+	) => Promise<boolean>;
+	readonly revoke: () => void;
+}
+
+export function createDurableTopicPolicy(input: {
+	readonly grants: readonly DurableTopicGrant[];
+	readonly verify: (
+		claim: DurableTopicPolicyClaim,
+	) => boolean | Promise<boolean>;
+}): DurableTopicPolicy {
+	const config = record(input, ["grants", "verify"]);
+	if (typeof config.verify !== "function" || types.isProxy(config.verify))
+		return invalid();
+	const verify = config.verify;
+	const topics = new Set<string>();
+	let subscriptionCount = 0;
+	const grants = array(config.grants, DURABLE_MESSAGING_LIMITS.topics).map(
+		(item) => {
+			const data = record(item, ["topic", "publish", "subscriptions"]);
+			const topic = text(data.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+			if (
+				topics.has(topic) ||
+				(data.publish !== true && data.publish !== false)
+			)
+				return invalid();
+			topics.add(topic);
+			const groups = new Set<string>();
+			const subscriptions = array(
+				data.subscriptions,
+				DURABLE_MESSAGING_LIMITS.subscriptions,
+			).map((entry) => {
+				const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
+				const consumerGroup = text(
+					data.consumerGroup,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				const deadLetterTopic = text(
+					data.deadLetterTopic,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				if (
+					groups.has(consumerGroup) ||
+					deadLetterTopic === topic ||
+					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+				)
+					return invalid();
+				groups.add(consumerGroup);
+				return Object.freeze({ consumerGroup, deadLetterTopic });
+			});
+			return Object.freeze({
+				topic,
+				publish: data.publish,
+				subscriptions: Object.freeze(subscriptions),
+			});
+		},
+	);
+	let active = true;
+	return Object.freeze({
+		revoke: () => {
+			active = false;
+		},
+		authorize: async (
+			request: DurableMessagingAuthorization,
+		): Promise<boolean> => {
+			if (!active) return false;
+			const grant = grants.find((item) => item.topic === request.topic);
+			if (!grant) return false;
+			let subscription: DurableTopicSubscriptionGrant | undefined;
+			if (request.method === "publish") {
+				if (!grant.publish || request.scope !== "topic") return false;
+			} else if (
+				["ensureSubscription", "consume", "ack", "nack"].includes(
+					request.method,
+				)
+			) {
+				subscription = grant.subscriptions.find(
+					(item) => item.consumerGroup === request.consumerGroup,
+				);
+				if (
+					!subscription ||
+					(request.method === "ensureSubscription" &&
+						request.deadLetterTopic !== subscription.deadLetterTopic)
+				)
+					return false;
+				if (
+					request.scope !==
+					(request.method === "ack"
+						? "consumer-group"
+						: "consumer-group-and-dead-letter")
+				)
+					return false;
+			} else return false;
+			const claim = Object.freeze(
+				subscription === undefined
+					? { request, grant }
+					: { request, grant, subscription },
+			);
+			try {
+				return (
+					(await intrinsicApply(verify, undefined, [claim])) === true && active
+				);
+			} catch {
+				return false;
+			}
+		},
+	});
+}
+
 export interface DurableMessagingLimitsGrant {
 	readonly revoke: () => void;
 }
