@@ -329,7 +329,8 @@ describe("overlay availability is reported, not silently skipped", () => {
 describe.runIf(probeOverlayfs())("overlayfs isolation", () => {
 	it("keeps an in-place write inside the workspace", () => {
 		const root = source();
-		const made = createWorkspace({ root, name: "agent" });
+		const capability = detectCapability(root, { reflink: () => false });
+		const made = createWorkspace({ root, name: "agent", capability });
 		expect(must(made.workspace, "made.workspace").tier).toBe("overlayfs");
 		execSync(
 			`sh -c ${JSON.stringify(execCommand(must(made.workspace, "made.workspace"), "echo EDIT >> src/app.ts"))}`,
