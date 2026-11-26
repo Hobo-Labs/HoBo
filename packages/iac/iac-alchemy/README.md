@@ -918,3 +918,7 @@ operations with explicit grants. A timed-out request retains capacity until
 its transport settles; uncertain mutations require reconciliation. The host
 must authenticate the table incarnation, enforce AWS permissions and fence
 in-flight work. This slice does not yet map the runtime into applications.
+The shared transport boundary permits at most 32 concurrent operations per
+store and uses a ten-second deadline. A deadline does not stop the provider; if
+completion observation cannot be established after an effect may have started,
+its capacity remains occupied.

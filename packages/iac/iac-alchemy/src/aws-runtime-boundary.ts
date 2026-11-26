@@ -17,7 +17,6 @@ const freeze = Object.freeze;
 const runCallback = Effect.runCallback;
 const isSuccess = Exit.isSuccess;
 
-/** One host-authorized bounded transport per store. A timeout does not release its slot. */
 export function createAwsRuntimeBoundary<Operation extends string>(options: {
 	readonly layer: Layer.Layer<Credentials | HttpClient.HttpClient>;
 	readonly authorize: (operation: Operation, key: string) => boolean;
@@ -49,11 +48,8 @@ export function createAwsRuntimeBoundary<Operation extends string>(options: {
 				},
 			});
 		} catch {
-			// The effect may have started before observer registration failed.
-			// Retain its slot because its completion cannot be established.
 			throw options.unavailable(operation);
 		}
-		// A deadline is not evidence that the provider stopped the request.
 		const timer = schedule(
 			() => deadline.reject(undefined),
 			AWS_RUNTIME_DEADLINE_MS,
