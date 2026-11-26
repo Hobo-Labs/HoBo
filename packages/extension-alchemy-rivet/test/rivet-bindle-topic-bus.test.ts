@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: the test injects an adversarial array callback at the boundary. */
 import { DurableObjectResource, Providers } from "@alchemy.run/rivet";
 import { durableMessagingOperation } from "@hobo/core";
 import {
@@ -26,6 +27,7 @@ import { bindle } from "../../bindles/src/bindle.js";
 import { sessionReplay } from "../../bindles/src/session-replay.js";
 import { createSqliteBusConformanceHost } from "../../runtimes/runtime-rivet/test/fixtures/durable-topic-bus-conformance.js";
 import {
+	bindRivetBindleTopicEntrypoint,
 	createRivetBindleTopicBusApplication,
 	createRivetBindleTopicBusMappers,
 } from "../src/rivet-http-topic-bus.js";
@@ -50,94 +52,169 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 		const definition = bindle("shop", (b) => {
 			const orders = b.topic().allow("publish");
 			const audit = b.topic().allow("publish");
-			return { orders, audit, web: b.web().dependsOn(orders, audit) };
+			return {
+				orders,
+				audit,
+				web: b
+					.web()
+					.with(sessionReplay({ enabled: false }))
+					.dependsOn(orders, audit),
+			};
 		});
+		const ordersResource = definition.resources.orders;
+		if (!ordersResource) throw Error("missing orders resource");
+		const mutableResources = {
+			...definition.resources,
+			orders: {
+				...ordersResource,
+				declaredAllow: [...ordersResource.declaredAllow],
+			},
+		};
+		let injected = false;
+		let publishMaps = 0;
+		const originalPush = Array.prototype.push;
+		const pushDescriptor = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"push",
+		);
+		const originalMap = Array.prototype.map;
+		const mapDescriptor = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"map",
+		);
 		let starts = 0;
 		let permitsProvisioning = false;
 		let scopeValid = true;
-		const app = createRivetBindleTopicBusApplication({
-			actorName: "web",
-			bus,
-			clientOptions,
-			verifyScope: () => scopeValid,
-			authorize: () => true,
-			bindle: {
-				bindleName: definition.name,
-				applicationName: "web",
-				resources: definition.resources,
-				edges: definition.edges,
-				bindings: [
-					{ resourceName: "orders", topic: "orders", subscriptions: [] },
-					{ resourceName: "audit", topic: "audit", subscriptions: [] },
+		let app: ReturnType<typeof createRivetBindleTopicBusApplication>;
+		try {
+			Object.defineProperty(Array.prototype, "map", {
+				configurable: true,
+				writable: true,
+				value: function (this: unknown[], ...args: unknown[]) {
+					if (this.length === 1 && this[0] === "publish") {
+						publishMaps++;
+						return [];
+					}
+					return Reflect.apply(originalMap, this, args);
+				},
+			});
+			Object.defineProperty(Array.prototype, "push", {
+				configurable: true,
+				writable: true,
+				value: function (this: unknown[], ...args: unknown[]) {
+					const first = args[0];
+					if (
+						!injected &&
+						first &&
+						typeof first === "object" &&
+						Object.hasOwn(first, "operation")
+					) {
+						injected = true;
+						mutableResources.orders.declaredAllow.length = 0;
+					}
+					return Reflect.apply(originalPush, this, args);
+				},
+			});
+			app = createRivetBindleTopicBusApplication({
+				actorName: "web",
+				bus,
+				clientOptions,
+				verifyScope: () => scopeValid,
+				authorize: () => true,
+				bindle: {
+					bindleName: definition.name,
+					applicationName: "web",
+					resources: mutableResources,
+					edges: definition.edges,
+					bindings: [
+						{ resourceName: "orders", topic: "orders", subscriptions: [] },
+						{ resourceName: "audit", topic: "audit", subscriptions: [] },
+					],
+				},
+				operations: [
+					{
+						topic: "audit",
+						operation: durableMessagingOperation(10_000, "topicaudit123456"),
+					},
+					{
+						topic: "orders",
+						operation: durableMessagingOperation(10_000, "topicorders12345"),
+					},
 				],
-			},
-			operations: [
-				{
-					topic: "audit",
-					operation: durableMessagingOperation(10_000, "topicaudit123456"),
-				},
-				{
-					topic: "orders",
-					operation: durableMessagingOperation(10_000, "topicorders12345"),
-				},
-			],
-			hostOptions: (port) => {
-				const portMetadataGrant = createDurableMessagingPortMetadataGrant({
-					port,
-					limits: clientOptions.binding.limits,
-					verify: () => true,
-				});
-				return {
-					provisioning: {
-						limitsGrant: createDurableMessagingLimitsGrant(),
-						lifecycle: createDurableMessagingLifecycle(),
-						portMetadataGrant,
-						authorize: () => permitsProvisioning,
-					},
-					application: {
-						limitsGrant: createDurableMessagingLimitsGrant(),
-						lifecycle: createDurableMessagingLifecycle(),
-						portMetadataGrant,
+				hostOptions: (port) => {
+					const portMetadataGrant = createDurableMessagingPortMetadataGrant({
+						port,
+						limits: clientOptions.binding.limits,
 						verify: () => true,
-					},
-				};
-			},
-			application: (host) => {
-				starts++;
-				const topic = host.topic("orders");
-				return async () => {
-					const outcome = await topic.publish({
-						operation: {
-							id: durableMessagingOperation(10_000, "publishnonce1234").id,
-							expiresAtMs: 10_000n,
-						},
-						message: {
-							id: "order-1",
-							subject: "created",
-							payload: new Uint8Array([7]),
-							attributes: [],
-						},
 					});
-					return Response.json({
-						tag: outcome.tag,
-						messageId:
-							outcome.tag === "committed" ? outcome.val.messageId : undefined,
-					});
-				};
-			},
-		});
-		const deployed = bindle("shop", (b) => {
+					return {
+						provisioning: {
+							limitsGrant: createDurableMessagingLimitsGrant(),
+							lifecycle: createDurableMessagingLifecycle(),
+							portMetadataGrant,
+							authorize: () => permitsProvisioning,
+						},
+						application: {
+							limitsGrant: createDurableMessagingLimitsGrant(),
+							lifecycle: createDurableMessagingLifecycle(),
+							portMetadataGrant,
+							verify: () => true,
+						},
+					};
+				},
+				application: (host) => {
+					starts++;
+					const topic = host.topic("orders");
+					return async () => {
+						const outcome = await topic.publish({
+							operation: {
+								id: durableMessagingOperation(10_000, "publishnonce1234").id,
+								expiresAtMs: 10_000n,
+							},
+							message: {
+								id: "order-1",
+								subject: "created",
+								payload: new Uint8Array([7]),
+								attributes: [],
+							},
+						});
+						return Response.json({
+							tag: outcome.tag,
+							messageId:
+								outcome.tag === "committed" ? outcome.val.messageId : undefined,
+						});
+					};
+				},
+			});
+		} finally {
+			if (pushDescriptor)
+				Object.defineProperty(Array.prototype, "push", pushDescriptor);
+			if (mapDescriptor)
+				Object.defineProperty(Array.prototype, "map", mapDescriptor);
+		}
+		expect(injected).toBe(true);
+		expect(publishMaps).toBe(0);
+		const deployed = bindRivetBindleTopicEntrypoint(definition, app);
+		expect(deployed.entrypoint("web")).toBe(app.http.entrypoint);
+		expect(definition.entrypoint("web")).toBeUndefined();
+		const existingHandler = bindle("shop", (b) => {
 			const orders = b.topic().allow("publish");
 			const audit = b.topic().allow("publish");
 			return {
 				orders,
 				audit,
-				web: b
-					.web(app.http.entrypoint)
-					.with(sessionReplay({ enabled: false }))
-					.dependsOn(orders, audit),
+				web: b.web(() => "already bound").dependsOn(orders, audit),
 			};
 		});
+		expect(() =>
+			bindRivetBindleTopicEntrypoint(existingHandler, app),
+		).toThrow();
+		expect(() =>
+			bindRivetBindleTopicEntrypoint(
+				{ ...definition, name: "different", entrypoint: definition.entrypoint },
+				app,
+			),
+		).toThrow();
 		const registry = setup({
 			use: { web: app.http.actor, [bus.actorName]: bus.actor },
 			noWelcome: true,

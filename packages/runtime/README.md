@@ -587,3 +587,7 @@ binding snapshot if caller-owned input changes during preparation.
 `createBindleTopicPreparation` shares concurrent and synchronously reentrant
 preparation attempts. Retries reuse the captured operation identities, which the
 caller must persist across restarts.
+
+The durable messaging boundary captures its array mapping intrinsic before
+processing Bindle graphs and provider results. Later changes to
+`Array.prototype.map` cannot change the grants or mapped message data.

@@ -6,6 +6,7 @@ import {
 	type AlchemyPrimitiveGraph,
 	type AlchemyPrimitiveInput,
 	type AlchemyPrimitiveMapper,
+	type BindleForAlchemy,
 	type PrimitiveDeclaration,
 } from "@hobo/iac-alchemy";
 import { bindRivetHttpSource } from "@hobo/iac-alchemy/rivet";
@@ -549,13 +550,6 @@ export function createRivetBindleTopicBusApplication(
 	const options: unknown = apply(hostOptions, undefined, [bound.client]);
 	if (isRivetAsyncResult(options))
 		return invalid("the topic host factory must be synchronous");
-	// SAFETY: preparation validates the captured graph, operations, and host options.
-	prepare = createBindleTopicPreparation(
-		bound.client,
-		data.bindle as Parameters<typeof createBindleTopicWitHost>[1],
-		data.operations as readonly BindleTopicProvisionOperation[],
-		options as Parameters<typeof prepareBindleTopicWitHost>[3],
-	);
 	const graph = fields(data.bindle, [
 		"bindleName",
 		"applicationName",
@@ -572,6 +566,60 @@ export function createRivetBindleTopicBusApplication(
 		edges: graph.edges,
 		bindings: graph.bindings,
 	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const resources: Record<
+		string,
+		{ kind: string; name: string; declaredAllow: string[]; dependsOn: string[] }
+	> = Object.create(null);
+	const edges: { from: string; to: string }[] = [];
+	const bindings: {
+		resourceName: string;
+		topic: string;
+		subscriptions: (typeof grants)[number]["grant"]["subscriptions"];
+	}[] = [];
+	const dependsOn: string[] = [];
+	for (let index = 0; index < grants.length; index++) {
+		const entry = grants[index];
+		if (!entry) return invalid("the Bindle grant is invalid");
+		const allow: string[] = [];
+		if (entry.grant.publish) allow[allow.length] = "publish";
+		if (entry.grant.subscriptions.length) allow[allow.length] = "subscribe";
+		resources[entry.resourceName] = {
+			kind: "topic",
+			name: entry.resourceName,
+			declaredAllow: allow,
+			dependsOn: [],
+		};
+		edges[edges.length] = {
+			from: graph.applicationName,
+			to: entry.resourceName,
+		};
+		bindings[bindings.length] = {
+			resourceName: entry.resourceName,
+			topic: entry.grant.topic,
+			subscriptions: entry.grant.subscriptions,
+		};
+		dependsOn[dependsOn.length] = "topic";
+	}
+	resources[graph.applicationName] = {
+		kind: "application",
+		name: graph.applicationName,
+		declaredAllow: [],
+		dependsOn,
+	};
+	const snapshot = {
+		bindleName: graph.bindleName,
+		applicationName: graph.applicationName,
+		resources,
+		edges,
+		bindings,
+	};
+	// SAFETY: preparation validates the normalized graph, operations, and host options.
+	prepare = createBindleTopicPreparation(
+		bound.client,
+		snapshot,
+		data.operations as readonly BindleTopicProvisionOperation[],
+		options as Parameters<typeof prepareBindleTopicWitHost>[3],
+	);
 	apply(weakSet, bindleApplications, [
 		bound,
 		Object.freeze({
@@ -581,6 +629,74 @@ export function createRivetBindleTopicBusApplication(
 		}),
 	]);
 	return bound;
+}
+
+export function bindRivetBindleTopicEntrypoint<Requirements>(
+	bindle: BindleForAlchemy<RivetHttpEntrypoint, Requirements>,
+	application: RivetHttpTopicBusApplication,
+): BindleForAlchemy<RivetHttpEntrypoint, Requirements> {
+	if (
+		typeof bindle !== "object" ||
+		bindle === null ||
+		isProxy(bindle) ||
+		!matchesApplication(application)
+	)
+		return invalid("a verified application and Bindle are required");
+	// SAFETY: only applications created by the Bindle adapter have an entry here.
+	const captured = apply(weakGet, bindleApplications, [
+		application,
+	]) as ReturnType<typeof bindleApplications.get>;
+	if (captured === undefined)
+		return invalid("the application has no Bindle topic host");
+	const property = (key: string, required = true): unknown => {
+		const descriptor = Object.getOwnPropertyDescriptor(bindle, key);
+		if (descriptor === undefined && !required) return undefined;
+		if (descriptor === undefined || !Object.hasOwn(descriptor, "value"))
+			return invalid("Bindle fields must be own data");
+		return descriptor.value;
+	};
+	const nameValue = property("name");
+	const resources = property("resources");
+	const edges = property("edges");
+	const requirements = property("requirements");
+	const connectors = property("connectors", false);
+	const entrypoint = property("entrypoint");
+	if (
+		nameValue !== captured.bindleName ||
+		typeof entrypoint !== "function" ||
+		isProxy(entrypoint)
+	)
+		return invalid("the Bindle identity or entrypoint resolver is invalid");
+	const previous: unknown = apply(entrypoint, bindle, [
+		captured.applicationName,
+	]);
+	if (
+		isRivetAsyncResult(previous) ||
+		(previous !== undefined && previous !== application.http.entrypoint)
+	)
+		return invalid("the application already has a different entrypoint");
+	const result = {
+		name: nameValue,
+		resources,
+		edges,
+		requirements,
+		entrypoint: (name: string) =>
+			name === captured.applicationName
+				? application.http.entrypoint
+				: apply(entrypoint, bindle, [name]),
+	};
+	if (connectors !== undefined)
+		Object.defineProperty(result, "connectors", {
+			value: connectors,
+			enumerable: true,
+		});
+	if (!matchesApplication(application))
+		return invalid("the application is no longer verified");
+	// SAFETY: the Alchemy Bindle mapper validates and snapshots the captured graph before use.
+	return Object.freeze(result) as BindleForAlchemy<
+		RivetHttpEntrypoint,
+		Requirements
+	>;
 }
 
 export interface RivetHttpTopicBusPoolClaim
