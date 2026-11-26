@@ -1,8 +1,6 @@
 ------------------------- MODULE AwsHttpBindings -------------------------
 EXTENDS Naturals, FiniteSets, TLC
 
-\* One application with two request slots. The host's grant verification,
-\* AWS effects, byte limits and response transport are abstract assumptions.
 CONSTANTS Requests, Limit
 VARIABLES state, slots, grant, operation, opResult, opVerified, opAdmitted, response, responseVerified
 vars == <<state, slots, grant, operation, opResult, opVerified, opAdmitted, response, responseVerified>>
