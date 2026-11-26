@@ -38,6 +38,9 @@ describe("release browser-wit runner smoke", () => {
 		);
 		expect(block).toMatch(/runs-on: \$\{\{ contains\(fromJSON/);
 		expect(block).toContain("'hobo'");
+		expect(block.slice(0, block.indexOf("    env:"))).toContain(
+			"timeout-minutes: 35",
+		);
 		expect(block).toContain("RELEASE_PAGES_MATERIALIZE_PATHS");
 		expect(block).toContain("build-release-browser-wit-on-runner.mts");
 		const layer = block.indexOf("Link Pages deps layer");

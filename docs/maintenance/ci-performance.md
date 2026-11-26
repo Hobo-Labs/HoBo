@@ -103,7 +103,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   Without a reusable deps layer or shared store, it attempts to restore the
   main pnpm store for at most five minutes, then installs from the registry if
   the cache is unavailable. A restored store is still checked by the frozen
-  lockfile install.
+  lockfile install. The full smoke has a 35-minute job limit so slow cold
+  installs leave time for the required componentization and its fallback build.
   When the runner lacks zstd commands, it fetches a pinned Debian zstd package
   for the cache restore. If the package is unavailable, the normal cache and
   full-build fallback remain in effect. Node-local stores remain the preferred
