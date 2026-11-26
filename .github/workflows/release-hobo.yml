@@ -1509,6 +1509,7 @@ jobs:
       needs.release-npm.result != 'success'
     needs: [release-main-train-gate, release-npm]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions: {}
     steps:
       - name: Fail when the required SDK publication did not succeed
