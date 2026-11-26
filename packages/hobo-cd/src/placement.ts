@@ -19,15 +19,10 @@ import { yard } from "@hobo/yards";
 // A Yard holds nothing external (docs/design/control-plane.md): each is its
 // own provider's.
 
-/** The Neon Claimable Postgres offering the journal fleet's members are. */
-// public-contract: the product id the journal Yard's row names (provider-neon's definition id).
 export const CD_JOURNAL_PRODUCT = "neon.claimable-postgres/v1";
 
-/** The routed config service the owner's chosen store answers as. */
-// public-contract: the capability the owner's store is routed by, as the relay's is.
 export const CD_CONFIG_PRODUCT = "secrets.config-service/v1";
 
-/** The journal fleet's Yard: the Postgres databases `prepare` provisions. */
 export const cdJournalYard = yard("hobo-cd-journal", {
 	provider: "neon",
 	labels: { project: "hobo-cd" },
@@ -48,5 +43,4 @@ export const cdConfigYard = yard("hobo-cd-config", {
 	],
 });
 
-/** The Yards `hobo cd plan` and `hobo cd up` place the journal and config on. */
 export const CD_PLACEMENT_YARDS = Object.freeze([cdJournalYard, cdConfigYard]);

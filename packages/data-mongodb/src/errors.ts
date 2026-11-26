@@ -46,7 +46,7 @@ export function isMongoDataError(
 	return value instanceof MongoDataError;
 }
 
-// domain-view: the thrown form of the wire record MongoCommandFailure in data-models/data_mongodb.proto.
+// domain-view:
 export interface MongoCommandFailure {
 	readonly code: number;
 	readonly codeName: string;

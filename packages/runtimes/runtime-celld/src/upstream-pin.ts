@@ -1,4 +1,3 @@
-/** Pinned celld evidence. Do not use latest. Checked 2026-08-14. */
 export const CELLD_PIN = {
 	project: "denoland/celld",
 	license: "Apache-2.0",

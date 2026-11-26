@@ -1,14 +1,3 @@
-/**
- * Schema apply for `in-place-evolve`: real expand / backfill / contract DDL,
- * a restorable snapshot, and a restore.
- *
- * DDL is transactional here, so a phase is one transaction and a failing
- * statement leaves nothing of the phase behind. The snapshot is a copy of the
- * configured tables into a separate server-side schema; restore drops the
- * live tables and recreates them from the copy. That genuinely restores
- * structure and data for an ordinary table — and it is refused, by name, for
- * a table carrying anything the copy cannot preserve.
- */
 import { randomUUID } from "node:crypto";
 import {
 	DataCoreError,
@@ -28,10 +17,6 @@ import {
 } from "./identifiers.js";
 import type { DatasetStore } from "./store.js";
 
-/**
- * What makes a table unsafe to snapshot by copy. Each row of the preflight
- * query is one reason; the reasons are impedance codes of this engine.
- */
 export const SCHEMA_SNAPSHOT_REFUSALS = Object.freeze({
 	notOrdinary:
 		"POSTGRES_SCHEMA_SNAPSHOT_ORDINARY_TABLES_ONLY: partitioned, inherited, or non-table relations are not copied faithfully",
@@ -67,14 +52,9 @@ function refusedPlan(message: string, table: string): DataCoreError {
 }
 
 function parseJsonText(text: string): JsonValue {
-	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }
 
-/**
- * One row per reason a table cannot be snapshotted. `$1` is the namespace,
- * `$2` the table, `$3` the dataset registry's regclass text.
- */
 const PREFLIGHT = `
 WITH target AS (
 	SELECT c.oid, c.relkind, c.relrowsecurity, c.relacl, c.relowner, c.relnamespace
@@ -113,20 +93,9 @@ SELECT 'dataset' FROM target t
 	WHERE EXISTS (SELECT 1 FROM %DATASETS% d WHERE d.dataset = $2::text)
 `;
 
-/**
- * A table can also be published through its schema, from PostgreSQL 15. The
- * catalog that records it does not exist before then, and a statement that
- * names a missing catalog does not parse — so the clause is added only on a
- * server that has it.
- *
- * The catalogs are read directly rather than through `pg_publication_tables`:
- * that view resolves every publication by name as it goes, and fails with
- * "publication does not exist" when another session drops one meanwhile.
- */
 const SCHEMA_PUBLICATIONS =
 	"\n\t\tOR EXISTS (SELECT 1 FROM pg_publication_namespace s WHERE s.pnnspid = t.relnamespace)";
 
-/** Columns a plain INSERT may name: live, and not generated. */
 const COPYABLE_COLUMNS = `
 SELECT a.attname::text AS name
 FROM pg_attribute a
@@ -139,7 +108,6 @@ ORDER BY a.attnum
 
 interface SnapshotTable {
 	readonly name: string;
-	/** False when the table did not exist when the snapshot was taken. */
 	readonly present: boolean;
 }
 
@@ -157,15 +125,12 @@ function parseSnapshotTables(text: string): readonly SnapshotTable[] {
 
 export interface SchemaPortOptions {
 	readonly store: DatasetStore;
-	/** Tables, in the binding's namespace, that snapshot and restore cover. */
 	readonly tables: readonly string[];
 	readonly clock: () => string;
 }
 
 export interface PostgresSchemaPort extends SchemaApplyPort {
-	/** Drop one snapshot's copy. Snapshots are kept until dropped. */
 	dropSnapshot(ref: SchemaSnapshotRef): Promise<void>;
-	/** Drop every snapshot this namespace holds. */
 	dropAllSnapshots(): Promise<void>;
 }
 
@@ -194,11 +159,6 @@ export function createSchemaPort(
 		return preflightText;
 	};
 
-	/**
-	 * Statements in a phase resolve unqualified names in the namespace first.
-	 * `public` stays on the path behind it, because that is where extension
-	 * types and functions a migration may name usually live.
-	 */
 	const inNamespace = async (tx: PostgresExecutor): Promise<void> => {
 		await tx.query(
 			"SELECT set_config('search_path', $1::text, true) AS search_path",
@@ -222,7 +182,6 @@ export function createSchemaPort(
 		return found.rows.length > 0;
 	};
 
-	/** Recreate `target` as a structural and data copy of `source`. */
 	const copyTable = async (
 		tx: PostgresExecutor,
 		source: { readonly schema: string; readonly table: string },
@@ -253,7 +212,6 @@ export function createSchemaPort(
 				`DELETE FROM ${registry} WHERE snapshot_ref = $1::text RETURNING snapshot_ref`,
 				[ref.ref],
 			);
-			// Only a schema this registry recorded is ever dropped.
 			if (known.rows.length > 0) {
 				await tx.query(
 					`DROP SCHEMA IF EXISTS ${quoteIdentifier(ref.ref)} CASCADE`,
@@ -277,7 +235,6 @@ export function createSchemaPort(
 			);
 			const takenAt = clock();
 			await executor.transaction(async (tx) => {
-				// One snapshot across every table copied.
 				await tx.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
 				await tx.query(`CREATE SCHEMA ${quoteIdentifier(ref)}`);
 				const recorded: SnapshotTable[] = [];
@@ -334,8 +291,6 @@ export function createSchemaPort(
 		async verify(violationsQuery: string): Promise<readonly JsonObject[]> {
 			await store.ready();
 			const query = violationsQuery.trim().replace(/;+$/u, "");
-			// Each row comes back as one JSON document, so evidence has the
-			// same form whatever types the query selected.
 			const result = await executor.transaction(async (tx) => {
 				await inNamespace(tx);
 				return tx.query(
@@ -366,9 +321,6 @@ export function createSchemaPort(
 					);
 				}
 				for (const table of parseSnapshotTables(text)) {
-					// No CASCADE: something that came to depend on the table
-					// since the snapshot fails the restore loudly instead of
-					// being dropped with it.
 					await tx.query(
 						`DROP TABLE IF EXISTS ${qualifiedName(namespace, table.name)}`,
 					);

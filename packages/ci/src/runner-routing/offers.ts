@@ -25,11 +25,6 @@ function isIsolatedHost(offer: OfferIdentity): boolean {
 	);
 }
 
-/**
- * The model that prices an offer. Several machine classes can share one
- * provider; the offer's label picks the class, and the provider's first
- * label-bound model stands in for a label the catalog has no class for.
- */
 export function runnerModelForOffer(
 	offer: OfferIdentity,
 ): RunnerFinancialModel | undefined {
@@ -54,11 +49,6 @@ export function runnerProviderRoleOfOffer(
 	return runnerModelForOffer(offer)?.role;
 }
 
-/**
- * The rate fields of an offer, read from its model: what an operator posts as
- * the offer's rate observation. Balances and spend are account facts and are
- * not here.
- */
 export function modelledOfferTerms(model: RunnerFinancialModel) {
 	const priceMicrosPerMinute = usdToMicrosCeil(model.usdPerMinute);
 	if (priceMicrosPerMinute === undefined)
@@ -82,13 +72,9 @@ function usdFromMicros(micros: number): string {
 }
 
 export type RunnerAccountFacts = Readonly<{
-	/** Label injected runners serve for this account's pool, normally `hobo`. */
 	poolLabel: string;
-	/** Other labels the pool's runners register with, such as `hobo-trunk`. */
 	extraPoolLabels?: readonly string[];
-	/** Offers whose circuit breaker is open. */
 	unhealthyOfferIds?: ReadonlySet<string>;
-	/** Opt-in providers where the owner has turned public repositories on. */
 	publicRepositoryOfferIds?: ReadonlySet<string>;
 	hoboCapacity?: FleetCapacity;
 }>;
@@ -120,13 +106,10 @@ export function runnerProvidersFromAccount(
 		const isolated = isIsolatedHost(offer);
 		const mine = leases.filter((lease) => lease.offerId === offer.id);
 		const holding = mine.filter((lease) => ACTIVE_STATES.has(lease.state));
-		// As in admission: usage the offer's observation already covers is in
-		// its balances and is not counted a second time.
 		const counted = (lease: Lease) =>
 			lease.state === "completed" &&
 			shouldCountLocalUsage(lease, offer.observedAt);
 		const settled = mine.filter(counted);
-		// One provider account can back several offers; its spend is all of them.
 		const payerLeases = leases.filter((lease) =>
 			lease.providerAccountId
 				? lease.provider === offer.provider &&
@@ -136,16 +119,11 @@ export function runnerProvidersFromAccount(
 		const freeUsed =
 			holding.reduce((sum, lease) => sum + lease.reservedFreeMinutes, 0) +
 			settled.reduce((sum, lease) => sum + lease.billedFreeMinutes, 0);
-		// The account's observed allowance replaces the catalog's, never adds to it.
-		// So does its ceiling: a plan-dependent limit is whatever the operator set.
 		const {
 			monthlyFreeMinutes: _catalogAllowance,
 			concurrency: _catalogCeiling,
 			...structural
 		} = base;
-		// One label can be several priced classes (GitHub prices a public and a
-		// private repository differently). The offer carries this account's rate,
-		// so the member serves every repository any of those classes serves.
 		const classes = RUNNER_FINANCIAL_MODELS.filter(
 			(candidate) =>
 				!isolated &&
@@ -183,7 +161,6 @@ export function runnerProvidersFromAccount(
 		const model: RunnerFinancialModel = hasAllowance
 			? { ...observed, monthlyFreeMinutes: String(offer.freeMinutes) }
 			: observed;
-		// A connected offer is an account that already exists.
 		const commercial: RunnerCommercialState = hasAllowance
 			? {
 					subscribed: true,
@@ -254,7 +231,6 @@ export function runnerBudgetPolicy(account: Account): BudgetPolicy {
 	);
 }
 
-/** Spend and held commitments against the account's whole budget. */
 export function runnerAccountExposure(
 	account: Account,
 	leases: readonly Lease[],

@@ -21,7 +21,6 @@ import { cloneAsJson, isJsonObject } from "./json.js";
 
 export const MAX_SET_DOCUMENT_BYTES = 921_600;
 
-/** The resolved deployment set a publish carries (from the frozen PublisherPort). */
 export type ResolvedSet = Parameters<PublisherPort["publish"]>[0]["resolved"];
 
 export type RenderedFile = Readonly<{ path: string; content: string }>;
@@ -34,7 +33,6 @@ export type EngineDocumentRef = Readonly<{
 }>;
 
 export type RenderedPublication = Readonly<{
-	/** Sorted by path. */
 	files: readonly RenderedFile[];
 	engineDocument: EngineDocumentRef;
 }>;
@@ -52,12 +50,10 @@ function sortKeys(value: JsonValue): JsonValue {
 	return value;
 }
 
-/** Byte-stable JSON document: sorted keys, two-space indent, final newline. */
 export function stableDocument(value: JsonValue): string {
 	return `${JSON.stringify(sortKeys(value), null, 2)}\n`;
 }
 
-/** Compact canonical JSON (sorted keys) for hashing and embedding. */
 export function canonicalJson(value: JsonValue): string {
 	return JSON.stringify(sortKeys(value));
 }
@@ -66,7 +62,6 @@ export function sha256Digest(text: string): `sha256:${string}` {
 	return `sha256:${createHash("sha256").update(text).digest("hex")}`;
 }
 
-/** A Kubernetes DNS-1123 name from free text; hashed when it must be cut. */
 export function k8sName(prefix: string, raw: string): string {
 	const slug = raw
 		.toLowerCase()

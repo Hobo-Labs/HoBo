@@ -195,7 +195,7 @@ credentials.
 Neither the proto nor the CUE is compiled at runtime: this package declares no
 `data-models/buf.yaml` and imports no generated `*_pb.ts`. Where a TypeScript
 declaration shares a name with a message, the declaration carries a
-`parallel-type-allowed:` note saying why.
+bare `parallel-type-allowed:` marker.
 
 ## Architecture evidence
 

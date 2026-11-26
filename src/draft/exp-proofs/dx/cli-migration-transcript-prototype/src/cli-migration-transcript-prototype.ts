@@ -132,7 +132,7 @@ export interface CliMigrationTranscriptPrototype {
   parentIssue: "HOBO-566";
   phase: "M2";
   targetPackage: "src/draft/exp-proofs/dx/cli-migration-transcript-prototype";
-  proofNote: "docs/design/proofs/cli-migration-transcript-prototype/README.md";
+  proofNote: "https://linear.app/quickdeploy-ai/document/hobo-575-migration-transcript-proof-record-archived-db1febb344a9";
   designAnchors: string[];
   transcriptSteps: TranscriptStep[];
   eventFixtures: MigrationEventFixture[];
@@ -184,7 +184,7 @@ export const CLI_MIGRATION_TRANSCRIPT_PROTOTYPE: CliMigrationTranscriptPrototype
   parentIssue: "HOBO-566",
   phase: "M2",
   targetPackage: "src/draft/exp-proofs/dx/cli-migration-transcript-prototype",
-  proofNote: "docs/design/proofs/cli-migration-transcript-prototype/README.md",
+  proofNote: "https://linear.app/quickdeploy-ai/document/hobo-575-migration-transcript-proof-record-archived-db1febb344a9",
   designAnchors: [
     "docs/design/developer-experience.md#plan-07",
     "docs/design/sdk-api.md#plan-02",

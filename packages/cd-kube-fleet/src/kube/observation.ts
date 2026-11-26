@@ -1,6 +1,3 @@
-// Shared pieces of both realizers: the preflight every pass runs before any
-// hub call (I1 content check, cluster mapping, rendering) and the
-// ReconcileObservationRecord builder. Nothing here performs I/O.
 import { create } from "@bufbuild/protobuf";
 import {
 	type CdContext,
@@ -20,16 +17,11 @@ export type Preflight =
 	| Readonly<{ ok: true; cluster: string; objects: readonly KubeObject[] }>
 	| Readonly<{ ok: false; reasons: readonly ReasonRecord[] }>;
 
-/** Resources the reconciler's departure plan keeps (WP7 `keep` directive). */
 export function keepOf(input: RealizeInput): ReadonlySet<string> {
 	const directed: RealizeInput & Readonly<{ keep?: readonly string[] }> = input;
 	return new Set(directed.keep ?? []);
 }
 
-/**
- * Everything a pass checks before touching the hub. A failure here is a
- * BLOCKED observation and zero hub calls.
- */
 export function preflight(
 	input: RealizeInput,
 	config: RealizerConfig,
@@ -116,7 +108,6 @@ export function observation(
 	});
 }
 
-/** A BLOCKED observation for a caught error (typed failures keep their code). */
 export function blocked(
 	input: RealizeInput,
 	ctx: CdContext,

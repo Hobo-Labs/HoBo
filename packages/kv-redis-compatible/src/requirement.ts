@@ -17,13 +17,9 @@ import {
 
 import { KvRedisCompatibleError } from "./errors.js";
 
-// public-contract: capability profile id the registry resolves.
 export const KV_KEY_VALUE_PROFILE = "kv.key-value/v1" as const;
-// public-contract: capability profile id the registry resolves.
 export const KV_REDIS_COMPATIBLE_PROFILE = "kv.redis-compatible/v1" as const;
-// public-contract: capability profile id the registry resolves.
 export const KV_VALKEY_PROFILE = "kv.valkey/v1" as const;
-// public-contract: capability profile id the registry resolves.
 export const KV_EPHEMERAL_STATE_PROFILE = "kv.ephemeral-state/v1" as const;
 
 export type KvRuntimeRequest = {
