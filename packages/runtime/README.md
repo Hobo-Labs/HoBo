@@ -590,6 +590,7 @@ caller must persist across restarts.
 
 The internal durable queue component boundary copies request bodies and
 attributes and checks operation identities, UTF-8 sizes, batches, and lease
-bounds before a future queue host dispatches them. This parser does not bind a
-queue provider, authorize a component, enforce delay or operation-window timing,
-or establish durable outcomes.
+bounds before a future queue host dispatches them. It also checks provider
+responses against the request and copies deliveries before disclosure. These
+parsers do not bind a queue provider, authorize a component, enforce delay or
+operation-window timing, or establish durable outcomes.
