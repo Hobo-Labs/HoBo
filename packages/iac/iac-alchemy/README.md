@@ -81,10 +81,13 @@ more than 100 versions, versions without canonical UUIDs or timestamps, or
 versions with equal timestamps whose newest-first order cannot be established.
 The bounded `AwsSecretOrdering` model checks sorting and tie rejection for three
 versions; it assumes the provider reports truthful timestamps.
+The provider's creation timestamps are its only ordering evidence, so equal
+timestamps cannot establish which version is newer.
 String-valued secrets and WASI bindings are not supported. HTTP applications
 may use scoped secret bindings as described below.
 The `AwsSecretVersions` bounded model assumes persisted IDs, provider
-idempotency and trusted host verification; it does not prove AWS behavior.
+idempotency, trusted host verification, timeout delivery and transport
+completion; it does not prove AWS behavior.
 
 AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
 its provider choice outside the Bindle: pass the neutral Bindle through
@@ -116,6 +119,8 @@ SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
+The runtime reports a successful write only after transport completion, even if
+application code replaces `Promise.race`.
 
 A Node.js HTTP host can bind the selected DynamoDB, S3 and versioned secret
 stores to a Bindle application with
@@ -126,7 +131,8 @@ verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. The bounded `AwsHttpSecret` model checks the secret write outcome
 and retained version ID across request retirement and grant revocation; it
-assumes the host verifier and provider behavior. The runtime buffers responses
+assumes one request and write, a trusted host verifier, a captured token,
+provider idempotency, and transport completion. The runtime buffers responses
 up to 1 MiB, 1,024 chunks and 16 KiB of headers; a stalled handler keeps one of 32 capacity slots until it settles.
 For an Alchemy AWS Web Function, create a source in the application's entry
 module. The `host` below is your own authority: it creates the branded stores
@@ -869,6 +875,8 @@ Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
 and verifies a pinned official package, starts an isolated loopback-only
 container, and removes it afterward. An existing copy of the same package may
 be supplied with `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
+The runner includes the secret runtime and HTTP ingress, mapper, and financial
+preview specifications alongside the storage and emulator tests.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
