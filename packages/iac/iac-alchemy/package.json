@@ -110,6 +110,10 @@
 		"./aws/http-source": {
 			"types": "./dist/aws-http-source.d.ts",
 			"default": "./dist/aws-http-source.js"
+		},
+		"./aws/http-mapper": {
+			"types": "./dist/aws-http-mapper.d.ts",
+			"default": "./dist/aws-http-mapper.js"
 		}
 	},
 	"dependencies": {
