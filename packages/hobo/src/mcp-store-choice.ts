@@ -36,6 +36,7 @@ import {
 	type RelayLoginTool,
 } from "./mcp-relay-login.js";
 import type {
+	OwnerPageSignIn,
 	OwnerSessionState,
 	OwnerStoreLabel,
 	OwnerStoreSessions,
@@ -473,7 +474,6 @@ export function createStoreChoiceApp(
 		) => OwnerSettingsStore;
 		readonly sessions?: OwnerStoreSessions;
 		readonly pages?: OwnerPages;
-		readonly deposit?: (name: string, value: string) => void;
 		readonly relayLogin?: RelayLoginTool;
 	} = {},
 ): StoreChoiceApp {
@@ -531,14 +531,21 @@ export function createStoreChoiceApp(
 		label: OwnerStoreLabel,
 		family: "ci" | "cd",
 		recorded = false,
+		signIn?: OwnerPageSignIn,
 	) => {
-		const state = await options.sessions?.establish(cwd);
+		const state =
+			family === "ci"
+				? await options.sessions?.establish(cwd, signIn, family)
+				: signIn === undefined
+					? await options.sessions?.establish(cwd)
+					: await options.sessions?.establish(cwd, signIn);
 		return sessionResult(state, label, family, recorded);
 	};
 
 	const record = async (
 		ticket: ChoiceTicket,
 		answer: JsonValue | undefined,
+		signIn?: OwnerPageSignIn,
 	): Promise<CallToolResult> => {
 		let choice: StoreChoice;
 		try {
@@ -568,6 +575,7 @@ export function createStoreChoiceApp(
 				return stale();
 			ticket.locator.assertCurrent?.();
 			ticket.locator.onOwnerChoice?.();
+			options.sessions?.invalidate?.(ticket.cwd);
 			revisions.set(ticket.key, ticket.revision + 1);
 		} catch (error) {
 			if (error instanceof OwnerWriteGuardUnavailableError)
@@ -597,7 +605,13 @@ export function createStoreChoiceApp(
 		} catch {
 			return NOT_SAVED;
 		}
-		return establish(ticket.cwd, labelFor(choice.store), ticket.family, true);
+		return establish(
+			ticket.cwd,
+			labelFor(choice.store),
+			ticket.family,
+			true,
+			signIn,
+		);
 	};
 
 	const savedChoice = async (locator: OwnerSettingsStore) => {
@@ -675,9 +689,17 @@ export function createStoreChoiceApp(
 		)
 			return stale();
 		const { answers } = opened;
+		const allowed = {
+			infisical: ["INFISICAL_CLI_SESSION", "INFISICAL_TOKEN"],
+			"1password": ["OP_CONNECT_TOKEN"],
+			bitwarden: ["BW_CLIENTID", "BW_CLIENTSECRET"],
+		} as const;
+		const names: readonly string[] = allowed[answers.store];
+		const signIn: Record<string, string> = {};
 		for (const name of OWNER_PAGE_SECRET_FIELDS) {
 			const value = answers[name]?.trim();
-			if (value !== undefined && value !== "") options.deposit?.(name, value);
+			if (names.includes(name) && value !== undefined && value !== "")
+				signIn[name] = value;
 		}
 		const choice: JsonObject = Object.fromEntries([
 			["store", answers.store],
@@ -686,7 +708,7 @@ export function createStoreChoiceApp(
 				return value === undefined ? [] : [[name, value]];
 			}),
 		]);
-		return record(ticket, choice);
+		return record(ticket, choice, signIn);
 	};
 
 	const openPage = async (

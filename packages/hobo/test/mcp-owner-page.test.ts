@@ -246,7 +246,9 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			const deposited = new Map<string, string>();
 			const written: Record<string, string>[] = [];
 			const sessions: OwnerStoreSessions = {
-				establish: async () => {
+				establish: async (_cwd, signIn) => {
+					if (signIn?.INFISICAL_TOKEN)
+						deposited.set("INFISICAL_TOKEN", signIn.INFISICAL_TOKEN);
 					expect(deposited.get("INFISICAL_TOKEN")).toBe(TOKEN);
 					return { status: "established", store: "Infisical" };
 				},
@@ -275,7 +277,6 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 				}),
 				sessions,
 				pages,
-				deposit: (name, value) => deposited.set(name, value),
 			});
 			expect(app.tools(NO_STORE_CHOICE_SUPPORT).map((t) => t.name)).toEqual([
 				CHOOSE_SECRET_STORE_TOOL,
@@ -329,7 +330,12 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			const written = new Map<string, string>();
 			let established = false;
 			const sessions: OwnerStoreSessions = {
-				establish: async () => {
+				establish: async (_cwd, signIn) => {
+					if (signIn?.INFISICAL_CLI_SESSION)
+						deposited.set(
+							"INFISICAL_CLI_SESSION",
+							signIn.INFISICAL_CLI_SESSION,
+						);
 					established = deposited.has("INFISICAL_CLI_SESSION");
 					return established
 						? { status: "established", store: "Infisical" }
@@ -362,7 +368,6 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 				}),
 				sessions,
 				pages: createOwnerPages(),
-				deposit: (name, value) => deposited.set(name, value),
 			});
 			const support = { formElicitation: true, apps: false };
 			const shown = await app.callTool(

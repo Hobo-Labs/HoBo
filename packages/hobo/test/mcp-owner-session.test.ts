@@ -40,9 +40,51 @@ afterEach(async () => {
 });
 
 describe("MCP owner store session", () => {
+	test("signs in using the store chosen for the requested family", async () => {
+		const project = await mkdtemp(join(tmpdir(), "hobo-owner-family-"));
+		vi.stubEnv("XDG_CONFIG_HOME", project);
+		let observedFamily: "ci" | "cd" | undefined;
+		let observedStore: string | undefined;
+		let mcp: ReturnType<typeof composeHoboMcp>;
+		mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: project,
+			remote: true,
+			ownerSignIn: async ({ cwd, family }) => {
+				const settings = mcp.owner.storeSettingsFor?.(family ?? "cd", cwd);
+				observedFamily = family;
+				observedStore = (await settings?.read())?.HOBO_SECRET_STORE;
+				return {
+					kind: "refused",
+					code: "TEST",
+					message: "Synthetic refusal",
+					remediation: [],
+				};
+			},
+		});
+		try {
+			let form = 0;
+			await mcp.session.storeChoice?.callTool(
+				"choose_secret_store",
+				{ family: "ci", cwd: project },
+				{ formElicitation: true, apps: false },
+				async () => ({
+					action: "accept",
+					content: form++ === 0 ? { store: "bitwarden" } : {},
+				}),
+			);
+			expect(observedFamily).toBe("ci");
+			expect(observedStore).toBe("bitwarden");
+		} finally {
+			await mcp.close();
+			await rm(project, { recursive: true, force: true });
+		}
+	});
+
 	test("invalidates another server's stale selection and vault", async () => {
 		const home = await mkdtemp(join(tmpdir(), "hobo-owner-generation-"));
 		vi.stubEnv("XDG_CONFIG_HOME", home);
+		const port = createMemorySecretsPort({ id: "synthetic-owner-store" });
 		await fileSettingsStore(secretStoreLocatorPath(home)).write({
 			HOBO_SECRET_STORE: "1password",
 			OP_VAULT_ID: "abcdefghijklmnopqrstuvwxyz",
@@ -52,6 +94,25 @@ describe("MCP owner store session", () => {
 			output: new PassThrough(),
 			projectDir: home,
 			remote: true,
+			ownerSignIn: async () => ({
+				kind: "owner",
+				owner: {
+					id: "infisical",
+					chosen: true,
+					missing: [],
+					handOffSignIn: undefined,
+					opened: {
+						id: "infisical",
+						port,
+						reference: (name) => `owner://${name}`,
+					},
+					infisicalFolder: undefined,
+					unopened: undefined,
+					stage: async () => {
+						throw new Error("unused");
+					},
+				},
+			}),
 		});
 		const second = composeHoboMcp({
 			output: new PassThrough(),
@@ -66,9 +127,12 @@ describe("MCP owner store session", () => {
 				throw new Error("No scoped owner session.");
 			await older.write({ HOBO_SECRET_STORE: "bitwarden" });
 			vault.put("SYNTHETIC_TOKEN", "fixture");
+			await first.sessions.establish(home);
+			expect(first.sessions.status(home).established).toBe(true);
 			newer.onOwnerChoice?.();
 			await expect(older.read()).rejects.toThrow(/owner session changed/u);
 			expect(vault.has("SYNTHETIC_TOKEN")).toBe(false);
+			expect(first.sessions.status(home).established).toBe(false);
 			const fresh = first.owner.storeSettingsFor?.("cd", home);
 			if (!fresh?.runStoreWrite) throw new Error("No refreshed owner session.");
 			expect(await fresh.read()).toEqual({ OTHER_SETTING: "preserved" });

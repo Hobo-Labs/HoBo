@@ -211,6 +211,7 @@ export function composeHoboMcp(options: {
 	const uncertainWrites = new Set<string>();
 	const ownSecretChanges = new Map<string, number>();
 	const familyVaults = new Map<string, ReturnType<typeof createTrustedVault>>();
+	let invalidateStoreSession: (cwd: string) => void = () => {};
 	let closed = false;
 	const scopeGeneration = (family: "ci" | "cd", project: string) => {
 		const key = scopeForProject(family, project);
@@ -240,6 +241,7 @@ export function composeHoboMcp(options: {
 			sessionChoices.delete(key);
 			familyVaults.get(key)?.clear();
 			familyVaults.delete(key);
+			invalidateStoreSession(project);
 			selectionControllers.get(key)?.abort();
 			selectionControllers.delete(key);
 			owner.cancelScopeKey(key);
@@ -282,6 +284,7 @@ export function composeHoboMcp(options: {
 					sessionChoices.delete(key);
 					familyVaults.get(key)?.clear();
 					familyVaults.delete(key);
+					invalidateStoreSession(project);
 					controller.abort();
 					selectionControllers.delete(key);
 					owner.cancelScopeKey(key);
@@ -648,6 +651,7 @@ export function composeHoboMcp(options: {
 				selectionRequiredScopes.delete(key);
 				familyVaults.get(key)?.clear();
 				familyVaults.delete(key);
+				invalidateStoreSession(project);
 				controller.abort();
 				selectionControllers.delete(key);
 				owner.cancelScopeKey(key);
@@ -750,7 +754,8 @@ export function composeHoboMcp(options: {
 			options.ownerSignIn ??
 			((input) =>
 				ownerChannelSignIn({
-					owner: ownerForFamily(owner, "cd", input.cwd) ?? owner,
+					owner:
+						ownerForFamily(owner, input.family ?? "cd", input.cwd) ?? owner,
 					deps: {
 						runCommand: machineRunner(),
 						which: (bin) => whichOnPath(bin),
@@ -764,7 +769,7 @@ export function composeHoboMcp(options: {
 					which: (bin) => whichOnPath(bin),
 				},
 			})(input),
-		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
+		keptFor: (cwd, family) => vaultForProject(family, canonical(cwd)),
 		agentVault: options.agentVault ?? {
 			launch: agentVaultProxyLauncher(),
 			command: () =>
@@ -775,6 +780,7 @@ export function composeHoboMcp(options: {
 				}),
 		},
 	});
+	invalidateStoreSession = (cwd) => sessions.invalidate?.(cwd);
 	const sleep =
 		options.relayLogin?.sleep ??
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -827,7 +833,6 @@ export function composeHoboMcp(options: {
 			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
 			sessions,
 			pages,
-			deposit: (name, value) => owner.deposit(name, value),
 			relayLogin: createRelayLoginTool({
 				relay,
 				pages,

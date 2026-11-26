@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 
 import type { CredentialResolver } from "@hobo/cd";
@@ -65,8 +66,26 @@ export function publicReason(message: string): string {
 		.slice(0, 300);
 }
 
+export type OwnerPageSignIn = Readonly<
+	Partial<
+		Record<
+			| "INFISICAL_CLI_SESSION"
+			| "INFISICAL_TOKEN"
+			| "OP_CONNECT_TOKEN"
+			| "BW_CLIENTID"
+			| "BW_CLIENTSECRET",
+			string
+		>
+	>
+>;
+
 export interface OwnerStoreSessions {
-	establish(cwd: string): Promise<OwnerSessionState>;
+	establish(
+		cwd: string,
+		signIn?: OwnerPageSignIn,
+		family?: "ci" | "cd",
+	): Promise<OwnerSessionState>;
+	invalidate?(cwd: string): void;
 	status(cwd: string): OwnerSessionStatus;
 	credentials(cwd: string): CredentialResolver;
 	entries(cwd: string): OwnerStoreEntries;
@@ -167,20 +186,49 @@ type Held = Readonly<{
 export type OwnerSignIn = (input: {
 	readonly cwd: string;
 	readonly vault: TrustedVault;
+	readonly family?: "ci" | "cd";
+	readonly infisicalSession?: string;
 }) => Promise<OwnerSignInOutcome>;
+
+export function ownerWithPageSession(
+	owner: OwnerChannel,
+	session: string | undefined,
+): OwnerChannel {
+	let copiedSession = session;
+	return {
+		...owner,
+		async openUrl(url, message, name) {
+			if (name === "INFISICAL_CLI_SESSION" && copiedSession !== undefined)
+				return;
+			return owner.openUrl(url, message, name);
+		},
+		async captureSecret(request) {
+			if (
+				request.name === "INFISICAL_CLI_SESSION" &&
+				copiedSession !== undefined
+			) {
+				const value = copiedSession;
+				copiedSession = undefined;
+				return value;
+			}
+			return owner.captureSecret(request);
+		},
+	};
+}
 
 export function ownerChannelSignIn(options: {
 	readonly owner: OwnerChannel;
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	readonly deps?: Omit<OwnerStoreDeps, "env" | "cwd" | "ownerChannel">;
 }): OwnerSignIn {
-	return async ({ cwd, vault }) => {
+	return async ({ cwd, vault, infisicalSession }) => {
 		const plainEnv = withoutSecretEnv(options.env ?? process.env);
+		const owner = ownerWithPageSession(options.owner, infisicalSession);
 		const deps: OwnerStoreDeps = {
 			...options.deps,
 			env: plainEnv,
 			cwd,
-			ownerChannel: options.owner,
+			ownerChannel: owner,
 			noBrowser: true,
 		};
 		return signInOwnerStore({
@@ -280,11 +328,21 @@ export function createOwnerStoreSessions(options: {
 	readonly relayFolder?: OwnerRelayFolder;
 	readonly fetch?: typeof fetch;
 	readonly kept?: TrustedVault;
+	readonly keptFor?: (cwd: string, family: "ci" | "cd") => TrustedVault;
 	readonly agentVault?: AgentVaultProxyDeps;
 }): OwnerStoreSessions {
 	const held = new Map<string, Held>();
 	const closing = new Set<Promise<void>>();
-	const keyOf = (cwd: string) => path.resolve(cwd);
+	const revisions = new Map<string, number>();
+	let closed = false;
+	const keyOf = (cwd: string) => {
+		const absolute = path.resolve(cwd);
+		try {
+			return realpathSync(absolute);
+		} catch {
+			return absolute;
+		}
+	};
 	const drop = (key: string) => {
 		const current = held.get(key);
 		current?.vault.clear();
@@ -303,18 +361,49 @@ export function createOwnerStoreSessions(options: {
 				})
 			: undefined;
 	return {
-		async establish(cwd) {
+		async establish(cwd, signIn, family = "cd") {
 			const key = keyOf(cwd);
+			const revision = revisions.get(key) ?? 0;
 			const vault = createTrustedVault();
+			if (closed)
+				return {
+					status: "sign-in-needed",
+					store: "Infisical",
+					code: "HOBO_OWNER_SESSION_CLOSED",
+				};
+			for (const name of [
+				"INFISICAL_TOKEN",
+				"OP_CONNECT_TOKEN",
+				"BW_CLIENTID",
+				"BW_CLIENTSECRET",
+			] as const) {
+				const value = signIn?.[name];
+				if (value !== undefined) vault.put(name, value);
+			}
 			let outcome: OwnerSignInOutcome;
 			try {
-				outcome = await options.signIn({ cwd: key, vault });
+				outcome = await options.signIn({
+					cwd: key,
+					vault,
+					family,
+					...(signIn?.INFISICAL_CLI_SESSION === undefined
+						? undefined
+						: { infisicalSession: signIn.INFISICAL_CLI_SESSION }),
+				});
 			} catch {
 				vault.clear();
 				return {
 					status: "sign-in-needed",
 					store: "Infisical",
 					code: "HOBO_OWNER_STORE_UNAVAILABLE",
+				};
+			}
+			if (closed || (revisions.get(key) ?? 0) !== revision) {
+				vault.clear();
+				return {
+					status: "sign-in-needed",
+					store: "Infisical",
+					code: "HOBO_OWNER_SESSION_CHANGED",
 				};
 			}
 			if (outcome.kind === "refused") {
@@ -341,9 +430,19 @@ export function createOwnerStoreSessions(options: {
 					code: "HOBO_OWNER_SIGN_IN",
 				};
 			}
-			for (const name of KEPT_STORE_SIGN_INS) {
-				const value = vault.reveal(name);
-				if (value !== undefined) options.kept?.put(name, value);
+			try {
+				const kept = options.keptFor?.(key, family) ?? options.kept;
+				for (const name of KEPT_STORE_SIGN_INS) {
+					const value = vault.reveal(name);
+					if (value !== undefined) kept?.put(name, value);
+				}
+			} catch {
+				vault.clear();
+				return {
+					status: "sign-in-needed",
+					store: label,
+					code: "HOBO_OWNER_SESSION_CHANGED",
+				};
 			}
 			drop(key);
 			held.set(key, {
@@ -353,6 +452,11 @@ export function createOwnerStoreSessions(options: {
 				broker: brokerFor(owner.opened),
 			});
 			return { status: "established", store: label };
+		},
+		invalidate(cwd) {
+			const key = keyOf(cwd);
+			revisions.set(key, (revisions.get(key) ?? 0) + 1);
+			drop(key);
 		},
 		status(cwd) {
 			const current = held.get(keyOf(cwd));
@@ -433,6 +537,7 @@ export function createOwnerStoreSessions(options: {
 			};
 		},
 		async close() {
+			closed = true;
 			for (const key of held.keys()) drop(key);
 			await Promise.all(closing);
 		},

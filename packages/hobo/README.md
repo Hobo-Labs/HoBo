@@ -352,6 +352,11 @@ the missing capability instead of collecting identifiers or values in chat.
 The transcript audit flags known private fields in nested owner-tool inputs and
 results, including API keys and numeric identifiers, without printing their values.
 
+An owner page passes its sign-in only to the selected project's store session,
+after the choice is recorded. It cannot fill another project's pending handoff.
+Changing the selection invalidates the old session and prevents an earlier
+sign-in from restoring it after the change.
+
 The MCP owner session records an opaque write-ahead marker under the owner's
 private state directory before changing a secret store. A lost response or a
 server crash before the write callback returns leaves the scope blocked;

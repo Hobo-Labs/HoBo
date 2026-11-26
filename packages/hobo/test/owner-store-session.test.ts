@@ -5,13 +5,13 @@ import {
 	type TransportRequest,
 	type TransportResponse,
 } from "@hobo/core";
-import type { OwnerStore } from "@hobo/hobo-ci";
+import type { OwnerChannel, OwnerStore } from "@hobo/hobo-ci";
 import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
 import {
 	HOSTINGER_WEB_HOSTING_PRODUCT_ID,
 	hostingerResolverRegistry,
 } from "@hobo/provider-hostinger";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createDeployCommand } from "../src/deploy-command.js";
 import { createDoctorCommand } from "../src/doctor-command.js";
@@ -19,6 +19,7 @@ import {
 	createOwnerStoreSessions,
 	OwnerCredentialUnavailable,
 	type OwnerSignIn,
+	ownerWithPageSession,
 } from "../src/owner-store-session.js";
 
 const PRIVATE_PROJECT = "synthetic-private-project-id";
@@ -69,6 +70,87 @@ function signedIn(owner: OwnerStore): OwnerSignIn {
 }
 
 describe("owner store session", () => {
+	it("keeps each project's sign-in in that project's vault", async () => {
+		const vaults = new Map([
+			["/project-a", createTrustedVault()],
+			["/project-b", createTrustedVault()],
+		]);
+		const owner = ownerStoreFor({ chosen: true, port: await storeHolding({}) });
+		const sessions = createOwnerStoreSessions({
+			keptFor: (cwd) => {
+				const vault = vaults.get(cwd);
+				if (!vault) throw new Error("Unknown project.");
+				return vault;
+			},
+			signIn: async ({ cwd, vault }) => {
+				vault.put("INFISICAL_TOKEN", `token-for-${cwd}`);
+				return { kind: "owner", owner };
+			},
+		});
+		await sessions.establish("/project-a");
+		await sessions.establish("/project-b");
+		expect(vaults.get("/project-a")?.reveal("INFISICAL_TOKEN")).toBe(
+			"token-for-/project-a",
+		);
+		expect(vaults.get("/project-b")?.reveal("INFISICAL_TOKEN")).toBe(
+			"token-for-/project-b",
+		);
+		await sessions.close();
+	});
+
+	it("discards a selected store and refuses an older sign-in that finishes later", async () => {
+		const owner = ownerStoreFor({
+			chosen: true,
+			port: await storeHolding({ HOSTINGER_API_TOKEN: HOSTINGER_TOKEN }),
+		});
+		let finish: (() => void) | undefined;
+		let calls = 0;
+		const sessions = createOwnerStoreSessions({
+			signIn: async () => {
+				calls += 1;
+				if (calls === 2)
+					await new Promise<void>((resolve) => {
+						finish = resolve;
+					});
+				return { kind: "owner", owner };
+			},
+		});
+		await sessions.establish(CWD);
+		const credentials = sessions.credentials(CWD);
+		const pending = sessions.establish(CWD);
+		expect(finish).toBeDefined();
+		sessions.invalidate?.(CWD);
+		await expect(
+			credentials.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+		).rejects.toBeInstanceOf(OwnerCredentialUnavailable);
+		finish?.();
+		expect(await pending).toMatchObject({ code: "HOBO_OWNER_SESSION_CHANGED" });
+		expect(sessions.status(CWD)).toEqual({ established: false });
+		await sessions.close();
+	});
+
+	it("consumes a copied page session only in the sign-in that received it", async () => {
+		const captureSecret = vi.fn(async () => undefined);
+		const openUrl = vi.fn(async () => {});
+		const underlying: OwnerChannel = {
+			captureSecret,
+			openUrl,
+			holds: () => false,
+		};
+		const first = ownerWithPageSession(underlying, "synthetic-page-session");
+		const second = ownerWithPageSession(underlying, undefined);
+		const request = {
+			name: "INFISICAL_CLI_SESSION",
+			title: "Session",
+			instructions: "",
+		};
+		await first.openUrl("https://example.test", "Sign in", request.name);
+		expect(openUrl).not.toHaveBeenCalled();
+		expect(await second.captureSecret(request)).toBeUndefined();
+		expect(await first.captureSecret(request)).toBe("synthetic-page-session");
+		expect(await first.captureSecret(request)).toBeUndefined();
+		expect(captureSecret).toHaveBeenCalledTimes(2);
+	});
 	it("establishes a session, keeps the store sign-in, and reports only the store's label", async () => {
 		const kept = createTrustedVault();
 		const sessions = createOwnerStoreSessions({
