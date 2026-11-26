@@ -37,11 +37,12 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { camps } from "../../release/hobo-release.delivery.ts";
+import { ociRegistryFailure } from "../lib/release-oci-diagnostic.mts";
 
 // SAFETY: release-contract builds @hobo/cd before plain-node invocation; dist exports match the checked-in TypeScript module.
 const releaseFreightDetail = createRequire(import.meta.url)(
@@ -315,6 +316,13 @@ export function releaseBlockedRealizerMessage(
 		const code = reason.code?.trim() || "unknown";
 		const structured = cdReasonStructured(reason);
 		if (structured) return formatReleaseFreightBlockedReason(code, structured);
+		if (
+			code === "RESOLVER_PROVIDER_REJECTED" ||
+			code === "RESOLVER_OUTPUT_UNPARSEABLE"
+		) {
+			const oci = ociRegistryFailure(reason.message ?? "");
+			if (oci) return `${code}: ${oci}`;
+		}
 		const parsed = parseReleaseFreightAuthorMessage(
 			reason.message ?? "",
 			allowed,
@@ -525,6 +533,7 @@ export function githubApiProbeTransport(
 		if (request.method !== "GET" || !PAGES_BUILD_LATEST.test(request.url))
 			return inner(authorized);
 		const notBuiltForHead = { status: 404, headers: {}, body: "" };
+		if (!token) return notBuiltForHead;
 		const bounded = {
 			...authorized,
 			maxResponseBytes: Math.min(
@@ -590,9 +599,11 @@ export async function openReleaseCd(options: {
 	const baseHttp: ReleaseHttpTransport =
 		options.seams?.http ??
 		core.createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	const http = githubApiProbeTransport(
+	const credentials =
+		options.seams?.credentials ?? releaseWorkflowCredentials(options.env);
+	const verificationHttp = githubApiProbeTransport(
 		await releaseGithubToken(
-			options.seams?.credentials,
+			credentials,
 			core.githubAppInstallationRef(
 				options.env.GITHUB_REPOSITORY?.trim() || "Hobo-Labs/HoBo",
 			),
@@ -605,10 +616,10 @@ export async function openReleaseCd(options: {
 		env,
 		home: options.home,
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
-		http,
+		http: baseHttp,
+		verificationHttp,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
-		credentials:
-			options.seams?.credentials ?? releaseWorkflowCredentials(options.env),
+		credentials,
 	});
 	if (!opened.ok)
 		throw new Error(

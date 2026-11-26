@@ -7,7 +7,10 @@
  * quarantine a replica restored from an older backup before it can vote.
  */
 import { createHash } from "node:crypto";
-import type { JsonValue } from "@hobo/core";
+import { ImmutableJournalError, type JsonValue } from "@hobo/core";
+
+export { ImmutableJournalError } from "@hobo/core";
+
 import { type AssignmentReplica, parseMemberName } from "@hobo/fleet";
 import {
 	assignmentKey,
@@ -72,12 +75,6 @@ export interface ImmutableJournal {
 		value: string,
 		expectedPosition: number,
 	): Promise<ImmutableJournalEntry>;
-}
-export class ImmutableJournalError extends Error {
-	constructor(readonly reason: string) {
-		super(`immutable journal ${reason}`);
-		this.name = "ImmutableJournalError";
-	}
 }
 
 const HASH = /^[a-f0-9]{64}$/u;

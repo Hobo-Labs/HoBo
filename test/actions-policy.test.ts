@@ -640,6 +640,22 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
+			if (
+				file === "release-pricing.yml" &&
+				lines[start] === "  pricing-release-publish:"
+			) {
+				assert.equal(runsOn, "ubuntu-24.04");
+				assert.match(
+					condition,
+					/needs\.pricing-release-pack\.result == 'success'/,
+				);
+				assert.match(
+					condition,
+					/startsWith\(github\.ref, 'refs\/tags\/pricing-v'\)/,
+				);
+				assert.match(block, /id-token: write/);
+				continue;
+			}
 			if ((lines[start] ?? "") === "  route:") {
 				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
 				assert.match(
