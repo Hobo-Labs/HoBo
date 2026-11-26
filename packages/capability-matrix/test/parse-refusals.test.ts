@@ -1,13 +1,3 @@
-/**
- * `parseCapabilityMatrix` — the boundary a stored or transmitted matrix
- * crosses on the way back in.
- *
- * A capability matrix is a published claim about what HoBo can actually run
- * on. That makes the read side as load-bearing as the derivation: a matrix
- * that round-trips through storage, an API, or a hand edit and comes back
- * subtly wrong is a coverage claim nobody derived and nobody can reproduce.
- * Every refusal below names the specific lie it stops.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -109,7 +99,6 @@ describe("shape refusals", () => {
 		const found = cells[index]?.candidates[0];
 		if (found === undefined) return;
 		found.definitionId = "  ";
-		// claim coverage under a name nothing can be traced back to.
 		expectRefusal(
 			() => parseCapabilityMatrix(bad),
 			/must be a non-empty string/u,
@@ -183,7 +172,6 @@ describe("ordering and uniqueness refusals", () => {
 	});
 
 	it("refuses a duplicated definition id", () => {
-		// duplicate would let one product be counted twice as coverage.
 		expectRefusal(
 			() => parseCapabilityMatrix(withBucketIds(["a.def/v1", "a.def/v1"])),
 			/must be sorted and unique/u,
@@ -207,7 +195,6 @@ describe("ordering and uniqueness refusals", () => {
 				const bucket = cell.buckets[name];
 				if (bucket !== undefined && bucket.available.length > 0) {
 					bucket.unavailable = [...bucket.available];
-					// A reader could count the same product as coverage and as a gap
 					expectRefusal(
 						() => parseCapabilityMatrix(bad),
 						/reported as both available and unavailable/u,
@@ -262,7 +249,6 @@ describe("cross-field consistency refusals", () => {
 		const sponsor = empty.buckets.sponsor;
 		if (sponsor === undefined) return;
 		sponsor.available = ["phantom.product/v1"];
-		// A bucket naming a product with no candidate behind it is coverage
 		expectRefusal(
 			() => parseCapabilityMatrix(bad),
 			/no candidate in the cell accounts for|does not follow from the buckets/u,
