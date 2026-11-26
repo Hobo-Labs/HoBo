@@ -2,13 +2,14 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Namespace } from "@alchemy.run/cloudflare/KV/Namespace";
 import { Providers } from "@alchemy.run/cloudflare/Providers";
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
+import * as Bundle from "alchemy/Bundle/Bundle";
 import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
@@ -41,7 +42,7 @@ import {
 } from "../src/cloudflare-runtime.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { hashAlchemyPriorState } from "../src/plan.js";
-import worker, {
+import {
 	application,
 	neutralApplication,
 } from "./fixtures/cloudflare-kv-app.js";
@@ -1176,6 +1177,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				(entry) => entry.type === Worker.Type && entry !== proxy,
 			);
 			expect(appWorker?.news).toMatchObject({
+				main: relative(process.cwd(), main),
 				env: {
 					HOBO_RESOURCE_0: expect.objectContaining({ workerName: proxyId }),
 				},
@@ -1233,14 +1235,35 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				path: `${name}.js`,
 				contents: source(name),
 			}));
+			if (appWorker === undefined)
+				throw new Error("mapped application missing");
+			const bundleDirectory = join(directory, "worker-bundle");
+			await Effect.runPromise(
+				Bundle.build(
+					{
+						input: main,
+						platform: "node",
+						resolve: { conditionNames: [...Bundle.NODE_CONDITION_NAMES] },
+						plugins: [],
+					},
+					{
+						dir: bundleDirectory,
+						format: "esm",
+						entryFileNames: "main.js",
+						codeSplitting: false,
+					},
+				),
+			);
 			const workerd = new Miniflare({
+				// This date and flag match Alchemy’s Node compatibility default for external Workers.
 				compatibilityDate: "2026-01-01",
+				compatibilityFlags: ["nodejs_compat"],
 				workers: [
 					{
-						name: "bridge",
+						name: appWorker.fqn,
 						modules: true,
-						script: `export default { fetch(request, env) { return env.PROXY.fetch("https://hobo-kv.internal/get", { method: "POST", headers: { "x-hobo-kv-key": request.headers.get("x-hobo-kv-key") } }); } };`,
-						serviceBindings: { PROXY: proxy.fqn },
+						script: readFileSync(join(bundleDirectory, "main.js"), "utf8"),
+						serviceBindings: { HOBO_RESOURCE_0: proxy.fqn },
 					},
 					{
 						name: proxy.fqn,
@@ -1262,21 +1285,9 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					"greeting",
 					new TextEncoder().encode("hello").buffer,
 				);
-				const simulatedProxy = await workerd.getWorker("bridge");
-				const result = await worker.fetch(new Request("https://app.test"), {
-					HOBO_RESOURCE_0: {
-						fetch: async (request: Request) => {
-							const response = await simulatedProxy.fetch(
-								"https://bridge.test/",
-								{ headers: Object.fromEntries(request.headers) },
-							);
-							return new Response(await response.arrayBuffer(), {
-								status: response.status,
-								headers: Object.fromEntries(response.headers),
-							});
-						},
-					},
-				});
+				const mappedApplication = await workerd.getWorker(appWorker.fqn);
+				const result = await mappedApplication.fetch("https://app.test/");
+				expect(result.status).toBe(200);
 				expect(await result.text()).toBe("hello");
 			} finally {
 				await workerd.dispose();
