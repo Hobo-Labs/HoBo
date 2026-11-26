@@ -580,3 +580,5 @@ the operation whose outcome is unknown.
 
 A scoped topic host is exposed only after all of its declared journals are
 confirmed. Rejected or uncertain provisioning leaves the host unavailable.
+`prepareBindleTopicWitHost` performs that preparation using the caller's
+persisted operation identities.
