@@ -46,6 +46,8 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/runtime/model/TopicPolicy.cfg",
 			"packages/runtime/model/BindleTopicGrants.tla",
 			"packages/runtime/model/BindleTopicGrants.cfg",
+			"packages/runtime/model/BindleTopicClient.tla",
+			"packages/runtime/model/BindleTopicClient.cfg",
 			"packages/runtime/model/check-topic-policy.mts",
 			"scripts/check-durable-topic-model.ts",
 			"packages/conformance/src/durable-messaging-conformance.ts",

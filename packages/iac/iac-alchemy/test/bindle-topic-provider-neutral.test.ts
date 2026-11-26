@@ -134,8 +134,8 @@ async function verifyProvider<Type extends string>(type: Type) {
 			resources: definition.resources,
 			edges: definition.edges,
 			bindings: [
-				{ resourceName: "orders", topic: "orders", subscriptions: [] },
-				{ resourceName: "audit", topic: "audit", subscriptions: [] },
+				{ resourceName: "orders", topic: "tenant.orders", subscriptions: [] },
+				{ resourceName: "audit", topic: "tenant.audit", subscriptions: [] },
 			],
 		},
 		{
@@ -164,13 +164,13 @@ async function verifyProvider<Type extends string>(type: Type) {
 	] as const)
 		expect(
 			(
-				await bound.host.publish({
+				await bound.topic(topicName).publish({
 					operation: operation(nonce),
-					topic: topicName,
 					message,
 				})
 			).tag,
 		).toBe("committed");
+	expect(() => bound.topic("other")).toThrow();
 	expect(
 		(
 			await bound.host.publish({
@@ -181,6 +181,14 @@ async function verifyProvider<Type extends string>(type: Type) {
 		).tag,
 	).toBe("unknown");
 	expect(port.publish).toHaveBeenCalledTimes(2);
+	expect(port.publish).toHaveBeenNthCalledWith(
+		1,
+		expect.objectContaining({ topic: "tenant.orders" }),
+	);
+	expect(port.publish).toHaveBeenNthCalledWith(
+		2,
+		expect.objectContaining({ topic: "tenant.audit" }),
+	);
 }
 
 describe("provider-neutral Alchemy topic mapping with test providers", () => {

@@ -157,6 +157,26 @@ const topicHost = createBindleTopicWitHost(authorizedMessagingPort, {
 // Call topicHost.revoke() when its authority is revoked.
 ```
 
+For JavaScript application logic, the authenticated host can pass
+`topicHost.topic("orders")` as the application's topic capability. The client
+uses the declared runtime topic and configured dead-letter destination; the
+application supplies a permitted consumer group and cannot substitute either.
+Its asynchronous inputs and outcomes use the WIT types, including `bigint`
+operation expiries. Create a distinct operation for each logical mutation and
+reuse it only when retrying that mutation.
+
+```ts
+import { durableMessagingOperation } from "@hobo/core";
+
+const orders = topicHost.topic("orders");
+const operation = durableMessagingOperation(host.expiryMs, host.randomNonce);
+const result = await orders.publish({
+  operation: { id: operation.id, expiresAtMs: BigInt(operation.expiresAtMs) },
+  message: { id: "order-1", subject: "created", payload: new Uint8Array([1]), attributes: [] },
+});
+// result.tag is committed, rejected, unknown or expired.
+```
+
 ```ts
 import {
   createDurableMessagingLifecycle,
