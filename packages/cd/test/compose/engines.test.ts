@@ -56,6 +56,36 @@ describe("CdEngineRegistry", () => {
 		expect(missing.reasons[0]?.code).toBe("compose-engine-unknown");
 	});
 
+	it("normalizes legacy registrations to the canonical name", () => {
+		const publisher = fakePublisher("argo-cd:main");
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("argo", publisher),
+		]);
+		expect(registry.names()).toEqual(["argo-cd"]);
+		expect(registry.publisher("argo")).toEqual({ ok: true, value: publisher });
+		expect(registry.publisher("argo-cd")).toEqual({
+			ok: true,
+			value: publisher,
+		});
+	});
+
+	it("rejects duplicate canonical engine names", () => {
+		const first = fakePublisher("first");
+		const second = fakePublisher("second");
+		expect(() =>
+			createCdEngineRegistry([
+				gitopsPublisherRegistration("flux", first),
+				gitopsPublisherRegistration("flux", second),
+			]),
+		).toThrow("duplicate CD engine registration: flux");
+		expect(() =>
+			createCdEngineRegistry([
+				gitopsPublisherRegistration("argo", first),
+				gitopsPublisherRegistration("argo-cd", second),
+			]),
+		).toThrow("duplicate CD engine registration: argo-cd");
+	});
+
 	it("records engine kind", () => {
 		const registry = createCdEngineRegistry([
 			gitopsPublisherRegistration("flux", fakePublisher("flux:x")),

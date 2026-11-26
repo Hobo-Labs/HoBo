@@ -53,14 +53,18 @@ export function createCdEngineRegistry(
 ): CdEngineRegistry {
 	const byName = new Map<string, CdEngineRecord>();
 	for (const entry of registrations) {
+		const name = resolveTargetName(entry.name);
+		if (byName.has(name)) {
+			throw new Error(`duplicate CD engine registration: ${name}`);
+		}
 		const target = entry.publisher.target;
 		const record: CdEngineRecord = Object.freeze({
-			name: entry.name,
+			name,
 			kind: entry.kind,
 			publisher: entry.publisher,
 			target,
 		});
-		byName.set(entry.name, record);
+		byName.set(name, record);
 	}
 	return Object.freeze({
 		get(name: string): Outcome<CdEngineRecord> {
