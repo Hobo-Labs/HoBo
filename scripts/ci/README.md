@@ -226,4 +226,6 @@ key from hiding a changed SDK artifact while leaving unrelated image keys indepe
 `pnpm run actions:lint` walks `.github/actions/**/action.yml` and rejects
 composite steps that set workflow-only fields such as `timeout-minutes` (use a
 shell `timeout` instead) or `continue-on-error: ${{ ... }}`. Job timeout and
-retry policy belong on the workflow job, not inside the composite.
+retry policy belong on the workflow job, not inside the composite. The composite
+field walk parses `yaml` AST nodes in `scripts/lint-actions.ts` via
+`lintCompositeStepFields` before matching unsupported step keys.

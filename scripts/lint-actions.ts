@@ -13,10 +13,11 @@ const yamlModulePath = requireFromRepo.resolve("yaml", {
 	paths: [join(lintActionsRepoRoot, "packages/ci-gh-actions")],
 });
 const yamlMod = await import(yamlModulePath);
-const { parseDocument } = yamlMod;
+const { parseDocument, isScalar, isMap, isSeq, isPair, isNode } = yamlMod;
 if (parseDocument === undefined) {
 	throw new Error("yaml package missing parseDocument");
 }
+type YamlNode = import("yaml").Node;
 
 export type LintActionsResult = Readonly<{
 	exitCode: number;
@@ -1147,20 +1148,40 @@ const COMPOSITE_STEP_UNSUPPORTED = new Set<string>(
 	COMPOSITE_STEP_UNSUPPORTED_KEYS,
 );
 
-function compositeStepKey(key: unknown): string | undefined {
-	if (typeof key === "string") return key;
-	if (typeof key !== "object" || key === null || !("value" in key))
-		return undefined;
-	const value = key.value;
-	return typeof value === "string" ? value : undefined;
+type YamlSourceLine = Readonly<{ line: number }>;
+
+type YamlMapKey = Readonly<{
+	text: string;
+	source: YamlSourceLine | undefined;
+}>;
+
+function sourceLineFromNode(
+	text: string,
+	node: YamlNode,
+): YamlSourceLine | undefined {
+	const start = node.range?.[0];
+	if (start === undefined) return undefined;
+	return { line: text.slice(0, start).split("\n").length };
 }
 
-function sourceLine(text: string, node: unknown): number | undefined {
-	if (typeof node !== "object" || node === null || !("range" in node))
-		return undefined;
-	const { range } = node;
-	if (!Array.isArray(range) || typeof range[0] !== "number") return undefined;
-	return text.slice(0, range[0]).split("\n").length;
+function mapKeyText(key: YamlNode | string): string | undefined {
+	if (isScalar(key)) {
+		const { value } = key;
+		const coerced = `${value}`;
+		return coerced === value ? coerced : undefined;
+	}
+	const coerced = `${key}`;
+	return coerced === key ? coerced : undefined;
+}
+
+function parseYamlMapKey(
+	key: YamlNode | string,
+	text: string,
+): YamlMapKey | undefined {
+	const keyText = mapKeyText(key);
+	if (keyText === undefined) return undefined;
+	const source = isNode(key) ? sourceLineFromNode(text, key) : undefined;
+	return { text: keyText, source };
 }
 
 function compositeStepKeyLine(
@@ -1201,19 +1222,24 @@ export function lintCompositeStepFields(
 	for (const error of doc.errors) {
 		errors.push(`${file}: invalid action YAML: ${error.message.trim()}`);
 	}
-	const usingNode = doc.get("runs")?.get("using");
-	const using =
-		typeof usingNode === "string" ? usingNode : compositeStepKey(usingNode);
-	if (using !== "composite") return;
+	const using = doc.get("runs")?.get("using");
+	const usingKey =
+		using === null || using === undefined
+			? undefined
+			: parseYamlMapKey(using, text);
+	if (usingKey?.text !== "composite") return;
 	const steps = doc.get("runs")?.get("steps");
-	if (!steps || !Array.isArray(steps.items)) return;
+	if (steps === null || steps === undefined || !isSeq(steps)) return;
 	for (const [index, step] of steps.items.entries()) {
-		if (!step?.items) continue;
+		if (!isMap(step)) continue;
 		for (const pair of step.items) {
-			const key = compositeStepKey(pair.key);
-			if (key === undefined || !COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
+			if (!isPair(pair)) continue;
+			const parsedKey = parseYamlMapKey(pair.key, text);
+			if (parsedKey === undefined) continue;
+			const key = parsedKey.text;
+			if (!COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
 			const line =
-				sourceLine(text, pair.key) ?? compositeStepKeyLine(text, index, key);
+				parsedKey.source?.line ?? compositeStepKeyLine(text, index, key);
 			const at = line === undefined ? file : `${file}:${line}`;
 			errors.push(
 				`${at}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
