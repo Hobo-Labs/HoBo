@@ -1,13 +1,13 @@
 # New visual work
 
-Use this flow when making a new surface or replacing a visual identity. PRODUCT.md owns product truth. DESIGN.md owns durable visual decisions. A surface brief keeps strategy that belongs only to one route or artifact. Complete [init.md](init.md) first when PRODUCT.md is missing; a missing DESIGN.md does not route back to init.
+Use this flow when making a new surface or replacing a visual identity. Follow `AGENTS.md`: use implemented product behavior, components, styles, and tokens as the source of truth; do not create planning or design files.
 
 ## 1. Decide what is already true
 
-Read DESIGN.md, representative code, tokens, components, and assets.
+Read representative code, tokens, components, and assets.
 
 - **Redesign:** preserve product truth, content, function, constraints, and explicit brand commitments; replace the old visual world rather than polishing it. The old look is evidence of what the subject is, not authority over what it becomes.
-- **Established world:** inherit it. A missing DESIGN.md does not erase a coherent identity already present in code; document that identity instead of inventing a replacement.
+- **Established world:** inherit it. Preserve a coherent identity already present in code rather than inventing a replacement.
 - **Incomplete brand:** preserve confirmed assets and recognizable traits, then help the user expand the system for this new surface.
 - **No visual authority:** create a new world with the user.
 
@@ -15,7 +15,7 @@ A section, component, feature, or state inside an established surface inherits t
 
 ## 2. Ask what will change the work
 
-Ask one round of two or three related questions through the structured question tool when available. Skip settled facts; a precise request may need only a compact confirmation.
+Use the request and existing product behavior to resolve routine choices. Ask only when missing information blocks the work, and continue independent implementation while waiting.
 
 - **Persuade:** clarify who must act, what they should believe, and which real proof, content, or assets can earn that belief.
 - **Operate:** clarify the task, information, important states, frequency, and constraints.
@@ -28,7 +28,7 @@ Across modes, ask what success looks like, what must remain untouched, and what 
 
 ### Extend an existing surface
 
-Inherit its world and composition. Resolve only the new purpose, content, hierarchy, states, interaction, and how the addition joins the surrounding experience. Do not run a concept tournament or change DESIGN.md unless the user approves a durable system change.
+Inherit its world and composition. Resolve only the new purpose, content, hierarchy, states, interaction, and how the addition joins the surrounding experience. Do not change the visual identity unless the request calls for it.
 
 ### Create a whole surface inside an established world
 
@@ -66,23 +66,9 @@ Calibration: AI-generated interfaces cluster around a few looks regardless of su
 
 Your measured rendition prior: warm, bookish, family, and child-facing subjects come out as cream grounds, serif display with italic accents, and lamplight, even when the assigned direction never asked for them. Treat that first palette as already spent. Before writing code, reread your OWN-WORLD block: when it says cream, paper, parchment, ivory, or lamplight for a Persuade surface the brief did not pin, the rendition failed and you rework it from the world's saturated materials first. The same subject renders as bookcloth, thread, jacket, and endpaper color on other models; nothing about the subject requires your default.
 
-## 5. Record the decision
+## 5. Choose the direction
 
-Before code, state the chosen direction as a contract in the artifact's opening comment, five short blocks, 150 words at most, in a form that survives the production build: an HTML comment in the emitted markup, never only a templating-frontmatter comment, placed as the first child of the document's body in the root layout, never inside a slotted or child component (some compilers, Astro among them, strip a slot's leading comment while keeping deeper ones). After the first production build, grep the built output for the seed key; a contract the build erased is a contract nobody can audit. THESIS: the one idea this surface owns and the category-default arrangement it refuses. OWN-WORLD: the palette and component language, specific enough to be recognizable with all content removed. STORY: what the visitor understands, believes, and does. FIRST VIEWPORT: the exact composition, what is where and at what scale, and where the primary action sits. FORM: the chosen form, its position on your ordered list, and the seed key the script printed. Close the comment with one more line, FINISH: the run's exit condition, verbatim "unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md". The comment tops the artifact you re-open on every edit, the one reminder that survives a long build: a page that looks complete with the FINISH line undischarged is not done, it is abandoned at the finish line. If a block reads like a mood, the direction is not decided yet; the finishing review audits the render against this contract.
-
-On a new or replacement world, DESIGN.md is written at finish, from the built world, by the shipped documenter (section 7); a rulebook written before the build gets defended against reality instead of describing it, and hands the design-system detector an unstable target. A new world shipped with no DESIGN.md is still an incomplete run. An ordinary extension does not rewrite DESIGN.md.
-
-If the work establishes durable strategy for a route or artifact, read its existing surface brief, then update it:
-
-`node .claude/skills/impeccable/scripts/surface-brief.mjs read <primary-target>`
-
-`node .claude/skills/impeccable/scripts/surface-brief.mjs write <primary-target> <body-file> [related-target ...]`
-
-Keep the brief small: scope and visitor mode; audience, job, action/task, proof/content, and constraints; chosen direction and memorable moment; unresolved decisions. Do not copy global product truth or DESIGN.md tokens into it.
-
-Whenever any image generation is available, a harness-native tool or the API fallback context.mjs reports, the locked direction is visualized before it is built, never skipped: load [visualize.md](visualize.md) and follow it, three compositional options rendered and put before the user for approval. This step is proven to produce the most compositional and ambitious work.
-
-For `shape`, return the selected direction to [shape.md](shape.md) and stop before persistence or implementation.
+Use the request and existing product behavior to choose the layout, hierarchy, color, typography, and interaction. Keep working notes in the conversation. Do not add explanatory comments, design files, surface briefs, or prompt sidecars to the project.
 
 ## 6. Build with full commitment
 
@@ -107,4 +93,4 @@ Inspect desktop and mobile in one batched screenshot round, critique the render 
 
 After the second inspection round the build thread's polishing is over: no further defect hunts, micro-edit scripts, or rebuilds here; whatever remains ships through the handoffs, where a fresh context does the finding better and cheaper. Where this harness runs no design hook, run `node .claude/skills/impeccable/scripts/detect.mjs --json` on the changed targets once here, fix what is mechanical, and pass the remaining findings to the reviewer; a hookless build that skips this ships every tell the hook exists to catch. Capture desktop and mobile screenshots to files, then spawn the shipped finish reviewer, `impeccable-finish-reviewer` (`impeccable_finish_reviewer` in codex; `/impeccable-finish-reviewer` in Cursor; on GitHub Copilot say "Use the impeccable-finish-reviewer agent"), with the original request, confirmed answers, the artifact path, the screenshot paths, its direction contract, existing hook findings, the QUALITY BAR card and approved comp paths, and the craft-floor reference path. The reviewer has no browser; screenshots you fail to pass are checks it cannot run. Never read the shipped agents' definition files before spawning; the harness loads them at spawn, and you owe only the input packet. Wait on any agent with one long timeout rather than a loop of short polls, and spend the wait on the next independent step. Verify its return carries the five contract sections; on an empty or thrashed return, respawn once with the same inputs before doing anything else. This review never runs inside the build thread and never inherits it: spawn the reviewer fresh, with no forked conversation history (`fork_turns: 0` in codex); a reviewer that inherits your transcript inherits your framing, your optimism, and your abstractions, and everything it needs travels in the inputs above. Only a harness whose tool surface has no subagent capability at all substitutes a fresh in-thread pass after stepping fully out of the build context, run from [degraded/finish-reviewer.md](degraded/finish-reviewer.md), and a substituted or failed-and-replaced review is disclosed in one line at finish, never silently. When the reviewer's first material fix is a rebuild directive, fidelity failed wholesale rather than in patches, so skip the fix batch and execute the rebuild immediately: re-derive the named regions, produce the named assets, and send the result back for a verdict, telling the user what is happening rather than asking permission to fix a failure. The user is consulted only when a second rebuild directive arrives, both verdicts on the table, or when rebuilding would discard content the user approved. Otherwise apply the material fixes in one batch, rebuild once, and recapture the same viewports. A recapture measures positions, loading, and overflow; it cannot measure whether a fix reached the quality the finding named, so send the recaptured screenshots back to the same reviewer for a verdict scoring every material fix resolved, partial, or unresolved (through the harness's agent continuation; without one, run the scoring fresh from [degraded/finish-reviewer.md](degraded/finish-reviewer.md)'s Verdict Pass). Fixes scored partial or unresolved get another batch, recapture, and verdict. Two rounds is the budget an unattended run ends at; an attended session's ceiling belongs to the user, so when the second verdict still lists open items, put the table in front of them and let them choose between shipping as it stands and funding another round. Whoever is deciding, stop the moment a round resolves nothing, and the reviewer's findings are the only list you work from, never your own re-opened hunt. Report the final verdict table to the user as it stands, open items included, under the reviewer's own disposition word: a table with open material findings is never announced as a pass, and never under a softer label than the reviewer wrote. Do not run a second detector.
 
-Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex), with the project root, the artifact path, the direction contract, PRODUCT.md, the [document.md](document.md) reference path, and the boundary to write at; it records DESIGN.md and the sidecar from the built world, ground truth over intention; without subagents the pass runs from [degraded/documenter.md](degraded/documenter.md). A clean detector pass is not finished; finished is the contract kept, the comp honored, the review closed, and the system recorded.
+Report the resulting visual choices and validation in the response or pull request; do not create design documents or sidecars.
