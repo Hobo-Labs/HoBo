@@ -712,6 +712,310 @@ export interface DurableMessagingAuthorization {
 	readonly reason?: string;
 }
 
+export interface DurableTopicSubscriptionGrant {
+	readonly consumerGroup: string;
+	readonly deadLetterTopic: string;
+}
+
+export interface DurableTopicGrant {
+	readonly topic: string;
+	readonly publish: boolean;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+}
+
+export interface DurableTopicPolicyClaim {
+	readonly request: DurableMessagingAuthorization;
+	readonly grant: DurableTopicGrant;
+	readonly subscription?: DurableTopicSubscriptionGrant;
+}
+
+export interface DurableTopicPolicy {
+	readonly authorize: (
+		request: DurableMessagingAuthorization,
+	) => Promise<boolean>;
+	readonly revoke: () => void;
+}
+
+export interface DurableTopicBinding {
+	readonly resourceName: string;
+	readonly topic: string;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+}
+
+export interface BindleTopicGrant {
+	readonly resourceName: string;
+	readonly grant: DurableTopicGrant;
+}
+
+export function compileBindleTopicGrants(input: {
+	readonly applicationName: string;
+	readonly resources: Readonly<
+		Record<
+			string,
+			{
+				readonly kind: string;
+				readonly name: string;
+				readonly declaredAllow: readonly string[];
+				readonly dependsOn: readonly string[];
+			}
+		>
+	>;
+	readonly edges: readonly { readonly from: string; readonly to: string }[];
+	readonly bindings: readonly DurableTopicBinding[];
+}): readonly BindleTopicGrant[] {
+	const inputData = record(input, [
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const applicationName = text(
+		inputData.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const source = inputData.resources;
+	if (
+		typeof source !== "object" ||
+		source === null ||
+		types.isProxy(source) ||
+		Array.isArray(source)
+	)
+		return invalid();
+	const prototype = Object.getPrototypeOf(source);
+	if (prototype !== Object.prototype && prototype !== null) return invalid();
+	const names = Reflect.ownKeys(source);
+	if (names.length > 256 || names.some((name) => typeof name !== "string"))
+		return invalid();
+	const resources = new Map<
+		string,
+		{
+			kind: string;
+			declaredAllow: readonly string[];
+			dependsOn: readonly string[];
+		}
+	>();
+	for (const key of names) {
+		if (typeof key !== "string") return invalid();
+		const name = text(key, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const descriptor = Object.getOwnPropertyDescriptor(source, key);
+		if (
+			descriptor === undefined ||
+			!Object.hasOwn(descriptor, "value") ||
+			!descriptor.enumerable
+		)
+			return invalid();
+		const resource = record(
+			descriptor.value,
+			["kind", "name", "declaredAllow", "dependsOn"],
+			["stableId", "annotations"],
+		);
+		if (resource.name !== name) return invalid();
+		const kind = text(resource.kind, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const declaredAllow = array(resource.declaredAllow, 256).map((value) =>
+			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		const dependsOn = array(resource.dependsOn, 256).map((value) =>
+			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		if (new Set(declaredAllow).size !== declaredAllow.length) return invalid();
+		resources.set(name, { kind, declaredAllow, dependsOn });
+	}
+	const application = resources.get(applicationName);
+	if (application === undefined || application.kind === "topic")
+		return invalid();
+	const selected = new Set<string>();
+	for (const item of array(inputData.edges, 1024)) {
+		const edge = record(item, ["from", "to"]);
+		const from = text(edge.from, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const to = text(edge.to, DURABLE_MESSAGING_LIMITS.nameBytes);
+		if (from !== applicationName) continue;
+		const target = resources.get(to);
+		if (target === undefined && to.startsWith("connector:")) continue;
+		if (target === undefined) return invalid();
+		if (target.kind === "topic") {
+			if (selected.has(to)) return invalid();
+			selected.add(to);
+		}
+	}
+	if (
+		application.dependsOn.filter((kind) => kind === "topic").length !==
+		selected.size
+	)
+		return invalid();
+	const bindings = array(inputData.bindings, DURABLE_MESSAGING_LIMITS.topics);
+	if (bindings.length !== selected.size) return invalid();
+	const seen = new Set<string>();
+	const namesUsed = new Set<string>();
+	let subscriptionCount = 0;
+	const result: BindleTopicGrant[] = [];
+	for (const value of bindings) {
+		const binding = record(value, ["resourceName", "topic", "subscriptions"]);
+		const resourceName = text(
+			binding.resourceName,
+			DURABLE_MESSAGING_LIMITS.nameBytes,
+		);
+		const topic = text(binding.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const resource = resources.get(resourceName);
+		if (
+			!selected.has(resourceName) ||
+			seen.has(resourceName) ||
+			namesUsed.has(topic) ||
+			resource === undefined ||
+			resource.declaredAllow.some(
+				(verb) => verb !== "publish" && verb !== "subscribe",
+			)
+		)
+			return invalid();
+		const groups = new Set<string>();
+		const subscriptions = array(
+			binding.subscriptions,
+			DURABLE_MESSAGING_LIMITS.subscriptions,
+		).map((item) => {
+			const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
+			const consumerGroup = text(
+				entry.consumerGroup,
+				DURABLE_MESSAGING_LIMITS.nameBytes,
+			);
+			const deadLetterTopic = text(
+				entry.deadLetterTopic,
+				DURABLE_MESSAGING_LIMITS.nameBytes,
+			);
+			if (
+				groups.has(consumerGroup) ||
+				deadLetterTopic === topic ||
+				++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+			)
+				return invalid();
+			groups.add(consumerGroup);
+			return Object.freeze({ consumerGroup, deadLetterTopic });
+		});
+		if (
+			resource.declaredAllow.includes("subscribe") !==
+			subscriptions.length > 0
+		)
+			return invalid();
+		seen.add(resourceName);
+		namesUsed.add(topic);
+		result.push(
+			Object.freeze({
+				resourceName,
+				grant: Object.freeze({
+					topic,
+					publish: resource.declaredAllow.includes("publish"),
+					subscriptions: Object.freeze(subscriptions),
+				}),
+			}),
+		);
+	}
+	return Object.freeze(
+		result.sort((a, b) => a.resourceName.localeCompare(b.resourceName)),
+	);
+}
+
+export function createDurableTopicPolicy(input: {
+	readonly grants: readonly DurableTopicGrant[];
+	readonly verify: (
+		claim: DurableTopicPolicyClaim,
+	) => boolean | Promise<boolean>;
+}): DurableTopicPolicy {
+	const config = record(input, ["grants", "verify"]);
+	if (typeof config.verify !== "function" || types.isProxy(config.verify))
+		return invalid();
+	const verify = config.verify;
+	const topics = new Set<string>();
+	let subscriptionCount = 0;
+	const grants = array(config.grants, DURABLE_MESSAGING_LIMITS.topics).map(
+		(item) => {
+			const data = record(item, ["topic", "publish", "subscriptions"]);
+			const topic = text(data.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+			if (
+				topics.has(topic) ||
+				(data.publish !== true && data.publish !== false)
+			)
+				return invalid();
+			topics.add(topic);
+			const groups = new Set<string>();
+			const subscriptions = array(
+				data.subscriptions,
+				DURABLE_MESSAGING_LIMITS.subscriptions,
+			).map((entry) => {
+				const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
+				const consumerGroup = text(
+					data.consumerGroup,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				const deadLetterTopic = text(
+					data.deadLetterTopic,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				if (
+					groups.has(consumerGroup) ||
+					deadLetterTopic === topic ||
+					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+				)
+					return invalid();
+				groups.add(consumerGroup);
+				return Object.freeze({ consumerGroup, deadLetterTopic });
+			});
+			return Object.freeze({
+				topic,
+				publish: data.publish,
+				subscriptions: Object.freeze(subscriptions),
+			});
+		},
+	);
+	let active = true;
+	return Object.freeze({
+		revoke: () => {
+			active = false;
+		},
+		authorize: async (
+			request: DurableMessagingAuthorization,
+		): Promise<boolean> => {
+			if (!active) return false;
+			const grant = grants.find((item) => item.topic === request.topic);
+			if (!grant) return false;
+			let subscription: DurableTopicSubscriptionGrant | undefined;
+			if (request.method === "publish") {
+				if (!grant.publish || request.scope !== "topic") return false;
+			} else if (
+				["ensureSubscription", "consume", "ack", "nack"].includes(
+					request.method,
+				)
+			) {
+				subscription = grant.subscriptions.find(
+					(item) => item.consumerGroup === request.consumerGroup,
+				);
+				if (
+					!subscription ||
+					(request.method === "ensureSubscription" &&
+						request.deadLetterTopic !== subscription.deadLetterTopic)
+				)
+					return false;
+				if (
+					request.scope !==
+					(request.method === "ack"
+						? "consumer-group"
+						: "consumer-group-and-dead-letter")
+				)
+					return false;
+			} else return false;
+			const claim = Object.freeze(
+				subscription === undefined
+					? { request, grant }
+					: { request, grant, subscription },
+			);
+			try {
+				return (
+					(await intrinsicApply(verify, undefined, [claim])) === true && active
+				);
+			} catch {
+				return false;
+			}
+		},
+	});
+}
+
 export interface DurableMessagingLimitsGrant {
 	readonly revoke: () => void;
 }
@@ -1361,6 +1665,569 @@ export function createDurableMessagingWitImports(
 		),
 	});
 }
+
+export interface BindleTopicHostClaim {
+	readonly port: DurableMessaging;
+	readonly bindleName: string;
+	readonly applicationName: string;
+	readonly binding: BindleTopicGrant;
+	readonly request: DurableMessagingAuthorization;
+	readonly subscription?: DurableTopicSubscriptionGrant;
+}
+
+export interface BindleTopicClient {
+	readonly publishEnabled: boolean;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+	publish(
+		input: Omit<Wit.PublishRequest, "topic">,
+	): Promise<Wit.PublishOutcome>;
+	ensureSubscription(input: {
+		readonly operation: Wit.Operation;
+		readonly consumerGroup: string;
+		readonly maxDeliveryAttempts: number;
+		readonly startAt: Wit.StartAt;
+	}): Promise<Wit.SubscriptionOutcome>;
+	consume(
+		input: Omit<Wit.ConsumeRequest, "topic">,
+	): Promise<Wit.ConsumeOutcome>;
+	ack(
+		input: Omit<Wit.AcknowledgementRequest, "topic">,
+	): Promise<Wit.MessageOutcome>;
+	nack(input: Omit<Wit.RejectionRequest, "topic">): Promise<Wit.NackOutcome>;
+}
+
+export function createBindleTopicWitHost(
+	port: DurableMessaging,
+	bindle: Parameters<typeof compileBindleTopicGrants>[0] & {
+		readonly bindleName: string;
+	},
+	options: Omit<DurableMessagingWitHostOptions, "authorize"> & {
+		readonly verify: (
+			claim: BindleTopicHostClaim,
+		) => boolean | Promise<boolean>;
+	},
+): {
+	readonly host: DurableMessagingWitHost;
+	readonly bindings: readonly BindleTopicGrant[];
+	readonly topic: (resourceName: string) => BindleTopicClient;
+	readonly revoke: () => void;
+} {
+	const config = record(
+		options,
+		["limitsGrant", "lifecycle", "verify"],
+		["timeoutMs", "portMetadataGrant"],
+	);
+	if (typeof config.verify !== "function" || types.isProxy(config.verify))
+		return invalid();
+	const verify = config.verify;
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const bindleName = text(
+		source.bindleName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const applicationName = text(
+		source.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	// SAFETY: the compiler validates all captured graph and binding fields.
+	const bindings = compileBindleTopicGrants({
+		applicationName,
+		resources: source.resources,
+		edges: source.edges,
+		bindings: source.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const byTopic = new Map(
+		bindings.map((binding) => [binding.grant.topic, binding]),
+	);
+	const policy = createDurableTopicPolicy({
+		grants: bindings.map((binding) => binding.grant),
+		verify: (claim) => {
+			const binding = byTopic.get(claim.grant.topic);
+			if (binding === undefined) return false;
+			const context = Object.freeze(
+				claim.subscription === undefined
+					? {
+							port,
+							bindleName,
+							applicationName,
+							binding,
+							request: claim.request,
+						}
+					: {
+							port,
+							bindleName,
+							applicationName,
+							binding,
+							request: claim.request,
+							subscription: claim.subscription,
+						},
+			);
+			return intrinsicApply(verify, undefined, [context]);
+		},
+	});
+	const hostOptions = {
+		...config,
+		authorize: policy.authorize,
+	};
+	Reflect.deleteProperty(hostOptions, "verify");
+	// SAFETY: the host validates the captured option fields and capability identities.
+	const host = createDurableMessagingWitHost(
+		port,
+		hostOptions as DurableMessagingWitHostOptions,
+	);
+	const byResource = new Map(
+		bindings.map((binding) => [binding.resourceName, binding]),
+	);
+	const topic = (resourceName: string): BindleTopicClient => {
+		const binding = byResource.get(
+			text(resourceName, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		if (binding === undefined) return invalid();
+		const call = async <T>(
+			input: unknown,
+			fields: readonly string[],
+			run: (
+				data: Record<string, unknown>,
+				op: DurableMessagingOperation,
+			) => Promise<WitOutcome<T>>,
+		): Promise<WitOutcome<T>> => {
+			const op = requestOperation(input);
+			try {
+				return await run(record(input, ["operation", ...fields]), op);
+			} catch {
+				return { tag: "unknown", val: witOperation(op) };
+			}
+		};
+		return Object.freeze({
+			publishEnabled: binding.grant.publish,
+			subscriptions: binding.grant.subscriptions,
+			publish: (input: Omit<Wit.PublishRequest, "topic">) =>
+				call(input, ["message"], (data, op) =>
+					host.publish({
+						operation: witOperation(op),
+						topic: binding.grant.topic,
+						message: witMessage(data.message, DURABLE_MESSAGING_LIMITS),
+					}),
+				),
+			ensureSubscription: (
+				input: Parameters<BindleTopicClient["ensureSubscription"]>[0],
+			) =>
+				call(
+					input,
+					["consumerGroup", "maxDeliveryAttempts", "startAt"],
+					(data, op) => {
+						const group = text(
+							data.consumerGroup,
+							DURABLE_MESSAGING_LIMITS.nameBytes,
+						);
+						const destination = binding.grant.subscriptions.find(
+							(item) => item.consumerGroup === group,
+						);
+						if (destination === undefined)
+							return Promise.resolve({ tag: "unknown", val: witOperation(op) });
+						if (data.startAt !== "earliest" && data.startAt !== "latest")
+							return invalid();
+						return host.ensureSubscription({
+							operation: witOperation(op),
+							subscription: {
+								topic: binding.grant.topic,
+								consumerGroup: group,
+								deadLetterTopic: destination.deadLetterTopic,
+								maxDeliveryAttempts: integer(
+									data.maxDeliveryAttempts,
+									DURABLE_MESSAGING_LIMITS.deliveryAttempts,
+									1,
+								),
+								startAt: data.startAt,
+							},
+						});
+					},
+				),
+			consume: (input: Omit<Wit.ConsumeRequest, "topic">) =>
+				call(
+					input,
+					["consumerGroup", "maxMessages", "visibilityTimeoutMs"],
+					(data, op) =>
+						host.consume({
+							operation: witOperation(op),
+							topic: binding.grant.topic,
+							consumerGroup: text(
+								data.consumerGroup,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							maxMessages: integer(
+								data.maxMessages,
+								DURABLE_MESSAGING_LIMITS.batchSize,
+								1,
+							),
+							visibilityTimeoutMs: BigInt(
+								fromU64(
+									data.visibilityTimeoutMs,
+									DURABLE_MESSAGING_LIMITS.leaseMs,
+									1,
+								),
+							),
+						}),
+				),
+			ack: (input: Omit<Wit.AcknowledgementRequest, "topic">) =>
+				call(
+					input,
+					["consumerGroup", "messageId", "sequence", "leaseId"],
+					(data, op) =>
+						host.ack({
+							operation: witOperation(op),
+							topic: binding.grant.topic,
+							consumerGroup: text(
+								data.consumerGroup,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							messageId: text(
+								data.messageId,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							sequence: BigInt(
+								fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1),
+							),
+							leaseId: text(data.leaseId, DURABLE_MESSAGING_LIMITS.nameBytes),
+						}),
+				),
+			nack: (input: Omit<Wit.RejectionRequest, "topic">) =>
+				call(
+					input,
+					["consumerGroup", "messageId", "sequence", "leaseId", "reason"],
+					(data, op) =>
+						host.nack({
+							operation: witOperation(op),
+							topic: binding.grant.topic,
+							consumerGroup: text(
+								data.consumerGroup,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							messageId: text(
+								data.messageId,
+								DURABLE_MESSAGING_LIMITS.nameBytes,
+							),
+							sequence: BigInt(
+								fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1),
+							),
+							leaseId: text(data.leaseId, DURABLE_MESSAGING_LIMITS.nameBytes),
+							reason: text(
+								data.reason,
+								DURABLE_MESSAGING_LIMITS.reasonBytes,
+								true,
+								true,
+							),
+						}),
+				),
+		});
+	};
+	return Object.freeze({ host, bindings, topic, revoke: policy.revoke });
+}
+export interface BindleTopicProvisionOperation {
+	readonly topic: string;
+	readonly operation: DurableMessagingOperation;
+}
+
+export type BindleTopicProvisionResult =
+	| {
+			readonly status: "complete";
+			readonly completed: readonly BindleTopicProvisionOperation[];
+	  }
+	| { readonly status: "limits-unavailable"; readonly completed: readonly [] }
+	| { readonly status: "capacity-exceeded"; readonly completed: readonly [] }
+	| {
+			readonly status: "incomplete";
+			readonly completed: readonly BindleTopicProvisionOperation[];
+			readonly failed: BindleTopicProvisionOperation;
+			readonly outcome: Exclude<
+				Wit.TopicOutcome,
+				{ readonly tag: "committed" }
+			>;
+			readonly notAttempted: readonly string[];
+	  };
+
+export async function provisionBindleTopics(
+	port: DurableMessaging,
+	bindle: Parameters<typeof compileBindleTopicGrants>[0],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: DurableMessagingWitHostOptions,
+): Promise<BindleTopicProvisionResult> {
+	return provisionCompiledBindleTopics(
+		port,
+		compileBindleTopicGrants(bindle),
+		operations,
+		options,
+	);
+}
+
+async function provisionCompiledBindleTopics(
+	port: DurableMessaging,
+	grants: readonly BindleTopicGrant[],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: DurableMessagingWitHostOptions,
+): Promise<BindleTopicProvisionResult> {
+	const topics = new Set<string>();
+	for (const binding of grants) {
+		topics.add(binding.grant.topic);
+		for (const subscription of binding.grant.subscriptions)
+			topics.add(subscription.deadLetterTopic);
+	}
+	if (topics.size > DURABLE_MESSAGING_LIMITS.topics)
+		return Object.freeze({
+			status: "capacity-exceeded",
+			completed: Object.freeze([] as const),
+		});
+	const names = [...topics].sort();
+	const provided = array(operations, DURABLE_MESSAGING_LIMITS.topics);
+	if (provided.length !== names.length) return invalid();
+	const byTopic = new Map<string, BindleTopicProvisionOperation>();
+	const identifiers = new Set<string>();
+	for (const entry of provided) {
+		const item = record(entry, ["topic", "operation"]);
+		const topic = text(item.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const op = providerOperation(item.operation);
+		if (!topics.has(topic) || byTopic.has(topic) || identifiers.has(op.id))
+			return invalid();
+		identifiers.add(op.id);
+		byTopic.set(topic, Object.freeze({ topic, operation: op }));
+	}
+	const config = record(
+		options,
+		["authorize", "limitsGrant", "lifecycle"],
+		["timeoutMs", "portMetadataGrant"],
+	);
+	if (typeof config.authorize !== "function" || types.isProxy(config.authorize))
+		return invalid();
+	const authorize = config.authorize;
+	const hostConfig = {
+		...config,
+		authorize: (request: DurableMessagingAuthorization) =>
+			request.method === "ensureTopic" &&
+			request.scope === "topic" &&
+			request.topic !== undefined &&
+			topics.has(request.topic) &&
+			intrinsicApply(authorize, undefined, [request]),
+	};
+	// SAFETY: the host validates the captured capability fields and authority callback.
+	const host = createDurableMessagingWitHost(
+		port,
+		hostConfig as DurableMessagingWitHostOptions,
+	);
+	let bounds: Awaited<ReturnType<DurableMessagingWitHost["limits"]>>;
+	try {
+		bounds = await host.limits();
+	} catch {
+		return Object.freeze({
+			status: "limits-unavailable",
+			completed: Object.freeze([] as const),
+		});
+	}
+	if (
+		names.length > bounds.topics ||
+		names.some(
+			(name) => new TextEncoder().encode(name).length > bounds.nameBytes,
+		)
+	)
+		return Object.freeze({
+			status: "capacity-exceeded",
+			completed: Object.freeze([] as const),
+		});
+	const completed: BindleTopicProvisionOperation[] = [];
+	for (let index = 0; index < names.length; index++) {
+		const name = names[index];
+		if (name === undefined) return invalid();
+		const entry = byTopic.get(name);
+		if (!entry) return invalid();
+		const outcome = await host.ensureTopic({
+			topic: name,
+			operation: witOperation(entry.operation),
+		});
+		if (outcome.tag !== "committed")
+			return Object.freeze({
+				status: "incomplete",
+				completed: Object.freeze([...completed]),
+				failed: entry,
+				outcome,
+				notAttempted: Object.freeze(names.slice(index + 1)),
+			});
+		completed.push(entry);
+	}
+	return Object.freeze({
+		status: "complete",
+		completed: Object.freeze(completed),
+	});
+}
+
+export async function prepareBindleTopicWitHost(
+	port: DurableMessaging,
+	bindle: Parameters<typeof createBindleTopicWitHost>[1],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: {
+		readonly provisioning: DurableMessagingWitHostOptions;
+		readonly application: Parameters<typeof createBindleTopicWitHost>[2];
+	},
+): Promise<
+	| {
+			readonly status: "ready";
+			readonly provisioning: Extract<
+				BindleTopicProvisionResult,
+				{ status: "complete" }
+			>;
+			readonly application: ReturnType<typeof createBindleTopicWitHost>;
+	  }
+	| {
+			readonly status: "unavailable";
+			readonly provisioning: Exclude<
+				BindleTopicProvisionResult,
+				{ status: "complete" }
+			>;
+	  }
+> {
+	const config = record(options, ["provisioning", "application"]);
+	// SAFETY: the host validates its options and snapshots the graph synchronously.
+	const application = createBindleTopicWitHost(
+		port,
+		bindle,
+		config.application as Parameters<typeof createBindleTopicWitHost>[2],
+	);
+	try {
+		// SAFETY: the provisioner validates the captured options before awaiting.
+		const provisioning = await provisionCompiledBindleTopics(
+			port,
+			application.bindings,
+			operations,
+			config.provisioning as DurableMessagingWitHostOptions,
+		);
+		if (provisioning.status !== "complete") {
+			application.revoke();
+			return Object.freeze({ status: "unavailable", provisioning });
+		}
+		return Object.freeze({ status: "ready", provisioning, application });
+	} catch (error) {
+		application.revoke();
+		throw error;
+	}
+}
+
+export function createBindleTopicPreparation(
+	port: DurableMessaging,
+	bindle: Parameters<typeof createBindleTopicWitHost>[1],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: Parameters<typeof prepareBindleTopicWitHost>[3],
+): () => ReturnType<typeof prepareBindleTopicWitHost> {
+	const source = record(bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const bindleName = text(
+		source.bindleName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const applicationName = text(
+		source.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	// SAFETY: the compiler validates and snapshots each graph field.
+	const grants = compileBindleTopicGrants({
+		applicationName,
+		resources: source.resources,
+		edges: source.edges,
+		bindings: source.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const resources: Record<
+		string,
+		{ kind: string; name: string; declaredAllow: string[]; dependsOn: string[] }
+	> = Object.create(null);
+	resources[applicationName] = {
+		kind: "application",
+		name: applicationName,
+		declaredAllow: [],
+		dependsOn: grants.map(() => "topic"),
+	};
+	const edges: { from: string; to: string }[] = [];
+	const bindings: DurableTopicBinding[] = [];
+	for (const { resourceName, grant } of grants) {
+		resources[resourceName] = {
+			kind: "topic",
+			name: resourceName,
+			declaredAllow: [
+				...(grant.publish ? ["publish"] : []),
+				...(grant.subscriptions.length ? ["subscribe"] : []),
+			],
+			dependsOn: [],
+		};
+		edges.push({ from: applicationName, to: resourceName });
+		bindings.push({
+			resourceName,
+			topic: grant.topic,
+			subscriptions: grant.subscriptions,
+		});
+	}
+	const snapshot = { bindleName, applicationName, resources, edges, bindings };
+	const captured = array(operations, DURABLE_MESSAGING_LIMITS.topics).map(
+		(entry) => {
+			const item = record(entry, ["topic", "operation"]);
+			return Object.freeze({
+				topic: text(item.topic, DURABLE_MESSAGING_LIMITS.nameBytes),
+				operation: providerOperation(item.operation),
+			});
+		},
+	);
+	const config = record(options, ["provisioning", "application"]);
+	const provisioning: unknown = Object.freeze(
+		record(
+			config.provisioning,
+			["authorize", "limitsGrant", "lifecycle"],
+			["timeoutMs", "portMetadataGrant"],
+		),
+	);
+	const application: unknown = Object.freeze(
+		record(
+			config.application,
+			["limitsGrant", "lifecycle", "verify"],
+			["timeoutMs", "portMetadataGrant"],
+		),
+	);
+	let pending: ReturnType<typeof prepareBindleTopicWitHost> | undefined;
+	let ready:
+		| Extract<
+				Awaited<ReturnType<typeof prepareBindleTopicWitHost>>,
+				{ status: "ready" }
+		  >
+		| undefined;
+	return () => {
+		if (ready !== undefined) return Promise.resolve(ready);
+		if (pending !== undefined) return pending;
+		// SAFETY: preparation validates both captured option records before use.
+		pending = Promise.resolve()
+			.then(() =>
+				prepareBindleTopicWitHost(port, snapshot, captured, {
+					provisioning: provisioning as DurableMessagingWitHostOptions,
+					application: application as Parameters<
+						typeof createBindleTopicWitHost
+					>[2],
+				}),
+			)
+			.then((result) => {
+				if (result.status === "ready") ready = result;
+				return result;
+			})
+			.finally(() => {
+				pending = undefined;
+			});
+		return pending;
+	};
+}
+
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
 export { DURABLE_MESSAGING_WIT_INTERFACE };

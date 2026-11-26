@@ -113,11 +113,13 @@ describe("wireContinuousDelivery", () => {
 			"failover",
 			"campPolicy",
 			"posture",
+			"engines",
 		] as const) {
 			expect(cd[key], key).toBeDefined();
 		}
 		expect(cd.deltas).toBe(cd.desired);
 		expect(cd.postureSeries).toBe(cd.posture);
+		expect(cd.engines.names()).toEqual([]);
 	});
 
 	it("closes the pipelines ⇄ promotions and fan-out → promotions cycles with forwarding references", async () => {

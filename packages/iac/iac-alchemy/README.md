@@ -864,3 +864,25 @@ or otherwise reconcile messages, and authorize destruction before deleting or
 recreating the actor: destroying its database destroys messages and deduplication
 history. Provider credentials, pool isolation, source identity, durable storage,
 and clock correctness remain independently verified host responsibilities.
+
+### AWS infrastructure and financial routing
+
+The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues
+and SNS topics for the corresponding HoBo declarations. This increment provides
+infrastructure only: runtime operations and application bindings are not yet
+supported, and unsupported operations are reported explicitly. Budget-based
+routing requires a complete supplied pricing model. An explicitly authorized
+unpriced admission instead bypasses budget evaluation and holds unbounded
+exposure; uncertain partial applies retain exposure for reconciliation. The
+mapping and budget outcomes are exercised against the Vercel Labs emulator and
+the opt-in official AWS Emulator; these tests do not establish production
+deployment or IAM behavior.
+
+### AWS Vite websites
+
+The AWS Vite mapper maps an assets-only web application to Alchemy's
+`AWS.Website.Vite` composite. Its financial inventory includes the complete
+nine-resource graph, and its source and plan fences must verify before apply.
+Application dependencies and server-side rendering are not supported by this
+mapping. The emulator test exercises the mapped CloudFront key-value store;
+it does not deploy the complete site.

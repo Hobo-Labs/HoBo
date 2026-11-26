@@ -24,6 +24,12 @@ import {
 	type RivetHttpRequestObservation,
 } from "@hobo/iac-alchemy/rivet/runtime";
 import {
+	type BindleTopicProvisionOperation,
+	createBindleTopicPreparation,
+	type createBindleTopicWitHost,
+	type prepareBindleTopicWitHost,
+} from "@hobo/runtime/durable-messaging-host";
+import {
 	createRivetDurableTopicClient,
 	isRivetDurableTopicBusBinding,
 	isRivetDurableTopicClientBoundTo,
@@ -422,6 +428,119 @@ export function createRivetHttpTopicBusApplication(
 		Object.freeze({ http, bus, client, verify }),
 	]);
 	return result;
+}
+
+export interface RivetBindleTopicBusApplicationOptions
+	extends Omit<RivetHttpTopicBusApplicationOptions, "application"> {
+	readonly bindle: Parameters<typeof createBindleTopicWitHost>[1];
+	readonly operations: readonly BindleTopicProvisionOperation[];
+	readonly hostOptions: (
+		client: RivetDurableTopicClient,
+	) => Parameters<typeof prepareBindleTopicWitHost>[3];
+	readonly application: (
+		host: ReturnType<typeof createBindleTopicWitHost>,
+	) => (request: Request) => Response | Promise<Response>;
+}
+
+export function createRivetBindleTopicBusApplication(
+	input: RivetBindleTopicBusApplicationOptions,
+): RivetHttpTopicBusApplication {
+	const data = fields(
+		input,
+		[
+			"actorName",
+			"bus",
+			"clientOptions",
+			"verifyScope",
+			"authorize",
+			"bindle",
+			"operations",
+			"hostOptions",
+			"application",
+		],
+		["authorizationTimeoutMs"],
+	);
+	if (
+		typeof data.hostOptions !== "function" ||
+		isProxy(data.hostOptions) ||
+		typeof data.application !== "function" ||
+		isProxy(data.application)
+	)
+		return invalid("the application and topic host factory are required");
+	const hostOptions = data.hostOptions;
+	const application = data.application;
+	let prepare: ReturnType<typeof createBindleTopicPreparation>;
+	const baseOptions = {
+		actorName: data.actorName,
+		bus: data.bus,
+		clientOptions: data.clientOptions,
+		verifyScope: data.verifyScope,
+		authorize: data.authorize,
+		application: () => {
+			let handler:
+				| ((request: Request) => Response | Promise<Response>)
+				| undefined;
+			return async (request: Request) => {
+				const result = await prepare();
+				if (result.status !== "ready") {
+					const failure = result.provisioning;
+					return Response.json(
+						{
+							status: "topic-unavailable",
+							reason:
+								failure.status === "incomplete"
+									? failure.outcome.tag
+									: failure.status,
+						},
+						{ status: 503 },
+					);
+				}
+				if (!matchesApplication(bound))
+					return Response.json(
+						{ status: "topic-unavailable", reason: "scope-unverified" },
+						{ status: 503 },
+					);
+				if (handler === undefined) {
+					const candidate: unknown = apply(application, undefined, [
+						result.application,
+					]);
+					if (
+						isRivetAsyncResult(candidate) ||
+						typeof candidate !== "function" ||
+						isProxy(candidate)
+					)
+						return invalid(
+							"the application must return a synchronous HTTP handler",
+						);
+					// SAFETY: the host returned a synchronous non-proxy handler.
+					handler = candidate as (
+						request: Request,
+					) => Response | Promise<Response>;
+				}
+				return handler(request);
+			};
+		},
+	};
+	if (data.authorizationTimeoutMs !== undefined)
+		Object.defineProperty(baseOptions, "authorizationTimeoutMs", {
+			value: data.authorizationTimeoutMs,
+			enumerable: true,
+		});
+	// SAFETY: the underlying adapter validates each captured field and callback.
+	const bound = createRivetHttpTopicBusApplication(
+		baseOptions as RivetHttpTopicBusApplicationOptions,
+	);
+	const options: unknown = apply(hostOptions, undefined, [bound.client]);
+	if (isRivetAsyncResult(options))
+		return invalid("the topic host factory must be synchronous");
+	// SAFETY: preparation validates the captured graph, operations, and host options.
+	prepare = createBindleTopicPreparation(
+		bound.client,
+		data.bindle as Parameters<typeof createBindleTopicWitHost>[1],
+		data.operations as readonly BindleTopicProvisionOperation[],
+		options as Parameters<typeof prepareBindleTopicWitHost>[3],
+	);
+	return bound;
 }
 
 export interface RivetHttpTopicBusPoolClaim

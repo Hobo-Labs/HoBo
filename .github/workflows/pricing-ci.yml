@@ -2,6 +2,7 @@ name: HoBo Pricing CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
@@ -75,6 +76,7 @@ env:
 jobs:
   route:
     name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
     # it is choosing against. The fleet while it takes jobs, an enrolled local
     # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
@@ -209,7 +211,10 @@ jobs:
           JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=2
         run: |
           node --experimental-strip-types scripts/check-iac-models.ts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-aws-vite.mts
           node --experimental-strip-types scripts/check-durable-topic-model.ts
+          node --experimental-strip-types packages/runtime/model/check-topic-policy.mts
+          node --experimental-strip-types packages/runtime/model/check-topic-provisioning.mts
           node --experimental-strip-types packages/core/model/check-messaging-settlement.mts
           node --experimental-strip-types packages/core/model/check-messaging-exhaustion.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts

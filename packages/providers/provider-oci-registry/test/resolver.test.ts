@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
 	OCI_REGISTRY_IMAGE_PRODUCT_ID,
 	type OciRegistryCredential,
+	OciRegistryRefusal,
 	type OciRegistryResolverOptions,
 	ociRegistryResolverRegistry,
 	type ResolverMetricPoint,
@@ -628,6 +629,25 @@ describe("upload session Location (GHCR and foreign hosts)", () => {
 			expect(error.code).toBe("RESOLVER_PROVIDER_REJECTED");
 			expect(error.message).toMatch(pattern);
 			expect(error.message).not.toContain(secret);
+			expect(error).toBeInstanceOf(OciRegistryRefusal);
+			if (!(error instanceof OciRegistryRefusal))
+				throw new Error("expected oci refusal");
+			const pathRefusal =
+				name === "another repository" ||
+				name === "dot segments" ||
+				name === "an encoded slash in the session id";
+			expect(error.reason).toBe(
+				pathRefusal ? "oci-upload-path" : "oci-upload-foreign-host",
+			);
+			expect(error.scopePayload).toBe(
+				pathRefusal ? "blob-upload-path" : "foreign-host",
+			);
+			expect(error.scopePayload).not.toContain("/");
+			expect(error.scopePayload).not.toContain("?");
+			expect(error.scopePayload).not.toContain("@");
+			expect(error.scopePayload).not.toContain("_state");
+			expect(error.message).not.toContain("_state");
+			expect(error.message).not.toContain("blobs/uploads");
 			for (const call of w.calls) {
 				const hostname = new URL(call.url).hostname;
 				expect(hostname).not.toBe(FOREIGN);
@@ -635,6 +655,20 @@ describe("upload session Location (GHCR and foreign hosts)", () => {
 					expect(credentialHosts.has(hostname)).toBe(true);
 			}
 		});
+
+	it("does not retain an untrusted upload host in the refusal", async () => {
+		const host = `${randomUUID().replaceAll("-", "")}.example.test`;
+		const fixture = image({ platform: "amd64", binary: true });
+		const w = locationWorld({ kind: "foreign", host }, [{ host }]);
+		const error = await rejection(
+			resolverFor(fixture).reconcile(storeRequest(fixture), w.transport),
+		);
+		expect(error).toMatchObject({
+			reason: "oci-upload-foreign-host",
+			scopePayload: "foreign-host",
+		});
+		expect(JSON.stringify(error)).not.toContain(host);
+	});
 });
 
 describe("converge: body encoding honesty", () => {
