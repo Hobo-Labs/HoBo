@@ -825,6 +825,27 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 		});
 	}
 
+	it("does not point production at the staged build until the finalizer promotes", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		let productionAtFirstPromote: string | undefined;
+		const watch: VercelFetch = async (url, init) => {
+			const path = new URL(url).pathname;
+			if (
+				init.method === "POST" &&
+				path === `/v10/projects/${PROJECT_ID}/promote/dpl_staged`
+			)
+				productionAtFirstPromote = vercel.state.production;
+			return vercel.fetch(url, init);
+		};
+		const ran = await production(home, clock, vercel, { fetch: watch });
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(productionAtFirstPromote).toBe("dpl_live");
+		expect(vercel.state.production).toBe("dpl_staged");
+	});
+
 	it("recovers when production already serves the staged build and the public relay is healthy", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
@@ -853,25 +874,35 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 			ACTIONS_ID_TOKEN_REQUEST_TOKEN: _token,
 			...ownerSessionEnv
 		} = STAGED_ENV;
+		let credentialResponse = "";
+		const trackedCredentialFetch: typeof fetch = async (input, init) => {
+			const answer = await credentialFetch(input, init);
+			credentialResponse = await answer.clone().text();
+			return answer;
+		};
 		const ran = await deploy([...PINNED, "--target", "production", "--wait"], {
 			fetch: vercel.fetch,
 			build: fakeVercelBuild(vercel).run,
 			env: ownerSessionEnv,
 			hoboHome: home,
 			probe: relayAt(SHA).http,
-			credentialFetch,
+			credentialFetch: trackedCredentialFetch,
 			...clock,
 		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
 			ok: false,
-			code: "HOBO_CI_DEPLOY_ROLLED_BACK",
+			code: "HOBO_CI_DEPLOY_RELAY_NOT_READY",
 		});
-		expect(vercel.state.sent).toContain(
-			`POST /v1/projects/${PROJECT_ID}/rollback/dpl_live`,
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
 		);
 		expect(vercel.state.production).toBe("dpl_live");
 		expect(JSON.stringify(ran.envelope)).not.toContain(TOKEN);
+		expect(credentialResponse).not.toContain("synthetic-request-token");
+		expect(JSON.stringify(ran.envelope)).not.toMatch(
+			/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
+		);
 	});
 
 	it("fails with explicit manual recovery when the staged build is already live and the public relay is unhealthy", async () => {
@@ -940,7 +971,7 @@ describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
 			ok: false,
-			code: "HOBO_CI_DEPLOY_PROMOTE_FAILED",
+			code: "HOBO_CI_DEPLOY_VERCEL_REFUSED",
 		});
 		expect(vercel.state.production).toBe("dpl_live");
 		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(

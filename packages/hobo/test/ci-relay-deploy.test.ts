@@ -1308,11 +1308,43 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 					VERCEL_TOKEN: TOKEN,
 					VERCEL_TEAM_ID: TEAM,
 					...ORIGINS,
-					HOBO_CI_RELAY_STAGED_PRODUCTION: "not-a-boolean",
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "false",
 				},
 			},
 		);
 		expect(ran.envelope).not.toMatchObject({
+			message: expect.stringContaining(
+				"HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses a malformed staged-production setting on the staged production path", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				"--build",
+				"prebuilt",
+				"--wait",
+			],
+			{
+				fetch,
+				env: {
+					VERCEL_TOKEN: TOKEN,
+					VERCEL_TEAM_ID: TEAM,
+					...ORIGINS,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "not-a-boolean",
+				},
+			},
+		);
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
 			message: expect.stringContaining(
 				"HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false",
 			),

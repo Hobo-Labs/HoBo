@@ -330,11 +330,11 @@ with a session whose store holds no token, with `HOBO_CI_DEPLOY_AUTH_REQUIRED`
 pointing at `hobo cd up`. Vercel's Git integration is never connected.
 
 `HOBO_CI_RELAY_STAGED_PRODUCTION=true` makes `hobo ci deploy --target
-production --wait --sha <commit>` stage production instead: the deployment is
-created without assigning domains, its `/healthz` and `/readyz` are verified
-on the deployment itself, and only then does HoBo promote it, poll production
-reads until the staged candidate is confirmed serving, and check the public
-origin `HOBO_CI_RELAY_PUBLIC_URL` (required, `https`) before the deploy
+production --wait --sha <commit>` realize production without promoting traffic:
+conductor convergence waits for the staged deployment to be READY, and the
+`AFTER_QUALIFIED` finalizer is the only step that promotes it. Its `/healthz`
+and `/readyz` are verified on the deployment and, after promotion, on the
+public origin `HOBO_CI_RELAY_PUBLIC_URL` (required, `https`) before the deploy
 deadline. The finalization hook runs only in the driving `hobo ci deploy`
 process; it is never written into the shared pipeline record that `hobo serve
 cd` and non-staged deliveries drive. Its promotion is driver-only, so another
@@ -347,12 +347,17 @@ rejected candidate, HoBo re-promotes the previous deployment first and reports
 moved production, which it leaves untouched) or `unknown`. Anything but
 `completed` needs the manual recovery the message names.
 The deploy token is the same `owner://HOBO_CD_VERCEL_TOKEN` read through the
-owner session. The probes of the staged deployment (and of a preview with
+owner session. The relay deploy workflow's secret-store verify step annotates
+failures through `scripts/ci/relay-deploy-secret-store-verify-report.mts`,
+which redacts credentials in check identity, method, result, and detail via
+`relay-deploy-redaction.mts` (percent-decoded search, `HOBO_*` codes kept).
+The probes of the staged deployment (and of a preview with
 `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true`) carry a GitHub OIDC token to the
 project's Vercel Trusted Source. Outside a GitHub Actions job no such token can
-be minted, so those probes answer 503: a preview fails verification, and a staged
-production deploy fails verification and HoBo rolls production back to the
-deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Public-origin
+be minted, so those probes answer 503: a preview fails verification, and staged
+production fails closed with `HOBO_CI_DEPLOY_RELAY_NOT_READY` before any
+promotion (`HOBO_CI_RELAY_STAGED_PRODUCTION` accepts only `true` or `false` on
+production `--wait` runs). Public-origin
 probes never carry that token.
 
 A relay left behind its sources is raised, not silent: the

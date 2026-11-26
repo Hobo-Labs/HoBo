@@ -148,10 +148,13 @@ import {
 } from "./vercel-env-policy.js";
 import {
 	checkoutHeadOf,
+	findStagedBuild,
 	promoteStagedBuild,
 	repositoryRoot,
 	servesProduction,
 	stageVercelBuild,
+	VERCEL_PREBUILT_META,
+	VERCEL_PREBUILT_REFUSAL,
 	type VercelBuildRunner,
 	vercelBuildEnvironment,
 	vercelBuildRunnerFrom,
@@ -908,7 +911,12 @@ export async function runCiRelayDeploy(
 			"hobo ci deploy --target production needs --sha <commit>: production takes exactly the commit preview verified, and a ref alone names no commit.",
 		);
 	const wait = values.wait === true;
-	if (stagedProduction && stagedProductionSetting === null)
+	if (
+		target === "production" &&
+		wait &&
+		env.HOBO_CI_RELAY_STAGED_PRODUCTION !== undefined &&
+		stagedProductionSetting === null
+	)
 		return usage("HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false.");
 	const origin = RELAY_VERIFY_ORIGIN[target];
 	const originGiven = env[origin]?.trim() ?? "";
@@ -1019,7 +1027,7 @@ export async function runCiRelayDeploy(
 				code: "HOBO_CI_DEPLOY_SOURCE_UNPINNED",
 				message: `Freight ${freightId} pins no commit: a prebuilt delivery builds only a pinned commit.`,
 			};
-		if (target === "production") {
+		if (target === "production" && !stagedProduction) {
 			const promoted = await promoteStagedBuild({
 				client,
 				project,
@@ -1046,6 +1054,35 @@ export async function runCiRelayDeploy(
 						: undefined),
 				},
 			};
+		}
+		if (target === "production" && stagedProduction) {
+			const read = await client.readProject(project);
+			prebuiltState.projectId = read.id;
+			const existing = await findStagedBuild(client, read.id, freightId);
+			if (existing !== undefined) {
+				const stagedSha = existing.meta[VERCEL_PREBUILT_META.sha];
+				if (stagedSha !== pinned.toLowerCase())
+					return {
+						ok: false,
+						code: VERCEL_PREBUILT_REFUSAL.notStaged,
+						message: `The build staged for Freight ${freightId} (${existing.id}) names commit ${stagedSha ?? "none"}, not ${pinned}: it is not promoted.`,
+					};
+				created.deploymentId = existing.id;
+				created.commit = pinned;
+				return {
+					ok: true,
+					outputs: {
+						deploymentId: existing.id,
+						url: existing.url,
+						target: "production",
+						build: "prebuilt",
+						staged: "true",
+						...(existing.readyState !== undefined
+							? { readyState: existing.readyState }
+							: undefined),
+					},
+				};
+			}
 		}
 		const repoRoot = repositoryRoot(input.cwd);
 		if (repoRoot === undefined)
@@ -1223,7 +1260,7 @@ export async function runCiRelayDeploy(
 			}
 		},
 		async readyState(deploymentId) {
-			if (prebuilt && target === "production") {
+			if (prebuilt && target === "production" && !stagedProduction) {
 				let serving = false;
 				try {
 					serving = await servesProduction(
