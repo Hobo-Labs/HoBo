@@ -16,6 +16,14 @@ import type * as Wit from "@hobo/wit/durable-messaging";
 import { synchronousResult } from "./synchronous-result.js";
 
 const intrinsicApply = Reflect.apply;
+const intrinsicArrayMap = Array.prototype.map;
+function mapArray<T, U>(
+	items: readonly T[],
+	mapper: (value: T, index: number) => U,
+): U[] {
+	// SAFETY: the captured intrinsic maps this checked array with the supplied callback.
+	return intrinsicApply(intrinsicArrayMap, items, [mapper]) as U[];
+}
 const intrinsicWeakGet = WeakMap.prototype.get;
 const intrinsicWeakSet = WeakMap.prototype.set;
 
@@ -366,7 +374,8 @@ function message(
 	const data = record(value, ["id", "subject", "payload", "attributes"]);
 	const seen = new Set<string>();
 	let total = 0;
-	const attributes = array(data.attributes, bounds.attributeCount).map(
+	const attributes = mapArray(
+		array(data.attributes, bounds.attributeCount),
 		(entry) => {
 			const item = record(entry, ["key", "value"]);
 			const key = text(item.key, bounds.attributeBytes, false, true);
@@ -496,7 +505,7 @@ function deliveries(
 	const ids = new Set<string>();
 	const sequences = new Set<number>();
 	const leases = new Set<string>();
-	return array(value, maximum).map((item) => {
+	return mapArray(array(value, maximum), (item) => {
 		const data = record(
 			item,
 			[
@@ -637,7 +646,7 @@ function eventsResult(
 	);
 	const next = integer(data.nextAfterSequence);
 	if (typeof data.hasMore !== "boolean" || after < first - 1) return invalid();
-	const entries = array(data.events, maximum).map((entry) =>
+	const entries = mapArray(array(data.events, maximum), (entry) =>
 		event(entry, bounds),
 	);
 	for (let index = 0; index < entries.length; index++) {
@@ -811,10 +820,11 @@ export function compileBindleTopicGrants(input: {
 		);
 		if (resource.name !== name) return invalid();
 		const kind = text(resource.kind, DURABLE_MESSAGING_LIMITS.nameBytes);
-		const declaredAllow = array(resource.declaredAllow, 256).map((value) =>
-			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		const declaredAllow = mapArray(
+			array(resource.declaredAllow, 256),
+			(value) => text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
 		);
-		const dependsOn = array(resource.dependsOn, 256).map((value) =>
+		const dependsOn = mapArray(array(resource.dependsOn, 256), (value) =>
 			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
 		);
 		if (new Set(declaredAllow).size !== declaredAllow.length) return invalid();
@@ -867,28 +877,28 @@ export function compileBindleTopicGrants(input: {
 		)
 			return invalid();
 		const groups = new Set<string>();
-		const subscriptions = array(
-			binding.subscriptions,
-			DURABLE_MESSAGING_LIMITS.subscriptions,
-		).map((item) => {
-			const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
-			const consumerGroup = text(
-				entry.consumerGroup,
-				DURABLE_MESSAGING_LIMITS.nameBytes,
-			);
-			const deadLetterTopic = text(
-				entry.deadLetterTopic,
-				DURABLE_MESSAGING_LIMITS.nameBytes,
-			);
-			if (
-				groups.has(consumerGroup) ||
-				deadLetterTopic === topic ||
-				++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
-			)
-				return invalid();
-			groups.add(consumerGroup);
-			return Object.freeze({ consumerGroup, deadLetterTopic });
-		});
+		const subscriptions = mapArray(
+			array(binding.subscriptions, DURABLE_MESSAGING_LIMITS.subscriptions),
+			(item) => {
+				const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
+				const consumerGroup = text(
+					entry.consumerGroup,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				const deadLetterTopic = text(
+					entry.deadLetterTopic,
+					DURABLE_MESSAGING_LIMITS.nameBytes,
+				);
+				if (
+					groups.has(consumerGroup) ||
+					deadLetterTopic === topic ||
+					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+				)
+					return invalid();
+				groups.add(consumerGroup);
+				return Object.freeze({ consumerGroup, deadLetterTopic });
+			},
+		);
 		if (
 			resource.declaredAllow.includes("subscribe") !==
 			subscriptions.length > 0
@@ -924,7 +934,8 @@ export function createDurableTopicPolicy(input: {
 	const verify = config.verify;
 	const topics = new Set<string>();
 	let subscriptionCount = 0;
-	const grants = array(config.grants, DURABLE_MESSAGING_LIMITS.topics).map(
+	const grants = mapArray(
+		array(config.grants, DURABLE_MESSAGING_LIMITS.topics),
 		(item) => {
 			const data = record(item, ["topic", "publish", "subscriptions"]);
 			const topic = text(data.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
@@ -935,28 +946,28 @@ export function createDurableTopicPolicy(input: {
 				return invalid();
 			topics.add(topic);
 			const groups = new Set<string>();
-			const subscriptions = array(
-				data.subscriptions,
-				DURABLE_MESSAGING_LIMITS.subscriptions,
-			).map((entry) => {
-				const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
-				const consumerGroup = text(
-					data.consumerGroup,
-					DURABLE_MESSAGING_LIMITS.nameBytes,
-				);
-				const deadLetterTopic = text(
-					data.deadLetterTopic,
-					DURABLE_MESSAGING_LIMITS.nameBytes,
-				);
-				if (
-					groups.has(consumerGroup) ||
-					deadLetterTopic === topic ||
-					++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
-				)
-					return invalid();
-				groups.add(consumerGroup);
-				return Object.freeze({ consumerGroup, deadLetterTopic });
-			});
+			const subscriptions = mapArray(
+				array(data.subscriptions, DURABLE_MESSAGING_LIMITS.subscriptions),
+				(entry) => {
+					const data = record(entry, ["consumerGroup", "deadLetterTopic"]);
+					const consumerGroup = text(
+						data.consumerGroup,
+						DURABLE_MESSAGING_LIMITS.nameBytes,
+					);
+					const deadLetterTopic = text(
+						data.deadLetterTopic,
+						DURABLE_MESSAGING_LIMITS.nameBytes,
+					);
+					if (
+						groups.has(consumerGroup) ||
+						deadLetterTopic === topic ||
+						++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+					)
+						return invalid();
+					groups.add(consumerGroup);
+					return Object.freeze({ consumerGroup, deadLetterTopic });
+				},
+			);
 			return Object.freeze({
 				topic,
 				publish: data.publish,
@@ -1743,10 +1754,10 @@ export function createBindleTopicWitHost(
 		bindings: source.bindings,
 	} as Parameters<typeof compileBindleTopicGrants>[0]);
 	const byTopic = new Map(
-		bindings.map((binding) => [binding.grant.topic, binding]),
+		mapArray(bindings, (binding) => [binding.grant.topic, binding]),
 	);
 	const policy = createDurableTopicPolicy({
-		grants: bindings.map((binding) => binding.grant),
+		grants: mapArray(bindings, (binding) => binding.grant),
 		verify: (claim) => {
 			const binding = byTopic.get(claim.grant.topic);
 			if (binding === undefined) return false;
@@ -1782,7 +1793,7 @@ export function createBindleTopicWitHost(
 		hostOptions as DurableMessagingWitHostOptions,
 	);
 	const byResource = new Map(
-		bindings.map((binding) => [binding.resourceName, binding]),
+		mapArray(bindings, (binding) => [binding.resourceName, binding]),
 	);
 	const topic = (resourceName: string): BindleTopicClient => {
 		const binding = byResource.get(
@@ -2151,7 +2162,7 @@ export function createBindleTopicPreparation(
 		kind: "application",
 		name: applicationName,
 		declaredAllow: [],
-		dependsOn: grants.map(() => "topic"),
+		dependsOn: mapArray(grants, () => "topic"),
 	};
 	const edges: { from: string; to: string }[] = [];
 	const bindings: DurableTopicBinding[] = [];
@@ -2173,7 +2184,8 @@ export function createBindleTopicPreparation(
 		});
 	}
 	const snapshot = { bindleName, applicationName, resources, edges, bindings };
-	const captured = array(operations, DURABLE_MESSAGING_LIMITS.topics).map(
+	const captured = mapArray(
+		array(operations, DURABLE_MESSAGING_LIMITS.topics),
 		(entry) => {
 			const item = record(entry, ["topic", "operation"]);
 			return Object.freeze({
@@ -2301,7 +2313,9 @@ export async function instantiateDurableMessagingAsync<T>(
 	]);
 	const digest = text(component.digest, 71);
 	if (!/^sha256:[a-f0-9]{64}$/u.test(digest)) return invalid();
-	const imports = array(component.imports, 64).map((entry) => text(entry, 256));
+	const imports = mapArray(array(component.imports, 64), (entry) =>
+		text(entry, 256),
+	);
 	if (new Set(imports).size !== imports.length) return invalid();
 	const matching = imports.filter(
 		(entry) => entry.split("@")[0] === NATIVE_IMPORT_ALIAS,
