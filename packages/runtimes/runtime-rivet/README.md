@@ -66,7 +66,11 @@ also relies on the host's clock not moving backward between observations.
 ```ts
 import { createRivetRuntimeHost } from "@hobo/runtime-rivet";
 
-const bundle = createRivetRuntimeHost({ tenantId: "acme", campId: "prod" });
+const bundle = createRivetRuntimeHost({
+  tenantId: "acme",
+  campId: "prod",
+  journalPath: "/var/lib/hobo/rivet.sqlite",
+});
 const accepted = bundle.actors.accept({
   identity: {
     tenantId: "acme",
@@ -81,6 +85,31 @@ const accepted = bundle.actors.accept({
   expectedRevision: 0,
 });
 ```
+
+Choose a persistent journal path to retain state and accepted commands across
+restarts. `journalPath: ":memory:"` is available for intentionally volatile
+sessions and tests. A runtime journal is bound to its tenant and Camp; opening
+it for another scope is rejected. An existing nonempty journal without a scope
+must be adopted explicitly with `adoptUnscopedJournal: true` after its owner has
+been verified. Adoption preserves its contents and cannot override an existing
+scope binding. The runtime also rejects command identities from another tenant;
+callers must still authorize actor operations.
+
+## Actor state and leases
+
+The local SQLite actor host stores `ActorHost.state` events in a dedicated journal stream. Handles for the same actor read the same history, including after reopening the database. Lease ownership and its increasing fence token are stored in SQLite; release or expiry allows a new holder, and stale handles cannot append through the actor host. The host uses a 30-second lease by default, with `leaseTtlMs` and `nowMs` options available for its local clock. The state stream is separate from the command inbox stream.
+
+## Event replay
+
+Actor commands append their original payloads so the same fold can rebuild state after a restart. Each command requires its declared `expectedRevision` to match the revision replayed at commit. A stale command receives a durable `failed-terminal` receipt and does not block later commands. The commit receipt is stored with the facts and outbox rows, so a restart can finish a committed command without applying it again.
+
+Older actor journals may contain folded state in event payloads. When the matching committed inbox entry identifies the original command payload and only one interpretation is valid, replay recovers it automatically. If both interpretations are valid but produce different states, replay stops with an ambiguous-payload error. Set `legacyEventPayloads: "command"` when those records are known to contain folded state, or `legacyEventPayloads: "event"` when they are original event payloads. Both `createRivetActorHost` and `createRivetRuntimeHost` accept the option. Folds must be deterministic and free of side effects.
+
+## Outbox delivery
+
+`processNext` accepts an `effects` callback that derives outbox entries from the folded state and event. It must be deterministic and free of side effects. Each entry has a stream-local `effectId`, digest, and JSON payload; reusing an ID with a different digest or payload fails the whole commit.
+
+Call `dispatchRivetOutbox(journal, streamId, deliver)` to deliver pending entries. A successful callback is acknowledged durably; a failed callback leaves its entry pending for retry. Delivery can repeat after a crash or when dispatchers overlap, so destinations should deduplicate by stream and effect ID.
 
 ## Non-guarantees
 
