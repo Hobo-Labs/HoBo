@@ -575,9 +575,14 @@ the full bounded request before dispatch and returns completed, uncertain and
 unattempted work explicitly. Callers must persist operation identities and
 reuse them when reconciling uncertain outcomes. The finite provisioning model
 assumes that the selected provider honors idempotent replay.
+Its retry transition abstracts replay of previously confirmed operations before
+the operation whose outcome is unknown.
 
 A scoped topic host is exposed only after all of its declared journals are
 confirmed. Rejected or uncertain provisioning leaves the host unavailable.
+`prepareBindleTopicWitHost` performs that preparation using the caller's
+persisted operation identities.
 
-Concurrent preparation calls share an attempt; retries reuse the captured
-operation identities, which the caller must persist across restarts.
+`createBindleTopicPreparation` shares concurrent preparation attempts. Retries
+reuse the captured operation identities, which the caller must persist across
+restarts.
