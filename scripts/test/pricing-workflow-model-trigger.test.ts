@@ -172,7 +172,17 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		prerequisitesIndex >= 0 && prerequisitesIndex < integrationIndex,
 		"Alchemy integration prerequisites must build before the test",
 	);
-	const simulatorSteps = asList(asObject(jobs?.["aws-emulator"])?.steps);
+	const simulatorJob = asObject(jobs?.["aws-emulator"]);
+	assert.equal(asText(simulatorJob?.needs), "route");
+	assert.equal(
+		asText(simulatorJob?.["runs-on"]),
+		asText(asObject(jobs?.["pricing-gate"])?.["runs-on"]),
+	);
+	const simulatorSteps = asList(simulatorJob?.steps);
+	const checkout = simulatorSteps?.find((step) =>
+		asText(asObject(step)?.uses)?.startsWith("actions/checkout@"),
+	);
+	assert.equal(asObject(asObject(checkout)?.with)?.clean, false);
 	const simulatorBuild =
 		simulatorSteps?.findIndex((step) =>
 			asText(asObject(step)?.run)?.includes("turbo run build"),

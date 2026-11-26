@@ -1255,7 +1255,6 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				),
 			);
 			const workerd = new Miniflare({
-				// This date and flag match Alchemy’s Node compatibility default for external Workers.
 				compatibilityDate: "2026-01-01",
 				compatibilityFlags: ["nodejs_compat"],
 				workers: [
