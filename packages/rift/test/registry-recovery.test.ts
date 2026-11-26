@@ -205,6 +205,31 @@ describe("the journal is the authority", () => {
 });
 
 describe("repair", () => {
+	it("restores a newer snapshot after an unterminated journal tail", () => {
+		const { abs, ws } = rootWithWorkspace();
+		writeSnapshot(abs, { root: abs, workspaces: [ws], eventCount: 2 });
+		writeFileSync(join(abs, RIFT_DIR, "events.jsonl"), '{"type":"WorkspaceCre');
+
+		expect(rebuildRegistry(abs).workspaces).toEqual([ws]);
+		expect(readRegistry(abs).workspaces).toEqual([ws]);
+		expect(readSnapshotFile(abs).workspaces).toEqual([ws]);
+		expect(existsSync(join(abs, RIFT_DIR, "registry.repair-backup.json"))).toBe(
+			false,
+		);
+	});
+
+	it("records a removal after an unterminated journal tail", () => {
+		const { abs, ws } = rootWithWorkspace();
+		writeSnapshot(abs, { root: abs, workspaces: [ws], eventCount: 2 });
+		writeFileSync(join(abs, RIFT_DIR, "events.jsonl"), '{"type":"WorkspaceCre', {
+			flag: "a",
+		});
+
+		expect(removeWorkspace(abs, ws.name)).toBe(true);
+		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(readSnapshotFile(abs).workspaces).toEqual([]);
+	});
+
 	it("preserves the backup and refuses further changes after an interrupted repair", () => {
 		const { abs, ws } = rootWithWorkspace();
 		const backup = join(abs, RIFT_DIR, "registry.repair-backup.json");

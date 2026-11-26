@@ -255,6 +255,10 @@ export function rebuildRegistry(root: string): RepairResult {
 			workspaces: projectWorkspaces(after),
 			eventCount: after.length,
 		};
+		if (!sameWorkspaces(restored.workspaces, surviving))
+			throw new RiftRegistryError(
+				`workspace repair could not verify the restored journal; backup left at ${repairBackupPath(abs)}`,
+			);
 		writeRegistry(restored);
 		rmSync(repairBackupPath(abs));
 		return restored;
