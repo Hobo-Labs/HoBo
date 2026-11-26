@@ -26,6 +26,7 @@ import { bindle } from "../../bindles/src/bindle.js";
 import { sessionReplay } from "../../bindles/src/session-replay.js";
 import { createSqliteBusConformanceHost } from "../../runtimes/runtime-rivet/test/fixtures/durable-topic-bus-conformance.js";
 import {
+	bindRivetBindleTopicEntrypoint,
 	createRivetBindleTopicBusApplication,
 	createRivetBindleTopicBusMappers,
 } from "../src/rivet-http-topic-bus.js";
@@ -50,7 +51,14 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 		const definition = bindle("shop", (b) => {
 			const orders = b.topic().allow("publish");
 			const audit = b.topic().allow("publish");
-			return { orders, audit, web: b.web().dependsOn(orders, audit) };
+			return {
+				orders,
+				audit,
+				web: b
+					.web()
+					.with(sessionReplay({ enabled: false }))
+					.dependsOn(orders, audit),
+			};
 		});
 		let starts = 0;
 		let permitsProvisioning = false;
@@ -126,18 +134,27 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 				};
 			},
 		});
-		const deployed = bindle("shop", (b) => {
+		const deployed = bindRivetBindleTopicEntrypoint(definition, app);
+		expect(deployed.entrypoint("web")).toBe(app.http.entrypoint);
+		expect(definition.entrypoint("web")).toBeUndefined();
+		const existingHandler = bindle("shop", (b) => {
 			const orders = b.topic().allow("publish");
 			const audit = b.topic().allow("publish");
 			return {
 				orders,
 				audit,
-				web: b
-					.web(app.http.entrypoint)
-					.with(sessionReplay({ enabled: false }))
-					.dependsOn(orders, audit),
+				web: b.web(() => "already bound").dependsOn(orders, audit),
 			};
 		});
+		expect(() =>
+			bindRivetBindleTopicEntrypoint(existingHandler, app),
+		).toThrow();
+		expect(() =>
+			bindRivetBindleTopicEntrypoint(
+				{ ...definition, name: "different", entrypoint: definition.entrypoint },
+				app,
+			),
+		).toThrow();
 		const registry = setup({
 			use: { web: app.http.actor, [bus.actorName]: bus.actor },
 			noWelcome: true,

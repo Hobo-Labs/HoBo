@@ -130,7 +130,7 @@ const app = createRivetHttpTopicBusApplication({
   authorize: (claim) => host.authorizeHttp(claim),
   application: (messages) => async (request) => {
     const result = await messages.publish(host.messageFor(request));
-    return Response.json(result);
+    return Response.json({ status: result.status });
   },
 });
 const registry = setup({ use: { web: app.http.actor, events: bus.actor } });
@@ -144,8 +144,63 @@ const mappers = createRivetHttpTopicBusMappers({
 });
 ```
 
-The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. This composition does not yet map a Bindle topic dependency. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.
+The host must fence the complete source, registry, transport and pool through each request and response. An unknown publish result can have committed and must be reconciled. The raw bus composition above does not map a Bindle topic dependency. The finite model in `model/RivetHttpTopicBus.tla` checks a bounded authority and timeout abstraction; it does not prove the implementation or host.
 
-The HTTP topic adapter can prepare a Bindle-scoped asynchronous topic host
-before starting application logic. Provisioning uncertainty returns unavailable;
-the caller must persist operation identities for retries across restarts.
+For a Bindle that declares named topics, use the scoped composition instead:
+
+```ts
+import { bindle, sessionReplay } from "@hobo/bindles";
+import { mapBindleToAlchemy } from "@hobo/iac-alchemy";
+import {
+  bindRivetBindleTopicEntrypoint,
+  createRivetBindleTopicBusApplication,
+  createRivetBindleTopicBusMappers,
+} from "@hobo/alchemy-rivet/http-topic-bus";
+import { setup } from "rivetkit";
+
+const shop = bindle("shop", (b) => {
+  const orders = b.topic().allow("publish");
+  return {
+    orders,
+    web: b.web().with(sessionReplay({ enabled: false })).dependsOn(orders),
+  };
+});
+
+// The host supplies the branded bus, credentials, authorities and durable IDs.
+const app = createRivetBindleTopicBusApplication({
+  actorName: "web",
+  bus,
+  clientOptions: host.busClientOptions,
+  verifyScope: (claim) => host.verifyBusScope(claim),
+  authorize: (claim) => host.authorizeHttp(claim),
+  bindle: {
+    bindleName: shop.name,
+    applicationName: "web",
+    resources: shop.resources,
+    edges: shop.edges,
+    bindings: [{ resourceName: "orders", topic: "orders", subscriptions: [] }],
+  },
+  operations: host.persistedTopicOperations,
+  hostOptions: (client) => host.topicHostOptions(client),
+  application: (topics) => async (request) => {
+    const outcome = await topics.topic("orders").publish(host.messageFor(request));
+    return Response.json({ status: outcome.tag });
+  },
+});
+const registry = setup({ use: { web: app.http.actor, [bus.actorName]: bus.actor } });
+const mappers = createRivetBindleTopicBusMappers({
+  application: app,
+  source: { ...host.httpSource, registry, binding: app.http },
+  poolDigest: host.poolDigest,
+  isolationDigest: host.isolationDigest,
+  poolHost: host.poolHost,
+  verifyPool: (claim) => host.verifyExclusivePool(claim),
+});
+const program = mapBindleToAlchemy(
+  bindRivetBindleTopicEntrypoint(shop, app),
+  mappers,
+  { assessRequirements: (requirements) => host.assessRequirements(requirements) },
+);
+```
+
+The host must persist each provisioning operation ID across process restarts and reuse it when an outcome is unknown. The current mapping supports one captured HTTP application and its named topics; other application dependencies and topic dependents are rejected. It provisions journals before starting the handler and reports an unavailable response if provisioning is not confirmed.
