@@ -93,6 +93,12 @@ outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
 
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+The store captures its allowed operations at construction, so later changes to
+application array prototypes do not change the captured grant.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
