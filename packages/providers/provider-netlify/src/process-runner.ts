@@ -26,11 +26,8 @@ import { NetlifyProviderError } from "./provider-errors.js";
  * 27.1.1 published 2026-08-07). Bumping this is a contract change: re-read the
  * `--json` output shape before changing it.
  */
-// public-contract: package identity used by execution plans.
 export const NETLIFY_CLI_PACKAGE = "netlify-cli" as const;
-// public-contract: audited CLI version used by execution plans.
 export const NETLIFY_CLI_VERSION = "27.1.1" as const;
-// public-contract: immutable CLI package specifier shown in receipts.
 export const NETLIFY_CLI_PACKAGE_SPEC =
 	`${NETLIFY_CLI_PACKAGE}@${NETLIFY_CLI_VERSION}` as const;
 

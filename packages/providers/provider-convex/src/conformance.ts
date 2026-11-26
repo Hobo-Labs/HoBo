@@ -22,10 +22,8 @@ import {
 	type ConvexHostingFormId,
 } from "./hosting-forms.js";
 
-// public-contract: conformance profile record schema id.
 export const CONFORMANCE_PROFILE_SCHEMA =
 	"hobo.provider-conformance-profile/v1";
-// public-contract: conformance report record schema id.
 export const CONFORMANCE_REPORT_SCHEMA = "hobo.provider-conformance-report/v1";
 
 export type ConformanceCheckResult = "pass" | "fail" | "unknown";

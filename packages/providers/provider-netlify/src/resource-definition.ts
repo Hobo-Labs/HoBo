@@ -18,7 +18,6 @@ import type {
 	SelectionCandidate,
 } from "@hobo/capability-profiles";
 
-// public-contract: schema identity shared with Resource Definition consumers.
 export const RESOURCE_DEFINITION_VNEXT_SCHEMA =
 	"hobo.resource-definition/vNext" as const;
 

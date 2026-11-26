@@ -21,7 +21,6 @@ import {
 	type TransportPolicy,
 } from "./transport.js";
 
-// public-contract: documented Netlify management API endpoint.
 export const NETLIFY_API_BASE = "https://api.netlify.com" as const;
 
 export type NetlifySite = {

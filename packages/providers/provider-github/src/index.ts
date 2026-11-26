@@ -48,5 +48,4 @@ export {
 	GITHUB_PAGES_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-// public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_GITHUB_PACKAGE = "@hobo/provider-github";

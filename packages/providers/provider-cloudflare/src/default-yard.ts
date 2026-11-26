@@ -81,7 +81,6 @@ export interface CloudflareYardOptions {
 }
 
 /** Cloudflare's edge is global; the default region list says exactly that. */
-// public-contract: the name the default Cloudflare Yard is registered under.
 export const CLOUDFLARE_DEFAULT_YARD_NAME = "cloudflare";
 export const CLOUDFLARE_DEFAULT_REGIONS = Object.freeze(["global"] as const);
 

@@ -19,7 +19,6 @@
 import type { TransportGuardPolicy } from "@hobo/core";
 import { unsupported } from "./errors.js";
 
-// public-contract: the closed set of npm-compatible registries this realizer binds.
 export const NPM_REGISTRY_KINDS = Object.freeze([
 	"npmjs",
 	"github-packages",
@@ -27,9 +26,7 @@ export const NPM_REGISTRY_KINDS = Object.freeze([
 ] as const);
 export type NpmRegistryKind = (typeof NPM_REGISTRY_KINDS)[number];
 
-// public-contract: the public npm registry origin.
 export const NPMJS_REGISTRY_ORIGIN = "https://registry.npmjs.org";
-// public-contract: the GitHub Packages npm registry origin.
 export const GITHUB_PACKAGES_NPM_ORIGIN = "https://npm.pkg.github.com";
 
 /** What a host supplies. Verdaccio is self-hosted, so it names its origin. */

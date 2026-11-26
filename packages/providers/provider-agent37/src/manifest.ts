@@ -9,9 +9,7 @@ import {
 	stableDigest,
 } from "@hobo/core";
 
-// public-contract: the hosting catalog pins the provider package identifier.
 export const AGENT37_PROVIDER_ID = "@hobo/provider-agent37";
-// public-contract: consumers select the provider through this capability name.
 export const AGENT37_CAPABILITY = "ci/runner";
 export const AGENT37_DEFAULT_REGIONS = Object.freeze(["us", "eu", "ap-south"]);
 export const AGENT37_COST_SOURCE = Object.freeze({

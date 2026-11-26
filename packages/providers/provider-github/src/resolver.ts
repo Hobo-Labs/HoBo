@@ -93,7 +93,6 @@ import {
 	type SiteContent,
 } from "./site-tree.js";
 
-// public-contract: how the Freight reaches the Pages site.
 export const GITHUB_PAGES_PUBLISH_MODES = Object.freeze([
 	"branch",
 	"pages-deployment",
@@ -101,19 +100,16 @@ export const GITHUB_PAGES_PUBLISH_MODES = Object.freeze([
 export type GithubPagesPublishMode =
 	(typeof GITHUB_PAGES_PUBLISH_MODES)[number];
 
-// public-contract: desired-state keys the resolver reads as directives, not identity.
 export const GITHUB_PAGES_DIRECTIVES = Object.freeze([
 	"commitMessage",
 	"onDelete",
 ] as const);
 
-// public-contract: what delete() does to the site.
 export const GITHUB_PAGES_DELETE_ACTIONS = Object.freeze([
 	"unpublish",
 	"retain",
 ] as const);
 
-// public-contract: Pages deployment statuses that mean the content can never deploy.
 const DEPLOYMENT_TERMINAL_FAILURE = new Set(["deployment_content_failed"]);
 // Statuses after which a fresh deployment of the same artifact is the remedy.
 const DEPLOYMENT_RETRYABLE_FAILURE = new Set([

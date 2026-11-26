@@ -55,7 +55,6 @@ import { isJsonString } from "./json.js";
  * widening reach is an edit a reviewer can see rather than a pattern that
  * silently matches a new group.
  */
-// public-contract: the closed set of apiserver path roots a resolver may address.
 export const RESOLVER_ALLOWED_PATH_PREFIXES = Object.freeze([
 	"/api/v1/",
 	"/apis/apps/v1/",

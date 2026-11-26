@@ -26,7 +26,6 @@ import { NetlifyProviderError, redactProviderText } from "./provider-errors.js";
  */
 export const NETLIFY_ANONYMOUS_CLAIM_WINDOW_MS = 60 * 60 * 1000;
 
-// public-contract: allowed ownership-claim URL prefix.
 export const NETLIFY_CLAIM_URL_PREFIX =
 	"https://app.netlify.com/claim" as const;
 

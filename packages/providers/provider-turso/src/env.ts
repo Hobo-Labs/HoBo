@@ -29,7 +29,6 @@ import {
 } from "./ephemeral-state.js";
 import type { LibsqlStatementClient } from "./meter.js";
 
-// public-contract: env names the Turso Marketplace integration injects and the relay reads.
 export const TURSO_ENV_NAMES = Object.freeze({
 	url: "TURSO_DATABASE_URL",
 	token: "TURSO_AUTH_TOKEN",

@@ -13,11 +13,8 @@ import {
 import type { DepotClient } from "./depot-client.js";
 import { DEPOT_PROVIDER_ID, executionHostManifest } from "./manifest.js";
 
-// public-contract: the past-tense fact recorded per build's cache outcome.
 export const BUILD_CACHE_HIT_OBSERVED = "build.CacheHitObserved";
-// public-contract: the shared-cache lane Depot accelerates builds with.
 export const DEPOT_CACHE_LANE = "depot-shared-cache";
-// public-contract: typed gate when no BuildKit executor is wired.
 export const DEPOT_EXECUTOR_MISSING = "DEPOT_EXECUTOR_MISSING";
 
 export class DepotExecutorMissingError extends Error {

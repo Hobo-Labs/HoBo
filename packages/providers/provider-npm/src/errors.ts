@@ -14,12 +14,9 @@
  */
 import { ResolverError, type ResolverErrorCode } from "@hobo/core";
 
-// public-contract: the npm package-version product id, keyed by the resolver registry.
 export const NPM_PACKAGE_VERSION_PRODUCT_ID = "npm.package-version/v1";
-// public-contract: provider id stamped on the resolver.
 export const NPM_PROVIDER_ID = "npm";
 
-// public-contract: closed reasons for an immutable-version conflict.
 export const NPM_CONFLICT_REASONS = Object.freeze([
 	"npm-version-integrity-mismatch",
 	"npm-version-previously-unpublished",
@@ -41,7 +38,6 @@ export class NpmVersionConflictError extends ResolverError {
 	}
 }
 
-// public-contract: the remediation for an npm one-time-password (2FA) challenge.
 export const NPM_OTP_REMEDIATION =
 	"bind a credential that publishes without a one-time password behind credentialRef: an npm automation token, or a granular access token with bypass-2FA enabled; on npmjs prefer OIDC trusted publishing (auth: oidc-trusted-publishing). HoBo never prompts for or supplies a one-time password";
 

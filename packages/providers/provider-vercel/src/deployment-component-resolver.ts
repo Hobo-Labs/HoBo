@@ -28,11 +28,8 @@ import {
 } from "./json.js";
 import type { VercelResolverOptions } from "./resolvers.js";
 
-// public-contract: versioned deployment-owned Vercel product identifier.
 export const VERCEL_QUEUE_PRODUCT_ID = "vercel.queues/v1";
-// public-contract: versioned deployment-owned Vercel product identifier.
 export const VERCEL_SCHEDULE_PRODUCT_ID = "vercel.schedules/v1";
-// public-contract: versioned deployment-owned Vercel product identifier.
 export const VERCEL_CRON_PRODUCT_ID = "vercel.cron/v1";
 type ComponentProduct =
 	| typeof VERCEL_QUEUE_PRODUCT_ID

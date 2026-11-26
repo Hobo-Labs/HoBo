@@ -20,7 +20,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const GCP_PROVIDER_ID = "@hobo/provider-gcp";
 
 export const DEFAULT_REGIONS = ["us-central1", "us-east1", "europe-west1"];

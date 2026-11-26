@@ -12,7 +12,6 @@ import {
 	NETLIFY_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
 
-// public-contract: Netlify Functions, catalogued so a request for them is refused by name.
 export const NETLIFY_FUNCTIONS_PRODUCT_ID = "netlify.functions/v1";
 
 export const NETLIFY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =

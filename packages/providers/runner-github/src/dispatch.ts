@@ -8,7 +8,6 @@ import {
 	type ExecutionHostManifest,
 } from "./types.js";
 
-// public-contract: the past-tense fact type each selection records.
 export const DISPATCH_DECIDED = "dispatch.Decided";
 
 export const OBJECTIVES = [

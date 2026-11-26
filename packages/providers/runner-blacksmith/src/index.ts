@@ -31,5 +31,4 @@ export {
 	createBlacksmithRunnerProvider,
 } from "./runner-provider.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_RUNNER_BLACKSMITH_PACKAGE = "@hobo/runner-blacksmith";

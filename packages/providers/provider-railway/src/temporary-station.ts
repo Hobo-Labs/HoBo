@@ -3,7 +3,6 @@ import { PROVIDER_TARGET } from "./options.js";
 
 export const supportsAnonymousTemporaryDeploy = false as const;
 
-// public-contract: stable refusal code for unsupported anonymous provisioning.
 export const TEMPORARY_PROVISION_UNAVAILABLE_CODE =
 	"HOBO_TEMP_PROVISION_UNAVAILABLE" as const;
 

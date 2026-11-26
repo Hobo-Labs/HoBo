@@ -35,7 +35,6 @@ import { NetlifyProviderError } from "./provider-errors.js";
 export const NETLIFY_TEMPORARY_PROVIDER_ID = PROVIDER_TARGET;
 export const supportsAnonymousTemporaryDeploy = true as const;
 
-/** public-contract: Drop / claim landing for operators. */
 export const NETLIFY_DROP_URL = "https://app.netlify.com/drop";
 
 export type NetlifyAnonymousDeployResult = {

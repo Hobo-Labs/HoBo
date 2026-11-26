@@ -24,7 +24,6 @@ import {
 import type { VercelResolverOptions } from "./resolvers.js";
 
 /** Immutable preview deployment, kept separate from mutable project settings. */
-// public-contract: static deployment product identity shared by the native resolver registry and Yard bindings.
 export const VERCEL_STATIC_DEPLOY_PRODUCT_ID = "vercel.static-deploy/v1";
 const API = "https://api.vercel.com";
 const PAGE_LIMIT = 25;

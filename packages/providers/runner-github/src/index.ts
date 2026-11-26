@@ -92,5 +92,4 @@ export {
 	type RunnerResult,
 } from "./types.js";
 
-// public-contract: the package id consumers assert against.
 export const HOBO_RUNNER_GITHUB_PACKAGE = "@hobo/runner-github";

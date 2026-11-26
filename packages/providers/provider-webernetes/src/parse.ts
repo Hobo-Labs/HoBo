@@ -68,7 +68,6 @@ export type WebernetesLocalEndpoint = {
 	readonly locality: WebernetesEndpointLocality;
 };
 
-// public-contract: stable parser error code exposed to callers.
 export const WEBERNETES_REJECTED_CODE =
 	"HOBO_WEBERNETES_INPUT_REJECTED" as const;
 

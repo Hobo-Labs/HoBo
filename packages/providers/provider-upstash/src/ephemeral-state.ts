@@ -14,7 +14,6 @@ import {
 	type UpstashTransport,
 } from "./transport.js";
 
-// public-contract: env names the Marketplace integration injects and the relay reads.
 export const UPSTASH_REST_ENV_PAIRS = [
 	{ url: "UPSTASH_REDIS_REST_URL", token: "UPSTASH_REDIS_REST_TOKEN" },
 	{ url: "KV_REST_API_URL", token: "KV_REST_API_TOKEN" },

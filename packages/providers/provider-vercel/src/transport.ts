@@ -54,7 +54,6 @@ export type TransportPolicy = {
 export const VERCEL_API_ALLOWED_HOSTS = ["api.vercel.com"] as const;
 
 /** The dashboard host that serves the human claim ceremony. Never called. */
-// public-contract: only host accepted for ownership-claim actions.
 export const VERCEL_CLAIM_HOST = "vercel.com" as const;
 
 /**

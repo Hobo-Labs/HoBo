@@ -15,11 +15,8 @@ import {
 	type ImageRef,
 } from "./types.js";
 
-// public-contract: the default workflow file `execute(build)` dispatches.
 export const BUILD_WORKFLOW_DEFAULT = "hobo-build.yml";
-// public-contract: typed failure when the credit budget cannot cover a build.
 export const CREDIT_EXHAUSTED = "credit.exhausted";
-// public-contract: the OCI manifest media type published ImageRefs carry.
 export const OCI_IMAGE_MANIFEST_MEDIA_TYPE =
 	"application/vnd.oci.image.manifest.v1+json";
 

@@ -46,9 +46,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: the Flux app hosting product id.
 export const FLUX_APP_PRODUCT_ID = "flux.app/v1";
-// public-contract: the documented public FluxOS API origin.
 export const FLUX_API_ORIGIN = "https://api.runonflux.io";
 
 const PROVIDER_ID = "flux";

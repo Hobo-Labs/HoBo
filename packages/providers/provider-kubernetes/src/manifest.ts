@@ -18,7 +18,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const KUBERNETES_PROVIDER_ID = "@hobo/provider-kubernetes";
 
 // A cluster has no region list of its own: where its nodes run is a fact about

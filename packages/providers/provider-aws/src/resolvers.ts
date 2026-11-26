@@ -1329,7 +1329,6 @@ const DYNAMODB_SPEC: Omit<AwsResolverSpec, "productId"> = {
 // SQS queues — query protocol on sqs.{region}.amazonaws.com
 // ---------------------------------------------------------------------------
 
-// public-contract: the SQS query-protocol API version every request declares.
 export const SQS_API_VERSION = "2012-11-05";
 
 const QUERY_CONTENT_TYPE = "application/x-www-form-urlencoded; charset=utf-8";
@@ -1561,7 +1560,6 @@ function sqsSpec(productId: string): Omit<AwsResolverSpec, "productId"> {
 // SNS topics — query protocol on sns.{region}.amazonaws.com
 // ---------------------------------------------------------------------------
 
-// public-contract: the SNS query-protocol API version every request declares.
 export const SNS_API_VERSION = "2010-03-31";
 
 /** A listing that will not terminate is refused rather than half-read. */

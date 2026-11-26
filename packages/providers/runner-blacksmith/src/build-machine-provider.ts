@@ -19,11 +19,8 @@ import {
 	executionHostManifest,
 } from "./manifest.js";
 
-// public-contract: the default workflow file `execute(build)` dispatches.
 export const BLACKSMITH_BUILD_WORKFLOW_DEFAULT = "hobo-build-blacksmith.yml";
-// public-contract: the cache lane Blacksmith accelerates container builds with.
 export const BLACKSMITH_CACHE_LANE = "sticky-disk";
-// public-contract: the past-tense fact recorded for every accelerated build.
 export const BUILD_CACHE_LANE_OBSERVED = "build.CacheLaneObserved";
 
 export interface CacheLaneFact {

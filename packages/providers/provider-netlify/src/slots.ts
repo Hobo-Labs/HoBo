@@ -1,6 +1,5 @@
 import { type SlotBinding, slotBinding } from "@hobo/core";
 import { NETLIFY_STATIC_DEPLOY_PRODUCT_ID } from "./resolvers.js";
-// public-contract: hosted-web capability profile advertised by Netlify's static deployment Yard binding.
 export const NETLIFY_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
 export type NetlifyStaticDeploySlotOptions = { readonly siteId?: string };
 export function staticDeployment(

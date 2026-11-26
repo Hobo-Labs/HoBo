@@ -1,6 +1,5 @@
 import { isJsonArray, type JsonObject } from "./json.js";
 
-// public-contract: the event-store fold this provider is addressed by. Stored
 export const GCP_EVENT_STORE_RESOLVER_ID = "gcp.yard.event-store/v1" as const;
 
 export interface GcpProviderNativeSignal {

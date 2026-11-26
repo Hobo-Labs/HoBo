@@ -22,7 +22,6 @@ export {
 	MANIFEST_SCHEMA,
 } from "@hobo/core";
 
-// public-contract: the provider id every published document carries.
 export const AWS_PROVIDER_ID = "@hobo/provider-aws";
 
 export const DEFAULT_REGIONS = ["us-east-1", "us-west-2", "eu-west-1"];

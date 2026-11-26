@@ -1,6 +1,5 @@
 import { parseRegisteredHostForm, type RegisteredHostForm } from "@hobo/core";
 
-// public-contract: the cited host forms the self-host assessment reads for this provider.
 export const DIGITALOCEAN_HOST_FORMS: readonly RegisteredHostForm[] =
 	Object.freeze(
 		[

@@ -25,7 +25,6 @@ import {
 } from "./json.js";
 import type { VercelResolverOptions } from "./resolvers.js";
 
-// public-contract: versioned Vercel Git function deployment product.
 export const VERCEL_GIT_FUNCTION_PRODUCT_ID = "vercel.function/v1";
 const API = "https://api.vercel.com";
 const MAX_PAGES = 25;

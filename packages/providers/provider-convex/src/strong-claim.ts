@@ -29,9 +29,7 @@
 import type { ConvexHostingFormId } from "./hosting-forms.js";
 import type { JsonValue } from "./json.js";
 
-// public-contract: strong-claim record schema id consumers pin.
 export const STRONG_CLAIM_SCHEMA = "hobo.provider-convex.strong-claim/v1";
-// public-contract: strong-claim receipt schema id.
 export const STRONG_CLAIM_RECEIPT_SCHEMA =
 	"hobo.provider-convex.strong-claim-receipt/v1";
 

@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import { ResolverError } from "@hobo/core";
 
-// public-contract: the OCI image (or index) product this package realizes.
 export const OCI_REGISTRY_IMAGE_PRODUCT_ID = "oci-registry.image/v1";
-// public-contract: provider id stamped on every resolver of this package.
 export const OCI_REGISTRY_PROVIDER_ID = "oci-registry";
 
 const REPOSITORY_PATTERN =
@@ -14,14 +12,10 @@ const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const HOST_PATTERN =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
 
-// public-contract: OCI image manifest media type, copied byte for byte.
 export const OCI_IMAGE_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
-// public-contract: OCI image index media type, copied byte for byte.
 export const OCI_IMAGE_INDEX = "application/vnd.oci.image.index.v1+json";
-// public-contract: Docker v2 schema 2 manifest media type, copied byte for byte.
 export const DOCKER_MANIFEST_V2 =
 	"application/vnd.docker.distribution.manifest.v2+json";
-// public-contract: Docker manifest list media type, copied byte for byte.
 export const DOCKER_MANIFEST_LIST =
 	"application/vnd.docker.distribution.manifest.list.v2+json";
 

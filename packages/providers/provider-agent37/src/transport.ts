@@ -6,9 +6,7 @@ import {
 } from "@hobo/core";
 import { z } from "zod";
 
-// public-contract: clients and contract fixtures pin the documented API origin.
 export const AGENT37_API_ORIGIN = "https://api.agent37.com";
-// public-contract: clients and contract fixtures pin the documented exec origin.
 export const AGENT37_EXEC_ORIGIN = "https://sandbox.agent37.app";
 export const AGENT37_ALLOWED_HOSTS = Object.freeze([
 	"api.agent37.com",

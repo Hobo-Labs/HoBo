@@ -1,6 +1,5 @@
 import type { JsonObject } from "./json.js";
 
-// public-contract: the provider target id `.with(...)` option blocks carry.
 export const AZURE_PROVIDER_TARGET = "azure";
 
 export type TypedOptionBlock = {
