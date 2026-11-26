@@ -90,6 +90,7 @@ unconfigured subscriptions. It returns each source resource name alongside its
 grant so the host can attest the exact source-to-provider mapping. It does not
 provision topics, authenticate the Bindle or verify the provider's state.
 
+
 ```ts
 import { bindle } from "@hobo/bindles";
 import {
@@ -122,6 +123,38 @@ const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
   limitsGrant,
   authorize: topicPolicy.authorize,
 });
+```
+
+`createBindleTopicWitHost` connects that mapping to the asynchronous WIT host
+for any `DurableMessaging` port. Its verifier receives the exact port, Bindle and
+application names, resource binding, request and, for subscriptions, the configured group and
+dead-letter destination. The trusted host must independently authenticate the
+application, mapping, port and current provider state; a callback that simply
+returns true does not establish those facts. Revoking the returned host policy
+does not cancel an in-flight provider operation or revoke other processes.
+The returned immutable `bindings` identify the runtime topic for each declared
+resource, so a host can supply the mapping to the authenticated application.
+
+```ts
+import { createBindleTopicWitHost } from "@hobo/runtime/durable-messaging-host";
+
+const topicHost = createBindleTopicWitHost(authorizedMessagingPort, {
+  bindleName: shop.name,
+  applicationName: "web",
+  resources: shop.resources,
+  edges: shop.edges,
+  bindings: [{
+    resourceName: "orders",
+    topic: "orders",
+    subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
+  }],
+}, {
+  lifecycle,
+  limitsGrant,
+  verify: (claim) => host.verifyTopicBindingAndCurrentSubscription(claim),
+});
+// Expose topicHost.host to the authenticated asynchronous component instance.
+// Call topicHost.revoke() when its authority is revoked.
 ```
 
 ```ts
