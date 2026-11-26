@@ -206,3 +206,14 @@ const program = mapBindleToAlchemy(
 The host must persist each provisioning operation ID across process restarts and reuse it when an outcome is unknown. The current mapping supports one captured HTTP application and its named topics; other application dependencies and topic dependents are rejected. It provisions journals before starting the handler and reports an unavailable response if provisioning is not confirmed.
 Provisioning and scope failures return HTTP 503 even if application code changes
 built-in array prototypes.
+The mapper validates the complete graph and counts the shared
+`Rivet.DurableObject` once in the financial inventory. The host must attest the
+exact binding, source and exclusive pool before application startup.
+The bounded `BindleTopicMapping` model assumes authoritative verifier claims,
+sequential provisioning and stable retry identities. It does not prove the
+TypeScript implementation or the external provider.
+
+The local Rivet engine test builds the selected pool source with Alchemy,
+starts the mapped application and durable topic actor, and exercises retries and
+tenant isolation. Its Alchemy provider is simulated; it does not verify hosted
+Rivet deployment, networking or billing.
