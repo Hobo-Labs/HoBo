@@ -7,6 +7,7 @@ import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
 import * as Endpoint from "@alchemy.run/aws/Endpoint";
 import { AWSEnvironment } from "@alchemy.run/aws/Environment";
+import { Key, KeyProvider } from "@alchemy.run/aws/KMS";
 import { Providers } from "@alchemy.run/aws/Providers";
 import { Bucket, BucketProvider } from "@alchemy.run/aws/S3";
 import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
@@ -108,7 +109,13 @@ function fixture(
 	withPricing: boolean,
 	allowUnpriced = false,
 	official = false,
-	resource: "bucket" | "queue" | "auth" | "notify" | "websocket" = "bucket",
+	resource:
+		| "bucket"
+		| "queue"
+		| "auth"
+		| "notify"
+		| "websocket"
+		| "crypto" = "bucket",
 ) {
 	const server = createServer(awsPlugin, { baseUrl: "http://localhost:4566" });
 	const credentials = {
@@ -132,17 +139,26 @@ function fixture(
 		});
 	};
 	const officialEndpoint = official
-		? new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "")
+		? new URL(
+				(resource === "crypto"
+					? process.env.HOBO_ALCHEMY_KMS_EMULATOR
+					: process.env.HOBO_ALCHEMY_AWS_ENDPOINT) ?? "",
+			)
 		: undefined;
 	if (
 		officialEndpoint &&
-		(officialEndpoint.protocol !== "https:" ||
+		(officialEndpoint.protocol !==
+			(resource === "crypto" ? "http:" : "https:") ||
 			!["localhost", "127.0.0.1", "[::1]"].includes(officialEndpoint.hostname))
 	)
 		throw new Error("expected HTTPS loopback");
 	const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
-	if (official && !caPath) throw new Error("AWS Emulator CA is required");
-	const ca = caPath && official ? readFileSync(caPath) : undefined;
+	if (official && resource !== "crypto" && !caPath)
+		throw new Error("AWS Emulator CA is required");
+	const ca =
+		caPath && official && resource !== "crypto"
+			? readFileSync(caPath)
+			: undefined;
 	const observedHttp = Layer.effect(
 		HttpClient.HttpClient,
 		Effect.map(
@@ -167,6 +183,11 @@ function fixture(
 							"ListTopics",
 							"GetTopicAttributes",
 							"ListTagsForResource",
+							"TrentService.ListKeys",
+							"TrentService.DescribeKey",
+							"TrentService.GetKeyPolicy",
+							"TrentService.GetKeyRotationStatus",
+							"TrentService.ListResourceTags",
 						].includes(target ?? "")
 					) {
 						mutationTargets.push(target ?? "");
@@ -232,57 +253,64 @@ function fixture(
 		fetchLayers,
 	);
 	const definition =
-		resource === "websocket"
+		resource === "crypto"
 			? mapBindleToAlchemy(
-					bindle("shop", (b) => ({
-						objects: b.websocket().with(sessionReplay({ enabled: false })),
-					})),
+					bindle("shop", (b) => ({ objects: b.crypto() })),
 					awsBindleMappers(),
 					{ assessRequirements: () => ({ status: "supported" }) },
 				)
-			: resource === "notify"
+			: resource === "websocket"
 				? mapBindleToAlchemy(
-						withAwsSnsNotification(
-							bindle("shop", (b) => ({ objects: b.notify().allow("send") })),
-							{ objects: true },
-						),
-						awsSnsNotificationMappers(),
+						bindle("shop", (b) => ({
+							objects: b.websocket().with(sessionReplay({ enabled: false })),
+						})),
+						awsBindleMappers(),
 						{ assessRequirements: () => ({ status: "supported" }) },
 					)
-				: resource === "auth"
+				: resource === "notify"
 					? mapBindleToAlchemy(
-							bindle("shop", (b) => ({ objects: b.auth() })),
-							awsBindleMappers(),
+							withAwsSnsNotification(
+								bindle("shop", (b) => ({ objects: b.notify().allow("send") })),
+								{ objects: true },
+							),
+							awsSnsNotificationMappers(),
 							{ assessRequirements: () => ({ status: "supported" }) },
 						)
-					: resource === "queue"
+					: resource === "auth"
 						? mapBindleToAlchemy(
-								withAwsDynamoDurableQueue(
-									bindle("shop", (b) => ({
-										objects: b.queue().allow("enqueue", "dequeue"),
-									})),
-									{ objects: true },
-								),
-								awsDynamoDurableQueueMappers(),
-								{ assessRequirements: () => ({ status: "supported" }) },
-							)
-						: mapBindleToAlchemy(
-								bindle("shop", (b) => ({ objects: b.bucket() })),
+								bindle("shop", (b) => ({ objects: b.auth() })),
 								awsBindleMappers(),
 								{ assessRequirements: () => ({ status: "supported" }) },
-							);
+							)
+						: resource === "queue"
+							? mapBindleToAlchemy(
+									withAwsDynamoDurableQueue(
+										bindle("shop", (b) => ({
+											objects: b.queue().allow("enqueue", "dequeue"),
+										})),
+										{ objects: true },
+									),
+									awsDynamoDurableQueueMappers(),
+									{ assessRequirements: () => ({ status: "supported" }) },
+								)
+							: mapBindleToAlchemy(
+									bindle("shop", (b) => ({ objects: b.bucket() })),
+									awsBindleMappers(),
+									{ assessRequirements: () => ({ status: "supported" }) },
+								);
 	const stack = Stack(
 		"Demo",
 		{
 			providers: Layer.effect(
 				Providers,
-				Provider.collection([Bucket, Table, UserPool, Topic, Api]),
+				Provider.collection([Bucket, Table, UserPool, Topic, Api, Key]),
 			).pipe(
 				Layer.provideMerge(BucketProvider()),
 				Layer.provideMerge(TableProvider()),
 				Layer.provideMerge(UserPoolProvider()),
 				Layer.provideMerge(TopicProvider()),
 				Layer.provideMerge(ApiProvider()),
+				Layer.provideMerge(KeyProvider()),
 				Layer.provideMerge(awsLayers),
 			),
 			state: inMemoryState(),
@@ -426,15 +454,17 @@ function fixture(
 				{
 					resourceId: "objects",
 					resourceType:
-						resource === "websocket"
-							? Api.Type
-							: resource === "notify"
-								? Topic.Type
-								: resource === "queue"
-									? Table.Type
-									: resource === "auth"
-										? UserPool.Type
-										: Bucket.Type,
+						resource === "crypto"
+							? Key.Type
+							: resource === "websocket"
+								? Api.Type
+								: resource === "notify"
+									? Topic.Type
+									: resource === "queue"
+										? Table.Type
+										: resource === "auth"
+											? UserPool.Type
+											: Bucket.Type,
 					providerId: "sandbox",
 					providerAccountRef: "account-a",
 					productId: "sandbox",
@@ -482,6 +512,7 @@ function fixture(
 }
 
 const official = process.env.HOBO_ALCHEMY_AWS_EMULATOR === "1" ? it : it.skip;
+const moto = process.env.HOBO_ALCHEMY_KMS_EMULATOR ? it : it.skip;
 
 describe("budget routing for an Alchemy AWS bucket", () => {
 	async function pricedSelection(f: ReturnType<typeof fixture>) {
@@ -731,6 +762,90 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 				expect(f.mutationTargets()).toContain(
 					"AWSCognitoIdentityProviderService.CreateUserPool",
 				);
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) => entry.reservedMicros === 0 && entry.unbounded === 1,
+						),
+				).toBe(true);
+				expect(f.liabilityRequests()).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	moto(
+		"reserves supplied pricing before creating a mapped KMS key",
+		async () => {
+			const f = fixture(true, false, true, "crypto");
+			try {
+				const selected = await pricedSelection(f);
+				expect(f.effects()).toBe(0);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+					selected,
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "allowed", reservation: "held" },
+				});
+				expect(f.mutationTargets()).toContain("TrentService.CreateKey");
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) =>
+								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
+						),
+				).toBe(true);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	moto(
+		"denies a mapped KMS key without pricing or explicit unpriced policy",
+		async () => {
+			const f = fixture(false, false, true, "crypto");
+			try {
+				const assessment = await f.provider.assessPricing(program);
+				expect(assessment).toMatchObject({
+					pricing: { state: { case: "unavailable" } },
+					budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				});
+				await expect(f.provider.apply(program)).rejects.toMatchObject({
+					code: "PRICING_MODEL_UNAVAILABLE",
+				});
+				expect(f.effects()).toBe(0);
+				expect(f.authority.read(NOW).unboundedExposureCount).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	moto(
+		"records unbounded exposure before an authorized unpriced KMS key",
+		async () => {
+			const f = fixture(false, true, true, "crypto");
+			try {
+				await f.provider.assessPricing(program);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "bypassed", reservation: "held" },
+				});
+				expect(f.mutationTargets()).toContain("TrentService.CreateKey");
 				expect(
 					f
 						.exposuresAtEffects()
