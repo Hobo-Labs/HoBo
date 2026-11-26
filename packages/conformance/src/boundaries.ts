@@ -503,6 +503,9 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// pinned beside the others in boundaries.test.ts.
 	"packages/adapters/adapter-1password->packages/identity",
 	"packages/adapters/adapter-bitwarden->packages/identity",
+	"packages/packs/pack-better-auth->packages/identity",
+	"packages/iac/iac-alchemy->packages/packs/pack-better-auth",
+	"packages/iac/iac-alchemy->packages/identity",
 	// Connector packages (#1052) are AUTHORING-side declarations, not runtime
 	// adapters: they export an opaque symbol built with @hobo/bindles'
 	// defineConnector so b.connector() can resolve it. The edge points at the

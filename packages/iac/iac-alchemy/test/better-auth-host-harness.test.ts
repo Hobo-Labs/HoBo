@@ -1,10 +1,10 @@
+import { createMemorySecretsPort } from "@hobo/identity";
 import {
 	campSecretNameFromBetterAuthRef,
 	planBetterAuthBundle,
 	planBetterAuthRelationalMigrations,
 	wireBetterAuthSigningSecret,
 } from "@hobo/pack-better-auth";
-import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
 import {
