@@ -418,16 +418,22 @@ function tagWorkerImage(remote: string, candidate: string): void {
 export function materializeCiWorkerImageResult(): WorkerMaterializeResult {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
-	if (dockerImagePresent(candidate)) {
+	const repo = process.env.GITHUB_REPOSITORY?.trim();
+	const requestedRef = process.env.HOBO_CI_WORKER_IMAGE_REF;
+	if (requestedRef !== undefined && !repo)
+		throw new Error(
+			"GITHUB_REPOSITORY is required with HOBO_CI_WORKER_IMAGE_REF",
+		);
+	const suppliedDigest =
+		requestedRef !== undefined && repo
+			? resolveWorkerRemoteRef(repo, version)
+			: null;
+	if (!suppliedDigest && dockerImagePresent(candidate)) {
 		run("docker", ["tag", candidate, "hobo-ci-worker:local"]);
 		console.log(`using pinned worker ${candidate}`);
 		return { ok: true, image: candidate };
 	}
 
-	const repo = process.env.GITHUB_REPOSITORY?.trim();
-	const suppliedDigest = repo
-		? validatedWorkerDigestRef(repo, process.env.HOBO_CI_WORKER_IMAGE_REF)
-		: null;
 	if (suppliedDigest && dockerImagePresent(suppliedDigest)) {
 		tagWorkerImage(suppliedDigest, candidate);
 		console.log(`using local worker digest ${suppliedDigest}`);
@@ -492,20 +498,26 @@ export function ensureCiWorkerImage(): string {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
 
-	if (releaseWorkerEnsurePath()) {
+	if (
+		releaseWorkerEnsurePath() ||
+		process.env.HOBO_CI_WORKER_IMAGE_REF !== undefined
+	) {
 		const { failure } = materialized;
+		const reason = releaseWorkerEnsurePath()
+			? `release path requires published ghcr.io worker ${version}`
+			: "supplied worker digest requires a matching published image";
 		if (failure?.kind === "pull_failed") {
 			throw new Error(
-				`GHCR manifest present for ${failure.remote} but pull failed (budgetSec=${failure.budgetSec}); release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
+				`GHCR manifest present for ${failure.remote} but pull failed (budgetSec=${failure.budgetSec}); ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
 			);
 		}
 		if (failure?.kind === "manifest_absent") {
 			throw new Error(
-				`GHCR manifest absent for ${failure.remote}; release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
+				`GHCR manifest absent for ${failure.remote}; ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
 			);
 		}
 		throw new Error(
-			`release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
+			`${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
 		);
 	}
 

@@ -462,6 +462,7 @@ describe("ensure-ci-worker-image", () => {
 	function materializeWithStub(imageRef: string | undefined) {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-invalid-"));
 		const calls = join(bin, "calls");
+		writeFileSync(calls, "");
 		writeFileSync(
 			join(bin, "docker"),
 			[
@@ -778,12 +779,14 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	function withReleaseProbe(
-		mode: "pull_failed" | "manifest_absent" | "local_digest",
+		mode: "pull_failed" | "manifest_absent" | "local_digest" | "remote_digest",
 		digestRef: string | undefined,
 		run: (calls: string) => void,
+		candidatePresent = false,
 	) {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-release-"));
 		const calls = join(bin, "calls");
+		writeFileSync(calls, "");
 		writeFileSync(
 			join(bin, "timeout"),
 			[
@@ -808,7 +811,10 @@ describe("ensure-ci-worker-image", () => {
 				`echo "docker $*" >> "${calls}"`,
 				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
 				'if [ "$1 $2" = "image inspect" ]; then',
-				digestRef
+				candidatePresent
+					? '  case "$3" in hobo-ci-worker:v*) exit 0 ;; esac'
+					: "",
+				digestRef && mode !== "remote_digest"
 					? `  if [ "$3" = "${digestRef}" ]; then exit 0; fi`
 					: "  exit 1",
 				"  exit 1",
@@ -840,8 +846,8 @@ describe("ensure-ci-worker-image", () => {
 			delete process.env.GITHUB_REF;
 			delete process.env.HOBO_CI_SKIP_GHCR_PULL;
 			process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC = "7";
-			if (mode === "local_digest") {
-				delete process.env.HOBO_RELEASE_VERSION;
+			if (mode === "local_digest" || mode === "remote_digest") {
+				process.env.HOBO_RELEASE_VERSION = "0.0.0-alpha.94";
 				if (digestRef) process.env.HOBO_CI_WORKER_IMAGE_REF = digestRef;
 			} else {
 				process.env.HOBO_RELEASE_VERSION = "0.0.0-alpha.94";
@@ -933,5 +939,60 @@ describe("ensure-ci-worker-image", () => {
 			assert.doesNotMatch(recorded, /manifest inspect/u);
 			assert.doesNotMatch(recorded, /build\.sh/u);
 		});
+	});
+
+	it("uses the supplied digest instead of a cached version tag", () => {
+		const digestRef = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"d".repeat(64)}`;
+		for (const mode of ["local_digest", "remote_digest"] as const) {
+			withReleaseProbe(
+				mode,
+				digestRef,
+				(calls) => {
+					const result = materializeCiWorkerImageResult();
+					assert.equal(result.ok, true);
+					if (!result.ok) return;
+					const recorded = readFileSync(calls, "utf8");
+					assert.ok(
+						recorded.includes(`docker tag ${digestRef} ${result.image}`),
+					);
+					if (mode === "remote_digest")
+						assert.ok(recorded.includes(`docker pull ${digestRef}`));
+				},
+				true,
+			);
+		}
+	});
+
+	it("rejects an invalid supplied digest even when a version tag is cached", () => {
+		withReleaseProbe(
+			"local_digest",
+			"ghcr.io/other/worker:latest",
+			(calls) => {
+				assert.throws(
+					() => materializeCiWorkerImageResult(),
+					/HOBO_CI_WORKER_IMAGE_REF/u,
+				);
+				assert.doesNotMatch(readFileSync(calls, "utf8"), /docker tag /u);
+			},
+			true,
+		);
+	});
+
+	it("does not build or use a cached tag when a supplied digest is unavailable", () => {
+		const digestRef = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"d".repeat(64)}`;
+		withReleaseProbe(
+			"remote_digest",
+			digestRef,
+			(calls) => {
+				delete process.env.HOBO_RELEASE_VERSION;
+				process.env.HOBO_CI_SKIP_GHCR_PULL = "1";
+				assert.throws(() => ensureCiWorkerImage(), /supplied worker digest/u);
+				assert.doesNotMatch(
+					readFileSync(calls, "utf8"),
+					/docker tag |build\.sh/u,
+				);
+			},
+			true,
+		);
 	});
 });
