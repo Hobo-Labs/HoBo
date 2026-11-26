@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -843,12 +850,12 @@ describe("Actions runner policy", () => {
 				writeFileSync(
 					timeout,
 					input.timeoutStatus === undefined
-						? "#!/bin/sh\nshift\nexec \"$@\"\n"
+						? '#!/bin/sh\nshift\nexec "$@"\n'
 						: `#!/bin/sh\nexit ${input.timeoutStatus}\n`,
 				);
 				writeFileSync(
 					node,
-					"#!/bin/sh\nif [ -n \"${FAKE_NODE_OUTPUT:-}\" ]; then printf '%s\\n' \"$FAKE_NODE_OUTPUT\" >> \"$GITHUB_OUTPUT\"; fi\nexit \"${FAKE_NODE_STATUS:-0}\"\n",
+					'#!/bin/sh\nif [ -n "${FAKE_NODE_OUTPUT:-}" ]; then printf \'%s\\n\' "$FAKE_NODE_OUTPUT" >> "$GITHUB_OUTPUT"; fi\nexit "${FAKE_NODE_STATUS:-0}"\n',
 				);
 				chmodSync(timeout, 0o755);
 				chmodSync(node, 0o755);

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
+import { depsContextPaths } from "../lib/deps-key.mts";
 import {
 	assertConeCoversPaths,
 	coneCoversPath,
@@ -168,11 +169,18 @@ describe("release sparse cone requirements", () => {
 		}
 	});
 
-	it("hobo release pages cone covers pins fetch", () => {
+	it("hobo release pages cone covers pins fetch and deps checkout-key paths", () => {
+		const cones = hoboReleasePagesSparseCones();
+		expect(cones).toContain("src");
 		assertConeCoversPaths(
 			"hobo-release-pages",
-			hoboReleasePagesSparseCones(),
-			requiredPathsForHoboReleasePages(),
+			cones,
+			requiredPathsForHoboReleasePages(root),
+		);
+		assertConeCoversPaths(
+			"hobo-release-pages-deps",
+			cones,
+			depsContextPaths(root),
 		);
 	});
 
@@ -468,7 +476,7 @@ describe("release workflow sparse-checkout sync", () => {
 		assertConeCoversPaths(
 			"release-pages",
 			cones,
-			requiredPathsForHoboReleasePages(),
+			requiredPathsForHoboReleasePages(root),
 		);
 	});
 

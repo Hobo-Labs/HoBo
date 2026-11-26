@@ -1155,6 +1155,43 @@ function compositeStepKey(key: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+function sourceLine(text: string, node: unknown): number | undefined {
+	if (typeof node !== "object" || node === null || !("range" in node))
+		return undefined;
+	const { range } = node;
+	if (!Array.isArray(range) || typeof range[0] !== "number") return undefined;
+	return text.slice(0, range[0]).split("\n").length;
+}
+
+function compositeStepKeyLine(
+	text: string,
+	stepIndex: number,
+	key: string,
+): number | undefined {
+	const lines = text.split("\n");
+	let stepsStarted = false;
+	let currentStep = -1;
+	let inStep = false;
+	const stepStart = /^\s+-\s/;
+	const stepKey = new RegExp(`^\\s+${key}\\s*:`);
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index] ?? "";
+		if (/^\s*steps:\s*$/.test(line)) {
+			stepsStarted = true;
+			continue;
+		}
+		if (!stepsStarted) continue;
+		if (stepStart.test(line)) {
+			currentStep++;
+			inStep = currentStep === stepIndex;
+			continue;
+		}
+		if (currentStep > stepIndex) break;
+		if (inStep && stepKey.test(line)) return index + 1;
+	}
+	return undefined;
+}
+
 export function lintCompositeStepFields(
 	errors: string[],
 	file: string,
@@ -1166,9 +1203,7 @@ export function lintCompositeStepFields(
 	}
 	const usingNode = doc.get("runs")?.get("using");
 	const using =
-		typeof usingNode === "string"
-			? usingNode
-			: compositeStepKey(usingNode);
+		typeof usingNode === "string" ? usingNode : compositeStepKey(usingNode);
 	if (using !== "composite") return;
 	const steps = doc.get("runs")?.get("steps");
 	if (!steps || !Array.isArray(steps.items)) return;
@@ -1177,8 +1212,11 @@ export function lintCompositeStepFields(
 		for (const pair of step.items) {
 			const key = compositeStepKey(pair.key);
 			if (key === undefined || !COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
+			const line =
+				sourceLine(text, pair.key) ?? compositeStepKeyLine(text, index, key);
+			const at = line === undefined ? file : `${file}:${line}`;
 			errors.push(
-				`${file}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
+				`${at}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
 			);
 		}
 	}

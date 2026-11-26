@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
+import { depsContextPaths } from "./deps-key.mts";
 import { loadReleaseOciManifest } from "./release-oci-contract.mts";
 
 /** Repo-root files listed explicitly in sparse cones (not directory cones). */
@@ -134,6 +135,7 @@ export function hoboReleasePagesSparseCones(): readonly string[] {
 		"release",
 		"external",
 		"examples",
+		"src",
 		"media",
 		...PINS_SPARSE_CONES,
 		...MISE_LOCK_SPARSE_CONES,
@@ -264,9 +266,12 @@ export function requiredPathsForTsAutocodeReleaseContract(): readonly string[] {
 	]);
 }
 
-export function requiredPathsForHoboReleasePages(): readonly string[] {
+export function requiredPathsForHoboReleasePages(
+	repoRoot: string,
+): readonly string[] {
 	return Object.freeze([
 		...PINS_FETCH_REQUIRED_FILES,
+		...depsContextPaths(repoRoot),
 		"site/package.json",
 		"site/scripts/build-browser-wit-runtime.mts",
 		"examples/try-site/yards.json",

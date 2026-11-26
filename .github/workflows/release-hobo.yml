@@ -248,6 +248,7 @@ env:
     release
     external
     examples
+    src
     media
     tools/pins
     .mise/locks
