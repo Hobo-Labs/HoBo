@@ -108,7 +108,11 @@ describe("actor-local journal crash windows", () => {
 	});
 
 	it("runtime host accept-before-ack survives a second processNext", async () => {
-		const bundle = createRivetRuntimeHost({ tenantId: "acme", campId: "shop" });
+		const bundle = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "shop",
+			journalPath: ":memory:",
+		});
 		const identity = {
 			tenantId: "acme",
 			projectId: "shop",
