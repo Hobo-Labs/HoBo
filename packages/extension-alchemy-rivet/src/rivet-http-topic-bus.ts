@@ -460,7 +460,6 @@ export interface RivetBindleTopicBusApplicationOptions
 	) => (request: Request) => Response | Promise<Response>;
 }
 
-/** Start application logic only after the declared journals are confirmed. */
 export function createRivetBindleTopicBusApplication(
 	input: RivetBindleTopicBusApplicationOptions,
 ): RivetHttpTopicBusApplication {
@@ -580,7 +579,6 @@ export function createRivetBindleTopicBusApplication(
 	return bound;
 }
 
-/** Attach the captured HTTP entrypoint without rebuilding the Bindle graph. */
 export function bindRivetBindleTopicEntrypoint<Requirements>(
 	bindle: BindleForAlchemy<RivetHttpEntrypoint, Requirements>,
 	application: RivetHttpTopicBusApplication,
@@ -782,7 +780,6 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 	});
 }
 
-/** Map one HTTP application and its named topics onto its verified Rivet pool. */
 export function createRivetBindleTopicBusMappers<Requirements>(
 	input: RivetHttpTopicBusMapperOptions,
 ): Readonly<
