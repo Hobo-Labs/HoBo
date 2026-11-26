@@ -158,3 +158,7 @@ graph and counts the shared `Rivet.DurableObject` once in the financial
 inventory. It rejects additional application dependencies and other dependents
 of those topics. Session replay must be disabled, and the host must attest the
 exact binding, source and exclusive pool before application startup.
+
+The adapter derives its provisioning graph and mapper grant claims from the same
+captured topic bindings, so later changes to caller-owned graph data cannot
+change one independently of the other.
