@@ -1475,6 +1475,20 @@ describe("planCommands", () => {
 		assert.ok(!build.includes("@hobo/hobo#test"));
 		assert.ok(!build.includes("--"));
 	});
+
+	it("builds the hello-bindle adapter in the HoBo build closure", () => {
+		const run = spawnSync(
+			"pnpm",
+			["exec", "turbo", "run", "build", "--filter=@hobo/hobo", "--dry=json"],
+			{ encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+		);
+		assert.equal(run.status, 0, run.stderr);
+		const tasks: unknown = JSON.parse(run.stdout).tasks;
+		assert.ok(Array.isArray(tasks));
+		const build = tasks.find((task) => task.taskId === "@hobo/hobo#build");
+		assert.ok(build && Array.isArray(build.dependencies));
+		assert.ok(build.dependencies.includes("@hobo/adapter-hono#build"));
+	});
 });
 
 describe("buildTaskConcurrency", () => {
