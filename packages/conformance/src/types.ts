@@ -30,27 +30,27 @@ export type AssertionCode =
 	| "golden-ir.equivalence"
 	| "trace-replay.equivalence";
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ValueDiff {
 	path: string;
 	expected: JsonValue;
 	actual: JsonValue;
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface SuiteCall {
 	function: string;
 	input: JsonValue;
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface SuiteExpect {
 	output?: JsonValue;
 	goldenIr?: JsonValue;
 	replayTrace?: JsonValue;
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface SuiteCase {
 	id: string;
 	tier: ConformanceTier;
@@ -110,14 +110,14 @@ export interface ConformanceAdapter {
 	[fn: string]: AdapterFunction | string | number | undefined;
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface CaseAssertion {
 	code: AssertionCode;
 	caseId: string;
 	function: string;
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ConformanceFailure {
 	code: FailureCode;
 	caseId?: string;
@@ -131,14 +131,14 @@ export interface ConformanceFailure {
 	diff?: ValueDiff;
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface CoverageManifest {
 	exercisedFunctions: string[];
 	requiredFunctions: string[];
 	unexercisedFunctions: string[];
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface RunProvenance {
 	suiteId: string;
 	port: string;
@@ -147,7 +147,7 @@ export interface RunProvenance {
 	cases: string[];
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface AdapterClaim {
 	status: "listed" | "blocked";
 	port: string;
@@ -155,7 +155,7 @@ export interface AdapterClaim {
 	failureCodes: FailureCode[];
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface PortSuiteReport {
 	schema: typeof REPORT_SCHEMA;
 	ok: boolean;
@@ -214,7 +214,7 @@ export interface AdapterRegistry {
 	list(): ConformanceAdapter[];
 }
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ConformanceSuiteDescriptor {
 	readonly suiteId: string;
 	readonly dimension: string;
@@ -243,7 +243,7 @@ export interface SdkParityInput {
 	};
 }
 
-// domain-view: parse-dont-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface SdkParityReport {
 	schema: typeof SDK_PARITY_SCHEMA;
 	ok: boolean;

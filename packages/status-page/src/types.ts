@@ -111,14 +111,14 @@ export class StatusPageParseError extends TypeError {
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const INCIDENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface StatusScope {
 	readonly kind: StatusScopeKind;
 	readonly id: string;
 	readonly label: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ComponentSpec {
 	readonly id: string;
 	readonly label: string;
@@ -126,7 +126,7 @@ export interface ComponentSpec {
 	readonly description?: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface IncidentUpdateRecord {
 	readonly state: IncidentState;
 	readonly body: string;
@@ -134,7 +134,7 @@ export interface IncidentUpdateRecord {
 	readonly public: boolean;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface IncidentRecord {
 	readonly id: string;
 	readonly title: string;
@@ -147,7 +147,7 @@ export interface IncidentRecord {
 	readonly updates: readonly IncidentUpdateRecord[];
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface MaintenanceRecord {
 	readonly id: string;
 	readonly title: string;
@@ -185,14 +185,14 @@ type ParsedIncident = {
 	updates: readonly IncidentUpdateRecord[];
 };
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface DailyStatusRecord {
 	readonly date: string;
 	readonly worst: ComponentStatus;
 	readonly samples: number;
 }
 
-// domain-view: parse-don't-validate parsed/derived type (frozen, enum-narrowed, regex-constrained fields); its wire form is data-models/status_page.proto (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ComponentStatusRecord {
 	readonly spec: ComponentSpec;
 	readonly status: ComponentStatus;

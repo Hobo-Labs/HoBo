@@ -16,7 +16,6 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`sdk-api.md`](./sdk-api.md#plan-02) | SDK / API design (the four-layer model) | 02 |
 | [`sdk-contracts.md`](./sdk-contracts.md) | Canonical public SDK signatures, defaults, conformance coverage, and implementation issue mapping | 02, 21 |
 | [`closure-builder-public-api.md`](./closure-builder-public-api.md) | V1 explicit Bindle closure-builder public contract for `@hobo/bindles` | 02, 21 |
-| [`technical-standards.md`](./technical-standards.md) | Cross-cutting implementation standards: latest stable TypeScript, Protobuf data contracts, CUE invariants/derivative object definitions, parse-don't-validate, and PACT boundary testing | — |
 | [`fuzzing.md`](./fuzzing.md) | OSS-Fuzz-style CI: fast-check control-plane properties, narrow Jazzer.js harnesses, Schemathesis PR API fuzz, RESTler/Toxiproxy nightly against simulators only | — |
 | [`build-s0-stage-gate-acceptance.md`](./build-s0-stage-gate-acceptance.md) | S0 stage gate acceptance: signed hello-bindle through CI with toolchain guards green; runnable signal is `.github/workflows/stage-gate-s0.yml` plus `@hobo/stage-gate` tests | — |
 | [`build-s1-stage-gate-acceptance.md`](./build-s1-stage-gate-acceptance.md) | S1 stage gate acceptance: production runtime-port/component-host/sdk-parity conformance, offline `hobo dev` on hello-bindle, and replay==live re-pointed onto `@hobo/conformance`/`@hobo/cli`/`@hobo/runtime-local`; runnable signal is `.github/workflows/s1-stage-gate.yml` | — |
@@ -205,10 +204,6 @@ Full capture + parity tracker: [`docs/competitors/lakebed`](../competitors/lakeb
 HoBo's metaphor is the itinerant worker who travels light. Names are proposals; technical meaning is what matters.
 
 The canonical term source is [`glossary.md`](./glossary.md). The canonical event-family source is [`event-families.md`](./event-families.md). Naming note: `hobo:sdk` is the WIT contract/package; `@hobo/sdk` is the operator SDK. The `docs:design-lint` gate fails on duplicate glossary terms, broken internal links or anchors, unindexed ADR references, `hobo:sdk`/`@hobo/sdk` ambiguity, and event families used outside the catalog.
-
-## Technical standards
-
-All implementation-facing design work follows the cross-cutting standards in [`technical-standards.md`](./technical-standards.md): latest stable TypeScript over vanilla JavaScript, Protobuf for data contracts, CUE for invariants/dependent constraints and derivative object definitions, parse-don't-validate at trust boundaries, and PACT-style contract tests for integration edges. These standards reinforce the suite's existing WIT/WASM portability model by catching schema, compatibility, and invariant drift before runtime.
 
 ## Keeping docs current
 

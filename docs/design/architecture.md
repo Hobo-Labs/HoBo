@@ -111,7 +111,6 @@ Trait concept):
 | **BoundaryContract** | Any of 13 integration edge kinds (http, event, resource-binding, agent-tool, …) with effects + resilience | `packages/contracts/src/contract-ir.ts` (`hobo.contract-ir/v1`, content-hashed) | `can-deploy` / Gatekeeper (ADR-0136) |
 | **Membrane (WIT/wRPC)** | The polyglot call boundary between components and providers | `LinkRecord.boundaryMode`/transport; link table + wRPC layer | runtime link enforcement; manifest-declared links only |
 | **Integration boundary (PACT)** | Consumer↔provider expectations across packages | `contracts/*.pact.json` + `*-boundaries.test.ts` | standards gate + `architecture:guard` |
-| **Parse boundary** | Untrusted input → derived domain types | per-package parsers | technical-standards.md ("one parser boundary") |
 | **Consistency boundary** | The write model (Aggregate) | stream + `expectedSeq`/fencing | DurableEventStore CAS (ADR-0135) |
 | **Capability boundary** | What a component may call, from inferred usage | grants (`packages/core/src/capability/`) | capability-enforcement conformance suite |
 | **Isolation boundary (Station)** | Control-plane isolation: tenant, residency, air-gap, trust domain | `StationIsolation` proto | Station/Rail policy pins |
