@@ -1075,7 +1075,7 @@ f: /* TODO: remove block */`;
 		assert.equal(guard(repo, "--staged").status, 1);
 	});
 
-	it("allows existing design links to move to Linear or immutable history without adding prose", () => {
+	it("allows existing design links to move without adding prose", () => {
 		const repo = fixture();
 		write(repo, "docs/design/existing.md", "# Existing\n[Scope](./old.md)\n");
 		git(repo, "add", "--all");
@@ -1101,6 +1101,13 @@ f: /* TODO: remove block */`;
 			repo,
 			"docs/design/existing.md",
 			"# Existing\n[Scope](https://github.com/Hobo-Labs/HoBo/blob/0123456789012345678901234567890123456789/old.md)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](../../packages/example/README.md#usage)\n",
 		);
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 0);
