@@ -47,7 +47,7 @@ async function verifyProvider<Type extends string>(type: Type) {
 	const entrypoint = () => "web";
 	const definition = bindle("shop", (b) => {
 		const orders = b.topic().allow("publish");
-		const audit = b.topic().allow("publish").dependsOn(orders);
+		const audit = b.topic().allow("publish");
 		return {
 			orders,
 			audit,
@@ -67,22 +67,35 @@ async function verifyProvider<Type extends string>(type: Type) {
 		if (primary === undefined) throw new Error("missing shared resource");
 		return primary;
 	};
+	const prior = (input: Parameters<Mapper["build"]>[0], owner: string) => {
+		const primary = input.priorPrimitives?.[owner];
+		if (primary === undefined) throw new Error("missing prior resource");
+		return primary;
+	};
 	const topic: Mapper = {
 		resourceTypes: [type],
 		operations: ["publish"],
 		annotations: [],
 		bindsEntrypoint: false,
+		validateGraph: ({ nodes }) => {
+			if (
+				nodes.web?.dependencies.length !== 2 ||
+				!nodes.web.dependencies.includes("orders") ||
+				!nodes.web.dependencies.includes("audit")
+			)
+				throw new Error("invalid topic graph");
+		},
 		build: (input) =>
-			input.declaration.name === "orders"
+			input.declaration.name === "audit"
 				? Effect.gen(function* () {
 						const primary = yield* Physical("bus", {});
 						return { primary, resources: [primary], boundDependencies: [] };
 					})
 				: Effect.succeed({
-						primary: shared(input, "orders"),
+						primary: prior(input, "audit"),
 						resources: [],
-						sharedDependency: "orders",
-						boundDependencies: ["orders"],
+						sharedPrimitive: "audit",
+						boundDependencies: [],
 					}),
 	};
 	const web: Mapper = {
@@ -195,4 +208,75 @@ describe("provider-neutral Alchemy topic mapping with test providers", () => {
 	for (const type of ["Spec.First", "Spec.Second"] as const)
 		it(`maps declared topics and counts ${type} once`, async () =>
 			verifyProvider(type));
+	it.each([
+		"missing-validator",
+		"wrong-owner",
+		"both-sharing-modes",
+		"extra-resource",
+	] as const)("rejects unsafe shared mapping: %s", async (mode) => {
+		type Physical = Resource<"Spec.Shared", object, { id: string }>;
+		const Physical = Resource<Physical>("Spec.Shared");
+		const definition = bindle("shared", (b) => ({
+			a: b.topic(),
+			z: b.topic(),
+		}));
+		type Mapper = AlchemyPrimitiveMapper<
+			BindleEntrypoint,
+			typeof definition.requirements,
+			Stack | Provider.Provider<Physical>
+		>;
+		const mapper: Mapper = {
+			resourceTypes: ["Spec.Shared"],
+			operations: [],
+			annotations: [],
+			bindsEntrypoint: false,
+			build: (input) =>
+				Effect.gen(function* () {
+					if (input.declaration.name === "a") {
+						const primary = yield* Physical("shared", {});
+						return { primary, resources: [primary], boundDependencies: [] };
+					}
+					const primary = input.priorPrimitives?.a;
+					if (!primary) throw new Error("missing fixture");
+					if (mode === "extra-resource") yield* Physical("unreported", {});
+					const shared = {
+						primary,
+						resources: [],
+						sharedPrimitive: mode === "wrong-owner" ? "missing" : "a",
+						boundDependencies: [],
+					};
+					if (mode === "both-sharing-modes")
+						Object.assign(shared, { sharedDependency: "a" });
+					return shared;
+				}),
+		};
+		if (mode !== "missing-validator")
+			Object.defineProperty(mapper, "validateGraph", {
+				value: () => {},
+				enumerable: true,
+			});
+		await expect(
+			Effect.runPromise(
+				mapBindleToAlchemy(
+					definition,
+					{ topic: mapper },
+					{ assessRequirements: () => ({ status: "supported" }) },
+				).pipe(
+					Effect.provideService(StackContext, {
+						name: "Shared",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+					Effect.provide(
+						Provider.succeed(Physical, {
+							reconcile: () => Effect.succeed({ id: "bus" }),
+							delete: () => Effect.void,
+						}),
+					),
+				),
+			),
+		).rejects.toThrow("MAPPING_INCOMPLETE");
+	});
 });

@@ -310,7 +310,10 @@ It refuses missing mappings and unbound dependencies.
 When two declarations share one Alchemy resource, a mapper can set
 `sharedDependency` to a declared dependency's name and return that dependency's
 exact primary resource. It must return no additional resources, actions or
-bindings. The shared resource appears once
+bindings. A mapper that validates the complete graph can instead use
+`sharedPrimitive` to reuse an already mapped primitive without claiming a
+dependency edge; it must return that primitive's exact primary resource and no
+additional resources, actions or bindings. The shared resource appears once
 in the mapped inventory; the mapper and host remain responsible for proving the
 application binding and for accounting for all usage of that resource.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational

@@ -65,6 +65,7 @@ export interface AlchemyPrimitiveMapper<Entrypoint, Requirements, Services> {
 	readonly build: (
 		input: AlchemyPrimitiveInput<Entrypoint, Requirements> & {
 			readonly dependencies: Readonly<Record<string, ResourceLike>>;
+			readonly priorPrimitives?: Readonly<Record<string, ResourceLike>>;
 		},
 	) => Effect.Effect<AlchemyMappedPrimitive<Entrypoint>, never, Services>;
 }
@@ -97,6 +98,7 @@ export interface AlchemyMappedPrimitive<Entrypoint> {
 	readonly primary: ResourceLike;
 	readonly resources: readonly ResourceLike[];
 	readonly sharedDependency?: string;
+	readonly sharedPrimitive?: string;
 	readonly boundDependencies: readonly string[];
 	readonly boundEntrypoint?: Entrypoint;
 }
@@ -969,19 +971,28 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 					requirements,
 					entrypoint: row.entrypoint,
 					dependencies: Object.freeze(dependencies),
+					priorPrimitives: Object.freeze(
+						Object.assign(Object.create(null), primary),
+					),
 					dependencyDeclarations: Object.freeze(dependencyDeclarations),
 				})
 				.pipe(Effect.provideService(StackContext, guardedStack));
-			const shared = mapped.sharedDependency;
+			const shared = mapped.sharedDependency ?? mapped.sharedPrimitive;
 			if (
 				resources.length + mapped.resources.length > 256 ||
+				(mapped.sharedDependency !== undefined &&
+					mapped.sharedPrimitive !== undefined) ||
 				(shared === undefined &&
 					(mapped.resources.length === 0 ||
 						!mapped.resources.includes(mapped.primary))) ||
 				(shared !== undefined &&
 					(!validName(shared) ||
-						!row.dependencies.includes(shared) ||
-						dependencies[shared] !== mapped.primary ||
+						(mapped.sharedDependency !== undefined &&
+							(!row.dependencies.includes(shared) ||
+								dependencies[shared] !== mapped.primary)) ||
+						(mapped.sharedPrimitive !== undefined &&
+							(row.mapper.validateGraph === undefined ||
+								primary[shared] !== mapped.primary)) ||
 						mapped.resources.length !== 0 ||
 						resourceWrites !== previousResourceWrites ||
 						actionWrites !== previousActionWrites ||
