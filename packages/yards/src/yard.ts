@@ -21,7 +21,6 @@ import {
 } from "./canonical.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
-// public-contract: version tag serialized on Yard topology objects.
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 /**
@@ -34,7 +33,6 @@ export interface Yard {
 	readonly contract: typeof TOPOLOGY_CONTRACT_VERSION;
 	readonly name: string;
 	readonly providerId: string;
-	/** Optional registered Yard-runtime family id. */
 	readonly runtimeId?: string;
 	readonly regions: readonly string[];
 	readonly require: readonly string[];
@@ -47,16 +45,11 @@ export interface Yard {
 	/** Provider-native refs only (no credentials). */
 	readonly properties: Readonly<Record<string, JsonValue>>;
 	readonly resolverDefaults: PrimitiveResolverConfig;
-	/** Canonical set of capability-profile → provider-offering rows (ADR-0157). */
 	readonly bindings: readonly YardBinding[];
 	readonly camps: readonly Camp[];
 }
 
 export interface YardConfig {
-	/**
-	 * Provider id or factory result `{ id: string }` / string.
-	 * Required: Yard is the only direct provider selection point.
-	 */
 	readonly provider: string | { readonly id: string };
 	readonly runtimeId?: string;
 	readonly regions?: readonly string[];
@@ -69,9 +62,7 @@ export interface YardConfig {
 	readonly labels?: Readonly<Record<string, string>>;
 	readonly properties?: Readonly<Record<string, JsonValue>>;
 	readonly resolverDefaults?: Partial<PrimitiveResolverConfig>;
-	/** Capability binding rows; order is not preserved — they parse into a set. */
 	readonly bindings?: readonly YardBindingInput[];
-	/** Zero or more declared Camp shapes (may be empty). */
 	readonly camps?: readonly Camp[];
 }
 
@@ -108,8 +99,6 @@ export function yard(name: string, config: YardConfig): Yard {
 	const bindings = parseYardBindings(config.bindings, {
 		pinnedSlots: resolverDefaults.pins.map((pin) => pin.slot),
 	});
-	// Nothing in a Yard is external (boundaries.ts): a binding another vendor
-	// runs needs its own Yard and a junction, unless the provider runs it for us.
 	const violations = yardBoundaryViolations(name, providerId, bindings);
 	if (violations.length > 0) throw new YardBoundaryError(violations);
 

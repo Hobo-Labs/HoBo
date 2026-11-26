@@ -1,7 +1,6 @@
 import { isJsonString, type JsonObject } from "./json.js";
 import type { ProviderAnnotation } from "./types.js";
 
-// public-contract: platform annotation option for status-page configuration.
 export const STATUS_PAGE_OPTION = "status-page" as const;
 
 export type StatusPageBindleConfig = Readonly<{

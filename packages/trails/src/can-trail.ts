@@ -4,7 +4,6 @@ import { orderTrailSteps } from "./definition.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 import { composeTrailWithRecipes, getPlatformRecipe } from "./recipes.js";
 
-// public-contract: can-trail dry-run schema version.
 export const CAN_TRAIL_SCHEMA_VERSION = "hobo.can-trail/v1" as const;
 
 export type CanTrailReason = Readonly<{

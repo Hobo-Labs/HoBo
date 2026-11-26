@@ -24,7 +24,7 @@ import, production tenant mutation, or provider-backed customer launch.
 
 ## Architecture Evidence
 
-- `ARCHITECTURE.md` records the parse, don't validate boundary, derived domain
+- [Architecture evidence](https://linear.app/quickdeploy-ai/document/customer-onboarding-architecture-record-archived-5f6f6e0e6ec0) records the parse, don't validate boundary, derived domain
   types, commands, events, actor, event-store, materialized view/projection,
   snapshot, and read store.
 - `contracts/pacts/customer-onboarding-scope.pact.json` records the PACT

@@ -5,7 +5,6 @@
 import { createHash } from "node:crypto";
 import { isJsonObject, type JsonValue } from "./json.js";
 
-// public-contract: trail definition schema version.
 export const TRAIL_DEFINITION_SCHEMA = "hobo.trail-definition/v1" as const;
 
 export type TrailStepKind =

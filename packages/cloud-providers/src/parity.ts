@@ -1,50 +1,3 @@
-/**
- * Parity taxonomy: how far each provider namespace is actually proven, read
- * off the code rather than written down beside it.
- *
- * Why this module exists: resolver coverage was stated in prose in four places
- * (this package's index header, `src/aws.ts`, the README, the live-provider
- * matrix), and they disagreed with each other and with the provider packages'
- * own `*_RESOLVED_PRODUCT_IDS` constants. A number nobody recomputes is a claim
- * nobody checks. So the denominator here is *derived*: the catalog side comes
- * from the namespace's parsed `Yard().bindings`, the resolved side from the
- * constant the provider package exports, and nothing in between is typed by
- * hand.
- *
- * The vocabulary is the council's:
- *
- *   - `P0` — catalog only: declarable, no resolver.
- *   - `L1` — simulated: a fake-transport resolver **plus** the six lifecycle
- *     conformance cases (create/update/replace/delete-idempotent/adopt/
- *     crash-resume) **plus** a PACT.
- *   - `L2` — local-live: the six lifecycle cases against real local processes.
- *   - `L3` — local-DX: a timed offline script, minutes recorded.
- *   - `P2` / `P3` — cloud live / cloud DX. Fallback claims only.
- *
- * WHAT THIS LAYER CAN SEE: constants only. It sees that a resolver id is
- * *declared* (`*_RESOLVED_PRODUCT_IDS`); it cannot see a conformance run or a
- * pact. It therefore emits `L1-DECLARED`, explicitly not the council's full L1.
- * `L2`/`L3`/`P2`/`P3` are never emitted: they need executed evidence later
- * layers own, and printing one from static data would be exactly the overclaim
- * this module exists to remove.
- *
- * Grain: per-provider or per-`(provider, profile)` *product* count. Provider
- * rows de-duplicate a product listed under two profiles; profile rows contain
- * only that profile's ids and resolved subset. One resolved product makes the
- * row `L1-DECLARED`; zero makes it `P0`. The denominator, not the level, says
- * how much is covered.
- *
- * This is a read model, not a deployment decision (see ADR.md): it does not
- * select among a Yard's offerings for deployment. It does canonicalize —
- * ids are sorted and de-duplicated, bindings without a `productId` are left
- * out of the product counts, and rows come back in `PARITY_PROVIDERS` order.
- * A resolved id the catalog does not declare is refused with a typed error
- * rather than dropped, because silently dropping it would make the
- * denominator look tidier than the code is.
- *
- * Determinism: no clock, no randomness, no environment reads; ids are
- * de-duplicated and sorted; every returned value is deep-frozen.
- */
 import { AWS_RESOLVED_PRODUCT_IDS } from "@hobo/provider-aws";
 import { AZURE_RESOLVED_PRODUCT_IDS } from "@hobo/provider-azure";
 import { CLOUDFLARE_RESOLVED_PRODUCT_IDS } from "@hobo/provider-cloudflare";
@@ -66,7 +19,6 @@ import * as hostinger from "./hostinger.js";
 import * as kubernetes from "./kubernetes.js";
 import * as vercel from "./vercel.js";
 
-// public-contract: the parity level vocabulary every parity claim depends on.
 export const PARITY_LEVELS = Object.freeze([
 	"P0",
 	"L1",
@@ -80,7 +32,6 @@ export type ParityLevel = (typeof PARITY_LEVELS)[number];
 
 export type SimulatedParityLevel = "P0" | "L1-DECLARED";
 
-// public-contract: refusal codes callers may branch on.
 export type ParityErrorCode =
 	| "PARITY_PROVIDER_EMPTY"
 	| "PARITY_PRODUCT_ID_EMPTY"
@@ -160,7 +111,6 @@ export function parityRow(
 	});
 }
 
-// public-contract: the provider rows providerParity() returns and their order.
 export const PARITY_PROVIDERS = Object.freeze([
 	"aws",
 	"azure",
@@ -180,7 +130,6 @@ export interface ParitySource {
 	readonly resolved: readonly string[];
 }
 
-// public-contract: where each parity row's catalog and resolved halves are read from.
 export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 	Object.freeze({
 		aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },

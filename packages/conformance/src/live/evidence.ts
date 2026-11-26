@@ -80,7 +80,7 @@ export type EvidenceProvenance = {
 	readonly suiteIds: readonly string[];
 };
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface AnonymousTrustEvidenceArtifact {
 	readonly schema: typeof ANONYMOUS_EVIDENCE_ARTIFACT_SCHEMA;
 	readonly provenance: EvidenceProvenance;

@@ -5,7 +5,7 @@ export type PostgresParameter = string | null;
 
 export type PostgresRow = { readonly [column: string]: string | null };
 
-// domain-view: parsed executor response; wire form is PostgresExecutorResponse in data-models/postgres_engine.proto.
+// domain-view:
 export interface PostgresQueryResult {
 	readonly rows: readonly PostgresRow[];
 	readonly rowCount: number;

@@ -20,7 +20,6 @@ export {
 
 export const KUBERNETES_PROVIDER_ID = "@hobo/provider-kubernetes";
 
-// A cluster has no region list of its own: where its nodes run is a fact about
 export const DEFAULT_REGIONS = ["in-cluster"];
 
 export type PublishedManifestDocuments = {

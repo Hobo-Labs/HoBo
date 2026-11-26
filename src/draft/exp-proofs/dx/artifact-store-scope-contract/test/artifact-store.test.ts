@@ -59,7 +59,7 @@ test("dependencies map authoritative design sources and owning initiatives", () 
     "docs/design/sbom-vulnerability-notice-evidence.md",
     "docs/design/platform-engineering.md#plan-25",
     "docs/design/contracts-policy-flags.md#plan-29",
-    "docs/design/technical-standards.md",
+    "AGENTS.md#hobo-implementation-architecture-rules",
   ]);
   assert.deepEqual(ARTIFACT_STORE_SCOPE.adrRefs, [
     "docs/design/adr/07-portability-extensibility.md#adr-0062",

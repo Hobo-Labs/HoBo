@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
-	chmodSync,
-	mkdirSync,
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -85,11 +79,9 @@ function commitBulk(dir: string): string {
 
 function writeStandardsFixture(dir: string) {
 	const guidance = "Protobuf CUE Parse, don't validate PACT\n";
-	mkdirSync(join(dir, "docs/design"), { recursive: true });
 	writeFileSync(join(dir, "package.json"), '{ "typescript": "6.0.3" }\n');
 	writeFileSync(join(dir, "pnpm-lock.yaml"), "typescript@6.0.3\n");
 	writeFileSync(join(dir, "AGENTS.md"), guidance);
-	writeFileSync(join(dir, "docs/design/technical-standards.md"), guidance);
 }
 
 function pnpmShimPath(): string {

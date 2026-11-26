@@ -47,7 +47,6 @@
 
 import { sortKeys } from "@hobo/core";
 
-// public-contract: wire identity of the declaration manifest.
 export const RESOURCE_INTENT_SCHEMA = "hobo.resource-intent/v1";
 
 export type Negotiation = "require" | "prefer";

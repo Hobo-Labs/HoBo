@@ -48,7 +48,6 @@ type BindingMetadataBag = ComponentBinding & {
 };
 
 /** Default name when authors use nameless `bindle((b) => …)`. */
-// public-contract: nameless Bindles compile to this stable manifest name.
 export const DEFAULT_BINDLE_NAME = "app";
 
 function isBindingMetadataBag(

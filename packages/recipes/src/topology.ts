@@ -11,7 +11,6 @@ import type { CanonicalValue } from "@hobo/trust";
 
 import type { RecipeId } from "./ids.js";
 
-// public-contract: versions resolved deployment topologies.
 export const RESOLVED_TOPOLOGY_SCHEMA_VERSION = "hobo.resolved-topology/v1";
 
 // parallel-type-allowed: the compiled resource with BindlePrimitive and RealizationKind unions; hobo.recipes.v1.ResolvedResource is the persisted projection the topology digest is taken over.

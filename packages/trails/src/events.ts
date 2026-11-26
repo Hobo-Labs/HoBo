@@ -1,7 +1,6 @@
 /**
  * Trail event family. Identity-sensitive progress reuses credential-audit posture.
  */
-// public-contract: trail event schema version.
 export const TRAIL_EVENT_SCHEMA = "hobo.trail-events/v1" as const;
 
 export const TRAIL_EVENTS = Object.freeze({

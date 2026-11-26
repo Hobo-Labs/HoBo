@@ -107,7 +107,6 @@ html{color-scheme:light dark}
 `;
 }
 
-// public-contract: the one inline script the page's CSP allows, by its hash.
 export const THEME_BOOT_SCRIPT = `(function(){try{var s=localStorage.getItem("hobo-theme");var t=s==="light"||s==="dark"?s:(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
 
 function scriptHash(script: string): string {

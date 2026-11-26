@@ -39,7 +39,7 @@ describe("createExtensionRegistry", () => {
 		).toThrow(/duplicate policy/);
 		expect(() =>
 			createExtensionRegistry<number>("hobo.example/v1", [], {
-				// @ts-expect-error invalid policy is a runtime parse failure too
+				// @ts-expect-error
 				duplicates: "merge",
 			}),
 		).toThrow(ExtensionRegistryError);

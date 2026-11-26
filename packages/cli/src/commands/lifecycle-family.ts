@@ -26,7 +26,6 @@ export interface LifecycleFlags {
 	readonly mode: string | null;
 	readonly project: string | null;
 	readonly yes: boolean;
-	/** `--hand-off`: an agent runs this and passes the owner's page on. */
 	readonly handOff: boolean;
 }
 
@@ -43,11 +42,6 @@ export interface PrepareInput {
 	readonly projectDir: string;
 	readonly whatIf: boolean;
 	readonly yes: boolean;
-	/**
-	 * An agent runs this for the owner (`--hand-off`): a page the owner must
-	 * see is served even without a terminal, and named on one progress line
-	 * for the agent to pass on, instead of the run refusing.
-	 */
 	readonly handOff?: boolean;
 	readonly run: CommandRunInput;
 }

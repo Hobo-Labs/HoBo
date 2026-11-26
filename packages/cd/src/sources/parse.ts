@@ -1,8 +1,3 @@
-// Parse, don't validate: every FreightSourceRecord the service stores came
-// through `parseFreightSource`, which returns a normalized record (defaults
-// applied, schema stamped) or a typed refusal listing every problem. Defaults
-// are the conservative ones: SemVer without prereleases, INDEPENDENT
-// assembly, the frozen poll interval and discovery limit.
 import { clone } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -370,7 +365,6 @@ function normalizeSubscription(
 	return item;
 }
 
-/** Normalize and check a FreightSourceRecord; `definedBy` is the principal id. */
 export function parseFreightSource(
 	input: FreightSourceRecord,
 	definedBy: string,

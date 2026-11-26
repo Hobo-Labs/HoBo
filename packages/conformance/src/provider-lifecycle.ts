@@ -46,7 +46,7 @@ export class ProviderLifecycleError extends Error {
 	}
 }
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ScratchResource {
 	readonly id: string;
 	readonly type: string;
@@ -96,7 +96,7 @@ export interface ScratchProvider {
 	): ScratchProviderResult | Promise<ScratchProviderResult>;
 }
 
-// domain-view: parse-dont-validate parsed/derived type; its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
+// domain-view:
 export interface ScratchDesired {
 	readonly type: string;
 	readonly logicalId: string;

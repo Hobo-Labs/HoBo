@@ -7,7 +7,9 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports. Preserve comments used as input
+  dynamic imports. Required `domain-view:` and `parallel-type-allowed:` markers
+  and TypeScript directives must contain no explanatory text. Preserve comments
+  used as input
   by comment-driven training and its executable fixtures. Independent
   submodules follow their own rules unless their work is explicitly requested.
 - Treat TODOs and other deferred markers as flags. Resolve a small in-scope
@@ -314,7 +316,7 @@ These rules are harness-neutral and apply to Claude Code, Cursor, Codex, Copilot
 - Require PACT-style consumer-driven contract tests for every integration boundary: SDK/runtime, runtime/provider, CLI/API, event/projection, generated plugin/host, and external service edges.
 - When changing code, automation, package metadata, CI, hooks, or agent tooling, update docs/proof notes to identify the TypeScript, Protobuf, CUE, and PACT gates that protect the change, or document the tracked gap.
 
-Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/technical-standards.md).
+Canonical detail lives in [the implementation architecture rules](#hobo-implementation-architecture-rules).
 
 ## Visual quality
 
@@ -443,7 +445,7 @@ Invoke TypeScript repo scripts through `tsx`:
 node --import tsx scripts/no-hand-edited-generated-files.mts
 ```
 
-Do not add `.mjs` repo scripts. If a non-TypeScript JavaScript-family implementation file is unavoidable because of a tooling limitation, document the exception in an ADR before adding it. Sanctioned exceptions: committed platform entry files under `packages/hobo/fixtures/deploy/<provider>/` that the target platform ingests verbatim (ADR-0126).
+Do not add `.mjs` repo scripts. If a non-TypeScript JavaScript-family implementation file is unavoidable because of a tooling limitation, record the exception in Linear before adding it. Sanctioned exceptions: committed platform entry files under `packages/hobo/fixtures/deploy/<provider>/` that the target platform ingests verbatim (ADR-0126).
 
 Before finalizing changes that add, rename, or modify implementation files, scripts, generated-file guards, package config, TypeScript config, Turbo config, or CI config, run:
 
@@ -456,6 +458,8 @@ If this check fails, fix the violation rather than bypassing it.
 ## HoBo implementation architecture rules
 
 All HoBo implementation work, including `src/draft/<kind>/<slug>` proof packages, must preserve these architectural contracts:
+
+- Keep internal thresholds and defaults private. Generate schema identifiers and enums from their contracts; give exported constants that are themselves contracts descriptive names.
 
 - **Bindle + abstract ports is the path of least resistance for app authoring.** Declare resources with the provider-neutral bindle kinds (`data`, `bucket`, `queue`, `api`, …) and let Matching select providers; `assertNoBindleProviderSelection` rejects provider pins on Bindles by construction — provider-specific `.with(...)` options belong at Camp/Yard scope and are scored as lock-in by the PortabilityReport (ADR-0024). Before claiming a thin SaaS adapter (Convex-class) covers a capability, check its impedance boundaries (typed limits exported by the provider package + the competitor doc's "Impedance boundaries" section) — never over-claim fidelity (ADR-0144).
 

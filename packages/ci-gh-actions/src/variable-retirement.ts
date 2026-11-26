@@ -10,7 +10,6 @@ export type VariableRetireLog = (
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
 
-/** What became of each name: retired (204 or 404), refused (403) or failed. */
 export type VariableRetireOutcome = Readonly<{
 	retired: readonly string[];
 	refused: readonly string[];
@@ -23,11 +22,6 @@ export const ALWAYS_RETIRED_VARIABLES: readonly string[] = [
 	["HOBO", "CI", "FLEET", "STATE"].join("_"),
 ];
 
-/**
- * Deletes each named repository variable once. Stops at the first 403: the
- * App will not be allowed the rest either, and the refusal is logged once,
- * with every name it leaves in place.
- */
 export async function retireRepositoryVariables(
 	github: GithubTransport,
 	target: Readonly<{
@@ -74,7 +68,6 @@ export async function retireRepositoryVariables(
 			return { retired, refused, failed };
 		}
 		failed.push(name);
-		// A status when GitHub answered; the transport's message when it threw.
 		target.log?.(
 			"hobo_ci_variable_retire_failed",
 			status === undefined

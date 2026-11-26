@@ -23,7 +23,6 @@ import type {
 import type { JsonObject, JsonValue } from "../json.js";
 import type { ResourceDefinition } from "./catalog.js";
 
-// public-contract: versions the portable resource-definition schema.
 export const RESOURCE_DEFINITION_VNEXT_SCHEMA =
 	"hobo.resource-definition/vNext" as const;
 
@@ -38,7 +37,6 @@ export type RemediationHint = {
 	readonly message: string;
 };
 
-/** The semantic facts a product must declare to be selectable by profile. */
 export type ResourceDefinitionSemantics = {
 	readonly schemaVersion: typeof RESOURCE_DEFINITION_VNEXT_SCHEMA;
 	readonly productId: string;
@@ -100,10 +98,6 @@ export class ResourceDefinitionMigrationError extends Error {
 	}
 }
 
-/**
- * Validate the semantic block. Legacy definitions pass straight through with no
- * semantics attached, which is what keeps existing catalogs readable.
- */
 export function parseResourceDefinitionVNext(
 	definition: ResourceDefinitionVNext,
 ): ResourceDefinitionVNext {
@@ -137,9 +131,6 @@ export function parseResourceDefinitionVNext(
 			"sponsorExposureMinorUnits must not be negative",
 		);
 	}
-	// A driver reference is what separates a described product from a
-	// deployable one; selection refuses candidates without it anyway, so
-	// catching it at load gives a far better error.
 	if (semantics.executorRef.length === 0) {
 		throw new ResourceDefinitionMigrationError(
 			definition.id,
@@ -149,12 +140,6 @@ export function parseResourceDefinitionVNext(
 	return definition;
 }
 
-/**
- * Project a definition into the shape profile-aware selection consumes.
- *
- * Returns `undefined` for a legacy definition: it stays matchable through the
- * existing port/feature path and is never silently promoted.
- */
 export function toSelectionCandidate(
 	definition: ResourceDefinitionVNext,
 ): SelectionCandidate | undefined {
@@ -226,9 +211,6 @@ export function semanticsDigestInput(
 		continuity: semantics.continuity,
 		supportsExport: semantics.supportsExport,
 		sponsorExposureMinorUnits: semantics.sponsorExposureMinorUnits,
-		// Array values are readonly on the semantics record and mutable in the
-		// JSON view; copying is what publishing means here anyway -- this is a
-		// snapshot, not a live window onto the definition it came from.
 		structuredCapabilities: Object.fromEntries(
 			Object.entries(semantics.structuredCapabilities)
 				.sort(([a], [b]) => a.localeCompare(b))

@@ -20,7 +20,6 @@ import type {
 /** Required Camp component-host runtimes implied by bindle dependencies. */
 export type RequiredRuntimeKind = "wasm" | "oci";
 
-// public-contract: serialized option name read by brokers and Camp hosts.
 export const DEPENDENCY_OPTION = "dependency" as const;
 
 /**

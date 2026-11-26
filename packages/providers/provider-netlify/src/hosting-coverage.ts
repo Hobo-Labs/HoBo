@@ -32,7 +32,6 @@ export const NETLIFY_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 		}),
 	]);
 
-/** The I14 coverage document for Netlify. */
 export const NETLIFY_HOSTING_COVERAGE: HostingCoverage = defineHostingCoverage({
 	providerId: "netlify",
 	resolvedProductIds: [...NETLIFY_RESOLVED_PRODUCT_IDS],

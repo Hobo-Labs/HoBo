@@ -54,10 +54,8 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// public-contract: env var naming the runner-host agent config file on a runner host.
 export const CD_RUNNER_HOST_ENV = "HOBO_CD_RUNNER_HOST";
 
-// public-contract: the NO_PLACE taint the Station keeps on a runner host that is not ready.
 export const RUNNER_HOST_UNREADY_TAINT = "hobo.ci/runner-host-unready";
 
 const HOST_KINDS: readonly RunnerHostKind[] = [
