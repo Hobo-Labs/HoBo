@@ -81,9 +81,12 @@ more than 100 versions, versions without canonical UUIDs or timestamps, or
 versions with equal timestamps whose newest-first order cannot be established.
 The bounded `AwsSecretOrdering` model checks sorting and tie rejection for three
 versions; it assumes the provider reports truthful timestamps.
+The provider's creation timestamps are its only ordering evidence, so equal
+timestamps cannot establish which version is newer.
 String-valued secrets and application or WASI bindings are not supported.
 The `AwsSecretVersions` bounded model assumes persisted IDs, provider
-idempotency and trusted host verification; it does not prove AWS behavior.
+idempotency, trusted host verification, timeout delivery and transport
+completion; it does not prove AWS behavior.
 
 AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
 its provider choice outside the Bindle: pass the neutral Bindle through
@@ -115,6 +118,8 @@ SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
+The runtime reports a successful write only after transport completion, even if
+application code replaces `Promise.race`.
 
 A Node.js HTTP host can bind those two AWS stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
