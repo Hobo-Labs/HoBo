@@ -39,7 +39,7 @@ export function awsVersionedSecretBindleMappers<Entrypoint, Requirements>(
 		annotations: ["aws:versioned-secret"],
 		limitations: [
 			"Node.js binary secrets only, at most 100 versions; persist each UUID before writing and reconcile unknown writes with that same ID.",
-			"Application and WASI bindings are not implemented; the host must authenticate grants, enforce IAM and fence in-flight work.",
+			"WASI bindings are not implemented; HTTP bindings require the host to authenticate grants, enforce IAM and fence in-flight work.",
 		],
 		validate(input) {
 			base.secret.validate?.(input);

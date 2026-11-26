@@ -6,6 +6,7 @@ import type { Providers } from "@alchemy.run/aws";
 import type { Table } from "@alchemy.run/aws/DynamoDB";
 import { WebFunction } from "@alchemy.run/aws/Lambda";
 import type { Bucket } from "@alchemy.run/aws/S3";
+import type { Secret } from "@alchemy.run/aws/SecretsManager";
 import type { ResourceLike } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import { awsBindleMappers } from "./aws.js";
@@ -199,7 +200,7 @@ export function awsHttpBindleMappers<Requirements>(
 		annotations: ["hobo:session-replay"],
 		bindsEntrypoint: true,
 		limitations: [
-			"Node.js HTTP with explicitly selected bounded DynamoDB and S3 bindings only; the host must authenticate the source, endpoint, stores, IAM and pricing inventory.",
+			"Node.js HTTP with explicitly selected bounded DynamoDB, S3 and Secrets Manager bindings only; the host must authenticate the source, endpoint, stores, IAM and pricing inventory.",
 		],
 		validate,
 		build: (input) =>
@@ -210,13 +211,19 @@ export function awsHttpBindleMappers<Requirements>(
 						"BINDLE_GRAPH_UNSUPPORTED",
 						"AWS dependencies are incomplete",
 					);
-				const env: Record<string, Table["tableName"] | Bucket["bucketName"]> =
-					{};
+				const env: Record<
+					string,
+					Table["tableName"] | Bucket["bucketName"] | Secret["secretArn"]
+				> = {};
 				for (const binding of graph.bindings) {
 					const dependency: ResourceLike | undefined =
 						input.dependencies[binding.name];
 					const expected =
-						binding.kind === "kv" ? "AWS.DynamoDB.Table" : "AWS.S3.Bucket";
+						binding.kind === "kv"
+							? "AWS.DynamoDB.Table"
+							: binding.kind === "bucket"
+								? "AWS.S3.Bucket"
+								: "AWS.SecretsManager.Secret";
 					if (
 						!dependency ||
 						dependency.FQN !== binding.name ||
@@ -230,7 +237,9 @@ export function awsHttpBindleMappers<Requirements>(
 					env[binding.environment] =
 						binding.kind === "kv"
 							? (dependency as Table).tableName
-							: (dependency as Bucket).bucketName;
+							: binding.kind === "bucket"
+								? (dependency as Bucket).bucketName
+								: (dependency as Secret).secretArn;
 				}
 				const primary = yield* WebFunction(graph.applicationName, {
 					main: canonical,

@@ -81,7 +81,8 @@ more than 100 versions, versions without canonical UUIDs or timestamps, or
 versions with equal timestamps whose newest-first order cannot be established.
 The bounded `AwsSecretOrdering` model checks sorting and tie rejection for three
 versions; it assumes the provider reports truthful timestamps.
-String-valued secrets and application or WASI bindings are not supported.
+String-valued secrets and WASI bindings are not supported. HTTP applications
+may use scoped secret bindings as described below.
 The `AwsSecretVersions` bounded model assumes persisted IDs, provider
 idempotency and trusted host verification; it does not prove AWS behavior.
 
@@ -116,14 +117,17 @@ outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
 
-A Node.js HTTP host can bind those two AWS stores to a Bindle application with
+A Node.js HTTP host can bind the selected DynamoDB, S3 and versioned secret
+stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
-from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
-Bindle, its application name, exactly the declared stores, and a synchronous
+from `@hobo/iac-alchemy/aws/http-runtime`. Use `secret(name)` for a versioned
+secret. The host supplies the selected Bindle, its application name, exactly the declared stores, and a synchronous
 verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
-request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
-headers; a stalled handler keeps one of 32 capacity slots until it settles.
+request ends. The bounded `AwsHttpSecret` model checks the secret write outcome
+and retained version ID across request retirement and grant revocation; it
+assumes the host verifier and provider behavior. The runtime buffers responses
+up to 1 MiB, 1,024 chunks and 16 KiB of headers; a stalled handler keeps one of 32 capacity slots until it settles.
 For an Alchemy AWS Web Function, create a source in the application's entry
 module. The `host` below is your own authority: it creates the branded stores
 for the provided physical names, verifies each grant, and supplies AWS clients.
@@ -133,7 +137,7 @@ import { defineAwsHttpSource } from "@hobo/iac-alchemy/aws/http-source";
 import { startAwsHttpServer } from "@hobo/iac-alchemy/aws/http-server";
 
 export const source = defineAwsHttpSource({
-  bindle: selectedBindle, // withAwsDynamoKv and withAwsS3 already applied
+  bindle: selectedBindle, // apply the appropriate AWS target choices first
   applicationName: "web",
   environment: process.env,
   resolveStores: (bindings) => host.resolveStores(bindings),
@@ -154,6 +158,7 @@ dependency closure throughout planning and deployment.
 import { awsDynamoKvBindleMappers } from "@hobo/iac-alchemy/aws/kv-mapper";
 import { awsS3BindleMappers } from "@hobo/iac-alchemy/aws/s3-mapper";
 import { awsHttpBindleMappers } from "@hobo/iac-alchemy/aws/http-mapper";
+import { awsVersionedSecretBindleMappers } from "@hobo/iac-alchemy/aws/secret-mapper";
 
 const mappers = awsHttpBindleMappers({
   source,
@@ -163,7 +168,7 @@ const mappers = awsHttpBindleMappers({
   rateLimit: 100,
   sourceFence: host.sourceFence,
   verifySource: (claim) => host.verifySource(claim),
-}, awsS3BindleMappers(awsDynamoKvBindleMappers()));
+}, awsVersionedSecretBindleMappers(awsS3BindleMappers(awsDynamoKvBindleMappers())));
 // Pass selectedBindle and mappers to mapBindleToAlchemy and the normal
 // financial planning and admission flow.
 ```

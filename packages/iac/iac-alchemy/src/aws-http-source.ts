@@ -9,12 +9,13 @@ import {
 } from "./aws-http-runtime.js";
 import { type AwsKvStore, inspectAwsDynamoKvStore } from "./aws-kv.js";
 import { type AwsS3Store, inspectAwsS3Store } from "./aws-s3.js";
+import { type AwsSecretStore, inspectAwsSecretStore } from "./aws-secret.js";
 import type { BindleForAlchemy } from "./bindle.js";
 import { observeUnexpectedSynchronousResult } from "./synchronous-result.js";
 
 export interface AwsHttpResolvedDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket";
+	readonly kind: "kv" | "bucket" | "secret";
 	readonly physicalName: string;
 	readonly allow: readonly string[];
 }
@@ -58,7 +59,7 @@ export function defineAwsHttpSource<Requirements>(options: {
 	readonly environment: Readonly<Record<string, string | undefined>>;
 	readonly resolveStores: (
 		bindings: readonly AwsHttpResolvedDependency[],
-	) => Readonly<Record<string, AwsKvStore | AwsS3Store>>;
+	) => Readonly<Record<string, AwsKvStore | AwsS3Store | AwsSecretStore>>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
 }): AwsHttpSource {
 	if (
@@ -102,7 +103,7 @@ export function defineAwsHttpSource<Requirements>(options: {
 			if (
 				typeof physicalName !== "string" ||
 				physicalName.length === 0 ||
-				physicalName.length > 255 ||
+				physicalName.length > 1024 ||
 				/[\p{Cc}]/u.test(physicalName)
 			)
 				throw new Error("AWS resource environment is unavailable");
@@ -147,14 +148,19 @@ export function defineAwsHttpSource<Requirements>(options: {
 						const grant =
 							binding.kind === "kv"
 								? inspectAwsDynamoKvStore(field.value)
-								: inspectAwsS3Store(field.value);
+								: binding.kind === "bucket"
+									? inspectAwsS3Store(field.value)
+									: inspectAwsSecretStore(field.value);
 						if (
 							!grant ||
 							(binding.kind === "kv"
 								? !("tableName" in grant) ||
 									grant.tableName !== binding.physicalName
-								: !("bucketName" in grant) ||
-									grant.bucketName !== binding.physicalName)
+								: binding.kind === "bucket"
+									? !("bucketName" in grant) ||
+										grant.bucketName !== binding.physicalName
+									: !("secretArn" in grant) ||
+										grant.secretArn !== binding.physicalName)
 						)
 							return unavailable();
 					}

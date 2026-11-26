@@ -1153,6 +1153,64 @@ try {
 			`AwsSecretOrdering ${label}: ${invariant} counterexample found\n`,
 		);
 	}
+	const httpSecretSource = readFileSync(
+		join(sharedDirectory, "AwsHttpSecret.tla"),
+		"utf8",
+	);
+	const httpSecretResult = check(
+		"AwsHttpSecret",
+		sharedDirectory,
+		join(scratch, "aws-http-secret"),
+	);
+	if (
+		httpSecretResult.status !== 0 ||
+		!httpSecretResult.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`AwsHttpSecret model checking failed:\n${httpSecretResult.stdout}\n${httpSecretResult.stderr}`,
+		);
+	process.stdout.write(httpSecretResult.stdout);
+	const httpSecretCases = [
+		[
+			"skip-recheck",
+			'IF request = "active" /\\ grant THEN "success" ELSE "unknown"',
+			'"success"',
+			"SuccessVerified",
+		],
+		[
+			"lose-write-id",
+			'THEN "none" ELSE token',
+			'THEN "none" ELSE "none"',
+			"UnknownIdentifiesWrite",
+		],
+		["unknown-witness", undefined, undefined, "NeverUnknown"],
+		["success-witness", undefined, undefined, "NeverSuccess"],
+	] as const;
+	for (const [label, before, after, invariant] of httpSecretCases) {
+		if (before !== undefined && httpSecretSource.split(before).length !== 2)
+			throw new Error(`AwsHttpSecret ${label} mutation target changed`);
+		const isolated = join(scratch, `aws-http-secret-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "AwsHttpSecret.tla"),
+			before === undefined
+				? httpSecretSource
+				: httpSecretSource.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "AwsHttpSecret.cfg"),
+			`SPECIFICATION Spec\nCONSTANTS Tokens = {t1, t2}\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check("AwsHttpSecret", isolated, join(isolated, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`AwsHttpSecret ${label} did not reach ${invariant}`);
+		process.stdout.write(
+			`AwsHttpSecret ${label}: ${invariant} counterexample found\n`,
+		);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

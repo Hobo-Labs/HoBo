@@ -9,7 +9,7 @@ import {
 
 export interface AwsHttpDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket";
+	readonly kind: "kv" | "bucket" | "secret";
 	readonly environment: string;
 	readonly allow: readonly string[];
 }
@@ -33,7 +33,7 @@ function name(value: unknown): value is string {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
-function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" {
+function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" | "secret" {
 	if (declaration.annotations.length !== 1)
 		throw new Error(
 			"AWS application dependency requires an explicit runtime choice",
@@ -47,12 +47,10 @@ function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" {
 	)
 		throw new Error("AWS application dependency is invalid");
 	const fields = Object.getOwnPropertyDescriptors(annotation.config);
-	if (
-		Object.keys(fields).length !== 3 ||
-		Object.getOwnPropertySymbols(annotation.config).length !== 0
-	)
+	if (Object.getOwnPropertySymbols(annotation.config).length !== 0)
 		throw new Error("AWS application dependency is invalid");
 	if (
+		Object.keys(fields).length === 3 &&
 		declaration.kind === "kv" &&
 		annotation.provider === "aws" &&
 		annotation.option === "dynamodb-kv" &&
@@ -62,6 +60,7 @@ function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" {
 	)
 		return "kv";
 	if (
+		Object.keys(fields).length === 3 &&
 		declaration.kind === "bucket" &&
 		annotation.provider === "aws" &&
 		annotation.option === "bounded-s3" &&
@@ -70,6 +69,18 @@ function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" {
 		fields.maxObjectBytes?.value === 1_048_576
 	)
 		return "bucket";
+	if (
+		Object.keys(fields).length === 5 &&
+		declaration.kind === "secret" &&
+		annotation.provider === "aws" &&
+		annotation.option === "versioned-secret" &&
+		fields.runtime?.value === "node-js" &&
+		fields.encoding?.value === "binary" &&
+		fields.maxValueBytes?.value === 65_536 &&
+		fields.maxVersions?.value === 100 &&
+		fields.versionIdentity?.value === "persisted-uuid"
+	)
+		return "secret";
 	throw new Error(
 		"AWS application dependency requires an explicit runtime choice",
 	);
@@ -207,7 +218,11 @@ export function captureAwsHttpGraph<Requirements>(
 			throw new Error("AWS application dependency is invalid");
 		const kind = marker(dependency);
 		const allowed =
-			kind === "kv" ? ["get", "set", "delete"] : ["read", "write", "delete"];
+			kind === "kv"
+				? ["get", "set", "delete"]
+				: kind === "bucket"
+					? ["read", "write", "delete"]
+					: ["put", "access"];
 		if (
 			dependency.declaredAllow.some(
 				(operation: string) => !allowed.includes(operation),
