@@ -442,7 +442,6 @@ export interface RivetBindleTopicBusApplicationOptions
 	) => (request: Request) => Response | Promise<Response>;
 }
 
-/** Start application logic only after the declared journals are confirmed. */
 export function createRivetBindleTopicBusApplication(
 	input: RivetBindleTopicBusApplicationOptions,
 ): RivetHttpTopicBusApplication {
