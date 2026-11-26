@@ -265,7 +265,14 @@ describe("AWS HTTP source", () => {
 		expect((await result).status).toBe(503);
 	});
 	it("serves an HTTP request and rejects invalid listeners", async () => {
-		const f = fixture(() => () => new Response("hello"));
+		const f = fixture(
+			() => async (request) =>
+				new Response(
+					request.method === "POST"
+						? String((await request.arrayBuffer()).byteLength)
+						: "hello",
+				),
+		);
 		const source = defineAwsHttpSource({
 			bindle: f.options.bindle,
 			applicationName: "web",
@@ -284,6 +291,16 @@ describe("AWS HTTP source", () => {
 			const response = await fetch(`http://127.0.0.1:${server.address.port}/`);
 			expect(response.status).toBe(200);
 			expect(await response.text()).toBe("hello");
+			const post = await fetch(`http://127.0.0.1:${server.address.port}/`, {
+				method: "POST",
+				body: "hello",
+			});
+			expect(await post.text()).toBe("5");
+			const oversized = await fetch(
+				`http://127.0.0.1:${server.address.port}/`,
+				{ method: "POST", body: "x".repeat(1_048_577) },
+			);
+			expect(oversized.status).toBe(413);
 		} finally {
 			await server.close();
 		}

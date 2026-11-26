@@ -1,6 +1,7 @@
 import type { Providers } from "@alchemy.run/aws";
 import { Table } from "@alchemy.run/aws/DynamoDB";
 import { Bucket } from "@alchemy.run/aws/S3";
+import { Secret } from "@alchemy.run/aws/SecretsManager";
 import { Topic } from "@alchemy.run/aws/SNS";
 import { Queue } from "@alchemy.run/aws/SQS";
 import * as Effect from "effect/Effect";
@@ -95,5 +96,22 @@ export function awsBindleMappers<Entrypoint, Requirements>() {
 				return { primary, resources: [primary], boundDependencies: [] };
 			}),
 	};
-	return Object.freeze({ kv, bucket, queue, topic });
+	const secret: Mapper = {
+		resourceTypes: ["AWS.SecretsManager.Secret"],
+		operations: [],
+		annotations: [],
+		bindsEntrypoint: false,
+		limitations: [
+			"Secrets Manager infrastructure only; versioned secret operations, values and application bindings are not implemented.",
+		],
+		validate: noDependencies,
+		build: (input) =>
+			Effect.gen(function* () {
+				const primary = yield* Secret(input.declaration.name, {
+					recoveryWindowInDays: 30,
+				});
+				return { primary, resources: [primary], boundDependencies: [] };
+			}),
+	};
+	return Object.freeze({ kv, bucket, queue, topic, secret });
 }
