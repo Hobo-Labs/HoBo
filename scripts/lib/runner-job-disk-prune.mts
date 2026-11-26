@@ -1,7 +1,5 @@
 const GIB = 1024 * 1024 * 1024;
 const DOCKER_ROOT_FORMAT = "{{.DockerRootDir}}";
-const KEEP_IMAGE = "hobo-ci-runner-keep:prune";
-const IMAGE_REF = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,511}$/u;
 
 export const DEFAULT_RUNNER_DISK_HEADROOM_GB = 12;
 
@@ -134,58 +132,18 @@ function belowHeadroom(sample: DiskSample, need: number): boolean {
 	return sample.availableBytes !== undefined && sample.availableBytes < need;
 }
 
-function workerImageRef(
-	env: Readonly<Record<string, string | undefined>>,
-	io: RunnerDiskPruneIo,
-): string | undefined {
-	const raw = env.HOBO_CI_WORKER_IMAGE_REF?.trim() ?? "";
-	if (raw === "") return undefined;
-	if (!IMAGE_REF.test(raw) || raw === KEEP_IMAGE) {
-		io.warn("runner-job-disk-prune: invalid HOBO_CI_WORKER_IMAGE_REF");
-		return undefined;
-	}
-	return raw;
-}
-
-function protectWorkerImage(io: RunnerDiskPruneIo, ref: string): boolean {
-	const inspected = io.docker(["image", "inspect", ref]);
-	if (!commandOk(inspected)) {
-		io.log(`runner-job-disk-prune: worker image absent ref=${ref}`);
-		return false;
-	}
-	const tagged = io.docker(["tag", ref, KEEP_IMAGE]);
-	if (!commandOk(tagged)) {
-		io.warn(`runner-job-disk-prune: docker tag ${ref} ${KEEP_IMAGE} failed`);
-		return false;
-	}
-	io.log(`runner-job-disk-prune: tagged ${ref} ${KEEP_IMAGE}`);
-	return true;
-}
-
-function restoreWorkerImage(io: RunnerDiskPruneIo, ref: string): void {
-	const restored = io.docker(["tag", KEEP_IMAGE, ref]);
-	if (!commandOk(restored)) {
-		io.warn(
-			`runner-job-disk-prune: failed to restore ${ref} from ${KEEP_IMAGE}`,
-		);
-		return;
-	}
-	const removed = io.docker(["rmi", KEEP_IMAGE]);
-	if (!commandOk(removed)) {
-		io.warn(`runner-job-disk-prune: docker rmi ${KEEP_IMAGE} failed`);
-		return;
-	}
-	io.log(`runner-job-disk-prune: restored ${ref}`);
-}
-
-function pruneBuilderAndImages(io: RunnerDiskPruneIo): void {
-	const builder = io.docker(["builder", "prune", "-af"]);
+function pruneBuilderCache(io: RunnerDiskPruneIo): void {
+	const builder = io.docker([
+		"builder",
+		"prune",
+		"--force",
+		"--filter",
+		"until=24h",
+		"--keep-storage",
+		"4GB",
+	]);
 	if (!commandOk(builder)) {
 		io.warn("runner-job-disk-prune: builder prune failed");
-	}
-	const images = io.docker(["image", "prune", "-af"]);
-	if (!commandOk(images)) {
-		io.warn("runner-job-disk-prune: image prune failed");
 	}
 }
 
@@ -233,12 +191,9 @@ export function executeRunnerJobDiskPrune(
 	if (lowDocker) lowLabels.push(beforeDocker.label);
 	if (lowWorkspace) lowLabels.push(beforeWorkspace.label);
 	io.log(
-		`runner-job-disk-prune: headroom low ${lowLabels.join(",")}; pruning builder and images`,
+		`runner-job-disk-prune: headroom low ${lowLabels.join(",")}; pruning stale builder cache`,
 	);
-	const ref = workerImageRef(env, io);
-	const kept = ref !== undefined && protectWorkerImage(io, ref);
-	pruneBuilderAndImages(io);
-	if (kept && ref !== undefined) restoreWorkerImage(io, ref);
+	pruneBuilderCache(io);
 	const afterDocker = takeSample(io, "dockerRoot", dockerRootPath);
 	const afterWorkspace = takeSample(io, "workspace", workspacePath);
 	logDf(io, "after", afterDocker, afterWorkspace, headroomBytes);

@@ -23,7 +23,6 @@ import {
 
 const GIB = 1024 * 1024 * 1024;
 const root = join(import.meta.dirname, "..", "..");
-const KEEP_IMAGE = "hobo-ci-runner-keep:prune";
 const DOCKER_ROOT = "/var/lib/docker";
 const WORKER_REF = "ghcr.io/acme/hobo-ci-worker:local";
 
@@ -81,6 +80,59 @@ function lowThenOk(): (path: string) => number {
 }
 
 describe("runner job disk prune", () => {
+	it("keeps tagged worker and other prepared images under disk pressure", () => {
+		const images = new Map([
+			[WORKER_REF, "worker"],
+			["another-job:prepared", "other"],
+		]);
+		const result = capture(
+			selfHosted({ HOBO_CI_WORKER_IMAGE_REF: WORKER_REF }),
+			{
+				dockerAvailable: true,
+				sample: lowThenOk(),
+				docker: (args) => {
+					if (args[0] === "info") return ok(`${DOCKER_ROOT}\n`);
+					if (args[0] === "image" && args[1] === "inspect")
+						return images.has(args[2] ?? "")
+							? ok()
+							: { status: 1, stdout: "", stderr: "missing" };
+					if (args[0] === "tag") {
+						const image = images.get(args[1] ?? "");
+						if (!image) return { status: 1, stdout: "", stderr: "missing" };
+						images.set(args[2] ?? "", image);
+					}
+					if (args[0] === "rmi") images.delete(args[1] ?? "");
+					if (
+						args[0] === "image" &&
+						args[1] === "prune" &&
+						args.some((arg) => arg === "-a" || arg === "--all" || arg === "-af")
+					)
+						images.clear();
+					return ok();
+				},
+			},
+		);
+		assert.equal(result.code, 0);
+		assert.equal(images.get(WORKER_REF), "worker");
+		assert.equal(images.get("another-job:prepared"), "other");
+	});
+
+	it("does not prune a worker available only by digest", () => {
+		const digest = `ghcr.io/acme/hobo-ci-worker@sha256:${"ab".repeat(32)}`;
+		let present = true;
+		const result = capture(selfHosted({ HOBO_CI_WORKER_IMAGE_REF: digest }), {
+			dockerAvailable: true,
+			sample: lowThenOk(),
+			docker: (args) => {
+				if (args[0] === "info") return ok(`${DOCKER_ROOT}\n`);
+				if (args[0] === "image" && args[1] === "prune") present = false;
+				return ok();
+			},
+		});
+		assert.equal(result.code, 0);
+		assert.equal(present, true);
+	});
+
 	it("defaults headroom to 12 GiB and rejects junk", () => {
 		assert.equal(DEFAULT_RUNNER_DISK_HEADROOM_GB, 12);
 		assert.equal(runnerDiskHeadroomBytes(undefined), 12 * GIB);
@@ -152,7 +204,7 @@ describe("runner job disk prune", () => {
 		assert.equal(result.warnings.length, 0);
 	});
 
-	it("prunes builder and images when either path is under the headroom", () => {
+	it("prunes stale builder cache when either path is under the headroom", () => {
 		const cases = [
 			{ dockerRoot: 12 * GIB - 1, workspace: 20 * GIB, low: "dockerRoot" },
 			{ dockerRoot: 20 * GIB, workspace: 12 * GIB - 1, low: "workspace" },
@@ -183,12 +235,14 @@ describe("runner job disk prune", () => {
 			assert.equal(result.code, 0, disk.low);
 			assert.deepEqual(commands(result.docker), [
 				"info -f {{.DockerRootDir}}",
-				"builder prune -af",
-				"image prune -af",
+				"builder prune --force --filter until=24h --keep-storage 4GB",
 			]);
 			assert.match(
 				result.logs.join("\n"),
-				new RegExp(`headroom low ${disk.low}; pruning builder and images`, "u"),
+				new RegExp(
+					`headroom low ${disk.low}; pruning stale builder cache`,
+					"u",
+				),
 			);
 			assert.match(result.logs.join("\n"), /before df /u);
 			assert.match(
@@ -199,124 +253,20 @@ describe("runner job disk prune", () => {
 		}
 	});
 
-	it("tags the worker image aside for the image prune and restores it", () => {
+	it("leaves tagged images alone regardless of the worker reference", () => {
 		const digest = `ghcr.io/acme/hobo-ci-worker@sha256:${"ab".repeat(32)}`;
-		for (const ref of [WORKER_REF, ` ${digest} `]) {
-			const trimmed = ref.trim();
+		for (const ref of [WORKER_REF, digest, "", "not a ref"]) {
 			const result = capture(selfHosted({ HOBO_CI_WORKER_IMAGE_REF: ref }), {
 				dockerAvailable: true,
 				sample: lowThenOk(),
 			});
-			assert.equal(result.code, 0, trimmed);
+			assert.equal(result.code, 0);
 			assert.deepEqual(commands(result.docker), [
 				"info -f {{.DockerRootDir}}",
-				`image inspect ${trimmed}`,
-				`tag ${trimmed} ${KEEP_IMAGE}`,
-				"builder prune -af",
-				"image prune -af",
-				`tag ${KEEP_IMAGE} ${trimmed}`,
-				`rmi ${KEEP_IMAGE}`,
+				"builder prune --force --filter until=24h --keep-storage 4GB",
 			]);
-			assert.match(result.logs.join("\n"), /restored /u);
 			assert.equal(result.warnings.length, 0);
 		}
-	});
-
-	it("prunes without a keep tag when the worker image is unset or absent", () => {
-		const absent = capture(
-			selfHosted({ HOBO_CI_WORKER_IMAGE_REF: WORKER_REF }),
-			{
-				dockerAvailable: true,
-				sample: lowThenOk(),
-				docker: (args) => {
-					if (args[0] === "info") return ok(`${DOCKER_ROOT}\n`);
-					if (args[0] === "image" && args[1] === "inspect") {
-						return { status: 1, stdout: "", stderr: "missing" };
-					}
-					return ok();
-				},
-			},
-		);
-		assert.deepEqual(commands(absent.docker), [
-			"info -f {{.DockerRootDir}}",
-			`image inspect ${WORKER_REF}`,
-			"builder prune -af",
-			"image prune -af",
-		]);
-		assert.match(absent.logs.join("\n"), /worker image absent/u);
-		assert.equal(absent.warnings.length, 0);
-
-		const unset = capture(selfHosted({ HOBO_CI_WORKER_IMAGE_REF: "  " }), {
-			dockerAvailable: true,
-			sample: lowThenOk(),
-		});
-		assert.deepEqual(commands(unset.docker), [
-			"info -f {{.DockerRootDir}}",
-			"builder prune -af",
-			"image prune -af",
-		]);
-	});
-
-	it("does not remove the keep tag when restore fails", () => {
-		let tags = 0;
-		const result = capture(
-			selfHosted({ HOBO_CI_WORKER_IMAGE_REF: WORKER_REF }),
-			{
-				dockerAvailable: true,
-				sample: () => 1,
-				docker: (args) => {
-					if (args[0] === "info") return ok(`${DOCKER_ROOT}\n`);
-					if (args[0] === "tag") {
-						tags += 1;
-						if (tags === 2) {
-							return { status: 1, stdout: "", stderr: "invalid reference" };
-						}
-					}
-					return ok();
-				},
-			},
-		);
-		assert.equal(result.code, 0);
-		assert.deepEqual(commands(result.docker), [
-			"info -f {{.DockerRootDir}}",
-			`image inspect ${WORKER_REF}`,
-			`tag ${WORKER_REF} ${KEEP_IMAGE}`,
-			"builder prune -af",
-			"image prune -af",
-			`tag ${KEEP_IMAGE} ${WORKER_REF}`,
-		]);
-		assert.match(result.warnings.join("\n"), /failed to restore/u);
-	});
-
-	it("still prunes when the keep tag cannot be created or the ref is unusable", () => {
-		const tagFailed = capture(
-			selfHosted({ HOBO_CI_WORKER_IMAGE_REF: WORKER_REF }),
-			{
-				dockerAvailable: true,
-				sample: () => 1,
-				docker: (args) => {
-					if (args[0] === "info") return ok(`${DOCKER_ROOT}\n`);
-					if (args[0] === "tag") return { status: 1, stdout: "", stderr: "no" };
-					return ok();
-				},
-			},
-		);
-		assert.deepEqual(commands(tagFailed.docker).slice(-2), [
-			"builder prune -af",
-			"image prune -af",
-		]);
-		assert.match(tagFailed.warnings.join("\n"), /docker tag /u);
-
-		const invalid = capture(
-			selfHosted({ HOBO_CI_WORKER_IMAGE_REF: "not a ref" }),
-			{ dockerAvailable: true, sample: () => 1 },
-		);
-		assert.deepEqual(commands(invalid.docker), [
-			"info -f {{.DockerRootDir}}",
-			"builder prune -af",
-			"image prune -af",
-		]);
-		assert.match(invalid.warnings.join("\n"), /HOBO_CI_WORKER_IMAGE_REF/u);
 	});
 
 	it("prunes from the path that could be sampled when the other df fails", () => {
@@ -330,7 +280,7 @@ describe("runner job disk prune", () => {
 		assert.equal(workspaceOnly.code, 0);
 		assert.match(
 			commands(workspaceOnly.docker).join("\n"),
-			/builder prune -af/u,
+			/builder prune --force --filter until=24h --keep-storage 4GB/u,
 		);
 		assert.match(
 			workspaceOnly.warnings.join("\n"),
@@ -338,7 +288,7 @@ describe("runner job disk prune", () => {
 		);
 		assert.match(
 			workspaceOnly.logs.join("\n"),
-			/headroom low workspace; pruning builder and images/u,
+			/headroom low workspace; pruning stale builder cache/u,
 		);
 
 		const dockerOnly = capture(selfHosted(), {
@@ -350,7 +300,7 @@ describe("runner job disk prune", () => {
 		});
 		assert.match(
 			dockerOnly.logs.join("\n"),
-			/headroom low dockerRoot; pruning builder and images/u,
+			/headroom low dockerRoot; pruning stale builder cache/u,
 		);
 	});
 
@@ -386,9 +336,8 @@ describe("runner job disk prune", () => {
 			},
 		);
 		assert.equal(stillShort.code, 0);
-		assert.match(commands(stillShort.docker).join("\n"), /image prune -af/u);
+		assert.doesNotMatch(commands(stillShort.docker).join("\n"), /image prune/u);
 		assert.match(stillShort.warnings.join("\n"), /builder prune failed/u);
-		assert.match(stillShort.warnings.join("\n"), /image prune failed/u);
 		assert.match(stillShort.warnings.join("\n"), /still below headroom/u);
 		assert.match(stillShort.logs.join("\n"), /after df /u);
 	});
@@ -433,15 +382,13 @@ describe("runner job disk prune", () => {
 		assert.doesNotMatch(unreadable.logs.join("\n"), /after df/u);
 	});
 
-	it("drops the keep-storage cap from the prune scripts", () => {
-		for (const path of [
-			"scripts/lib/runner-job-disk-prune.mts",
-			"scripts/ci/runner-job-disk-prune.mts",
-		]) {
-			const source = readFileSync(join(root, path), "utf8");
-			assert.doesNotMatch(source, /keep-storage/u, path);
-			assert.doesNotMatch(source, /HOBO_CI_WORKER_BUILDER_CACHE_CAP/u, path);
-		}
+	it("bounds cache pruning and leaves images alone", () => {
+		const source = readFileSync(
+			join(root, "scripts/lib/runner-job-disk-prune.mts"),
+			"utf8",
+		);
+		assert.match(source, /keep-storage/u);
+		assert.doesNotMatch(source, /"-af"/u);
 	});
 
 	it("preflight runs the prune on self-hosted runners before the untagged image sweep", () => {
@@ -460,6 +407,10 @@ describe("runner job disk prune", () => {
 		assert.match(
 			action,
 			/RUNNER_ENVIRONMENT: \$\{\{ runner\.environment \}\}/u,
+		);
+		assert.match(
+			action,
+			/if: runner\.environment == 'self-hosted'[\s\S]*?runner-job-disk-prune\.mts/u,
 		);
 		assert.match(action, /HOBO_CI_RUNNER_DISK_HEADROOM_GB/u);
 		assert.match(action, /default 12/u);
@@ -610,12 +561,7 @@ describe("runner job disk prune", () => {
 				"docker info -f {{.DockerRootDir}}",
 				"df -B1 --output=avail -- /var/lib/docker",
 				`df -B1 --output=avail -- ${bin}`,
-				`docker image inspect ${WORKER_REF}`,
-				`docker tag ${WORKER_REF} ${KEEP_IMAGE}`,
-				"docker builder prune -af",
-				"docker image prune -af",
-				`docker tag ${KEEP_IMAGE} ${WORKER_REF}`,
-				`docker rmi ${KEEP_IMAGE}`,
+				"docker builder prune --force --filter until=24h --keep-storage 4GB",
 				"df -B1 --output=avail -- /var/lib/docker",
 				`df -B1 --output=avail -- ${bin}`,
 			]);

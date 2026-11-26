@@ -37,6 +37,7 @@ runs:
     - name: >-
         Prune job disk on self-hosted when the docker data root or workspace
         has less than HOBO_CI_RUNNER_DISK_HEADROOM_GB free (default 12 GiB)
+      if: runner.environment == 'self-hosted'
       shell: bash
       env:
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
