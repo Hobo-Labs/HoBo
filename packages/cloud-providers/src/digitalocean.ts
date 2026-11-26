@@ -58,7 +58,6 @@ export {
 // public-contract: the provider id the authoring surface reads off this namespace; changing it repoints every Yard opened with yard(digitalocean, …).
 export const PROVIDER_ID = "digitalocean";
 
-// public-contract: the name every default DigitalOcean Yard is registered under; changing it renames them all.
 export const DEFAULT_DIGITALOCEAN_YARD_NAME = "digitalocean";
 
 export interface DigitalOceanYardOptions

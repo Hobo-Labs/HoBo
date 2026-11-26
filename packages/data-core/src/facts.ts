@@ -68,7 +68,7 @@ export const MIGRATION_EVENTS = Object.freeze({
 export type MigrationEventType =
 	(typeof MIGRATION_EVENTS)[keyof typeof MIGRATION_EVENTS];
 
-// domain-view: in-process fact; each `data` body's wire form is the matching Migration*EventData message in data-models/data_core.proto.
+// domain-view:
 export interface MigrationFact {
 	readonly type: string;
 	readonly data: JsonObject;
@@ -88,7 +88,6 @@ export const MIGRATION_FACT_VERSIONS: Readonly<Record<string, number>> =
 		[MIGRATION_EVENTS.RolledBack]: 2,
 	});
 
-/** The body version a fact of this type is appended at; 1 unless listed. */
 export function migrationFactVersion(type: string): number {
 	return MIGRATION_FACT_VERSIONS[type] ?? 1;
 }
@@ -104,7 +103,6 @@ export function fenceTokenDigest(fenceToken: string): string {
 	return `sha256:${sha256Hex(fenceToken)}`;
 }
 
-/** The phase names an in-place migration plans; no other pattern uses them. */
 const IN_PLACE_PLAN_PHASES: readonly string[] = Object.freeze([
 	"expand",
 	"backfill",
@@ -177,19 +175,16 @@ export function liftMigrationFact(fact: MigrationFact): MigrationFact {
 	return fact;
 }
 
-/** `liftMigrationFact` over a loaded journal; one fact in, one fact out. */
 export function liftMigrationFacts(
 	facts: readonly MigrationFact[],
 ): readonly MigrationFact[] {
 	return Object.freeze(facts.map((fact) => liftMigrationFact(fact)));
 }
 
-/** Which store a write fence is requested on. */
 export const FENCE_SIDES = ["source", "target"] as const;
 export type FenceSide = (typeof FENCE_SIDES)[number];
 
 export const MIGRATION_REALIZATIONS = ["native", "hub"] as const;
-/** `native` is an engine's own fast path; `hub` is the canonical envelope. */
 export type MigrationRealization = (typeof MIGRATION_REALIZATIONS)[number];
 
 function isRealization(
@@ -197,7 +192,6 @@ function isRealization(
 ): value is MigrationRealization {
 	return (
 		isJsonString(value) &&
-		// SAFETY: membership test against the closed tuple of realizations.
 		(MIGRATION_REALIZATIONS as readonly string[]).includes(value)
 	);
 }
@@ -212,21 +206,14 @@ export const MIGRATION_STATUSES = [
 ] as const;
 export type MigrationStatus = (typeof MIGRATION_STATUSES)[number];
 
-// domain-view: folded aggregate state; wire form is MigrationState in data-models/data_core.proto.
+// domain-view:
 export interface MigrationState {
 	readonly migrationId: string;
 	readonly status: MigrationStatus;
 	readonly pattern?: MigrationPatternId;
-	/**
-	 * How records travel in this run, as the plan recorded it: `hub` through
-	 * the canonical envelope, `native` through the engine's own transport.
-	 * Absent for a plan that predates the field, which ran the hub.
-	 */
 	readonly realization?: MigrationRealization;
-	/** The native migration profile, for a `native` realization. */
 	readonly profile?: string;
 	readonly completedPhases: readonly MigrationPhase[];
-	/** Checkpoint each completed phase recorded, by phase. */
 	readonly checkpoints: Readonly<Partial<Record<MigrationPhase, JsonObject>>>;
 	readonly cutOver: boolean;
 	/**
@@ -252,19 +239,10 @@ export function initialMigrationState(migrationId: string): MigrationState {
 function isPhase(value: JsonValue | undefined): value is MigrationPhase {
 	return (
 		isJsonString(value) &&
-		// SAFETY: membership test against the closed tuple of phase names.
 		(MIGRATION_PHASES as readonly string[]).includes(value)
 	);
 }
 
-/**
- * The aggregate's fold. Total over every `migration.*` fact: an unrecognised
- * type leaves the state unchanged rather than wedging a replay.
- *
- * `completed` and `rolled-back` are absorbing. A fact that arrives after
- * either — a late `Held`, a stray `PhaseApplied` — changes nothing, so a
- * finished migration cannot be reopened by whatever is appended next.
- */
 export function evolveMigration(
 	state: MigrationState,
 	fact: MigrationFact,
@@ -290,7 +268,6 @@ export function evolveMigration(
 		}
 		case MIGRATION_EVENTS.PhaseApplied: {
 			const phase = data.phase;
-			// Legacy expand/backfill/contract facts carry no uniform phase name.
 			if (!isPhase(phase)) return state;
 			const checkpoint = isJsonObject(data.checkpoint) ? data.checkpoint : {};
 			const { heldAt: _heldAt, heldReason: _heldReason, ...rest } = state;
@@ -346,11 +323,6 @@ export function foldMigration(
 	return state;
 }
 
-/**
- * A migration may hold only in a safe-hold phase. The fence-and-flip step is
- * the one phase that either completes or compensates; asking to hold inside
- * it is a programming error, refused before any fact is written.
- */
 export function assertHoldable(phase: MigrationPhase): void {
 	if (!isSafeHold(phase)) {
 		throw new DataCoreError(
@@ -361,17 +333,8 @@ export function assertHoldable(phase: MigrationPhase): void {
 	}
 }
 
-/** Where a migration's facts are appended and replayed from. */
 export interface MigrationJournal {
 	load(migrationId: string): Awaitable<readonly MigrationFact[]>;
-	/**
-	 * Append one fact, on the condition that the journal holds exactly
-	 * `expectedCount` facts for this migration — the number the caller loaded,
-	 * plus those it has appended itself. Any other count is refused with
-	 * `JournalConflictError` and nothing is appended: a compare-and-set on the
-	 * head, which is what keeps two drivers of one migration from both
-	 * deciding from a view only one of them still has.
-	 */
 	append(
 		migrationId: string,
 		fact: MigrationFact,
@@ -407,12 +370,6 @@ export interface EventStoreJournalContext {
 
 export const MIGRATION_STREAM_PREFIX = "migration:";
 
-/**
- * A journal over the durable event store: one stream per migration, appended
- * under optimistic `seq`. This is the production journal — a migration's
- * state then survives a restart and replays like any other aggregate. The
- * stream must hold this migration's facts and nothing else.
- */
 export function createEventStoreMigrationJournal(
 	store: Pick<EventStore, "append" | "read">,
 	context: EventStoreJournalContext,
@@ -426,13 +383,10 @@ export function createEventStoreMigrationJournal(
 				facts.push(
 					Object.freeze({
 						type: event.type,
-						// SAFETY: migration facts are appended by this journal as JSON objects.
 						data: (isJsonObject(event.data) ? event.data : {}) as JsonObject,
 					}),
 				);
 			}
-			// A stream written by an earlier release holds bodies of an earlier
-			// version: lifted here, before anything folds them.
 			return liftMigrationFacts(facts);
 		},
 		async append(
@@ -440,11 +394,6 @@ export function createEventStoreMigrationJournal(
 			fact: MigrationFact,
 			expectedCount: number,
 		): Promise<void> {
-			// One fact is one event and a stream's sequence starts at one, so
-			// the count the run holds is the sequence the stream must be at.
-			// The store's own optimistic check is the compare-and-set; the head
-			// is never read again here, because re-reading it is what let a
-			// stale driver's append succeed.
 			try {
 				await store.append(
 					streamId(migrationId),

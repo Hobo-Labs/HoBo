@@ -25,7 +25,7 @@ export const MATRIX_FINDING_SEVERITIES = ["error", "warning", "info"] as const;
 
 export type MatrixFindingSeverity = (typeof MATRIX_FINDING_SEVERITIES)[number];
 
-// domain-view: parsed narrowing of CapabilityMatrixFindingRecord in
+// domain-view:
 export type CapabilityMatrixFinding = {
 	readonly code: MatrixFindingCode;
 	readonly severity: MatrixFindingSeverity;
@@ -35,7 +35,7 @@ export type CapabilityMatrixFinding = {
 	readonly definitionIds: readonly string[];
 };
 
-// domain-view: parsed narrowing of CoverageSummaryRecord in
+// domain-view:
 export type CoverageSummaryEntry = {
 	readonly verdict: CoverageVerdict;
 	readonly cells: number;

@@ -29,7 +29,7 @@ export {
 } from "@hobo/manifest-declaration";
 export { DEPLOYMENT_PLAN_SCHEMA };
 
-// domain-view: capability-negotiation verdict; wire form is CapabilityVerdict in data-models/cloud.proto.
+// domain-view:
 export type CapabilityVerdict =
 	| { kind: "full" }
 	| { kind: "partial"; missing: string[] }
@@ -40,7 +40,7 @@ export type {
 	ResourcePlanAuthoring as ResourcePlan,
 } from "@hobo/manifest-plan";
 
-// domain-view: ranked candidate inside match.Decided; wire form is RankedCandidate in data-models/cloud.proto.
+// domain-view:
 export interface RankedCandidate {
 	definitionId: string;
 	providerId: string;
@@ -48,13 +48,13 @@ export interface RankedCandidate {
 	priority: number;
 }
 
-// domain-view: structured rejection inside match.Decided; wire form is RejectedCandidate in data-models/cloud.proto.
+// domain-view:
 export interface RejectedCandidate {
 	definitionId: string;
 	reason: string;
 }
 
-// domain-view: match.Decided body; wire form is MatchDecided in data-models/cloud.proto.
+// domain-view:
 export interface MatchDecided {
 	deploymentId: string;
 	resource: string;
@@ -79,7 +79,7 @@ export interface MatchDecided {
 	nonPortableRows?: readonly string[];
 }
 
-// domain-view: rejection remediation; wire form is PlanRemediation in data-models/cloud.proto.
+// domain-view:
 export interface PlanRemediation {
 	resource: string;
 	code: string;

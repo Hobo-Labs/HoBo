@@ -22,20 +22,14 @@ import { CD_JOURNAL_MEMBER_PLANS } from "./fleet-plans.js";
 // creates nothing. With several provisioners, members go round-robin across
 // them for vendor spread.
 
-// public-contract: the CD runtime parses the fleet's members from this setting.
 export const JOURNAL_FLEET_SETTING = "HOBO_CD_POSTGRES_FLEET";
-// public-contract: the CD runtime parses the fleet's witnesses from this setting.
 export const JOURNAL_WITNESS_SETTING = "HOBO_CD_POSTGRES_WITNESSES";
 
-/** Creates one database for a fleet member. */
 export interface JournalMemberProvisioner {
-	/** The member plan (`CD_JOURNAL_MEMBER_PLANS`) its databases run on. */
 	readonly plan: string;
 	create(input: {
 		readonly member: string;
-		/** Stable for this member of this fleet: a retry adopts, never duplicates. */
 		readonly idempotencyKey: string;
-		/** The owner's store: where a provisioner keeps its durable claim. */
 		readonly store: OpenedSecretStore;
 	}): Promise<{
 		readonly connectionString: string;
@@ -50,12 +44,10 @@ export type JournalFleetLayout = Readonly<{
 	witnesses: readonly JournalFleetMember[];
 }>;
 
-/** The entry holding a member's connection string (`neon-eu` → `HOBO_CD_POSTGRES_URL_NEON_EU`). */
 export function journalMemberUrlEntry(id: string): string {
 	return `HOBO_CD_POSTGRES_URL_${id.toUpperCase().replaceAll("-", "_")}`;
 }
 
-/** The entry holding a member's claim link. */
 export function journalMemberClaimEntry(id: string): string {
 	return `HOBO_CD_POSTGRES_CLAIM_${id.toUpperCase().replaceAll("-", "_")}`;
 }
@@ -104,7 +96,6 @@ async function holds(store: OpenedSecretStore, name: string): Promise<boolean> {
 	throw new Error(`Cannot read ${store.reference(name)}.`);
 }
 
-/** Provision what the journal's fleet is missing (see the module comment). */
 export async function prepareJournalFleet(input: {
 	readonly store: OpenedSecretStore;
 	readonly provisioners: readonly JournalMemberProvisioner[];
@@ -161,7 +152,6 @@ export async function prepareJournalFleet(input: {
 			throw new Error(
 				`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
 			);
-		// The claim link first: a member whose URL is stored is complete.
 		if (created.claimUrl !== undefined)
 			await store.port.put(
 				journalMemberClaimEntry(member.id),

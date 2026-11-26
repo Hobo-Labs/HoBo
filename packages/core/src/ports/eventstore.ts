@@ -22,11 +22,6 @@ export interface EventInput<T = unknown> {
 	meta?: JsonObject;
 }
 
-/**
- * Database-local monotonic position within one storage partition.
- * Distinct from domain EventEnvelope.seq (per-stream) and event id (ULID).
- * Represented as bigint so full 64-bit values survive Node + browser WASM.
- */
 export type EventPosition = bigint & { readonly __brand: "EventPosition" };
 
 /**
@@ -48,7 +43,6 @@ export interface AppendOptions {
 	causationId?: string;
 	correlationId?: string;
 	lane?: string;
-	/** When set, rejects appends if stored owner_epoch is higher (stale holder). */
 	fenceToken?: bigint;
 }
 
@@ -56,9 +50,7 @@ export interface AppendResult {
 	streamId: string;
 	appended: EventEnvelope[];
 	deduped: EventEnvelope[];
-	/** First database-local position of this commit, if any events appended. */
 	firstPosition?: EventPosition;
-	/** Last database-local position of this commit, if any events appended. */
 	lastPosition?: EventPosition;
 }
 
@@ -86,16 +78,9 @@ export interface SnapshotRecord<S = unknown> {
 	savedAt: string;
 }
 
-/**
- * Stream head metadata for fenced streams. Stores that enforce single-writer
- * fencing (owner_epoch) expose it so choreography writers on the same
- * partition can continue a fenced stream instead of bypassing the fence.
- */
 export interface StreamHead {
 	readonly streamId: string;
-	/** Current revision (== seq of the last appended event). */
 	readonly revision: number;
-	/** Current fencing owner epoch; 0 = unfenced. */
 	readonly ownerEpoch: bigint;
 }
 
@@ -124,7 +109,6 @@ export interface SnapshotWriteOptions {
 	readonly fenceToken?: bigint;
 }
 
-/** Baseline EventStore port — append, stream read, live wake, snapshot. */
 export interface EventStore {
 	append(
 		streamId: string,
@@ -142,11 +126,8 @@ export interface EventStore {
 		seq: number,
 		opts?: SnapshotWriteOptions,
 	): Promise<SnapshotRecord>;
-	/** Present on stores that enforce single-writer fencing. */
 	getStreamHead?(streamId: string): StreamHead | undefined;
 }
-
-// ── Durable effects (staged with domain events in one transaction) ──────────
 
 export type DurableEffectKind =
 	| "queue"
@@ -224,8 +205,6 @@ export interface DurableCommitResult extends AppendResult {
 	readonly effects: readonly DurableEffectReceipt[];
 }
 
-// ── Durable subscriptions (checkpoint + lease, not live-only) ───────────────
-
 export type SubscriptionId = string & { readonly __brand: "SubscriptionId" };
 export type PartitionId = string & { readonly __brand: "PartitionId" };
 
@@ -263,7 +242,6 @@ export interface ResetCheckpointOptions {
 	readonly subscriptionId: string;
 	readonly partitionId: string;
 	readonly position: EventPosition | bigint;
-	/** Administrative reset; bypasses monotonic check. */
 	readonly administrative: true;
 	readonly holderId: string;
 }
@@ -273,9 +251,7 @@ export interface ResetCheckpointOptions {
  * App authors should not depend on this directly; runtimes wire it.
  */
 export interface DurableEventStore extends EventStore {
-	/** Catch-up reads by database-local position within this partition. */
 	readAll(options?: ReadAllOptions): AsyncIterable<PositionedEvent>;
-	/** Atomic domain events + staged runtime effects. */
 	commit(request: DurableCommitRequest): Promise<DurableCommitResult>;
 	loadSnapshot?<S>(streamId: string): Promise<SnapshotRecord<S> | undefined>;
 	claimSubscription?(
@@ -301,8 +277,6 @@ export interface DurableEventStore extends EventStore {
 		options: ResetCheckpointOptions,
 	): Promise<SubscriptionCheckpoint>;
 }
-
-// ── Parse boundaries ────────────────────────────────────────────────────────
 
 export class EventStoreParseError extends CoreParseError {
 	constructor(
@@ -341,15 +315,12 @@ export function parseEventPosition<T>(
 				errorReceived(value),
 			);
 		}
-		// SAFETY: parse already proved a non-negative bigint position.
 		return amount as EventPosition;
 	}
 	if (isJsonNumber(value) && Number.isSafeInteger(value) && value >= 0) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return BigInt(value) as EventPosition;
 	}
 	if (isJsonString(value) && /^(0|[1-9]\d*)$/.test(value)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return BigInt(value) as EventPosition;
 	}
 	throw new EventStoreParseError(
@@ -373,11 +344,9 @@ export function parseFenceToken<T>(value: T, path = "fenceToken"): FenceToken {
 		return amount as FenceToken;
 	}
 	if (isJsonNumber(value) && Number.isSafeInteger(value) && value >= 0) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return BigInt(value) as FenceToken;
 	}
 	if (isJsonString(value) && /^(0|[1-9]\d*)$/.test(value)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return BigInt(value) as FenceToken;
 	}
 	throw new EventStoreParseError(
@@ -393,7 +362,6 @@ export function parseSubscriptionId(
 	if (!isJsonString(value) || value.length === 0) {
 		throw new EventStoreParseError("subscriptionId", "non-empty string", value);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return value as SubscriptionId;
 }
 
@@ -401,7 +369,6 @@ export function parsePartitionId(value: JsonValue | undefined): PartitionId {
 	if (!isJsonString(value) || value.length === 0) {
 		throw new EventStoreParseError("partitionId", "non-empty string", value);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return value as PartitionId;
 }
 
@@ -412,8 +379,6 @@ export function fenceTokenToText(token: bigint): string {
 export function eventPositionToText(position: bigint): string {
 	return position.toString(10);
 }
-
-// ── Typed errors with stable codes ──────────────────────────────────────────
 
 export type EventStoreErrorCode =
 	| "OPTIMISTIC_SEQUENCE_CONFLICT"
@@ -443,7 +408,6 @@ export class EventStoreError extends Error {
 	}
 }
 
-/** Stale expectedSeq — optimistic concurrency conflict. */
 export class OptimisticSequenceConflictError extends EventStoreError {
 	readonly streamId: string;
 	readonly expectedSeq: number;
@@ -477,7 +441,6 @@ export class StaleFenceError extends EventStoreError {
 	}
 }
 
-/** Unfenced write against a stream that has entered fenced ownership. */
 export class MissingFenceError extends EventStoreError {
 	readonly streamId: string;
 	readonly stored: bigint;
@@ -568,9 +531,7 @@ export class StorageWorkerTerminatedError extends EventStoreError {
 
 export function isOptimisticConflict(error: Error): boolean {
 	if (error instanceof OptimisticSequenceConflictError) return true;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const name = (error as { name?: unknown })?.name;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const code = (error as { code?: unknown })?.code;
 	return (
 		name === "OptimisticSequenceConflictError" ||
@@ -581,14 +542,11 @@ export function isOptimisticConflict(error: Error): boolean {
 
 export function isStaleFence(error: Error): boolean {
 	if (error instanceof StaleFenceError) return true;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const name = (error as { name?: unknown })?.name;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const code = (error as { code?: unknown })?.code;
 	return name === "StaleFenceError" || code === "STALE_FENCE";
 }
 
-/** Bounds for production APIs. */
 export const EVENTSTORE_LIMITS = Object.freeze({
 	maxBatchEvents: 256,
 	maxReadPage: 1000,
