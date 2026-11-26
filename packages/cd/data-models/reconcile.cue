@@ -46,20 +46,39 @@ package cd
 	detailKind: "github-credential-rejected" | "github-permission-missing" | "github-rate-limited" | "github-pages-disabled" | "github-pages-source-mismatch" | "github-ref-not-fast-forward" | "github-pages-build-errored" | "github-pages-deployment-failed" | "github-pages-artifact-unavailable"
 }
 
-#ociRegistryHost: string & !~"[\\r\\n]" & =~"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
+// DNS hostname only (no port, userinfo, path, or query). RE2 has no
+// lookahead, so the 253-character cap is a separate constraint from the
+// label pattern. Keep this aligned with OCI_REGISTRY_HOST in
+// src/reconcile/release-oci-detail.ts.
+#ociRegistryHost: string & !~"[\\r\\n]" & =~"^.{1,253}$" & =~"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
 #ociHttpStatusScope: string & !~"[\\r\\n]" & =~"^(GET|HEAD|POST|PUT|PATCH|DELETE):[1-5][0-9]{2}$"
 
-#reconcileReasonStructuredOci: {
-	credentialRef: #releaseFreightCredentialRef
-	requestedScope:
-		#ociRegistryHost |
-		"blob-upload-path" |
-		#ociHttpStatusScope |
-		"over-transport-bound" |
-		"post-upload" |
-		#releaseFreightScope
-	detailKind: "oci-upload-foreign-host" | "oci-upload-path" | "oci-http-status" | "oci-blob-size" | "oci-blob-not-observed" | "oci-credential-refused"
-}
+#reconcileReasonStructuredOci:
+	{
+		credentialRef: #releaseFreightCredentialRef
+		requestedScope: #ociRegistryHost
+		detailKind: "oci-upload-foreign-host"
+	} | {
+		credentialRef: #releaseFreightCredentialRef
+		requestedScope: "blob-upload-path"
+		detailKind: "oci-upload-path"
+	} | {
+		credentialRef: #releaseFreightCredentialRef
+		requestedScope: #ociHttpStatusScope
+		detailKind: "oci-http-status"
+	} | {
+		credentialRef: #releaseFreightCredentialRef
+		requestedScope: "over-transport-bound"
+		detailKind: "oci-blob-size"
+	} | {
+		credentialRef: #releaseFreightCredentialRef
+		requestedScope: "post-upload"
+		detailKind: "oci-blob-not-observed"
+	} | {
+		credentialRef: #releaseFreightCredentialRef
+		requestedScope: #releaseFreightScope
+		detailKind: "oci-credential-refused"
+	}
 
 #reconcileReasonStructured:
 	#reconcileReasonStructuredScope |

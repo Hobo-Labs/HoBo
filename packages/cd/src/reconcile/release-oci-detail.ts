@@ -25,6 +25,8 @@ const OCI_UPLOAD_PATH_SCOPE = "blob-upload-path";
 const OCI_BLOB_SIZE_SCOPE = "over-transport-bound";
 const OCI_BLOB_NOT_OBSERVED_SCOPE = "post-upload";
 
+// Closed DNS hostname. data-models/reconcile.cue ANDs `^.{1,253}$` with the
+// label pattern because CUE's RE2 rejects the length lookahead.
 const OCI_REGISTRY_HOST =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
 const OCI_HTTP_STATUS_SCOPE =
@@ -130,9 +132,3 @@ export function ociStructuredScopePayload(
 			return scopePayload.trim();
 	}
 }
-
-export {
-	OCI_BLOB_NOT_OBSERVED_SCOPE,
-	OCI_BLOB_SIZE_SCOPE,
-	OCI_UPLOAD_PATH_SCOPE,
-};

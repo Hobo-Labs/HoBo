@@ -15,7 +15,6 @@ import {
 	releaseFreightStructuredFromFields,
 } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
-import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 import {
 	announceVerdict,
 	awaitReleasePagesWall,
@@ -30,19 +29,20 @@ import {
 	type ReleaseCd,
 	type ReleaseDriveState,
 	type ReleaseHttpTransport,
+	releaseBlockedRealizerMessage,
 	releaseCampId,
+	releaseCampRealizeScope,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
 	releasePagesWallBudgetMs,
-	releaseBlockedRealizerMessage,
-	releaseCampRealizeScope,
 	releaseSource,
 	releaseWorkflowCredentials,
 	releaseWorkflowGithubAppScopeAllowed,
 	siteTree,
 	startReleasePagesWall,
 } from "../ci/create-github-release.mts";
+import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 
 type TransportRequest = Parameters<ReleaseHttpTransport>[0];
 
@@ -420,6 +420,27 @@ describe("releaseBlockedRealizerMessage", () => {
 		).toBe(
 			"RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-http-status credential=owner://GHCR_PUBLISH http=POST:403",
 		);
+	});
+
+	it("does not echo an upload location when oci detail is not a closed scope", () => {
+		const token = `npm_${randomBytes(8).toString("hex")}`;
+		const session = randomBytes(8).toString("hex");
+		const location = `https://uploads.example/v2/app/blobs/uploads/${session}?_state=${token}`;
+		const line = releaseBlockedRealizerMessage([
+			{
+				code: "RESOLVER_PROVIDER_REJECTED",
+				message: location,
+				structured: {
+					credentialRef: "owner://GHCR_PUBLISH",
+					requestedScope: location,
+					detailKind: "oci-upload-foreign-host",
+				},
+			},
+		]);
+		expect(line).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(line).not.toContain(token);
+		expect(line).not.toContain("_state");
+		expect(line).not.toContain(session);
 	});
 });
 
