@@ -80,6 +80,91 @@ describe("Rivet actor inbox lifecycle", () => {
 		}
 	});
 
+	it("commits chained commands when command ids are not in submission order", () => {
+		const journal = createActorLocalJournal();
+		try {
+			const actor = createRivetActorHost({ journal });
+			actor.accept(command("z-first", 2, 0));
+			actor.accept(command("a-second", 3, 1));
+			expect(actor.processNext(identity, add, 0)).toEqual({
+				revision: 1,
+				commandId: "z-first",
+			});
+			expect(actor.processNext(identity, add, 0)).toEqual({
+				revision: 2,
+				commandId: "a-second",
+			});
+			expect(journal.readFacts(streamId).map((fact) => fact.eventId)).toEqual([
+				"z-first",
+				"a-second",
+			]);
+			expect(journal.loadCommand(streamId, "z-first")).toMatchObject({
+				status: "completed",
+			});
+			expect(journal.loadCommand(streamId, "a-second")).toMatchObject({
+				status: "completed",
+			});
+		} finally {
+			journal.close();
+		}
+	});
+
+	it("claims equal revisions in acceptance order and rejects the later one as stale", () => {
+		const journal = createActorLocalJournal();
+		try {
+			const actor = createRivetActorHost({ journal });
+			actor.accept(command("z-first", 2, 0));
+			actor.accept(command("a-second", 3, 0));
+			expect(actor.processNext(identity, add, 0)).toEqual({
+				revision: 1,
+				commandId: "z-first",
+			});
+			expect(() => actor.processNext(identity, add, 0)).toThrow(
+				/expected revision 0, found 1/,
+			);
+			expect(journal.loadCommand(streamId, "a-second")).toMatchObject({
+				status: "failed-terminal",
+			});
+			expect(journal.readFacts(streamId).map((fact) => fact.eventId)).toEqual([
+				"z-first",
+			]);
+		} finally {
+			journal.close();
+		}
+	});
+
+	it("does not terminally reject a command ahead of the head", () => {
+		const journal = createActorLocalJournal();
+		try {
+			const actor = createRivetActorHost({ journal });
+			actor.accept(command("a-second", 3, 1));
+			expect(actor.processNext(identity, add, 0)).toBeUndefined();
+			expect(actor.processNext(identity, add, 0)).toBeUndefined();
+			expect(journal.loadCommand(streamId, "a-second")).toMatchObject({
+				status: "persisted",
+			});
+			expect(journal.readFacts(streamId)).toHaveLength(0);
+			actor.accept(command("z-first", 2, 0));
+			expect(actor.processNext(identity, add, 0)).toEqual({
+				revision: 1,
+				commandId: "z-first",
+			});
+			expect(actor.processNext(identity, add, 0)).toEqual({
+				revision: 2,
+				commandId: "a-second",
+			});
+			expect(journal.readFacts(streamId).map((fact) => fact.eventId)).toEqual([
+				"z-first",
+				"a-second",
+			]);
+			expect(journal.loadCommand(streamId, "a-second")?.status).not.toBe(
+				"failed-terminal",
+			);
+		} finally {
+			journal.close();
+		}
+	});
+
 	it.each([
 		false,
 		true,

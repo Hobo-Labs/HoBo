@@ -78,38 +78,33 @@ type PackageJson = {
 function remapDeps(
 	deps: Record<string, string> | undefined,
 	map: ScopeMap,
+	version?: string,
+	development = false,
 ): Record<string, string> | undefined {
 	if (!deps) return deps;
 	const out: Record<string, string> = {};
 	for (const [name, range] of Object.entries(deps)) {
-		if (name.startsWith("@hobo/") && map.packages[name]) {
-			out[map.packages[name]!] = range;
-		} else {
-			out[name] = range;
+		const mapped = map.packages[name];
+		if (version && !development && name.startsWith("@hobo/") && !mapped) {
+			throw new Error(
+				`npm-scope-map: runtime workspace dependency ${name} has no public package mapping`,
+			);
 		}
-	}
-	return out;
-}
-
-const WORKSPACE_RANGE = /^workspace:/;
-
-/** Replace workspace ranges with the release semver for published @hobo-labs deps. */
-function pinReleaseDependencyRanges(
-	deps: Record<string, string> | undefined,
-	map: ScopeMap,
-	version: string,
-): Record<string, string> | undefined {
-	if (!deps) return deps;
-	const published = new Set(Object.values(map.packages));
-	const out: Record<string, string> = {};
-	for (const [name, range] of Object.entries(deps)) {
-		if (WORKSPACE_RANGE.test(range)) {
-			if (published.has(name)) {
-				out[name] = version;
+		if (range.startsWith("workspace:")) {
+			if (!version) {
+				out[mapped ?? name] = range;
+			} else if (mapped) {
+				out[name] = `npm:${mapped}@${version}`;
+			} else if (!development) {
+				throw new Error(
+					`npm-scope-map: runtime workspace dependency ${name} has no public package mapping`,
+				);
 			}
-			continue;
+		} else if (mapped && version) {
+			out[name] = `npm:${mapped}@${range}`;
+		} else {
+			out[mapped ?? name] = range;
 		}
-		out[name] = range;
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -130,16 +125,19 @@ export function applyScopeToManifest(
 	if (map.repository) {
 		out.repository = { type: "git", url: `git+${map.repository}.git` };
 	}
-	let deps = remapDeps(manifest.dependencies, map);
-	let devDeps = remapDeps(manifest.devDependencies, map);
-	let peerDeps = remapDeps(manifest.peerDependencies, map);
-	let optDeps = remapDeps(manifest.optionalDependencies, map);
-	if (options?.version) {
-		deps = pinReleaseDependencyRanges(deps, map, options.version);
-		devDeps = pinReleaseDependencyRanges(devDeps, map, options.version);
-		peerDeps = pinReleaseDependencyRanges(peerDeps, map, options.version);
-		optDeps = pinReleaseDependencyRanges(optDeps, map, options.version);
-	}
+	const deps = remapDeps(manifest.dependencies, map, options?.version);
+	const devDeps = remapDeps(
+		manifest.devDependencies,
+		map,
+		options?.version,
+		true,
+	);
+	const peerDeps = remapDeps(manifest.peerDependencies, map, options?.version);
+	const optDeps = remapDeps(
+		manifest.optionalDependencies,
+		map,
+		options?.version,
+	);
 	if (deps) out.dependencies = deps;
 	else delete out.dependencies;
 	if (devDeps) out.devDependencies = devDeps;

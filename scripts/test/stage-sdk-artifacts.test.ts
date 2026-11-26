@@ -1,15 +1,197 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadNpmScopeMap } from "../ci/npm-publish-scope.mts";
 import {
 	orderedSdkTarballPaths,
+	prepareSdkPackageManifest,
 	releaseSdkTurboBuildArgv,
+	runBoundedSdkTasks,
+	runCliSdkBundleSync,
 	SDK_PACKAGES,
+	sdkPackageWorkerLimit,
+	stageSdkArtifactsDir,
+	verifyStagedSdkArtifacts,
 } from "../ci/stage-sdk-artifacts.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("runs package lifecycle scripts serially", () => {
+		expect(sdkPackageWorkerLimit([{ scripts: { build: "build" } }, {}])).toBe(
+			4,
+		);
+		for (const hook of [
+			"prepack",
+			"prepare",
+			"postpack",
+			"preprepare",
+			"postprepare",
+		])
+			expect(sdkPackageWorkerLimit([{ scripts: { [hook]: "run" } }])).toBe(1);
+	});
+
+	it("preserves input order while running tasks in parallel", async () => {
+		const starts: number[] = [];
+		const result = await runBoundedSdkTasks(4, 2, async (index) => {
+			starts.push(index);
+			await new Promise((resolve) => setTimeout(resolve, index === 0 ? 10 : 1));
+			return index * 2;
+		});
+		expect(starts.slice(0, 2)).toEqual([0, 1]);
+		expect(result).toEqual([0, 2, 4, 6]);
+	});
+
+	it("drains active workers and stops scheduling after failure", async () => {
+		const started: number[] = [];
+		let release = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let drained = false;
+		const result = runBoundedSdkTasks(5, 2, async (index) => {
+			started.push(index);
+			if (index === 0) throw new Error("pack failed");
+			await gate;
+			drained = true;
+			return index;
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(started).toEqual([0, 1]);
+		release();
+		await expect(result).rejects.toThrow("pack failed");
+		expect(drained).toBe(true);
+	});
+
+	it("rejects duplicate worker tarball names before publishing either", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-pack-collision-"));
+		try {
+			const bin = join(dir, "bin");
+			const pkg = join(dir, "pkg");
+			const out = join(dir, "out");
+			mkdirSync(bin);
+			mkdirSync(pkg);
+			mkdirSync(join(out, ".staging"), { recursive: true });
+			writeFileSync(
+				join(pkg, "package.json"),
+				'{"name":"fixture","version":"1.0.0"}',
+			);
+			writeFileSync(
+				join(bin, "npm"),
+				'#!/bin/sh\nprintf content > "$3/fixture.tgz"\nprintf \'[{"filename":"fixture.tgz"}]\'\n',
+			);
+			chmodSync(join(bin, "npm"), 0o755);
+			const staged = ["@hobo/core", "@hobo/policy"].map((workspaceName) => ({
+				workspaceName,
+				pkgDir: pkg,
+				staged: { name: "fixture", version: "1.0.0" },
+			}));
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(import.meta.dirname, "../ci/stage-sdk-artifacts.mts"),
+					"--pack-all",
+					out,
+					JSON.stringify(staged),
+				],
+				{
+					env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+					encoding: "utf8",
+				},
+			);
+			expect(result.status).not.toBe(0);
+			expect(result.stderr).toContain("duplicate tarball names");
+			expect(existsSync(join(out, "fixture.tgz"))).toBe(false);
+			expect(existsSync(join(out, ".staging", "results.json"))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("fails closed when an npm pack worker fails", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-pack-failure-"));
+		try {
+			const bin = join(dir, "bin");
+			const pkg = join(dir, "pkg");
+			const out = join(dir, "out");
+			mkdirSync(bin);
+			mkdirSync(pkg);
+			mkdirSync(join(out, ".staging"), { recursive: true });
+			writeFileSync(
+				join(pkg, "package.json"),
+				'{"name":"fixture","version":"1.0.0"}',
+			);
+			writeFileSync(join(bin, "npm"), "#!/bin/sh\nexit 7\n");
+			chmodSync(join(bin, "npm"), 0o755);
+			const staged = [
+				{
+					workspaceName: "@hobo/core",
+					pkgDir: pkg,
+					staged: { name: "fixture", version: "1.0.0" },
+				},
+			];
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(import.meta.dirname, "../ci/stage-sdk-artifacts.mts"),
+					"--pack-all",
+					out,
+					JSON.stringify(staged),
+				],
+				{
+					env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+					encoding: "utf8",
+				},
+			);
+			expect(result.status).not.toBe(0);
+			expect(result.stderr).toContain("SDK package staging failed");
+			expect(existsSync(join(out, "MANIFEST.json"))).toBe(false);
+			expect(existsSync(join(out, ".staging", "results.json"))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("invalidates a prior manifest when preflight fails", () => {
+		const outDir = mkdtempSync(join(tmpdir(), "hobo-sdk-preflight-fail-"));
+		const original = process.env.HOBO_RELEASE_SEMVER;
+		try {
+			writeFileSync(join(outDir, "MANIFEST.json"), "{}");
+			process.env.HOBO_RELEASE_SEMVER = "not-a-semver";
+			expect(() => stageSdkArtifactsDir(outDir)).toThrow();
+			expect(existsSync(join(outDir, "MANIFEST.json"))).toBe(false);
+		} finally {
+			if (original === undefined) delete process.env.HOBO_RELEASE_SEMVER;
+			else process.env.HOBO_RELEASE_SEMVER = original;
+			rmSync(outDir, { recursive: true, force: true });
+		}
+	});
+
+	it("removes the manifest when the actual acceptance verifier rejects it", () => {
+		const outDir = mkdtempSync(join(tmpdir(), "hobo-sdk-verification-fail-"));
+		try {
+			writeFileSync(join(outDir, "MANIFEST.json"), "{}");
+			expect(() => verifyStagedSdkArtifacts(outDir)).toThrow(
+				/SDK artifact verification failed/,
+			);
+			expect(existsSync(join(outDir, "MANIFEST.json"))).toBe(false);
+		} finally {
+			rmSync(outDir, { recursive: true, force: true });
+		}
+	});
+
 	it("orders tarballs using MANIFEST pack order (core before bindles)", () => {
 		const map = loadNpmScopeMap();
 		const outDir = mkdtempSync(join(tmpdir(), "hobo-sdk-order-"));
@@ -56,5 +238,71 @@ describe("stage-sdk-artifacts", () => {
 		expect(SDK_PACKAGES.indexOf("@hobo/policy")).toBeLessThan(
 			SDK_PACKAGES.indexOf("@hobo/contracts"),
 		);
+	});
+	it("prepares only the explicit bundled dependencies and rejects unknown workspace packages", () => {
+		const fullMap = loadNpmScopeMap();
+		const map = {
+			...fullMap,
+			packages: Object.fromEntries(
+				SDK_PACKAGES.map((name) => [name, fullMap.packages[name]!]),
+			),
+		};
+		const runtime = JSON.parse(
+			readFileSync(join("packages/runtime/package.json"), "utf8"),
+		);
+		const sqlite = JSON.parse(
+			readFileSync(join("packages/storage-sqlite/package.json"), "utf8"),
+		);
+		const stagedRuntime = prepareSdkPackageManifest(
+			runtime,
+			map,
+			"0.0.0-proof.1",
+		);
+		const stagedSqlite = prepareSdkPackageManifest(
+			sqlite,
+			map,
+			"0.0.0-proof.1",
+		);
+		expect(
+			stagedRuntime.dependencies?.["ts-autocode-grounding"],
+		).toBeUndefined();
+		expect(stagedRuntime.dependencies?.typescript).toBe("^5.9.3");
+		expect(
+			stagedSqlite.dependencies?.["@hobo/backend-routing"],
+		).toBeUndefined();
+		expect(stagedSqlite.dependencies?.["@hobo/core"]).toBe(
+			"npm:@hobo-labs/core@0.0.0-proof.1",
+		);
+		const cli = JSON.parse(
+			readFileSync(join("packages/cli/package.json"), "utf8"),
+		);
+		const stagedCli = prepareSdkPackageManifest(cli, map, "0.0.0-proof.1");
+		expect(stagedCli.dependencies?.["@hobo/core"]).toBe(
+			"npm:@hobo-labs/core@0.0.0-proof.1",
+		);
+		expect(stagedCli.dependencies?.["@hobo/cd"]).toBeUndefined();
+		expect(() =>
+			prepareSdkPackageManifest(
+				{
+					...cli,
+					dependencies: {
+						...cli.dependencies,
+						"@hobo/unpublished-proof": "workspace:*",
+					},
+				},
+				map,
+				"0.0.0-proof.1",
+			),
+		).toThrow(/unexpected direct dependencies/);
+	});
+	it("propagates CLI bundle subprocess failures", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-cli-runner-failure-"));
+		try {
+			expect(() => runCliSdkBundleSync(root, join(root, "out"))).toThrow(
+				/CLI SDK bundle failed/,
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

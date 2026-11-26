@@ -178,6 +178,25 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
+	it("allows the pricing publisher on the npm-required hosted runner", () => {
+		assert.equal(
+			lintRunner(
+				"release-pricing.yml",
+				"pricing-release-publish",
+				"ubuntu-24.04",
+			),
+			0,
+		);
+		assert.notEqual(
+			lintRunner(
+				"release-pricing.yml",
+				"pricing-release-build",
+				"ubuntu-24.04",
+			),
+			0,
+		);
+	});
+
 	it("allows the one GitHub-hosted runner needed for npm trusted publishing", () => {
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
