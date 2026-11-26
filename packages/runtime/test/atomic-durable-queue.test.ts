@@ -2,6 +2,7 @@ import { DURABLE_QUEUE_MAX_LIMITS, durableQueueOperation } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	createAtomicDurableQueue,
+	inspectAtomicDurableQueue,
 	type AtomicQueueStore,
 } from "../src/atomic-durable-queue.js";
 import {
@@ -77,6 +78,65 @@ function memoryStore() {
 }
 
 describe("atomic durable queue provider", () => {
+	it("attests only the exact factory-created queue and captured store", () => {
+		const backing = memoryStore();
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => 1000,
+		});
+		expect(inspectAtomicDurableQueue(queue)).toMatchObject({
+			store: backing.store,
+			limits,
+		});
+		const mutable = { store: backing.store, limits, now: () => 1000 };
+		const captured = createAtomicDurableQueue(mutable);
+		mutable.store = memoryStore().store;
+		expect(inspectAtomicDurableQueue(captured)?.store).toBe(backing.store);
+		expect(inspectAtomicDurableQueue({ ...queue })).toBeUndefined();
+		let traps = 0;
+		const proxy = new Proxy(queue, {
+			get() {
+				traps++;
+				throw Error("trap");
+			},
+		});
+		expect(inspectAtomicDurableQueue(proxy)).toBeUndefined();
+		expect(traps).toBe(0);
+		let getterCalls = 0;
+		const options = {
+			get store() {
+				getterCalls++;
+				return backing.store;
+			},
+			limits,
+			now: () => 1000,
+		};
+		expect(() => createAtomicDurableQueue(options)).toThrow();
+		expect(getterCalls).toBe(0);
+		const iterator = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			Symbol.iterator,
+		);
+		let rejected = false;
+		try {
+			Object.defineProperty(Array.prototype, Symbol.iterator, {
+				configurable: true,
+				value: function* () {},
+			});
+			try {
+				createAtomicDurableQueue(options);
+			} catch {
+				rejected = true;
+			}
+		} finally {
+			if (iterator !== undefined)
+				Object.defineProperty(Array.prototype, Symbol.iterator, iterator);
+		}
+		expect(rejected).toBe(true);
+		expect(getterCalls).toBe(0);
+	});
+
 	it("recovers a committed enqueue after its response is lost and a new provider opens", async () => {
 		const backing = memoryStore();
 		backing.loseNext();

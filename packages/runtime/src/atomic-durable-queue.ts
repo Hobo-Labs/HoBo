@@ -1,3 +1,4 @@
+import { types } from "node:util";
 import {
 	type DurableQueue,
 	type DurableQueueLimits,
@@ -57,6 +58,27 @@ export interface AtomicDurableQueueOptions {
 	readonly limits: DurableQueueLimits;
 	readonly now: () => number;
 }
+export interface AtomicQueueIdentity {
+	readonly store: AtomicQueueStore;
+	readonly limits: DurableQueueLimits;
+}
+const queueIdentities = new WeakMap<object, AtomicQueueIdentity>();
+const identityGet = WeakMap.prototype.get;
+const identitySet = WeakMap.prototype.set;
+const identityApply = Reflect.apply;
+const identityProxy = types.isProxy;
+const identityDescriptor = Object.getOwnPropertyDescriptor;
+const identityOwnKeys = Reflect.ownKeys;
+const identityHasOwn = Object.hasOwn;
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: the identity is obtained only from a private factory registry. */
+export function inspectAtomicDurableQueue(
+	value: unknown,
+): AtomicQueueIdentity | undefined {
+	if (typeof value !== "object" || value === null || identityProxy(value))
+		return undefined;
+	return identityApply(identityGet, queueIdentities, [value]);
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply */
 const NativePromise = Promise;
 const setPrototype = Object.setPrototypeOf;
 const freeze = Object.freeze;
@@ -74,12 +96,28 @@ function uncertain(
 export function createAtomicDurableQueue(
 	options: AtomicDurableQueueOptions,
 ): AtomicDurableQueue {
+	if (identityProxy(options) || identityOwnKeys(options).length !== 3)
+		throw new TypeError("atomic_queue.invalid_options");
+	const required = ["store", "limits", "now"];
+	for (let index = 0; index < required.length; index++) {
+		const key = required[index];
+		if (key === undefined) throw new TypeError("atomic_queue.invalid_options");
+		const field = identityDescriptor(options, key);
+		if (
+			field === undefined ||
+			!field.enumerable ||
+			!identityHasOwn(field, "value")
+		)
+			throw new TypeError("atomic_queue.invalid_options");
+	}
+	const store = options.store;
+	if (identityProxy(store)) throw new TypeError("atomic_queue.invalid_options");
 	const limits = parseDurableQueueLimits(options.limits);
 	if (limits.nameBytes < 16)
 		throw new TypeError("atomic_queue.invalid_options");
 	const now = options.now;
-	const load = options.store.load.bind(options.store);
-	const compareAndSwap = options.store.compareAndSwap.bind(options.store);
+	const load = store.load.bind(store);
+	const compareAndSwap = store.compareAndSwap.bind(store);
 	type Loaded = {
 		readonly revision: number;
 		readonly events: AtomicQueueEvent[];
@@ -312,5 +350,10 @@ export function createAtomicDurableQueue(
 			});
 		},
 	};
-	return freeze(port);
+	const result = freeze(port);
+	identityApply(identitySet, queueIdentities, [
+		result,
+		freeze({ store, limits }),
+	]);
+	return result;
 }
