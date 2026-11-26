@@ -57,6 +57,8 @@ mise refuses to run untrusted config:
 
 HoBo CI sets trust via mise-action (`install: true` trusts the checkout). The fleet image bakes `/etc/mise/config.toml` from whichever commit last built it, so `build.sh`, the `dev-env-smoke` mise job and every job that runs `ci-runner-preflight` (which exports it to the rest of the job) set `MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`, so the checkout's pins rule; otherwise a PR that swaps a tool fails `mise install --locked` with `<tool> is not in the lockfile`. Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
 
+Nerdbank.GitVersioning's `dotnet` pin stays in [`release/mise.toml`](../../release/mise.toml). [`scripts/lib/nbgv-toolchain.mts`](../../scripts/lib/nbgv-toolchain.mts) installs that tool with `mise -C release install --locked dotnet` and sets `MISE_IGNORED_CONFIG_PATHS` to the absolute path of the repo-root `mise.toml`, appending any value already set (including preflight's `/etc/mise/config.toml`). `mise -C release` otherwise walks up to the root config, and `mise install` then pulls `betterleaks`, `python`, and `syft`.
+
 ## `mise activate` vs shims
 
 | Mode | When |
