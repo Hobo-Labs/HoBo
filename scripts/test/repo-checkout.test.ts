@@ -28,6 +28,14 @@ const repoCheckoutCli = resolve(
 );
 
 const repository = "Hobo-Labs/HoBo";
+const newlinePath =
+	process.platform === "win32"
+		? "other/deep/line-break.txt"
+		: "other/deep/line\nbreak.txt";
+const trailingSpacePath =
+	process.platform === "win32"
+		? "other/deep/trailing-space.txt"
+		: "other/deep/trailing-space.txt ";
 let temp = "";
 let source = "";
 let mirror = "";
@@ -48,11 +56,15 @@ beforeAll(() => {
 	writeFileSync(join(source, "README.md"), "mirror fixture\n");
 	writeFileSync(join(source, "scripts/ci/ci-trace.mts"), "export {};\n");
 	writeFileSync(join(source, "other/deep/outside-cone.txt"), "outside\n");
+	writeFileSync(join(source, newlinePath), "unusual\n");
+	writeFileSync(join(source, trailingSpacePath), "space\n");
 	git(source, [
 		"add",
 		"README.md",
 		"scripts/ci/ci-trace.mts",
 		"other/deep/outside-cone.txt",
+		newlinePath,
+		trailingSpacePath,
 	]);
 	git(source, [
 		"-c",
@@ -142,7 +154,10 @@ describe("clearSparseCheckoutConfig", () => {
 	it("clears skip-worktree for whitespace paths and assume-unchanged entries", () => {
 		const work = join(temp, "work-sparse-special-paths");
 		execFileSync("git", ["clone", source, work]);
-		const whitespace = "other/deep/ leading and trailing .txt ";
+		const whitespace =
+			process.platform === "win32"
+				? "other/deep/leading and trailing.txt"
+				: "other/deep/ leading and trailing .txt ";
 		const assumed = "other/deep/assumed.txt";
 		writeFileSync(join(work, whitespace), "whitespace\n");
 		writeFileSync(join(work, assumed), "assumed\n");
@@ -154,6 +169,54 @@ describe("clearSparseCheckoutConfig", () => {
 		expect(clearSkipWorktreeFromSparseCone(work)).toBe(true);
 		expect(git(work, ["ls-files", "-v", "--", whitespace])[0]).toBe("H");
 		expect(git(work, ["ls-files", "-v", "--", assumed])[0]).toBe("h");
+	});
+
+	it("clears stale index flags when sparse config was already removed", () => {
+		const work = join(temp, "work-sparse-interrupted-prepare");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		git(work, ["config", "--worktree", "--unset", "core.sparseCheckout"]);
+		rmSync(join(work, ".git", "info", "sparse-checkout"));
+		expect(sparseCheckoutEnabled(work)).toBe(false);
+		expect(clearSparseCheckoutConfig(work)).toBe(true);
+		git(work, ["checkout", "--force", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
+	});
+
+	it("recognizes a Git boolean alias for sparse checkout", () => {
+		const work = join(temp, "work-sparse-boolean-alias");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		git(work, ["config", "--worktree", "core.sparseCheckout", "yes"]);
+		expect(sparseCheckoutEnabled(work)).toBe(true);
+		expect(clearSparseCheckoutConfig(work)).toBe(true);
+		git(work, ["checkout", "--force", sha]);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
+	});
+
+	it("lets the next full checkout materialize paths excluded by the old cone", () => {
+		const work = join(temp, "work-next-full-checkout");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", sha]);
+		const outside = join(work, "other/deep/outside-cone.txt");
+		expect(existsSync(outside)).toBe(false);
+		git(work, ["update-index", "--assume-unchanged", "--", trailingSpacePath]);
+		writeFileSync(join(work, "README.md"), "local modification\n");
+		expect(clearSparseCheckoutConfig(work)).toBe(true);
+		expect(readFileSync(join(work, "README.md"), "utf8")).toBe(
+			"local modification\n",
+		);
+		expect(existsSync(outside)).toBe(false);
+		git(work, ["checkout", "--force", sha]);
+		expect(readFileSync(outside, "utf8")).toBe("outside\n");
+		expect(readFileSync(join(work, newlinePath), "utf8")).toBe("unusual\n");
+		expect(readFileSync(join(work, trailingSpacePath), "utf8")).toBe("space\n");
 	});
 
 	it("clears sparse config on a blob:none clone without materializing missing blobs", () => {
@@ -172,6 +235,7 @@ describe("clearSparseCheckoutConfig", () => {
 		expect(sparseCheckoutEnabled(work)).toBe(true);
 		expect(clearSparseCheckoutConfig(work)).toBe(true);
 		expect(sparseCheckoutEnabled(work)).toBe(false);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
 		git(work, ["checkout", "-f", sha]);
 		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(true);
 	});

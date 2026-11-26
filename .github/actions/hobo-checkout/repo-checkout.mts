@@ -172,7 +172,11 @@ export function sparseCheckoutEnabled(
 	if (!inside.ok || inside.stdout.trim() !== "true") {
 		return false;
 	}
-	const config = git(cwd, ["config", "--get", "core.sparseCheckout"], env);
+	const config = git(
+		cwd,
+		["config", "--bool", "--get", "core.sparseCheckout"],
+		env,
+	);
 	return config.ok && config.stdout.trim() === "true";
 }
 
@@ -203,69 +207,53 @@ export function clearSkipWorktreeFromSparseCone(
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-	const listed = git(cwd, ["ls-files", "-v", "-z"], env);
-	if (!listed.ok) {
-		return false;
+	const listed = spawnSync("git", ["ls-files", "-t", "-z"], {
+		cwd,
+		env,
+		maxBuffer: 16 * 1024 * 1024,
+	});
+	if (listed.error || listed.status !== 0) return false;
+	const entries = listed.stdout;
+	const skipped: Buffer[] = [];
+	for (let start = 0; start < entries.length; ) {
+		const end = entries.indexOf(0, start);
+		if (end < 0) return false;
+		if (entries[start] === 83 && entries[start + 1] === 32)
+			skipped.push(entries.subarray(start + 2, end + 1));
+		start = end + 1;
 	}
-	const paths: string[] = [];
-	for (const entry of listed.stdout.split("\0")) {
-		if (!entry) {
-			continue;
-		}
-		if (entry[0] !== "S" && entry[0] !== "s") {
-			continue;
-		}
-		const path = entry.slice(2);
-		if (path) {
-			paths.push(path);
-		}
-	}
-	if (paths.length === 0) {
-		return true;
-	}
-	const input = `${paths.join("\0")}\0`;
-	const update = spawnSync(
+	if (skipped.length === 0) return true;
+	const updated = spawnSync(
 		"git",
 		["update-index", "--no-skip-worktree", "-z", "--stdin"],
-		{
-			cwd: resolve(cwd),
-			env,
-			input,
-			encoding: "utf8",
-		},
+		{ cwd, env, input: Buffer.concat(skipped), maxBuffer: 16 * 1024 * 1024 },
 	);
-	if (update.error) {
-		return false;
-	}
-	return update.status === 0;
+	return !updated.error && updated.status === 0;
 }
 
 export function clearSparseCheckoutConfig(
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-	if (!sparseCheckoutEnabled(cwd, env)) {
-		return true;
-	}
-	const gitDir = gitDirPath(cwd, env);
-	if (!gitDir) {
-		return false;
-	}
-	const info = join(gitDir, "info");
-	for (const name of ["sparse-checkout", "sparse-checkout-cone"] as const) {
-		const path = join(info, name);
-		if (existsSync(path)) {
-			rmSync(path);
+	if (sparseCheckoutEnabled(cwd, env)) {
+		const gitDir = gitDirPath(cwd, env);
+		if (!gitDir) {
+			return false;
 		}
+		const info = join(gitDir, "info");
+		for (const name of ["sparse-checkout", "sparse-checkout-cone"] as const) {
+			const path = join(info, name);
+			if (existsSync(path)) {
+				rmSync(path);
+			}
+		}
+		for (const scope of ["--worktree", "--local"] as const) {
+			git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
+			git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
+		}
+		if (sparseCheckoutEnabled(cwd, env)) return false;
 	}
-	for (const scope of ["--worktree", "--local"] as const) {
-		git(cwd, ["config", scope, "--unset", "core.sparseCheckout"], env);
-		git(cwd, ["config", scope, "--unset", "core.sparseCheckoutCone"], env);
-	}
-	if (!clearSkipWorktreeFromSparseCone(cwd, env)) {
-		return false;
-	}
-	return sparseCheckoutEnabled(cwd, env) === false;
+	return clearSkipWorktreeFromSparseCone(cwd, env);
 }
 
 function parseArgs(args: readonly string[]) {
