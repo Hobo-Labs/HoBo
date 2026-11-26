@@ -165,6 +165,7 @@ export type CdComposeInput = Readonly<{
 	factories: CdFactories;
 	adapters: CdComposeAdapters;
 	http: HttpTransport;
+	verificationHttp?: HttpTransport;
 	credentials: CredentialResolver;
 	/** Webhook HMAC secrets for nudges; defaults to `credentials`. */
 	webhookSecrets?: CredentialResolver;
@@ -374,7 +375,7 @@ export function wireContinuousDelivery(
 	// Verification (WP9). Posture series feed INFORM-node verification (D24).
 	const suites = a.suites?.(scope) ?? unconfiguredSuites({ telemetry: sink });
 	const healthSources = f.createHealthSources({
-		http: input.http,
+		http: input.verificationHttp ?? input.http,
 		credentials: input.credentials,
 		posture,
 	});
@@ -384,7 +385,7 @@ export function wireContinuousDelivery(
 			...base,
 			sources: healthSources,
 			suites,
-			http: input.http,
+			http: input.verificationHttp ?? input.http,
 		}),
 	);
 
