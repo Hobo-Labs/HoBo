@@ -6,11 +6,15 @@ import { withAwsTargetSelection } from "./aws-target-selection.js";
 import type { AlchemyPrimitiveMapper, BindleForAlchemy } from "./bindle.js";
 import { AlchemyIacError } from "./plan.js";
 
+const keys = Object.keys;
+const descriptors = Object.getOwnPropertyDescriptors;
+const freeze = Object.freeze;
+
 export function awsDynamoDurableQueue() {
-	return Object.freeze({
+	return freeze({
 		provider: "aws",
 		option: "dynamodb-durable-queue",
-		config: Object.freeze({
+		config: freeze({
 			runtime: "node-js",
 			consistency: "strong",
 			maxLogEvents: 512,
@@ -41,9 +45,10 @@ export function awsDynamoDurableQueueMappers<Entrypoint, Requirements>(
 		limitations: [
 			"Node.js atomic queue has a 512-event, 256-KiB lifetime log, with no compaction, dead-lettering, SQS or automatic application binding.",
 			"The host must fence the dedicated table, authorize the queue and reconcile unknown operations.",
+			"Supplied pricing must cover queue storage and requests; individual queue calls do not perform budget admission.",
 		],
 		validate(input) {
-			if (Object.keys(input.dependencyDeclarations).length !== 0)
+			if (keys(input.dependencyDeclarations).length !== 0)
 				throw new AlchemyIacError(
 					"BINDLE_GRAPH_UNSUPPORTED",
 					"DynamoDB queue dependencies are not bound",
@@ -51,14 +56,12 @@ export function awsDynamoDurableQueueMappers<Entrypoint, Requirements>(
 			const annotations = input.declaration.annotations;
 			const annotation = annotations[0];
 			const fields =
-				annotation === undefined
-					? {}
-					: Object.getOwnPropertyDescriptors(annotation.config);
+				annotation === undefined ? {} : descriptors(annotation.config);
 			if (
 				annotations.length !== 1 ||
 				annotation?.provider !== "aws" ||
 				annotation.option !== "dynamodb-durable-queue" ||
-				Object.keys(fields).length !== 4 ||
+				keys(fields).length !== 4 ||
 				fields.runtime?.value !== "node-js" ||
 				fields.consistency?.value !== "strong" ||
 				fields.maxLogEvents?.value !== 512 ||
@@ -79,5 +82,5 @@ export function awsDynamoDurableQueueMappers<Entrypoint, Requirements>(
 				return { primary, resources: [primary], boundDependencies: [] };
 			}),
 	};
-	return Object.freeze({ ...base, queue });
+	return freeze({ ...base, queue });
 }

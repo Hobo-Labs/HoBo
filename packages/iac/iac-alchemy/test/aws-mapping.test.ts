@@ -252,6 +252,9 @@ describe("explicit DynamoDB durable queue choice", () => {
 			supportedOperations: ["enqueue", "dequeue"],
 			bindsEntrypoint: false,
 		});
+		expect(support[0]?.limitations).toContain(
+			"Supplied pricing must cover queue storage and requests; individual queue calls do not perform budget admission.",
+		);
 		// SAFETY: mapping registers resource constructors without running a provider.
 		const mapped = await Effect.runPromise(
 			mapBindleToAlchemy(selected, mappers, requirements).pipe(
@@ -307,6 +310,42 @@ describe("explicit DynamoDB durable queue choice", () => {
 		expect(mapped.primary.sessions?.Type).toBe(Table.Type);
 		expect(mapped.primary.objects?.Type).toBe(Bucket.Type);
 	});
+	it("does not let modified object helpers hide a dependency", () => {
+		const original = bindle("app", (b) => {
+			const objects = b.bucket();
+			return { objects, jobs: b.queue().dependsOn(objects) };
+		});
+		const selected = withAwsDynamoDurableQueue(original, { jobs: true });
+		const declaration = selected.resources.jobs;
+		const dependency = selected.resources.objects;
+		const validate = awsDynamoDurableQueueMappers().queue.validate;
+		if (
+			declaration === undefined ||
+			dependency === undefined ||
+			validate === undefined
+		)
+			throw Error("fixture incomplete");
+		const originalKeys = Object.keys;
+		let error: unknown;
+		try {
+			Object.keys = () => [];
+			try {
+				validate({
+					bindleName: selected.name,
+					declaration,
+					dependencyDeclarations: { objects: dependency },
+					requirements: selected.requirements,
+					entrypoint: undefined,
+				});
+			} catch (caught) {
+				error = caught;
+			}
+		} finally {
+			Object.keys = originalKeys;
+		}
+		expect(error).toMatchObject({ code: "BINDLE_GRAPH_UNSUPPORTED" });
+	});
+
 	it("refuses dependencies that have not been bound", () => {
 		const original = bindle("jobs-app", (b) => {
 			const objects = b.bucket();
