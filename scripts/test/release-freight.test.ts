@@ -258,6 +258,56 @@ describe("release topology names", () => {
 		expect(seen[5]?.headers.authorization).toBeUndefined();
 	});
 
+	it.each([
+		"queued",
+		"building",
+		"errored",
+	])("rejects a %s Pages build as unhealthy in the probe transport", async (status) => {
+		const seen: TransportRequest[] = [];
+		const inner = async (request: TransportRequest) => {
+			seen.push(request);
+			return {
+				status: 200,
+				headers: {},
+				body: JSON.stringify({ status, commit: COMMIT }),
+			};
+		};
+		const request: TransportRequest = {
+			method: "GET",
+			url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+			headers: { "user-agent": "hobo-cd-probe" },
+			timeoutMs: 5_000,
+			maxResponseBytes: 1_048_576,
+		};
+		const result = await githubApiProbeTransport("probe-token", inner)(request);
+		expect(result.status).toBe(404);
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.headers.authorization).toBe("Bearer probe-token");
+	});
+
+	it("passes other GitHub requests through without changing them", async () => {
+		const seen: TransportRequest[] = [];
+		const inner = async (request: TransportRequest) => {
+			seen.push(request);
+			return { status: 202, headers: {}, body: "queued" };
+		};
+		const request: TransportRequest = {
+			method: "POST",
+			url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds",
+			headers: { accept: "application/json" },
+			timeoutMs: 5_000,
+			maxResponseBytes: 1_048_576,
+		};
+		expect(
+			await githubApiProbeTransport("probe-token", inner)(request),
+		).toEqual({
+			status: 202,
+			headers: {},
+			body: "queued",
+		});
+		expect(seen).toEqual([request]);
+	});
+
 	it("binds the GitHub Camps to HoBo's GitHub App installation on the release repository", () => {
 		const githubCamps = camps.filter(
 			(camp) =>

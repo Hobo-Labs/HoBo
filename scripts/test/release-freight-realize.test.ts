@@ -111,6 +111,7 @@ function ghcrWorld() {
 function withProbes(
 	inner: HttpTransport,
 	seen: TransportRequest[],
+	pages?: ReturnType<Fixtures["githubWorld"]>,
 ): HttpTransport {
 	return async (request) => {
 		seen.push(request);
@@ -118,7 +119,18 @@ function withProbes(
 			return { status: 401, headers: {}, body: "" };
 		if (request.url === "https://registry.npmjs.org/-/ping")
 			return { status: 200, headers: {}, body: "{}" };
-
+		if (
+			pages &&
+			request.headers["user-agent"] === "hobo-cd-probe" &&
+			request.url ===
+				`https://api.github.com/repos/${OWNER}/${REPO}/pages/builds/latest`
+		) {
+			const build = pages.builds.at(-1);
+			return build?.status === "built" &&
+				build.commit === pages.refs.get("gh-pages")
+				? { status: 200, headers: {}, body: JSON.stringify(build) }
+				: { status: 404, headers: {}, body: "" };
+		}
 		return inner(request);
 	};
 }
@@ -706,6 +718,40 @@ describe.skipIf(!built)(
 			expect(journalText(home)).not.toContain(fx.TOKEN);
 		});
 
+		it("Pages: workflow credentials authenticate the release probe", async () => {
+			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
+			const seen: TransportRequest[] = [];
+			const github: HttpTransport = async (request) => {
+				const response = await world.transport(request);
+				if (request.method !== "GET") world.finishBuild("built");
+				return response;
+			};
+			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-"));
+			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-"));
+			await qualifySiteRelease({
+				dist,
+				home,
+				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+				seams: {
+					http: withProbes(github, seen, world),
+					now: clock(),
+					drive: { passes: 700, intervalMs: 0 },
+				},
+			});
+			const probes = seen.filter(
+				(request) =>
+					request.headers["user-agent"] === "hobo-cd-probe" &&
+					request.url.endsWith("/pages/builds/latest"),
+			);
+			expect(probes.length).toBeGreaterThan(0);
+			expect(
+				probes.every(
+					(request) => request.headers.authorization === `Bearer ${fx.TOKEN}`,
+				),
+			).toBe(true);
+		});
+
 		it("Pages: 8-minute delayed build still qualifies", async () => {
 			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
 			let at = Date.parse("2026-11-12T00:00:00Z");
@@ -818,6 +864,15 @@ describe.skipIf(!built)(
 				readFileSync(releaseReportPath(home, "pages"), "utf8"),
 			);
 			expect(report.channels.candidate.outcome).toBe("blocked");
+			expect(
+				world
+					.mutations()
+					.filter(
+						(request) =>
+							request.method === "POST" &&
+							request.url.endsWith("/pages/builds"),
+					),
+			).toHaveLength(0);
 		});
 
 		it("npm: scoped OIDC candidate publishes the signed tarball and stable observes anonymously", async () => {
