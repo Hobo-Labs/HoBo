@@ -621,6 +621,15 @@ export type {
 	UsageEventType,
 } from "./ports/metering.js";
 export { createMeteringBus, createUsageEvent } from "./ports/metering.js";
+export {
+	NOTIFICATION_CONTRACT,
+	NOTIFICATION_MAX_BODY_BYTES,
+	NOTIFICATION_MAX_SUBJECT_BYTES,
+	type NotificationOutcome,
+	type NotificationPort,
+	type NotificationRequest,
+	parseNotificationRequest,
+} from "./ports/notification.js";
 export type {
 	OfferingFidelity,
 	OfferingNegotiation,
