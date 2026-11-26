@@ -735,10 +735,14 @@ declarations (the same peer-aligned instances the adapter resolves) and builds
 its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
 `test/better-auth-session-durability.test.ts` simulates sign-in, a process
 restart (SQLite file reopen), and brokered signing-secret re-resolution so
-session rows and cookie integrity survive host recycle. `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+session rows and cookie integrity survive host recycle. The session file is
+the harness `sessionStorePath`. `openBetterAuthSessionStore` applies the pack
+migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
+to that file; there is no hand-written session DDL. `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
-state, and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort` broker
-wire (synthetic signing material only; no live Worker/D1 deploy).
+state, a file-backed `sqlite` path (the same session file, not an in-memory
+database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
+broker wire (synthetic signing material only; no live Worker/D1 deploy).
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 

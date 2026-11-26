@@ -74,7 +74,7 @@ export interface BetterAuthHostHarness {
 	readonly stackName: string;
 	readonly stage: string;
 	readonly dotEnv: BetterAuthHostDotEnv;
-	readonly sqlite: ":memory:";
+	readonly sqlite: string;
 	readonly sessionStorePath: string;
 	createInMemoryAlchemyState(): ReturnType<typeof inMemoryState>;
 	dispose(): void;
@@ -95,7 +95,7 @@ export function createBetterAuthHostHarness(): BetterAuthHostHarness {
 		stackName: "better-auth-host",
 		stage: "test",
 		dotEnv: BETTER_AUTH_HOST_DOTENV_FIXTURE,
-		sqlite: ":memory:",
+		sqlite: sessionStorePath,
 		sessionStorePath,
 		createInMemoryAlchemyState: () => inMemoryState(),
 		dispose() {
