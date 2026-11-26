@@ -1,0 +1,503 @@
+{
+  "ci": {
+    "run": {
+      "id": 45695300131,
+      "head_sha": "2eeb84b2e22056ac76e46a61158c3b54d285a595",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-25T20:28:31Z",
+      "updated_at": "2026-11-25T20:37:05Z",
+      "run_attempt": 2,
+      "html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/45695300131"
+    },
+    "jobs": {
+      "total_count": 23,
+      "jobs": [
+        {
+          "name": "Main build cache",
+          "status": "completed",
+          "conclusion": "failure",
+          "started_at": "2026-11-25T20:36:38Z",
+          "completed_at": "2026-11-25T20:37:05Z"
+        },
+        {
+          "name": "HoBo release integration PR shard",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "CI deps layer (pnpm)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Workspace test shard ${{ matrix.shard }}",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Main full gate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "State-machine verification",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "PR impact validation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Live data engines (PostgreSQL 16, MongoDB 8)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Secret scan",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "PR affected package lanes",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Scripts tests",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "artifact signing and install verification",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "PR impact gate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "hobo dev cold loop (offline <=60s)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Main workspace test shard ${{ matrix.shard }}",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:30:06Z"
+        },
+        {
+          "name": "Main workspace plan",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T20:29:18Z",
+          "completed_at": "2026-11-25T20:30:06Z"
+        },
+        {
+          "name": "Main full gate (finish)",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T20:33:28Z",
+          "completed_at": "2026-11-25T20:33:33Z"
+        },
+        {
+          "name": "HoBo's own Freight",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:37Z",
+          "completed_at": "2026-11-25T20:33:33Z"
+        },
+        {
+          "name": "CI runner image (mise oci)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:43Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "PR off-path checks (ts-autocode surface, production packages)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:44Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "PR impact plan",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:45Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "Route runners",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-25T20:28:48Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        },
+        {
+          "name": "CI fabric contract guard",
+          "status": "completed",
+          "conclusion": "skipped",
+          "started_at": "2026-11-25T20:36:46Z",
+          "completed_at": "2026-11-25T20:29:16Z"
+        }
+      ]
+    }
+  },
+  "cd": [
+    {
+      "run": {
+        "id": 45696681028,
+        "head_sha": "2eeb84b2e22056ac76e46a61158c3b54d285a595",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-25T20:37:10Z",
+        "updated_at": "2026-11-25T20:42:22Z",
+        "run_attempt": 1,
+        "html_url": "https://github.com/Hobo-Labs/HoBo/actions/runs/45696681028"
+      },
+      "jobs": {
+        "total_count": 20,
+        "jobs": [
+          {
+            "name": "Route runners",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-25T20:38:09Z",
+            "completed_at": "2026-11-25T20:38:28Z"
+          },
+          {
+            "name": "Release contract + affected OCI images",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-25T20:38:30Z",
+            "completed_at": "2026-11-25T20:42:21Z"
+          },
+          {
+            "name": "Main train release gate (nbgv)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-25T20:38:39Z",
+            "completed_at": "2026-11-25T20:38:52Z"
+          },
+          {
+            "name": "Pages browser-wit build (hobo runner)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:28Z",
+            "completed_at": "2026-11-25T20:38:28Z"
+          },
+          {
+            "name": "Pages freshness gate",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:28Z",
+            "completed_at": "2026-11-25T20:38:28Z"
+          },
+          {
+            "name": "Release Freight realize proof (offline)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:28Z",
+            "completed_at": "2026-11-25T20:38:28Z"
+          },
+          {
+            "name": "Build the hobo CLI once (release Freight)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:53Z",
+            "completed_at": "2026-11-25T20:38:52Z"
+          },
+          {
+            "name": "Release train images",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:53Z",
+            "completed_at": "2026-11-25T20:38:52Z"
+          },
+          {
+            "name": "HoBo slow integration suites (release gate)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:53Z",
+            "completed_at": "2026-11-25T20:38:52Z"
+          },
+          {
+            "name": "Publish GitHub Pages (site/)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:53Z",
+            "completed_at": "2026-11-25T20:38:52Z"
+          },
+          {
+            "name": "HoBo release integration PR gate",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:38:53Z",
+            "completed_at": "2026-11-25T20:38:52Z"
+          },
+          {
+            "name": "HoBo release PR gate (required)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:21Z"
+          },
+          {
+            "name": "Resolve the release toolchain image once",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:21Z"
+          },
+          {
+            "name": "Build all OCI images on tag (gate publish)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          },
+          {
+            "name": "Publish GHCR images (tagged release)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          },
+          {
+            "name": "npm publish train (SDK allowlist)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          },
+          {
+            "name": "Fleet service images (build, provenance, bill of materials)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          },
+          {
+            "name": "Attest GHCR images",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          },
+          {
+            "name": "Signed git tag + GitHub Release (main train)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          },
+          {
+            "name": "GitHub Release (independent train tag)",
+            "status": "completed",
+            "conclusion": "skipped",
+            "started_at": "2026-11-25T20:42:22Z",
+            "completed_at": "2026-11-25T20:42:22Z"
+          }
+        ]
+      }
+    }
+  ],
+  "requirements": [
+    {
+      "deployable": "hobo-cli",
+      "jobs": [
+        {
+          "stage": "ci",
+          "name": "Main build cache"
+        },
+        {
+          "stage": "cd",
+          "name": "Build all OCI images on tag (gate publish) (hobo-cli)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GHCR images (tagged release) (hobo-cli)"
+        },
+        {
+          "stage": "cd",
+          "name": "Attest GHCR images"
+        },
+        {
+          "stage": "cd",
+          "name": "Signed git tag + GitHub Release (main train)"
+        }
+      ]
+    },
+    {
+      "deployable": "hobo-mcp",
+      "jobs": [
+        {
+          "stage": "ci",
+          "name": "Main build cache"
+        },
+        {
+          "stage": "cd",
+          "name": "Build all OCI images on tag (gate publish) (hobo-mcp)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GHCR images (tagged release) (hobo-mcp)"
+        },
+        {
+          "stage": "cd",
+          "name": "Attest GHCR images"
+        },
+        {
+          "stage": "cd",
+          "name": "Signed git tag + GitHub Release (main train)"
+        }
+      ]
+    },
+    {
+      "deployable": "hobo-codegen",
+      "jobs": [
+        {
+          "stage": "ci",
+          "name": "Main build cache"
+        },
+        {
+          "stage": "cd",
+          "name": "Build all OCI images on tag (gate publish) (hobo-codegen)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GHCR images (tagged release) (hobo-codegen)"
+        },
+        {
+          "stage": "cd",
+          "name": "Attest GHCR images"
+        },
+        {
+          "stage": "cd",
+          "name": "Signed git tag + GitHub Release (main train)"
+        }
+      ]
+    },
+    {
+      "deployable": "hobo-sdk",
+      "jobs": [
+        {
+          "stage": "ci",
+          "name": "Main build cache"
+        },
+        {
+          "stage": "cd",
+          "name": "Build all OCI images on tag (gate publish) (hobo-sdk)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GHCR images (tagged release) (hobo-sdk)"
+        },
+        {
+          "stage": "cd",
+          "name": "npm publish train (SDK allowlist)"
+        },
+        {
+          "stage": "cd",
+          "name": "Attest GHCR images"
+        },
+        {
+          "stage": "cd",
+          "name": "Signed git tag + GitHub Release (main train)"
+        }
+      ]
+    },
+    {
+      "deployable": "hobo-site",
+      "jobs": [
+        {
+          "stage": "ci",
+          "name": "Main build cache"
+        },
+        {
+          "stage": "cd",
+          "name": "Build all OCI images on tag (gate publish) (hobo-site)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GHCR images (tagged release) (hobo-site)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GitHub Pages (site/)"
+        },
+        {
+          "stage": "cd",
+          "name": "Attest GHCR images"
+        },
+        {
+          "stage": "cd",
+          "name": "Signed git tag + GitHub Release (main train)"
+        }
+      ]
+    },
+    {
+      "deployable": "hobo-ci-serve",
+      "jobs": [
+        {
+          "stage": "ci",
+          "name": "Main build cache"
+        },
+        {
+          "stage": "cd",
+          "name": "Build all OCI images on tag (gate publish) (hobo-ci-serve)"
+        },
+        {
+          "stage": "cd",
+          "name": "Publish GHCR images (tagged release) (hobo-ci-serve)"
+        },
+        {
+          "stage": "cd",
+          "name": "Attest GHCR images"
+        },
+        {
+          "stage": "cd",
+          "name": "Signed git tag + GitHub Release (main train)"
+        }
+      ]
+    }
+  ],
+  "cache": {
+    "state": "unknown",
+    "evidence": []
+  }
+}

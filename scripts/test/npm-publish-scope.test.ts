@@ -40,20 +40,44 @@ describe("npm-publish-scope", () => {
 		);
 	});
 
-	it("pins mapped workspace deps to the release semver for npm pack", () => {
+	it("preserves workspace import names using npm aliases", () => {
 		const map = loadNpmScopeMap();
 		const staged = applyScopeToManifest(
 			{
 				name: "@hobo/cli",
-				dependencies: {
-					"@hobo/core": "workspace:*",
-					"@hobo/cloud": "workspace:*",
-				},
+				dependencies: { "@hobo/core": "workspace:*", lodash: "^4.0.0" },
+				peerDependencies: { "@hobo/policy": "workspace:*" },
 			},
 			map,
 			{ version: "0.0.0-alpha.1" },
 		);
-		assert.equal(staged.dependencies?.["@hobo-labs/core"], "0.0.0-alpha.1");
-		assert.equal(staged.dependencies?.["@hobo/cloud"], undefined);
+		assert.equal(
+			staged.dependencies?.["@hobo/core"],
+			"npm:@hobo-labs/core@0.0.0-alpha.1",
+		);
+		assert.equal(staged.dependencies?.lodash, "^4.0.0");
+		assert.equal(
+			staged.peerDependencies?.["@hobo/policy"],
+			"npm:@hobo-labs/policy@0.0.0-alpha.1",
+		);
+	});
+
+	it("rejects unmapped workspace runtime dependencies", () => {
+		const map = loadNpmScopeMap();
+		for (const section of [
+			"dependencies",
+			"peerDependencies",
+			"optionalDependencies",
+		] as const) {
+			assert.throws(
+				() =>
+					applyScopeToManifest(
+						{ name: "@hobo/cli", [section]: { "@hobo/cloud": "workspace:*" } },
+						map,
+						{ version: "0.0.0-alpha.1" },
+					),
+				/runtime workspace dependency @hobo\/cloud has no public package mapping/,
+			);
+		}
 	});
 });

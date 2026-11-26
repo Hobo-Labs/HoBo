@@ -49,6 +49,7 @@ import {
 	REGENERABLE,
 	type Registry,
 	RIFT_DIR,
+	RiftRegistryError,
 	readRegistry,
 	rebuildRegistry,
 	removeWorkspace,
@@ -205,6 +206,100 @@ describe("the journal is the authority", () => {
 });
 
 describe("repair", () => {
+	it("preserves a snapshot when a same-named workspace is replaced without a removal", () => {
+		const abs = initRoot(root()).root;
+		const original = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "old"),
+		);
+		const replacement = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "new"),
+		);
+		mkdirSync(original.path, { recursive: true });
+		mkdirSync(replacement.path, { recursive: true });
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: original.createdAt,
+			workspace: original,
+		});
+		const snapshot = { root: abs, workspaces: [original], eventCount: 2 };
+		writeSnapshot(abs, snapshot);
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: replacement.createdAt,
+			workspace: replacement,
+		});
+
+		expect(() => rebuildRegistry(abs)).toThrow(RiftRegistryError);
+		expect(readSnapshotFile(abs)).toEqual(snapshot);
+		expect(existsSync(original.path)).toBe(true);
+	});
+
+	it("permits a same-named replacement after a recorded removal", () => {
+		const abs = initRoot(root()).root;
+		const original = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "old"),
+		);
+		const replacement = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "new"),
+		);
+		mkdirSync(original.path, { recursive: true });
+		mkdirSync(replacement.path, { recursive: true });
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: original.createdAt,
+			workspace: original,
+		});
+		writeSnapshot(abs, { root: abs, workspaces: [original], eventCount: 2 });
+		appendJournal(abs, {
+			type: "WorkspaceRemoved",
+			at: replacement.createdAt,
+			name: original.name,
+		});
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: replacement.createdAt,
+			workspace: replacement,
+		});
+
+		expect(rebuildRegistry(abs).workspaces).toEqual([replacement]);
+	});
+
+	it("does not append a removal after an unverified same-name replacement", () => {
+		const abs = initRoot(root()).root;
+		const original = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "old"),
+		);
+		const replacement = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "new"),
+		);
+		mkdirSync(original.path, { recursive: true });
+		mkdirSync(replacement.path, { recursive: true });
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: original.createdAt,
+			workspace: original,
+		});
+		const snapshot = { root: abs, workspaces: [original], eventCount: 2 };
+		writeSnapshot(abs, snapshot);
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: replacement.createdAt,
+			workspace: replacement,
+		});
+		const journal = join(abs, RIFT_DIR, "events.jsonl");
+		const before = readFileSync(journal, "utf8");
+
+		expect(() => removeWorkspace(abs, "shared")).toThrow(RiftRegistryError);
+		expect(readFileSync(journal, "utf8")).toBe(before);
+		expect(readSnapshotFile(abs)).toEqual(snapshot);
+		expect(existsSync(original.path)).toBe(true);
+	});
 	it("preserves a snapshot belonging to a different root", () => {
 		const abs = root();
 		const foreignRoot = join(abs, "other-root");
@@ -249,6 +344,50 @@ describe("repair", () => {
 		expect(removeWorkspace(abs, ws.name)).toBe(true);
 		expect(readRegistry(abs).workspaces).toEqual([]);
 		expect(readSnapshotFile(abs).workspaces).toEqual([]);
+	});
+
+	it("refuses to drop a workspace when a truncated repair stops halfway and the backup is gone", () => {
+		const abs = initRoot(root()).root;
+		const stalePath = join(abs, RIFT_DIR, "workspaces", "stale");
+		const keptPath = join(abs, RIFT_DIR, "workspaces", "kept");
+		const lostPath = join(abs, RIFT_DIR, "workspaces", "lost");
+		mkdirSync(stalePath, { recursive: true });
+		mkdirSync(keptPath, { recursive: true });
+		mkdirSync(lostPath, { recursive: true });
+		const stale = workspace("stale", stalePath);
+		const kept = workspace("kept", keptPath);
+		const lost = workspace("lost", lostPath);
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: stale.createdAt,
+			workspace: stale,
+		});
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: kept.createdAt,
+			workspace: kept,
+		});
+		const body = { root: abs, workspaces: [kept, lost], eventCount: 4 };
+		writeSnapshot(abs, body);
+		const backup = join(abs, RIFT_DIR, "registry.repair-backup.json");
+		writeFileSync(backup, readFileSync(join(abs, RIFT_DIR, "registry.json")));
+		appendJournal(abs, {
+			type: "WorkspaceRemoved",
+			at: "2026-08-20T02:00:00.000Z",
+			name: stale.name,
+		});
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: kept.createdAt,
+			workspace: kept,
+		});
+		rmSync(backup);
+
+		expect(() => rebuildRegistry(abs)).toThrow(RiftRegistryError);
+		expect(() => rebuildRegistry(abs)).toThrow("would drop workspace(s) lost");
+		expect(readSnapshotFile(abs)).toEqual(body);
+		expect(existsSync(lost.path)).toBe(true);
+		expect(existsSync(backup)).toBe(false);
 	});
 
 	it("preserves the backup and refuses further changes after an interrupted repair", () => {
@@ -337,6 +476,20 @@ describe("repair", () => {
 		writeSnapshot(abs, body);
 		expect(rebuildRegistry(abs).undecidable).toContain("left untouched");
 		expect(readSnapshotFile(abs)).toEqual(body);
+	});
+
+	it("removes a workspace when the snapshot has no event count", () => {
+		const { abs, ws } = rootWithWorkspace();
+		const body = { root: abs, workspaces: [ws] };
+		writeSnapshot(abs, body);
+		expect(removeWorkspace(abs, ws.name)).toBe(true);
+		expect(readRegistry(abs).workspaces).toEqual([]);
+		expect(readSnapshotFile(abs)).toEqual({
+			root: abs,
+			workspaces: [],
+			eventCount: expect.any(Number),
+		});
+		expect(existsSync(ws.path)).toBe(false);
 	});
 
 	it("preserves conflicting snapshots at the same event count", () => {
