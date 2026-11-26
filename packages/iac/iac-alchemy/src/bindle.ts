@@ -98,7 +98,6 @@ export interface AlchemyMappedPrimitive<Entrypoint> {
 	readonly primary: ResourceLike;
 	readonly resources: readonly ResourceLike[];
 	readonly sharedDependency?: string;
-	/** Reuse a previously mapped resource without claiming a dependency edge. */
 	readonly sharedPrimitive?: string;
 	readonly boundDependencies: readonly string[];
 	readonly boundEntrypoint?: Entrypoint;

@@ -1,8 +1,6 @@
 --------------------------- MODULE AwsS3Objects ---------------------------
 EXTENDS Naturals, TLC
 
-\* One key, bounded bodies and a collision-free abstract digest. Out-of-band
-\* objects can have foreign metadata, arbitrary size or corrupt body/digest.
 CONSTANT MaxBytes
 Bodies == {"empty", "small", "large"}
 Digests == {"d0", "d1", "d2", "foreign"}
