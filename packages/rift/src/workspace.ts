@@ -491,12 +491,17 @@ function snapshotSources(root: string): Registry[] {
 }
 
 function droppedWorkspaceNames(registry: Registry): string[] {
-	const kept = new Set(registry.workspaces.map((workspace) => workspace.name));
 	const dropped: string[] = [];
 	const seen = new Set<string>();
 	for (const source of snapshotSources(registry.root)) {
 		for (const workspace of source.workspaces) {
-			if (kept.has(workspace.name) || seen.has(workspace.name)) continue;
+			if (
+				registry.workspaces.some((candidate) =>
+					sameWorkspace(workspace, candidate),
+				) ||
+				seen.has(workspace.name)
+			)
+				continue;
 			seen.add(workspace.name);
 			dropped.push(workspace.name);
 		}
@@ -516,23 +521,36 @@ function completingVerifiedTruncatedRepair(registry: Registry): boolean {
 	return sameWorkspaces(registry.workspaces, surviving);
 }
 
-function suffixRemovesWorkspace(
+function suffixAuthorizesWorkspaceChange(
 	events: readonly WorkspaceEvent[],
 	eventCount: number,
-	name: string,
+	original: WorkspaceRecord,
+	current: WorkspaceRecord | undefined,
 ): boolean {
-	let mentioned = false;
-	let present = false;
+	let removed = false;
+	let created: WorkspaceRecord | undefined;
 	for (const event of events.slice(eventCount)) {
-		if (event.type === "WorkspaceCreated" && event.workspace.name === name) {
-			mentioned = true;
-			present = true;
-		} else if (event.type === "WorkspaceRemoved" && event.name === name) {
-			mentioned = true;
-			present = false;
+		if (event.type === "WorkspaceRemoved" && event.name === original.name) {
+			removed = true;
+			created = undefined;
+		} else if (
+			event.type === "WorkspaceCreated" &&
+			event.workspace.name === original.name
+		) {
+			if (!removed) {
+				if (!sameWorkspace(event.workspace, original)) return false;
+				continue;
+			}
+			if (created && !sameWorkspace(created, event.workspace)) return false;
+			created = event.workspace;
 		}
 	}
-	return mentioned && !present;
+	return (
+		removed &&
+		(current
+			? created !== undefined && sameWorkspace(created, current)
+			: created === undefined)
+	);
 }
 
 function journalAuthorizesWorkspaceDrops(
@@ -544,16 +562,25 @@ function journalAuthorizesWorkspaceDrops(
 	if (!sameWorkspaces(registry.workspaces, projectWorkspaces(events)))
 		return false;
 	return dropped.every((name) => {
-		const sources = snapshotSources(registry.root).filter((source) =>
-			source.workspaces.some((workspace) => workspace.name === name),
+		const current = registry.workspaces.find(
+			(workspace) => workspace.name === name,
 		);
+		const sources = snapshotSources(registry.root).flatMap((source) => {
+			const original = source.workspaces.find(
+				(workspace) =>
+					workspace.name === name &&
+					(!current || !sameWorkspace(workspace, current)),
+			);
+			return original ? [{ source, original }] : [];
+		});
 		return (
 			sources.length > 0 &&
-			sources.every((source) =>
-				suffixRemovesWorkspace(
+			sources.every(({ source, original }) =>
+				suffixAuthorizesWorkspaceChange(
 					events,
 					isJsonNumber(source.eventCount) ? source.eventCount : 0,
-					name,
+					original,
+					current,
 				),
 			)
 		);

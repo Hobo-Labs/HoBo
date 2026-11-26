@@ -206,6 +206,100 @@ describe("the journal is the authority", () => {
 });
 
 describe("repair", () => {
+	it("preserves a snapshot when a same-named workspace is replaced without a removal", () => {
+		const abs = initRoot(root()).root;
+		const original = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "old"),
+		);
+		const replacement = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "new"),
+		);
+		mkdirSync(original.path, { recursive: true });
+		mkdirSync(replacement.path, { recursive: true });
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: original.createdAt,
+			workspace: original,
+		});
+		const snapshot = { root: abs, workspaces: [original], eventCount: 2 };
+		writeSnapshot(abs, snapshot);
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: replacement.createdAt,
+			workspace: replacement,
+		});
+
+		expect(() => rebuildRegistry(abs)).toThrow(RiftRegistryError);
+		expect(readSnapshotFile(abs)).toEqual(snapshot);
+		expect(existsSync(original.path)).toBe(true);
+	});
+
+	it("permits a same-named replacement after a recorded removal", () => {
+		const abs = initRoot(root()).root;
+		const original = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "old"),
+		);
+		const replacement = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "new"),
+		);
+		mkdirSync(original.path, { recursive: true });
+		mkdirSync(replacement.path, { recursive: true });
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: original.createdAt,
+			workspace: original,
+		});
+		writeSnapshot(abs, { root: abs, workspaces: [original], eventCount: 2 });
+		appendJournal(abs, {
+			type: "WorkspaceRemoved",
+			at: replacement.createdAt,
+			name: original.name,
+		});
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: replacement.createdAt,
+			workspace: replacement,
+		});
+
+		expect(rebuildRegistry(abs).workspaces).toEqual([replacement]);
+	});
+
+	it("does not append a removal after an unverified same-name replacement", () => {
+		const abs = initRoot(root()).root;
+		const original = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "old"),
+		);
+		const replacement = workspace(
+			"shared",
+			join(abs, RIFT_DIR, "workspaces", "new"),
+		);
+		mkdirSync(original.path, { recursive: true });
+		mkdirSync(replacement.path, { recursive: true });
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: original.createdAt,
+			workspace: original,
+		});
+		const snapshot = { root: abs, workspaces: [original], eventCount: 2 };
+		writeSnapshot(abs, snapshot);
+		appendJournal(abs, {
+			type: "WorkspaceCreated",
+			at: replacement.createdAt,
+			workspace: replacement,
+		});
+		const journal = join(abs, RIFT_DIR, "events.jsonl");
+		const before = readFileSync(journal, "utf8");
+
+		expect(() => removeWorkspace(abs, "shared")).toThrow(RiftRegistryError);
+		expect(readFileSync(journal, "utf8")).toBe(before);
+		expect(readSnapshotFile(abs)).toEqual(snapshot);
+		expect(existsSync(original.path)).toBe(true);
+	});
 	it("preserves a snapshot belonging to a different root", () => {
 		const abs = root();
 		const foreignRoot = join(abs, "other-root");
