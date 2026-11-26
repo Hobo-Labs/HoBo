@@ -1787,6 +1787,12 @@ export function createPromotionService(
 		intent: DeltaIntent,
 		preview?: PreviewEnvironmentRecord,
 	): boolean {
+		const requestMode = loaded.trigger.meta?.promotionRequestMode;
+		if (
+			requestMode !== undefined &&
+			requestMode !== (input.requestMode ?? "manual")
+		)
+			return false;
 		const fingerprint = loaded.trigger.meta?.promotionRequestFingerprint;
 		if (fingerprint !== undefined)
 			return fingerprint === requestFingerprint(input, intent, preview);
@@ -1960,6 +1966,7 @@ export function createPromotionService(
 				data: body(PromotionRecordSchema, promotion),
 				idempotencyKey: "request",
 				meta: {
+					promotionRequestMode: input.requestMode ?? "manual",
 					promotionRequestFingerprint: requestFingerprint(
 						input,
 						intent,
