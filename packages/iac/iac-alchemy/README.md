@@ -62,6 +62,11 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
+The AWS mapper also maps a secret declaration with no requested operations to
+an Alchemy `AWS.SecretsManager.Secret`, with a 30-day deletion recovery window
+and no value in the IaC configuration. This is infrastructure-only: versioned
+secret operations and application bindings are not yet provided by this mapper.
+
 AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
 its provider choice outside the Bindle: pass the neutral Bindle through
 `withAwsDynamoKv(bindle, { cache: true })` and use
