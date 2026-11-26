@@ -109,9 +109,9 @@ revoked epoch, fence outstanding requests during ownership changes, and enforce
 matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
 bytes and values to 256 KiB. A failed or timed-out write or delete has an
 unknown outcome and requires reconciliation. Each store retains capacity for a
-timed-out request until the transport settles. This subset does not bind a
-HoBo application or WASI guest to the table, implement transactions, or prevent
-out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
+timed-out request until the transport settles. The HTTP binding described below connects a HoBo application to the table.
+WASI guests, transactions, and prevention of out-of-band AWS access are not
+implemented. The bounded `AwsKvRuntime` model assumes the host's
 verifier and transport behave as specified; it does not prove those components.
 It models one bounded store and allows transport to remain in flight after a
 caller times out.
@@ -126,9 +126,9 @@ and grant, per-key authorization, IAM and the AWS credentials and HTTP Effect
 layer. Each operation sends S3's expected-owner condition. It
 supports objects up to 1 MiB, 1,024-byte keys, at most 1,024 body chunks and
 SHA-256 content-digest metadata. Failed writes and deletes have unknown
-outcomes; the host must fence ownership changes and reconcile them. It does not
-bind an application or WASI guest, implement blob events or version management,
-or authenticate the digest against a separate authority.
+outcomes; the host must fence ownership changes and reconcile them. The HTTP binding described below connects a HoBo application to the bucket.
+WASI guests, blob events, version management, and digest authentication against
+a separate authority are not implemented.
 The runtime reports a successful write only after transport completion, even if
 application code replaces `Promise.race`.
 The bounded `AwsS3Objects` model uses one key and a collision-free abstract
@@ -144,8 +144,8 @@ application array prototypes do not change the captured grant.
 A Node.js HTTP host can bind the selected DynamoDB, S3 and versioned secret
 stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
-from `@hobo/iac-alchemy/aws/http-runtime`. Use `secret(name)` for a versioned
-secret. The host supplies the selected Bindle, its application name, exactly the declared stores, and a synchronous
+from `@hobo/iac-alchemy/aws/http-runtime`. Use `kv(name)`, `bucket(name)` or
+`secret(name)` to access the declared dependency. The host supplies the selected Bindle, its application name, exactly the declared stores, and a synchronous
 verifier for each captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. The bounded `AwsHttpSecret` model checks the secret write outcome
@@ -1115,9 +1115,9 @@ protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
 Official AWS Emulator tests exercise priced, denied-unpriced and authorized
 unpriced admission before creating that API.
-The base mapper provides
-infrastructure only: runtime operations and application bindings are not yet
-supported, and unsupported operations are reported explicitly. Budget-based
+The base AWS mapper provides infrastructure-only resources; the explicit
+runtime selections described here add the supported operation and HTTP bindings.
+The support report identifies operations that remain unsupported. Budget-based
 routing requires a complete supplied pricing model. An explicitly authorized
 unpriced admission instead bypasses budget evaluation and holds unbounded
 exposure; uncertain partial applies retain exposure for reconciliation. The
@@ -1188,7 +1188,7 @@ must authenticate the table incarnation and each operation, enforce AWS permissi
 and fence in-flight work. Values are limited to 256 KiB to leave room for keys and
 attributes within DynamoDB's item limit. If completion observation cannot be
 established after an effect may have started, its capacity remains occupied.
-This slice does not yet map the runtime into applications.
+The HTTP application binding uses the selected runtime and full table ARN.
 The shared transport boundary permits at most 32 concurrent operations per
 store and uses a ten-second deadline. A deadline does not stop the provider.
 
@@ -1196,8 +1196,7 @@ The optional Node.js S3 runtime supports bounded object reads, writes and
 deletes with per-key grants and a one MiB object limit. The host authenticates
 the bucket incarnation and IAM scope on each operation. Responses with invalid
 metadata or ranges consume at most one chunk so the stream scope closes;
-uncertain mutations require reconciliation. This runtime is not yet bound to
-applications.
+uncertain mutations require reconciliation. The HTTP application binding uses the selected runtime and bucket name.
 
 The internal AWS queue atomic store uses a strongly consistent read and a
 conditional DynamoDB write for one bounded state document. A failed conditional
@@ -1208,9 +1207,9 @@ is not proof of a conflict or of no effect. Each queue requires a dedicated,
 exclusively owned table and host-verified resource epoch; deleting or recreating
 that table without fencing can lose receipts or permit an ABA revision. Factory
 inspection exposes the captured grant for host binding; it does not verify IAM or
-the table's actual incarnation. This
-storage layer does not yet implement queue messages, leases, the SQS mapping, or
-component bindings. The official AWS Emulator test resets its test record and
+the table's actual incarnation. This storage layer alone does not implement queue messages or leases; the
+queue host and HTTP application binding below provide those operations. It does
+not implement SQS. The official AWS Emulator test resets its test record and
 checks conditional writes, reopening, and concurrent writers against an
 Alchemy-created table.
 
