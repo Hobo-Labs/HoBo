@@ -13,6 +13,7 @@ import {
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
+import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
@@ -113,6 +114,54 @@ describe("explicit DynamoDB KV runtime choice", () => {
 			"DynamoDB KV requires",
 		);
 		expect(() => withAwsDynamoKv(original, { missing: true })).toThrow(
+			"unknown resource",
+		);
+	});
+});
+
+describe("composable AWS target choices", () => {
+	it("maps bounded S3 and DynamoDB operations while preserving the neutral Bindle", async () => {
+		const original = bindle("shop", (b) => ({
+			objects: b.bucket().allow("read", "write", "delete"),
+			sessions: b.kv().allow("get", "set", "delete"),
+		}));
+		const selected = withAwsS3(withAwsDynamoKv(original, { sessions: true }), {
+			objects: true,
+		});
+		expect(original.resources.objects?.annotations).toEqual([]);
+		expect(original.resources.sessions?.annotations).toEqual([]);
+		const mappers = awsS3BindleMappers(awsDynamoKvBindleMappers());
+		const report = describeAlchemyPrimitiveSupport(
+			[
+				{ factory: "bucket", allowVerbs: ["read", "write", "delete"] },
+				{ factory: "kv", allowVerbs: ["get", "set", "delete"] },
+			],
+			mappers,
+		);
+		expect(
+			report.map((row) => [row.kind, row.status, row.unsupportedOperations]),
+		).toEqual([
+			["bucket", "partial", []],
+			["kv", "partial", []],
+		]);
+		// SAFETY: this constructs Alchemy resources without running a provider.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.objects?.Type).toBe(Bucket.Type);
+		expect(mapped.primary.sessions?.Type).toBe(Table.Type);
+		expect(() => withAwsS3(original, { sessions: true })).toThrow(
+			"unannotated bucket",
+		);
+		expect(() => withAwsS3(original, { missing: true })).toThrow(
 			"unknown resource",
 		);
 	});
