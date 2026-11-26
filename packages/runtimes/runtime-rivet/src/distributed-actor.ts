@@ -247,7 +247,6 @@ function readSnapshot(
 			if (encoded === undefined) return undefined;
 			bytes += Buffer.byteLength(encoded);
 			if (bytes > 524_288) return undefined;
-			// SAFETY: the canonical encoder accepts only a bounded valid FoldEvent.
 			result.push({
 				eventId: eventId.value,
 				event: JSON.parse(encoded) as FoldEvent,
@@ -442,7 +441,6 @@ export function createRivetDistributedJournal(
 			const encoded = encodeDistributedEvent(event);
 			if (encoded === undefined)
 				throw new TypeError("invalid Rivet journal event");
-			// SAFETY: the canonical encoder validates the bounded event before copying it.
 			const snapshot = JSON.parse(encoded) as FoldEvent;
 			const remote = handle(key);
 			const proof = await authorize(key, "append", {

@@ -1,4 +1,3 @@
-
 import path from "node:path";
 
 export type WaspEnvScope = "server" | "client" | "general";
@@ -35,7 +34,6 @@ export type WaspWebAppAnnotation = {
 	readonly root: string;
 };
 
-// public-contract: callers branch on this stable parse-boundary error code.
 export const WASP_REJECTED_CODE = "HOBO_WASP_INPUT_REJECTED" as const;
 
 export class WaspInputRejectedError extends Error {

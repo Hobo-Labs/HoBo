@@ -1,11 +1,3 @@
-/**
- * Structured findings over a derived matrix.
- *
- * Nothing here throws. A gap in coverage is a fact about the world, not a
- * programming error, and the caller — a docs job, a release gate, a dashboard —
- * decides which findings it treats as blocking. Throwing would force that
- * decision into this package and make an honest empty matrix unreportable.
- */
 import type { BindlePrimitive, BindleRuntime } from "@hobo/capability-profiles";
 
 import { CAPABILITY_MATRIX_COORDINATES } from "./grid.js";
@@ -70,7 +62,6 @@ const SEVERITY_BY_CODE = {
 	"sponsor-only-cell": "warning",
 	"substrate-only-cell": "info",
 	"expiring-evidence-cell": "warning",
-	// A claim nobody can check is not coverage.
 	"missing-conformance-ref": "error",
 } as const;
 
@@ -119,7 +110,6 @@ function expiringFinding(
 			candidate.evidenceExpiresAtMs !== undefined &&
 			candidate.evidenceExpiresAtMs - evaluatedAtMs <= horizonMs,
 	);
-	// candidate beside a healthy one is not a coverage risk.
 	if (expiring.length !== available.length) return undefined;
 	return {
 		code: "expiring-evidence-cell",
@@ -153,13 +143,6 @@ function missingConformanceRefFinding(
 	};
 }
 
-/**
- * Report what is wrong with a matrix, as data.
- *
- * The findings are ordered by cell in canonical grid order and then by code, so
- * two runs over equal matrices produce equal reports and a diff of the report
- * is a diff of the coverage.
- */
 export function validateCapabilityMatrix(
 	matrix: CapabilityMatrix,
 	options: CapabilityMatrixValidationOptions = {},

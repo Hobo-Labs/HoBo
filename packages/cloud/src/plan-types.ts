@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-// constant has been exported without a `// public-contract:` marker since it
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlanAuthoring as DeploymentPlan,

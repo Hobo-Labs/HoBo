@@ -36,22 +36,8 @@
 
 import { createHash } from "node:crypto";
 
-// The schema discriminant of a round-trip report. Hashed into the report
-// digest, so a consumer pins this exact string rather than deriving it.
 export const ROUND_TRIP_REPORT_SCHEMA = "hobo.manifest-round-trip/v1" as const;
 
-/**
- * What a check found.
- *
- * - `single-declaration` — the shape is declared once, in the manifest package,
- *   and the upstream package re-exports it. Nothing can drift.
- * - `parity` — the shape is still declared in both places and the two
- *   declarations agree field for field, optionality included.
- * - `divergent` — declared in both places and they do not agree. Not a test
- *   failure by itself: a recorded, named divergence with a reason is the
- *   honest state when closing it is outside the closing party's reach. A
- *   divergence with no `detail` is refused.
- */
 export const CHECK_OUTCOMES = [
 	"single-declaration",
 	"parity",
@@ -64,14 +50,11 @@ declare const roundTripReportBrand: unique symbol;
 
 // domain-view: parsed decomposition check; wire form is ManifestCheck in data-models/round_trip_report.proto.
 export type ManifestCheck = {
-	/** The exported name that moved, e.g. `ResourceIntent`. */
 	readonly shape: string;
 	/** The package that owns it now, e.g. `@hobo/manifest-declaration`. */
 	readonly owner: string;
-	/** Repo-relative path of the file it moved out of. */
 	readonly upstream: string;
 	readonly outcome: CheckOutcome;
-	/** Required on `divergent`, and refused as empty on any outcome. */
 	readonly detail: string;
 };
 
@@ -86,7 +69,6 @@ export type ReportHash = `sha256:${string}`;
 
 export class RoundTripReportError extends Error {
 	readonly code = "INVALID_ROUND_TRIP_REPORT" as const;
-	/** Dotted path of the offending field, e.g. `checks[2].detail`. */
 	readonly path: string;
 
 	constructor(path: string, detail: string) {
@@ -153,12 +135,6 @@ function parseCheck(input: unknown, path: string): ManifestCheck {
 	});
 }
 
-/**
- * The parse boundary. Refuses an unknown field, an empty string anywhere, an
- * outcome outside the closed set, and two checks naming the same shape — a
- * duplicated shape means one of the two records is stale and there is no way to
- * tell which.
- */
 export function parseRoundTripReport(input: unknown): RoundTripReport {
 	const source = objectAt(input, "$");
 	for (const key of Object.keys(source)) {

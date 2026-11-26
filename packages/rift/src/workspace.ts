@@ -25,7 +25,6 @@ import {
 import { isJsonNumber } from "./json.js";
 import { parseWorkspaceName, type WorkspaceName } from "./names.js";
 
-// public-contract: marker identifying a registered rift root.
 export const RIFT_DIR = ".hobo-rift";
 
 export const REGENERABLE = [

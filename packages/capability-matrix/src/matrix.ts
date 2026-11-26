@@ -1,12 +1,3 @@
-/**
- * The derived matrix and the vocabulary its cells speak.
- *
- * A cell answers two different questions and keeps the answers apart: *what is
- * registered here* (five buckets of definition ids) and *what could be selected
- * automatically right now* (one verdict). The second is a function of the
- * first plus evidence state, so coverage can regress without anything being
- * deleted from the catalog.
- */
 import type { BindlePrimitive, BindleRuntime } from "@hobo/capability-profiles";
 
 import type {
@@ -107,14 +98,6 @@ const VERDICT_BY_BUCKET: readonly (readonly [
 	["sponsor", "sponsor-only"],
 ];
 
-/**
- * Reduce a cell's buckets to a single verdict.
- *
- * The distinction that matters is between a cell nobody ever registered
- * anything for (`uncovered`) and a cell that had coverage until its evidence
- * went stale (`evidence-lapsed`). Reporting both as "uncovered" would hide a
- * regression inside a permanent gap.
- */
 export function deriveCoverageVerdict(
 	buckets: CapabilityMatrixBuckets,
 ): CoverageVerdict {

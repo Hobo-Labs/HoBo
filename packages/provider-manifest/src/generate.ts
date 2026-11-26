@@ -1,10 +1,3 @@
-/**
- * Generators over a parsed API spec: a TypeScript client, a code-mode MCP
- * server, and MCP client configuration.
- *
- * Every function here is pure — source text in, source text out. Writing
- * files is the CLI's job.
- */
 import type {
 	ApiSection,
 	McpServer,
@@ -17,7 +10,6 @@ function comment(value: string): string {
 	return value.replace(/\s+/gu, " ").replace(/\*\//gu, "* /").trim();
 }
 
-/** A template-literal expression for a path with `{param}` placeholders. */
 function pathExpression(path: string): string {
 	const literal = (segment: string) => segment.replace(/[\\`$]/gu, "\\$&");
 	const parts = path.split(/\{([^}]+)\}/u);
@@ -40,7 +32,6 @@ function record(operation: ApiOperation, location: "query" | "header") {
 	return `{ ${entries.join(", ")} }`;
 }
 
-/** `api.getPet({ petId, verbose? })` — the call shape shown to a model. */
 export function operationSignature(operation: ApiOperation): string {
 	const fields = operation.parameters.map(
 		(parameter) => `${parameter.name}${parameter.required ? "" : "?"}`,
@@ -71,11 +62,6 @@ function methodSource(operation: ApiOperation): string {
 	].join("\n");
 }
 
-/**
- * A dependency-free TypeScript client: one method per operation over `fetch`.
- * Parameters are named and required-ness is typed; bodies and responses are
- * `unknown`, because schemas are not interpreted.
- */
 export function generateApiClient(api: ParsedApiSpec): string {
 	return `// ${GENERATED_BY}
 // Source: ${comment(api.title)} ${comment(api.version)}
@@ -154,8 +140,6 @@ export type Client = ReturnType<typeof createClient>;
 `;
 }
 
-// The code-mode server's runtime. Plain ESM JavaScript with no dependencies,
-// written without template literals so it embeds here verbatim.
 const CODE_MODE_RUNTIME = String.raw`
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -340,12 +324,6 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
 });
 `;
 
-/**
- * A code-mode MCP server for an API: instead of one tool per endpoint it
- * exposes `search` (find operations) and `execute` (run model-written
- * JavaScript against a typed `api` object). Output is one dependency-free
- * ESM file speaking MCP over stdio.
- */
 export function generateCodeModeServer(id: string, api: ParsedApiSpec): string {
 	const table = {
 		id,
@@ -386,10 +364,6 @@ function remoteServer(server: McpServer) {
 	};
 }
 
-/**
- * `.mcp.json`-shaped client configuration: the provider's own MCP servers,
- * plus any generated code-mode servers (by the file name they were written to).
- */
 export function generateMcpClientConfig(
 	api: ApiSection | undefined,
 	generatedServers: Readonly<Record<string, string>> = {},
