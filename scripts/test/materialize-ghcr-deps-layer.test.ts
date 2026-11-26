@@ -9,6 +9,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	readlinkSync,
 	rmSync,
@@ -271,6 +272,29 @@ function localFetch(base: string): typeof fetch {
 		}
 		return fetch(input, init);
 	};
+}
+
+function snapshotTree(directory: string): string {
+	const lines: string[] = [];
+	const walk = (dir: string, prefix: string): void => {
+		for (const name of readdirSync(dir).sort()) {
+			const path = join(dir, name);
+			const rel = prefix === "" ? name : `${prefix}/${name}`;
+			const stat = lstatSync(path);
+			if (stat.isSymbolicLink()) {
+				lines.push(`${rel} -> ${readlinkSync(path)}`);
+				continue;
+			}
+			if (stat.isDirectory()) {
+				lines.push(`${rel}/`);
+				walk(path, rel);
+				continue;
+			}
+			lines.push(`${rel} ${stat.nlink} ${readFileSync(path, "utf8")}`);
+		}
+	};
+	walk(directory, "");
+	return lines.join("\n");
 }
 
 function writePayloadTree(root: string, marker: string): void {
@@ -794,6 +818,116 @@ describe("registry materialize", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	it("refuses members that descend through a payload symlink", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-symlink-"));
+		try {
+			const outside = join(root, "outside");
+			mkdirSync(join(outside, "nested"), { recursive: true });
+			writeFileSync(join(outside, "keep.txt"), "keep\n");
+			writeFileSync(join(outside, "nested", "inner.txt"), "inner\n");
+			const before = snapshotTree(outside);
+			const linkTree = join(root, "link-only");
+			mkdirSync(join(linkTree, "opt", "hobo-deps"), { recursive: true });
+			symlinkSync(outside, join(linkTree, "opt", "hobo-deps", "evil"));
+			const linkArchive = join(root, "link-only.tar");
+			writeFileSync(
+				linkArchive,
+				gnuTar(linkTree, ["opt/hobo-deps/evil"], false),
+			);
+			const linkPayload = join(root, "link-payload");
+			await extractDepsTar(createReadStream(linkArchive), linkPayload);
+			assert.equal(readlinkSync(join(linkPayload, "evil")), outside);
+			assert.equal(snapshotTree(outside), before);
+
+			const rejectThrough = async (
+				label: string,
+				prepare: (payload: string) => {
+					paths: string[];
+					extra?: string[];
+				},
+			): Promise<void> => {
+				const tree = join(root, label);
+				const payload = join(tree, "opt", "hobo-deps");
+				mkdirSync(payload, { recursive: true });
+				symlinkSync(outside, join(payload, "evil"));
+				const spec = prepare(payload);
+				const archive = join(root, `${label}.tar`);
+				writeFileSync(
+					archive,
+					gnuTar(tree, spec.paths, false, spec.extra ?? []),
+				);
+				await assert.rejects(
+					extractDepsTar(
+						createReadStream(archive),
+						join(root, `${label}-payload`),
+					),
+					/through a symlink/,
+				);
+				assert.equal(snapshotTree(outside), before);
+				assert.equal(existsSync(join(outside, "sub")), false);
+				assert.equal(existsSync(join(outside, "pwned")), false);
+			};
+
+			await rejectThrough("file", (payload) => {
+				writeFileSync(join(payload, "pwned-src"), "pwned\n");
+				return {
+					paths: ["opt/hobo-deps/evil", "opt/hobo-deps/pwned-src"],
+					extra: [
+						"--transform",
+						"s,^opt/hobo-deps/pwned-src$,opt/hobo-deps/evil/sub/pwned,",
+					],
+				};
+			});
+			await rejectThrough("dir", (payload) => {
+				mkdirSync(join(payload, "newdir"));
+				return {
+					paths: ["opt/hobo-deps/evil", "opt/hobo-deps/newdir"],
+					extra: [
+						"--transform",
+						"s,^opt/hobo-deps/newdir$,opt/hobo-deps/evil/newdir,",
+					],
+				};
+			});
+			await rejectThrough("symlink", (payload) => {
+				symlinkSync("keep.txt", join(payload, "link-src"));
+				return {
+					paths: ["opt/hobo-deps/evil", "opt/hobo-deps/link-src"],
+					extra: [
+						"--transform",
+						"s,^opt/hobo-deps/link-src$,opt/hobo-deps/evil/link,",
+					],
+				};
+			});
+			await rejectThrough("whiteout", (payload) => {
+				writeFileSync(join(payload, "opq"), "");
+				return {
+					paths: ["opt/hobo-deps/evil", "opt/hobo-deps/opq"],
+					extra: [
+						"--transform",
+						"s,^opt/hobo-deps/opq$,opt/hobo-deps/evil/.wh..wh..opq,",
+					],
+				};
+			});
+			await rejectThrough("hardlink", (payload) => {
+				writeFileSync(join(payload, "target.txt"), "target\n");
+				linkSync(join(payload, "target.txt"), join(payload, "alias"));
+				return {
+					paths: [
+						"opt/hobo-deps/target.txt",
+						"opt/hobo-deps/alias",
+						"opt/hobo-deps/evil",
+					],
+					extra: [
+						"--transform",
+						"s,^opt/hobo-deps/alias$,opt/hobo-deps/evil/sub/pwned,",
+					],
+				};
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("docker materialize", () => {
@@ -1226,6 +1360,77 @@ describe("materialize CLI and main build cache job", () => {
 			console.log = previous.log;
 			console.error = previous.error;
 			await registry.close();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("installs from a warm store when the repository or key is rejected", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-pre-attempt-"));
+		const token = randomBytes(18).toString("hex");
+		const previous = { log: console.log, error: console.error };
+		const logs: string[] = [];
+		const errors: string[] = [];
+		console.log = (...args: unknown[]) => {
+			logs.push(args.map(String).join(" "));
+		};
+		console.error = (...args: unknown[]) => {
+			errors.push(args.map(String).join(" "));
+		};
+		try {
+			const filled = join(root, "filled");
+			const empty = join(root, "empty");
+			mkdirSync(filled);
+			mkdirSync(empty);
+			writeFileSync(join(filled, "entry"), "1");
+			const path = `${pnpmOnPath(join(root, "bin"), "#!/bin/sh\nexit 1\n")}${delimiter}${process.env.PATH ?? ""}`;
+			const ref = `ghcr.io/hobo-labs/hobo/hobo-ci-deps:${key}`;
+			const warmRepo = await runCli(join(root, "warm-repo"), {
+				GITHUB_TOKEN: token,
+				GITHUB_REPOSITORY: "not a repo",
+				HOBO_CI_PNPM_STORE_DIR: filled,
+				PATH: path,
+			});
+			assert.equal(warmRepo.status, 0);
+			assert.match(warmRepo.output, /materialized=false/);
+			assert.equal(warmRepo.output.includes("materialized=true"), false);
+			assert.match(warmRepo.output, /install=true/);
+			assert.match(warmRepo.output, /reason=warm-pnpm-store/);
+			assert.match(warmRepo.output, /source=failed/);
+			const coldRepo = await runCli(join(root, "cold-repo"), {
+				GITHUB_TOKEN: token,
+				GITHUB_REPOSITORY: "not a repo",
+				HOBO_CI_PNPM_STORE_DIR: empty,
+				PATH: path,
+			});
+			assert.equal(coldRepo.status, 1);
+			assert.equal(coldRepo.output.includes("install=true"), false);
+			const warmKey = await runCli(join(root, "warm-key"), {
+				GITHUB_TOKEN: token,
+				HOBO_CI_DEPS_IMAGE_REF: ref,
+				HOBO_CI_PNPM_STORE_DIR: filled,
+				PATH: path,
+			});
+			assert.equal(warmKey.status, 0);
+			assert.match(warmKey.output, /materialized=false/);
+			assert.match(warmKey.output, /install=true/);
+			assert.match(warmKey.output, /reason=warm-pnpm-store/);
+			const coldKey = await runCli(join(root, "cold-key"), {
+				GITHUB_TOKEN: token,
+				HOBO_CI_DEPS_IMAGE_REF: ref,
+				HOBO_CI_PNPM_STORE_DIR: empty,
+				PATH: path,
+			});
+			assert.equal(coldKey.status, 1);
+			assert.equal(coldKey.output.includes("install=true"), false);
+			const text = `${logs.join("\n")}\n${errors.join("\n")}\n${warmRepo.output}\n${warmKey.output}\n${coldRepo.output}\n${coldKey.output}`;
+			assert.equal(text.includes(token), false);
+			assert.match(
+				errors.join("\n"),
+				/::error title=hobo-ci-deps-layer-unavailable::/,
+			);
+		} finally {
+			console.log = previous.log;
+			console.error = previous.error;
 			rmSync(root, { recursive: true, force: true });
 		}
 	});

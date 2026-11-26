@@ -274,6 +274,33 @@ function payloadRelative(member: string): string | undefined {
 	return parts.join("/");
 }
 
+function rejectSymlinkedAncestor(payload: string, relative: string): void {
+	if (relative === "") return;
+	const parts = relative.split("/");
+	let current = payload;
+	for (let index = 0; index < parts.length - 1; index += 1) {
+		current = join(current, parts[index] ?? "");
+		let stat;
+		try {
+			stat = lstatSync(current);
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				"code" in error &&
+				error.code === "ENOENT"
+			) {
+				return;
+			}
+			throw error;
+		}
+		if (stat.isSymbolicLink()) {
+			throw new Error(
+				`deps layer tar escapes ${PREFIX} through a symlink: ${relative}`,
+			);
+		}
+	}
+}
+
 function removePath(path: string): void {
 	try {
 		const stat = lstatSync(path);
@@ -297,6 +324,8 @@ function applyWhiteout(payload: string, relative: string): boolean {
 	const slash = relative.lastIndexOf("/");
 	const base = slash === -1 ? relative : relative.slice(slash + 1);
 	const dir = slash === -1 ? "" : relative.slice(0, slash);
+	if (base !== ".wh..wh..opq" && !base.startsWith(".wh.")) return false;
+	rejectSymlinkedAncestor(payload, relative);
 	if (base === ".wh..wh..opq") {
 		const target = dir ? join(payload, dir) : payload;
 		mkdirSync(target, { recursive: true });
@@ -305,11 +334,8 @@ function applyWhiteout(payload: string, relative: string): boolean {
 		}
 		return true;
 	}
-	if (base.startsWith(".wh.")) {
-		removePath(join(payload, dir, base.slice(".wh.".length)));
-		return true;
-	}
-	return false;
+	removePath(join(payload, dir, base.slice(".wh.".length)));
+	return true;
 }
 
 function parsePax(body: Buffer): PaxFields {
@@ -397,6 +423,8 @@ export async function extractDepsTar(
 
 	const queueHardlinks = (): void => {
 		for (const link of hardlinks) {
+			rejectSymlinkedAncestor(payloadDir, link.relative);
+			rejectSymlinkedAncestor(payloadDir, link.target);
 			const target = join(payloadDir, link.target);
 			const dest = join(payloadDir, link.relative);
 			removePath(dest);
@@ -446,11 +474,13 @@ export async function extractDepsTar(
 		}
 		const dest = relative === "" ? payloadDir : join(payloadDir, relative);
 		if (flag === "5" || relative === "") {
+			rejectSymlinkedAncestor(payloadDir, relative);
 			mkdirSync(dest, { recursive: true });
 			member = { kind: "dir", relative, link: "", mode };
 			return;
 		}
 		if (flag === "2") {
+			rejectSymlinkedAncestor(payloadDir, relative);
 			removePath(dest);
 			mkdirSync(dirname(dest), { recursive: true });
 			symlinkSync(link, dest);
@@ -462,6 +492,8 @@ export async function extractDepsTar(
 			if (target === undefined || target === "") {
 				throw new Error(`deps layer hardlink escapes ${PREFIX}: ${link}`);
 			}
+			rejectSymlinkedAncestor(payloadDir, relative);
+			rejectSymlinkedAncestor(payloadDir, target);
 			hardlinks.push({ relative, target });
 			member = { kind: "hardlink", relative, link: target, mode };
 			return;
@@ -470,6 +502,7 @@ export async function extractDepsTar(
 			member = { kind: "skip", relative: "", link: "", mode };
 			return;
 		}
+		rejectSymlinkedAncestor(payloadDir, relative);
 		removePath(dest);
 		mkdirSync(dirname(dest), { recursive: true });
 		const fd = openSync(dest, "w", mode === 0 ? 0o644 : mode);
@@ -1135,9 +1168,28 @@ export async function runMaterializeCli(
 		);
 		return 0;
 	} catch (error) {
-		return fail(
-			error instanceof Error ? error.message : "deps layer materialize failed",
-		);
+		const detail =
+			error instanceof Error ? error.message : "deps layer materialize failed";
+		const warm = warmPnpmStore({
+			env,
+			storePath: () => pnpmStorePath(env),
+		});
+		const recovery = decideDepsRecovery({
+			materialized: false,
+			warmStore: warm,
+			detail,
+		});
+		if (recovery.action === "install") {
+			appendLine(env, "GITHUB_OUTPUT", "materialized=false");
+			appendLine(env, "GITHUB_OUTPUT", "source=failed");
+			appendLine(env, "GITHUB_OUTPUT", "install=true");
+			appendLine(env, "GITHUB_OUTPUT", `reason=${recovery.reason}`);
+			console.log(
+				`deps layer failed; warm pnpm store will install (${recovery.reason})`,
+			);
+			return 0;
+		}
+		return fail(recovery.action === "fail" ? recovery.detail : detail);
 	}
 }
 

@@ -121,7 +121,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   build hashes match theirs; on the box the shared host cache already holds them) and saves `.turbo/cache` under `turbo-<os>-main-build-…`, pruned with
   `HOBO_TURBO_CACHE_KEEP_DAYS=0` to that tree's builds. On a deps-layer miss it pulls the published
   `ghcr.io/<repository>/hobo-ci-deps:<checkout-key>` image (`packages: read`) and materializes
-  `/opt/hobo-deps`, then links and checks again. It does not build a deps image. `pnpm install` runs
+  `/opt/hobo-deps`, then links and checks again. Materialize refuses tar members whose ancestor chain
+  inside `/opt/hobo-deps` contains a symlink, so extraction cannot write or delete outside the payload.
+  If key or repository resolution fails before a pull, a warm pnpm store still allows install;
+  otherwise the job fails as `hobo-ci-deps-layer-unavailable`. It does not build a deps image. `pnpm install` runs
   only when a warm store is mounted (`HOBO_CI_PNPM_STORE_MOUNTED=1`), `HOBO_CI_PNPM_STORE_DIR` is a
   non-empty directory, or `pnpm store path` already has entries. Otherwise the job fails with
   `hobo-ci-deps-layer-unavailable` while the 20-minute limit still has time, instead of a cold
