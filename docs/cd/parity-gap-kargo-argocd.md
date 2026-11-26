@@ -154,7 +154,8 @@ new hook kinds without an **ADR-0182 amendment**.
 3. **ApplicationSet or documented equivalent** for fleet Camps (rendered or hub policy).
 4. **Drift surfacing** to CLI/API (journal-sourced diff is acceptable).
 5. **Production observation** of publisher → Argo CD (CONVERGED with real revision),
-   linked per AGENTS.md channel rule (P9).
+   linked per AGENTS.md channel rule (P9). Tracking:
+   [finding 170](../ci/findings/0170-cd-git-publisher-argo-cd-converged-channel.md).
 
 ## Cross-cutting scorecard
 
@@ -204,7 +205,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row — **implemented** (ConfigMap `sync-wave: "0"`) |
 | **P7** | CLI: `pipeline graph` + `freight timeline` | Promotion UI partial — **implemented** (CLI commands) |
 | **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
-| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows |
+| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows — **open** ([finding 170](../ci/findings/0170-cd-git-publisher-argo-cd-converged-channel.md)) |
 
 Additional engines (e.g. Octopus) follow the same registry pattern only if product
 rejects the **intentional-gap** on a second promotion brain.
