@@ -58,6 +58,33 @@ function answers(values: readonly (string | undefined)[]) {
 }
 
 describe("store_owner_entries", () => {
+	it("writes to the requested family session", async () => {
+		const held = new Map<string, string>();
+		const base = fakeSessions(held);
+		const families: Array<string | undefined> = [];
+		const sessions: OwnerStoreSessions = {
+			...base,
+			status: (cwd, family) => {
+				families.push(family);
+				return base.status(cwd, family);
+			},
+			entries: (cwd, family) => {
+				families.push(family);
+				return base.entries(cwd, family);
+			},
+		};
+		const { ask } = answers([HOSTINGER]);
+		const result = await storeOwnerEntries({
+			cwd: "/p",
+			args: { family: "ci", entries: ["HOSTINGER_API_TOKEN"] },
+			sessions,
+			ask,
+		});
+		expect(result.isError).toBe(false);
+		expect(families).toEqual(["ci", "ci"]);
+		expect(held.get("HOSTINGER_API_TOKEN")).toBe(HOSTINGER);
+	});
+
 	it("asks for each missing entry in a host form and writes it to the owner's store", async () => {
 		const held = new Map<string, string>([["HOBO_CI_ACCOUNT_TOKEN", "kept"]]);
 		const { ask, asked } = answers([

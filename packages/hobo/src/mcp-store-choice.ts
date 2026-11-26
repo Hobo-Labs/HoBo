@@ -575,7 +575,7 @@ export function createStoreChoiceApp(
 				return stale();
 			ticket.locator.assertCurrent?.();
 			ticket.locator.onOwnerChoice?.();
-			options.sessions?.invalidate?.(ticket.cwd);
+			options.sessions?.invalidate?.(ticket.cwd, ticket.family);
 			revisions.set(ticket.key, ticket.revision + 1);
 		} catch (error) {
 			if (error instanceof OwnerWriteGuardUnavailableError)
@@ -896,7 +896,7 @@ export function createStoreChoiceApp(
 				parsedCall.reselect !== true &&
 				locator.hasSessionChoice?.() !== false
 			) {
-				const held = options.sessions?.status(cwd);
+				const held = options.sessions?.status(cwd, family);
 				if (held?.established === true && held.store !== undefined)
 					return sessionResult(
 						{ status: "established", store: held.store },

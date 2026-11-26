@@ -19,7 +19,9 @@ import {
 	createOwnerStoreSessions,
 	OwnerCredentialUnavailable,
 	type OwnerSignIn,
+	ownerChannelSignIn,
 	ownerWithPageSession,
+	withRelaySession,
 } from "../src/owner-store-session.js";
 
 const PRIVATE_PROJECT = "synthetic-private-project-id";
@@ -70,6 +72,86 @@ function signedIn(owner: OwnerStore): OwnerSignIn {
 }
 
 describe("owner store session", () => {
+	it("opens the requested CI or CD family folder during owner sign-in", async () => {
+		const folders: string[] = [];
+		const port = await storeHolding({});
+		const signIn = ownerChannelSignIn({
+			env: {},
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				storeSettings: {
+					read: async () => ({
+						HOBO_SECRET_STORE: "infisical",
+						INFISICAL_PROJECT_ID: PRIVATE_PROJECT,
+					}),
+					write: async () => undefined,
+				},
+			},
+			deps: {
+				openStore: async (_id, coordinates) => {
+					folders.push(coordinates.INFISICAL_SECRET_PATH ?? "");
+					return {
+						ok: true,
+						store: { id: "infisical", port, reference: (name) => name },
+					};
+				},
+			},
+		});
+		for (const family of ["ci", "cd"] as const) {
+			const vault = createTrustedVault();
+			vault.put("INFISICAL_TOKEN", STORE_SIGN_IN);
+			const result = await signIn({ cwd: CWD, vault, family });
+			expect(result.kind).toBe("owner");
+		}
+		expect(folders).toEqual(["/hobo-ci-relay", "/hobo-cd"]);
+	});
+
+	it("keeps CI and CD sessions separate for the same project", async () => {
+		const ci = await storeHolding({ HOSTINGER_API_TOKEN: "ci-token" });
+		const cd = await storeHolding({ HOSTINGER_API_TOKEN: "cd-token" });
+		const sessions = createOwnerStoreSessions({
+			signIn: async ({ family }) => ({
+				kind: "owner",
+				owner: ownerStoreFor({ chosen: true, port: family === "ci" ? ci : cd }),
+			}),
+		});
+		await sessions.establish(CWD, undefined, "cd");
+		await sessions.establish(CWD, undefined, "ci");
+		expect(
+			await sessions
+				.credentials(CWD, "cd")
+				.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+		).toEqual({ token: "cd-token" });
+		expect(
+			await sessions
+				.credentials(CWD, "ci")
+				.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+		).toEqual({ token: "ci-token" });
+		sessions.invalidate?.(CWD, "ci");
+		expect(sessions.status(CWD, "ci").established).toBe(false);
+		expect(sessions.status(CWD, "cd").established).toBe(true);
+		const withRelay = withRelaySession(sessions, {
+			held: () => ({
+				expiresAt: 1000,
+				credentials: { resolve: async () => ({ token: "relay-token" }) },
+			}),
+			now: () => 0,
+		});
+		expect(
+			await withRelay
+				.credentials(CWD, "ci")
+				.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+		).toEqual({ token: "relay-token" });
+		expect(
+			await withRelay
+				.credentials(CWD, "cd")
+				.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+		).toEqual({ token: "cd-token" });
+		await sessions.close();
+	});
+
 	it("keeps each project's sign-in in that project's vault", async () => {
 		const vaults = new Map([
 			["/project-a", createTrustedVault()],
@@ -126,6 +208,38 @@ describe("owner store session", () => {
 		finish?.();
 		expect(await pending).toMatchObject({ code: "HOBO_OWNER_SESSION_CHANGED" });
 		expect(sessions.status(CWD)).toEqual({ established: false });
+		await sessions.close();
+	});
+
+	it("does not return a credential after its family session is invalidated", async () => {
+		const store = await storeHolding({ HOSTINGER_API_TOKEN: HOSTINGER_TOKEN });
+		let release: (() => void) | undefined;
+		let markStarted: (() => void) | undefined;
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const port: SecretsPort = {
+			...store,
+			access: async (name) => {
+				const result = await store.access(name);
+				await new Promise<void>((resolve) => {
+					release = resolve;
+					markStarted?.();
+				});
+				return result;
+			},
+		};
+		const sessions = createOwnerStoreSessions({
+			signIn: signedIn(ownerStoreFor({ chosen: true, port })),
+		});
+		await sessions.establish(CWD, undefined, "ci");
+		const pending = sessions
+			.credentials(CWD, "ci")
+			.resolve("owner://HOSTINGER_API_TOKEN", "test");
+		await started;
+		sessions.invalidate?.(CWD, "ci");
+		release?.();
+		await expect(pending).rejects.toBeInstanceOf(OwnerCredentialUnavailable);
 		await sessions.close();
 	});
 

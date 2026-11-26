@@ -40,6 +40,73 @@ afterEach(async () => {
 });
 
 describe("MCP owner store session", () => {
+	test("keeps CI and CD store choices independent for one project", async () => {
+		const project = await mkdtemp(join(tmpdir(), "hobo-owner-families-"));
+		vi.stubEnv("XDG_CONFIG_HOME", project);
+		const ci = createMemorySecretsPort({ id: "ci" });
+		const cd = createMemorySecretsPort({ id: "cd" });
+		await ci.put("HOSTINGER_API_TOKEN", "ci-token");
+		await cd.put("HOSTINGER_API_TOKEN", "cd-token");
+		const mcp = composeHoboMcp({
+			output: new PassThrough(),
+			projectDir: project,
+			remote: true,
+			ownerSignIn: async ({ family }) => ({
+				kind: "owner",
+				owner: {
+					id: "infisical",
+					chosen: true,
+					missing: [],
+					handOffSignIn: undefined,
+					opened: {
+						id: "infisical",
+						port: family === "ci" ? ci : cd,
+						reference: (name) => `owner://${name}`,
+					},
+					infisicalFolder: undefined,
+					unopened: undefined,
+					stage: async () => {
+						throw new Error("unused");
+					},
+				},
+			}),
+		});
+		try {
+			const choose = async (family: "ci" | "cd") => {
+				let form = 0;
+				return mcp.session.storeChoice?.callTool(
+					"choose_secret_store",
+					{ family, cwd: project, reselect: true },
+					{ formElicitation: true, apps: false },
+					async () => ({
+						action: "accept",
+						content:
+							form++ === 0
+								? { store: "infisical" }
+								: { INFISICAL_PROJECT_ID: `project-${family}` },
+					}),
+				);
+			};
+			await choose("cd");
+			await choose("ci");
+			expect(
+				await mcp.sessions
+					.credentials(project, "cd")
+					.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+			).toEqual({ token: "cd-token" });
+			expect(
+				await mcp.sessions
+					.credentials(project, "ci")
+					.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+			).toEqual({ token: "ci-token" });
+			await choose("ci");
+			expect(mcp.sessions.status(project, "cd").established).toBe(true);
+		} finally {
+			await mcp.close();
+			await rm(project, { recursive: true, force: true });
+		}
+	});
+
 	test("signs in using the store chosen for the requested family", async () => {
 		const project = await mkdtemp(join(tmpdir(), "hobo-owner-family-"));
 		vi.stubEnv("XDG_CONFIG_HOME", project);
@@ -85,6 +152,7 @@ describe("MCP owner store session", () => {
 		const home = await mkdtemp(join(tmpdir(), "hobo-owner-generation-"));
 		vi.stubEnv("XDG_CONFIG_HOME", home);
 		const port = createMemorySecretsPort({ id: "synthetic-owner-store" });
+		await port.put("HOSTINGER_API_TOKEN", "synthetic-token");
 		await fileSettingsStore(secretStoreLocatorPath(home)).write({
 			HOBO_SECRET_STORE: "1password",
 			OP_VAULT_ID: "abcdefghijklmnopqrstuvwxyz",
@@ -130,6 +198,11 @@ describe("MCP owner store session", () => {
 			await first.sessions.establish(home);
 			expect(first.sessions.status(home).established).toBe(true);
 			newer.onOwnerChoice?.();
+			await expect(
+				first.sessions
+					.credentials(home)
+					.resolve("owner://HOSTINGER_API_TOKEN", "test"),
+			).rejects.toThrow(/owner's store session/u);
 			await expect(older.read()).rejects.toThrow(/owner session changed/u);
 			expect(vault.has("SYNTHETIC_TOKEN")).toBe(false);
 			expect(first.sessions.status(home).established).toBe(false);

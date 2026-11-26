@@ -80,6 +80,11 @@ export const STORE_OWNER_ENTRIES_INPUT: JsonObject = {
 			description:
 				"The project directory; the server's working directory by default.",
 		},
+		family: {
+			type: "string",
+			enum: ["ci", "cd"],
+			description: "The CI or CD store session; defaults to CD.",
+		},
 		entries: {
 			type: "array",
 			items: {
@@ -98,6 +103,7 @@ export const STORE_OWNER_ENTRIES_INPUT: JsonObject = {
 };
 
 const argsSchema = z.object({
+	family: z.enum(["ci", "cd"]).optional().catch(undefined),
 	entries: z
 		.array(z.enum(OWNER_ENTRY_SPECS.map((s) => s.name)))
 		.optional()
@@ -127,23 +133,24 @@ export async function storeOwnerEntries(input: {
 		| undefined;
 }): Promise<OwnerEntriesResult> {
 	const { ask, sessions, cwd } = input;
+	const args = argsSchema.parse(input.args);
+	const family = args.family ?? "cd";
 	if (ask === undefined)
 		return {
 			text: "This host shows no MCP forms, so HoBo cannot ask the owner for these entries privately. Nothing was asked or stored.",
 			structured: { status: "secure-form-unavailable" },
 			isError: true,
 		};
-	if (sessions === undefined || !sessions.status(cwd).established)
+	if (sessions === undefined || !sessions.status(cwd, family).established)
 		return {
 			text: "No owner store session is established for this project. Call choose_secret_store first, then ask again.",
 			structured: { status: "sign-in-needed" },
 			isError: true,
 		};
-	const args = argsSchema.parse(input.args);
 	const wanted = OWNER_ENTRY_SPECS.filter(
 		(spec) => args.entries === undefined || args.entries.includes(spec.name),
 	);
-	const entries = sessions.entries(cwd);
+	const entries = sessions.entries(cwd, family);
 	const stored: string[] = [];
 	const kept: string[] = [];
 	const skipped: string[] = [];

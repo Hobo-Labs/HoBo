@@ -50,8 +50,8 @@ connects (`src/mcp-store-choice.ts`, `src/owner-store-session.ts`). It asks the 
 through MCP form elicitation or the `ui://hobo/store-choice` MCP App, never through tool
 arguments, writes the choice to the owner's locator for the project `cwd`
 (`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
-owner channel. The opened store stays in the server's memory, keyed by project. Its
-`credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
+owner channel. Opened stores stay in the server's memory, keyed by project and CI/CD
+family. Its `credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
 the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
 resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
 because the process environment never holds credentials. Hostinger's resolvers receive
@@ -92,7 +92,8 @@ written ([CI.md](CI.md#reconnect-after-a-restart-hobo-login---relay)).
 
 `store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
 (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
-each value checked for shape and written with the session's `entries(cwd).write`,
+each value checked for shape and written with the selected family's session. Pass
+`family: "ci"` for the CI store; the default is `"cd"`. Values go to `entries(cwd).write`,
 never returned. It needs form elicitation and an established session. The server
 declares `tools.listChanged` and sends `notifications/tools/list_changed` after
 `notifications/initialized`, so a host that reconnects to a restarted server lists

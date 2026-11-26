@@ -211,7 +211,8 @@ export function composeHoboMcp(options: {
 	const uncertainWrites = new Set<string>();
 	const ownSecretChanges = new Map<string, number>();
 	const familyVaults = new Map<string, ReturnType<typeof createTrustedVault>>();
-	let invalidateStoreSession: (cwd: string) => void = () => {};
+	let invalidateStoreSession: (cwd: string, family: "ci" | "cd") => void =
+		() => {};
 	let closed = false;
 	const scopeGeneration = (family: "ci" | "cd", project: string) => {
 		const key = scopeForProject(family, project);
@@ -241,7 +242,7 @@ export function composeHoboMcp(options: {
 			sessionChoices.delete(key);
 			familyVaults.get(key)?.clear();
 			familyVaults.delete(key);
-			invalidateStoreSession(project);
+			invalidateStoreSession(project, family);
 			selectionControllers.get(key)?.abort();
 			selectionControllers.delete(key);
 			owner.cancelScopeKey(key);
@@ -284,7 +285,7 @@ export function composeHoboMcp(options: {
 					sessionChoices.delete(key);
 					familyVaults.get(key)?.clear();
 					familyVaults.delete(key);
-					invalidateStoreSession(project);
+					invalidateStoreSession(project, family);
 					controller.abort();
 					selectionControllers.delete(key);
 					owner.cancelScopeKey(key);
@@ -651,7 +652,7 @@ export function composeHoboMcp(options: {
 				selectionRequiredScopes.delete(key);
 				familyVaults.get(key)?.clear();
 				familyVaults.delete(key);
-				invalidateStoreSession(project);
+				invalidateStoreSession(project, family);
 				controller.abort();
 				selectionControllers.delete(key);
 				owner.cancelScopeKey(key);
@@ -770,6 +771,8 @@ export function composeHoboMcp(options: {
 				},
 			})(input),
 		keptFor: (cwd, family) => vaultForProject(family, canonical(cwd)),
+		assertCurrent: (cwd, family) =>
+			storeSettingsFor(family, cwd).assertCurrent?.(),
 		agentVault: options.agentVault ?? {
 			launch: agentVaultProxyLauncher(),
 			command: () =>
@@ -780,7 +783,7 @@ export function composeHoboMcp(options: {
 				}),
 		},
 	});
-	invalidateStoreSession = (cwd) => sessions.invalidate?.(cwd);
+	invalidateStoreSession = (cwd, family) => sessions.invalidate?.(cwd, family);
 	const sleep =
 		options.relayLogin?.sleep ??
 		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -818,7 +821,7 @@ export function composeHoboMcp(options: {
 		},
 		connector: createInfisicalCaptureConnector({
 			bindingStore: ownerSecretStoreBindingStore(
-				sessions.entries(options.projectDir),
+				sessions.entries(options.projectDir, "ci"),
 			),
 		}),
 		notify: (method, params) => {

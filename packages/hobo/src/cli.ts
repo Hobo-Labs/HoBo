@@ -320,13 +320,15 @@ export function createComposedHoboCli(
 		cwd: string,
 	): OwnerChannel | undefined =>
 		ownerForFamily(options.ownerChannel, family, cwd);
+	const ownerSession = options.ownerSession;
 	const ci = createCiCommand({
 		runtime,
-		...(options.ownerSession !== undefined
+		...(ownerSession !== undefined
 			? {
-					ownerCredentials: options.ownerSession.credentials,
-					fleetAgentVault: options.ownerSession.agentVault,
-					ownerEntries: options.ownerSession.entries,
+					ownerCredentials: (cwd: string) =>
+						ownerSession.credentials(cwd, "ci"),
+					fleetAgentVault: (cwd: string) => ownerSession.agentVault(cwd, "ci"),
+					ownerEntries: (cwd: string) => ownerSession.entries(cwd, "ci"),
 				}
 			: undefined),
 	});
@@ -369,11 +371,12 @@ export function createComposedHoboCli(
 					createCiRelayUpCommand(
 						credentials,
 						up,
-						options.ownerSession !== undefined
+						ownerSession !== undefined
 							? {
 									owner: {
-										credentials: options.ownerSession.credentials,
-										entries: options.ownerSession.entries,
+										credentials: (cwd: string) =>
+											ownerSession.credentials(cwd, "ci"),
+										entries: (cwd: string) => ownerSession.entries(cwd, "ci"),
 									},
 								}
 							: {},
