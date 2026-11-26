@@ -1093,8 +1093,8 @@ The opt-in static schedule mapper creates an Alchemy `AWS.Scheduler.Schedule`
 for a schedule that depends on exactly one SQS queue. Its cadence is UTC and
 supports wildcard day and weekday fields, and numeric, wildcard or step minute,
 hour and month fields. It rejects other cron
-forms before registering resources. Supply a nonempty SQS message body and an
-existing Scheduler execution role for each declared schedule.
+forms before registering resources. Supply a nonempty, valid Unicode SQS message
+body and an existing Scheduler execution role for each declared schedule.
 Message bodies containing Scheduler's `<aws.scheduler.` substitution prefix are
 rejected so a configured body remains literal.
 The mapper composes with an AWS mapper set whose entries are own data properties
