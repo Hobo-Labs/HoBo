@@ -236,13 +236,18 @@ describe("ensure-ci-worker-image", () => {
 		}
 	});
 
-	function resolveDigestWithStub(manifest: boolean) {
+	function resolveDigestWithStub(
+		manifest: boolean,
+		login = true,
+		budgetSec = 5,
+	) {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-resolve-"));
 		try {
 			const calls = join(bin, "calls");
 			const out = join(bin, "out");
 			const digest = `sha256:${"d".repeat(64)}`;
 			writeFileSync(out, "");
+			writeFileSync(calls, "");
 			writeFileSync(
 				join(bin, "timeout"),
 				[
@@ -263,7 +268,7 @@ describe("ensure-ci-worker-image", () => {
 				join(bin, "docker"),
 				[
 					"#!/bin/sh",
-					'if [ "$1" = login ]; then cat > /dev/null; exit 0; fi',
+					`if [ "$1" = login ]; then cat > /dev/null; exit ${login ? 0 : 1}; fi`,
 					'if [ "$1" = pull ]; then',
 					manifest ? "  exit 0" : "  exit 1",
 					"fi",
@@ -299,7 +304,7 @@ describe("ensure-ci-worker-image", () => {
 						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
 						GITHUB_TOKEN: "token-for-test",
 						GITHUB_OUTPUT: out,
-						HOBO_CI_WORKER_PULL_BUDGET_SEC: "5",
+						HOBO_CI_WORKER_PULL_BUDGET_SEC: String(budgetSec),
 					},
 				},
 			);
@@ -325,12 +330,32 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
+	it("lets a slow release image pull use the remaining shared deadline", () => {
+		const resolved = resolveDigestWithStub(true, true, 300);
+		assert.equal(resolved.result.status, 0, resolved.result.stderr);
+		const match = resolved.calls.match(
+			/timeout (\d+) docker pull ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v/u,
+		);
+		assert.ok(match);
+		assert.ok(Number(match[1]) > 120 && Number(match[1]) <= 300);
+	});
+
 	it("fails clearly when the release toolchain manifest is absent", () => {
 		const resolved = resolveDigestWithStub(false);
 		assert.notEqual(resolved.result.status, 0);
 		assert.match(
 			resolved.result.stderr,
 			/timed out after 5s waiting for pullable worker image|GHCR manifest absent or unreadable/u,
+		);
+		assert.equal(resolved.output, "");
+	});
+
+	it("reports a failed registry login while resolving a release digest", () => {
+		const resolved = resolveDigestWithStub(true, false);
+		assert.notEqual(resolved.result.status, 0);
+		assert.match(
+			resolved.result.stderr,
+			/GHCR login failed while resolving the worker digest/u,
 		);
 		assert.equal(resolved.output, "");
 	});
@@ -618,7 +643,12 @@ describe("ensure-ci-worker-image", () => {
 
 	// The post-green publisher asks what GHCR has for this tree (finding 113).
 	function withWorkerPublishStub(
-		stub: { host: boolean; manifest: boolean; pull?: boolean },
+		stub: {
+			host: boolean;
+			manifest: boolean;
+			pull?: boolean;
+			unreadable?: boolean;
+		},
 		run: () => void,
 	) {
 		const pullOk = stub.pull ?? stub.manifest;
@@ -641,7 +671,7 @@ describe("ensure-ci-worker-image", () => {
 					"#!/bin/sh",
 					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
 					'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
-					`if [ "$1 $2" = "manifest inspect" ]; then exit ${stub.manifest ? 0 : 1}; fi`,
+					`if [ "$1 $2" = "manifest inspect" ]; then ${stub.manifest ? "exit 0" : `echo '${stub.unreadable ? "registry unavailable" : "no such manifest: worker"}' >&2; exit 1`}; fi`,
 					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
 					"exit 0",
 					"",
@@ -662,11 +692,19 @@ describe("ensure-ci-worker-image", () => {
 		}
 	}
 
-	function publishedStatus(stub: {
-		host: boolean;
-		manifest: boolean;
-		pull?: boolean;
-	}) {
+	function publishedStatus(
+		stub: {
+			host: boolean;
+			manifest: boolean;
+			pull?: boolean;
+			login?: boolean;
+			unreadable?: boolean;
+		},
+		expectInconclusive?:
+			| "pull-failed"
+			| "login-failed"
+			| "manifest-unavailable",
+	) {
 		const pullOk = stub.pull ?? stub.manifest;
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-status-cli-"));
 		try {
@@ -680,8 +718,8 @@ describe("ensure-ci-worker-image", () => {
 				[
 					"#!/bin/sh",
 					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
-					'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
-					`if [ "$1 $2" = "manifest inspect" ]; then exit ${stub.manifest ? 0 : 1}; fi`,
+					`if [ "$1" = "login" ]; then cat > /dev/null; exit ${stub.login === false ? 1 : 0}; fi`,
+					`if [ "$1 $2" = "manifest inspect" ]; then ${stub.manifest ? "exit 0" : `echo '${stub.unreadable ? "registry unavailable" : "no such manifest: worker"}' >&2; exit 1`}; fi`,
 					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
 					"exit 0",
 					"",
@@ -709,7 +747,16 @@ describe("ensure-ci-worker-image", () => {
 					},
 				},
 			);
-			assert.equal(run.status, 0, run.stderr);
+			if (expectInconclusive) {
+				assert.notEqual(run.status, 0);
+				assert.ok(
+					run.stderr.includes(
+						`publication check inconclusive (${expectInconclusive}); refusing to rebuild`,
+					),
+				);
+			} else {
+				assert.equal(run.status, 0, run.stderr);
+			}
 			return readFileSync(out, "utf8");
 		} finally {
 			rmSync(bin, { recursive: true, force: true });
@@ -760,11 +807,58 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
-	it("treats a manifest without pullable layers as unpublished", () => {
+	it("recognizes a pullable image when the manifest probe is unreadable", () => {
+		withWorkerPublishStub(
+			{ host: false, manifest: false, pull: true, unreadable: true },
+			() => {
+				const status = ciWorkerImagePublished();
+				assert.equal(status.ghcr, true);
+			},
+		);
+		assert.match(
+			publishedStatus({
+				host: false,
+				manifest: false,
+				pull: true,
+				unreadable: true,
+			}),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
+		);
+	});
+
+	it("refuses to infer a missing image from an incomplete pull", () => {
 		withWorkerPublishStub({ host: false, manifest: true, pull: false }, () => {
 			const status = ciWorkerImagePublished();
 			assert.equal(status.ghcr, false);
+			assert.equal(status.ghcrProbe, "pull-failed");
 		});
+		assert.equal(
+			publishedStatus(
+				{ host: false, manifest: true, pull: false },
+				"pull-failed",
+			),
+			"",
+		);
+	});
+
+	it("does not rebuild when the publication probe cannot authenticate", () => {
+		assert.equal(
+			publishedStatus(
+				{ host: false, manifest: false, login: false },
+				"login-failed",
+			),
+			"",
+		);
+	});
+
+	it("does not rebuild when both manifest and pull probes are inconclusive", () => {
+		assert.equal(
+			publishedStatus(
+				{ host: false, manifest: false, pull: false, unreadable: true },
+				"manifest-unavailable",
+			),
+			"",
+		);
 	});
 
 	it("does not treat ordinary CI as release worker ensure", () => {
