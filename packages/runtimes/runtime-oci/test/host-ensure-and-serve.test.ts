@@ -1,39 +1,9 @@
-/**
- * The OCI Camp host — ensure, schedule, and roll back.
- *
- * This adapter packs WASM components as OCI images and schedules them on
- * Kubernetes through the kubectl PACT boundary. Three properties matter more
- * than the mechanics.
- *
- * **`ensure` and `servePrivate` have different cluster requirements.** Ensure
- * only needs a usable kubectl client — it is what a `hobo yard ensure` runs on
- * a laptop with no cluster, and failing it there would make the install
- * command unusable offline. `servePrivate` genuinely needs a reachable
- * cluster, so it refuses up front rather than failing partway through a
- * schedule.
- *
- * **A failed schedule rolls back everything it already did.** Half a
- * deployment is worse than none: the components that did come up would serve
- * an app whose other half is missing, and nothing else would tear them down.
- * Every port-forward is closed and every scheduled workload deleted before the
- * error propagates.
- *
- * **A component with no built wasm is refused by name.** The OCI host does not
- * build — `@hobo/runtime-wasm` does — and scheduling a component with no
- * artifact would deploy the runtime image with nothing to run inside it, which
- * comes up healthy and serves nothing.
- *
- * Kubernetes names are sanitized rather than passed through: a resource named
- * `My Service!` is a valid Bindle name and an invalid Kubernetes one, and the
- * apply would be rejected by the apiserver with a message about DNS labels.
- */
 import { describe, expect, it, vi } from "vitest";
 
 import { createOciRuntimeHost, ensureOciRuntime } from "../src/host.js";
 import { KubectlUnavailableError } from "../src/kubectl-transport.js";
 import type { KubernetesClient } from "../src/kubernetes-client.js";
 
-/** A Kubernetes client that records what it was asked to do. */
 function fakeK8s(
 	overrides: Partial<KubernetesClient> & {
 		clusterReachable?: boolean;
@@ -89,8 +59,6 @@ const ensureCtx = (env: NodeJS.ProcessEnv = {}) => ({
 
 describe("ensure", () => {
 	it("reports ready with an injected client, without equipping kubectl", async () => {
-		// A PACT mock has no binary to download. Attempting one would make every
-		// contract test reach for the network.
 		const { client } = fakeK8s();
 		const result = await createOciRuntimeHost({ kubernetes: client }).ensure(
 			ensureCtx(),
@@ -101,9 +69,6 @@ describe("ensure", () => {
 	});
 
 	it("reports ready when the client works but no cluster answers", async () => {
-		// This is `hobo yard ensure` on a laptop with no cluster. Failing here
-		// would make the install command unusable offline, and the note says
-		// plainly that serving will need more.
 		const { client } = fakeK8s({ clusterReachable: false });
 		const result = await createOciRuntimeHost({ kubernetes: client }).ensure(
 			ensureCtx(),
@@ -122,8 +87,6 @@ describe("ensure", () => {
 	});
 
 	it("carries the probe's own notes through", async () => {
-		// The probe's notes name the binary and the cluster's error. Dropping
-		// them would leave the ensure result unable to say why anything failed.
 		const { client } = fakeK8s();
 		const result = await createOciRuntimeHost({ kubernetes: client }).ensure(
 			ensureCtx(),
@@ -132,8 +95,6 @@ describe("ensure", () => {
 	});
 
 	it("reports the namespace it will schedule into", async () => {
-		// Deploying into the wrong namespace is not an error anyone notices —
-		// it is a successful deploy nobody can find.
 		const { client } = fakeK8s();
 		const result = await createOciRuntimeHost({
 			kubernetes: client,
@@ -160,9 +121,6 @@ describe("ensure", () => {
 	});
 
 	it("counts an injected client as equipped even when its probe says otherwise", async () => {
-		// A mock provider legitimately reports `ready: false` for the binary it
-		// does not have. Treating that as unequipped would fail every contract
-		// test's ensure.
 		const { client } = fakeK8s({ ready: false });
 		const result = await createOciRuntimeHost({ kubernetes: client }).ensure(
 			ensureCtx(),
@@ -181,8 +139,6 @@ describe("ensure", () => {
 
 describe("servePrivate — cluster requirement", () => {
 	it("refuses up front when no cluster is reachable", async () => {
-		// Failing partway through a schedule would leave workloads behind. The
-		// notes come along because they say *why* it is unreachable.
 		const { client } = fakeK8s({ clusterReachable: false });
 		await expect(
 			createOciRuntimeHost({ kubernetes: client }).servePrivate({
@@ -240,8 +196,6 @@ describe("servePrivate — container dependencies", () => {
 	};
 
 	it("applies, waits, and port-forwards each dependency", async () => {
-		// The order matters: forwarding before the workload is ready would
-		// connect to nothing and fail the first request.
 		const fake = fakeK8s();
 		await serve([{ resourceName: "db", image: "postgres:16" }], fake);
 		expect(fake.applied).toHaveLength(1);
@@ -259,8 +213,6 @@ describe("servePrivate — container dependencies", () => {
 	});
 
 	it("registers a handler under the dependency's Bindle name, not its k8s name", async () => {
-		// Callers reach dependencies by the name they wrote in the Bindle. The
-		// sanitized name is an implementation detail of the cluster.
 		const { result } = await serve([
 			{ resourceName: "My Cache!", image: "redis:7" },
 		]);
@@ -268,16 +220,12 @@ describe("servePrivate — container dependencies", () => {
 	});
 
 	it("sanitizes the name it schedules under", async () => {
-		// `My Cache!` is a valid Bindle name and an invalid DNS label — the
-		// apiserver would reject the apply with a message about label syntax.
 		const fake = fakeK8s();
 		await serve([{ resourceName: "My Cache!", image: "redis:7" }], fake);
 		expect(fake.waited).toEqual(["my-cache"]);
 	});
 
 	it("proxies a request through the cluster boundary", async () => {
-		// The handler is what a component calls. It has to reach the workload
-		// through the same PACT-shaped hop the rest of the host uses.
 		const fake = fakeK8s();
 		const { result } = await serve(
 			[{ resourceName: "db", image: "postgres:16" }],
@@ -306,8 +254,6 @@ describe("servePrivate — container dependencies", () => {
 	});
 
 	it("returns an empty body when the proxy answered with neither", async () => {
-		// A response with no json and no text still has to produce a Response;
-		// emitting `undefined` would serialize as the literal string.
 		const fake = fakeK8s({
 			httpProxy: async () => ({ status: 200, headers: {} }),
 		} as never);
@@ -322,20 +268,6 @@ describe("servePrivate — container dependencies", () => {
 	});
 
 	it("DEFECT: throws on an upstream 204 instead of proxying it", async () => {
-		// A null-body status (204, 205, 304) cannot carry a body, and the
-		// handler builds every non-JSON response as `new Response(text ?? "")`
-		// — the empty string is still a body, so the Response constructor
-		// rejects the status.
-		//
-		// This is a real defect, not a design choice: a workload that answers
-		// 204 to a DELETE — an entirely ordinary thing for a REST service to do
-		// — makes the mesh hop throw a TypeError about a "response status code"
-		// rather than returning the 204. The caller sees a runtime error from
-		// inside HoBo for a perfectly valid upstream reply.
-		//
-		// Pinned here rather than fixed: the fix is a one-line null-body guard
-		// in `host.ts`, but it changes production behaviour on a path this
-		// tranche is only meant to cover. Flagged on the PR for a decision.
 		const fake = fakeK8s({
 			httpProxy: async () => ({ status: 204, headers: {} }),
 		} as never);
@@ -349,8 +281,6 @@ describe("servePrivate — container dependencies", () => {
 	});
 
 	it("reports the isolation boundary and what it scheduled", async () => {
-		// The isolation report is what a deploy prints. It has to say what
-		// actually enforces the boundary, not just that one exists.
 		const { result } = await serve([
 			{ resourceName: "db", image: "postgres:16" },
 		]);
@@ -366,8 +296,6 @@ describe("servePrivate — container dependencies", () => {
 	});
 
 	it("serves nothing, successfully, when there is nothing to serve", async () => {
-		// A Bindle with no private components and no dependencies is a valid
-		// deploy — refusing it would break the simplest case.
 		const { result } = await serve([]);
 		expect(result.handlers.size).toBe(0);
 		expect(result.isolation.privateSandboxes).toBe(0);
@@ -376,8 +304,6 @@ describe("servePrivate — container dependencies", () => {
 
 describe("servePrivate — rollback", () => {
 	it("tears down what it scheduled when a later step fails", async () => {
-		// Half a deployment serves an app whose other half is missing, and
-		// nothing else would clean it up.
 		const fake = fakeK8s({
 			waitReady: vi
 				.fn()
@@ -402,8 +328,6 @@ describe("servePrivate — rollback", () => {
 	});
 
 	it("propagates the original error, not a teardown failure", async () => {
-		// The teardown error is a consequence; the original is the cause. Losing
-		// it would leave the operator debugging the cleanup.
 		const fake = fakeK8s({
 			waitReady: async () => {
 				throw new Error("rollout timed out");
@@ -425,9 +349,6 @@ describe("servePrivate — rollback", () => {
 	});
 
 	it("refuses a private component with no built wasm, naming it", async () => {
-		// The OCI host does not build. Scheduling without an artifact would
-		// deploy the runtime image with nothing inside — healthy, and serving
-		// nothing.
 		const fake = fakeK8s();
 		await expect(
 			createOciRuntimeHost({ kubernetes: fake.client }).servePrivate({
@@ -441,8 +362,6 @@ describe("servePrivate — rollback", () => {
 
 describe("close", () => {
 	it("closes every forward and deletes every workload", async () => {
-		// A dev session that exited without this would leave port-forwards and
-		// deployments behind on the user's cluster.
 		const fake = fakeK8s();
 		const result = await createOciRuntimeHost({
 			kubernetes: fake.client,
@@ -461,8 +380,6 @@ describe("close", () => {
 	});
 
 	it("survives a delete that fails", async () => {
-		// Close runs from process teardown. Throwing there would turn a clean
-		// exit into a crash over a cluster that is already gone.
 		const fake = fakeK8s({
 			delete: async () => {
 				throw new Error("gone");
@@ -490,21 +407,15 @@ describe("Kubernetes name sanitizing", () => {
 			hoboHome: "/tmp/h",
 			privateComponents: [],
 			env: {},
-			// SAFETY: the host reads exactly the fields a serve context names.
 		} as never);
 		return fake.waited[0];
 	};
 
 	it("lowercases and replaces characters a DNS label cannot carry", async () => {
-		// `My Service!` is a valid Bindle name and an invalid Kubernetes one;
-		// passing it through would be rejected by the apiserver with a message
-		// about DNS labels, long after the operator chose the name.
 		expect(await scheduledNameFor("My Service!")).toBe("my-service");
 	});
 
 	it("trims leading and trailing dashes left by the replacement", async () => {
-		// A DNS label may not begin or end with a dash, and the replacement is
-		// exactly what produces them.
 		expect(await scheduledNameFor("__api__")).toBe("api");
 	});
 
@@ -514,10 +425,6 @@ describe("Kubernetes name sanitizing", () => {
 	});
 
 	it("falls back to a placeholder when nothing survives", async () => {
-		// A name of only invalid characters sanitizes to the empty string, and
-		// an empty metadata.name is rejected by the apiserver. `component` is a
-		// legible stand-in; the Bindle name is still what the handler is
-		// registered under, so nothing is lost to the caller.
 		expect(await scheduledNameFor("!!!")).toBe("component");
 	});
 
@@ -540,15 +447,11 @@ describe("the runtime image a component runs in", () => {
 			hoboHome: "/tmp/h",
 			privateComponents: [],
 			env,
-			// SAFETY: the host reads exactly the fields a serve context names.
 		} as never);
 		return fake;
 	};
 
 	it("schedules dependencies on their own image, not the runtime one", async () => {
-		// The runtime image hosts *components*. A dependency declares its own
-		// image and running it on the runtime image would start the wrong
-		// program under the right name.
 		const fake = await detailsFor({ runtimeImage: "ghcr.io/acme/rt:1" });
 		const manifests = fake.applied[0] as Array<{
 			spec?: {
@@ -561,9 +464,6 @@ describe("the runtime image a component runs in", () => {
 	});
 
 	it("accepts a runtime image from the environment", async () => {
-		// The escape hatch for an air-gapped registry. Asserted through a
-		// successful serve rather than a thrown error, because the value is
-		// only read on the private-component path.
 		await expect(
 			detailsFor({}, { HOBO_OCI_RUNTIME_IMAGE: "registry.internal/rt:1" }),
 		).resolves.toBeDefined();
@@ -584,7 +484,6 @@ describe("a dependency's environment", () => {
 			privateComponents: [],
 			env: {},
 			...(bindleEnv !== undefined ? { bindleEnv } : {}),
-			// SAFETY: the host reads exactly the fields a serve context names.
 		} as never);
 		const manifests = fake.applied[0] as Array<{
 			spec?: {
@@ -615,9 +514,6 @@ describe("a dependency's environment", () => {
 	});
 
 	it("merges the bindle environment over the dependency's", async () => {
-		// The bindle is the deployment-time authority; a dependency's own value
-		// is a default it ships with. Reversing this would make a bindle unable
-		// to point a dependency at anything.
 		expect(
 			await appliedEnvFor(
 				{
