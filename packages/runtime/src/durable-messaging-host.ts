@@ -2051,9 +2051,6 @@ export async function provisionBindleTopics(
 	});
 }
 
-/** Prepare a scoped application host only after all of its journals exist.
- * Callers must persist and reuse the supplied operation IDs when retrying.
- */
 export async function prepareBindleTopicWitHost(
 	port: DurableMessaging,
 	bindle: Parameters<typeof createBindleTopicWitHost>[1],
@@ -2117,7 +2114,6 @@ export async function prepareBindleTopicWitHost(
 	}
 }
 
-/** Capture a topic plan and reuse its operation IDs across concurrent attempts. */
 export function createBindleTopicPreparation(
 	port: DurableMessaging,
 	bindle: Parameters<typeof createBindleTopicWitHost>[1],
