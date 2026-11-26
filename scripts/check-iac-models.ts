@@ -690,14 +690,14 @@ try {
 		],
 		[
 			"undeclared",
-			"/\\ declared /\\ exact /\\ writes = 0",
+			"/\\ (declared \\/ graphValidated) /\\ exact /\\ writes = 0",
 			"/\\ exact /\\ writes = 0",
 			"ShareExactAndDeclared",
 		],
 		[
 			"hidden",
-			"/\\ declared /\\ exact /\\ writes = 0",
-			"/\\ declared /\\ exact",
+			"/\\ (declared \\/ graphValidated) /\\ exact /\\ writes = 0",
+			"/\\ (declared \\/ graphValidated) /\\ exact",
 			"InventoryComplete",
 		],
 	] as const;
@@ -742,6 +742,23 @@ try {
 	)
 		throw new Error("SharedMapping shared-resource state is unreachable");
 	process.stdout.write("SharedMapping: shared-resource witness found\n");
+	writeFileSync(
+		join(witness, "SharedMapping.cfg"),
+		`${sharedConfig}\nINVARIANT NeverGraphShared\n`,
+	);
+	const graphWitness = check(
+		"SharedMapping",
+		witness,
+		join(witness, "graph-states"),
+	);
+	if (
+		graphWitness.status === 0 ||
+		!graphWitness.stdout.includes("Invariant NeverGraphShared is violated")
+	)
+		throw new Error("SharedMapping graph-validated sharing is unreachable");
+	process.stdout.write(
+		"SharedMapping: graph-validated sharing witness found\n",
+	);
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }
