@@ -605,7 +605,8 @@ it does not prove this host or the provider's replay and durability assumptions.
 The host does not itself implement or map a cloud queue.
 
 The internal atomic queue transition function records bounded operation receipts,
-message idempotency, lease generations, and explicit capacity and delivery
+message idempotency using canonical request fingerprints, lease generations,
+and explicit capacity and delivery
 exhaustion outcomes. Completed and exhausted messages remain retained; there is
 no compaction or dead-letter operation yet, so a finite queue eventually requires
 operator reconciliation. The transition requires validated inputs, a monotonic
