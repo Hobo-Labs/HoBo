@@ -1958,7 +1958,20 @@ export async function provisionBindleTopics(
 	operations: readonly BindleTopicProvisionOperation[],
 	options: DurableMessagingWitHostOptions,
 ): Promise<BindleTopicProvisionResult> {
-	const grants = compileBindleTopicGrants(bindle);
+	return provisionCompiledBindleTopics(
+		port,
+		compileBindleTopicGrants(bindle),
+		operations,
+		options,
+	);
+}
+
+async function provisionCompiledBindleTopics(
+	port: DurableMessaging,
+	grants: readonly BindleTopicGrant[],
+	operations: readonly BindleTopicProvisionOperation[],
+	options: DurableMessagingWitHostOptions,
+): Promise<BindleTopicProvisionResult> {
 	const topics = new Set<string>();
 	for (const binding of grants) {
 		topics.add(binding.grant.topic);
@@ -2077,13 +2090,6 @@ export async function prepareBindleTopicWitHost(
 	  }
 > {
 	const config = record(options, ["provisioning", "application"]);
-	const source = record(bindle, [
-		"bindleName",
-		"applicationName",
-		"resources",
-		"edges",
-		"bindings",
-	]);
 	// SAFETY: the host validates its options and snapshots the graph synchronously.
 	const application = createBindleTopicWitHost(
 		port,
@@ -2091,15 +2097,10 @@ export async function prepareBindleTopicWitHost(
 		config.application as Parameters<typeof createBindleTopicWitHost>[2],
 	);
 	try {
-		// SAFETY: the provisioner validates the graph and options before awaiting.
-		const provisioning = await provisionBindleTopics(
+		// SAFETY: the provisioner validates the captured options before awaiting.
+		const provisioning = await provisionCompiledBindleTopics(
 			port,
-			{
-				applicationName: source.applicationName,
-				resources: source.resources,
-				edges: source.edges,
-				bindings: source.bindings,
-			} as Parameters<typeof compileBindleTopicGrants>[0],
+			application.bindings,
 			operations,
 			config.provisioning as DurableMessagingWitHostOptions,
 		);

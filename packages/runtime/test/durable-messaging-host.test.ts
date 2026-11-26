@@ -2135,6 +2135,48 @@ describe("provider-neutral Bindle topic provisioning", () => {
 		expect(result).not.toHaveProperty("application");
 		expect(port.publish).not.toHaveBeenCalled();
 	});
+	it("does not expose an unprovisioned topic when bindings change during preparation", async () => {
+		const { port } = fixture();
+		const mutable = {
+			...binding,
+			bindleName: "shop",
+			bindings: binding.bindings.map((entry) => ({ ...entry })),
+		};
+		let armed = false;
+		let changed = false;
+		const metadata = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: () => {
+				if (armed) {
+					const first = mutable.bindings[0];
+					if (!first) throw new Error("missing binding");
+					first.topic = "rerouted";
+					armed = false;
+					changed = true;
+				}
+				return true;
+			},
+		});
+		const altered = operations.map((entry) =>
+			entry.topic === "orders" ? { ...entry, topic: "rerouted" } : entry,
+		);
+		armed = true;
+		await expect(
+			prepareBindleTopicWitHost(port, mutable, altered, {
+				provisioning: options(),
+				application: {
+					limitsGrant: createDurableMessagingLimitsGrant(),
+					lifecycle: createDurableMessagingLifecycle(),
+					portMetadataGrant: metadata,
+					verify: () => true,
+				},
+			}),
+		).rejects.toThrow(/durable_messaging.invalid_boundary_value/);
+		expect(changed).toBe(true);
+		expect(port.ensureTopic).not.toHaveBeenCalled();
+	});
+
 	it("exposes only the compiled application topic after all journals are provisioned", async () => {
 		const { port } = fixture();
 		const result = await prepareBindleTopicWitHost(
