@@ -216,6 +216,43 @@ describe("origin slots", () => {
 		]);
 	});
 
+	it("does not fall back to an older upstream Freight when the latest is unusable", async () => {
+		const h = harness();
+		await h.source("images");
+		const applied = await h.controller.apply(
+			pipeline("shop", [
+				node("dev", {
+					campIds: ["dev-1"],
+					fromSources: ["images"],
+					autoPromotion: AutoPromotion.DISABLED,
+				}),
+				node("prod", {
+					campIds: ["prod-1"],
+					fromNodes: ["dev"],
+					autoPromotion: AutoPromotion.DISABLED,
+					originSlots: [
+						create(FreightOriginSlotRecordSchema, {
+							name: "oci",
+							fromSources: ["images"],
+							autoPromotion: AutoPromotion.MATCH_UPSTREAM,
+						}),
+					],
+				}),
+			]),
+			h.ctx,
+		);
+		expect(applied.ok).toBe(true);
+		h.ledger.add("old", T0 - 2 * HOUR, { sourceName: "images" });
+		h.ledger.add("new", T0 - HOUR, { sourceName: "images" });
+		h.ledger.qualify("old", "dev-1", "shop", "dev", T0 - MINUTE);
+		h.ledger.qualify("new", "dev-1", "shop", "dev", T0 - MINUTE);
+		h.ledger.unusable.add("new");
+		await h.promoted("old", ["dev-1"], "shop", "dev");
+		await h.promoted("new", ["dev-1"], "shop", "dev");
+		await h.controller.tick(h.ctx);
+		expect(h.promotions.requests).toEqual([]);
+	});
+
 	it("runs independent NEWEST lanes per slot on different nodes", async () => {
 		const h = harness();
 		await h.source("images");

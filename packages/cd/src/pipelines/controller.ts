@@ -770,20 +770,29 @@ export function createPipelineController(
 	function currentUpstreamFreight(
 		pipeline: PipelineRecord,
 		node: PipelineNodeRecord,
-		slotCandidates?: readonly Candidate[],
+		facts: readonly FreightFacts[],
+		slotName?: string,
 	): string | undefined {
 		const upstream = node.fromNodes[0];
 		if (!upstream) return undefined;
 		const key = `${pipeline.name}|${upstream}`;
-		if (!slotCandidates) return currentByNode.get(key);
-		const allowed = new Set(
-			slotCandidates.map((candidate) => candidate.freight.freightId),
-		);
+		if (!slotName) return currentByNode.get(key);
+		const slot = node.originSlots.find((item) => item.name === slotName);
+		if (!slot) return undefined;
 		const history = promotedFreightByNode.get(key);
 		if (!history) return undefined;
-		return [...history.keys()]
-			.reverse()
-			.find((freightId) => allowed.has(freightId));
+		const byId = new Map(facts.map((fact) => [fact.freight.freightId, fact]));
+		for (const freightId of [...history.keys()].reverse()) {
+			const fact = byId.get(freightId);
+			if (!fact) return undefined;
+			if (
+				slot.fromSources.some((source) =>
+					freightMatchesOrigin(fact.freight, source),
+				)
+			)
+				return freightId;
+		}
+		return undefined;
 	}
 
 	async function refreshAutoPromotionHolds(ctx: CdContext): Promise<void> {
@@ -803,9 +812,9 @@ export function createPipelineController(
 				? slots.map((slot) => ({
 						node: effectiveSlotNode(node, slot),
 						list: candidatesForSlot(list, slot),
-						slot: true,
+						slot: slot.name,
 					}))
-				: [{ node, list, slot: false }];
+				: [{ node, list, slot: undefined }];
 			let competing = false;
 			for (const lane of lanes) {
 				const allowed = new Set(lane.list.map((c) => c.freight.freightId));
@@ -825,7 +834,8 @@ export function createPipelineController(
 					const current = currentUpstreamFreight(
 						pipeline,
 						lane.node,
-						lane.list,
+						facts,
+						lane.slot,
 					);
 					if (current) laneCurrent.set(key, current);
 					else laneCurrent.delete(key);
@@ -884,11 +894,7 @@ export function createPipelineController(
 				break;
 			}
 			case AutoPromotion.MATCH_UPSTREAM: {
-				const current = currentUpstreamFreight(
-					pipeline,
-					node,
-					slotName ? list : undefined,
-				);
+				const current = currentUpstreamFreight(pipeline, node, facts, slotName);
 				const match = list.find(
 					(candidate) =>
 						candidate.freight.freightId === current &&
