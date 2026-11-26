@@ -160,9 +160,10 @@ function relocationRelink(before: string, after: string): boolean {
 		if (previous[index] === target) continue;
 		if (
 			!target ||
-			!/^https:\/\/(?:linear\.app\/|github\.com\/Hobo-Labs\/HoBo\/blob\/[\da-f]{40}\/)/u.test(
+			(!/^https:\/\/(?:linear\.app\/|github\.com\/Hobo-Labs\/HoBo\/blob\/[\da-f]{40}\/)/u.test(
 				target,
-			)
+			) &&
+				!/^(?:\.{1,2}\/)+(?:[^/#?]+\/)*[^/#?]+\.mdx?(?:#[^ ]*)?$/u.test(target))
 		)
 			return false;
 		changed = true;
