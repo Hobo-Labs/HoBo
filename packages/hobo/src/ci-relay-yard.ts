@@ -47,7 +47,6 @@ export const RELAY_YARD_SOURCE_CANDIDATES = [
 	"deploy/yard.mts",
 ] as const;
 
-// public-contract: the connectivity id a Yard row names when the Vercel Marketplace attaches it (packages/ci-vercel/deploy/yard.ts).
 export const VERCEL_MARKETPLACE_CONNECTIVITY = "vercel.marketplace/v1";
 
 export type RelayTarget = "preview" | "production";
