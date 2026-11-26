@@ -736,6 +736,182 @@ export interface DurableTopicPolicy {
 	readonly revoke: () => void;
 }
 
+export interface DurableTopicBinding {
+	readonly resourceName: string;
+	readonly topic: string;
+	readonly subscriptions: readonly DurableTopicSubscriptionGrant[];
+}
+
+export interface BindleTopicGrant {
+	readonly resourceName: string;
+	readonly grant: DurableTopicGrant;
+}
+
+export function compileBindleTopicGrants(input: {
+	readonly applicationName: string;
+	readonly resources: Readonly<
+		Record<
+			string,
+			{
+				readonly kind: string;
+				readonly name: string;
+				readonly declaredAllow: readonly string[];
+				readonly dependsOn: readonly string[];
+			}
+		>
+	>;
+	readonly edges: readonly { readonly from: string; readonly to: string }[];
+	readonly bindings: readonly DurableTopicBinding[];
+}): readonly BindleTopicGrant[] {
+	const inputData = record(input, [
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	const applicationName = text(
+		inputData.applicationName,
+		DURABLE_MESSAGING_LIMITS.nameBytes,
+	);
+	const source = inputData.resources;
+	if (
+		typeof source !== "object" ||
+		source === null ||
+		types.isProxy(source) ||
+		Array.isArray(source)
+	)
+		return invalid();
+	const prototype = Object.getPrototypeOf(source);
+	if (prototype !== Object.prototype && prototype !== null) return invalid();
+	const names = Reflect.ownKeys(source);
+	if (names.length > 256 || names.some((name) => typeof name !== "string"))
+		return invalid();
+	const resources = new Map<
+		string,
+		{
+			kind: string;
+			declaredAllow: readonly string[];
+			dependsOn: readonly string[];
+		}
+	>();
+	for (const key of names) {
+		if (typeof key !== "string") return invalid();
+		const name = text(key, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const descriptor = Object.getOwnPropertyDescriptor(source, key);
+		if (
+			descriptor === undefined ||
+			!Object.hasOwn(descriptor, "value") ||
+			!descriptor.enumerable
+		)
+			return invalid();
+		const resource = record(
+			descriptor.value,
+			["kind", "name", "declaredAllow", "dependsOn"],
+			["stableId", "annotations"],
+		);
+		if (resource.name !== name) return invalid();
+		const kind = text(resource.kind, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const declaredAllow = array(resource.declaredAllow, 256).map((value) =>
+			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		const dependsOn = array(resource.dependsOn, 256).map((value) =>
+			text(value, DURABLE_MESSAGING_LIMITS.nameBytes),
+		);
+		if (new Set(declaredAllow).size !== declaredAllow.length) return invalid();
+		resources.set(name, { kind, declaredAllow, dependsOn });
+	}
+	const application = resources.get(applicationName);
+	if (application === undefined || application.kind === "topic")
+		return invalid();
+	const selected = new Set<string>();
+	for (const item of array(inputData.edges, 1024)) {
+		const edge = record(item, ["from", "to"]);
+		const from = text(edge.from, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const to = text(edge.to, DURABLE_MESSAGING_LIMITS.nameBytes);
+		if (from !== applicationName) continue;
+		const target = resources.get(to);
+		if (target === undefined && to.startsWith("connector:")) continue;
+		if (target === undefined) return invalid();
+		if (target.kind === "topic") {
+			if (selected.has(to)) return invalid();
+			selected.add(to);
+		}
+	}
+	if (
+		application.dependsOn.filter((kind) => kind === "topic").length !==
+		selected.size
+	)
+		return invalid();
+	const bindings = array(inputData.bindings, DURABLE_MESSAGING_LIMITS.topics);
+	if (bindings.length !== selected.size) return invalid();
+	const seen = new Set<string>();
+	const namesUsed = new Set<string>();
+	let subscriptionCount = 0;
+	const result: BindleTopicGrant[] = [];
+	for (const value of bindings) {
+		const binding = record(value, ["resourceName", "topic", "subscriptions"]);
+		const resourceName = text(
+			binding.resourceName,
+			DURABLE_MESSAGING_LIMITS.nameBytes,
+		);
+		const topic = text(binding.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+		const resource = resources.get(resourceName);
+		if (
+			!selected.has(resourceName) ||
+			seen.has(resourceName) ||
+			namesUsed.has(topic) ||
+			resource === undefined ||
+			resource.declaredAllow.some(
+				(verb) => verb !== "publish" && verb !== "subscribe",
+			)
+		)
+			return invalid();
+		const groups = new Set<string>();
+		const subscriptions = array(
+			binding.subscriptions,
+			DURABLE_MESSAGING_LIMITS.subscriptions,
+		).map((item) => {
+			const entry = record(item, ["consumerGroup", "deadLetterTopic"]);
+			const consumerGroup = text(
+				entry.consumerGroup,
+				DURABLE_MESSAGING_LIMITS.nameBytes,
+			);
+			const deadLetterTopic = text(
+				entry.deadLetterTopic,
+				DURABLE_MESSAGING_LIMITS.nameBytes,
+			);
+			if (
+				groups.has(consumerGroup) ||
+				deadLetterTopic === topic ||
+				++subscriptionCount > DURABLE_MESSAGING_LIMITS.subscriptions
+			)
+				return invalid();
+			groups.add(consumerGroup);
+			return Object.freeze({ consumerGroup, deadLetterTopic });
+		});
+		if (
+			resource.declaredAllow.includes("subscribe") !==
+			subscriptions.length > 0
+		)
+			return invalid();
+		seen.add(resourceName);
+		namesUsed.add(topic);
+		result.push(
+			Object.freeze({
+				resourceName,
+				grant: Object.freeze({
+					topic,
+					publish: resource.declaredAllow.includes("publish"),
+					subscriptions: Object.freeze(subscriptions),
+				}),
+			}),
+		);
+	}
+	return Object.freeze(
+		result.sort((a, b) => a.resourceName.localeCompare(b.resourceName)),
+	);
+}
+
 export function createDurableTopicPolicy(input: {
 	readonly grants: readonly DurableTopicGrant[];
 	readonly verify: (
