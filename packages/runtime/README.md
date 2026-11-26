@@ -594,7 +594,8 @@ checks and copies component requests and provider responses, authorizes dispatch
 and disclosure, and reports an uncertain outcome when a call times out, access
 is denied, or a response cannot be trusted. Work that outlives a timeout keeps
 its per-host capacity slot until it settles; a repeated in-flight operation is
-not dispatched again by that host. The provider must durably bind operation IDs
+not dispatched again by that host. Deadline observation and the in-flight guard
+use captured intrinsics; result variants have no inherited `then` property. The provider must durably bind operation IDs
 to exact requests, fence leases, and supply idempotent replay across hosts and
 restarts. The host creator must authenticate and scope the queue binding, attest
 the limits, supply a trusted clock and authorization callback, and bound the
