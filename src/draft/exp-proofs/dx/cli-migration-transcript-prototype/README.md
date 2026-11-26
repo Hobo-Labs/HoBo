@@ -57,7 +57,7 @@ pnpm.cmd --prefix src\draft\exp-proofs\cli-migration-transcript-prototype test
   cases, events, phases, and gate behavior.
 - `architecture/pacts/cli_migration_transcript_prototype.pact.json` records the
   design-proof registry consumer contract.
-- `ADR.md` names the command, event, actor, projection, replay, and snapshot
+- [Architecture record](https://linear.app/quickdeploy-ai/document/hobo-575-architecture-record-archived-97113298ac0c) names the command, event, actor, projection, replay, and snapshot
   contracts that keep this POC independent from production migration runtime.
 - Parse, don't validate: fixture input parses once into
   derived domain types, then event-store, materialized view / projection,
