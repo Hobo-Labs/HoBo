@@ -26,8 +26,8 @@ Executable proofs:
 Branch evidence:
 
 - [`HOBO-521 proof record`](./proofs/hobo-521-meta-cloud-broker/README.md)
-- [`HOBO-522 proof record`](./proofs/hobo-522-meta-cloud-broker-artifacts/README.md)
-- [`HOBO-523 proof record`](./proofs/hobo-523-yard-receipt-consumption/README.md)
+- [`HOBO-522 proof record`](https://linear.app/quickdeploy-ai/document/hobo-522-proof-record-archived-7b5d48bd2c58)
+- [`HOBO-523 proof record`](https://linear.app/quickdeploy-ai/document/hobo-523-proof-record-archived-a38956140978)
 - [`HOBO-525 proof record`](https://linear.app/quickdeploy-ai/document/hobo-525-proof-record-archived-81dbe462d156)
 - [`HOBO-528 proof record`](./proofs/hobo-528-meta-cloud-broker-rejection-matrix/README.md)
 - [`HOBO-529 proof record`](./proofs/hobo-529-broker-receipt-integrity/README.md)

@@ -12,7 +12,7 @@ Source issue: HOBO-413.
 Executable proof lives in
 [`src/draft/exp-proofs/api/organization-workspace-model-contract`](../../src/draft/exp-proofs/api/organization-workspace-model-contract/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-413-organization-workspace-model`](./proofs/hobo-413-organization-workspace-model/README.md).
+[`proofs/hobo-413-organization-workspace-model`](https://linear.app/quickdeploy-ai/document/hobo-413-proof-record-archived-62aaa1e5e3d7).
 
 ## M0 Acceptance Record
 

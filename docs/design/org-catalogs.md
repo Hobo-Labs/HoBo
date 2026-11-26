@@ -12,7 +12,7 @@ Source issue: HOBO-424.
 Executable proof lives in
 [`src/draft/exp-proofs/dx/org-catalogs-scope-acceptance`](../../src/draft/exp-proofs/dx/org-catalogs-scope-acceptance/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-424-org-catalogs`](./proofs/hobo-424-org-catalogs/README.md).
+[`proofs/hobo-424-org-catalogs`](https://linear.app/quickdeploy-ai/document/hobo-424-proof-record-archived-f6466c1d580b).
 
 ## M0 Acceptance Record
 

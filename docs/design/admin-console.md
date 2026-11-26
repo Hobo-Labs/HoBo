@@ -12,7 +12,7 @@ Source issue: HOBO-425.
 Executable proof lives in
 [`src/draft/exp-proofs/ux/admin-console-scope`](../../src/draft/exp-proofs/ux/admin-console-scope/README.md).
 Branch evidence is summarized in
-[`proofs/hobo-425-admin-console`](./proofs/hobo-425-admin-console/README.md).
+[`proofs/hobo-425-admin-console`](https://linear.app/quickdeploy-ai/document/hobo-425-proof-record-archived-596d0a535c72).
 
 ## M0 Acceptance Record
 
