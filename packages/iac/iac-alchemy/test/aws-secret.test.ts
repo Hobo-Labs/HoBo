@@ -210,6 +210,31 @@ describe("AWS Secrets Manager runtime", () => {
 			code: "AWS_SECRET_READ_UNAVAILABLE",
 		});
 	});
+	it("does not use the current-version label to order tied older versions", async () => {
+		const older = "00000000-0000-4000-8000-000000000002";
+		const other = "00000000-0000-4000-8000-000000000003";
+		const f = fixture(async () =>
+			Response.json({
+				ARN: secretArn,
+				Versions: [
+					{
+						VersionId: id,
+						CreatedDate: 1_700_000_001,
+						VersionStages: ["AWSCURRENT"],
+					},
+					{
+						VersionId: older,
+						CreatedDate: 1_700_000_000,
+						VersionStages: ["AWSPREVIOUS"],
+					},
+					{ VersionId: other, CreatedDate: 1_700_000_000, VersionStages: [] },
+				],
+			}),
+		);
+		await expect(f.store.listVersions()).rejects.toMatchObject({
+			code: "AWS_SECRET_READ_UNAVAILABLE",
+		});
+	});
 	it("rejects foreign values and incomplete version lists", async () => {
 		const f = fixture(async (_url, init) =>
 			new Headers(init?.headers).get("x-amz-target")?.endsWith("GetSecretValue")
