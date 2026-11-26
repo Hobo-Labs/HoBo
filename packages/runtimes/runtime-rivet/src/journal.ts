@@ -136,6 +136,7 @@ export interface ActorLocalJournal {
 	readFacts(streamId: string, fromSeq?: number): readonly JournalFactRecord[];
 	acceptCommand(input: AcceptCommandInput): AcceptCommandResult;
 	claimNext(streamId: string): InboxCommand | undefined;
+	releaseClaim(streamId: string, commandId: string): boolean;
 	markCommitted(streamId: string, commandId: string): void;
 	rejectCommand(
 		streamId: string,
@@ -294,11 +295,15 @@ export function createActorLocalJournal(
             status, attempt, result_json
      FROM hobo_inbox
      WHERE stream_id = ? AND status IN ('persisted', 'processing', 'committed')
-     ORDER BY command_id ASC LIMIT 1`,
+     ORDER BY expected_revision ASC, rowid ASC LIMIT 1`,
 	);
 	const claimInbox = db.prepare(
 		`UPDATE hobo_inbox SET status = 'processing', attempt = attempt + 1
      WHERE stream_id = ? AND command_id = ? AND status IN ('persisted', 'processing')`,
+	);
+	const releaseInbox = db.prepare(
+		`UPDATE hobo_inbox SET status = 'persisted'
+     WHERE stream_id = ? AND command_id = ? AND status = 'processing'`,
 	);
 	const commitInbox = db.prepare(
 		`UPDATE hobo_inbox SET status = 'committed'
@@ -560,6 +565,14 @@ export function createActorLocalJournal(
 				const row = nextInbox.get(streamId);
 				if (!row) return undefined;
 				const commandId = String(row.command_id);
+				const status = parseInboxStatus(row.status);
+				if (status !== "committed") {
+					const current = asNumber(getHead.get(streamId)?.revision);
+					if (asNumber(row.expected_revision) > current) {
+						if (status === "processing") releaseInbox.run(streamId, commandId);
+						return undefined;
+					}
+				}
 				claimInbox.run(streamId, commandId);
 
 				const claimed = getInbox.get(streamId, commandId);
@@ -570,6 +583,11 @@ export function createActorLocalJournal(
 					);
 				return mapInbox(claimed);
 			});
+		},
+		releaseClaim(streamId, commandId) {
+			return this.transaction(
+				() => releaseInbox.run(streamId, commandId).changes === 1,
+			);
 		},
 		markCommitted(streamId, commandId) {
 			this.transaction(() => {

@@ -106,3 +106,116 @@ resolution contracts are exercised in
 [`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
 Release `--resolve-digest` pins the worker only when `docker image inspect` lists
 exactly one matching `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:<64 lowercase hex>`.
+
+
+## SDK release artifacts
+
+SDK staging validates the runtime workspace dependency closure before building
+or packing. Runtime grounding and SQLite internal dependencies are transformed
+first and included with their licenses. Every remaining runtime, peer, and
+optional workspace dependency must belong to the SDK publish train; otherwise
+staging stops before producing a tarball.
+
+Packages stage and pack in up to four isolated workers, with a serial fallback
+when a package declares a pack or prepare lifecycle script. The manifest keeps
+the SDK allowlist order, and the clean-install acceptance verifier still runs
+before the artifacts are accepted.
+
+Published package manifests retain workspace import names as npm aliases for
+their public package names. OCI app staging installs matching workspace-name
+links so the same packed modules resolve in the deployed app.
+
+
+The SQLite SDK includes backend-routing and Fleet implementation code and their
+license notices in its tarball. Shared journal errors come from `@hobo/core`,
+so a separately installed backend-routing package and the SQLite bundle use the
+same constructor when they resolve the same core version.
+
+## CI/CD gauntlet
+
+Run `node scripts/ci/measure-cicd-gauntlet.mts evidence.json` to measure from
+CI workflow creation through the last CI or CD workflow or job completion.
+The limit is strictly less than 600 seconds. The process exits 1 when the
+recorded evidence does not pass and 2 when the input is unusable.
+
+The input combines GitHub Actions run and complete job API responses under
+`ci` and `cd`. See `scripts/test/fixtures/cicd-gauntlet/` for captured
+examples and the configurable deployable job requirements. Include the
+`workflow_run` event for each CD run: it must identify the CI run, SHA and
+attempt. Inside Actions, the current CD run reads its event from
+`GITHUB_EVENT_PATH` and does not print the event payload. Matching SHAs and
+timestamps alone do not prove causality. A CD run cannot pass while it is still
+running; retain the event evidence and analyze it after the run completes.
+
+A passing result requires evidence for a warm cache globally and for every
+configured deployable. For a public OCI image, provide its SHA-256 digest,
+evidence of an anonymous manifest digest check, and evidence that every
+referenced config and layer blob was retrieved and verified. For a deployable
+without a public OCI image, explicitly set `publicOci.required` to false and
+supply a reason. Job success alone never verifies public registry availability.
+Cache and registry evidence are supplied by the caller; this tool does not
+perform the registry probes or independently verify deployment health. OCI and
+Docker manifest indexes may provide each child under `publicOci.manifests`
+with its digest, exact manifest text, HTTP status and anonymous-access flag.
+Every referenced config and layer in `publicOci.blobs` needs its digest,
+independently observed digest and size, HTTP status and anonymous-access flag.
+The verifier hashes manifest bytes, checks descriptor sizes and the supplied
+blob observations, and requires at least one runnable image. Digest-only records
+without measured sizes fail closed and must be recaptured. Attestation
+manifests are verified too; they do not count as a runnable image. It rejects
+duplicate evidence, unsupported media types and excessive graph depth or size.
+
+Captured inputs are historical snapshots. Before promoting a champion, check
+the current target branch SHA and refresh the corresponding run, job, trigger,
+cache, and registry evidence. A fixture or earlier successful run does not
+establish that a later revision is current or working.
+
+## Runtime SDK grounding
+
+`vendor-runtime-grounding.mts` provides synchronous staging helpers that retain the runtime package’s original grounding implementation and declarations under its own `dist` directory. The helpers copy its MIT license, preserve shared module identity, declare the grounding implementation’s TypeScript dependency, and reject unexpected dependency or import changes. The WIT runtime primitives are exposed through the `@hobo/wit/runtime-primitives` type subpath.
+
+
+## Pages release observation
+
+The GitHub Pages provider reads the actual build state while the release
+verification probe independently requires an authenticated, completed build
+of the current Pages branch head. Queued or building releases remain pending
+without requesting another build, and missing credentials fail verification.
+
+If GitHub temporarily reports an older completed build after a new build is
+requested, the provider can request another build on each reconciliation until
+the latest-build endpoint catches up. The resolver does not currently persist a
+pending request across controllers or restarts. Verification still requires a
+completed build of the current branch head.
+
+## CLI SDK bundling
+
+The [`bundle-cli-sdk.mts`](bundle-cli-sdk.mts) prepares the CLI library
+bundle with public SDK imports left external. It checks the pinned training source,
+workspace import graph, computed imports, asset paths, and bundled MIT licenses before
+recording source, output, and asset hashes in `BUNDLE-PROVENANCE.json`. Starter
+`.gitignore` files are staged as `.gitignore.tpl` so npm retains them and the existing
+renderer restores their intended names. [`bundle-cli-sdk.test.ts`](../test/bundle-cli-sdk.test.ts)
+checks these guards and the packed asset inventory on Node 22. SDK staging invokes
+the declaration and JavaScript helpers before packing. These helpers do not change
+the protobuf, CUE, or PACT checks.
+
+The CLI declaration helper copies the workspace dependency closure into an isolated
+TypeScript project. It preserves public SDK alias imports, rejects undeclared external
+imports and type references, compares exported names, and typechecks the result. Its
+generator is pinned to 9.5.1 for Node 22 compatibility. The staging runner records
+declaration source and license hashes along with the final declaration hash, and the
+synchronous staging wrapper propagates any failure before packaging.
+
+SDK staging runs `verify-cli-sdk-artifacts.mts` before returning a manifest.
+The verifier checks the exact SDK allowlist, source and license provenance,
+every shipped CLI output, and a clean consumer installed from a loopback-only
+registry. Failure removes the manifest so a previous or incomplete run cannot
+be published. The offline acceptance disables third-party lifecycle scripts
+while repacking test dependencies; it does not replace verification of a
+normal lifecycle-enabled npm installation.
+
+The OCI image input key includes SDK bundling helpers for the SDK image. The CLI
+image key also depends on the SDK image key because CLI staging installs its npm
+artifacts; the MCP image depends on the CLI image. This prevents an unchanged image
+key from hiding a changed SDK artifact while leaving unrelated image keys independent.

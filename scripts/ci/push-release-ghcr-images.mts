@@ -47,6 +47,7 @@ import {
 	qualifyReleaseCandidate,
 	type ReleaseArtifact,
 } from "./create-github-release.mts";
+import { verifyReleaseOciHandoff } from "./release-oci-handoff.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -237,6 +238,7 @@ export function buildReleaseGhcrImages(options: {
 	imageId?: string | undefined;
 	/** Seam: export a built image (default `exportReleaseOciLayout`). */
 	exportLayout?: (localTag: string, dir: string) => ReleaseOciLayout;
+	reusePublishedTag?: typeof tryReusePublishedTag;
 }): ReleaseImage[] {
 	const parsed = parseReleaseRef(options.releaseRef);
 	const out: ReleaseImage[] = [];
@@ -253,14 +255,37 @@ export function buildReleaseGhcrImages(options: {
 			throw new Error(`expected one GHCR tag for ${id}, got ${tags.length}`);
 		}
 		const tag = tags[0] ?? "";
-		const reused = tryReusePublishedTag({
+		const handoffDir = process.env.HOBO_RELEASE_OCI_LAYOUT_DIR?.trim();
+		const handoff = handoffDir
+			? verifyReleaseOciHandoff(handoffDir, {
+					imageId: id,
+					revision,
+					version: parsed.semver,
+				})
+			: undefined;
+		if (handoff && (!options.imageId || images.length !== 1))
+			throw new Error("OCI handoff requires exactly one named image");
+		const reused = (options.reusePublishedTag ?? tryReusePublishedTag)({
 			imageId: id,
 			tag,
 			revision,
 			releaseVersion: parsed.semver,
 		});
 		if (reused) {
+			if (handoff && !reused.endsWith(`@${handoff.digest}`))
+				throw new Error(
+					`${id}: existing registry digest does not match verified OCI handoff`,
+				);
 			out.push({ id, line: reused });
+			continue;
+		}
+		if (handoff) {
+			const repository = tag.slice(0, tag.lastIndexOf(":"));
+			out.push({
+				id,
+				line: `${repository}@${handoff.digest}`,
+				layout: handoff,
+			});
 			continue;
 		}
 		if (id === "hobo-mcp") {

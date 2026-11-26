@@ -18,8 +18,6 @@
  * because a downgrade that still reaches the network has already spent the
  * credential.
  *
- * Two normalization rules are deliberate and load-bearing:
- *
  * - Host comparison is **exact** against the policy strings. WHATWG URL
  *   parsing already lowercases an ASCII authority and punycodes a non-ASCII
  *   one, so `https://API.Example.com` and `https://api.example.com` are the
@@ -27,20 +25,6 @@
  *   not do is case-fold the *policy*: a mixed-case allowlist entry matches
  *   nothing. Repairing a policy typo is widening reach on a guess, and this
  *   guard fails closed instead.
- * - Percent-encoded path separators are refused rather than decoded. Be precise
- *   about which forms actually survive, because the obvious example does not:
- *   WHATWG resolves dot segments during parsing, and it treats `%2e` as a dot
- *   while doing so, so `/v1/../admin` *and* `/v1/%2e%2e/admin` both arrive at
- *   the prefix check already collapsed to `/admin` — and are refused by the
- *   prefix check on their own merits.
- *
- *   What survives is an encoded *separator*: `%2f` and `%5c` are not separators
- *   to the parser, so `/v1/projects/%2f%2e%2e%2fadmin` and
- *   `/v1/projects/..%5cadmin` reach the prefix check with the prefix intact,
- *   pass it, and are decoded only by the origin — after every check here. Their
- *   presence is the refusal. `%2e` stays in the pattern because it still
- *   appears in those composite forms.
- *
  * Purity: no clock, no randomness, no ambient environment reads. The guard is
  * a pure function of the request, the policy, and the inner transport's reply.
  */
@@ -134,6 +118,7 @@ export interface TransportGuardPolicy {
 	 * explicit, per policy, and visible in review; the default stays closed.
 	 */
 	readonly allowedPorts?: readonly string[];
+	readonly allowedEncodedPaths?: readonly string[];
 }
 
 // public-contract: every refusal a guarded transport can report.
@@ -353,11 +338,6 @@ function assertAllowedHost(parsed: URL, policy: TransportGuardPolicy): void {
 /**
  * True when a pathname percent-encodes a separator or dot segment.
  *
- * `parsed.pathname` has already had literal dot segments resolved by WHATWG
- * parsing, so a prefix check sees the path the origin will route on — with one
- * exception: percent-encoded separators survive parsing and are decoded only by
- * the provider, past every check. Their presence is the refusal.
- *
  * Exported as a predicate rather than folded into `assertAllowedEndpoint`
  * because two transports still cannot use `assertAllowedEndpoint` at all, but
  * both need *this*. Sharing the rule is what keeps the copies from drifting
@@ -387,9 +367,29 @@ export function encodesPathSeparator(pathname: string): boolean {
 	return /%2e|%2f|%5c/iu.test(pathname);
 }
 
+function isAllowedEncodedPath(
+	path: string,
+	allowed: readonly string[] | undefined,
+): boolean {
+	if (!allowed?.includes(path) || /%(?:2e|5c|25)/iu.test(path)) return false;
+	try {
+		const decoded = decodeURIComponent(path);
+		return (
+			!decoded.includes("\\") &&
+			!decoded.includes("%") &&
+			!decoded.split("/").some((segment) => segment === "." || segment === "..")
+		);
+	} catch {
+		return false;
+	}
+}
+
 function assertAllowedPath(parsed: URL, policy: TransportGuardPolicy): void {
 	const path = parsed.pathname;
-	if (encodesPathSeparator(path)) {
+	if (
+		encodesPathSeparator(path) &&
+		!isAllowedEncodedPath(path, policy.allowedEncodedPaths)
+	) {
 		throw new TransportGuardError(
 			"TRANSPORT_PATH_FORBIDDEN",
 			`path ${path} percent-encodes a path separator or dot segment, which this guard refuses rather than decodes: only the origin would resolve it, after every check here has passed`,
