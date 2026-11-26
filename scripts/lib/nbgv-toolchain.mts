@@ -1,6 +1,6 @@
 /** Release-scoped mise toolchain for Nerdbank.GitVersioning (not in CI runner image). */
 import { spawn, spawnSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 export type NbgvToolchainLog = (line: string) => void;
 
@@ -23,6 +23,14 @@ export function nbgvMiseInstallArgv(releaseDir: string): readonly string[] {
 	return ["-C", releaseDir, "install", "--locked", "dotnet"];
 }
 
+export function nbgvMiseExecPath(
+	basePath: string | undefined,
+	hostNodeExecPath: string = process.execPath,
+): string {
+	const nodeDir = dirname(hostNodeExecPath);
+	return [nodeDir, ...(basePath ? [basePath] : [])].join(delimiter);
+}
+
 /**
  * Env for `mise exec` from repo root with `release/mise.toml` tools (dotnet).
  * `-C release` would chdir into `release/` and break root `pnpm exec nbgv`.
@@ -30,6 +38,7 @@ export function nbgvMiseInstallArgv(releaseDir: string): readonly string[] {
 export function nbgvMiseExecEnv(
 	repoRoot: string,
 	base: NodeJS.ProcessEnv = process.env,
+	hostNodeExecPath: string = process.execPath,
 ): NodeJS.ProcessEnv {
 	const rootMiseToml = resolve(repoRoot, "mise.toml");
 	const existing = base.MISE_IGNORED_CONFIG_PATHS;
@@ -38,6 +47,7 @@ export function nbgvMiseExecEnv(
 		...base,
 		MISE_CONFIG_DIR: nbgvMiseReleaseDir(repoRoot),
 		MISE_IGNORED_CONFIG_PATHS: ignored,
+		PATH: nbgvMiseExecPath(base.PATH, hostNodeExecPath),
 	};
 }
 
