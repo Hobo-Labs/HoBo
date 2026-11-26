@@ -149,3 +149,4 @@ The host must fence the complete source, registry, transport and pool through ea
 The HTTP topic adapter can prepare a Bindle-scoped asynchronous topic host
 before starting application logic. Provisioning uncertainty returns unavailable;
 the caller must persist operation identities for retries across restarts.
+The application factory runs only after all declared journals are confirmed.
