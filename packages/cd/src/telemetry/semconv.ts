@@ -1,16 +1,13 @@
-// public-contract: the pinned semantic-conventions release.
 export const SEMCONV = Object.freeze({
 	version: "1.41.0",
 	schemaUrl: "https://opentelemetry.io/schemas/1.41.0",
 } as const);
 
-// public-contract: instrumentation scope reported on every export.
 export const CD_INSTRUMENTATION_SCOPE = Object.freeze({
 	name: "@hobo/cd",
 	version: "0.0.1",
 } as const);
 
-// public-contract: OTel CI/CD registry attribute keys (semconv `cicd.*`).
 export const CICD = Object.freeze({
 	pipelineName: "cicd.pipeline.name",
 	pipelineActionName: "cicd.pipeline.action.name",
@@ -35,7 +32,6 @@ export const DEPLOYMENT_ENVIRONMENT_NAME =
 // public-contract: other registry keys @hobo/cd sets.
 export const ERROR_TYPE = "error.type" as const;
 
-// public-contract: HoBo attribute keys (outside the OTel registry namespace).
 export const HOBO_ATTR = Object.freeze({
 	freightId: "hobo.freight.id",
 	freightAlias: "hobo.freight.alias",
@@ -74,7 +70,6 @@ export type CicdRunState = "pending" | "executing" | "finalizing";
 
 export type CicdTaskType = "build" | "test" | "deploy";
 
-// public-contract: OTel CI/CD metric names (semconv `cicd.*` metrics).
 export const CICD_METRICS = Object.freeze({
 	pipelineRunDuration: "cicd.pipeline.run.duration",
 	pipelineRunActive: "cicd.pipeline.run.active",

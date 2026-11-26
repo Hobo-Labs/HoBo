@@ -13,13 +13,6 @@ import {
 	resolveResourceOfferings,
 } from "./offering-resolution.js";
 
-/**
- * Portable data-store offerings — the first non-routing vocabulary bound to
- * the generic per-resource-class resolver (plan-25 Resource Definition
- * Matching). Providers declare what their stores natively realize; the
- * portable fallback ladder covers what the platform can realize on top of any
- * store (journal-backed CDC, trail-driven dual writes — ADR-0032/0135).
- */
 export type DataStoreOfferingId =
 	| "sql.relational"
 	| "sql.transactions"
@@ -35,12 +28,8 @@ export type DataStoreOfferingId =
 	| "replica.multi-region"
 	| "write.multi-writer"
 	| "ha.failover"
-	// Logical replication, split by direction: `publish` is outbound (the store
-	// is the publisher), `subscribe` is inbound (the store is the subscriber).
-	// `cdc.stream` stays the consumer-agnostic change feed.
 	| "replicate.logical-publish"
 	| "replicate.logical-subscribe"
-	// Connection-port facts a client has to know before it can dial.
 	| "pool.transaction"
 	| "auth.password"
 	| "auth.identity-token"
@@ -78,15 +67,6 @@ export type DataStoreProvider =
 	| "self-hosted-postgres"
 	| "other";
 
-/**
- * The storage engine behind a data store (ADR-0177).
- *
- * `DataStoreProvider` above names *products*. An engine is a different fact
- * with a different owner: wire protocol, type system, DDL semantics, and
- * replication mechanism are properties of the engine, shared by every product
- * of it. The migration patterns a store can take part in are decided by its
- * engine; what a particular product then disables is a narrowing on top.
- */
 export const DATA_STORE_ENGINES = Object.freeze([
 	"sqlite",
 	"postgres",
@@ -98,20 +78,14 @@ export const DATA_STORE_ENGINES = Object.freeze([
 
 export type DataStoreEngine = (typeof DATA_STORE_ENGINES)[number];
 
-/** Which engine each known product is. `other` is honest: nothing is assumed. */
 const PROVIDER_ENGINES: Readonly<Record<DataStoreProvider, DataStoreEngine>> =
 	Object.freeze({
 		"sqlite-local": "sqlite",
-		// D1 speaks the SQLite dialect; it is not a Postgres and never satisfies one.
 		"cloudflare-d1": "sqlite",
 		"supabase-postgres": "postgres",
-		// These two family ids name a managed *service* that hosts more than one
-		// engine, so the id alone does not determine the engine.
 		"aws-rds": "other",
 		"gcp-cloudsql": "other",
 		"azure-sql": "sqlserver",
-		// Each product-level id names one PostgreSQL product (see
-		// `DataStoreProvider`), including the PostgreSQL-compatible services.
 		"neon-postgres": "postgres",
 		"prisma-postgres": "postgres",
 		"pgedge-cloud": "postgres",
@@ -126,11 +100,6 @@ const PROVIDER_ENGINES: Readonly<Record<DataStoreProvider, DataStoreEngine>> =
 		other: "other",
 	});
 
-/**
- * The engine a product is, when the product id determines it. Returns `other`
- * for a product that hosts several engines — the caller must then read the
- * engine from the product's declaration rather than guess.
- */
 export function engineOfDataStoreProvider(
 	provider: DataStoreProvider,
 ): DataStoreEngine {
@@ -222,12 +191,6 @@ export const DATA_STORE_PROVIDERS: readonly DataStoreProvider[] = Object.freeze(
 	[...PROVIDERS],
 );
 
-/**
- * Product id to the engine-agnostic family id it refines. A consumer that
- * still keys on a family id can map a product id back without string surgery;
- * ids absent here (Aurora, AlloyDB, every non-hyperscaler product) refine no
- * family that existed before them.
- */
 export const DATA_STORE_PROVIDER_FAMILIES = Object.freeze({
 	"aws-rds-postgres": "aws-rds",
 	"gcp-cloudsql-postgres": "gcp-cloudsql",
@@ -246,10 +209,6 @@ const FIDELITIES = new Set<OfferingFidelity>([
 	"camp-only",
 ]);
 
-/**
- * Default portable fallback ladder: realizable on top of any store the
- * platform journals — CDC via journal tailing, dual writes via trails.
- */
 export const DEFAULT_DATA_STORE_FALLBACKS: readonly DataStoreOfferingId[] = [
 	"journal.event-stream",
 	"cdc.stream",
@@ -285,7 +244,6 @@ export function parseDataStoreOffering(
 	});
 }
 
-/** Defaults to `stable`, the vocabulary's existing default. */
 export function parseDataStoreStability(
 	value: JsonValue | undefined,
 	path = "stability",
@@ -298,7 +256,6 @@ export function parseDataStoreStability(
 	);
 }
 
-/** Defaults to `real`, the vocabulary's existing default. */
 export function parseDataStoreFidelity(
 	value: JsonValue | undefined,
 	path = "fidelity",
@@ -359,7 +316,6 @@ export function parseDataStoreProviderProfile(
 	});
 }
 
-/** Match a data-store request against one provider profile. */
 export function matchDataStoreOfferings(
 	profile: DataStoreProviderProfile,
 	request: DataStorePortRequest = {},
@@ -367,7 +323,6 @@ export function matchDataStoreOfferings(
 	return matchResourceOfferings(DATA_STORE_RESOURCE_CLASS, profile, request);
 }
 
-/** Resolve a data-store request against candidate provider profiles. */
 export function resolveDataStore(
 	profiles: readonly DataStoreProviderProfile[],
 	request: DataStorePortRequest = {},

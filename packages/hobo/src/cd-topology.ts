@@ -1,5 +1,4 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: topology files are untrusted module exports; each record is parsed once with its generated cd_topology schema before it is used. */
-/** public-contract: declared Camp topology composed from @hobo/yards and cd_topology records. */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";

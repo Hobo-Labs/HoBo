@@ -28,7 +28,6 @@ import {
 	parseDataStoreCatalogEntry,
 } from "@hobo/core";
 
-/** UTC day every source below was read. One sweep, one date. */
 export const POSTGRES_BACKEND_CATALOG_OBSERVED_ON = "2026-11-10";
 
 function src(url: string, note: string) {
@@ -57,12 +56,10 @@ const native = claim("native");
 const operator = claim("operator");
 const unsupported = claim("unsupported");
 
-/** Not confirmed from a primary source; `detail` says what is missing. */
 function unknown(offering: string, detail: string) {
 	return { offering, realization: "unknown", detail };
 }
 
-/** Both SQL offerings follow from one fact: it is a PostgreSQL server. */
 function postgres(source: Source) {
 	return [
 		native("sql.relational", [source]),
@@ -1151,19 +1148,16 @@ export const POSTGRES_BACKEND_EXCLUSIONS = Object.freeze([
 	},
 ]);
 
-/** The catalog entry for one provider id, if the catalog has one. */
 export function postgresBackend(
 	provider: DataStoreProvider,
 ): DataStoreCatalogEntry | undefined {
 	return POSTGRES_BACKEND_CATALOG.find((entry) => entry.provider === provider);
 }
 
-/** Resolver-ready profiles, derived from the claims in catalog order. */
 export function postgresBackendProfiles(): readonly DataStoreProviderProfile[] {
 	return Object.freeze(POSTGRES_BACKEND_CATALOG.map(dataStoreProfileOf));
 }
 
-/** Cited-versus-unknown claim counts per entry, in catalog order. */
 export function postgresBackendEvidence() {
 	return Object.freeze(POSTGRES_BACKEND_CATALOG.map(dataStoreCatalogEvidence));
 }

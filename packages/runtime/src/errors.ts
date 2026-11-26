@@ -32,7 +32,6 @@ export class CapabilityDeniedError extends RuntimeAuthoringError {
 	}
 }
 
-/** Lowers onto `runtime-error.fatal`: stop immediately, do not retry. */
 export class FatalError extends RuntimeAuthoringError {
 	readonly code = "fatal" as const;
 	constructor(message: string) {
@@ -41,7 +40,6 @@ export class FatalError extends RuntimeAuthoringError {
 	}
 }
 
-/** Lowers onto `runtime-error.retryable`: retry within the step budget. */
 export class RetryableError extends RuntimeAuthoringError {
 	readonly code = "retryable" as const;
 	readonly retries: number | undefined;
@@ -59,11 +57,6 @@ export class WorkflowExecutionAborted extends RuntimeAuthoringError {
 	}
 }
 
-/**
- * A step whose retry budget is exhausted (or that threw `FatalError`). The
- * engine journals `run.StepFailed` + `run.Failed` and returns a failed handle;
- * it never re-throws for these — they are part of the durable record.
- */
 export class WorkflowFailure extends RuntimeAuthoringError {
 	readonly code = "workflow.failed" as const;
 	readonly step: string | undefined;

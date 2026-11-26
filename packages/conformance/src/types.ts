@@ -1,14 +1,9 @@
-// public-contract: persisted suite documents use this versioned schema identifier.
 import type { JsonValue } from "./json.js";
 
-// public-contract: stable exported contract literal
 export const SUITE_SCHEMA = "hobo.conformance.port-suite/v1" as const;
-// public-contract: persisted reports use this versioned schema identifier.
 export const REPORT_SCHEMA = "hobo.conformance.port-suite-report/v1" as const;
-// public-contract: SDK parity artifacts use this versioned schema identifier.
 export const SDK_PARITY_SCHEMA =
 	"hobo.conformance.sdk-parity-report/v1" as const;
-// public-contract: deterministic conformance runs share this default seed.
 export const DEFAULT_SEED = "hobo-conformance-default-seed" as const;
 
 export type ConformanceTier = "local" | "camp";

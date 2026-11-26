@@ -1,6 +1,6 @@
 export type DaprDeployMode = "self-hosted" | "kubernetes";
 
-// domain-view: parse-don't-validate parsed/derived type; wire form is DaprRuntimeConfig in data-models/runtime_dapr.proto.
+// domain-view:
 export interface DaprRuntimeConfig {
 	readonly campId: string;
 	readonly tenantId: string;
@@ -17,7 +17,7 @@ export interface DaprRuntimeConfig {
 	readonly svidBindingRef: string;
 }
 
-// domain-view: parse-don't-validate parsed/derived type; wire form is DaprComponentSpec in data-models/runtime_dapr.proto.
+// domain-view:
 export interface DaprComponentSpec {
 	readonly name: string;
 	readonly type: string;
@@ -27,7 +27,7 @@ export interface DaprComponentSpec {
 	readonly scopes: readonly string[];
 }
 
-// domain-view: parse-don't-validate parsed/derived type; wire form is DaprComponentYaml in data-models/runtime_dapr.proto.
+// domain-view:
 export interface DaprComponentYaml {
 	readonly apiVersion: "dapr.io/v1alpha1";
 	readonly kind: "Component";
@@ -36,7 +36,7 @@ export interface DaprComponentYaml {
 	readonly secretless: true;
 }
 
-// domain-view: parse-don't-validate parsed/derived type; wire form is DaprDoctorReport in data-models/runtime_dapr.proto.
+// domain-view:
 export interface DaprDoctorReport {
 	readonly daprCliAvailable: boolean;
 	readonly runtimeReachable: boolean;

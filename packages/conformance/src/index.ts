@@ -1,4 +1,3 @@
-// public-contract: package diagnostics expose this canonical package identifier.
 export const HOBO_CONFORMANCE_PACKAGE = "@hobo/conformance";
 
 export * from "./boundaries.js";

@@ -26,7 +26,6 @@ import { z } from "zod";
 // deposit, and the page sees references. Later runs require readable token,
 // installation id and explicit account scope; they do not verify them online.
 
-/** Deposit order: the installation id last, so its presence means complete. */
 export const VERCEL_CONNECTION_KEYS = Object.freeze([
 	"HOBO_CD_VERCEL_TOKEN",
 	"HOBO_CD_VERCEL_TEAM_ID",
@@ -53,10 +52,8 @@ const TokenSchema = z.object({
 const UserSchema = z.object({ user: z.object({ id: z.string() }) });
 
 export interface VercelConnectOptions {
-	/** The HoBo CD Integration's slug (vercel.com/integrations/<slug>). */
 	readonly integrationSlug: string;
 	readonly clientId: string;
-	/** The Redirect URL registered on the Integration console. */
 	readonly redirectUri: string;
 	readonly stores?: readonly SecretStoreOption[];
 	readonly openStore: (id: SecretStoreId) => Promise<SecretStoreOpening>;
@@ -88,8 +85,6 @@ export function sameVercelConnection(
 	);
 }
 
-/** Read the whole connection, including an explicit personal-account marker.
- * Missing, partial or unreadable data must not change account scope. */
 export async function readVercelConnection(
 	store: OpenedSecretStore,
 ): Promise<StoredVercelConnection | undefined> {
@@ -122,7 +117,6 @@ export async function readVercelConnection(
 			team !== PERSONAL_SCOPE &&
 			!/^team_[A-Za-z0-9]{1,64}$/u.test(team)) ||
 		installationId === undefined ||
-		// An Integration's installation, or a device-grant connection (none).
 		!(
 			/^icfg_[A-Za-z0-9]{1,64}$/u.test(installationId) ||
 			installationId === "device-grant"
@@ -136,7 +130,6 @@ export async function readVercelConnection(
 	};
 }
 
-/** True when the store already holds a complete Vercel connection. */
 export async function vercelConnected(
 	store: OpenedSecretStore,
 ): Promise<boolean> {
@@ -160,7 +153,6 @@ function sameState(a: string, b: string): boolean {
 	return left.length === right.length && timingSafeEqual(left, right);
 }
 
-/** The Vercel connection as a connect-page flow. */
 export function createVercelConnectFlow(
 	options: VercelConnectOptions,
 ): ConnectFlow & {
@@ -248,8 +240,6 @@ export function createVercelConnectFlow(
 				return { step: current };
 			const code = query.get("code");
 			const returned = query.get("state");
-			// The Redirect URL is fixed and public on the loopback, so the state
-			// is what ties this answer to this connection.
 			if (code === null || returned === null || !sameState(returned, state))
 				return failed("Vercel's answer did not match this connection.", [
 					"Run hobo cd up again; nothing was stored.",

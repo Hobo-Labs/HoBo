@@ -27,17 +27,13 @@ import {
 	POSTGRES_SERVER_VERSION,
 } from "./image.js";
 
-// public-contract: stable identifier for PostgreSQL OCI pack selection.
 export const POSTGRES_PACK_ID = "pack.postgres.oci/v1" as const;
-// public-contract: serialized pack version.
 export const POSTGRES_PACK_VERSION = "1.0.0" as const;
 
 /** The migration profile this pack implements. */
-// public-contract: migration profile advertised by this pack.
 export const POSTGRES_MIGRATION_PROFILE =
 	"migration.postgres.pg-dump/v1" as const;
 
-// public-contract: conformance evidence expected from this pack.
 export const POSTGRES_CONFORMANCE_SUITE_REF =
 	"hobo.conformance/pack.postgres.oci/v1" as const;
 
@@ -48,7 +44,6 @@ const CHECKED = "2026-08-08";
  * places — the manifest, the configuration schema, and the container spec — and a
  * typo across them would be a runtime surprise rather than a compile error.
  */
-// public-contract: stable logical volume name in pack manifests.
 export const POSTGRES_DATA_VOLUME = "pgdata" as const;
 
 /**

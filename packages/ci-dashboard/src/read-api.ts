@@ -11,9 +11,7 @@ import { z } from "zod/mini";
 
 type JsonValue = z.infer<ReturnType<typeof z.json>>;
 
-// public-contract: where the read API's paths start (frozen, ADR-0183).
 export const READ_API_PREFIX = "/v1/accounts/self";
-// public-contract: rows the dashboard reads per list.
 export const DASHBOARD_PAGE_LIMIT = 50;
 
 export class DashboardApiError extends Error {
