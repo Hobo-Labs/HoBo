@@ -186,3 +186,40 @@ it("refuses two declared notifications sharing one physical topic", () => {
 		}),
 	).toThrow("identities must be unique");
 });
+
+it("stops notification dispatch when the source topic changes during a request", async () => {
+	const environment = { HOBO_RESOURCE_0: "alerts" };
+	let calls = 0;
+	let result: Awaited<ReturnType<NotificationPort["send"]>> | undefined;
+	const store = publisher(async () => {
+		calls++;
+		return response();
+	});
+	const definition = bindle("shop", (b) => {
+		const alerts = b.notify().allow("send");
+		return {
+			alerts,
+			web: b
+				.web((context) => async () => {
+					const scoped = awsHttpBindings(context).notify("alerts");
+					environment.HOBO_RESOURCE_0 = "other-topic";
+					result = await scoped.send(request);
+					return new Response("ok");
+				})
+				.with(sessionReplay({ enabled: false }))
+				.dependsOn(alerts),
+		};
+	});
+	const source = defineAwsHttpSource({
+		bindle: withAwsSnsNotification(definition, { alerts: true }),
+		applicationName: "web",
+		environment,
+		resolveStores: () => ({ alerts: store }),
+		verifyBinding: () => true,
+	});
+	expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+		503,
+	);
+	expect(result).toEqual({ status: "rejected", code: "unauthorized" });
+	expect(calls).toBe(0);
+});

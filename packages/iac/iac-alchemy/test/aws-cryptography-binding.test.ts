@@ -34,7 +34,10 @@ const response = () =>
 	new Response(JSON.stringify({ KeyId: keyArn, CiphertextBlob: "BAUG" }), {
 		headers: { "content-type": "application/x-amz-json-1.1" },
 	});
-function port(fetch: typeof globalThis.fetch) {
+function port(
+	fetch: typeof globalThis.fetch,
+	verify: () => boolean = () => true,
+) {
 	const layer = Layer.mergeAll(
 		Endpoint.of("http://localhost:4566"),
 		Credentials.fromCredentials(
@@ -47,7 +50,7 @@ function port(fetch: typeof globalThis.fetch) {
 		FetchHttpClient.layer,
 		Layer.succeed(FetchHttpClient.Fetch, fetch),
 	);
-	return createAwsKmsCryptography({ grant, verify: () => true, layer });
+	return createAwsKmsCryptography({ grant, verify, layer });
 }
 it("binds only the genuine scoped key selected by the source", async () => {
 	let retained: CryptographyPort | undefined;
@@ -201,4 +204,173 @@ it("rejects duplicate physical keys and mismatched permissions", () => {
 			verifyBinding: () => true,
 		}),
 	).toThrow("does not match");
+});
+
+it("rejects an operation when the source key changes during the request", async () => {
+	const environment = { HOBO_RESOURCE_0: keyId };
+	let calls = 0;
+	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
+	const store = port(async () => {
+		calls++;
+		return response();
+	});
+	const definition = bindle("shop", (b) => {
+		const key = b.crypto().allow("encrypt", "decrypt");
+		return {
+			key,
+			web: b
+				.web((context) => async () => {
+					const scoped = awsHttpBindings(context).crypto("key");
+					environment.HOBO_RESOURCE_0 = "changed-key";
+					result = await scoped.encrypt(request);
+					return new Response("ok");
+				})
+				.with(sessionReplay({ enabled: false }))
+				.dependsOn(key),
+		};
+	});
+	const source = defineAwsHttpSource({
+		bindle: withAwsKmsCryptography(definition, { key: true }),
+		applicationName: "web",
+		environment,
+		resolveStores: () => ({ key: store }),
+		verifyBinding: () => true,
+	});
+	expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+		503,
+	);
+	expect(result).toEqual({ status: "rejected", code: "unauthorized" });
+	expect(calls).toBe(0);
+});
+
+it("withholds an in-flight result when the source key changes", async () => {
+	const environment = { HOBO_RESOURCE_0: keyId };
+	let finish!: (value: Response) => void;
+	let started!: () => void;
+	const dispatch = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	const store = port(
+		async () =>
+			new Promise<Response>((resolve) => {
+				finish = resolve;
+				started();
+			}),
+	);
+	let result: ReturnType<CryptographyPort["encrypt"]> | undefined;
+	const definition = bindle("shop", (b) => {
+		const key = b.crypto().allow("encrypt", "decrypt");
+		return {
+			key,
+			web: b
+				.web((context) => async () => {
+					result = awsHttpBindings(context).crypto("key").encrypt(request);
+					await result;
+					return new Response("ok");
+				})
+				.with(sessionReplay({ enabled: false }))
+				.dependsOn(key),
+		};
+	});
+	const source = defineAwsHttpSource({
+		bindle: withAwsKmsCryptography(definition, { key: true }),
+		applicationName: "web",
+		environment,
+		resolveStores: () => ({ key: store }),
+		verifyBinding: () => true,
+	});
+	const incoming = source.fetch(new Request("https://app.test"));
+	await dispatch;
+	environment.HOBO_RESOURCE_0 = "changed-key";
+	finish(response());
+	expect(await result).toEqual({
+		status: "unknown",
+		attemptId: request.attemptId,
+	});
+	expect((await incoming).status).toBe(503);
+});
+
+it("rechecks the source after a verifier changes its key", async () => {
+	const environment = { HOBO_RESOURCE_0: keyId };
+	let armed = false;
+	let calls = 0;
+	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
+	const store = port(async () => {
+		calls++;
+		return response();
+	});
+	const definition = bindle("shop", (b) => {
+		const key = b.crypto().allow("encrypt", "decrypt");
+		return {
+			key,
+			web: b
+				.web((context) => async () => {
+					armed = true;
+					result = await awsHttpBindings(context)
+						.crypto("key")
+						.encrypt(request);
+					return new Response("ok");
+				})
+				.with(sessionReplay({ enabled: false }))
+				.dependsOn(key),
+		};
+	});
+	const source = defineAwsHttpSource({
+		bindle: withAwsKmsCryptography(definition, { key: true }),
+		applicationName: "web",
+		environment,
+		resolveStores: () => ({ key: store }),
+		verifyBinding: () => {
+			if (armed) environment.HOBO_RESOURCE_0 = "changed-key";
+			return true;
+		},
+	});
+	expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+		503,
+	);
+	expect(result).toEqual({ status: "rejected", code: "unauthorized" });
+	expect(calls).toBe(0);
+});
+
+it("reports unknown if a provider verifier changes the source after the scoped check", async () => {
+	const environment = { HOBO_RESOURCE_0: keyId };
+	let calls = 0;
+	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
+	const store = port(
+		async () => {
+			calls++;
+			return response();
+		},
+		() => {
+			environment.HOBO_RESOURCE_0 = "changed-key";
+			return true;
+		},
+	);
+	const definition = bindle("shop", (b) => {
+		const key = b.crypto().allow("encrypt", "decrypt");
+		return {
+			key,
+			web: b
+				.web((context) => async () => {
+					result = await awsHttpBindings(context)
+						.crypto("key")
+						.encrypt(request);
+					return new Response("ok");
+				})
+				.with(sessionReplay({ enabled: false }))
+				.dependsOn(key),
+		};
+	});
+	const source = defineAwsHttpSource({
+		bindle: withAwsKmsCryptography(definition, { key: true }),
+		applicationName: "web",
+		environment,
+		resolveStores: () => ({ key: store }),
+		verifyBinding: () => true,
+	});
+	expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+		503,
+	);
+	expect(result).toEqual({ status: "unknown", attemptId: request.attemptId });
+	expect(calls).toBe(1);
 });
