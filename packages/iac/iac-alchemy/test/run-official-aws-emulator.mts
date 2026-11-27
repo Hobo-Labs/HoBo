@@ -117,6 +117,7 @@ try {
 			vitest,
 			"run",
 			"test/aws-mapping.test.ts",
+			"test/aws-kv.test.ts",
 			"test/aws-emulator.test.ts",
 			"test/aws-budget-emulator.test.ts",
 			"test/aws-vite.test.ts",
