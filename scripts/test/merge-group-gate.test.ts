@@ -253,6 +253,48 @@ describe("merge-group required gate", () => {
 		}
 	});
 
+	it("rejects fully skipped pull request checks even for a draft", () => {
+		const script = shellForStep(
+			gate,
+			"Require successful validation and workspace tests",
+		);
+		const skipped = {
+			EVENT_NAME: "pull_request",
+			ROUTE_RESULT: "skipped",
+			PLAN_RESULT: "skipped",
+			VALIDATION_RESULT: "skipped",
+			WORKSPACE_RESULT: "skipped",
+			AFFECTED_RESULT: "skipped",
+			SCRIPTS_RESULT: "skipped",
+			FORMAL_RESULT: "skipped",
+			ATTESTED: "",
+			ATTESTED_JOBS: "",
+			PR_FABRIC: "",
+			STATE_MACHINES: "",
+		};
+		const run = (draft: string, extra: Record<string, string> = {}) =>
+			spawnSync("bash", ["-c", script], {
+				encoding: "utf8",
+				env: {
+					...process.env,
+					...skipped,
+					PULL_REQUEST_DRAFT: draft,
+					...extra,
+				},
+			});
+		for (const draft of ["true", "false", ""]) {
+			const rejected = run(draft);
+			assert.notEqual(rejected.status, 0, draft);
+			assert.match(rejected.stderr, /PR impact plan did not succeed: skipped/u);
+		}
+		const failedPlan = run("true", { PLAN_RESULT: "failure" });
+		assert.notEqual(failedPlan.status, 0);
+		assert.match(failedPlan.stderr, /PR impact plan did not succeed: failure/u);
+		const mergeGroup = run("true", { EVENT_NAME: "merge_group" });
+		assert.notEqual(mergeGroup.status, 0);
+		assert.match(mergeGroup.stderr, /PR impact plan did not succeed: skipped/u);
+	});
+
 	it("requires the plan, validation, all workspace shards, and the PR package lanes", () => {
 		assert.match(planner, /needs: \[route\]/u);
 		assert.match(
@@ -1232,5 +1274,38 @@ describe("release required gate", () => {
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
+	});
+
+	it("rejects a fully skipped release gate even for a draft", () => {
+		const skipped = {
+			EVENT_NAME: "pull_request",
+			ROUTE_RESULT: "skipped",
+			CONTRACT_RESULT: "skipped",
+			REALIZE_RESULT: "skipped",
+			BROWSER_WIT_SMOKE_RESULT: "skipped",
+			ATTESTED: "",
+			ATTESTED_JOBS: "",
+		};
+		const run = (draft: string, extra: Record<string, string> = {}) =>
+			spawnSync("bash", ["-c", script], {
+				encoding: "utf8",
+				env: {
+					...process.env,
+					...skipped,
+					PULL_REQUEST_DRAFT: draft,
+					...extra,
+				},
+			});
+		for (const draft of ["true", "false", ""]) {
+			const rejected = run(draft);
+			assert.notEqual(rejected.status, 0, draft);
+			assert.match(rejected.stdout, /Runner routing did not succeed/u);
+		}
+		const failedRoute = run("true", { ROUTE_RESULT: "failure" });
+		assert.notEqual(failedRoute.status, 0);
+		assert.match(failedRoute.stdout, /Runner routing did not succeed/u);
+		const mergeGroup = run("true", { EVENT_NAME: "merge_group" });
+		assert.notEqual(mergeGroup.status, 0);
+		assert.match(mergeGroup.stdout, /Runner routing did not succeed/u);
 	});
 });

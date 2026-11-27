@@ -9,8 +9,16 @@ tags: [hobo, ci, performance, maintenance]
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
-- **Draft pull requests run CI on request.** Draft entry jobs normally skip expensive work. After reviewing a draft head, apply `ci:run-draft-checks` to trigger its applicable checks without changing draft status; if the label is already present, remove and reapply it after each new head. The release-integration workflow has no branch or path filters, so its PR shards also run on request. For PRs targeting main, an untested draft's required PR impact gate fails when its route is skipped. Mark the PR ready only after the current head's actual checks pass; `ready_for_review` starts them again. Non-PR workflows keep their existing triggers.
+- **Pull request CI runs when ready for review.** Draft PRs skip entry and aggregate jobs, including when a label is applied. Review and validate the change locally, then mark it ready for review to start its applicable CI and release checks. Queue it only after the ready-state checks pass. If a gate fails, return the same PR to draft and fix it on that branch before marking it ready again. Required gates still reject failed, cancelled, or unverifiably skipped prerequisites on ready PRs and merge groups. Non-PR workflows keep their existing triggers.
+- **Fleet probes follow ready PRs.** The probe receives ready PR events from the trusted base workflow and skips draft events. It ignores PR-triggered CI workflow runs, which exist even when all draft jobs were skipped. Main, merge-group and manual probes continue to measure the same runner labels.
+- **Hosted toolchain bootstrap uses the pinned mise installer.** GitHub-hosted jobs fetch the installer for the exact version in `mise-version.txt` and verify it against the release digest in `.github/actions/ci-runner-preflight/mise-installer.sha256` before executing it. That versioned installer verifies its archive using the embedded release checksum, so a transient failure to fetch the separate GitHub checksum file does not prevent installation. An explicit `MISE_INSTALL_PATH` selects that installation even if another mise is already on PATH. Update both pins together when changing the mise version.
 - **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one idle online Agent37 runner. When overflow runners are absent, offline-only, or unreadable, the run keeps the prior route unless verified public compute on `ubuntu-24.04` is available; the reason and the fallback warning record whether the route changed or was retained. A readable label list with zero online runners is normal ephemeral JIT idle and does not saturate the pool. An unreadable runner page never saturates on its own (R3). A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk` only when `runnerRouting.box.trunkLend` is `1`, then `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; with the committed `trunkLend: 0` it never lands on the cold trunk pool ([finding 167](../ci/findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)); the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
+- **Pricing model budget.** The bounded IaC model lane has 20 minutes so it can finish on a slower
+  runner. It still runs the same model checks and fails if they do not complete successfully.
+- **AWS emulator Docker context.** The Alchemy emulator lane builds a temporary image from the
+  digest-verified emulator binary so a Docker daemon without the runner's temporary directory can
+  start it. The container keeps its read-only filesystem, dropped capabilities and loopback port;
+  the test removes its uniquely named image after use.
 - **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
   pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
   no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
@@ -45,11 +53,19 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   supplied digest ref never falls back to the mutable version tag. Build and publish legs pull that digest under one overall
   `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
   four attempts and exponential backoff plus jitter instead of 120-second
-  per-attempt kills; their ensure steps have a 10-minute bound. The
-  `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
-  job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
-  legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
-  removes its own `<image>:candidate` when it finishes.
+  per-attempt kills. A pull that `timeout` kills (exit 124) after docker has printed
+  `Download complete` or `Pull complete` gets one immediate leftover-layer resume of
+  `WORKER_PULL_EXTRACT_BUDGET_SEC` (150 seconds) so those layers can finish extracting.
+  A kill that fetched no layers, and any other hard failure, stays inside the shared
+  deadline and retries with what remains until that deadline is spent. A resume that still fails
+  keeps the release-path "manifest present … pull failed … refusing build.sh" error.
+  An already-present image after a timeout counts only for a digest-qualified ref;
+  a mutable tag needs a successful pull before it can be reused.
+  Those ensure steps have a 13-minute bound so the 540-second download, the extract
+  resume, and login plus manifest inspection fit under the step cap. The job cap
+  stays 20 minutes. The `release-oci-build-tag` matrix permits six parallel legs;
+  each uses a run- and image-specific candidate suffix so shared Docker daemons
+  keep their intermediate images and cleanup separate.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
@@ -62,6 +78,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
+- **Alchemy test worker limit.** The Alchemy suite caps Vitest at one worker. Some
+  integration fixtures compile the adapter into separate temporary directories;
+  running those compilers concurrently can exceed their subprocess deadline on a
+  shared runner. The native-await fixture gives its compiler 90 seconds and its
+  complete test 120 seconds, so a loaded runner can finish the same assertions.
 - **Job disk headroom.** On a self-hosted runner, the first `ci-runner-preflight` step runs
   `scripts/ci/runner-job-disk-prune.mts`. It samples free bytes with `df` on Docker's data root
   (`docker info -f {{.DockerRootDir}}`) and on `GITHUB_WORKSPACE`. If either is below

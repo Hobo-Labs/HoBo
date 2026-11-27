@@ -203,9 +203,8 @@ function tokenize(source: string): Token[] {
 			at += number[0].length;
 			continue;
 		}
-		const name = /^[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*/u.exec(
-			rest,
-		);
+		const name =
+			/^[A-Za-z_][A-Za-z0-9_-]*(\.(?:\*|[A-Za-z_][A-Za-z0-9_-]*))*/u.exec(rest);
 		if (name) {
 			tokens.push({ kind: "name", text: name[0] });
 			at += name[0].length;

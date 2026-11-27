@@ -15,7 +15,7 @@ jobs:
   hello-bindle-fixture:
     name: hello-bindle sandbox fixture (simulate)
     if: >-
-      (github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false) &&
       (github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
       contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))
@@ -56,7 +56,7 @@ jobs:
     name: hello-bindle fixture quarantine (simulate)
     if: >-
       github.event_name == 'pull_request' &&
-      (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) &&
+      (github.event.pull_request.draft == false) &&
       contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
     runs-on: hobo
     timeout-minutes: 20
