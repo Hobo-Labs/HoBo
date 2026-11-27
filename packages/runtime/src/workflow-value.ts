@@ -109,12 +109,10 @@ export function parseRunStartedFact(data: JsonValue): ParsedRunStarted {
 		new Set(["args", "seed", "workflowName", "commandTreeVersion"]),
 		"invalid run.Started",
 	);
-	// Version 3 is the command tree this reader implements. Older writers
-	// stored it on run.Started; current writers omit it. Any other version
-	// is a different contract and stays refused.
+	const implementedCommandTreeVersion = 3;
 	if (
 		Object.hasOwn(data, "commandTreeVersion") &&
-		data.commandTreeVersion !== 3
+		data.commandTreeVersion !== implementedCommandTreeVersion
 	) {
 		throw new TypeError("invalid run.Started");
 	}
@@ -232,8 +230,6 @@ export function parseRunSleepScheduledFact(
 	}
 	if (!Object.hasOwn(data, "index") || !isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.SleepScheduled");
-	// A deadline may be omitted when a later run.SleepDeadlineSet supplies it.
-	// One timestamp without the other is still a corrupt record.
 	const hasScheduledAt = Object.hasOwn(data, "scheduledAtMs");
 	const hasDeadline = Object.hasOwn(data, "deadlineMs");
 	if (hasScheduledAt !== hasDeadline) {
