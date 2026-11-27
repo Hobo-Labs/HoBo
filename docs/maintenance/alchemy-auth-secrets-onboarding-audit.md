@@ -113,6 +113,8 @@ This audit targets **HoBo product auth** — the **`hobo:auth` bundle + deploy/o
 
 **Status:** Descriptor, parse boundaries, claims mapping, PACT (pact_only). **No** `better-auth` npm dependency, **no** HTTP server, **no** migrations, **no** route mount.
 
+Shared planning vocabulary (`parseBetterAuthConfig`, locator parse, descriptor, runtime gate) lives in **`@hobo/auth-adapter-contract`** so `@hobo/pack-better-auth` can compose the issuer without adapter-to-adapter imports.
+
 Documented honest scope: [`packages/adapters/adapter-better-auth/README.md`](../../packages/adapters/adapter-better-auth/README.md).
 
 ADR-0161 decisions already recorded:
