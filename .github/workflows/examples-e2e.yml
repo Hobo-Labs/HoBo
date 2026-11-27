@@ -3,7 +3,7 @@ name: HoBo Examples E2E
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:

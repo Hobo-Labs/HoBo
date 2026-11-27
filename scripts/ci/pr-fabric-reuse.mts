@@ -85,7 +85,6 @@ export type PrFabricDecision = Readonly<{
 export const AWAITING_EVIDENCE_REASON =
 	"the merge-group head commit could not be read";
 
-/** The route job's name on the Actions jobs API. Only an executed route uploads `pr-fabric-tested`. */
 export const ROUTE_JOB_NAME = "Route runners";
 
 export type RunJob = Readonly<{
@@ -156,12 +155,6 @@ function routeJobSucceeded(jobs: readonly RunJob[] | undefined): boolean {
 	);
 }
 
-/**
- * A pull_request conclusion of success is not evidence the route ran: a draft
- * whose jobs were all skipped can still conclude success. Reuse needs the
- * route job's success on the jobs API, or the pr-fabric-tested artifact that
- * only an executed route uploads. Unreadable evidence is undefined, not a no.
- */
 async function executedRouteEvidence(
 	runId: number,
 	reads: Pick<PrFabricReads, "jobs" | "artifacts">,

@@ -17,7 +17,9 @@ Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers
 ## Draft pull request CI (Nov 2026)
 
 Pull request workflows listen only on `opened`, `synchronize`, `reopened`, and
-`ready_for_review`. The first routing job on each `pull_request`-triggered
+`ready_for_review` (`examples-e2e.yml` also listens on `labeled` so adding
+`hobo/e2e` or `hobo/e2e-quarantine` to a ready pull request can start those
+lanes; entry job conditions still skip drafts). The first routing job on each `pull_request`-triggered
 workflow carries `github.event_name != 'pull_request' || github.event.pull_request.draft == false`, so a draft schedules no runner jobs. Required aggregate gates
 (for example `pr-gate` in `hobo-ci.yml`) run only when the pull request is not a
 draft; their scripts fail closed if prerequisites were skipped without an

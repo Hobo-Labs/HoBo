@@ -734,6 +734,11 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 	"ready_for_review",
 ] as const;
 
+export const ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES = new Map<
+	string,
+	readonly string[]
+>([["examples-e2e.yml", ["labeled"]]]);
+
 export const CANONICAL_ENTRY_JOB_DRAFT_IF =
 	"github.event_name != 'pull_request' || github.event.pull_request.draft == false";
 
@@ -898,12 +903,19 @@ function lintPullRequestDraftPolicy(
 	}
 	if (types.length > 0) {
 		const canonical = [...REQUIRED_PULL_REQUEST_TYPES];
-		const canonicalSet = new Set<string>(canonical);
-		const extra = effective.filter((type) => !canonicalSet.has(type));
+		const allowed = new Set<string>([
+			...canonical,
+			...(ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES.get(file) ?? []),
+		]);
+		const extra = effective.filter((type) => !allowed.has(type));
 		const missing = canonical.filter((type) => !effective.includes(type));
 		if (extra.length > 0 || missing.length > 0) {
+			const allowedLabel = [
+				...canonical,
+				...(ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES.get(file) ?? []),
+			].join(", ");
 			errors.push(
-				`${file}: pull_request.types must match ${canonical.join(", ")} (have: ${effective.join(", ")})`,
+				`${file}: pull_request.types must match ${allowedLabel} (have: ${effective.join(", ")})`,
 			);
 		}
 	}

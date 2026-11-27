@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateExpression } from "../ci/attested-jobs.mts";
 import {
+	ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES,
 	CANONICAL_ENTRY_JOB_DRAFT_IF,
 	draftGateEntryJobs,
 	jobLevelIfHasRequiredDraftGate,
@@ -276,6 +277,33 @@ describe("draft pull request CI policy", () => {
 			block,
 			/\[ "\$\{ROUTE_RESULT:-\}" = "success" \] \|\| return 1/u,
 		);
+	});
+
+	it("allows labeled only on the examples E2E workflow for ready label-gated lanes", () => {
+		assert.deepEqual(
+			ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES.get("examples-e2e.yml"),
+			["labeled"],
+		);
+		const text = readFileSync(join(workflowDir, "examples-e2e.yml"), "utf8");
+		assert.match(text, /ready_for_review, labeled/);
+		assert.equal(
+			jobLevelIfHasRequiredDraftGate(
+				"examples-e2e.yml",
+				"hello-bindle-fixture",
+				jobBlockFromText(text, "hello-bindle-fixture"),
+			),
+			true,
+		);
+		const quarantine = jobBlockFromText(text, "hello-bindle-fixture-quarantine");
+		assert.equal(
+			jobLevelIfHasRequiredDraftGate(
+				"examples-e2e.yml",
+				"hello-bindle-fixture-quarantine",
+				quarantine,
+			),
+			true,
+		);
+		assert.match(quarantine.join("\n"), /hobo\/e2e-quarantine/);
 	});
 
 	it("rejects a pull_request.types list that still listens on labeled", async () => {

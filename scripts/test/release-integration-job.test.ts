@@ -204,7 +204,6 @@ describe("release integration pull-request and merge-queue lane", () => {
 			"synchronize",
 			"reopened",
 			"ready_for_review",
-			"labeled",
 		]);
 		assert.equal(pullRequest?.paths, undefined);
 		assert.equal(pullRequest?.branches, undefined);
