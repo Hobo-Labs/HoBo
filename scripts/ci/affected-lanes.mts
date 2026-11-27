@@ -6,9 +6,12 @@
  * every turbo task hashes (workspace, tsconfig and biome config, toolchain pins,
  * vendored sources) and any deleted package run the whole workspace. Root
  * package.json and turbo.json edits are compared with their base: scripts-only
- * manifest edits and root `//#` task edits do not change workspace package
- * tasks. globalDependencies edits, every other edit to those files, or a missing
- * or unparsable base/head run the whole workspace.
+ * manifest edits, root `//#` task edits, and package-qualified task edits
+ * (`@scope/name#task`) do not change every workspace package's tasks. A
+ * package-qualified task selects that package. globalDependencies edits,
+ * shared task edits, every other edit to those files, or a missing or
+ * unparsable base/head run the whole workspace. A package-qualified task
+ * whose package is not exactly one workspace package does too.
  * `mise.toml` and `mise.lock` are compared with their base too: a pin of a tool
  * no workspace task runs (the secret scanner, the shell linter, the SBOM tool)
  * changes the runner image, not a package's build or test. Any other edit to
@@ -27,7 +30,8 @@
  * mainGateScope). Omitting `--base` retains fail-closed path-only behavior.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { posix } from "node:path";
 import process from "node:process";
 
 export type AffectedLanes =
@@ -96,32 +100,113 @@ function jsonEqual(
 	);
 }
 
-function rootConfigIsPackageLaneInput(
-	path: RootConfigPath,
-	readRootFile: ReadRootFile | undefined,
-): boolean {
+function rootManifestWidens(readRootFile: ReadRootFile | undefined): boolean {
 	if (!readRootFile) return true;
-	const base = parseRootObject(readRootFile(path, "base"));
-	const head = parseRootObject(readRootFile(path, "head"));
+	const base = parseRootObject(readRootFile("package.json", "base"));
+	const head = parseRootObject(readRootFile("package.json", "head"));
 	if (!base || !head) return true;
 	const keys = new Set([...Object.keys(base), ...Object.keys(head)]);
-	const differing = [...keys].filter((key) => !jsonEqual(base[key], head[key]));
-	if (path === "package.json")
-		return differing.some((key) => key !== "scripts");
-	return differing.some((key) => {
-		if (key !== "tasks") return true;
-		const baseTasks = base.tasks;
-		const headTasks = head.tasks;
-		if (!isJsonObject(baseTasks) || !isJsonObject(headTasks)) return true;
-		const taskKeys = new Set([
-			...Object.keys(baseTasks),
-			...Object.keys(headTasks),
-		]);
-		return [...taskKeys].some(
-			(task) =>
-				!task.startsWith("//#") && !jsonEqual(baseTasks[task], headTasks[task]),
-		);
-	});
+	return [...keys].some(
+		(key) => key !== "scripts" && !jsonEqual(base[key], head[key]),
+	);
+}
+
+/**
+ * Package names whose turbo task definitions changed, or `undefined` when the
+ * edit can change every package (shared task, globalDependencies, globalEnv,
+ * a missing or unparsable side). Root `//#` tasks are omitted: no workspace
+ * package runs them. A measured package override changes that one package.
+ */
+function turboPackageNames(
+	readRootFile: ReadRootFile | undefined,
+): readonly string[] | undefined {
+	if (!readRootFile) return undefined;
+	const base = parseRootObject(readRootFile("turbo.json", "base"));
+	const head = parseRootObject(readRootFile("turbo.json", "head"));
+	if (!base || !head) return undefined;
+	const keys = new Set([...Object.keys(base), ...Object.keys(head)]);
+	for (const key of keys) {
+		if (key === "tasks") continue;
+		if (!jsonEqual(base[key], head[key])) return undefined;
+	}
+	const baseTasks = base.tasks;
+	const headTasks = head.tasks;
+	if (jsonEqual(baseTasks, headTasks)) return [];
+	if (!isJsonObject(baseTasks) || !isJsonObject(headTasks)) return undefined;
+	const packages = new Set<string>();
+	const taskKeys = new Set([
+		...Object.keys(baseTasks),
+		...Object.keys(headTasks),
+	]);
+	for (const task of taskKeys) {
+		if (jsonEqual(baseTasks[task], headTasks[task])) continue;
+		if (task.startsWith("//#")) continue;
+		const hash = task.indexOf("#");
+		// A shared task (`build`, `test`) has no package. `#task` is not one.
+		if (hash <= 0) return undefined;
+		packages.add(task.slice(0, hash));
+	}
+	return [...packages];
+}
+
+let cachedPackageDirs: Map<string, string> | undefined;
+
+/** Repo-relative directory of a workspace package, if exactly one exists. */
+function workspacePackageDir(name: string): string | undefined {
+	cachedPackageDirs ??= indexWorkspacePackages();
+	const dir = cachedPackageDirs.get(name);
+	return dir === undefined || dir === "" ? undefined : dir;
+}
+
+function indexWorkspacePackages(): Map<string, string> {
+	const yaml = readFileSync(
+		new URL("../../pnpm-workspace.yaml", import.meta.url),
+		"utf8",
+	);
+	const block = /^packages:\n((?:[ \t]+-[^\n]*\n)+)/m.exec(yaml)?.[1] ?? "";
+	const patterns = [...block.matchAll(/-\s*["']?([^"'\n]+?)["']?\s*$/gm)]
+		.map((match) => match[1] ?? "")
+		.filter((pattern) => pattern !== "" && !pattern.startsWith("!"));
+	const map = new Map<string, string>();
+	for (const pattern of patterns) {
+		for (const dir of expandWorkspacePattern(pattern)) {
+			const manifestPath = posix.join(dir, "package.json");
+			if (!existsSync(manifestPath)) continue;
+			let packageName: string | undefined;
+			try {
+				const value: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+				if (isJsonObject(value) && typeof value.name === "string")
+					packageName = value.name;
+			} catch {
+				continue;
+			}
+			if (packageName === undefined) continue;
+			const prior = map.get(packageName);
+			map.set(packageName, prior !== undefined && prior !== dir ? "" : dir);
+		}
+	}
+	return map;
+}
+
+function expandWorkspacePattern(pattern: string): readonly string[] {
+	let dirs = ["."];
+	for (const segment of pattern.split("/")) {
+		if (segment === "") continue;
+		if (segment === "*") {
+			dirs = dirs.flatMap((dir) => {
+				try {
+					return readdirSync(dir, { withFileTypes: true })
+						.filter((entry) => entry.isDirectory())
+						.map((entry) => posix.join(dir, entry.name));
+				} catch {
+					return [];
+				}
+			});
+			continue;
+		}
+		dirs = dirs.map((dir) => posix.join(dir, segment));
+	}
+	return dirs;
 }
 
 /**
@@ -241,6 +326,7 @@ export function affectedLanes(
 	if (changed.length === 0)
 		return { mode: "all", reason: "empty diff (base unresolved?)" };
 	const dirs = new Set<string>();
+	const turboPackages = new Set<string>();
 	let lockfileChanged = false;
 	for (const path of changed) {
 		if (path.split("/").some((part) => part === ".." || part === "."))
@@ -259,11 +345,15 @@ export function affectedLanes(
 			dirs.add(dir);
 			continue;
 		}
-		if (
-			(path === "package.json" || path === "turbo.json") &&
-			rootConfigIsPackageLaneInput(path, readRootFile)
-		)
+		if (path === "package.json" && rootManifestWidens(readRootFile))
 			return { mode: "all", reason: `workspace-wide input changed: ${path}` };
+		if (path === "turbo.json") {
+			const names = turboPackageNames(readRootFile);
+			if (names === undefined)
+				return { mode: "all", reason: `workspace-wide input changed: ${path}` };
+			for (const name of names) turboPackages.add(name);
+			continue;
+		}
 		if (
 			path === "mise.toml" &&
 			!toolchainIsPackageLaneInput(path, readRootFile)
@@ -275,6 +365,17 @@ export function affectedLanes(
 			lockfileChanged = true;
 			continue;
 		}
+	}
+	for (const name of [...turboPackages].sort()) {
+		const dir = workspacePackageDir(name);
+		if (dir === undefined)
+			return {
+				mode: "all",
+				reason: `turbo.json task names a package outside the workspace: ${name}`,
+			};
+		if (!exists(`${dir}/package.json`))
+			return { mode: "all", reason: `${dir} removed or not a package` };
+		dirs.add(dir);
 	}
 	if (dirs.size === 0) {
 		if (lockfileChanged)
