@@ -1721,7 +1721,6 @@ jobs:
         pnpm-workspace.yaml
         turbo.json
         tsconfig.base.json
-        .env.example
         .gitattributes
         .gitignore
         .betterleaks.toml

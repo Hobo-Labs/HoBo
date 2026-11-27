@@ -608,6 +608,7 @@ const TRUNK_EVENTS = new Set([
 	"workflow_dispatch",
 	"merge_group",
 	"workflow_run",
+	"schedule",
 ]);
 
 function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
