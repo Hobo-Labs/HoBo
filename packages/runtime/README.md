@@ -591,3 +591,9 @@ caller must persist across restarts.
 The durable messaging boundary captures its array mapping intrinsic before
 processing Bindle graphs and provider results. Later changes to
 `Array.prototype.map` cannot change the grants or mapped message data.
+
+The internal durable queue component boundary copies request bodies and
+attributes and checks operation identities, UTF-8 sizes, batches, and lease
+bounds before a future queue host dispatches them. This parser does not bind a
+queue provider, authorize a component, enforce delay or operation-window timing,
+or establish durable outcomes.
