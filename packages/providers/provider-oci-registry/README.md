@@ -62,8 +62,9 @@ Anything else is refused by name rather than ignored.
 
    When a chunk receives HTTP 416, the uploader reads the registry's current
    offset and resumes from it, with at most three status recoveries per blob.
-   Invalid offsets and upload locations fail closed; the closing digest check
-   and subsequent observation still apply.
+   Further 416 responses open a fresh upload session and PUT the full blob
+   monolithically. Invalid offsets and upload locations fail closed; the
+   closing digest check and subsequent observation still apply.
 3. PUT each declared tag with the same bytes. A tag the desired state does not
    name is never written.
 4. Copy referrers (attestations, signatures, SBOMs) of the subject from the

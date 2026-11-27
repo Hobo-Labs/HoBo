@@ -476,11 +476,12 @@ describe("converge: copy from a source registry", () => {
 		}
 	});
 
-	it("bounds repeated upload range recovery", async () => {
+	it("falls back to a fresh monolithic upload when range recovery is exhausted", async () => {
 		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
 		const w = world();
 		seedImage(w, SOURCE, "ci/app", fixture);
 		let lookups = 0;
+		let monolithic = false;
 		const transport: HttpTransport = async (req) => {
 			if (
 				req.method === "PATCH" &&
@@ -495,15 +496,25 @@ describe("converge: copy from a source registry", () => {
 					body: "",
 				};
 			}
+			if (
+				req.method === "PUT" &&
+				req.url.includes("/blobs/uploads/") &&
+				req.headers["content-length"] !== "0"
+			) {
+				monolithic = true;
+			}
 			return w.transport(req);
 		};
-		await expect(
-			resolverOf({ chunkBytes: 1000 }).reconcile(request(fixture), transport),
-		).rejects.toThrow();
+		const result = await resolverOf({ chunkBytes: 1000 }).reconcile(
+			request(fixture),
+			transport,
+		);
+		expect(result.outputs.ready).toBe(true);
 		expect(lookups).toBe(3);
+		expect(monolithic).toBe(true);
 		expect(
 			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
-		).toBe(false);
+		).toBe(true);
 	});
 
 	it("does not publish a blob when a reported offset skips bytes", async () => {

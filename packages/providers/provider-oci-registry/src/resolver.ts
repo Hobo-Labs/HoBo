@@ -620,6 +620,44 @@ export function createOciRegistryResolvers(
 		return `${location}${location.includes("?") ? "&" : "?"}digest=${encodeURIComponent(digest)}`;
 	}
 
+	async function monolithicBlobUpload(
+		copy: Copy,
+		blob: Descriptor,
+		bytes: Uint8Array,
+		session: string | undefined,
+	): Promise<void> {
+		const scopes = push(copy.repository);
+		let location = session;
+		if (location === undefined) {
+			const started = await copy.target.send({
+				method: "POST",
+				path: `/v2/${copy.repository}/blobs/uploads/`,
+				scopes,
+				headers: { "content-length": "0" },
+			});
+			if (started.status !== 202)
+				unexpected(started, "POST", "start blob upload");
+			location = repositoryUploadLocation(copy, started);
+		}
+		const body = encodeBody(bytes, encoding);
+		if (body === undefined)
+			rejected(
+				`blob ${blob.digest} is binary and the host transport carries UTF-8 text`,
+				"mount from the same registry, or run with transportBodyEncoding 'latin1' on a byte transport",
+			);
+		const done = await copy.target.send({
+			method: "PUT",
+			path: withDigest(location, blob.digest),
+			scopes,
+			headers: {
+				"content-type": "application/octet-stream",
+				"content-length": String(bytes.byteLength),
+			},
+			body,
+		});
+		if (done.status !== 201) unexpected(done, "PUT", "upload blob");
+	}
+
 	async function upload(
 		copy: Copy,
 		blob: Descriptor,
@@ -640,23 +678,7 @@ export function createOciRegistryResolvers(
 			location = repositoryUploadLocation(copy, started);
 		}
 		if (bytes.byteLength <= chunkBytes) {
-			const body = encodeBody(bytes, encoding);
-			if (body === undefined)
-				rejected(
-					`blob ${blob.digest} is binary and the host transport carries UTF-8 text`,
-					"mount from the same registry, or run with transportBodyEncoding 'latin1' on a byte transport",
-				);
-			const done = await copy.target.send({
-				method: "PUT",
-				path: withDigest(location, blob.digest),
-				scopes,
-				headers: {
-					"content-type": "application/octet-stream",
-					"content-length": String(bytes.byteLength),
-				},
-				body,
-			});
-			if (done.status !== 201) unexpected(done, "PUT", "upload blob");
+			await monolithicBlobUpload(copy, blob, bytes, location);
 			return;
 		}
 		if (encoding !== "latin1")
@@ -703,6 +725,10 @@ export function createOciRegistryResolvers(
 				location = repositoryUploadLocation(copy, status);
 				start = end + 1;
 				continue;
+			}
+			if (patched.status === 416) {
+				await monolithicBlobUpload(copy, blob, bytes, undefined);
+				return;
 			}
 			if (patched.status !== 202) unexpected(patched, "PATCH", "upload chunk");
 			location = repositoryUploadLocation(copy, patched);
