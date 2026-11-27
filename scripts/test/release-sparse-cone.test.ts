@@ -14,8 +14,8 @@ import {
 	requiredPathsForHoboReleasePages,
 	requiredPathsForTsAutocodeReleaseContract,
 	rootVitestSetupFiles,
-	splitSparseCheckoutPaths,
 	sparsePathLooksLikeNestedFile,
+	splitSparseCheckoutPaths,
 	tsAutocodeReleaseSparseCones,
 } from "../lib/release-sparse-cone.mts";
 
@@ -34,24 +34,6 @@ function parseWorkflowEnvMultiline(
 		.split("\n")
 		.map((line) => line.replace(/^    /, "").trimEnd())
 		.filter((line) => line.length > 0);
-}
-
-/** The sparse-checkout block of one job; the route job has a small one of its own. */
-function parseInlineSparseCheckout(
-	workflowText: string,
-	jobId: string,
-): string[] {
-	const marker = "sparse-checkout: |";
-	const job = workflowText.indexOf(`\n  ${jobId}:\n`);
-	if (job < 0) throw new Error(`workflow missing job ${jobId}`);
-	const start = workflowText.indexOf(marker, job);
-	if (start < 0) {
-		throw new Error("workflow missing sparse-checkout block");
-	}
-	return parseMultilineBlockAfterMarker(
-		workflowText.slice(start + marker.length),
-		"            ",
-	);
 }
 
 /** Paths from a job's hobo-checkout `sparse-paths:` (inline block or env ref). */
@@ -439,7 +421,7 @@ describe("release workflow sparse-checkout sync", () => {
 	});
 
 	it("release-ts-autocode sparse-checkout matches canonical cone", () => {
-		const inWorkflow = parseInlineSparseCheckout(
+		const inWorkflow = parseJobHoboCheckoutSparsePaths(
 			tsWorkflow,
 			"ts-autocode-release-contract",
 		);

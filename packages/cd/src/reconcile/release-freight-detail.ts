@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { RESOLVER_ERROR_CODES } from "@hobo/core";
 import {
 	JWT_DETECTOR,
 	PRIVATE_KEY_DETECTOR,
@@ -8,6 +9,10 @@ import {
 	type ReasonStructuredDetail,
 	ReasonStructuredDetailSchema,
 } from "../_generated/cd_pb.js";
+import {
+	formatOciBlockedDetail,
+	validateOciReasonStructuredDetail,
+} from "./release-oci-detail.js";
 
 export const RELEASE_FREIGHT_DETAIL_KINDS = [
 	"scope-not-allowed",
@@ -15,6 +20,15 @@ export const RELEASE_FREIGHT_DETAIL_KINDS = [
 	"repository-mismatch",
 	"missing-GITHUB_REPOSITORY",
 	"missing-GITHUB_TOKEN",
+	"github-credential-rejected",
+	"github-permission-missing",
+	"github-rate-limited",
+	"github-pages-disabled",
+	"github-pages-source-mismatch",
+	"github-ref-not-fast-forward",
+	"github-pages-build-errored",
+	"github-pages-deployment-failed",
+	"github-pages-artifact-unavailable",
 ] as const;
 
 export type ReleaseFreightDetailKind =
@@ -30,6 +44,7 @@ const MAX_CREDENTIAL_REF_LEN = 153;
 const MAX_SCOPE_LEN = 138;
 
 const RELEASE_FREIGHT_VERDICT_CODE = /^[a-z0-9][a-z0-9._:-]{0,63}$/u;
+const RESOLVER_VERDICT_CODES = new Set<string>(RESOLVER_ERROR_CODES);
 
 const GH_TOKEN_PREFIX =
 	/(?:^|[^A-Za-z0-9_])(?:npm_|ghp_|ghu_|ghs_|ghr_|github_pat_)/u;
@@ -112,6 +127,8 @@ export function validateReasonStructuredDetail(
 	detail: ReasonStructuredDetail | undefined,
 ): ReasonStructuredDetail | undefined {
 	if (!detail) return undefined;
+	const oci = validateOciReasonStructuredDetail(detail);
+	if (oci) return oci;
 	const credentialRef = detail.credentialRef?.trim() ?? "";
 	const requestedScope = detail.requestedScope?.trim() ?? "";
 	const kind = releaseFreightDetailKindOf(detail.detailKind?.trim() ?? "");
@@ -134,6 +151,8 @@ export function formatReleaseFreightBlockedDetail(
 ): string {
 	const validated = validateReasonStructuredDetail(detail);
 	if (!validated) return code.trim() || "unknown";
+	if (validated.detailKind.startsWith("oci-"))
+		return formatOciBlockedDetail(code, validated);
 	if (validated.detailKind === "repository-mismatch") {
 		const scope = validated.requestedScope;
 		const expectedRepository = scope.startsWith("github-app://")
@@ -141,6 +160,8 @@ export function formatReleaseFreightBlockedDetail(
 			: scope;
 		return `${code}: credential=${validated.credentialRef} expected-repository=${expectedRepository} repository-mismatch`;
 	}
+	if (validated.detailKind.startsWith("github-"))
+		return `${code}: provider=github pages-reason=${validated.detailKind} scope=${validated.requestedScope} credential=${validated.credentialRef}`;
 	return `${code}: credential=${validated.credentialRef} scope=${validated.requestedScope} ${validated.detailKind}`;
 }
 
@@ -314,9 +335,22 @@ export function sanitizeReleaseFreightVerdictCodes(
 ): string[] {
 	return codes
 		.map((code) => code.replaceAll(/[\r\n]/gu, "").trim())
-		.filter(
-			(code) => code.length > 0 && RELEASE_FREIGHT_VERDICT_CODE.test(code),
-		);
+		.filter((code) => {
+			if (code.length === 0) return false;
+			if (RESOLVER_VERDICT_CODES.has(code)) return true;
+			return RELEASE_FREIGHT_VERDICT_CODE.test(code);
+		});
+}
+
+export function releaseFreightVerdictCodesForAnnounce(
+	codes: readonly string[],
+	message: string,
+): string[] {
+	const sanitized = sanitizeReleaseFreightVerdictCodes(codes);
+	if (sanitized.length > 0) return sanitized;
+	const trimmed = message.trim();
+	if (RESOLVER_VERDICT_CODES.has(trimmed)) return [trimmed];
+	return [];
 }
 
 export function releaseFreightLogFragment(text: string | undefined): string {

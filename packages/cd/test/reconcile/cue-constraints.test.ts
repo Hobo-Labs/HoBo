@@ -169,6 +169,93 @@ describe.skipIf(!cue)("data-models/reconcile.cue", () => {
 				detailKind: "repository-mismatch",
 			}).ok,
 		).toBe(false);
+		const pagesReject = validateReasonStructuredDetail({
+			credentialRef: "github-app://Hobo-Labs/HoBo",
+			requestedScope: "cd-realize:hobo-release/pages-candidate",
+			detailKind: "github-permission-missing",
+		});
+		if (!pagesReject)
+			throw new Error("expected github pages structured fixture");
+		expect(
+			vet(
+				"ReasonStructuredDetail",
+				toJson(ReasonStructuredDetailSchema, pagesReject),
+			).ok,
+		).toBe(true);
+		const ociReject = validateReasonStructuredDetail({
+			credentialRef: "owner://GHCR_PUBLISH",
+			requestedScope: "POST:403",
+			detailKind: "oci-http-status",
+		});
+		if (!ociReject) throw new Error("expected oci structured fixture");
+		expect(
+			vet(
+				"ReasonStructuredDetail",
+				toJson(ReasonStructuredDetailSchema, ociReject),
+			).ok,
+		).toBe(true);
+	});
+
+	it("accepts each oci structured shape and rejects secret-bearing scopes", () => {
+		const labels = (length: number) => {
+			const parts: string[] = [];
+			let left = length;
+			while (left > 0) {
+				if (left <= 63) {
+					parts.push("a".repeat(left));
+					break;
+				}
+				parts.push("a".repeat(63));
+				left -= 64;
+			}
+			return parts.join(".");
+		};
+		const accepted: readonly (readonly [string, string])[] = [
+			["oci-upload-foreign-host", "foreign-host"],
+			["oci-upload-path", "blob-upload-path"],
+			["oci-http-status", "POST:403"],
+			["oci-http-status", "DELETE:500"],
+			["oci-blob-size", "over-transport-bound"],
+			["oci-blob-not-observed", "post-upload"],
+			["oci-credential-refused", "cd-realize:hobo-release/oci-candidate"],
+		];
+		for (const [detailKind, requestedScope] of accepted) {
+			const structured = validateReasonStructuredDetail({
+				credentialRef: "owner://GHCR_PUBLISH",
+				requestedScope,
+				detailKind,
+			});
+			expect(structured, detailKind).toBeDefined();
+			if (!structured) continue;
+			const result = vet(
+				"ReasonStructuredDetail",
+				toJson(ReasonStructuredDetailSchema, structured),
+			);
+			expect(result.ok, `${detailKind} ${result.output}`).toBe(true);
+		}
+		const rejected: readonly (readonly [string, string])[] = [
+			[
+				"oci-upload-foreign-host",
+				"https://evil.example/v2/blobs/uploads/abc?_state=sekret",
+			],
+			["oci-upload-foreign-host", labels(254)],
+			["oci-upload-foreign-host", labels(253)],
+			["oci-upload-foreign-host", "upload.foreign.test"],
+			["oci-upload-path", "POST:403"],
+			["oci-http-status", "upload.foreign.test"],
+			["oci-credential-refused", "registry-basic"],
+			["oci-blob-size", "post-upload"],
+		];
+		for (const [detailKind, requestedScope] of rejected) {
+			expect(
+				vet("ReasonStructuredDetail", {
+					credentialRef: "owner://GHCR_PUBLISH",
+					requestedScope,
+					detailKind,
+				}).ok,
+				detailKind,
+			).toBe(false);
+		}
 	});
 
 	it("rejects a BLOCKED observation without a reason and a malformed drift kind", () => {

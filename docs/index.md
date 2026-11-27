@@ -16,6 +16,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
 | Root test shards | [`ci/unit-test-shards.md`](./ci/unit-test-shards.md) | Maintaining Turbo inputs for root unit test shards. |
 | Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
+| Alchemy auth audit | [`maintenance/alchemy-auth-secrets-onboarding-audit.md`](./maintenance/alchemy-auth-secrets-onboarding-audit.md) | Maps Alchemy auth/secrets/Better Auth/Domain/testing docs to HoBo's current auth, secrets, and onboarding code (2026-11-25). |
 
 ## Reference directories outside `docs/`
 
@@ -25,6 +26,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | [`competitors/`](./competitors/index.md) | Product and platform positioning references. |
 | [`patterns/`](./patterns/index.md) | Architecture/operations patterns used by HoBo decisions. |
 | [`runbooks/cd/`](./runbooks/cd/index.md) | HoBo.CD operator runbooks, assembled from each `@hobo/cd` module's Runbook section ([design](./design/continuous-delivery.md)). |
+| [`cd/`](./cd/index.md) | HoBo.CD parity and maintenance references (Kargo / Argo CD gap analysis). |
 | [`standards/`](./standards/index.md) | External standards referenced by design decisions. |
 | [`technologies/`](./technologies/index.md) | Technology notes for adapters, engines, and possible implementation choices. |
 | [`archive/`](./archive/) | Deferred or superseded planning artifacts. |

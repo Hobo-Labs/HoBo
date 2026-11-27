@@ -3,6 +3,7 @@ name: ts-autocode release (HoBo pins cone)
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - "tools/pins/siblings.json"
       - "scripts/bootstrap-siblings.mts"
@@ -19,6 +20,20 @@ on:
 permissions:
   contents: read
 
+env:
+  TS_AUTOCODE_SPARSE_PATHS: |
+    .github
+    scripts
+    packages
+    tools/pins
+    external
+    package.json
+    pnpm-lock.yaml
+    pnpm-workspace.yaml
+    .mise/locks
+    mise.toml
+    mise.lock
+
 concurrency:
   group: ts-autocode-release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -26,6 +41,7 @@ concurrency:
 jobs:
   route:
     name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
     # it is choosing against. The fleet while it takes jobs, an enrolled local
     # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
@@ -77,25 +93,19 @@ jobs:
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          clean: false
           fetch-depth: 1
           filter: blob:none
-          sparse-checkout: |
-            .github
-            scripts
-            packages
-            tools/pins
-            external
-            package.json
-            pnpm-lock.yaml
-            pnpm-workspace.yaml
-            .mise/locks
-            mise.toml
-            mise.lock
+          sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          sparse-paths: ${{ env.TS_AUTOCODE_SPARSE_PATHS }}
           submodules: recursive
-          clean: false
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode sparse cone
         run: pnpm run pins:fetch ts-autocode

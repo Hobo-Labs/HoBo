@@ -29,16 +29,11 @@ const YARD = {
 // release on the target, stable re-observes the same Freight there and
 // qualifies it (promote, never rebuild).
 const BINDING = {
-	// npmjs with the hobodev automation token and provenance required: the
-	// release job signs each tarball's Sigstore bundle and records it in the
-	// Freight (scripts/ci/publish-npm-sdk.mts); the realizer attaches it to the
-	// publish. Token auth, because npm's OIDC exchange routes only for the
-	// escaped scope separator, which the transport guard refuses.
 	npm: {
 		"hobo.cd/npm.registry": "npmjs",
-		"hobo.cd/npm.auth": "token",
+		"hobo.cd/npm.auth": "oidc-trusted-publishing",
 		"hobo.cd/npm.provenance": "required",
-		"hobo.cd/credential-ref": "owner://NPM_TOKEN",
+		"hobo.cd/credential-ref": "github-actions://npm-oidc",
 	},
 	oci: {
 		"hobo.cd/oci.registry": "ghcr.io",

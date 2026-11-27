@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { parseArgv } from "../src/shell/parse.js";
 
-/**
- * `hobo serve control --demo` (ADR-0147): demo mode must be reachable from the
- * CLI, not only from env vars, and must stay scoped to the serve verb so it
- * can never silently apply to a real deploy.
- */
 describe("serve control flags", () => {
 	it("parses --demo, --demo-seed, --port and --host for the serve verb", () => {
 		const request = parseArgv([

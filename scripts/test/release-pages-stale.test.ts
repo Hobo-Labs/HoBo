@@ -10,7 +10,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadReleaseHoboPullRequestPathFilters } from "../lib/release-hobo-path-filters.mts";
+import {
+	loadReleaseHoboPullRequestPathFilters,
+	loadReleasePagesPathFilters,
+	parseReleasePagesPathFilters,
+} from "../lib/release-hobo-path-filters.mts";
 import {
 	COMPARE_FILE_LIMIT,
 	decidePagesDeploy,
@@ -22,7 +26,7 @@ import {
 } from "../lib/release-pages-stale.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const filters = loadReleaseHoboPullRequestPathFilters(root);
+const filters = loadReleasePagesPathFilters(root);
 const deployed = "93d367d9a7f58bfd2a442ea5b607cf633ffc09f2";
 const head = "b13f2846000000000000000000000000000000aa";
 
@@ -80,10 +84,36 @@ describe("decidePagesDeploy", () => {
 			filters,
 			source: source(
 				`deploy: ${deployed}`,
-				ahead(["packages/ci/test/journal.test.ts", "docs/ci/performance.md"]),
+				ahead(["README.md", ".editorconfig"]),
 			),
 		});
 		expect(decision).toMatchObject({ deploy: false, deployedSha: deployed });
+	});
+
+	it.each([
+		"media/src/pages/index.astro",
+		"docs/ci/performance.md",
+		"packages/core/src/index.ts",
+		"examples/browser-runtime/wit/world.wit",
+		"site/src/pages/index.astro",
+		"version.json",
+	])("publishes changes in the Pages build inputs: %s", async (path) => {
+		const decision = await decidePagesDeploy({
+			head,
+			filters,
+			source: source(`deploy: ${deployed}`, ahead([path])),
+		});
+		expect(decision.deploy).toBe(true);
+	});
+
+	it("deploys conservatively if the Pages checkout inputs cannot be parsed", async () => {
+		const unknownFilters = parseReleasePagesPathFilters("env:\n");
+		const decision = await decidePagesDeploy({
+			head,
+			filters: unknownFilters,
+			source: source(`deploy: ${deployed}`, ahead(["unclassified/file"])),
+		});
+		expect(decision.deploy).toBe(true);
 	});
 
 	it("publishes when the changed-file list was cut off", async () => {
@@ -468,7 +498,11 @@ describe("release-hobo pages jobs", () => {
 	});
 
 	it("lists its own script and library among the release paths", () => {
-		expect(filters).toContain("scripts/lib/release-pages-stale.mts");
-		expect(filters).toContain("scripts/test/release-pages-stale.test.ts");
+		expect(loadReleaseHoboPullRequestPathFilters(root)).toContain(
+			"scripts/lib/release-pages-stale.mts",
+		);
+		expect(loadReleaseHoboPullRequestPathFilters(root)).toContain(
+			"scripts/test/release-pages-stale.test.ts",
+		);
 	});
 });

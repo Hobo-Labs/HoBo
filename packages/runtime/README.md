@@ -38,6 +38,270 @@ The glossary's "Runtime" entry records the same disambiguation.
 `WorkflowFailure` preserves an omitted step or cause as `undefined` rather than
 manufacturing placeholder values.
 
+## Durable messaging component hosts
+
+`@hobo/runtime/durable-messaging-host` adapts one host-authorized
+`DurableMessaging` port to the generated `hobo:durable-messaging` JavaScript
+interface. The caller binds the port to the authenticated tenant and durable
+instance; names and operation IDs supplied by a guest are not authorization.
+A mandatory host authority checks current access before dispatch and again before
+disclosing a response; the host must fence that authorization throughout each
+call, including in-flight work that outlives a timeout. Instance-scoped
+authorization is required for unfiltered audit events. The host issues a
+separate instance-metadata grant for asynchronous `limits()` disclosure only
+after authorizing the binding. Revocation is permanent for that grant; each
+regrant requires a fresh grant and binding, and the host must propagate revocation
+and fence in-flight work across processes. For `ensureSubscription`, the authorizer must authorize the supplied dead-letter
+destination write as well as the source group. For `consume` and `nack`, the
+authorizer must independently resolve the current subscription and authorize
+its dead-letter destination write, including expiry-driven transfer;
+source group permission alone is insufficient. Authorization is method-specific:
+topic-wide `publish` and `compact` grants cover every subject and message and
+all subscriptions affected by those operations. The callback does not receive
+message subjects, bodies or attributes and cannot enforce content-level policy.
+The adapter bounds and
+detaches each request and response, converts WIT `u64`
+values only when they fit a JavaScript safe integer, and checks receipt and
+lease scope. An invalid operation envelope traps before dispatch. Once a valid
+envelope is captured, malformed mutation data returns `unknown` for that exact
+operation because an earlier attempt may have committed. Invalid audit reads
+return `invalid-argument`. A lost reply, timeout, thrown provider call or
+contradictory mutation response likewise returns `unknown`; none is treated as a
+definite rejection.
+
+`createDurableTopicPolicy` provides a provider-independent allow list for
+application topic access. Each grant names a topic, whether publishing is
+allowed, and the exact consumer groups and dead-letter destinations allowed
+for subscriptions. It denies topic creation, compaction and unfiltered audit
+reads. Its `verify` callback receives the current request and the captured
+grant on dispatch and disclosure; the host must authenticate the principal and
+independently verify the current subscription and dead-letter authority. The
+policy snapshots its bounded grants and `revoke()` permanently denies access.
+Use its `authorize` function as the host authorizer; revoke the limits grant and
+fence in-flight work separately. A denied mutation returns `unknown` for its
+operation ID because an earlier attempt could have committed.
+
+`compileBindleTopicGrants` derives those grants from a Bindle application's
+topic dependency edges and each topic's declared `publish` and `subscribe`
+permissions. Supply one explicit runtime topic binding for every topic edge,
+including the consumer groups and dead-letter destinations for subscriptions.
+It rejects missing or extra bindings, duplicate runtime topic names and
+unconfigured subscriptions. It returns each source resource name alongside its
+grant so the host can attest the exact source-to-provider mapping. It does not
+provision topics, authenticate the Bindle or verify the provider's state.
+
+
+```ts
+import { bindle } from "@hobo/bindles";
+import {
+  compileBindleTopicGrants,
+  createDurableMessagingWitImports,
+  createDurableTopicPolicy,
+} from "@hobo/runtime/durable-messaging-host";
+
+const shop = bindle("shop", (b) => {
+  const orders = b.topic().allow("publish", "subscribe");
+  return { orders, web: b.web().dependsOn(orders) };
+});
+const bindings = compileBindleTopicGrants({
+  applicationName: "web",
+  resources: shop.resources,
+  edges: shop.edges,
+  bindings: [{
+    resourceName: "orders",
+    topic: "orders",
+    subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
+  }],
+});
+const topicPolicy = createDurableTopicPolicy({
+  grants: bindings.map((binding) => binding.grant),
+  verify: (claim) => host.verifyTopicBindingAndCurrentSubscription(bindings, claim),
+});
+
+const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
+  lifecycle,
+  limitsGrant,
+  authorize: topicPolicy.authorize,
+});
+```
+
+`createBindleTopicWitHost` connects that mapping to the asynchronous WIT host
+for any `DurableMessaging` port. Its verifier receives the exact port, Bindle and
+application names, resource binding, request and, for subscriptions, the configured group and
+dead-letter destination. The trusted host must independently authenticate the
+application, mapping, port and current provider state; a callback that simply
+returns true does not establish those facts. Revoking the returned host policy
+does not cancel an in-flight provider operation or revoke other processes.
+The returned immutable `bindings` identify the runtime topic for each declared
+resource, so a host can supply the mapping to the authenticated application.
+
+```ts
+import { createBindleTopicWitHost } from "@hobo/runtime/durable-messaging-host";
+
+const topicHost = createBindleTopicWitHost(authorizedMessagingPort, {
+  bindleName: shop.name,
+  applicationName: "web",
+  resources: shop.resources,
+  edges: shop.edges,
+  bindings: [{
+    resourceName: "orders",
+    topic: "orders",
+    subscriptions: [{ consumerGroup: "fulfillment", deadLetterTopic: "orders-dlq" }],
+  }],
+}, {
+  lifecycle,
+  limitsGrant,
+  verify: (claim) => host.verifyTopicBindingAndCurrentSubscription(claim),
+});
+// Expose topicHost.host to the authenticated asynchronous component instance.
+// Call topicHost.revoke() when its authority is revoked.
+```
+
+For JavaScript application logic, the authenticated host can pass
+`topicHost.topic("orders")` as the application's topic capability. The client
+uses the declared runtime topic and configured dead-letter destination; the
+application supplies a permitted consumer group and cannot substitute either.
+Its asynchronous inputs and outcomes use the WIT types, including `bigint`
+operation expiries. Create a distinct operation for each logical mutation and
+reuse it only when retrying that mutation.
+
+```ts
+import { durableMessagingOperation } from "@hobo/core";
+
+const orders = topicHost.topic("orders");
+const operation = durableMessagingOperation(host.expiryMs, host.randomNonce);
+const result = await orders.publish({
+  operation: { id: operation.id, expiresAtMs: BigInt(operation.expiresAtMs) },
+  message: { id: "order-1", subject: "created", payload: new Uint8Array([1]), attributes: [] },
+});
+// result.tag is committed, rejected, unknown or expired.
+```
+
+```ts
+import {
+  createDurableMessagingLifecycle,
+  createDurableMessagingLimitsGrant,
+  createDurableMessagingWitImports,
+} from "@hobo/runtime/durable-messaging-host";
+
+// Create these only after the host authenticates and authorizes the instance.
+const lifecycle = createDurableMessagingLifecycle({ maxInFlight: 128 });
+const limitsGrant = createDurableMessagingLimitsGrant();
+const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
+  lifecycle,
+  limitsGrant,
+  authorize: (request) => host.verifyMessagingAccess(binding, request),
+  timeoutMs: 30_000,
+});
+// On revocation, call limitsGrant.revoke() and revoke the host authority.
+// A JS component host supplies `imports` for the authenticated binding.
+```
+
+Ports with an accessor-backed `limits` field are rejected by default without
+running the accessor. A trusted embedding host can instead create a
+`createDurableMessagingPortMetadataGrant` for one exact port and a detached
+limits snapshot, with a synchronous verifier that independently authenticates
+the port, the entire snapshot and the current metadata authority. Pass that
+grant as `portMetadataGrant` when constructing the WIT host. The verifier is
+checked before metadata disclosure, before dispatch, and after provider work
+and disclosure authorization. Revoking the grant permanently closes that
+binding; a false or throwing verifier fails closed. Revocation must also be
+propagated to the provider's own metadata capability and other processes.
+The verifier is trusted host code, not proof of its own source, and cannot
+replace a held cross-process ownership fence, bounded stream disclosure or an
+independent watchdog for blocked synchronous callbacks.
+A synchronous metadata verifier must not return a promise. An ordinary native
+promise is observed and refused; exotic or proxied promises are refused without
+reading their thenables or constructors. The caller remains responsible for
+handling any rejection from an exotic promise.
+
+The host must isolate the JavaScript realm and its globals before loading the
+bridge and throughout its lifetime; the bridge captures selected intrinsics,
+but does not make an adversarial shared realm safe.
+
+Timeouts do not cancel provider work. An in-flight slot remains occupied until
+that work actually settles, even if the guest has already received `unknown`.
+Retry only the same operation against the same independently authenticated
+journal. After receipt expiry, fencing and draining previous attempts alone
+cannot establish noncommit: a separately authenticated noncommit proof is also
+needed before replacing the operation. Audit gaps or absent events do not prove
+failure. Hosts must enforce the port's durable receipts, authorization and clock
+requirements; validating the shape of a response cannot prove durability.
+A consume receipt may replay an already expired or superseded lease. Before a
+fenced handler effect, the host must independently verify current authorization
+and lease ownership; the bridge checks their shape and scope only. The embedding
+host must also bound component memory, call resources and serialized input
+before JCO materializes JavaScript values. Share a single lifecycle across all
+bindings for the authenticated instance in one process; `maxInFlight` applies
+to that lifecycle and is not a fleet-wide quota. A trusted durable host authority
+must enforce the corresponding cross-process fence and prevent a new lifecycle
+from bypassing unresolved work. Creating a new in-memory lifecycle does not prove
+old starts, calls, or executor credentials were fenced. Before replacement the
+host must independently fence and drain old executors and reconcile unresolved
+work, using authenticated noncommit evidence where noncommit is asserted.
+
+For JCO components, `instantiateDurableMessagingAsync` links the native
+`hobo:durable-messaging/messaging@0.1.0` asynchronous ABI using JSPI
+suspension. It refuses a runtime lacking `WebAssembly.Suspending` and
+`WebAssembly.promising`; Node 24 requires `--experimental-wasm-stack-switching`.
+The trusted verifier must independently bind the component digest, its complete
+import list, the supplied factory, its core Wasm modules and the exact branded
+host binding, including its principal, instance and grant epoch. The host must
+keep those artifacts and the binding immutable. Verification is a trusted,
+bounded, nonblocking synchronous callback; the start timeout cannot interrupt it and begins after verification.
+The adapter checks that the exact versioned interface is
+present before passing JCO's short alias solely to that verified factory.
+Configure JCO's JSPI transpiler to mark all nine imports and each
+guest entry point that can call them as asynchronous. For example, a host that
+has already identified the component and its factory can pass its independent
+verification capability:
+
+```ts
+import {
+  createDurableMessagingWitHost,
+  instantiateDurableMessagingAsync,
+} from "@hobo/runtime/durable-messaging-host";
+
+// Reuse the instance lifecycle and limits grant from the authorized binding.
+const messaging = createDurableMessagingWitHost(authorizedMessagingPort, {
+  lifecycle,
+  limitsGrant,
+  authorize: (request) => host.verifyMessagingAccess(binding, request),
+});
+const start = await instantiateDurableMessagingAsync(messaging, {
+  component: hostComponent,
+  verify: (candidate, bindingHost) => host.verifyComponentAndBinding(candidate, bindingHost),
+  timeoutMs: 30_000,
+});
+if (start.status === "started") {
+  const app = start.value;
+  // The host may invoke the verified component here.
+} else if (start.status === "busy") {
+  // This attempt did not start; the shared lifecycle is already in use.
+} else {
+  // Start effects are unknown; fence and reconcile before replacement.
+}
+```
+
+A timed-out or failed start, or a factory that finishes while an import remains
+active, returns `unknown` and permanently fences all bindings sharing that local
+lifecycle. In-flight operations remain counted until they settle; late
+verification cannot dispatch after the start deadline. The host must maintain an
+independently authenticated complete record of start-time operation identities
+and attempts, including those still in flight, or reconcile the whole fenced
+instance and journal before replacement. `started` only means the factory
+returned and no import remains active: it does not reconcile an import that
+already returned `unknown`. The guest and host must retain and reconcile such
+operations even when the factory ignores that result. A same-thread timer cannot
+interrupt synchronous JavaScript or Wasm that never yields. Run untrusted
+components under an independently enforceable worker or process watchdog with
+CPU and memory limits; after termination, fence the executor and reconcile any
+prior effects. The monotonic deadline detects an eventual late return but cannot
+produce a result while the event loop is blocked.
+
+This JCO/JSPI path executes native async WIT components. The existing Wasmtime
+subprocess and JSON-only local component host do not yet link this interface;
+this adapter does not enable those hosts by itself.
 
 ## Durable workflows
 
@@ -449,3 +713,28 @@ stateDiagram-v2
   s2 --> s1: resume with recorded deadline
   s1 --> s3: recheck deadline
 ```
+
+### Durable topic provisioning
+
+The asynchronous messaging host provisions each declared topic and its
+dead-letter journals through a provider-neutral administrative port. It checks
+the full bounded request before dispatch and returns completed, uncertain and
+unattempted work explicitly. Callers must persist operation identities and
+reuse them when reconciling uncertain outcomes. The finite provisioning model
+assumes that the selected provider honors idempotent replay.
+Its retry transition abstracts replay of previously confirmed operations before
+the operation whose outcome is unknown.
+
+A scoped topic host is exposed only after all of its declared journals are
+confirmed. Rejected or uncertain provisioning leaves the host unavailable.
+`prepareBindleTopicWitHost` performs that preparation using the caller's
+persisted operation identities. The host and provisioner use the same validated
+binding snapshot if caller-owned input changes during preparation.
+
+`createBindleTopicPreparation` shares concurrent and synchronously reentrant
+preparation attempts. Retries reuse the captured operation identities, which the
+caller must persist across restarts.
+
+The durable messaging boundary captures its array mapping intrinsic before
+processing Bindle graphs and provider results. Later changes to
+`Array.prototype.map` cannot change the grants or mapped message data.

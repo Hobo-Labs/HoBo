@@ -356,7 +356,7 @@ export class ControlModel {
 		capabilityId: string,
 		verbs: readonly Verb[],
 	): void {
-		const captured = captureVerbs(verbs);
+		const ownedVerbs = Object.freeze(checkedVerbs(verbs));
 		const existing = this.#capabilities.get(capabilityId);
 		if (existing && existing.tenantId !== tenantId) {
 			this.#advanceClock();
@@ -367,11 +367,11 @@ export class ControlModel {
 		this.#capabilities.set(capabilityId, {
 			id: capabilityId,
 			tenantId,
-			verbs: captured,
+			verbs: ownedVerbs,
 		});
 		this.#appendEvent(tenantId, "capability.added", {
 			capabilityId,
-			verbs: captured.join(","),
+			verbs: ownedVerbs.join(","),
 		});
 	}
 
@@ -380,7 +380,7 @@ export class ControlModel {
 		capabilityId: string,
 		keep: readonly Verb[],
 	): void {
-		const captured = captureVerbs(keep);
+		const ownedKeep = checkedVerbs(keep);
 		const cap = this.#capabilities.get(capabilityId);
 		if (!cap) return;
 		if (cap.tenantId !== tenantId) {
@@ -392,7 +392,7 @@ export class ControlModel {
 		}
 		this.#advanceClock();
 		const allowed = new Set(cap.verbs);
-		cap.verbs = captured.filter((verb) => allowed.has(verb));
+		cap.verbs = ownedKeep.filter((verb) => allowed.has(verb));
 		this.#appendEvent(cap.tenantId, "capability.attenuated", {
 			capabilityId,
 			verbs: cap.verbs.join(","),
@@ -666,10 +666,10 @@ export class ControlModel {
 		}
 	}
 
-	replay(): string {
+	replay(recorded?: readonly ModelEvent[]): string {
 		const copy = new ControlModel();
 		if (this.#replayBaseline !== undefined) copy.restore(this.#replayBaseline);
-		for (const event of this.#eventLog) {
+		for (const event of recorded ?? this.#eventLog) {
 			if (event.kind === "clock.advanced") {
 				copy.tick();
 			} else if (event.kind === "clock.set") {
@@ -785,13 +785,6 @@ function isVerb(value: SnapshotJson | undefined): value is Verb {
 	);
 }
 
-function captureVerbs(verbs: readonly Verb[]): Verb[] {
-	if (!Array.isArray(verbs)) throw new Error("fuzz.invalid_verbs");
-	const captured = [...verbs];
-	if (!captured.every(isVerb)) throw new Error("fuzz.invalid_verbs");
-	return captured;
-}
-
 function captureEventPayload(payload: Record<string, string>) {
 	if (!payload || Object(payload) !== payload || Array.isArray(payload)) {
 		throw new Error("fuzz.invalid_event_payload");
@@ -875,11 +868,23 @@ function tenantFingerprint(blob: SnapshotBlob, tenantId: string): string {
 	return scratch.fingerprint(tenantId);
 }
 
+function checkedVerbs(verbs: readonly Verb[]): Verb[] {
+	if (!Array.isArray(verbs)) throw new TypeError("invalid capability verb");
+	const owned = [...verbs];
+	if (!owned.every((verb) => isVerb(verb))) {
+		throw new TypeError("invalid capability verb");
+	}
+	return owned;
+}
+
 function parseVerbs(raw: string | undefined): Verb[] {
-	return (raw ?? "").split(",").filter((verb): verb is Verb =>
-		// SAFETY: ALL_VERBS is the runtime source for the Verb union.
-		(ALL_VERBS as readonly string[]).includes(verb),
-	);
+	if (raw === undefined) throw new TypeError("missing capability verbs");
+	if (raw === "") return [];
+	const verbs = raw.split(",");
+	if (!verbs.every((verb): verb is Verb => isVerb(verb))) {
+		throw new TypeError("invalid capability verb");
+	}
+	return verbs;
 }
 
 export function verdict(

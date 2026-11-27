@@ -104,6 +104,110 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 	);
 });
 
+function fabricJobBlock(workflow: string, job: string): string {
+	const lines = workflow.split("\n");
+	const start = lines.indexOf(`  ${job}:`);
+	assert.notEqual(start, -1, `missing job ${job}`);
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex((line) => /^  [A-Za-z0-9_-]+:$/u.test(line));
+	return lines
+		.slice(start, end < 0 ? lines.length : start + 1 + end)
+		.join("\n");
+}
+
+function hostedPlaywrightPreflightWithInputs(withBlock: string): boolean {
+	return (
+		/browser:\s*"true"/u.test(withBlock) &&
+		/save-playwright-cache:\s*\$\{\{\s*matrix\.shard == 0 && 'true' \|\| 'false' \}\}/u.test(
+			withBlock,
+		)
+	);
+}
+
+function assertFabricShardHostedPlaywrightPreflight(
+	workflow: string,
+	job: string,
+): void {
+	const block = fabricJobBlock(workflow, job);
+	const match = block.match(
+		/- uses: \$\/\.github\/actions\/ci-runner-preflight\n        with:\n((?:          [^\n]+\n)+)/u,
+	);
+	assert.ok(
+		match?.[1] && hostedPlaywrightPreflightWithInputs(match[1]),
+		`${job} must run ci-runner-preflight with browser: "true" and shard-0 save wiring`,
+	);
+}
+
+test("Fabric workspace shards always install pinned Chromium on hosted runners", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	const preflight = await readFile(
+		new URL(
+			"../.github/actions/ci-runner-preflight/action.yml",
+			import.meta.url,
+		),
+		"utf8",
+	);
+	assert.doesNotMatch(workflow, /Decide Playwright install/u);
+	assert.doesNotMatch(workflow, /job-needs-playwright-browser\.mts/u);
+	for (const job of ["workspace_tests", "main_workspace_tests"])
+		assertFabricShardHostedPlaywrightPreflight(workflow, job);
+	assert.match(
+		preflight,
+		/Save Playwright headless shell \(hosted\)[\s\S]*inputs\.save-playwright-cache == 'true'/u,
+	);
+	assert.match(preflight, /Restore Playwright headless shell \(hosted\)/);
+	assert.match(
+		preflight,
+		/actions\/cache\/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/,
+	);
+	assert.match(
+		preflight,
+		/actions\/cache\/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/,
+	);
+	assert.match(
+		preflight,
+		/playwright-chromium-headless-shell-\$\{\{ hashFiles\('pnpm-lock.yaml', 'scripts\/lib\/ci-runner-contract\.mts', 'scripts\/lib\/playwright-headless-shell-install\.mts', 'scripts\/lib\/playwright-headless-shell-archive\.mts', 'scripts\/ci\/install-hosted-playwright-browser\.mts'\) \}\}/,
+	);
+	assert.doesNotMatch(
+		preflight,
+		/restore-keys:[\s\S]*playwright-chromium-headless-shell-\$\{\{ runner\.arch \}\}-/u,
+	);
+	assert.match(preflight, /install-hosted-playwright-browser\.mts/);
+	assert.doesNotMatch(preflight, /PLAYWRIGHT_BROWSERS_PATH=\/opt\/pw-browsers/);
+});
+
+test("Fabric shard Playwright preflight guard rejects missing browser or preflight step", async () => {
+	const workflow = await readFile(
+		new URL("../.github/workflows/hobo-ci.yml", import.meta.url),
+		"utf8",
+	);
+	for (const job of ["workspace_tests", "main_workspace_tests"]) {
+		const block = fabricJobBlock(workflow, job);
+		const browserOff = workflow.replace(
+			block,
+			block.replace('browser: "true"', 'browser: "false"'),
+		);
+		assert.throws(
+			() => assertFabricShardHostedPlaywrightPreflight(browserOff, job),
+			/ci-runner-preflight with browser: "true"/u,
+		);
+		const stepRemoved = workflow.replace(
+			block,
+			block.replace(
+				/      - uses: \$\/\.github\/actions\/ci-runner-preflight\n        with:\n          browser: "true"\n          save-playwright-cache: \$\{\{ matrix\.shard == 0 && 'true' \|\| 'false' \}\}\n/,
+				"",
+			),
+		);
+		assert.throws(
+			() => assertFabricShardHostedPlaywrightPreflight(stepRemoved, job),
+			/ci-runner-preflight/u,
+		);
+	}
+});
+
 test("workflow conditions never read the secrets context", async () => {
 	const directory = new URL("../.github/workflows/", import.meta.url);
 	const files = (await readdir(directory)).filter((name) =>
@@ -150,14 +254,26 @@ test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /1 enabled workflow/);
 });
+const pullRequestTrigger = `  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+`;
+const routeWithDraftGate = `  route:
+    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: route
+        uses: ./.github/actions/route-runner
+`;
 test("authoritative CI workflows are an allowed enabled set", async () => {
 	const minimalHoboCi = `name: HoBo CI Fabric
 on:
   push:
     branches: [main]
-  pull_request:
-jobs:
-  pr-gate:
+${pullRequestTrigger}jobs:
+${routeWithDraftGate}  pr-gate:
     if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
@@ -304,9 +420,8 @@ test("authoritative CI jobs choose between hobo and the trunk label only", async
 on:
   push:
     branches: [main]
-  pull_request:
-jobs:
-  pr-gate:
+${pullRequestTrigger}jobs:
+${routeWithDraftGate}  pr-gate:
     if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
@@ -374,9 +489,8 @@ jobs:
 test("deps-image routing confines the unpromoted PR build to its approved runners", async () => {
 	const workflow = (runsOn: string, command: string) => `name: Routing
 on:
-  pull_request:
-jobs:
-  ci-deps-image:
+${pullRequestTrigger}jobs:
+${routeWithDraftGate}  ci-deps-image:
     needs: route
     if: \${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
     runs-on: ${runsOn}
@@ -445,13 +559,13 @@ jobs:
 test("trunk-label-routing requires plain hobo on PR-only jobs, including folded conditions", async () => {
 	const workflow = (runsOn: string) => `name: Routing
 on:
-  pull_request:
-  workflow_dispatch:
+${pullRequestTrigger}  workflow_dispatch:
 jobs:
-  build:
+  hello-bindle-fixture-quarantine:
     if: >-
       github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.labels.*.name, 'hobo/e2e')
+      (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) &&
+      contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
     runs-on: ${runsOn}
     steps:
       - run: true
@@ -536,6 +650,22 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
+			if (
+				file === "release-pricing.yml" &&
+				lines[start] === "  pricing-release-publish:"
+			) {
+				assert.equal(runsOn, "ubuntu-24.04");
+				assert.match(
+					condition,
+					/needs\.pricing-release-pack\.result == 'success'/,
+				);
+				assert.match(
+					condition,
+					/startsWith\(github\.ref, 'refs\/tags\/pricing-v'\)/,
+				);
+				assert.match(block, /id-token: write/);
+				continue;
+			}
 			if ((lines[start] ?? "") === "  route:") {
 				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
 				assert.match(
@@ -600,9 +730,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.equal(runsOn, depsImageRunsOn, `${file}: ci-deps-image`);
 				continue;
 			}
+			const quarantineCondition =
+				">- github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')";
 			const prOnly =
-				/github\.event_name == 'pull_request'/.test(condition) &&
-				!condition.includes("||");
+				(/github\.event_name == 'pull_request'/.test(condition) &&
+					!condition.includes("||")) ||
+				condition.replaceAll(/\s+/g, " ").trim() === quarantineCondition;
 			assert.equal(
 				runsOn,
 				prOnly ? "hobo" : trunkRunsOn,

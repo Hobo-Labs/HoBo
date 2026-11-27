@@ -453,3 +453,7 @@ model. The declared `pricing.*` events belong to later actor integrations; those
 integrations must consume commands, append events to an event store, and build
 materialized-view projections and snapshots in a read store outside this pure
 rating path.
+
+Pricing tags of the form `pricing-v<version>` publish `@hobo-labs/pricing` at the exact semantic version in the tag. The workspace manifest remains private; the release workflow stages the mapped public manifest, packs and installs it with pnpm in a clean consumer, then publishes that same verified tarball using npm trusted publishing and provenance.
+
+Stable Pricing releases use npm’s default `latest` tag. Every prerelease uses the `next` dist-tag, including numeric prerelease identifiers, so prereleases cannot replace `latest`.

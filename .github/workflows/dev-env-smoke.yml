@@ -2,6 +2,7 @@ name: Dev environment smoke
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - mise.toml
       - mise.lock
@@ -20,6 +21,7 @@ permissions:
 jobs:
   mise-bootstrap:
     name: mise install + build smoke
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 15
     # Smoke the checkout's pins, not the ones the fleet image baked into
@@ -43,6 +45,7 @@ jobs:
 
   docker-bootstrap:
     name: Clean container bootstrap
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     steps:

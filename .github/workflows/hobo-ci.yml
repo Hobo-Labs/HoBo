@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   merge_group:
     branches: [main]
     types: [checks_requested]
@@ -56,6 +56,7 @@ concurrency:
 jobs:
   route:
     name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -759,6 +760,7 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
@@ -1900,6 +1902,9 @@ jobs:
         id: deps-layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
