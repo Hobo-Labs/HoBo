@@ -24,8 +24,6 @@ const image =
 	"debian@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e";
 if (process.platform !== "linux" || process.arch !== "x64")
 	throw new Error("The pinned AWS emulator test requires Linux x64 and Docker");
-// /tmp is a private tmpfs in CI job containers, so the host daemon cannot
-// bind-mount it. Unpack onto the host-visible work directory instead.
 const scratch = mkdtempSync(
 	join(emulatorScratchParent(process.env, tmpdir()), "hobo-official-aws-"),
 );

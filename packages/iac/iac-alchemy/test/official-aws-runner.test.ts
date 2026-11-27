@@ -63,7 +63,6 @@ it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
 						PATH: [directory, process.env.PATH ?? ""].join(delimiter),
 						HOBO_AWS_EMULATOR_PACKAGE: archive,
 						HOBO_TEST_DOCKER_MARKER: marker,
-						// Keep this negative test off the host work mount.
 						HOBO_CI_HOST_JOB_DIRECTORY: "",
 					},
 					timeout: 30_000,

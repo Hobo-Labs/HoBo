@@ -1294,9 +1294,7 @@ jobs:
     # This is the required check. It runs even if a prerequisite was skipped,
     # failed, or cancelled, and accepts only the event's complete validation:
     # each job succeeded, or the route job succeeded, reported a verified signed
-    # local run covering that job, and the job was skipped for it. A draft
-    # pull request skips route until it is marked ready or labeled
-    # ci:run-draft-checks; that requested skip is not a failed validation.
+    # local run covering that job, and the job was skipped for it.
     needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}

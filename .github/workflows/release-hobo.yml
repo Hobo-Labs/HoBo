@@ -1955,8 +1955,6 @@ jobs:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     needs: [route, release-contract, release-realize, release-pages-browser-wit-smoke]
-    # A draft pull request skips route until it is marked ready or labeled
-    # ci:run-draft-checks; that requested skip is not a failed validation.
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04

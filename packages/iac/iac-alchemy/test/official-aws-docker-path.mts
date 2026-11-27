@@ -2,13 +2,8 @@ import { posix } from "node:path";
 
 const { isAbsolute, join, relative, sep } = posix;
 
-/** Container path of the host job directory bind mount. */
 export const HOST_VISIBLE_JOB_MOUNT = "/opt/actions-runner/_hobo_work";
 
-/**
- * Directory the runner can use for files the host Docker daemon must see.
- * Job containers mount the host socket and keep `/tmp` on a private tmpfs.
- */
 export function emulatorScratchParent(
 	env: Readonly<Record<string, string | undefined>>,
 	tmp: string,
@@ -18,7 +13,6 @@ export function emulatorScratchParent(
 	return hostJob ? mount : tmp;
 }
 
-/** Bind-mount source for `file`, translated onto the host job directory. */
 export function dockerBindSource(
 	file: string,
 	env: Readonly<Record<string, string | undefined>>,
