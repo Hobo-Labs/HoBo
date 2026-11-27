@@ -95,7 +95,7 @@ describe("release-hobo publish and attest, one image per job", () => {
 			);
 			expect(block).toContain('HOBO_CI_WORKER_PULL_BUDGET_SEC: "540"');
 			expect(block).toMatch(
-				/name: Ensure digest-pinned content-keyed toolchain image\n\s+timeout-minutes: 10/u,
+				/name: Ensure digest-pinned content-keyed toolchain image\n\s+timeout-minutes: 13/u,
 			);
 		}
 		const fromTrain =

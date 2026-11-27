@@ -1064,7 +1064,7 @@ jobs:
       HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
       HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: ${{ matrix.image_id == 'hobo-cli' && 30 || 20 }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -1091,7 +1091,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:
@@ -1147,7 +1147,7 @@ jobs:
       HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-hobo-cli
       HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-hobo-cli-${{ github.run_attempt }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1415,7 +1415,7 @@ jobs:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:

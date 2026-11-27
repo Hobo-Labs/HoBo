@@ -51,12 +51,21 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   supplied digest ref never falls back to the mutable version tag. Build and publish legs pull that digest under one overall
   `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
   four attempts and exponential backoff plus jitter instead of 120-second
-  per-attempt kills; their ensure steps have a 10-minute bound. The
-  `release-oci-build-tag` stays at `max-parallel: 6` for sdk, codegen, ci-serve,
-  and site. `hobo-cli` and `hobo-mcp` are later jobs: they load the verified OCI
-  layout artifacts instead of rebuilding `hobo-sdk:candidate` (and
-  `hobo-cli:candidate`) on that daemon. Each image job still removes its own
-  `<image>:candidate` when it finishes.
+  per-attempt kills. A pull that `timeout` kills (exit 124) after docker has printed
+  `Download complete` or `Pull complete` gets one immediate leftover-layer resume of
+  `WORKER_PULL_EXTRACT_BUDGET_SEC` (150 seconds) so those layers can finish extracting.
+  A kill that fetched no layers, and any other hard failure, stays inside the shared
+  deadline and retries with what remains until that deadline is spent. A resume that still fails
+  keeps the release-path "manifest present … pull failed … refusing build.sh" error.
+  An already-present image after a timeout counts only for a digest-qualified ref;
+  a mutable tag needs a successful pull before it can be reused.
+  Those ensure steps have a 13-minute bound so the 540-second download, the extract
+  resume, and login plus manifest inspection fit under the step cap. The
+  `release-oci-build-tag` matrix permits six parallel legs for SDK, codegen,
+  CI serve and site. The later CLI and MCP jobs load verified OCI layout
+  artifacts instead of rebuilding their prerequisites. Each image uses a run-
+  and image-specific candidate suffix so shared Docker daemons keep cleanup
+  separate. The CLI job has 30 minutes; the other image jobs keep 20.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests

@@ -14,7 +14,7 @@ const SCHEDULE_JOB_TIMEOUT = /^hobo-ci\.yml:main-gate$/;
 type LongJob = Readonly<{ minutes: number; why: string }>;
 const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 	[
-		"release-hobo.yml:release-oci-build-tag",
+		"release-hobo.yml:release-oci-build-cli",
 		{
 			minutes: 30,
 			why: "The cold CLI image includes a prerequisite build, live verification and artifact handoff; it exhausted 20 minutes just after its contract passed, while other image legs retain the standard limit",
@@ -24,7 +24,7 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 		"release-hobo.yml:release-pages",
 		{
 			minutes: 30,
-			why: "Pages setup precedes a separately bounded 21-minute promotion step, so the whole job needs setup and cleanup time outside that budget",
+			why: "Pages setup precedes a separately bounded 19-minute promotion step, so the whole job needs setup and cleanup time outside that budget",
 		},
 	],
 	[
@@ -97,18 +97,6 @@ function assertJobTimeout(
 	const long = LONG_JOB_TIMEOUTS.get(`${file}:${jobId}`);
 	if (long !== undefined) {
 		assert.ok(long.why.length > 0, `${label} long timeout has no reason`);
-		if (
-			file === "release-hobo.yml" &&
-			jobId === "release-oci-build-tag" &&
-			raw.startsWith("${{")
-		) {
-			assert.match(
-				raw,
-				/^\$\{\{\s*matrix\.image_id == 'hobo-cli' && 30 \|\| 20\s*\}\}$/u,
-				`${label} may extend only the CLI leg`,
-			);
-			return;
-		}
 		assert.match(raw, /^\d+$/u, `${label} long timeout must be a number`);
 		assert.ok(
 			Number(raw) <= long.minutes,
@@ -146,16 +134,16 @@ describe("GitHub Actions job timeouts", () => {
 
 	it("leaves bounded headroom for cold release image verification", () => {
 		const release = readFileSync(join(workflowDir, "release-hobo.yml"), "utf8");
-		const job = jobBlocks(release).find(
-			({ id }) => id === "release-oci-build-tag",
-		);
-		assert.ok(job, "missing release image build job");
+		const jobs = jobBlocks(release);
+		const job = jobs.find(({ id }) => id === "release-oci-build-cli");
+		assert.ok(job, "missing dedicated CLI image build job");
 		const timeout = jobTimeoutLine(job.block);
-		assert.match(
-			timeout ?? "",
-			/^\$\{\{\s*matrix\.image_id == 'hobo-cli' && 30 \|\| 20\s*\}\}$/u,
-			"only the cold CLI leg needs extra time",
-		);
+		assert.equal(timeout, "30", "the cold CLI job needs extra time");
+		for (const id of ["release-oci-build-tag", "release-oci-build-mcp"]) {
+			const other = jobs.find((entry) => entry.id === id);
+			assert.ok(other, `missing ${id}`);
+			assert.equal(jobTimeoutLine(other.block), "20", `${id} keeps 20 minutes`);
+		}
 		assert.doesNotThrow(() =>
 			assertJobTimeout("release-hobo.yml", job.id, timeout),
 		);
@@ -164,11 +152,7 @@ describe("GitHub Actions job timeouts", () => {
 		);
 		assert.throws(() => assertJobTimeout("release-hobo.yml", job.id, "31"));
 		assert.throws(() =>
-			assertJobTimeout(
-				"release-hobo.yml",
-				job.id,
-				"${{ matrix.image_id == 'hobo-mcp' && 30 || 20 }}",
-			),
+			assertJobTimeout("release-hobo.yml", "release-oci-build-tag", "30"),
 		);
 	});
 
