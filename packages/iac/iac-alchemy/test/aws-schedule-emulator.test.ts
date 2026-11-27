@@ -207,6 +207,7 @@ describe("AWS static schedules in the official emulator", () => {
 				scheduleName = output.scheduleName;
 				let delivered = false;
 				for (let attempt = 0; attempt < 18 && !delivered; attempt++) {
+					const started = Date.now();
 					const received = await run(
 						// SAFETY: the test layer provides SQS credentials and an emulator HTTP transport.
 						SQS.receiveMessage({
@@ -222,6 +223,11 @@ describe("AWS static schedules in the official emulator", () => {
 					delivered =
 						received.Messages?.some((message) => message.Body === body) ??
 						false;
+					const remaining = 5_000 - (Date.now() - started);
+					if (!delivered && remaining > 0)
+						await new Promise((resolveDelay) =>
+							setTimeout(resolveDelay, remaining),
+						);
 				}
 				expect(delivered).toBe(true);
 			} finally {
