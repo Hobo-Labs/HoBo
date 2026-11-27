@@ -86,6 +86,14 @@
 		"./cloudflare/r2": {
 			"types": "./dist/cloudflare-native-r2.d.ts",
 			"default": "./dist/cloudflare-native-r2.js"
+		},
+		"./aws/kv": {
+			"types": "./dist/aws-kv.d.ts",
+			"default": "./dist/aws-kv.js"
+		},
+		"./aws/kv-mapper": {
+			"types": "./dist/aws-kv-mapper.d.ts",
+			"default": "./dist/aws-kv-mapper.js"
 		}
 	},
 	"dependencies": {
@@ -99,7 +107,8 @@
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
 		"rivetkit": "3.0.0",
-		"ws": "^8.21.0"
+		"ws": "^8.21.0",
+		"@distilled.cloud/aws": "1.0.0-rc.20"
 	},
 	"peerDependenciesMeta": {
 		"@alchemy.run/aws": {
@@ -112,6 +121,9 @@
 			"optional": true
 		},
 		"rivetkit": {
+			"optional": true
+		},
+		"@distilled.cloud/aws": {
 			"optional": true
 		}
 	},
@@ -128,7 +140,8 @@
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
 		"@types/node": "^24.13.2",
-		"miniflare": "4.20260722.0"
+		"miniflare": "4.20260722.0",
+		"@distilled.cloud/aws": "1.0.0-rc.20"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",

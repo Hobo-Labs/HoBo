@@ -22,6 +22,11 @@ import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { awsBindleMappers } from "../src/aws.js";
+import { createAwsDynamoKvStore } from "../src/aws-kv.js";
+import {
+	awsDynamoKvBindleMappers,
+	withAwsDynamoKv,
+} from "../src/aws-kv-mapper.js";
 import { mapBindleToAlchemy } from "../src/bindle.js";
 
 const credentials = {
@@ -29,17 +34,21 @@ const credentials = {
 	secretAccessKey: Redacted.make("local"),
 };
 
-async function mappedResources() {
+async function mappedResources(nativeKv = false) {
+	const definition = bindle("shop", (b) => ({
+		objects: b.bucket(),
+		sessions: nativeKv ? b.kv().allow("get", "set", "delete") : b.kv(),
+		jobs: b.queue(),
+		events: b.topic(),
+	}));
+	const selected = nativeKv
+		? withAwsDynamoKv(definition, { sessions: true })
+		: definition;
 	// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 	const mapped = await Effect.runPromise(
 		mapBindleToAlchemy(
-			bindle("shop", (b) => ({
-				objects: b.bucket(),
-				sessions: b.kv(),
-				jobs: b.queue(),
-				events: b.topic(),
-			})),
-			awsBindleMappers(),
+			selected,
+			nativeKv ? awsDynamoKvBindleMappers() : awsBindleMappers(),
 			{ assessRequirements: () => ({ status: "supported" as const }) },
 		).pipe(
 			Effect.provideService(StackContext, {
@@ -370,13 +379,37 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					connect: { ca, servername: "localhost" },
 				}),
 			);
-			const { table } = await mappedResources();
+			const { table } = await mappedResources(true);
 			const result = await reconcileTable(table, layer);
 			expect(result.tableArn).toBe(
 				`arn:aws:dynamodb:us-east-1:000000000000:table/${result.tableName}`,
 			);
 			expect(result.partitionKey).toBe("pk");
 			expect(result.billingMode).toBe("PAY_PER_REQUEST");
+			let authorized = true;
+			const store = createAwsDynamoKvStore({
+				grant: {
+					tableName: result.tableName,
+					region: "us-east-1",
+					resourceEpoch: `sha256:${"a".repeat(64)}`,
+					grantEpoch: `sha256:${"b".repeat(64)}`,
+					allow: ["get", "set", "delete"],
+				},
+				verify: () => authorized,
+				layer,
+			});
+			expect(await store.get("user:1")).toBeUndefined();
+			await store.set({ key: "user:1", value: new Uint8Array([0, 255, 7]) });
+			expect(await store.exists("user:1")).toBe(true);
+			expect(await store.get("user:1")).toEqual(new Uint8Array([0, 255, 7]));
+			authorized = false;
+			await expect(store.delete("user:1")).rejects.toMatchObject({
+				code: "AWS_KV_DENIED",
+			});
+			authorized = true;
+			expect(await store.exists("user:1")).toBe(true);
+			await store.delete("user:1");
+			expect(await store.exists("user:1")).toBe(false);
 		},
 		30_000,
 	);
