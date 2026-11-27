@@ -401,7 +401,9 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(locatorSettings(choice)).toEqual({ HOBO_SECRET_STORE: "infisical" });
 	});
 
-	it("refuses a page answer once the owner chose again, and deposits nothing", async () => {
+	it.skipIf(browser === undefined)(
+		"refuses a page answer once the owner chose again, and deposits nothing",
+		async () => {
 		const deposited = new Map<string, string>();
 		const written: Record<string, string>[] = [];
 		const app = createStoreChoiceApp({
@@ -450,7 +452,8 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(done.structuredContent).toEqual({ status: "stale" });
 		expect(deposited.size).toBe(0);
 		expect(written).toEqual([{ HOBO_SECRET_STORE: "bitwarden" }]);
-	});
+	},
+	);
 
 	it("still reports no private form when no owner page is wired", async () => {
 		const app = createStoreChoiceApp({

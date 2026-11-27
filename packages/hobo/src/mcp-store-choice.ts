@@ -825,20 +825,26 @@ export function createStoreChoiceApp(
 			if (parsedCall.channel === "page" && options.pages !== undefined)
 				return openPage(ticketFor(30), options.pages);
 			if (parsedCall.reselect !== true) {
+				const locator = locatorFor(cwd, family);
 				const held = options.sessions?.status(cwd);
-				if (held?.established === true && held.store !== undefined)
+				if (held?.established === true && held.store !== undefined) {
+					locator.markSessionChosen?.();
 					return sessionResult(
 						{ status: "established", store: held.store },
 						held.store,
 						family,
 					);
+				}
 				let saved: StoreChoice["store"] | undefined;
 				try {
 					saved = await savedChoice(cwd, family);
 				} catch {
 					return NOT_SAVED;
 				}
-				if (saved !== undefined) return establish(cwd, labelFor(saved), family);
+				if (saved !== undefined) {
+					locator.markSessionChosen?.();
+					return establish(cwd, labelFor(saved), family);
+				}
 			}
 			const ticket = ticketFor(10);
 			if (support.formElicitation && request !== undefined)

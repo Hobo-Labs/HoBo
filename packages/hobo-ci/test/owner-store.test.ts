@@ -9,6 +9,30 @@ import {
 } from "../src/index.js";
 
 describe("owner store continuity", () => {
+	it("strips inherited store env once the session is marked chosen", async () => {
+		let chosen = false;
+		const locator = {
+			hasSessionChoice: () => chosen,
+			markSessionChosen: () => {
+				chosen = true;
+			},
+			read: async () => ({ HOBO_SECRET_STORE: "infisical" }),
+			write: async () => undefined,
+		};
+		locator.markSessionChosen();
+		const inheritedStore = "HOBO_SECRET_STORE";
+		const inheritedProject = "BWS_PROJECT_ID";
+		const env = await ownerStoreSessionEnvironment(
+			{ locator },
+			{
+				[inheritedStore]: "bitwarden",
+				BWS_ACCESS_TOKEN: "ambient-credential",
+				[inheritedProject]: "inherited-bitwarden-project",
+			},
+		);
+		expect(env).toEqual({});
+	});
+
 	it("re-checks the owner selection after reading its settings", async () => {
 		let current = true;
 		await expect(

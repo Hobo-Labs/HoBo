@@ -157,6 +157,9 @@ export function composeHoboMcp(options: {
 				}
 			},
 			hasSessionChoice: () => sessionChoices.has(key),
+			markSessionChosen: () => {
+				sessionChoices.add(key);
+			},
 			onOwnerChoice: () => {
 				assertCurrent();
 				if ((pendingWrites.get(key) ?? 0) > 0)
@@ -309,6 +312,7 @@ export function composeHoboMcp(options: {
 		createStoreChoiceApp({
 			sessions,
 			pages,
+			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
 			deposit: (name, value) => owner.deposit(name, value),
 			relayLogin: createRelayLoginTool({
 				relay,

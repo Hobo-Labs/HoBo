@@ -3,6 +3,7 @@ import type { TrustedVault } from "@hobo/core";
 
 export interface OwnerSettingsStore extends SettingsStore {
 	readonly hasSessionChoice?: () => boolean;
+	readonly markSessionChosen?: () => void;
 	readonly onOwnerChoice?: () => void;
 	readonly assertCurrent?: () => void;
 	readonly selectionSignal?: AbortSignal;
