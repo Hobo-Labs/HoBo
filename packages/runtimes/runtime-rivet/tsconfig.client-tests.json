@@ -16,7 +16,6 @@
 		"test/durable-topic-process-conformance.test.ts",
 		"test/durable-topic-async-live.test.ts",
 		"test/durable-topic-actor.test.ts",
-		"test/durable-topic-bus.test.ts",
-		"test/durable-topic-bus-model.test.ts"
+		"test/durable-topic-bus.test.ts"
 	]
 }
