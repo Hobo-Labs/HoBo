@@ -1,0 +1,32 @@
+{
+	"name": "@hobo/cd-argocd",
+	"version": "0.0.1",
+	"description": "HoBo CD Argo CD control plane: observe and sync Applications (Kargo argocd-update parity)",
+	"license": "MIT",
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/cd-gitops": "workspace:*",
+		"@hobo/core": "workspace:*"
+	}
+}

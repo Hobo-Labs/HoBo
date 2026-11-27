@@ -34,6 +34,13 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 			why: "HoBo Fleet: the same sandbox, NATS and relay provisioning as fleet-verify, then every fleet *.integration.test.ts; splitting it would provision the sandbox runtime once per shard",
 		},
 	],
+	[
+		"pricing-ci.yml:aws-emulator",
+		{
+			minutes: 40,
+			why: "Alchemy AWS simulator: a self-hosted runner without a shared pnpm store spends most of a 20-minute cap downloading the workspace, then the job is cancelled during the simulator build before test:aws-emulator runs. Warm runners still finish in a few minutes; 40 covers one cold install plus that build and the emulator lane",
+		},
+	],
 ]);
 
 function jobBlocks(text: string): { id: string; block: string }[] {
