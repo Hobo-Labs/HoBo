@@ -90,6 +90,10 @@
 		"./aws/kv": {
 			"types": "./dist/aws-kv.d.ts",
 			"default": "./dist/aws-kv.js"
+		},
+		"./aws/kv-mapper": {
+			"types": "./dist/aws-kv-mapper.d.ts",
+			"default": "./dist/aws-kv-mapper.js"
 		}
 	},
 	"dependencies": {

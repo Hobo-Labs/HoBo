@@ -8,7 +8,15 @@ import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { CATALOG_ROWS } from "../../../bindles/src/types.js";
 import { awsBindleMappers, describeAwsPrimitiveSupport } from "../src/aws.js";
-import { mapBindleToAlchemy } from "../src/bindle.js";
+import {
+	awsDynamoKv,
+	awsDynamoKvBindleMappers,
+	withAwsDynamoKv,
+} from "../src/aws-kv-mapper.js";
+import {
+	describeAlchemyPrimitiveSupport,
+	mapBindleToAlchemy,
+} from "../src/bindle.js";
 
 const requirements = {
 	assessRequirements: () => ({ status: "supported" as const }),
@@ -68,5 +76,44 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(() =>
 			mapBindleToAlchemy(definition, awsBindleMappers(), requirements),
 		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+	});
+});
+
+describe("explicit DynamoDB KV runtime choice", () => {
+	it("keeps the Bindle neutral and maps permitted operations to a real table", async () => {
+		const original = bindle("shop", (b) => ({
+			sessions: b.kv().allow("get", "set", "delete"),
+		}));
+		const selected = withAwsDynamoKv(original, { sessions: true });
+		expect(original.resources.sessions?.annotations).toEqual([]);
+		expect(selected.resources.sessions?.annotations).toEqual([awsDynamoKv()]);
+		const mappers = awsDynamoKvBindleMappers();
+		const report = describeAlchemyPrimitiveSupport(
+			[{ factory: "kv", allowVerbs: ["get", "set", "delete"] }],
+			mappers,
+		);
+		expect(report[0]).toMatchObject({
+			status: "partial",
+			supportedOperations: ["get", "set", "delete"],
+		});
+		// SAFETY: mapping registers resource constructors only; no provider is invoked.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.sessions?.Type).toBe(Table.Type);
+		expect(() => mapBindleToAlchemy(original, mappers, requirements)).toThrow(
+			"DynamoDB KV requires",
+		);
+		expect(() => withAwsDynamoKv(original, { missing: true })).toThrow(
+			"unknown resource",
+		);
 	});
 });
