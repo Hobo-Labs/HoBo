@@ -69,6 +69,7 @@ const nativeBufferFrom = Buffer.from;
 const nativeBufferToString = Buffer.prototype.toString;
 const nativeArray = Array.isArray;
 const nativeNumber = Number.isSafeInteger;
+const nativeString = String;
 const maxSafe = Number.MAX_SAFE_INTEGER;
 const NativeBytes = Uint8Array;
 export function emptyAtomicQueueState(): AtomicQueueState {
@@ -97,7 +98,7 @@ function messageSignature(
 		nativeApply(nativeBufferFrom, Buffer, [input.body]),
 		["base64"],
 	);
-	let signature = field(encoded) + `${input.attributes.length};`;
+	let signature = field(nativeString(encoded)) + `${input.attributes.length};`;
 	for (let index = 0; index < input.attributes.length; index++) {
 		const attr = input.attributes[index];
 		if (attr === undefined)
