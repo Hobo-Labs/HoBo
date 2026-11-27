@@ -66,6 +66,9 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			createStoreChoiceApp({
 				cwd: project,
 				locatorFor: () => ({
+					assertCurrent: () => {},
+					onOwnerChoice: () => {},
+					selectionRevision: () => 0,
 					read: async () => ({ ...saved }),
 					write: async (values: Record<string, string>) => {
 						Object.assign(saved, values);
@@ -183,6 +186,7 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			view.eval(required(script?.textContent));
 			await initialized;
 			await bridge.sendToolInput({ arguments: { cwd: project } });
+			await bridge.sendToolResult(shown);
 			const radio = required(
 				view.document.querySelector<HTMLInputElement>(
 					'input[value="infisical"]',

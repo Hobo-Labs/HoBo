@@ -246,8 +246,9 @@ export async function prepareJournalFleet(input: {
 						created.connectionString,
 					);
 				}
+				const latest = await settings.read();
 				await settings.write({
-					...state.saved,
+					...latest,
 					[JOURNAL_FLEET_SETTING]: state.layout.members.map(entry).join(","),
 					[JOURNAL_WITNESS_SETTING]: state.layout.witnesses
 						.map(entry)

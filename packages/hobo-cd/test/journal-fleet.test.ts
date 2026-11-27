@@ -143,6 +143,59 @@ describe("prepareJournalFleet", () => {
 		expect(again.created).toEqual([]);
 	});
 
+	it("keeps concurrent settings keys on an unlocked terminal store", async () => {
+		const store = memoryStore();
+		await familySettings(store, "cd").write({ HOBO_CD_KEEP: "yes" });
+		let pendingKeys = 0;
+		let release: () => void = () => undefined;
+		const bothRecorded = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let record = Promise.resolve();
+		const provisioner = (tag: "a" | "b"): JournalMemberProvisioner => {
+			let once = true;
+			return {
+				plan: "neon-claimable",
+				async create({ member }) {
+					if (member === "journal-1" && once) {
+						once = false;
+						const run = record.then(async () => {
+							const current = await familySettings(store, "cd").read();
+							await familySettings(store, "cd").write({
+								...current,
+								[`HOBO_CD_FROM_${tag}`]: tag,
+							});
+						});
+						record = run.then(
+							() => undefined,
+							() => undefined,
+						);
+						await run;
+						pendingKeys += 1;
+						if (pendingKeys === 2) release();
+						await bothRecorded;
+					}
+					return {
+						connectionString: `postgresql://${member}.example/db`,
+						claimUrl: "https://example.invalid/claim",
+					};
+				},
+			};
+		};
+		const steps = await Promise.all([
+			prepareJournalFleet({ store, provisioners: [provisioner("a")] }),
+			prepareJournalFleet({ store, provisioners: [provisioner("b")] }),
+		]);
+		expect(steps.every((step) => step.outcome === "created")).toBe(true);
+		await expect(familySettings(store, "cd").read()).resolves.toMatchObject({
+			HOBO_CD_KEEP: "yes",
+			HOBO_CD_FROM_a: "a",
+			HOBO_CD_FROM_b: "b",
+			HOBO_CD_POSTGRES_FLEET: expect.stringContaining("journal-1"),
+			HOBO_CD_POSTGRES_WITNESSES: expect.stringContaining("journal-witness"),
+		});
+	});
+
 	it("reads the fleet after acquiring the shared write lock", async () => {
 		const store = serialStore(memoryStore());
 		const neon = fakeNeon();

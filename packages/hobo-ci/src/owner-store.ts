@@ -40,6 +40,7 @@ import {
 	type SecretStoreOpening,
 } from "./secret-stores.js";
 import type { RunCommand } from "./store-cli.js";
+import { terminalOwnerWriteProtocol } from "./terminal-owner-guard.js";
 
 // The owner's secret store, as the first stage of every lifecycle ceremony.
 //
@@ -425,17 +426,32 @@ export async function ownerStore(
 			openSecretStore(id, coordinates, signIn, deps));
 	const saved = await locator.read();
 	locator.assertCurrent?.();
+	const protocol:
+		| Pick<
+				OwnerSettingsStore,
+				| "assertCurrent"
+				| "runStoreWrite"
+				| "runPreparedStoreWrite"
+				| "recordStoreChange"
+				| "markUncertainWrite"
+		  >
+		| undefined = locator.assertCurrent
+		? locator
+		: deps.locator === undefined &&
+				deps.ownerChannel?.storeSettings === undefined
+			? terminalOwnerWriteProtocol(family, deps.cwd ?? process.cwd())
+			: undefined;
 	const guarded = (store: OpenedSecretStore): OpenedSecretStore => {
-		if (!locator.assertCurrent) return store;
+		if (!protocol?.assertCurrent) return store;
 		const port = store.port;
-		const check = locator.assertCurrent;
+		const check = protocol.assertCurrent;
 		const write = <T>(operation: () => Promise<T>): Promise<T> =>
-			locator.runStoreWrite ? locator.runStoreWrite(operation) : operation();
+			protocol.runStoreWrite ? protocol.runStoreWrite(operation) : operation();
 		const writePrepared: NonNullable<
 			OpenedSecretStore["withPreparedWriteLock"]
 		> = (prepareReadOnly, operation) => {
-			if (locator.runPreparedStoreWrite)
-				return locator.runPreparedStoreWrite(prepareReadOnly, operation);
+			if (protocol.runPreparedStoreWrite)
+				return protocol.runPreparedStoreWrite(prepareReadOnly, operation);
 			return write(async () => {
 				const prepared = await prepareReadOnly();
 				return prepared.kind === "completed"
@@ -446,11 +462,11 @@ export async function ownerStore(
 		const mutate = <T>(operation: () => Promise<T>): Promise<T> =>
 			write(async () => {
 				check();
-				locator.recordStoreChange?.();
+				protocol.recordStoreChange?.();
 				try {
 					return await operation();
 				} catch (error) {
-					locator.markUncertainWrite?.();
+					protocol.markUncertainWrite?.();
 					throw error;
 				}
 			});
