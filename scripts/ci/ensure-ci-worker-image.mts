@@ -318,8 +318,6 @@ function probeWorkerPull(
 		{ cwd: root, encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] },
 	);
 	if (result.status === 0) return "pullable";
-	// timeout exits 124. Only a normal docker failure can prove the manifest
-	// is missing, and only through the same lines manifest inspect uses.
 	if (result.status !== 1) return "unknown";
 	const classified = classifyWorkerManifestInspect(
 		1,
@@ -347,10 +345,6 @@ function probeWorkerPublication(
 	const manifestBudget = Math.min(45, remainingSec());
 	if (manifestBudget <= 0) return "budget-exhausted";
 	const manifestStatus = workerManifestStatus(remote, token, manifestBudget);
-	// Login and manifest inspect share one probe budget. Once that budget is
-	// gone, do not start a pull. With no injected clock, a confirmed manifest
-	// may then use the full worker pull budget; a caller-supplied clock or
-	// deadline spends only the remainder.
 	if (remainingSec() <= 0) return "budget-exhausted";
 	const pullBudget =
 		options === undefined && manifestStatus === "present"

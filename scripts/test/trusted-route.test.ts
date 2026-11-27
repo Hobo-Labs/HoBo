@@ -333,23 +333,156 @@ describe("base-controlled attestation verification", () => {
 	});
 
 	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
-		it(`${workflow} keeps merge-group routing on hosted runners`, () => {
+		it(`${workflow} keeps merge-group routing on its pinned runners`, () => {
 			const doc = workflowDocument(
 				readFileSync(`.github/workflows/${workflow}`, "utf8"),
 			);
 			const route = asObject(asObject(doc.jobs)?.route);
-			assert.equal(route?.["runs-on"], "ubuntu-24.04");
-			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
-			const routeStep = asList(route?.steps)
-				?.map(asObject)
-				.find((step) => step?.id === "route");
-			const withBlock = asObject(routeStep?.with);
 			assert.equal(
-				asText(withBlock?.route),
-				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
+				route?.["runs-on"],
+				workflow === "hobo-ci.yml"
+					? "${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}"
+					: "ubuntu-24.04",
 			);
+			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
+			const steps = asList(route?.steps)?.map(asObject) ?? [];
+			const routeStep = steps.find((step) => step?.id === "route");
+			const withBlock = asObject(routeStep?.with);
+			const routeInput =
+				workflow === "hobo-ci.yml"
+					? "${{ inputs.route || (github.event_name == 'merge_group' && steps.trusted-route.outputs.merge_group) || 'auto' }}"
+					: "auto";
+			assert.equal(asText(withBlock?.route), routeInput);
+			if (workflow !== "hobo-ci.yml") {
+				assert.equal(
+					steps.some((step) => step?.id === "trusted-route"),
+					false,
+				);
+				return;
+			}
+			const trustedAt = steps.findIndex((step) => step?.id === "trusted-route");
+			const routeAt = steps.findIndex((step) => step?.id === "route");
+			const checkoutAt = steps.findIndex(
+				(step) => asObject(step?.with)?.path === ".ci-trusted",
+			);
+			assert.ok(
+				trustedAt > checkoutAt,
+				"trusted-route follows the base checkout",
+			);
+			assert.equal(routeAt, trustedAt + 1);
+			assert.match(routeInput, /steps\.trusted-route\.outputs\.merge_group/u);
 		});
 	}
+
+	it("hobo-ci.yml pins merge-group fleet only when the trusted route-runner exempts it", () => {
+		const doc = workflowDocument(
+			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
+		);
+		const steps =
+			asList(asObject(asObject(doc.jobs)?.route)?.steps)?.map(asObject) ?? [];
+		const shell = asText(
+			steps.find((step) => step?.id === "trusted-route")?.run,
+		);
+		assert.ok(shell);
+		const workspace = mkdtempSync(join(tmpdir(), "hobo-trusted-route-pin-"));
+		const output = join(workspace, "out");
+		const file = join(
+			workspace,
+			".ci-trusted",
+			"scripts",
+			"ci",
+			"route-runner.mts",
+		);
+		const run = () =>
+			spawnSync("bash", ["-c", shell], {
+				cwd: workspace,
+				encoding: "utf8",
+				env: {
+					PATH: process.env.PATH ?? "",
+					GITHUB_OUTPUT: output,
+				},
+			});
+		try {
+			writeFileSync(output, "");
+			const missing = run();
+			assert.notEqual(missing.status, 0);
+			assert.match(
+				`${missing.stdout}${missing.stderr}`,
+				/trusted route-runner file is missing/u,
+			);
+			assert.equal(readFileSync(output, "utf8"), "");
+			mkdirSync(join(workspace, ".ci-trusted", "scripts", "ci"), {
+				recursive: true,
+			});
+			writeFileSync(file, 'workflowFile(env) !== "release-hobo.yml"\n');
+			writeFileSync(output, "");
+			const plain = run();
+			assert.equal(plain.status, 0, plain.stderr);
+			assert.equal(readFileSync(output, "utf8"), "merge_group=auto\n");
+			writeFileSync(file, 'workflowFile(env) !== "hobo-ci.yml" &&\n');
+			writeFileSync(output, "");
+			const exempt = run();
+			assert.equal(exempt.status, 0, exempt.stderr);
+			assert.equal(readFileSync(output, "utf8"), "merge_group=fleet\n");
+		} finally {
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	});
+
+	it("hobo-ci.yml leaves a full worktree after a merge-group route on a reused runner", () => {
+		const doc = workflowDocument(
+			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
+		);
+		const steps =
+			asList(asObject(asObject(doc.jobs)?.route)?.steps)?.map(asObject) ?? [];
+		const cleanup = steps.at(-1);
+		assert.equal(
+			cleanup?.name,
+			"Leave a full worktree for the next job on this runner",
+		);
+		assert.equal(
+			asText(cleanup?.if),
+			"always() && github.event_name == 'merge_group'",
+		);
+		const script = asText(cleanup?.run);
+		assert.ok(script);
+		const workspace = mkdtempSync(join(tmpdir(), "hobo-route-unsparse-"));
+		const env = Object.fromEntries(
+			Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+		);
+		const git = (...args: string[]) =>
+			spawnSync("git", args, { cwd: workspace, encoding: "utf8", env });
+		try {
+			assert.equal(git("init", "-q").status, 0);
+			git("config", "user.email", "ci@example.invalid");
+			git("config", "user.name", "ci");
+			mkdirSync(join(workspace, "kept"), { recursive: true });
+			mkdirSync(join(workspace, "dropped"), { recursive: true });
+			writeFileSync(join(workspace, "kept", "a.txt"), "a\n");
+			writeFileSync(join(workspace, "dropped", "b.txt"), "b\n");
+			git("add", ".");
+			git("commit", "-q", "-m", "init");
+			git("sparse-checkout", "set", "--no-cone", "/kept/");
+			git("config", "core.sparseCheckoutCone", "true");
+			mkdirSync(join(workspace, ".ci-trusted"), { recursive: true });
+			assert.equal(existsSync(join(workspace, "dropped", "b.txt")), false);
+			const ran = spawnSync("bash", ["-c", script], {
+				cwd: workspace,
+				encoding: "utf8",
+				env,
+			});
+			assert.equal(ran.status, 0, ran.stderr);
+			assert.equal(existsSync(join(workspace, "dropped", "b.txt")), true);
+			assert.equal(existsSync(join(workspace, ".ci-trusted")), false);
+			assert.equal(git("ls-files", "-t").stdout.includes("S "), false);
+			assert.notEqual(
+				git("config", "core.sparseCheckout").stdout.trim(),
+				"true",
+			);
+		} finally {
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	});
 
 	it("decides PR Fabric reuse beside the checked-out base action, never from the candidate's copy", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-pr-fabric-route-"));
