@@ -628,3 +628,10 @@ unknown when full. Completed or exhausted messages remain retained. The storage
 owner and trusted deployment must fence old writers and preserve the record
 across restarts; deleting it destroys receipts and idempotency history. The log
 version must change when replay semantics change.
+
+The internal queue checkpoint codec preserves messages, sequence counters and
+unexpired operation receipts, and checks limits, identities, lease references
+and delivery content when it reads a checkpoint. It assumes that the storage
+record is controlled by an authorized writer; structural checks cannot prove the
+history in an externally forged checkpoint. The codec is not yet connected to a
+compaction operation.
