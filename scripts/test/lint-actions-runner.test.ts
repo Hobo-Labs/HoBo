@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -8,9 +9,13 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import {
+	COMPOSITE_STEP_UNSUPPORTED_KEYS,
+	lintCompositeStepFields,
+} from "../lint-actions.ts";
 import { testRunner } from "./support/test-runner.ts";
 
 const { describe, it } = await testRunner();
@@ -773,6 +778,221 @@ describe("Actions runner policy", () => {
 			lintRunner("pricing-ci.yml", "probe", "hobo-local-host"),
 			0,
 		);
+	});
+
+	it("rejects unsupported keys on composite action steps", () => {
+		assert.deepEqual(
+			[...COMPOSITE_STEP_UNSUPPORTED_KEYS],
+			[
+				"timeout-minutes",
+				"runs-on",
+				"needs",
+				"strategy",
+				"concurrency",
+				"services",
+				"container",
+				"permissions",
+				"outputs",
+			],
+		);
+		const composite = (steps: string) =>
+			`name: fixture\nruns:\n  using: composite\n  steps:\n${steps}`;
+		const step = (body: string) =>
+			composite(`    - shell: bash\n${body}      run: echo ok\n`);
+		const errorsFor = (text: string) => {
+			const errors: string[] = [];
+			lintCompositeStepFields(errors, "actions/fixture/action.yml", text);
+			return errors;
+		};
+		const allowed = errorsFor(
+			[
+				"name: fixture",
+				"outputs:",
+				"  result:",
+				"    description: step result",
+				"    value: ${{ steps.main.outputs.value }}",
+				"runs:",
+				"  using: composite",
+				"  steps:",
+				"    - id: main",
+				"      if: steps.deps.outputs.match != 'true'",
+				"      shell: bash",
+				"      working-directory: scripts",
+				"      continue-on-error: true",
+				"      env:",
+				"        FOO: bar",
+				"      run: echo ok",
+				"    - uses: ./local",
+				"      with:",
+				"        timeout-minutes: '1'",
+				"",
+			].join("\n"),
+		);
+		assert.deepEqual(allowed, []);
+		assert.deepEqual(
+			errorsFor(
+				"name: fixture\nruns:\n  using: node20\n  main: index.js\n  steps:\n    - timeout-minutes: 8\n      run: echo ok\n",
+			),
+			[],
+		);
+		for (const key of COMPOSITE_STEP_UNSUPPORTED_KEYS) {
+			const errors = errorsFor(step(`      ${key}: 1\n`));
+			assert.equal(errors.length, 1, key);
+			assert.match(
+				errors[0] ?? "",
+				new RegExp(
+					`^actions/fixture/action\\.yml:[0-9]+: composite step 1 must not set ${key}`,
+				),
+				key,
+			);
+			assert.notEqual(lintAction(step(`      ${key}: 1\n`)), 0, key);
+		}
+		const later = errorsFor(
+			composite(
+				"    - shell: bash\n      run: echo ok\n    - shell: bash\n      runs-on: hobo\n      run: echo no\n",
+			),
+		);
+		assert.equal(later.length, 1);
+		assert.match(later[0] ?? "", /composite step 2 must not set runs-on/);
+		assert.equal(
+			lintAction(
+				step("      env:\n        FOO: bar\n      continue-on-error: true\n"),
+			),
+			0,
+		);
+	});
+
+	it("exits 0 when deps materialize outputs are missing after a non-zero status", () => {
+		const action = readFileSync(
+			fileURLToPath(
+				new URL(
+					"../../.github/actions/ci-deps-recovery/action.yml",
+					import.meta.url,
+				),
+			),
+			"utf8",
+		);
+		assert.equal(action.includes("timeout-minutes:"), false);
+		const command =
+			"timeout 480 node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts";
+		const commandAt = action.indexOf(command);
+		const header = "      run: |\n";
+		const runAt = action.lastIndexOf(header, commandAt);
+		const nextStep = action.indexOf("\n    - name:", commandAt);
+		assert.ok(commandAt > 0 && runAt > 0 && nextStep > commandAt);
+		const script = `${action
+			.slice(runAt + header.length, nextStep)
+			.split("\n")
+			.map((line) => line.slice(8))
+			.join("\n")
+			.trim()}\n`;
+		const runWrapper = (input: {
+			readonly nodeStatus: number;
+			readonly nodeOutput?: string;
+			readonly timeoutStatus?: number;
+			readonly githubOutput?: string | null;
+			readonly warmStore?: boolean;
+		}) => {
+			const root = mkdtempSync(join(tmpdir(), "hobo-deps-wrap-"));
+			try {
+				const timeout = join(root, "timeout");
+				const node = join(root, "node");
+				writeFileSync(
+					timeout,
+					input.timeoutStatus === undefined
+						? '#!/bin/sh\nshift\nexec "$@"\n'
+						: `#!/bin/sh\nexit ${input.timeoutStatus}\n`,
+				);
+				writeFileSync(
+					node,
+					'#!/bin/sh\nif [ "${4:-}" = "--check-warm-store" ]; then printf \'%s\\n\' "${FAKE_WARM_STORE:-false}"; exit 0; fi\nif [ -n "${FAKE_NODE_OUTPUT:-}" ]; then printf \'%s\\n\' "$FAKE_NODE_OUTPUT" >> "$GITHUB_OUTPUT"; fi\nexit "${FAKE_NODE_STATUS:-0}"\n',
+				);
+				chmodSync(timeout, 0o755);
+				chmodSync(node, 0o755);
+				const outputPath = join(root, "github-output");
+				const env: NodeJS.ProcessEnv = {
+					...process.env,
+					PATH: `${root}${delimiter}${process.env.PATH ?? ""}`,
+					FAKE_NODE_STATUS: String(input.nodeStatus),
+					FAKE_NODE_OUTPUT: input.nodeOutput ?? "",
+					FAKE_WARM_STORE: String(input.warmStore === true),
+				};
+				delete env.GITHUB_OUTPUT;
+				if (input.githubOutput !== null && input.githubOutput !== undefined) {
+					writeFileSync(outputPath, input.githubOutput);
+					env.GITHUB_OUTPUT = outputPath;
+				}
+				const result = spawnSync("bash", ["-c", script], {
+					env,
+					encoding: "utf8",
+				});
+				return {
+					status: result.status,
+					stdout: result.stdout,
+					stderr: result.stderr,
+					output:
+						input.githubOutput === null || input.githubOutput === undefined
+							? ""
+							: readFileSync(outputPath, "utf8"),
+				};
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		};
+		const missing = runWrapper({ nodeStatus: 7, githubOutput: "" });
+		assert.equal(missing.status, 0, `${missing.stdout}${missing.stderr}`);
+		assert.match(missing.output, /^materialized=false\n/u);
+		assert.match(missing.output, /^source=failed$/mu);
+		assert.match(missing.output, /^install=false$/mu);
+		const timedOut = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "",
+		});
+		assert.equal(timedOut.status, 0, `${timedOut.stdout}${timedOut.stderr}`);
+		assert.match(
+			timedOut.stdout,
+			/::warning title=hobo-ci-deps-materialize-timeout::/,
+		);
+		assert.match(timedOut.output, /^install=false$/mu);
+		const timedOutWarm = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "",
+			warmStore: true,
+		});
+		assert.equal(timedOutWarm.status, 0);
+		assert.match(timedOutWarm.output, /^install=true$/mu);
+		const partialWarm = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "materialized=true\n",
+			warmStore: true,
+		});
+		assert.equal(partialWarm.status, 0);
+		assert.match(
+			partialWarm.output,
+			/materialized=false\nsource=failed\ninstall=true\n$/u,
+		);
+		const unset = runWrapper({ nodeStatus: 1, githubOutput: null });
+		assert.equal(unset.status, 0, `${unset.stdout}${unset.stderr}`);
+		const decided = runWrapper({
+			nodeStatus: 9,
+			githubOutput: "materialized=true\nsource=local\ninstall=false\n",
+			nodeOutput: "",
+		});
+		assert.equal(decided.status, 9);
+		assert.equal(
+			decided.output,
+			"materialized=true\nsource=local\ninstall=false\n",
+		);
+		const succeeded = runWrapper({
+			nodeStatus: 0,
+			githubOutput: "",
+			nodeOutput: "materialized=true\ninstall=false",
+		});
+		assert.equal(succeeded.status, 0);
+		assert.equal(succeeded.output, "materialized=true\ninstall=false\n");
 	});
 
 	it("passes on this repository's own workflows", () => {

@@ -13,9 +13,18 @@ const yamlModulePath = requireFromRepo.resolve("yaml", {
 	paths: [join(lintActionsRepoRoot, "packages/ci-gh-actions")],
 });
 const yamlMod = await import(yamlModulePath);
-const { parseDocument } = yamlMod;
+const { parseDocument, isScalar, isMap, isSeq, isPair, isNode } = yamlMod;
 if (parseDocument === undefined) {
 	throw new Error("yaml package missing parseDocument");
+}
+type YamlAstNode = Readonly<{
+	range?: readonly [number, number, number] | null;
+	value?: unknown;
+}>;
+
+function isYamlStringKey(key: YamlAstNode | string): key is string {
+	const coerced = `${key}`;
+	return coerced === key;
 }
 
 export type LintActionsResult = Readonly<{
@@ -599,6 +608,7 @@ const TRUNK_EVENTS = new Set([
 	"workflow_dispatch",
 	"merge_group",
 	"workflow_run",
+	"schedule",
 ]);
 
 function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
@@ -1155,6 +1165,124 @@ function lintWorkflowYaml(
 	}
 }
 
+export const COMPOSITE_STEP_UNSUPPORTED_KEYS = [
+	"timeout-minutes",
+	"runs-on",
+	"needs",
+	"strategy",
+	"concurrency",
+	"services",
+	"container",
+	"permissions",
+	"outputs",
+] as const;
+
+const COMPOSITE_STEP_UNSUPPORTED = new Set<string>(
+	COMPOSITE_STEP_UNSUPPORTED_KEYS,
+);
+
+type YamlSourceLine = Readonly<{ line: number }>;
+
+type YamlMapKey = Readonly<{
+	text: string;
+	source: YamlSourceLine | undefined;
+}>;
+
+function sourceLineFromNode(
+	text: string,
+	node: YamlAstNode,
+): YamlSourceLine | undefined {
+	const start = node.range?.[0];
+	if (start === undefined) return undefined;
+	return { line: text.slice(0, start).split("\n").length };
+}
+
+function mapKeyText(key: YamlAstNode | string): string | undefined {
+	if (isYamlStringKey(key)) return key;
+	if (!isScalar(key)) return undefined;
+	const { value } = key;
+	const coerced = `${value}`;
+	return coerced === value ? coerced : undefined;
+}
+
+function parseYamlMapKey(
+	key: YamlAstNode | string,
+	text: string,
+): YamlMapKey | undefined {
+	const keyText = mapKeyText(key);
+	if (keyText === undefined) return undefined;
+	const source = isYamlStringKey(key)
+		? undefined
+		: isNode(key)
+			? sourceLineFromNode(text, key)
+			: undefined;
+	return { text: keyText, source };
+}
+
+function compositeStepKeyLine(
+	text: string,
+	stepIndex: number,
+	key: string,
+): number | undefined {
+	const lines = text.split("\n");
+	let stepsStarted = false;
+	let currentStep = -1;
+	let inStep = false;
+	const stepStart = /^\s+-\s/;
+	const stepKey = new RegExp(`^\\s+${key}\\s*:`);
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index] ?? "";
+		if (/^\s*steps:\s*$/.test(line)) {
+			stepsStarted = true;
+			continue;
+		}
+		if (!stepsStarted) continue;
+		if (stepStart.test(line)) {
+			currentStep++;
+			inStep = currentStep === stepIndex;
+			continue;
+		}
+		if (currentStep > stepIndex) break;
+		if (inStep && stepKey.test(line)) return index + 1;
+	}
+	return undefined;
+}
+
+export function lintCompositeStepFields(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
+	const doc = parseDocument(text, { uniqueKeys: true });
+	for (const error of doc.errors) {
+		errors.push(`${file}: invalid action YAML: ${error.message.trim()}`);
+	}
+	const using = doc.get("runs")?.get("using");
+	const usingKey =
+		using === null || using === undefined
+			? undefined
+			: parseYamlMapKey(using, text);
+	if (usingKey?.text !== "composite") return;
+	const steps = doc.get("runs")?.get("steps");
+	if (steps === null || steps === undefined || !isSeq(steps)) return;
+	for (const [index, step] of steps.items.entries()) {
+		if (!isMap(step)) continue;
+		for (const pair of step.items) {
+			if (!isPair(pair)) continue;
+			const parsedKey = parseYamlMapKey(pair.key, text);
+			if (parsedKey === undefined) continue;
+			const key = parsedKey.text;
+			if (!COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
+			const line =
+				parsedKey.source?.line ?? compositeStepKeyLine(text, index, key);
+			const at = line === undefined ? file : `${file}:${line}`;
+			errors.push(
+				`${at}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
+			);
+		}
+	}
+}
+
 function lintCompositeActions(errors: string[], githubRoot: string): void {
 	const actionsRoot = join(githubRoot, "actions");
 	if (!existsSync(actionsRoot)) return;
@@ -1171,6 +1299,7 @@ function lintCompositeActions(errors: string[], githubRoot: string): void {
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 			lintPinnedActionRefs(errors, rel, text);
 			lintRouting(errors, rel, text);
+			lintCompositeStepFields(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);
