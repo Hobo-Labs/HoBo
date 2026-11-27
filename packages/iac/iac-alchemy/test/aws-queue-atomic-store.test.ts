@@ -4,7 +4,10 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
-import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
+import {
+	createAwsQueueAtomicStore,
+	inspectAwsQueueAtomicStore,
+} from "../src/aws-queue-atomic-store.js";
 
 const grant = {
 	tableName: "queue-table",
@@ -35,6 +38,21 @@ function fixture(
 }
 
 describe("AWS queue atomic state", () => {
+	it("attests only stores created with a validated AWS grant", () => {
+		const store = fixture(async () => Response.json({}));
+		expect(inspectAwsQueueAtomicStore(store)).toEqual(grant);
+		expect(inspectAwsQueueAtomicStore({ ...store })).toBeUndefined();
+		let traps = 0;
+		const proxy = new Proxy(store, {
+			get() {
+				traps++;
+				throw Error("trap");
+			},
+		});
+		expect(inspectAwsQueueAtomicStore(proxy)).toBeUndefined();
+		expect(traps).toBe(0);
+	});
+
 	it("uses a consistent read and copies returned state", async () => {
 		let body = "";
 		const store = fixture(async (_url, init) => {
