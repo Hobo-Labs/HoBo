@@ -70,8 +70,8 @@ try {
 	check(
 		"MissingCoverage",
 		mutate(
-			'/\\ phase = "mapped" /\\ mode = "budget" /\\ covered = inventory',
-			'/\\ phase = "mapped" /\\ mode = "budget"',
+			'/\\ phase = "mapped" /\\ mode = "budget" /\\ pricing = "supplied" /\\ covered = inventory',
+			'/\\ phase = "mapped" /\\ mode = "budget" /\\ pricing = "supplied"',
 		),
 		config,
 		"BudgetCoversInventory",
@@ -79,18 +79,44 @@ try {
 	check(
 		"MissingUnpricedPolicy",
 		mutate(
-			'/\\ phase = "mapped" /\\ mode = "unpriced" /\\ policy',
-			'/\\ phase = "mapped" /\\ mode = "unpriced"',
+			'/\\ phase = "mapped" /\\ mode = "unpriced" /\\ pricing = "missing" /\\ policy',
+			'/\\ phase = "mapped" /\\ mode = "unpriced" /\\ pricing = "missing"',
 		),
 		config,
 		"UnpricedRequiresPolicy",
 	);
 	check(
-		"WitnessAdmission",
-		model,
-		`${config}\nINVARIANT NeverAdmitted\n`,
-		"NeverAdmitted",
+		"IncompletePricingFallback",
+		mutate(
+			'/\\ phase = "mapped" /\\ mode = "unpriced" /\\ pricing = "missing" /\\ policy',
+			'/\\ phase = "mapped" /\\ mode = "unpriced" /\\ policy',
+		),
+		config.replace("INVARIANT UnpricedRequiresMissingModel\n", ""),
+		"NoIncompleteAsUnpriced",
 	);
+	check(
+		"MissingBudgetModel",
+		mutate(
+			'/\\ phase = "mapped" /\\ mode = "budget" /\\ pricing = "supplied" /\\ covered = inventory',
+			'/\\ phase = "mapped" /\\ mode = "budget" /\\ covered = inventory',
+		),
+		config,
+		"BudgetRequiresModel",
+	);
+	for (const witness of [
+		"NeverUnpriced",
+		"NeverBudget",
+		"NeverRejected",
+		"NeverIncompleteRejected",
+		"NeverUnpricedPolicyRejected",
+	]) {
+		check(
+			`Witness${witness}`,
+			model,
+			`${config}\nINVARIANT ${witness}\n`,
+			witness,
+		);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }
