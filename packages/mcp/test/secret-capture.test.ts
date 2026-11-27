@@ -220,7 +220,6 @@ type TicketView = {
 	name: string;
 	state: string;
 	channel: string;
-	ref?: string;
 	url?: string;
 	key: { kty: "EC"; crv: "P-256"; x: string; y: string };
 };
@@ -336,7 +335,7 @@ describe("the tool and resource surface", () => {
 });
 
 describe("the MCP App channel", () => {
-	it("captures, seals in the form, stores, and answers only name, stored and ref", async () => {
+	it("captures, seals in the form, stores, and answers name and status without store coordinates", async () => {
 		const { app, store, watch } = setup();
 		const value = synthetic("SYNTHETIC-webhook", 24);
 		const opened = watch.outcome(
@@ -368,9 +367,12 @@ describe("the MCP App channel", () => {
 			ticketId: ticket.ticketId,
 			name: "HOBO_CI_WEBHOOK_SECRET",
 			stored: true,
-			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 			status: "stored",
 		});
+		expect(result(submitted).content[0]?.text).toBe(
+			"HOBO_CI_WEBHOOK_SECRET stored.",
+		);
+		expect(JSON.stringify(submitted)).not.toContain("secref://");
 		// It reached the store, and only the store.
 		const read = await store.runtime.access("HOBO_CI_WEBHOOK_SECRET");
 		expect(read.status === "ok" && read.material).toBe(value);
@@ -384,13 +386,16 @@ describe("the MCP App channel", () => {
 		);
 		expect(result(status).structuredContent).toMatchObject({
 			state: "stored",
-			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 		});
+		expect(result(status).structuredContent).not.toHaveProperty("ref");
+		expect(result(status).content[0]?.text).not.toContain("secref://");
 		watch.record(app.events());
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureOpened",
 			"secret.CaptureStored",
 		]);
+		for (const event of app.events()) expect(event).not.toHaveProperty("ref");
+		expect(JSON.stringify(app.events())).not.toContain("secref://");
 		expect(watch.assertNever(value)).toBeGreaterThan(0);
 	});
 
@@ -662,6 +667,55 @@ describe("refusals before anything is opened", () => {
 	});
 });
 
+describe("form elicitation", () => {
+	it("returns a receipt and events with name and status, never a store coordinate", async () => {
+		const store = memoryConnector();
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			elicit: async () => ({
+				action: "accept",
+				content: { value: "x".repeat(40) },
+			}),
+		});
+		apps.push(app);
+		const captured = await app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "HOBO_CI_WEBHOOK_SECRET" },
+			FORM_ONLY,
+		);
+		const answer = result(captured);
+		expect(answer.isError).toBe(false);
+		expect(answer.structuredContent).toMatchObject({
+			name: "HOBO_CI_WEBHOOK_SECRET",
+			stored: true,
+			status: "stored",
+		});
+		expect(answer.structuredContent).not.toHaveProperty("ref");
+		expect(answer.content[0]?.text).toBe("HOBO_CI_WEBHOOK_SECRET stored.");
+		expect(JSON.stringify(answer)).not.toContain("secref://");
+		const ticketId = ticketOf(captured).ticketId;
+		const status = result(
+			await app.callTool(SECRET_CAPTURE_STATUS_TOOL, { ticketId }, FORM_ONLY),
+		);
+		expect(status.structuredContent).toMatchObject({ state: "stored" });
+		expect(status.structuredContent).not.toHaveProperty("ref");
+		const stored = app
+			.events()
+			.find((event) => event.type === "secret.CaptureStored");
+		expect(stored).toMatchObject({
+			name: "HOBO_CI_WEBHOOK_SECRET",
+			target: "runtime",
+		});
+		expect(stored).not.toHaveProperty("ref");
+		expect(JSON.stringify(app.events())).not.toContain("secref://");
+		expect((await store.runtime.access("HOBO_CI_WEBHOOK_SECRET")).status).toBe(
+			"ok",
+		);
+	});
+});
+
 describe("the writer session", () => {
 	it("authorizes writes with a one-use credential that is never stored, and ends it", async () => {
 		const { app, store, watch } = setup({ writable: false });
@@ -689,9 +743,15 @@ describe("the writer session", () => {
 			ticketId: writer.ticketId,
 			name: "INFISICAL_WRITER_CLIENT_SECRET",
 			stored: false,
-			ref: "hobo-writer-session://writer-client",
 			status: "authorized",
 		});
+		expect(result(authorized).content[0]?.text).toBe(
+			"INFISICAL_WRITER_CLIENT_SECRET authorized writes.",
+		);
+		expect(JSON.stringify(authorized)).not.toContain("hobo-writer-session://");
+		expect(
+			app.events().find((event) => event.type === "secret.CaptureAuthorized"),
+		).not.toHaveProperty("ref");
 		const token = synthetic("SYNTHETIC-vercel", 16);
 		const ticket = ticketOf(
 			await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
@@ -828,11 +888,13 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		});
 		watch.record(posted.body);
 		expect(posted.status).toBe(200);
-		expect(JSON.parse(posted.body)).toMatchObject({
+		expect(JSON.parse(posted.body)).toEqual({
+			ticketId: ticket.ticketId,
 			name: "HOBO_CI_WEBHOOK_SECRET",
 			stored: true,
 			status: "stored",
 		});
+		expect(posted.body).not.toContain("secref://");
 		const read = await store.runtime.access("HOBO_CI_WEBHOOK_SECRET");
 		expect(read.status === "ok" && read.material).toBe(value);
 		expect(notifications).toEqual([
@@ -852,6 +914,8 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		expect(result(retried).structuredContent).toMatchObject({
 			state: "stored",
 		});
+		expect(result(retried).structuredContent).not.toHaveProperty("ref");
+		expect(JSON.stringify(retried)).not.toContain("secref://");
 		// The page is closed now.
 		expect(
 			(

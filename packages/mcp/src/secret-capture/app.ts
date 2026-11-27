@@ -165,7 +165,6 @@ export type SecretCaptureEvent = Readonly<{
 	name?: string;
 	target?: SecretCaptureTarget;
 	channel?: SecretCaptureChannel;
-	ref?: string;
 	code?: string;
 }>;
 
@@ -281,7 +280,6 @@ type Ticket = {
 	readonly publicKey: CapturePublicKey;
 	tokenDigest: Buffer | undefined;
 	url: string | undefined;
-	ref: string | undefined;
 	attempts: number;
 };
 
@@ -346,7 +344,6 @@ type TicketView = {
 	purpose: string;
 	charset: string;
 	maxBytes: number;
-	ref?: string;
 	key?: CapturePublicKey;
 	url?: string;
 	/** What this host can show the owner, so the agent never guesses. */
@@ -496,7 +493,6 @@ export function createSecretCaptureApp(
 			charset: ticket.spec.charset,
 			maxBytes: ticket.spec.maxBytes,
 		};
-		if (ticket.ref !== undefined) shown.ref = ticket.ref;
 		if (open) shown.key = { ...ticket.publicKey };
 		if (open && ticket.url !== undefined) shown.url = ticket.url;
 		return shown;
@@ -785,7 +781,6 @@ export function createSecretCaptureApp(
 			publicKey: keys.publicKey,
 			tokenDigest: undefined,
 			url: undefined,
-			ref: undefined,
 			attempts: 0,
 		};
 		if (channel === "form-elicitation") {
@@ -930,14 +925,13 @@ export function createSecretCaptureApp(
 		ticket: Ticket,
 		secret: CapturedSecret,
 	): Promise<SecretCaptureToolResult> {
-		let ref: string;
 		let state: "stored" | "authorized";
 		try {
 			if (ticket.spec.target === "writer") {
-				({ ref } = await options.connector.authorizeWriter({
+				await options.connector.authorizeWriter({
 					clientId: ticket.writerClientId ?? "",
 					secret,
-				}));
+				});
 				state = "authorized";
 			} else {
 				const refusal = await refuseIfNotWritable(ticket.spec);
@@ -956,9 +950,9 @@ export function createSecretCaptureApp(
 					// To the waiting ceremony, in memory; no store, no file.
 					if (ticket.handoff) await ticket.handoff.receive(secret);
 					else await options.handoff?.(secret);
-					ref = `handoff://${ticket.spec.name}`;
-				} else
-					({ ref } = await options.connector.store(ticket.spec.target, secret));
+				} else {
+					await options.connector.store(ticket.spec.target, secret);
+				}
 				state = "stored";
 			}
 		} catch (error) {
@@ -978,14 +972,10 @@ export function createSecretCaptureApp(
 						);
 			return failed(ticket, refusal, "secret.CaptureRefused", code);
 		}
-		ticket.ref = ref;
 		shut(ticket, state);
 		emit(
 			state === "stored" ? "secret.CaptureStored" : "secret.CaptureAuthorized",
-			{
-				...ticketFields(ticket),
-				ref,
-			},
+			ticketFields(ticket),
 		);
 		if (ticket.channel === "url-elicitation")
 			try {
@@ -999,14 +989,16 @@ export function createSecretCaptureApp(
 			ticketId: ticket.id,
 			name: ticket.spec.name,
 			stored: state === "stored",
-			ref,
 			status: state,
 		};
 		return {
 			content: [
 				{
 					type: "text",
-					text: `${ticket.spec.name} ${state === "stored" ? "stored" : "authorized writes"}: ${ref}.`,
+					text:
+						state === "stored"
+							? `${ticket.spec.name} stored.`
+							: `${ticket.spec.name} authorized writes.`,
 				},
 			],
 			structuredContent: receipt,

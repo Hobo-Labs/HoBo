@@ -189,10 +189,12 @@ const SCRIPT = `(function () {
   function finish(answer) {
     clearFields();
     form.hidden = true;
-    done.textContent = String(answer.ref || "");
-    done.textContent = done.textContent.indexOf("handoff://") === 0
+    var handoff = ticket && ticket.target === "handoff";
+    done.textContent = handoff
       ? "Handed to the waiting run. You can close this."
-      : (answer.status === "authorized" ? "Writes authorized for this session (" : "Stored in the secret store as ") + answer.ref + (answer.status === "authorized" ? "). " : ". ") + "You can close this.";
+      : (answer.status === "authorized"
+        ? "Writes authorized for this session. You can close this."
+        : "Stored in the secret store. You can close this.");
     done.hidden = false;
     resize();
   }
@@ -211,7 +213,7 @@ const SCRIPT = `(function () {
       ? "It is encrypted in this window and goes only to the run waiting for it. The agent never sees it, and it is not shown here again."
       : "It is encrypted in this window and written straight to the secret store. The agent never sees it, and it is not shown here again.";
     submit.textContent = handoff ? "Hand it over" : "Store it";
-    if (next.state === "stored" || next.state === "authorized") { finish({ status: next.state, ref: next.ref }); return; }
+    if (next.state === "stored" || next.state === "authorized") { finish({ status: next.state }); return; }
     var multiline = next.charset === "printable-multiline";
     multi.hidden = !multiline;
     line.hidden = multiline;

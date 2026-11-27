@@ -120,7 +120,14 @@ export interface SecretStoreDeps {
 	readonly onePasswordClient?: (
 		coordinates: Env,
 		signIn: SecretHolder,
+		authMode: "service-account" | "desktop-app",
 	) => Promise<OnePasswordSdkClient>;
+	readonly loadOnePasswordSdk?: () => Promise<typeof import("@1password/sdk")>;
+	readonly observeOnePasswordAuth?: (auth: {
+		readonly vaultId: string;
+		readonly authMode: "service-account" | "desktop-app";
+		readonly accountName?: string;
+	}) => void;
 	readonly validateOnePasswordServiceAccount?: ValidateOnePasswordServiceAccount;
 	readonly now?: () => number;
 	/** Tests inject a client; otherwise `@bitwarden/sdk-napi` is loaded on demand. */
@@ -264,14 +271,37 @@ export function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
 	};
 }
 
+type OnePasswordStoreCredential = {
+	readonly authMode: "service-account" | "desktop-app";
+	readonly accountName: string | undefined;
+};
+
+export function onePasswordStoreAuth(input: {
+	readonly accountName: string | undefined;
+	readonly connectHost: boolean;
+	readonly attestedServiceAccount: boolean;
+}): OnePasswordStoreCredential {
+	if (
+		input.attestedServiceAccount ||
+		input.connectHost ||
+		input.accountName === undefined ||
+		input.accountName === ""
+	)
+		return { authMode: "service-account", accountName: undefined };
+	return { authMode: "desktop-app", accountName: input.accountName };
+}
+
 async function onePasswordSdkClient(
 	coordinates: Env,
 	signIn: SecretHolder,
+	authMode: "service-account" | "desktop-app",
+	loadSdk?: () => Promise<Sdk>,
 ): Promise<OnePasswordSdkClient> {
-	const sdk = await import("@1password/sdk");
-	const auth = coordinates.OP_ACCOUNT
-		? new sdk.DesktopAuth(coordinates.OP_ACCOUNT)
-		: signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
+	const sdk = await (loadSdk ?? (() => import("@1password/sdk")))();
+	const auth =
+		authMode === "desktop-app"
+			? new sdk.DesktopAuth(coordinates.OP_ACCOUNT ?? "")
+			: signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
 	if (auth === undefined || auth === "")
 		throw new Error("no 1Password sign-in in the environment");
 	const client = await sdk.createClient({
@@ -490,6 +520,7 @@ export async function openSecretStore(
 				};
 			try {
 				const serviceAccountToken = signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
+				let attestedServiceAccount = false;
 				if (!connectHost && serviceAccountToken !== undefined) {
 					const token =
 						parseOnePasswordServiceAccountToken(serviceAccountToken);
@@ -538,7 +569,13 @@ export async function openSecretStore(
 										"Run again: the private owner form connects a fresh, vault-scoped service account and writes a new reuse lease.",
 									],
 								};
+					attestedServiceAccount = true;
 				}
+				const auth = onePasswordStoreAuth({
+					accountName: env.OP_ACCOUNT,
+					connectHost: connectHost !== undefined,
+					attestedServiceAccount,
+				});
 				const client =
 					connectHost && connectToken
 						? createOnePasswordConnectClient({
@@ -548,18 +585,23 @@ export async function openSecretStore(
 									? { fetch: deps.fetch }
 									: undefined),
 							})
-						: await (deps.onePasswordClient ?? onePasswordSdkClient)(
-								coordinates,
-								signIn,
-							);
-				const binding = onePasswordBinding({
+						: deps.onePasswordClient !== undefined
+							? await deps.onePasswordClient(coordinates, signIn, auth.authMode)
+							: await onePasswordSdkClient(
+									coordinates,
+									signIn,
+									auth.authMode,
+									deps.loadOnePasswordSdk,
+								);
+				const bindingInit = {
 					vaultId,
-					authMode:
-						env.OP_ACCOUNT && !connectHost ? "desktop-app" : "service-account",
-					...(env.OP_ACCOUNT && !connectHost
-						? { accountName: env.OP_ACCOUNT }
+					authMode: auth.authMode,
+					...(auth.accountName !== undefined
+						? { accountName: auth.accountName }
 						: undefined),
-				});
+				};
+				deps.observeOnePasswordAuth?.(bindingInit);
+				const binding = onePasswordBinding(bindingInit);
 				return {
 					ok: true,
 					store: {

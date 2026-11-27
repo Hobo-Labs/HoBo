@@ -318,10 +318,21 @@ describe("1Password SDK bridge", () => {
 					OP_SERVICE_ACCOUNT_EXPIRES_AT: EXPIRES_AT,
 				},
 				token: TOKEN,
+				authMode: "service-account" as const,
 			},
 			{
 				coordinates: { OP_VAULT_ID: VAULT, OP_ACCOUNT: "owner@example.test" },
 				token: undefined,
+				authMode: "desktop-app" as const,
+			},
+			{
+				coordinates: {
+					OP_VAULT_ID: VAULT,
+					OP_ACCOUNT: "owner@example.test",
+					OP_SERVICE_ACCOUNT_EXPIRES_AT: EXPIRES_AT,
+				},
+				token: TOKEN,
+				authMode: "service-account" as const,
 			},
 		]) {
 			const signIn = createTrustedVault();
@@ -333,11 +344,16 @@ describe("1Password SDK bridge", () => {
 				{
 					validateOnePasswordServiceAccount: async () => true,
 					now: () => NOW,
-					onePasswordClient: async (coordinates, credentialHolder) => {
+					onePasswordClient: async (
+						coordinates,
+						credentialHolder,
+						authMode,
+					) => {
 						expect(coordinates).toEqual(entry.coordinates);
 						expect(credentialHolder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(
 							entry.token,
 						);
+						expect(authMode).toBe(entry.authMode);
 						return fx.client;
 					},
 				},
