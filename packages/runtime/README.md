@@ -707,3 +707,10 @@ an authorized owner can reconcile it before the original expiry.
 The bounded topic and declared-topic models live alongside the provider-neutral
 runtime. They assume transactional persistence, a truthful clock, ownership and
 authorization; they do not prove the implementation or those host guarantees.
+
+The bounded `TopicJournal` model covers retries, authorization at start and
+disclosure, digest changes, expiry, and unknown results before and after an
+effect. It explores at most three attempts for one operation and assumes atomic
+transactions and truthful host authorization. Its start step abstracts an
+authorized operation after the transaction clock check; it does not prove the
+code or provider behavior.
