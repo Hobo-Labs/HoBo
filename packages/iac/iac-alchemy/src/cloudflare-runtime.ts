@@ -668,6 +668,7 @@ function allowFor(declaration: PrimitiveDeclaration) {
 			);
 		case "api":
 		case "service":
+		case "ui":
 		case "web":
 			return { kind: "service", verbs: [] } as const;
 		default:
@@ -763,10 +764,12 @@ export function bindleCloudflareWorker<Requirements>(
 		!name(bindle.name) ||
 		declaration === undefined ||
 		declaration.name !== resourceName ||
-		!["web", "api", "service"].includes(declaration.kind) ||
+		!["web", "api", "service", "ui"].includes(declaration.kind) ||
 		typeof entrypoint !== "function"
 	)
 		throw new Error("an HTTP bindle entrypoint is required");
+	if (declaration.kind === "ui" && declaration.declaredAllow.length > 0)
+		throw new Error("UI render and drive operations are unsupported");
 	if (
 		bindle.connectors !== undefined &&
 		Object.keys(bindle.connectors).length > 0

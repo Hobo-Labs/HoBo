@@ -28,8 +28,8 @@ it("preserves Cloudflare HTTP handler behavior in workerd", async () => {
 	const entry = `
 import { bindleCloudflareWorker } from './cloudflare-runtime.js';
 import { cloudflareRequestBodyUsed, cloudflareResponseHeader } from './cloudflare-web-options.js';
-const declaration = { kind: 'web', name: 'web', stableId: 'web:web', declaredAllow: [], dependsOn: [], annotations: [] };
-function workerFor(factory) {
+function workerFor(factory, kind = 'web') {
+  const declaration = { kind, name: 'web', stableId: kind + ':web', declaredAllow: [], dependsOn: [], annotations: [] };
   return bindleCloudflareWorker({ name: 'shop', resources: { web: declaration }, edges: [], requirements: {}, entrypoint: () => factory }, 'web');
 }
 export default { async fetch() {
@@ -37,6 +37,8 @@ export default { async fetch() {
   let receiver = false;
   class Handler { fetch() { receiver = this instanceof Handler; return new Response('class'); } }
   const classResult = await workerFor(() => new Handler()).fetch(request(), {});
+  const uiResult = await workerFor(() => () => new Response('ui works'), 'ui').fetch(request(), {});
+  const uiBody = await uiResult.text();
   const frozen = Object.freeze(new Response(null, { status: 204 }));
   const frozenResult = await workerFor(() => () => frozen).fetch(request(), {});
   const large = new Response('large', { headers: { 'x-hobo-kv-key': 'x'.repeat(8193) } });
@@ -52,7 +54,7 @@ export default { async fetch() {
   const usedBefore = cloudflareRequestBodyUsed(post);
   await post.text();
   const usedAfter = cloudflareRequestBodyUsed(post);
-  return Response.json({ classStatus: classResult.status, receiver, frozenSame: frozenResult === frozen,
+  return Response.json({ classStatus: classResult.status, uiStatus: uiResult.status, uiBody, receiver, frozenSame: frozenResult === frozen,
     largeSame: largeResult === large, receiptRejected, subclassSame: subclassResult === subResponse,
     restored, usedBefore, usedAfter });
 } }`;
@@ -69,6 +71,8 @@ export default { async fetch() {
 		expect(response.status, body).toBe(200);
 		expect(JSON.parse(body)).toEqual({
 			classStatus: 200,
+			uiStatus: 200,
+			uiBody: "ui works",
 			receiver: true,
 			frozenSame: true,
 			largeSame: true,

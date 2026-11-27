@@ -95,6 +95,7 @@ export type CloudflareBindleMappers<Requirements> = Readonly<
 		| "queue"
 		| "secret"
 		| "service"
+		| "ui"
 		| "web",
 		AlchemyPrimitiveMapper<CloudflareBindleEntrypoint, Requirements, Providers>
 	>
@@ -134,7 +135,7 @@ const CLOUD_FLARE_LIMITATIONS: Readonly<Record<string, string>> = Object.freeze(
 		notify:
 			"Email.Send is available for email, but the HoBo notification delivery port is not bound.",
 		guardrail: "No HoBo guardrail evaluation binding is implemented.",
-		ui: "No HoBo UI render and drive binding is implemented.",
+		ui: "HTTP Worker requires an exported bindle module and disabled session replay; UI render and drive operations are not implemented.",
 		experiment:
 			"No HoBo experiment assignment and analysis binding is implemented.",
 		rollout: "No HoBo rollout progression and rollback binding is implemented.",
@@ -599,5 +600,11 @@ export function cloudflareBindleMappers<Requirements>(
 		web,
 		api: http,
 		service: http,
+		ui: {
+			...http,
+			limitations: [
+				CLOUD_FLARE_LIMITATIONS.ui ?? "UI operations are unsupported.",
+			],
+		},
 	} satisfies CloudflareBindleMappers<Requirements>;
 }

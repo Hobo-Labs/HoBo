@@ -30,6 +30,47 @@ const declaration = (
 });
 
 describe("Cloudflare worker binding", () => {
+	it("routes a UI dependency as an HTTP service without UI operation grants", async () => {
+		const entrypoint = (context?: CloudflareBindleContext) => async () =>
+			cloudflareBindings(context)
+				.service("panel")
+				.fetch(new Request("https://panel.test/"));
+		const app = {
+			name: "shop",
+			resources: {
+				web: declaration("web", "web", [], ["ui"]),
+				panel: declaration("ui", "panel", []),
+			},
+			edges: [{ from: "web", to: "panel" }],
+			requirements: {},
+			entrypoint: () => entrypoint,
+		};
+		const worker = bindleCloudflareWorker(app, "web");
+		expect(inspectCloudflareWorker(worker)?.bindings).toEqual([
+			{
+				name: "panel",
+				kind: "service",
+				env: "HOBO_RESOURCE_0",
+				allow: ["fetch"],
+			},
+		]);
+		const response = await worker.fetch(new Request("https://app.test/"), {
+			HOBO_RESOURCE_0: { fetch: () => new Response("panel") },
+		});
+		expect(await response.text()).toBe("panel");
+		for (const operation of ["render", "drive"]) {
+			const denied = {
+				...app,
+				resources: {
+					...app.resources,
+					panel: declaration("ui", "panel", [operation]),
+				},
+			};
+			expect(() => bindleCloudflareWorker(denied, "web")).toThrow(
+				"ui operation is unsupported",
+			);
+		}
+	});
 	it("invokes the native service using captured intrinsics", async () => {
 		const entrypoint = (context?: CloudflareBindleContext) => async () =>
 			cloudflareBindings(context)
