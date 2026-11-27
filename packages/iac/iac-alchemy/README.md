@@ -116,7 +116,10 @@ headers; a stalled handler keeps one of 32 capacity slots until it settles.
 The host must authenticate HTTP requests, independently enforce IAM and fence
 in-flight AWS operations across grant or resource ownership changes. This host
 adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
-request bodies, stream responses, or provide connectors or session replay.
+request bodies, stream responses, or provide connectors or session replay. The
+bounded `AwsHttpBindings` model checks request retirement, grant revalidation
+and timed-out capacity. It assumes host verification and transport behavior;
+it does not prove AWS, HTTP parsing, byte limits or liveness.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
