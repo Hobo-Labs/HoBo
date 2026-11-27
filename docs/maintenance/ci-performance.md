@@ -52,6 +52,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
+- **Alchemy test worker limit.** The Alchemy suite caps Vitest at one worker. Some
+  integration fixtures compile the adapter into separate temporary directories;
+  running those compilers concurrently can exceed their 30-second subprocess
+  deadline on a shared runner. The full suite and its existing deadlines remain in
+  place.
 - **Job disk headroom.** On a self-hosted runner, the first `ci-runner-preflight` step runs
   `scripts/ci/runner-job-disk-prune.mts`. It samples free bytes with `df` on Docker's data root
   (`docker info -f {{.DockerRootDir}}`) and on `GITHUB_WORKSPACE`. If either is below
