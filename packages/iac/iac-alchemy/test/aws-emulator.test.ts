@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
@@ -8,6 +8,7 @@ import { Bucket, BucketProvider } from "@alchemy.run/aws/S3";
 import { Secret, SecretProvider } from "@alchemy.run/aws/SecretsManager";
 import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
 import { Queue, QueueProvider } from "@alchemy.run/aws/SQS";
+import * as SecretsManager from "@distilled.cloud/aws/secrets-manager";
 import { NodeHttpClient } from "@effect/platform-node";
 import { awsPlugin, getAwsStore } from "@emulators/aws";
 import { createServer } from "@emulators/core";
@@ -39,6 +40,11 @@ import {
 } from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
+import { createAwsSecretStore } from "../src/aws-secret.js";
+import {
+	awsVersionedSecretBindleMappers,
+	withAwsVersionedSecret,
+} from "../src/aws-secret-mapper.js";
 import { mapBindleToAlchemy } from "../src/bindle.js";
 
 const credentials = {
@@ -357,10 +363,15 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					connect: { ca, servername: "localhost" },
 				}),
 			);
-			const definition = bindle("shop", (b) => ({ credentials: b.secret() }));
+			const definition = bindle("shop", (b) => ({
+				credentials: b.secret().allow("put", "access"),
+			}));
+			const selected = withAwsVersionedSecret(definition, {
+				credentials: true,
+			});
 			// SAFETY: resource declaration only registers constructors; no AWS provider runs here.
 			const mapped = await Effect.runPromise(
-				mapBindleToAlchemy(definition, awsBindleMappers(), {
+				mapBindleToAlchemy(selected, awsVersionedSecretBindleMappers(), {
 					assessRequirements: () => ({ status: "supported" }),
 				}).pipe(
 					Effect.provideService(StackContext, {
@@ -398,6 +409,48 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				":secretsmanager:us-east-1:000000000000:secret:",
 			);
 			expect(output.versionId).toBeUndefined();
+			try {
+				let authorized = true;
+				const store = createAwsSecretStore({
+					grant: {
+						secretArn: output.secretArn,
+						resourceEpoch: `sha256:${"a".repeat(64)}`,
+						grantEpoch: `sha256:${"b".repeat(64)}`,
+						allow: ["put", "access"],
+					},
+					verify: () => authorized,
+					layer,
+				});
+				const first = randomUUID();
+				const second = randomUUID();
+				expect(await store.put(new Uint8Array([1, 2]), first)).toBe(first);
+				// A provider may report timestamps at whole-second precision.
+				await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_100));
+				expect(await store.put(new Uint8Array([3, 4]), second)).toBe(second);
+				expect(await store.access()).toEqual({
+					versionId: second,
+					value: new Uint8Array([3, 4]),
+				});
+				expect(await store.accessVersion(first)).toEqual(
+					new Uint8Array([1, 2]),
+				);
+				expect(new Set(await store.listVersions())).toEqual(
+					new Set([first, second]),
+				);
+				authorized = false;
+				await expect(store.access()).rejects.toMatchObject({
+					code: "AWS_SECRET_DENIED",
+				});
+			} finally {
+				// SAFETY: this deletes only the ephemeral secret created inside the local emulator.
+				await Effect.runPromise(
+					SecretsManager.deleteSecret({
+						SecretId: output.secretArn,
+						ForceDeleteWithoutRecovery: true,
+						region: "us-east-1",
+					}).pipe(Effect.provide(layer)) as Effect.Effect<unknown>,
+				);
+			}
 		},
 		30_000,
 	);

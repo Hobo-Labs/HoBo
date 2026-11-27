@@ -62,10 +62,28 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
-The AWS mapper also maps a secret declaration with no requested operations to
-an Alchemy `AWS.SecretsManager.Secret`, with a 30-day deletion recovery window
-and no value in the IaC configuration. This is infrastructure-only: versioned
-secret operations and application bindings are not yet provided by this mapper.
+The AWS mapper maps a secret declaration to an Alchemy
+`AWS.SecretsManager.Secret`, with a 30-day deletion recovery window and no
+secret value in IaC configuration. For bounded Node.js version operations,
+select `withAwsVersionedSecret(bindle, { credentials: true })` and compose
+`awsVersionedSecretBindleMappers()` from `@hobo/iac-alchemy/aws/secret-mapper`.
+Use `createAwsSecretStore` from `@hobo/iac-alchemy/aws/secret` with the exact
+mapped secret ARN, host-issued resource and grant epochs, explicit permissions,
+a synchronous verifier and the AWS credentials and HTTP Effect layer.
+
+`put(bytes, versionId)` requires a canonical UUID persisted by the host before
+dispatch. An uncertain write reports that same ID; reconcile it or retry with
+the same ID and bytes. The host must authenticate the secret incarnation,
+enforce IAM, fence in-flight operations during ownership changes, and protect
+secret bytes and version IDs appropriately. `access` also permits pinned reads
+and version listing. Values are binary and limited to 64 KiB; listing rejects
+more than 100 versions, versions without canonical UUIDs or timestamps, or
+versions with equal timestamps whose newest-first order cannot be established.
+The bounded `AwsSecretOrdering` model checks sorting and tie rejection for three
+versions; it assumes the provider reports truthful timestamps.
+String-valued secrets and application or WASI bindings are not supported.
+The `AwsSecretVersions` bounded model assumes persisted IDs, provider
+idempotency and trusted host verification; it does not prove AWS behavior.
 
 AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
 its provider choice outside the Bindle: pass the neutral Bindle through

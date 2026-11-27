@@ -1030,6 +1030,129 @@ try {
 			`AwsHttpIngress ${label}: ${invariant} counterexample found\n`,
 		);
 	}
+	const secretSource = readFileSync(
+		join(sharedDirectory, "AwsSecretVersions.tla"),
+		"utf8",
+	);
+	const secretResult = check(
+		"AwsSecretVersions",
+		sharedDirectory,
+		join(scratch, "aws-secret"),
+	);
+	if (
+		secretResult.status !== 0 ||
+		!secretResult.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`AwsSecretVersions model checking failed:\n${secretResult.stdout}\n${secretResult.stderr}`,
+		);
+	process.stdout.write(secretResult.stdout);
+	const secretCases = [
+		[
+			"overwrite-version",
+			'/\\ state \\in {"running", "timedout"} /\\ versions[token] = "none"',
+			'/\\ state \\in {"running", "timedout"}',
+			"OneVersionPerToken",
+		],
+		[
+			"release-on-timeout",
+			"/\\ UNCHANGED <<slot, grant, token, payload, versions, writes, responseVerified>>",
+			"/\\ slot' = FALSE /\\ UNCHANGED <<grant, token, payload, versions, writes, responseVerified>>",
+			"TimeoutRetainsSlot",
+		],
+		[
+			"skip-grant-check",
+			'IF grant THEN "success" ELSE "unknown"',
+			'"success"',
+			"SuccessIsConfirmed",
+		],
+		["success-witness", undefined, undefined, "NeverSuccess"],
+		["timeout-witness", undefined, undefined, "NeverTimeout"],
+	] as const;
+	for (const [label, before, after, invariant] of secretCases) {
+		if (before !== undefined && secretSource.split(before).length !== 2)
+			throw new Error(`AwsSecretVersions ${label} mutation target changed`);
+		const isolated = join(scratch, `aws-secret-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "AwsSecretVersions.tla"),
+			before === undefined ? secretSource : secretSource.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "AwsSecretVersions.cfg"),
+			`SPECIFICATION Spec\nCONSTANTS Tokens = {t1, t2}\n          Payloads = {p1, p2}\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check(
+			"AwsSecretVersions",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`AwsSecretVersions ${label} did not reach ${invariant}`);
+		process.stdout.write(
+			`AwsSecretVersions ${label}: ${invariant} counterexample found\n`,
+		);
+	}
+	const orderingSource = readFileSync(
+		join(sharedDirectory, "AwsSecretOrdering.tla"),
+		"utf8",
+	);
+	const orderingResult = check(
+		"AwsSecretOrdering",
+		sharedDirectory,
+		join(scratch, "aws-secret-ordering"),
+	);
+	if (
+		orderingResult.status !== 0 ||
+		!orderingResult.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`AwsSecretOrdering model checking failed:\n${orderingResult.stdout}\n${orderingResult.stderr}`,
+		);
+	process.stdout.write(orderingResult.stdout);
+	const orderingCases = [
+		["ignore-order", "Unique(o) /\\ Sorted(o)", "Unique(o)", "NewestFirst"],
+		[
+			"accept-tie",
+			'IF Distinct THEN "success" ELSE "unavailable"',
+			'"success"',
+			"TieRejected",
+		],
+		["success-witness", undefined, undefined, "NeverSuccess"],
+		["unavailable-witness", undefined, undefined, "NeverUnavailable"],
+	] as const;
+	for (const [label, before, after, invariant] of orderingCases) {
+		if (before !== undefined && orderingSource.split(before).length !== 2)
+			throw new Error(`AwsSecretOrdering ${label} mutation target changed`);
+		const isolated = join(scratch, `aws-secret-ordering-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "AwsSecretOrdering.tla"),
+			before === undefined
+				? orderingSource
+				: orderingSource.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "AwsSecretOrdering.cfg"),
+			`SPECIFICATION Spec\nCONSTANTS Versions = {v1, v2, v3}\n          Times = {1, 2, 3}\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check(
+			"AwsSecretOrdering",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`AwsSecretOrdering ${label} did not reach ${invariant}`);
+		process.stdout.write(
+			`AwsSecretOrdering ${label}: ${invariant} counterexample found\n`,
+		);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }
