@@ -29,6 +29,7 @@ export async function withOwnerJournalFleet(
 	if (
 		env.HOBO_CD_POSTGRES_FLEET !== undefined ||
 		env.HOBO_CD_POSTGRES_URL !== undefined ||
+		(env.HOBO_CD_SQLITE_PATH?.trim() ?? "") !== "" ||
 		(open === undefined && !hasSecretStoreLocator(cwd, env))
 	)
 		return { env };

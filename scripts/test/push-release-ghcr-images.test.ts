@@ -104,15 +104,12 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(build).toContain(
 			"HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}",
 		);
-		expect(build).toContain("needs.release-main-train-gate.outputs.turbo_base");
-		expect(publish).toContain(
-			"needs.release-main-train-gate.outputs.turbo_base",
-		);
-		expect(publish).toContain("Fetch previous release for affected builds");
-		expect(build).toContain(
-			"node --no-warnings scripts/ci/fetch-release-turbo-base.mts",
-		);
-		expect(workflow).toContain("turbo_base: ${{ steps.scope.outputs.from }}");
+		for (const block of [build, publish]) {
+			expect(block).not.toContain("Fetch previous release for affected builds");
+			expect(block).not.toContain(
+				"needs.release-main-train-gate.outputs.turbo_base",
+			);
+		}
 		expect(publish).toContain(fromTrain);
 		expect(publish).toMatch(/max-parallel: 6/u);
 		expect(publish).toContain(
@@ -138,16 +135,6 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(attest).toContain("digest artifact empty");
 		expect(attest).toContain("if: steps.digest.outputs.present == 'true'");
 		expect(workflow).not.toContain("name: hobo-release-digests\n");
-	});
-
-	it("ships the fetch wrapper both release build jobs call", async () => {
-		const { existsSync } = await import("node:fs");
-		const { join } = await import("node:path");
-		expect(
-			existsSync(
-				join(import.meta.dirname, "..", "ci/fetch-release-turbo-base.mts"),
-			),
-		).toBe(true);
 	});
 });
 
@@ -240,6 +227,7 @@ async function layoutFixture(options: {
 	present?: readonly string[];
 	attestation?: boolean;
 	index?: boolean;
+	labels?: Record<string, string>;
 }) {
 	const { createHash } = await import("node:crypto");
 	const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
@@ -256,7 +244,13 @@ async function layoutFixture(options: {
 	const children = platforms.map((arch) => {
 		const present = (options.present ?? platforms).includes(arch);
 		const config = put(
-			Buffer.from(JSON.stringify({ architecture: arch, os: "linux" })),
+			Buffer.from(
+				JSON.stringify({
+					architecture: arch,
+					os: "linux",
+					config: { Labels: options.labels },
+				}),
+			),
 			present,
 		);
 		const layer = put(
@@ -331,6 +325,114 @@ async function layoutFixture(options: {
 	);
 	return { dir, root, children };
 }
+
+describe("verified OCI handoff", () => {
+	const expected = {
+		imageId: "hobo-sdk",
+		revision: "a".repeat(40),
+		version: "1.2.3",
+	};
+	const labels = {
+		"io.hobo.release.image": expected.imageId,
+		"org.opencontainers.image.revision": expected.revision,
+		"org.opencontainers.image.version": expected.version,
+	};
+	it("verifies each platform and requires labels", async () => {
+		const { verifyReleaseOciHandoff } = await import(
+			"../ci/release-oci-handoff.mts"
+		);
+		const { rmSync } = await import("node:fs");
+		const multi = await layoutFixture({
+			platforms: ["amd64", "arm64"],
+			labels,
+		});
+		const missing = await layoutFixture({});
+		try {
+			if (!multi.root) throw new Error("fixture has no root");
+			expect(verifyReleaseOciHandoff(multi.dir, expected).digest).toBe(
+				multi.root.digest,
+			);
+			expect(() => verifyReleaseOciHandoff(missing.dir, expected)).toThrow();
+		} finally {
+			rmSync(multi.dir, { recursive: true, force: true });
+			rmSync(missing.dir, { recursive: true, force: true });
+		}
+	});
+	it("rejects a reused registry tag whose digest differs from the verified image", async () => {
+		const { buildReleaseGhcrImages } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		const { rmSync } = await import("node:fs");
+		const fixture = await layoutFixture({ labels });
+		const oldDir = process.env.HOBO_RELEASE_OCI_LAYOUT_DIR;
+		const oldRevision = process.env.HOBO_RELEASE_REVISION;
+		process.env.HOBO_RELEASE_OCI_LAYOUT_DIR = fixture.dir;
+		process.env.HOBO_RELEASE_REVISION = expected.revision;
+		const repository = "ghcr.io/hobo-labs/hobo/hobo-sdk";
+		try {
+			const options = {
+				releaseRef: "sdk-v1.2.3",
+				repository: "hobo-labs/hobo",
+				imageId: expected.imageId,
+			};
+			expect(() =>
+				buildReleaseGhcrImages({
+					...options,
+					reusePublishedTag: () => `${repository}@sha256:${"f".repeat(64)}`,
+				}),
+			).toThrow(
+				/existing registry digest does not match verified OCI handoff/u,
+			);
+			if (!fixture.root?.digest) throw new Error("fixture has no root digest");
+			const digest = fixture.root.digest;
+			expect(
+				buildReleaseGhcrImages({
+					...options,
+					reusePublishedTag: () => `${repository}@${digest}`,
+				}),
+			).toEqual([{ id: expected.imageId, line: `${repository}@${digest}` }]);
+		} finally {
+			if (oldDir === undefined) delete process.env.HOBO_RELEASE_OCI_LAYOUT_DIR;
+			else process.env.HOBO_RELEASE_OCI_LAYOUT_DIR = oldDir;
+			if (oldRevision === undefined) delete process.env.HOBO_RELEASE_REVISION;
+			else process.env.HOBO_RELEASE_REVISION = oldRevision;
+			rmSync(fixture.dir, { recursive: true, force: true });
+		}
+	});
+	it("accepts the verified gate image and rejects altered inputs", async () => {
+		const { verifyReleaseOciHandoff } = await import(
+			"../ci/release-oci-handoff.mts"
+		);
+		const fixture = await layoutFixture({ labels });
+		try {
+			const result = verifyReleaseOciHandoff(fixture.dir, expected);
+			expect(result.digest).toMatch(/^sha256:[0-9a-f]{64}$/u);
+			expect(() =>
+				verifyReleaseOciHandoff(fixture.dir, {
+					...expected,
+					imageId: "hobo-cli",
+				}),
+			).toThrow();
+			expect(() =>
+				verifyReleaseOciHandoff(fixture.dir, {
+					...expected,
+					revision: "b".repeat(40),
+				}),
+			).toThrow();
+			expect(() =>
+				verifyReleaseOciHandoff(fixture.dir, { ...expected, version: "1.2.4" }),
+			).toThrow();
+			const { writeFileSync } = await import("node:fs");
+			const last = result.blobs.at(-1);
+			if (!last) throw new Error("fixture has no blobs");
+			writeFileSync(last.path, "corrupted");
+			expect(() => verifyReleaseOciHandoff(fixture.dir, expected)).toThrow();
+		} finally {
+			const { rmSync } = await import("node:fs");
+			rmSync(fixture.dir, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("readOciLayout (the image the oci-candidate realizer pushes)", () => {
 	it("reads a single-platform image: root manifest first, then config and layers, each re-hashed", async () => {

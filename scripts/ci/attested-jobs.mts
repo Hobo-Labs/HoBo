@@ -203,12 +203,8 @@ function tokenize(source: string): Token[] {
 			at += number[0].length;
 			continue;
 		}
-		// A `.*` segment is GitHub's filter on a context path, as in
-		// `github.event.pull_request.labels.*.name`.
 		const name =
-			/^[A-Za-z_][A-Za-z0-9_-]*(\.(?:\*|[A-Za-z_][A-Za-z0-9_-]*))*/u.exec(
-				rest,
-			);
+			/^[A-Za-z_][A-Za-z0-9_-]*(\.(?:\*|[A-Za-z_][A-Za-z0-9_-]*))*/u.exec(rest);
 		if (name) {
 			tokens.push({ kind: "name", text: name[0] });
 			at += name[0].length;

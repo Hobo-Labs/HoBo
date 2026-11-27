@@ -116,7 +116,7 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
 	const jobsIndex = lines.indexOf("jobs:");
 	const starts = lines.flatMap((line, index) =>
-		index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
+		index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
 	);
 	if (jobsIndex === -1 || starts.length === 0)
 		errors.push(`${probeFile}: the probe needs its jobs`);
@@ -166,7 +166,7 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
 	const jobsIndex = lines.indexOf("jobs:");
 	const starts = lines.flatMap((line, index) =>
-		index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
+		index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
 	);
 	if (jobsIndex === -1 || starts.length === 0)
 		errors.push(`${healthFile}: the health monitor needs its ci-health job`);
@@ -185,6 +185,12 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 /** The one runner choice besides `hobo`: trunk events ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
+
+const MERGE_GROUP_TRUNK_RUNS_ON =
+	"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
+
+const MERGE_GROUP_SCRIPTS_RUNS_ON =
+	"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
 
 const ROUTED_RUNS_ON =
 	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
@@ -329,10 +335,16 @@ function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
 	runsOn: string | undefined,
+	file = "",
 ): boolean {
-	if (/^  route:$/.test(jobLine)) {
+	const gateRunsOn =
+		runsOn === HOSTED_RUNS_ON ||
+		(runsOn === MERGE_GROUP_TRUNK_RUNS_ON &&
+			file === "hobo-ci.yml" &&
+			/^ {2}(route|pr-gate):$/.test(jobLine));
+	if (/^ {2}route:$/.test(jobLine)) {
 		return (
-			runsOn === HOSTED_RUNS_ON &&
+			gateRunsOn &&
 			block.some(
 				(line) =>
 					line.trim() === "uses: ./.github/actions/route-runner" ||
@@ -341,15 +353,21 @@ function isAlwaysHostedJob(
 			)
 		);
 	}
-	if (runsOn !== HOSTED_RUNS_ON) return false;
+	if (!gateRunsOn) return false;
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
-	if (/^  ci-health:$/.test(jobLine))
-		return block.some((line) =>
-			/^\s*-?\s*run: node scripts\/ci\/ci-health\.mts$/.test(line),
+	if (/^ {2}ci-health:$/.test(jobLine))
+		return (
+			runsOn === HOSTED_RUNS_ON &&
+			block.some((line) =>
+				/^\s*-?\s*run: node scripts\/ci\/ci-health\.mts$/.test(line),
+			)
 		);
-	if (/^  supersession:$/.test(jobLine))
-		return block.some((line) =>
-			/^\s*-?\s*run: node scripts\/ci\/pr-supersession\.mts$/.test(line),
+	if (/^ {2}supersession:$/.test(jobLine))
+		return (
+			runsOn === HOSTED_RUNS_ON &&
+			block.some((line) =>
+				/^\s*-?\s*run: node scripts\/ci\/pr-supersession\.mts$/.test(line),
+			)
 		);
 	const stepsAt = block.findIndex((line) => line === "    steps:");
 	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
@@ -434,13 +452,13 @@ function lintAttestedSkips(
 	block: readonly string[],
 	line: number,
 ): void {
-	const jobId = /^  ([A-Za-z0-9_-]+):$/.exec(jobLine)?.[1] ?? "";
+	const jobId = /^ {2}([A-Za-z0-9_-]+):$/.exec(jobLine)?.[1] ?? "";
 	const stepsAt = block.findIndex((entry) => entry === "    steps:");
 	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
 	const body = stepsAt === -1 ? [] : block.slice(stepsAt);
 	if (jobId === "route") {
 		const declares = header.some((entry) =>
-			/^      attested(-jobs)?:/.test(entry),
+			/^ {6}attested(-jobs)?:/.test(entry),
 		);
 		if (!declares) return;
 		for (const needed of ATTESTATION_VERIFIER_FILES)
@@ -546,11 +564,12 @@ function isNpmOidcHostedReleaseJob(
 	jobLine: string,
 	runsOn: string | undefined,
 ): boolean {
-	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	const jobId = /^ {2}([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
 	return (
-		file === "release-hobo.yml" &&
-		(jobId === "release-npm" || jobId === "release-hobo-cli") &&
-		runsOn === "ubuntu-24.04"
+		runsOn === "ubuntu-24.04" &&
+		((file === "release-hobo.yml" &&
+			(jobId === "release-npm" || jobId === "release-hobo-cli")) ||
+			(file === "release-pricing.yml" && jobId === "pricing-release-publish"))
 	);
 }
 
@@ -559,7 +578,7 @@ function isHostedReleaseIntegrationJob(
 	jobLine: string,
 	runsOn: string | undefined,
 ): boolean {
-	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	const jobId = /^ {2}([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
 	return (
 		runsOn === "ubuntu-24.04" &&
 		((file === "release-hobo-pr.yml" && jobId === "release-integration") ||
@@ -585,7 +604,7 @@ const TRUNK_EVENTS = new Set([
 function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
 	return lines
 		.slice(0, jobsIndex)
-		.some((line) => TRUNK_EVENTS.has(/^  ([a-z_]+):/.exec(line)?.[1] ?? ""));
+		.some((line) => TRUNK_EVENTS.has(/^ {2}([a-z_]+):/.exec(line)?.[1] ?? ""));
 }
 
 function isPullRequestOnlyJob(
@@ -593,7 +612,7 @@ function isPullRequestOnlyJob(
 	workflowHasTrunkEvent: boolean,
 ): boolean {
 	if (!workflowHasTrunkEvent) return true;
-	const condition = /^    if:([^\n]*(?:\n      [^\n]*)*)/m.exec(
+	const condition = /^ {4}if:([^\n]*(?:\n {6}[^\n]*)*)/m.exec(
 		block.join("\n"),
 	)?.[1];
 	const expression = extractJobLevelIf(block);
@@ -876,7 +895,7 @@ function lintLocalActionsNeedCheckoutFirst(
 	let seenCheckout = false;
 	for (let i = stepsIndex + 1; i < block.length; i++) {
 		const line = block[i] ?? "";
-		if (/^    [A-Za-z0-9_-]+:/.test(line)) break;
+		if (/^ {4}[A-Za-z0-9_-]+:/.test(line)) break;
 		if (!/^\s+- /.test(line)) continue;
 		const indent = line.match(/^(\s*)-/)?.[1] ?? "      ";
 		let end = i + 1;
@@ -948,7 +967,7 @@ function lintWorkflowYaml(
 		.map((line, index) => ({ line, index }))
 		.filter(
 			(entry) =>
-				entry.index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(entry.line),
+				entry.index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(entry.line),
 		)
 		.map((entry) => entry.index);
 	const workflowHasTrunkEvent = hasTrunkEvent(lines, jobsIndex);
@@ -979,7 +998,11 @@ function lintWorkflowYaml(
 			jobLine,
 			runsOn,
 		);
-		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
+		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn, file);
+		const mergeGroupScripts =
+			file === "hobo-ci.yml" &&
+			jobLine === "  scripts-tests:" &&
+			runsOn === MERGE_GROUP_SCRIPTS_RUNS_ON;
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -990,6 +1013,7 @@ function lintWorkflowYaml(
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			!mergeGroupScripts &&
 			runsOn !== RELEASE_PAGES_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
@@ -1008,7 +1032,10 @@ function lintWorkflowYaml(
 			);
 		}
 		if (
-			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || depsRoute) &&
+			(runsOn === ROUTED_RUNS_ON ||
+				runsOn === SHARD_RUNS_ON ||
+				mergeGroupScripts ||
+				depsRoute) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -1023,6 +1050,8 @@ function lintWorkflowYaml(
 		if (
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
+			runsOn === MERGE_GROUP_TRUNK_RUNS_ON ||
+			mergeGroupScripts ||
 			runsOn === ROUTED_RUNS_ON ||
 			runsOn === SHARD_RUNS_ON ||
 			depsRoute

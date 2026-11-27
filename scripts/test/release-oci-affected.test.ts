@@ -401,6 +401,7 @@ describe("affected release OCI images", () => {
 		"mise.lock",
 		"packages/ci-gh-actions/deploy/ci-runner/Dockerfile",
 		"scripts/ci/build-release-oci-image.mts",
+		"scripts/lib/turbo-concurrency.ts",
 		"tsconfig.base.json",
 	])("builds every image when the shared layer input %s changes", (path) => {
 		expect(affected({ [path]: "changed\n" })).toEqual(ALL);
@@ -427,6 +428,41 @@ describe("affected release OCI images", () => {
 				"release/oci-images.json": json({ ...MANIFEST, owner: "x" }),
 			}),
 		).toEqual(ALL);
+	});
+
+	it("invalidates the SDK and its CLI consumers when staging inputs change", () => {
+		const sdkManifest = {
+			...MANIFEST,
+			images: [...MANIFEST.images, image("hobo-sdk")],
+		};
+		const base = {
+			...BASE,
+			"release/oci-images.json": json(sdkManifest),
+			"deploy/release-images/hobo-sdk/Dockerfile": "FROM toolchain\n",
+		};
+		const sdkPackages = (id: string) =>
+			id === "hobo-sdk" ? ["@hobo/core"] : packagesOf(id);
+		const changed = (path: string) =>
+			affectedReleaseOciImages(
+				imageInputs(tree(base), sdkPackages),
+				imageInputs(tree({ ...base, [path]: "changed\n" }), sdkPackages),
+			).map(({ id }) => id);
+		for (const path of [
+			"scripts/ci/sdk-package-list.mts",
+			"scripts/ci/verify-cli-sdk-artifacts.mts",
+			"scripts/ci/cli-sdk-acceptance-child.mts",
+			"scripts/ci/bundle-cli-sdk.mts",
+			"scripts/ci/bundle-cli-declarations.mts",
+			"scripts/ci/run-cli-sdk-bundle.mts",
+			"scripts/ci/bundle-sqlite-sdk.mts",
+			"scripts/ci/vendor-runtime-grounding.mts",
+			"scripts/ci/npm-publish-scope.mts",
+			"release/npm-scope-map.json",
+		]) {
+			expect(isReleaseOciLayerNoise(path), path).toBe(false);
+			expect(changed(path), path).toEqual(["hobo-sdk", "hobo-cli", "hobo-mcp"]);
+		}
+		expect(changed("docs/unrelated.md")).toEqual([]);
 	});
 
 	it("builds the site for the example inputs it reads by path", () => {

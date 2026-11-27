@@ -326,7 +326,7 @@ describe("catalogCampBinding", () => {
 		);
 	});
 
-	it("names npm OIDC trusted publishing of a scoped package as its own provider limit", () => {
+	it("accepts scoped npm packages with trusted publishing", () => {
 		const binding = catalogCampBinding(
 			camp("@hobo/provider-npm", {
 				[L.npmRegistry]: "npmjs",
@@ -335,7 +335,7 @@ describe("catalogCampBinding", () => {
 			}),
 			{ artifacts: noArtifacts, resolveCredential: async () => ({}) },
 		);
-		expect(() =>
+		expect(
 			binding?.requests({
 				freightId: DIGEST,
 				labels: { [L.npmDistTag]: "alpha" },
@@ -348,7 +348,7 @@ describe("catalogCampBinding", () => {
 					},
 				],
 			}),
-		).toThrow(expect.objectContaining({ code: "npm-oidc-scoped-unsupported" }));
+		).toHaveLength(1);
 	});
 
 	it("refuses a mislabelled npm Camp or Freight as catalog-binding-invalid, never a provider limit", () => {

@@ -142,14 +142,7 @@ describe("draft pull request CI policy", () => {
 		for (const [event, draft, action, label, labels, expected] of [
 			["pull_request", true, "opened", "", [], false],
 			["pull_request", true, "synchronize", "", [], false],
-			[
-				"pull_request",
-				true,
-				"synchronize",
-				"",
-				["ci:run-draft-checks"],
-				true,
-			],
+			["pull_request", true, "synchronize", "", ["ci:run-draft-checks"], true],
 			["pull_request", true, "labeled", "other", ["other"], false],
 			[
 				"pull_request",

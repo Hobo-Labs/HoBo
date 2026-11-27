@@ -178,6 +178,25 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
+	it("allows the pricing publisher on the npm-required hosted runner", () => {
+		assert.equal(
+			lintRunner(
+				"release-pricing.yml",
+				"pricing-release-publish",
+				"ubuntu-24.04",
+			),
+			0,
+		);
+		assert.notEqual(
+			lintRunner(
+				"release-pricing.yml",
+				"pricing-release-build",
+				"ubuntu-24.04",
+			),
+			0,
+		);
+	});
+
 	it("allows the one GitHub-hosted runner needed for npm trusted publishing", () => {
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
@@ -414,12 +433,61 @@ describe("Actions runner policy", () => {
 
 	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
+		const mergeGroupTrunk =
+			"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
+		const trunkRoute = routeJob
+			.replace("runs-on: ubuntu-24.04", `runs-on: ${mergeGroupTrunk}`)
+			.replace(
+				"persist-credentials: false\n",
+				"persist-credentials: false\n          clean: false\n",
+			);
+		const trunkGate = (id: string) =>
+			`  ${id}:\n    if: \${{ always() }}\n    runs-on: ${mergeGroupTrunk}\n    steps:\n      - run: echo ok\n`;
+		const hoboCi = (jobs: string) =>
+			lintFile(
+				"hobo-ci.yml",
+				`name: fixture\non:\n  merge_group:\njobs:\n${jobs}  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`,
+			);
+		assert.equal(hoboCi(`${trunkRoute}${trunkGate("pr-gate")}`), 0);
 		assert.notEqual(
-			lintJobs(
+			hoboCi(
 				routeJob.replace(
 					"runs-on: ubuntu-24.04",
-					"runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}",
+					`runs-on: ${mergeGroupTrunk}`,
 				),
+			),
+			0,
+			"a route job on the trunk fleet must keep its default-path checkout",
+		);
+		assert.notEqual(hoboCi(`${trunkRoute}${trunkGate("gate")}`), 0);
+		assert.notEqual(lintJobs(trunkRoute), 0);
+		assert.notEqual(lintJobs(trunkGate("pr-gate")), 0);
+		assert.notEqual(
+			hoboCi(
+				`  build:\n    runs-on: ${mergeGroupTrunk}\n    steps:\n      - run: echo ok\n`,
+			),
+			0,
+		);
+		const mergeGroupScripts =
+			"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
+		const scriptsJob = (id: string, needs: string) =>
+			`  ${id}:\n${needs}    runs-on: ${mergeGroupScripts}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          clean: false\n`;
+		assert.equal(
+			hoboCi(
+				`${routeJob}${scriptsJob("scripts-tests", "    needs: [route]\n")}`,
+			),
+			0,
+		);
+		assert.notEqual(hoboCi(`${routeJob}${scriptsJob("scripts-tests", "")}`), 0);
+		assert.notEqual(
+			hoboCi(
+				`${routeJob}${scriptsJob("workspace_tests", "    needs: [route]\n")}`,
+			),
+			0,
+		);
+		assert.notEqual(
+			lintJobs(
+				`${routeJob}${scriptsJob("scripts-tests", "    needs: [route]\n")}`,
 			),
 			0,
 		);
