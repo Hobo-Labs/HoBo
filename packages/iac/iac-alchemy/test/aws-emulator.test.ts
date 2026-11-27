@@ -29,6 +29,7 @@ import {
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
+import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import { mapBindleToAlchemy } from "../src/bindle.js";
 
 const credentials = {
@@ -36,23 +37,30 @@ const credentials = {
 	secretAccessKey: Redacted.make("local"),
 };
 
-async function mappedResources(nativeKv = false) {
+async function mappedResources(nativeKv = false, nativeS3 = false) {
 	const definition = bindle("shop", (b) => ({
-		objects: b.bucket(),
+		objects: nativeS3
+			? b.bucket().allow("read", "write", "delete")
+			: b.bucket(),
 		sessions: nativeKv ? b.kv().allow("get", "set", "delete") : b.kv(),
 		jobs: b.queue(),
 		events: b.topic(),
 	}));
-	const selected = nativeKv
+	const kvSelected = nativeKv
 		? withAwsDynamoKv(definition, { sessions: true })
 		: definition;
+	const selected = nativeS3
+		? withAwsS3(kvSelected, { objects: true })
+		: kvSelected;
+	const baseMappers = nativeKv
+		? awsDynamoKvBindleMappers()
+		: awsBindleMappers();
+	const mappers = nativeS3 ? awsS3BindleMappers(baseMappers) : baseMappers;
 	// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 	const mapped = await Effect.runPromise(
-		mapBindleToAlchemy(
-			selected,
-			nativeKv ? awsDynamoKvBindleMappers() : awsBindleMappers(),
-			{ assessRequirements: () => ({ status: "supported" as const }) },
-		).pipe(
+		mapBindleToAlchemy(selected, mappers, {
+			assessRequirements: () => ({ status: "supported" as const }),
+		}).pipe(
 			Effect.provideService(StackContext, {
 				name: "shop",
 				stage: "test",
@@ -246,7 +254,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				app.fetch(new Request(url, init)),
 			),
 		);
-		const { bucket } = await mappedResources();
+		const { bucket } = await mappedResources(false, true);
 		const first = await precreate(bucket, layer);
 		const second = await precreate(bucket, layer);
 		expect(second.bucketName).toBe(first.bucketName);
@@ -324,7 +332,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					connect: { ca, servername: "localhost" },
 				}),
 			);
-			const { bucket } = await mappedResources();
+			const { bucket } = await mappedResources(false, true);
 			const first = await precreate(bucket, layer);
 			const second = await precreate(bucket, layer);
 			expect(first.bucketArn).toBe(`arn:aws:s3:::${first.bucketName}`);
