@@ -72,7 +72,12 @@ try {
 		],
 		[
 			String.raw`/\ phase[c] = "idle" /\ ~receipt /\ attempt = 1 /\ ~lease /\ ~live`,
-			String.raw`/\ phase[c] = "idle" /\ ~receipt /\ attempt = 1`,
+			String.raw`/\ phase[c] = "idle" /\ ~receipt /\ attempt = 1 /\ ~live`,
+			"SafeRedrive",
+		],
+		[
+			String.raw`/\ phase[c] = "idle" /\ ~receipt /\ attempt = 1 /\ ~lease /\ ~live`,
+			String.raw`/\ phase[c] = "idle" /\ ~receipt /\ attempt = 1 /\ ~lease`,
 			"SafeRedrive",
 		],
 	] as const;
