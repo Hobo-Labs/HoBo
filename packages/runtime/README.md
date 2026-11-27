@@ -611,9 +611,9 @@ The host does not itself implement or map a cloud queue.
 
 The atomic queue transition function records bounded operation receipts, message
 idempotency, lease generations, and explicit capacity, identifier exhaustion and
-delivery exhaustion outcomes. Completed and exhausted messages remain retained;
-there is no dead-letter or message-reclamation operation yet, so a finite queue
-can eventually require operator reconciliation.
+delivery exhaustion outcomes. Exhausted messages remain retained; there is no
+dead-letter or redrive operation yet, so a finite queue can eventually require
+operator reconciliation.
 
 `createAtomicDurableQueue` from `@hobo/runtime/atomic-durable-queue` connects the
 transition function to an injected atomic store. The store must provide durable,
@@ -646,3 +646,12 @@ that store and its authority.
 Queue checkpoints accept strictly increasing message identities with gaps, so a
 future authorized reclamation can preserve the monotonic next identity. Live
 receipts must still refer to a retained message.
+
+A trusted owner can call `reclaimCompleted()` to remove completed messages once
+all unexpired committed receipts that reference them have expired. It atomically
+checkpoints the survivors with a revision fence; an `unknown` response may have
+committed and can be retried. Reclamation ends message-key deduplication for each
+removed message, so a later enqueue with the same key creates a new message and
+the owner must choose its retention window accordingly. Active and exhausted
+messages are never reclaimed by this operation. This does not provide a
+dead-letter or redrive operation.

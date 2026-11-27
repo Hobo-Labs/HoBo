@@ -317,6 +317,147 @@ describe("atomic durable queue provider", () => {
 			}),
 		).toEqual({ status: "rejected", code: "lease-lost" });
 	});
+	it("reclaims completed messages only after their live receipts expire", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const bounds = { ...limits, retainedMessages: 1 };
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		const initial = await queue.enqueue(message(1));
+		const read = { operation: op(2), maxMessages: 1, visibilityTimeoutMs: 10 };
+		const leased = await queue.dequeue(read);
+		const completed = { operation: op(3), messageId: "m1", leaseId: "l1" };
+		expect(await queue.complete(completed)).toMatchObject({
+			status: "committed",
+		});
+		expect(await queue.reclaimCompleted()).toEqual({
+			status: "reclaimed",
+			reclaimedMessages: 0,
+			prunedReceipts: 0,
+		});
+		expect(await queue.enqueue(message(1))).toEqual(initial);
+		expect(await queue.dequeue(read)).toEqual(leased);
+		clock = 10000;
+		backing.loseNext();
+		expect(await queue.reclaimCompleted()).toEqual({ status: "unknown" });
+		const reopened = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		expect(await reopened.reclaimCompleted()).toEqual({
+			status: "reclaimed",
+			reclaimedMessages: 0,
+			prunedReceipts: 0,
+		});
+		const next = {
+			...message(4),
+			operation: durableQueueOperation(20000, "abcdefghijklmn04"),
+		};
+		expect(await reopened.enqueue(next)).toMatchObject({
+			status: "committed",
+			value: { messageId: "m2", idempotencyKey: "job" },
+		});
+	});
+	it("retains a completed message while a later delivery receipt remains live", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => clock,
+		});
+		const early = (n: number) =>
+			durableQueueOperation(
+				2000,
+				`abcdefghijklmn${String(n).padStart(2, "0")}`,
+			);
+		const later = durableQueueOperation(5000, "abcdefghijklmn09");
+		await queue.enqueue({ ...message(1), operation: early(1) });
+		const read = { operation: later, maxMessages: 1, visibilityTimeoutMs: 10 };
+		const delivered = await queue.dequeue(read);
+		await queue.complete({
+			operation: early(3),
+			messageId: "m1",
+			leaseId: "l1",
+		});
+		clock = 2000;
+		expect(await queue.reclaimCompleted()).toMatchObject({
+			status: "reclaimed",
+			reclaimedMessages: 0,
+		});
+		expect(await queue.dequeue(read)).toEqual(delivered);
+		clock = 5000;
+		expect(await queue.reclaimCompleted()).toMatchObject({
+			status: "reclaimed",
+			reclaimedMessages: 1,
+		});
+	});
+	it("never reclaims an exhausted uncompleted message", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		clock = 10000;
+		expect(await queue.reclaimCompleted()).toMatchObject({
+			status: "reclaimed",
+			reclaimedMessages: 0,
+		});
+		expect(
+			await queue.dequeue({
+				operation: durableQueueOperation(20000, "abcdefghijklmn03"),
+				maxMessages: 1,
+				visibilityTimeoutMs: 10,
+			}),
+		).toEqual({ status: "rejected", code: "delivery-exhausted" });
+	});
+
+	it("fences reclamation against a concurrent new receipt", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		await queue.complete({ operation: op(3), messageId: "m1", leaseId: "l1" });
+		clock = 10000;
+		const next = {
+			...message(4),
+			operation: durableQueueOperation(20000, "abcdefghijklmn04"),
+		};
+		const [reclaimed, duplicate] = await Promise.all([
+			queue.reclaimCompleted(),
+			queue.enqueue(next),
+		]);
+		expect(
+			[reclaimed.status, duplicate.status].filter(
+				(status) => status === "unknown",
+			),
+		).toHaveLength(1);
+		const retry = await queue.enqueue(next);
+		expect(retry.status).toBe("committed");
+		if (duplicate.status === "committed") expect(retry).toEqual(duplicate);
+	});
+
 	it("recovers a lost compaction response without losing a receipt", async () => {
 		const backing = memoryStore();
 		const queue = createAtomicDurableQueue({
