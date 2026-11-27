@@ -556,9 +556,20 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 						upstreamQualifications: [],
 						manualApprovalExpiresAtMs: null,
 					});
-					yield* Effect.promise(
-						() => new Promise((resolve) => setTimeout(resolve, 100)),
-					);
+					for (let attempt = 0; attempt < 40; attempt += 1) {
+						const runView = yield* client.CdDeliveryRunStatusView.get(runId);
+						const stageView = yield* client.CdStageStatusView.get(stageId);
+						if (
+							runView?._tag === "Completed" &&
+							stageView?._tag === "Idle" &&
+							stageView.currentFreightDigest === digest
+						) {
+							break;
+						}
+						yield* Effect.promise(
+							() => new Promise((resolve) => setTimeout(resolve, 25)),
+						);
+					}
 				}).pipe(Effect.scoped, Effect.provide(HttpWorld)),
 			);
 		} finally {
@@ -601,7 +612,7 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 		} finally {
 			reopened.close();
 		}
-	});
+	}, 20_000);
 
 	it("persists pull-based CD watches in RivetKit SQLite, broadcasts events, guards premature expiry, and times out via setupTest", async (testCtx) => {
 		const engine = await startLocalRivetTestEngine();

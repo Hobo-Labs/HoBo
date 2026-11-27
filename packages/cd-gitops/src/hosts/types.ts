@@ -55,4 +55,5 @@ export interface GitHostClient {
 	): Promise<Readonly<{ merged: boolean; mergeCommitSha?: string }>>;
 }
 
+// public-contract: credential scope for Git host API tokens.
 export const GIT_CREDENTIAL_SCOPE = "cd.gitops.git" as const;

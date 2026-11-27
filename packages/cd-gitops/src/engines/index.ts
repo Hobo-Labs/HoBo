@@ -15,6 +15,7 @@ export type EngineVerdict = Readonly<{
 	reason?: Readonly<{ code: GitopsFailureCode; message: string }>;
 }>;
 
+// public-contract: credential scope for engine status tokens.
 export const ENGINE_CREDENTIAL_SCOPE = "cd.gitops.engine" as const;
 
 function get(
