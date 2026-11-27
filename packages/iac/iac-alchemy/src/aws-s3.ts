@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-object-parameters, anti-slop/no-reflect-apply -- SAFETY: resource grants and object values cross an external host boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-object-parameters, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: resource grants and object values cross an external host boundary. */
 import { createHash } from "node:crypto";
 import { types } from "node:util";
 import type { Credentials } from "@distilled.cloud/aws/Credentials";
@@ -70,6 +70,18 @@ export interface AwsS3Store {
 	read(name: string): Promise<AwsS3Object | undefined>;
 	write(object: AwsS3Object): Promise<void>;
 	delete(name: string): Promise<void>;
+}
+const storeGrants = new WeakMap<object, AwsS3Grant>();
+const storeGrantGet = WeakMap.prototype.get;
+const storeGrantSet = WeakMap.prototype.set;
+const storeIsProxy = types.isProxy;
+const storeApply = Reflect.apply;
+
+/** Returns only the grant captured by a store created in this runtime instance. */
+export function inspectAwsS3Store(value: unknown): AwsS3Grant | undefined {
+	if (typeof value !== "object" || value === null || storeIsProxy(value))
+		return undefined;
+	return storeApply(storeGrantGet, storeGrants, [value]);
 }
 export class AwsS3Error extends Error {
 	constructor(
@@ -244,7 +256,7 @@ export function createAwsS3Store(options: {
 					: "mutation may have taken effect; reconcile before retry",
 			),
 	});
-	return Object.freeze({
+	const store = Object.freeze({
 		async read(name: string) {
 			const key = keyOf(name);
 			const effect = Effect.gen(function* () {
@@ -356,4 +368,6 @@ export function createAwsS3Store(options: {
 			boundary.beforeReturn("delete", key);
 		},
 	});
+	storeApply(storeGrantSet, storeGrants, [store, grant]);
+	return store;
 }

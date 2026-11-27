@@ -9,6 +9,7 @@ import {
 	AWS_KV_MAX_VALUE_BYTES,
 	type AwsKvGrant,
 	createAwsDynamoKvStore,
+	inspectAwsDynamoKvStore,
 } from "../src/aws-kv.js";
 
 const defineTest = Object.defineProperty;
@@ -165,6 +166,34 @@ describe("DynamoDB KV runtime", () => {
 		}
 		expect(failure).toMatchObject({ code: "AWS_KV_GRANT_INVALID" });
 	});
+	it("retains immutable store identity and rejects lookalikes", () => {
+		const f = fixture(async () => new Response());
+		const captured = inspectAwsDynamoKvStore(f.store);
+		expect(captured).toEqual(grant);
+		expect(Object.isFrozen(captured)).toBe(true);
+		expect(Object.isFrozen(captured?.allow)).toBe(true);
+		expect(inspectAwsDynamoKvStore({ ...f.store })).toBeUndefined();
+		const descriptor = Object.getOwnPropertyDescriptor(
+			WeakMap.prototype,
+			"get",
+		);
+		let forged: AwsKvGrant | undefined;
+		let real: AwsKvGrant | undefined;
+		try {
+			Object.defineProperty(WeakMap.prototype, "get", {
+				value: () => grant,
+				configurable: true,
+			});
+			forged = inspectAwsDynamoKvStore({ ...f.store });
+			real = inspectAwsDynamoKvStore(f.store);
+		} finally {
+			if (descriptor)
+				Object.defineProperty(WeakMap.prototype, "get", descriptor);
+		}
+		expect(forged).toBeUndefined();
+		expect(real).toEqual(grant);
+	});
+
 	it("rejects invalid grants and values without making a request", async () => {
 		const transport = vi.fn(async () => new Response("{}"));
 		expect(() =>

@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-object-parameters, anti-slop/no-reflect-apply -- SAFETY: runtime options and byte buffers cross a host boundary and require intrinsic validation before use. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-object-parameters, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: runtime options and byte buffers cross a host boundary and require intrinsic validation before use. */
 import { types } from "node:util";
 import type { Credentials } from "@distilled.cloud/aws/Credentials";
 import * as DynamoDB from "@distilled.cloud/aws/dynamodb";
@@ -59,6 +59,20 @@ export interface AwsKvStore {
 		readonly value: Uint8Array;
 	}): Promise<void>;
 	delete(key: string): Promise<void>;
+}
+const storeGrants = new WeakMap<object, AwsKvGrant>();
+const storeGrantGet = WeakMap.prototype.get;
+const storeGrantSet = WeakMap.prototype.set;
+const storeIsProxy = types.isProxy;
+const storeApply = Reflect.apply;
+
+/** Returns only the grant captured by a store created in this runtime instance. */
+export function inspectAwsDynamoKvStore(
+	value: unknown,
+): AwsKvGrant | undefined {
+	if (typeof value !== "object" || value === null || storeIsProxy(value))
+		return undefined;
+	return storeApply(storeGrantGet, storeGrants, [value]);
 }
 export class AwsKvError extends Error {
 	constructor(
@@ -241,7 +255,7 @@ export function createAwsDynamoKvStore(options: {
 		beforeReturn("get", checkedKey);
 		return value;
 	};
-	return Object.freeze({
+	const store = Object.freeze({
 		get,
 		async exists(key: string) {
 			const present = (await get(key)) !== undefined;
@@ -301,4 +315,6 @@ export function createAwsDynamoKvStore(options: {
 			beforeReturn("delete", checkedKey);
 		},
 	});
+	storeApply(storeGrantSet, storeGrants, [store, grant]);
+	return store;
 }
