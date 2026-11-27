@@ -1873,7 +1873,7 @@ jobs:
 
   release-integration-measure-gate:
     name: HoBo release integration PR gate
-    if: always() && github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks'))
     needs: [release-hobo-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
