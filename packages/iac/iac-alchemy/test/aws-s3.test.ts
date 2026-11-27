@@ -9,6 +9,7 @@ import {
 	AWS_S3_MAX_OBJECT_BYTES,
 	type AwsS3Grant,
 	createAwsS3Store,
+	inspectAwsS3Store,
 } from "../src/aws-s3.js";
 
 const defineTest = Object.defineProperty;
@@ -56,6 +57,32 @@ const object = {
 };
 
 describe("S3 bounded object runtime", () => {
+	it("captures exact permissions even if includes changes during construction", async () => {
+		const original = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"includes",
+		);
+		let call: Promise<void>;
+		let calls: () => number;
+		try {
+			Object.defineProperty(Array.prototype, "includes", {
+				value: () => true,
+				configurable: true,
+			});
+			const f = fixture(
+				async () => new Response(),
+				() => true,
+				{ ...grant, allow: ["read"] },
+			);
+			calls = f.calls;
+			call = f.store.delete("key");
+		} finally {
+			if (original)
+				Object.defineProperty(Array.prototype, "includes", original);
+		}
+		await expect(call).rejects.toMatchObject({ code: "AWS_S3_DENIED" });
+		expect(calls()).toBe(0);
+	});
 	it("does not broaden a grant when Array.includes is replaced", async () => {
 		const f = fixture(
 			async () => new Response(),
@@ -136,6 +163,15 @@ describe("S3 bounded object runtime", () => {
 		).toThrow("AWS_S3_GRANT_INVALID");
 		expect(invoked).toBe(false);
 	});
+	it("retains immutable store identity and rejects lookalikes", () => {
+		const f = fixture(async () => new Response());
+		const captured = inspectAwsS3Store(f.store);
+		expect(captured).toEqual(grant);
+		expect(Object.isFrozen(captured)).toBe(true);
+		expect(Object.isFrozen(captured?.allow)).toBe(true);
+		expect(inspectAwsS3Store({ ...f.store })).toBeUndefined();
+	});
+
 	it("rejects invalid grants, keys and object metadata without a request", async () => {
 		expect(() =>
 			fixture(

@@ -67,12 +67,12 @@ its provider choice outside the Bindle: pass the neutral Bindle through
 `withAwsDynamoKv(bindle, { cache: true })` and use
 `awsDynamoKvBindleMappers()` from `@hobo/iac-alchemy/aws/kv-mapper`. Install the
 optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
-`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS region,
+`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS partition, owner account and region,
 host-issued resource and grant epochs, an explicit operation allow-list, a
 per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
 The host must authenticate the actual table incarnation, never reuse a
 revoked epoch, fence outstanding requests during ownership changes, and enforce
-matching IAM permissions. Reads are strongly consistent; keys are limited to 2,048 UTF-8
+matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
 bytes and values to 256 KiB. A failed or timed-out write or delete has an
 unknown outcome and requires reconciliation. Each store retains capacity for a
 timed-out request until the transport settles. This subset does not bind a
@@ -98,6 +98,12 @@ or authenticate the digest against a separate authority.
 The bounded `AwsS3Objects` model uses one key and a collision-free abstract
 digest. It includes out-of-band objects with foreign metadata, oversized bodies
 and corrupted digests; it does not prove the hash implementation or provider.
+
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+The store captures its allowed operations at construction, so later changes to
+application array prototypes do not change the captured grant.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
