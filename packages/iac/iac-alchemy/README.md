@@ -1314,3 +1314,11 @@ reachability witnesses cover unknown outcomes before and after processing,
 capacity rejection and subsequent recovery. The model abstracts two calls and a
 single capacity slot; it assumes a truthful transport and verifier, and does not
 prove the TypeScript implementation, AWS behavior or budget admission.
+
+The bounded `AwsSourceRevalidation` model checks the source identity and grant
+at invocation and disclosure, and distinguishes rejection before dispatch from
+an unknown result that can occur before or after provider dispatch. A
+reachability witness shows that the source can change between the scoped check
+and provider dispatch. The model uses one
+operation, one irreversible source change and one revocation; it assumes the
+host verifier and transport behave as modeled and does not prove the code.

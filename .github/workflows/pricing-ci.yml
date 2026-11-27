@@ -259,6 +259,7 @@ jobs:
           node --experimental-strip-types packages/core/model/check-messaging-settlement.mts
           node --experimental-strip-types packages/core/model/check-notification-submission.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-aws-crypto.mts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-aws-source-revalidation.mts
           node --experimental-strip-types packages/core/model/check-durable-queue.mts
           node --experimental-strip-types packages/core/model/check-atomic-queue-cas.mts
           node --experimental-strip-types packages/core/model/check-queue-compaction.mts

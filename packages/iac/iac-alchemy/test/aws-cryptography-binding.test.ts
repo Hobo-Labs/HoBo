@@ -374,3 +374,46 @@ it("reports unknown if a provider verifier changes the source after the scoped c
 	expect(result).toEqual({ status: "unknown", attemptId: request.attemptId });
 	expect(calls).toBe(1);
 });
+
+it("conservatively reports unknown when the source changes before a provider rejects", async () => {
+	const environment = { HOBO_RESOURCE_0: keyId };
+	let calls = 0;
+	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
+	const store = port(
+		async () => {
+			calls++;
+			return response();
+		},
+		() => {
+			environment.HOBO_RESOURCE_0 = "changed-key";
+			return false;
+		},
+	);
+	const definition = bindle("shop", (b) => {
+		const key = b.crypto().allow("encrypt", "decrypt");
+		return {
+			key,
+			web: b
+				.web((context) => async () => {
+					result = await awsHttpBindings(context)
+						.crypto("key")
+						.encrypt(request);
+					return new Response("ok");
+				})
+				.with(sessionReplay({ enabled: false }))
+				.dependsOn(key),
+		};
+	});
+	const source = defineAwsHttpSource({
+		bindle: withAwsKmsCryptography(definition, { key: true }),
+		applicationName: "web",
+		environment,
+		resolveStores: () => ({ key: store }),
+		verifyBinding: () => true,
+	});
+	expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+		503,
+	);
+	expect(result).toEqual({ status: "unknown", attemptId: request.attemptId });
+	expect(calls).toBe(0);
+});
