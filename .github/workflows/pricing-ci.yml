@@ -76,7 +76,7 @@ env:
 jobs:
   route:
     name: Route runners
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
     # it is choosing against. The fleet while it takes jobs, an enrolled local
     # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
@@ -128,11 +128,22 @@ jobs:
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          submodules: recursive
           clean: false
+          fetch-depth: 1
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-repo-checkout
+        with:
+          bootstrap-composite-actions: "false"
+          submodules: recursive
           fetch-depth: 0
+          marker: |
+            scripts/ci-runner-preflight.mts
+            .mise/locks/turbo/2.11.10/aube-lock.yaml
+            .mise/locks/turbo/2.11.10/package.json
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode

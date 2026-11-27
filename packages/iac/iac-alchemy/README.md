@@ -105,6 +105,19 @@ the store; the host must still authenticate it and authorize each operation.
 The store captures its allowed operations at construction, so later changes to
 application array prototypes do not change the captured grant.
 
+A Node.js HTTP host can bind those two AWS stores to a Bindle application with
+`createAwsBindleApplication` and read them through `awsHttpBindings(context)`
+from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
+Bindle, its application name, exactly the declared stores, and a synchronous
+verifier that authenticates each exact captured store grant. The runtime rejects forged stores,
+extra permissions and unverified bindings, and retires scoped handles when the
+request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
+headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host must authenticate HTTP requests, independently enforce IAM and fence
+in-flight AWS operations across grant or resource ownership changes. This host
+adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
+request bodies, stream responses, or provide connectors or session replay.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
@@ -785,7 +798,16 @@ restart (SQLite file reopen), and brokered signing-secret re-resolution so
 session rows and cookie integrity survive host recycle. The session file is
 the harness `sessionStorePath`. `openBetterAuthSessionStore` applies the pack
 migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
-to that file; there is no hand-written session DDL. `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+to that file; there is no hand-written session DDL.
+`test/better-auth-cross-box-session.test.ts` shares one file-backed session
+database across two Alchemy host harness instances (two boxes, one relational
+URL). `test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
+evidence steps (construction config → bundle plan → migrations → broker wire →
+first session).
+`test/better-auth-secret-providers.test.ts` models Alchemy-style secret-provider
+**ordering** for auth-stack CI (construction-key merge only; **no** committed
+`.env` files or live Infisical — synthetic fixtures and memory `SecretsPort`
+only). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, a file-backed `sqlite` path (the same session file, not an in-memory
 database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`

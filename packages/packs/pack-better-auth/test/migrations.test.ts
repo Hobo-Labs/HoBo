@@ -81,6 +81,38 @@ describe("planBetterAuthRelationalMigrations", () => {
 		expect(wire.migrationPlan.steps.length).toBeGreaterThan(0);
 	});
 
+	it("rejects malformed and unknown migration profile versions", () => {
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		for (const profile of [
+			"data.postgres/v0",
+			"data.postgres/v1-extra",
+			"data.relational/v1-extra",
+			"data.relational/v2",
+		]) {
+			const invalid = {
+				...bundlePlan,
+				config: { ...bundlePlan.config, database: { profile } },
+			};
+			expect(() => planBetterAuthRelationalMigrations(invalid)).toThrow(
+				/not a relational family profile/,
+			);
+		}
+	});
+
+	it("keeps shared base and organization schemas immutable", () => {
+		const organizationSchema = buildBetterAuthRelationalSchemaIr({
+			organizations: { enabled: true },
+		});
+		for (const table of [
+			BETTER_AUTH_RELATIONAL_TABLES[0],
+			organizationSchema.tables.find((item) => item.name === "organization"),
+		]) {
+			if (!table?.columns[0]) throw new Error("missing schema table");
+			expect(Reflect.set(table, "name", "tampered")).toBe(false);
+			expect(Reflect.set(table.columns[0], "type", "tampered")).toBe(false);
+		}
+	});
+
 	it("is a no-op when the current schema already matches", () => {
 		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
 		const wire = planBetterAuthRelationalMigrations(bundlePlan, {
