@@ -1,5 +1,6 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: host values and application handlers cross a checked runtime boundary. */
 import { types } from "node:util";
+import type { CryptographyPort } from "@hobo/core/cryptography";
 import type { NotificationPort } from "@hobo/core/notification";
 import {
 	type DurableQueue,
@@ -12,6 +13,10 @@ import {
 	observeBoundary,
 	raceBoundary,
 } from "./async-boundary.js";
+import {
+	type AwsKmsGrant,
+	inspectAwsKmsCryptography,
+} from "./aws-cryptography.js";
 import { captureAwsHttpGraph } from "./aws-http-graph.js";
 import {
 	AwsKvError,
@@ -30,6 +35,7 @@ import {
 	type AwsS3Store,
 	inspectAwsS3Store,
 } from "./aws-s3.js";
+import { scopeAwsCryptography } from "./aws-scoped-cryptography.js";
 import { scopeAwsNotification } from "./aws-scoped-notification.js";
 import { scopeAwsQueue } from "./aws-scoped-queue.js";
 import {
@@ -144,6 +150,7 @@ export interface AwsHttpBindings {
 	secret(name: string): AwsSecretStore;
 	queue(name: string): DurableQueue;
 	notify(name: string): NotificationPort;
+	crypto(name: string): CryptographyPort;
 }
 export type AwsHttpEntrypoint = (
 	context?: AwsBindleContext,
@@ -154,6 +161,7 @@ export type AwsHttpBindingClaim = Readonly<
 		| { kind: "bucket"; grant: AwsS3Grant }
 		| { kind: "secret"; grant: AwsSecretGrant }
 		| { kind: "notify"; grant: AwsNotificationGrant }
+		| { kind: "crypto"; grant: AwsKmsGrant }
 		| {
 				kind: "queue";
 				grant: AwsKvGrant;
@@ -403,7 +411,12 @@ export function createAwsBindleApplication<Requirements>(options: {
 	readonly stores: Readonly<
 		Record<
 			string,
-			AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue | NotificationPort
+			| AwsKvStore
+			| AwsS3Store
+			| AwsSecretStore
+			| DurableQueue
+			| NotificationPort
+			| CryptographyPort
 		>
 	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
@@ -443,7 +456,8 @@ export function createAwsBindleApplication<Requirements>(options: {
 			| AwsS3Store
 			| AwsSecretStore
 			| DurableQueue
-			| NotificationPort;
+			| NotificationPort
+			| CryptographyPort;
 	}[] = [];
 	for (let index = 0; index < graph.bindings.length; index++) {
 		const binding = graph.bindings[index];
@@ -456,6 +470,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 		const bucket = inspectAwsS3Store(field.value);
 		const secret = inspectAwsSecretStore(field.value);
 		const notification = inspectAwsNotificationPublisher(field.value);
+		const cryptography = inspectAwsKmsCryptography(field.value);
 		const queue = inspectAtomicDurableQueue(field.value);
 		const queueGrant =
 			queue === undefined ? undefined : inspectAwsQueueAtomicStore(queue.store);
@@ -512,7 +527,17 @@ export function createAwsBindleApplication<Requirements>(options: {
 										kind: "notify" as const,
 										grant: notification,
 									})
-								: undefined;
+								: cryptography &&
+										binding.kind === "crypto" &&
+										samePermissions(binding.allow, cryptography.allow)
+									? Object.freeze({
+											bindleName: graph.bindleName,
+											applicationName,
+											resourceName: name,
+											kind: "crypto" as const,
+											grant: cryptography,
+										})
+									: undefined;
 		if (!claim)
 			throw new Error("AWS store does not match its declared dependency");
 		const identity =
@@ -522,7 +547,9 @@ export function createAwsBindleApplication<Requirements>(options: {
 					? `bucket|${claim.grant.bucketName}`
 					: claim.kind === "notify"
 						? `sns|${claim.grant.partition}|${claim.grant.accountId}|${claim.grant.region}|${claim.grant.topicName}`
-						: `secret|${claim.grant.secretArn}`;
+						: claim.kind === "crypto"
+							? `kms|${claim.grant.partition}|${claim.grant.accountId}|${claim.grant.region}|${claim.grant.keyId}`
+							: `secret|${claim.grant.secretArn}`;
 		if (apply(setHas, physicalIdentities, [identity]))
 			throw new Error("AWS store identities must be unique");
 		apply(setAdd, physicalIdentities, [identity]);
@@ -559,13 +586,14 @@ export function createAwsBindleApplication<Requirements>(options: {
 			const scoped = new Map<
 				string,
 				{
-					kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+					kind: "kv" | "bucket" | "secret" | "queue" | "notify" | "crypto";
 					store:
 						| AwsKvStore
 						| AwsS3Store
 						| AwsSecretStore
 						| DurableQueue
-						| NotificationPort;
+						| NotificationPort
+						| CryptographyPort;
 				}
 			>();
 			for (let index = 0; index < entries.length; index++) {
@@ -592,6 +620,16 @@ export function createAwsBindleApplication<Requirements>(options: {
 						{
 							kind: "notify",
 							store: scopeAwsNotification(store, () => live(claim)),
+						},
+					]);
+				} else if (claim.kind === "crypto") {
+					// SAFETY: the port brand and its exact key grant were checked above.
+					const store = entry.store as CryptographyPort;
+					apply(mapSet, scoped, [
+						entry.name,
+						{
+							kind: "crypto",
+							store: scopeAwsCryptography(store, () => live(claim)),
 						},
 					]);
 				} else if (claim.kind === "kv") {
@@ -750,13 +788,20 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								kind:
+									| "kv"
+									| "bucket"
+									| "secret"
+									| "queue"
+									| "notify"
+									| "crypto";
 								store:
 									| AwsKvStore
 									| AwsS3Store
 									| AwsSecretStore
 									| DurableQueue
-									| NotificationPort;
+									| NotificationPort
+									| CryptographyPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "kv")
@@ -768,13 +813,20 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								kind:
+									| "kv"
+									| "bucket"
+									| "secret"
+									| "queue"
+									| "notify"
+									| "crypto";
 								store:
 									| AwsKvStore
 									| AwsS3Store
 									| AwsSecretStore
 									| DurableQueue
-									| NotificationPort;
+									| NotificationPort
+									| CryptographyPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "bucket")
@@ -786,13 +838,20 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								kind:
+									| "kv"
+									| "bucket"
+									| "secret"
+									| "queue"
+									| "notify"
+									| "crypto";
 								store:
 									| AwsKvStore
 									| AwsS3Store
 									| AwsSecretStore
 									| DurableQueue
-									| NotificationPort;
+									| NotificationPort
+									| CryptographyPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "queue")
@@ -804,13 +863,20 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								kind:
+									| "kv"
+									| "bucket"
+									| "secret"
+									| "queue"
+									| "notify"
+									| "crypto";
 								store:
 									| AwsKvStore
 									| AwsS3Store
 									| AwsSecretStore
 									| DurableQueue
-									| NotificationPort;
+									| NotificationPort
+									| CryptographyPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "notify")
@@ -818,17 +884,49 @@ export function createAwsBindleApplication<Requirements>(options: {
 					// SAFETY: the scoped entry's kind was checked above.
 					return item.store as NotificationPort;
 				},
-				secret(name: string) {
+				crypto(name: string) {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
 						| {
-								kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+								kind:
+									| "kv"
+									| "bucket"
+									| "secret"
+									| "queue"
+									| "notify"
+									| "crypto";
 								store:
 									| AwsKvStore
 									| AwsS3Store
 									| AwsSecretStore
 									| DurableQueue
-									| NotificationPort;
+									| NotificationPort
+									| CryptographyPort;
+						  }
+						| undefined = apply(mapGet, scoped, [name]);
+					if (!active || item?.kind !== "crypto")
+						throw new Error("cryptography binding is unavailable");
+					// SAFETY: the scoped entry's kind was checked above.
+					return item.store as CryptographyPort;
+				},
+				secret(name: string) {
+					// SAFETY: scoped is the private map populated with checked entries.
+					const item:
+						| {
+								kind:
+									| "kv"
+									| "bucket"
+									| "secret"
+									| "queue"
+									| "notify"
+									| "crypto";
+								store:
+									| AwsKvStore
+									| AwsS3Store
+									| AwsSecretStore
+									| DurableQueue
+									| NotificationPort
+									| CryptographyPort;
 						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "secret")

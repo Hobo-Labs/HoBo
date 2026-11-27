@@ -905,6 +905,44 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				attemptId: "decrypt_attempt_123",
 				data: plaintext,
 			});
+			const application = bindle("shop", (b) => {
+				const key = b.crypto().allow("encrypt", "decrypt");
+				return {
+					key,
+					web: b
+						.web((context) => async () => {
+							const scoped = awsHttpBindings(context).crypto("key");
+							const encrypted = await scoped.encrypt({
+								attemptId: "http_encrypt_1234",
+								data: plaintext,
+							});
+							if (encrypted.status !== "completed")
+								return new Response(null, { status: 500 });
+							const decrypted = await scoped.decrypt({
+								attemptId: "http_decrypt_1234",
+								data: encrypted.data,
+							});
+							if (decrypted.status !== "completed")
+								return new Response(null, { status: 500 });
+							return Response.json({ data: Array.from(decrypted.data) });
+						})
+						.with(sessionReplay({ enabled: false }))
+						.dependsOn(key),
+				};
+			});
+			const source = defineAwsHttpSource({
+				bindle: withAwsKmsCryptography(application, { key: true }),
+				applicationName: "web",
+				environment: { HOBO_RESOURCE_0: first.keyId },
+				resolveStores: () => ({ key: cryptography }),
+				verifyBinding: (claim) =>
+					claim.kind === "crypto" &&
+					claim.resourceName === "key" &&
+					claim.grant.keyId === first.keyId,
+			});
+			const appResponse = await source.fetch(new Request("https://app.test"));
+			expect(appResponse.status).toBe(200);
+			expect(await appResponse.json()).toEqual({ data: Array.from(plaintext) });
 			// SAFETY: the test layer supplies the emulator transport and credentials.
 			const encrypted = await Effect.runPromise(
 				KMS.encrypt({ KeyId: first.keyArn, Plaintext: plaintext }).pipe(

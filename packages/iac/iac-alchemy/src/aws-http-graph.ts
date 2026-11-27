@@ -9,7 +9,7 @@ import {
 
 export interface AwsHttpDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+	readonly kind: "kv" | "bucket" | "secret" | "queue" | "notify" | "crypto";
 	readonly environment: string;
 	readonly allow: readonly string[];
 }
@@ -35,7 +35,7 @@ function name(value: unknown): value is string {
 }
 function marker(
 	declaration: PrimitiveDeclaration,
-): "kv" | "bucket" | "secret" | "queue" | "notify" {
+): "kv" | "bucket" | "secret" | "queue" | "notify" | "crypto" {
 	if (declaration.annotations.length !== 1)
 		throw new Error(
 			"AWS application dependency requires an explicit runtime choice",
@@ -104,6 +104,18 @@ function marker(
 		fields.retries?.value === "none"
 	)
 		return "notify";
+
+	if (
+		Object.keys(fields).length === 4 &&
+		declaration.kind === "crypto" &&
+		annotation.provider === "aws" &&
+		annotation.option === "kms-cryptography" &&
+		fields.runtime?.value === "node-js" &&
+		fields.maxPlaintextBytes?.value === 4096 &&
+		fields.maxCiphertextBytes?.value === 6144 &&
+		fields.retries?.value === "none"
+	)
+		return "crypto";
 
 	throw new Error(
 		"AWS application dependency requires an explicit runtime choice",
@@ -249,7 +261,9 @@ export function captureAwsHttpGraph<Requirements>(
 						? ["enqueue", "dequeue"]
 						: kind === "notify"
 							? ["send"]
-							: ["put", "access"];
+							: kind === "crypto"
+								? ["encrypt", "decrypt"]
+								: ["put", "access"];
 		if (
 			dependency.declaredAllow.some(
 				(operation: string) => !allowed.includes(operation),

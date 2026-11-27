@@ -1120,15 +1120,14 @@ The official AWS Emulator also checks priced, denied-unpriced and authorized
 unpriced admission before creating the selected notification topic, and sends
 from an HTTP application through that admitted topic. Provisioning admission
 does not perform a new budget check for each subsequent send.
-The crypto declaration maps to a symmetric Alchemy `AWS.KMS.Key`. It does not
-provide encryption, decryption, signing, verification or application bindings;
-declarations requiring those operations are rejected. The host controls key
-policy and deletion and must reconcile an unknown creation before retrying.
-The simulator suite exercises Alchemy key reconciliation and native KMS
-encryption against a pinned Moto image because the official AWS Emulator does
-not currently implement KMS. It also checks priced, denied-unpriced and
-authorized-unpriced admission before KMS key creation. This does not establish
-HoBo crypto runtime support.
+The base crypto mapper creates a symmetric Alchemy `AWS.KMS.Key` and rejects
+runtime operations. An explicit KMS selection enables bounded encryption and
+decryption, including application bindings; signing and verification remain
+unsupported. The host controls key policy and deletion and must reconcile an
+unknown creation before retrying. The simulator suite exercises Alchemy key
+reconciliation and the application binding against a pinned Moto image because
+the official AWS Emulator does not currently implement KMS. It also checks
+priced, denied-unpriced and authorized-unpriced admission before key creation.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
 protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
@@ -1298,3 +1297,7 @@ Select the symmetric runtime for declared crypto resources with
 `awsKmsCryptographyMappers()`. The selected resource is an Alchemy `AWS.KMS.Key`;
 the support report lists encrypt and decrypt while rejecting sign and verify.
 Without this explicit choice, the base mapping remains infrastructure only.
+An AWS HTTP handler obtains its request-scoped port using
+`awsHttpBindings(context).crypto("key")`. The host must verify that the exact
+key ID and grant correspond to the mapped resource; access is revoked when the
+request ends. Deployment admission does not budget each later KMS operation.
