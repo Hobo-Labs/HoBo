@@ -127,11 +127,23 @@ describe("checkoutFromBareMirror", () => {
 			sha,
 			mirrorGitDir: mirror,
 			originUrl: `https://github.com/${repository}`,
-			markerPath: "scripts/ci/ci-trace.mts",
+			markerPath: "scripts/ci/ci-trace.mts\nother/deep/outside-cone.txt\n",
 			retryDelaysMs: [0],
 		});
 		expect(result.ok).toBe(true);
 		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
+	});
+
+	it("rejects a mirror checkout when any required marker is missing", () => {
+		const result = checkoutFromBareMirror({
+			workDir: join(temp, "work-checkout-missing-marker"),
+			sha,
+			mirrorGitDir: mirror,
+			originUrl: `https://github.com/${repository}`,
+			markerPath: "scripts/ci/ci-trace.mts\nmissing-sidecar.yaml",
+			retryDelaysMs: [0],
+		});
+		expect(result.ok).toBe(false);
 	});
 });
 

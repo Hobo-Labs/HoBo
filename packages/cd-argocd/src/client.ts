@@ -206,6 +206,16 @@ export function createArgoCdControlClient(
 				if (error instanceof ArgocdError) {
 					return argocdRefusal(error.code, error.message, input.name);
 				}
+				if (
+					error instanceof GitopsError &&
+					error.code === "gitops-credential-missing"
+				) {
+					return argocdRefusal(
+						ARGCD_FAILURES.credentialMissing,
+						"Argo CD credential is unavailable",
+						input.name,
+					);
+				}
 				return argocdRefusal(
 					ARGCD_FAILURES.hostUnavailable,
 					"Argo CD API request failed",

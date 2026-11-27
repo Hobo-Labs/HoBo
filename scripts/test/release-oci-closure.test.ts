@@ -63,7 +63,7 @@ test("a deeply shallow release checkout never fetches or broadens the deployable
 		});
 		process.env.PATH = `${shim}:${oldPath}`;
 		process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
-		assert.deepEqual(releaseOciTurboBuildArgs(work, ["@hobo/hobo..."]), [
+		assert.deepEqual(releaseOciTurboBuildArgs(work, ["@hobo/hobo..."], {}), [
 			"exec",
 			"turbo",
 			"run",
@@ -71,7 +71,7 @@ test("a deeply shallow release checkout never fetches or broadens the deployable
 			"--filter=@hobo/hobo...",
 		]);
 		process.env.HOBO_RELEASE_TURBO_BASE = `invalid; touch ${join(temp, "injected")}`;
-		assert.deepEqual(releaseOciTurboBuildArgs(work, ["@hobo/hobo..."]), [
+		assert.deepEqual(releaseOciTurboBuildArgs(work, ["@hobo/hobo..."], {}), [
 			"exec",
 			"turbo",
 			"run",
