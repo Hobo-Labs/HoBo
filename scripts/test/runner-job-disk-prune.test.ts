@@ -12,6 +12,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	DF_SAMPLE_TIMEOUT_MS,
+	DOCKER_COMMAND_TIMEOUT_MS,
+	runDocker,
+	sampleAvailBytes,
+} from "../ci/runner-job-disk-prune.mts";
+import {
 	DEFAULT_RUNNER_DISK_HEADROOM_GB,
 	type DockerCommandResult,
 	executeRunnerJobDiskPrune,
@@ -342,7 +348,7 @@ describe("runner job disk prune", () => {
 		assert.match(stillShort.logs.join("\n"), /after df /u);
 	});
 
-	it("fails closed on an invalid headroom and fails open when df cannot sample", () => {
+	it("warns and skips an invalid headroom and fails open when df cannot sample", () => {
 		const invalid = capture(
 			selfHosted({ HOBO_CI_RUNNER_DISK_HEADROOM_GB: "0" }),
 			{
@@ -352,12 +358,13 @@ describe("runner job disk prune", () => {
 				},
 			},
 		);
-		assert.equal(invalid.code, 1);
+		assert.equal(invalid.code, 0);
 		assert.match(
 			invalid.warnings.join("\n"),
 			/HOBO_CI_RUNNER_DISK_HEADROOM_GB/u,
 		);
 		assert.deepEqual(invalid.docker, []);
+		assert.deepEqual(invalid.logs, []);
 
 		const unreadable = capture(selfHosted(), {
 			dockerAvailable: true,
@@ -389,6 +396,37 @@ describe("runner job disk prune", () => {
 		);
 		assert.match(source, /keep-storage/u);
 		assert.doesNotMatch(source, /"-af"/u);
+	});
+
+	it("stops a hung df or docker command at its timeout", () => {
+		assert.ok(DF_SAMPLE_TIMEOUT_MS >= 10_000);
+		assert.ok(DOCKER_COMMAND_TIMEOUT_MS >= 30_000);
+		const cli = readFileSync(
+			join(root, "scripts/ci/runner-job-disk-prune.mts"),
+			"utf8",
+		);
+		assert.match(cli, /timeout: timeoutMs/u);
+		const bin = mkdtempSync(join(tmpdir(), "hobo-job-disk-timeout-"));
+		const hang = ["#!/bin/sh", "exec /bin/sleep 5", ""].join("\n");
+		writeFileSync(join(bin, "df"), hang, { mode: 0o755 });
+		writeFileSync(join(bin, "docker"), hang, { mode: 0o755 });
+		const previousPath = process.env.PATH;
+		try {
+			process.env.PATH = `${bin}:${previousPath ?? ""}`;
+			const started = Date.now();
+			assert.throws(
+				() => sampleAvailBytes("/var/lib/docker", 400),
+				/ETIMEDOUT|timed out/iu,
+			);
+			const info = runDocker(["info"], 400);
+			assert.ok(info.error);
+			const prune = runDocker(["builder", "prune", "--force"], 400);
+			assert.ok(prune.error);
+			assert.ok(Date.now() - started < 3000);
+		} finally {
+			process.env.PATH = previousPath;
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
 
 	it("preflight runs the prune on self-hosted runners before the untagged image sweep", () => {
