@@ -1,8 +1,12 @@
 package authadapter
 
-#SigningSecretRef: =~"^(aws-sm|azure-kv|gcp-sm|hobo-secret|hobo-token|infisical|op|vault)://[^@\\s]+/[^@\\s]+$"
+import "strings"
 
-#DataProfileId: =~"^data\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*/v[1-9][0-9]*$"
+#SigningSecretRef: strings.MaxRunes(2048) & (
+	=~"^(aws-sm|azure-kv|gcp-sm|hobo-token)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$" |
+	=~"^(vault|op|infisical|hobo-secret)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*(#[A-Za-z0-9._-]+)?$") & !~"://\\.\\.?/" & !~"/\\.\\.?(/|#|$)"
+
+#DataProfileId: =~"^data\\.(relational|postgres|mysql|sqlite)/v1$"
 
 #BasePath: =~"^(/[a-z0-9][a-z0-9._~-]*)+$"
 

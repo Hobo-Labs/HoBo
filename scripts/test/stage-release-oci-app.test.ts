@@ -46,15 +46,29 @@ const WorkspaceManifest = z.object({
 });
 
 describe("release OCI app staging", () => {
+	it("honors the runner's memory-aware Turbo limit when building release images", () => {
+		const previous = process.env.HOBO_TURBO_CONCURRENCY;
+		try {
+			process.env.HOBO_TURBO_CONCURRENCY = "1";
+			expect(
+				releaseOciTurboBuildArgs("/no-checkout-needed", ["@hobo/core"]),
+			).toContain("--concurrency=1");
+		} finally {
+			if (previous === undefined) delete process.env.HOBO_TURBO_CONCURRENCY;
+			else process.env.HOBO_TURBO_CONCURRENCY = previous;
+		}
+	});
+
 	it("always builds only the requested deployable closure", () => {
 		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
 		try {
 			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
 			expect(
-				releaseOciTurboBuildArgs("/no-checkout-needed", [
-					"@hobo/hobo...",
-					"@hobo/ci-gh-actions...",
-				]),
+				releaseOciTurboBuildArgs(
+					"/no-checkout-needed",
+					["@hobo/hobo...", "@hobo/ci-gh-actions..."],
+					{},
+				),
 			).toEqual([
 				"exec",
 				"turbo",
@@ -150,14 +164,19 @@ describe("release OCI app staging", () => {
 		).toContain("--config.package-import-method=hardlink");
 	});
 
-	it("prefers npm_config_store_dir without shelling out to pnpm", () => {
+	it("uses the configured store when pnpm is unavailable", () => {
 		const storeDir = resolve("/pnpm-store");
-		expect(
-			releasePnpmStore(root, {
-				npm_config_store_dir: storeDir,
-				PATH: "/usr/bin",
-			}),
-		).toBe(storeDir);
+		const emptyPath = mkdtempSync(join(tmpdir(), "hobo-no-pnpm-"));
+		try {
+			expect(
+				releasePnpmStore(root, {
+					npm_config_store_dir: storeDir,
+					PATH: emptyPath,
+				}),
+			).toBe(storeDir);
+		} finally {
+			rmSync(emptyPath, { recursive: true, force: true });
+		}
 	});
 
 	it("pins the workspace store for a deployment on another filesystem", () => {

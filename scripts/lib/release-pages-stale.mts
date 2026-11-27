@@ -55,6 +55,23 @@ export function parseDeployedSha(message: string): string | undefined {
 	return match?.[1]?.toLowerCase();
 }
 
+export async function requirePagesDeployedHead(options: {
+	readonly head: string;
+	readonly source: PagesSource;
+}): Promise<void> {
+	const message = await options.source.deployedMessage();
+	const deployed =
+		message === undefined ? undefined : parseDeployedSha(message);
+	if (
+		!/^[0-9a-f]{40}$/i.test(options.head) ||
+		deployed !== options.head.toLowerCase()
+	) {
+		throw new Error(
+			`Pages stable source ${deployed ?? "unverifiable"} does not match ${options.head}`,
+		);
+	}
+}
+
 export async function decidePagesDeploy(options: {
 	readonly head: string;
 	readonly filters: readonly string[];

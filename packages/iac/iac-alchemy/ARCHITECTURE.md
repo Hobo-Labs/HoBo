@@ -32,9 +32,21 @@ admission, or provider pins change on `main`.
 
 `test/better-auth-host-harness.test.ts` is the incremental Alchemy-auth stack
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped config, in-memory Alchemy
-state, local SQLite posture (`:memory:`), and `@hobo/pack-better-auth` planning
+state, a file-backed SQLite session path, and `@hobo/pack-better-auth` planning
 plus camp `SecretsPort` broker wire — no live Worker/D1 deploy yet.
 
 `test/better-auth-session-durability.test.ts` is the stack-6 gate: file-backed
 SQLite session rows plus brokered signing-secret re-resolution after a simulated
 process restart (still mocked boundaries; no HTTP Better Auth runtime).
+
+`test/better-auth-cross-box-session.test.ts` is the stack-7 gate: two independent
+host harnesses open the same shared session store path so login on box A is
+visible on box B.
+
+`test/better-auth-onboarding-steps.test.ts` is the stack-8 gate: one Vitest
+scenario per onboarding claim (config, plan, migrations, signing wire, session).
+
+`test/better-auth-secret-providers.test.ts` is the stack-9 gate: stage-scoped
+Construction-key provider-order labels (`dotenv` / `infisical`) plus merge
+semantics for auth-stack CI hosts — test fixtures only, not Alchemy DotEnv or
+committed `.env` files.

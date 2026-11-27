@@ -12,7 +12,9 @@ in tests; no linked production run shows `observe()` returning CONVERGED with th
 revision the publisher committed.
 
 **Channel:** `packages/cd-gitops` `PublisherPort.publish` → remote Git → Argo CD pull →
-`PublisherPort.observe` reading Application sync/health with matching `targetRevision`.
+`PublisherPort.observe` reading Application sync/health with `status.sync.revision`
+matching the published commit. The Application's `spec.source.targetRevision` names
+the configured branch.
 
 **Scorecard:** `docs/cd/parity-gap-kargo-argocd.md` Argo rows (Application, sync/health,
 pull GitOps) stay **built-not-proven** until this finding records one production

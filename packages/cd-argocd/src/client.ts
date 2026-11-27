@@ -11,6 +11,7 @@ import {
 	GitopsError,
 	hostFailure,
 	isJsonObject,
+	isJsonString,
 	ok,
 	parseJson,
 	send,
@@ -158,6 +159,13 @@ export function createArgoCdControlClient(
 			ctx: CdContext,
 		): Promise<Outcome<void>> {
 			try {
+				if (!isJsonString(input.revision) || input.revision.trim() === "") {
+					return argocdRefusal(
+						ARGCD_FAILURES.bodyInvalid,
+						"Argo CD sync requires a non-empty revision",
+						input.name,
+					);
+				}
 				const url = applicationUrl(
 					config.apiBaseUrl,
 					input.name,
@@ -205,6 +213,16 @@ export function createArgoCdControlClient(
 			} catch (error) {
 				if (error instanceof ArgocdError) {
 					return argocdRefusal(error.code, error.message, input.name);
+				}
+				if (
+					error instanceof GitopsError &&
+					error.code === "gitops-credential-missing"
+				) {
+					return argocdRefusal(
+						ARGCD_FAILURES.credentialMissing,
+						"Argo CD credential is unavailable",
+						input.name,
+					);
 				}
 				return argocdRefusal(
 					ARGCD_FAILURES.hostUnavailable,

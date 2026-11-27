@@ -796,7 +796,16 @@ restart (SQLite file reopen), and brokered signing-secret re-resolution so
 session rows and cookie integrity survive host recycle. The session file is
 the harness `sessionStorePath`. `openBetterAuthSessionStore` applies the pack
 migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
-to that file; there is no hand-written session DDL. `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+to that file; there is no hand-written session DDL.
+`test/better-auth-cross-box-session.test.ts` shares one file-backed session
+database across two Alchemy host harness instances (two boxes, one relational
+URL). `test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
+evidence steps (construction config → bundle plan → migrations → broker wire →
+first session).
+`test/better-auth-secret-providers.test.ts` models Alchemy-style secret-provider
+**ordering** for auth-stack CI (construction-key merge only; **no** committed
+`.env` files or live Infisical — synthetic fixtures and memory `SecretsPort`
+only). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, a file-backed `sqlite` path (the same session file, not an in-memory
 database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
