@@ -185,8 +185,6 @@ jobs:
     name: Alchemy AWS simulator and budget routing
     needs: route
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
-    # A cold self-hosted pod with no shared pnpm store can spend most of 20
-    # minutes on install; the simulator build and emulator lane still have to run.
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
