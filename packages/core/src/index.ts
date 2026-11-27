@@ -405,6 +405,25 @@ export {
 	parseDurableMessagingOperation,
 } from "./ports/durable-messaging.js";
 export type {
+	DurableQueue,
+	DurableQueueDelivery,
+	DurableQueueEnqueueReceipt,
+	DurableQueueLimits,
+	DurableQueueMessage,
+	DurableQueueOperation,
+	DurableQueueOutcome,
+	DurableQueueRejectionCode,
+	DurableQueueSettlement,
+} from "./ports/durable-queue.js";
+export {
+	DURABLE_QUEUE_CONTRACT,
+	DURABLE_QUEUE_MAX_LIMITS,
+	DURABLE_QUEUE_WIT_INTERFACE,
+	durableQueueOperation,
+	parseDurableQueueLimits,
+	parseDurableQueueOperation,
+} from "./ports/durable-queue.js";
+export type {
 	EphemeralEntry,
 	EphemeralKey,
 	EphemeralLockLease,
