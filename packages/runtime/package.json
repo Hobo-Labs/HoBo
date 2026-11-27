@@ -19,6 +19,10 @@
 		"./durable-messaging-host": {
 			"types": "./dist/durable-messaging-host.d.ts",
 			"default": "./dist/durable-messaging-host.js"
+		},
+		"./durable-queue-host": {
+			"types": "./dist/durable-queue-host.d.ts",
+			"default": "./dist/durable-queue-host.js"
 		}
 	},
 	"publishConfig": {
