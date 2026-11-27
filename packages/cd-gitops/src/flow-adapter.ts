@@ -540,8 +540,17 @@ export function createGitopsPullFlowAdapter(
 								: { triggerSync: input.triggerSync },
 						);
 					} else {
+						const ref = engineRefForTarget(config, target);
+						verdict = await observeEngine(
+							config,
+							ref,
+							input.targetRevision,
+							http,
+							engineToken,
+						);
 						if (
 							input.triggerSync &&
+							verdict.state !== "converged" &&
 							config.engine === GitopsEngine.ARGO_CD &&
 							target.kind === "application"
 						) {
@@ -555,14 +564,14 @@ export function createGitopsPullFlowAdapter(
 									? { appNamespace: target.namespace }
 									: undefined,
 							);
+							verdict = await observeEngine(
+								config,
+								ref,
+								input.targetRevision,
+								http,
+								engineToken,
+							);
 						}
-						verdict = await observeEngine(
-							config,
-							engineRefForTarget(config, target),
-							input.targetRevision,
-							http,
-							engineToken,
-						);
 					}
 
 					const outOfSyncCount = decodeNonNegativeCount(

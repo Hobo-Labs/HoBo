@@ -647,6 +647,7 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 
 				const resolved = await conn.recordObservation({
 					deliveryRunId: "run-rivet-pr-1",
+					watchKind: "pull-request",
 					status: "pr-merged",
 					revision: "merge-sha-42",
 					summary: "pull-request-merged",
@@ -654,12 +655,54 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 				expect(resolved?.status).toBe("pr-merged");
 				expect(resolved?.revision).toBe("merge-sha-42");
 
+				const convergenceWatch = await conn.registerWatch({
+					deliveryRunId: "run-rivet-pr-1",
+					stageId: "prod",
+					flowTarget: "gitops-primary",
+					watchKind: "convergence",
+					targetRef: "merge-sha-42",
+					deadlineMs: 10_000,
+				});
+				expect(convergenceWatch.watchKind).toBe("convergence");
+				expect(convergenceWatch.status).toBe("watching");
+
+				await expect(
+					conn.recordObservation({
+						deliveryRunId: "run-rivet-pr-1",
+						watchKind: "convergence",
+						status: "pr-merged",
+						revision: "merge-sha-42",
+						summary: "wrong-kind-status",
+					}),
+				).rejects.toThrow();
+
+				const convergedWatch = await conn.recordObservation({
+					deliveryRunId: "run-rivet-pr-1",
+					watchKind: "convergence",
+					status: "converged",
+					revision: "merge-sha-42",
+					summary: "argo-synced-and-healthy",
+				});
+				expect(convergedWatch?.status).toBe("converged");
+
+				await expect(
+					conn.registerWatch({
+						deliveryRunId: "run-rivet-bad-deadline",
+						stageId: "prod",
+						flowTarget: "gitops-primary",
+						watchKind: "convergence",
+						targetRef: "merge-sha-42",
+						deadlineMs: -1,
+					}),
+				).rejects.toThrow();
+
 				await vi.waitFor(() => {
 					expect(
 						receivedEvents.some(
 							(entry) =>
 								entry.action === "resolved" &&
-								entry.watch.deliveryRunId === "run-rivet-pr-1",
+								entry.watch.deliveryRunId === "run-rivet-pr-1" &&
+								entry.watch.watchKind === "convergence",
 						),
 					).toBe(true);
 				});
@@ -672,7 +715,10 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 					targetRef: "merge-sha-42",
 					deadlineMs: 60_000,
 				});
-				const premature = await conn.expireWatch("run-rivet-premature");
+				const premature = await conn.expireWatch({
+					deliveryRunId: "run-rivet-premature",
+					watchKind: "convergence",
+				});
 				expect(premature.expired).toBe(false);
 
 				await conn.registerWatch({
@@ -689,7 +735,9 @@ describe("@hobo/cd/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 						async () => {
 							const watches = await conn.listWatches();
 							return watches.find(
-								(entry) => entry.deliveryRunId === "run-rivet-timeout",
+								(entry) =>
+									entry.deliveryRunId === "run-rivet-timeout" &&
+									entry.watchKind === "convergence",
 							)?.status;
 						},
 						{ timeout: 5_000, interval: 25 },

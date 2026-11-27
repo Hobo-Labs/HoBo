@@ -400,7 +400,7 @@ const RegisterPullWatchInputSchema = Schema.Struct({
 	flowTarget: Schema.NonEmptyString,
 	watchKind: PullWatchKindSchema,
 	targetRef: Schema.NonEmptyString,
-	deadlineMs: Schema.Int,
+	deadlineMs: Schema.Int.check(Schema.isGreaterThan(0)),
 });
 
 const decodeRegisterPullWatchInput = Schema.decodeUnknownSync(
@@ -409,6 +409,7 @@ const decodeRegisterPullWatchInput = Schema.decodeUnknownSync(
 
 const ResolvePullWatchInputSchema = Schema.Struct({
 	deliveryRunId: Schema.NonEmptyString,
+	watchKind: PullWatchKindSchema,
 	status: PullWatchResolutionStatusSchema,
 	revision: Schema.NullOr(Schema.NonEmptyString),
 	summary: Schema.NonEmptyString,
@@ -418,7 +419,10 @@ const decodeResolvePullWatchInput = Schema.decodeUnknownSync(
 	ResolvePullWatchInputSchema,
 );
 
-const ExpirePullWatchKeySchema = Schema.NonEmptyString;
+const ExpirePullWatchKeySchema = Schema.Struct({
+	deliveryRunId: Schema.NonEmptyString,
+	watchKind: PullWatchKindSchema,
+});
 const decodeExpirePullWatchKey = Schema.decodeUnknownSync(
 	ExpirePullWatchKeySchema,
 );
@@ -452,9 +456,25 @@ export interface RegisterCdPullWatchInput {
 
 export interface ResolveCdPullWatchInput {
 	readonly deliveryRunId: string;
+	readonly watchKind: CdPullWatchKind;
 	readonly status: CdPullWatchResolutionStatus;
 	readonly revision: string | null;
 	readonly summary: string;
+}
+
+export interface ExpireCdPullWatchInput {
+	readonly deliveryRunId: string;
+	readonly watchKind: CdPullWatchKind;
+}
+
+function isResolutionCompatibleWithKind(
+	watchKind: CdPullWatchKind,
+	status: CdPullWatchResolutionStatus,
+): boolean {
+	if (watchKind === "pull-request") {
+		return status === "pr-merged" || status === "pr-closed";
+	}
+	return status === "converged" || status === "degraded";
 }
 
 function toPullWatchRecord(
@@ -482,7 +502,7 @@ export function createCdPullWatchRegistry(
 			onMigrate: async (client) => {
 				await client.execute(`
 					CREATE TABLE IF NOT EXISTS cd_pull_watches (
-						delivery_run_id TEXT PRIMARY KEY,
+						delivery_run_id TEXT NOT NULL,
 						stage_id TEXT NOT NULL,
 						flow_target TEXT NOT NULL,
 						watch_kind TEXT NOT NULL,
@@ -491,7 +511,8 @@ export function createCdPullWatchRegistry(
 						revision TEXT,
 						summary TEXT,
 						created_at_ms INTEGER NOT NULL,
-						deadline_at_ms INTEGER NOT NULL
+						deadline_at_ms INTEGER NOT NULL,
+						PRIMARY KEY (delivery_run_id, watch_kind)
 					)
 				`);
 			},
@@ -504,8 +525,9 @@ export function createCdPullWatchRegistry(
 				const input = decodeRegisterPullWatchInput(rawInput);
 				const existingRows = decodePullWatchRows(
 					await c.db.execute(
-						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ?",
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ? AND watch_kind = ?",
 						input.deliveryRunId,
+						input.watchKind,
 					),
 				);
 				const existing = existingRows[0];
@@ -540,7 +562,10 @@ export function createCdPullWatchRegistry(
 					createdAtMs: nowMs,
 					deadlineAtMs,
 				};
-				await c.schedule.after(deadlineMs, "expireWatch", input.deliveryRunId);
+				await c.schedule.after(deadlineMs, "expireWatch", {
+					deliveryRunId: input.deliveryRunId,
+					watchKind: input.watchKind,
+				});
 				c.broadcast("pullWatchUpdated", { action: "registered", watch });
 				return watch;
 			},
@@ -549,10 +574,16 @@ export function createCdPullWatchRegistry(
 				rawInput: ResolveCdPullWatchInput | JsonValue,
 			): Promise<CdPullWatchRecord | null> => {
 				const input = decodeResolvePullWatchInput(rawInput);
+				if (!isResolutionCompatibleWithKind(input.watchKind, input.status)) {
+					throw new Error(
+						`resolution status ${input.status} is incompatible with watch kind ${input.watchKind}`,
+					);
+				}
 				const rows = decodePullWatchRows(
 					await c.db.execute(
-						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ?",
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ? AND watch_kind = ?",
 						input.deliveryRunId,
+						input.watchKind,
 					),
 				);
 				const existing = rows[0];
@@ -560,11 +591,12 @@ export function createCdPullWatchRegistry(
 				if (existing.status !== "watching") return toPullWatchRecord(existing);
 
 				await c.db.execute(
-					"UPDATE cd_pull_watches SET status = ?, revision = ?, summary = ? WHERE delivery_run_id = ? AND status = 'watching'",
+					"UPDATE cd_pull_watches SET status = ?, revision = ?, summary = ? WHERE delivery_run_id = ? AND watch_kind = ? AND status = 'watching'",
 					input.status,
 					input.revision,
 					input.summary,
 					input.deliveryRunId,
+					input.watchKind,
 				);
 				const updated: CdPullWatchRecord = {
 					...toPullWatchRecord(existing),
@@ -577,16 +609,18 @@ export function createCdPullWatchRegistry(
 			},
 			expireWatch: async (
 				c,
-				rawDeliveryRunId: string | JsonValue,
+				rawKey: ExpireCdPullWatchInput | JsonValue,
 			): Promise<{
 				readonly expired: boolean;
 				readonly deliveryRunId: string;
+				readonly watchKind: CdPullWatchKind;
 			}> => {
-				const deliveryRunId = decodeExpirePullWatchKey(rawDeliveryRunId);
+				const { deliveryRunId, watchKind } = decodeExpirePullWatchKey(rawKey);
 				const rows = decodePullWatchRows(
 					await c.db.execute(
-						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ?",
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ? AND watch_kind = ?",
 						deliveryRunId,
+						watchKind,
 					),
 				);
 				const existing = rows[0];
@@ -595,11 +629,12 @@ export function createCdPullWatchRegistry(
 					existing.status !== "watching" ||
 					Date.now() < existing.deadline_at_ms
 				) {
-					return { expired: false, deliveryRunId };
+					return { expired: false, deliveryRunId, watchKind };
 				}
 				await c.db.execute(
-					"UPDATE cd_pull_watches SET status = 'timed-out', summary = 'pull-watch-deadline-elapsed' WHERE delivery_run_id = ? AND status = 'watching'",
+					"UPDATE cd_pull_watches SET status = 'timed-out', summary = 'pull-watch-deadline-elapsed' WHERE delivery_run_id = ? AND watch_kind = ? AND status = 'watching'",
 					deliveryRunId,
+					watchKind,
 				);
 				const expiredWatch: CdPullWatchRecord = {
 					...toPullWatchRecord(existing),
@@ -610,12 +645,12 @@ export function createCdPullWatchRegistry(
 					action: "expired",
 					watch: expiredWatch,
 				});
-				return { expired: true, deliveryRunId };
+				return { expired: true, deliveryRunId, watchKind };
 			},
 			listWatches: async (c): Promise<readonly CdPullWatchRecord[]> => {
 				const rows = decodePullWatchRows(
 					await c.db.execute(
-						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches ORDER BY created_at_ms ASC, delivery_run_id ASC",
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches ORDER BY created_at_ms ASC, delivery_run_id ASC, watch_kind ASC",
 					),
 				);
 				return rows.map(toPullWatchRecord);

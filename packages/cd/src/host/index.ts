@@ -35,6 +35,7 @@ export {
 	createCdPullWatchRegistry,
 	createCdReleaseRivetLayer,
 	DefaultFailClosedDeliveryFlowLayer,
+	type ExpireCdPullWatchInput,
 	type OpenCdPromotionGateInput,
 	type RegisterCdPullWatchInput,
 	type ResolveCdPromotionGateInput,
