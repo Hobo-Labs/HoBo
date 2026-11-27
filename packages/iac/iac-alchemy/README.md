@@ -16,6 +16,10 @@ AWS mappings require the optional `@alchemy.run/aws` beta.87 peer; AWS runtime
 adapters also require `@distilled.cloud/aws` 1.0.0-rc.20. Rivet integrations
 require the optional `@alchemy.run/rivet` beta.87 and `rivetkit` 3.0.0 peers.
 Install the peers for the targets your application uses.
+`describeAwsPrimitiveSupport(catalog, mappers)` reports the operations and
+limitations declared by the exact composed AWS mapper set; omitting `mappers`
+reports the default infrastructure-only mappings. A partial report does not
+establish that application bindings or provider authorization are configured.
 The `@hobo/iac-alchemy/rivet` entry point binds HoBo HTTP applications, including
 HTTP-served UI kits, to Alchemy Rivet DurableObjects. UI `render` and `drive`
 operations remain unsupported and cannot be granted. `@hobo/iac-alchemy/rivet/runtime` provides the

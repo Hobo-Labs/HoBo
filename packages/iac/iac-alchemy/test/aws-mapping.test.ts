@@ -275,6 +275,27 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			mapBindleToAlchemy(application, awsBindleMappers(), requirements),
 		).toThrow("ENTRYPOINT_UNSUPPORTED");
 	});
+	it("reports the operations of the selected composed AWS mappers", () => {
+		const selected = awsS3BindleMappers(awsDynamoKvBindleMappers());
+		const report = describeAwsPrimitiveSupport(CATALOG_ROWS, selected);
+		expect(report.find((entry) => entry.kind === "kv")).toMatchObject({
+			status: "partial",
+			resourceTypes: ["AWS.DynamoDB.Table"],
+			supportedOperations: ["get", "set", "delete"],
+			unsupportedOperations: [],
+		});
+		expect(report.find((entry) => entry.kind === "bucket")).toMatchObject({
+			status: "partial",
+			resourceTypes: ["AWS.S3.Bucket"],
+			supportedOperations: ["read", "write", "delete"],
+			unsupportedOperations: [],
+		});
+		expect(report.find((entry) => entry.kind === "auth")).toMatchObject({
+			status: "partial",
+			supportedOperations: [],
+			unsupportedOperations: ["verify", "session"],
+		});
+	});
 	it("refuses declared dependencies that have no runtime binding", () => {
 		const definition = bindle("shop", (b) => {
 			const objects = b.bucket();

@@ -15,13 +15,16 @@ import {
 } from "./bindle.js";
 import { AlchemyIacError } from "./plan.js";
 
-export function describeAwsPrimitiveSupport(
+export function describeAwsPrimitiveSupport<Entrypoint, Requirements>(
 	catalog: readonly {
 		readonly factory: string;
 		readonly allowVerbs: readonly string[];
 	}[],
+	mappers: Readonly<
+		Record<string, AlchemyPrimitiveMapper<Entrypoint, Requirements, Providers>>
+	> = awsBindleMappers<Entrypoint, Requirements>(),
 ) {
-	return describeAlchemyPrimitiveSupport(catalog, awsBindleMappers());
+	return describeAlchemyPrimitiveSupport(catalog, mappers);
 }
 
 export function awsBindleMappers<Entrypoint, Requirements>() {
