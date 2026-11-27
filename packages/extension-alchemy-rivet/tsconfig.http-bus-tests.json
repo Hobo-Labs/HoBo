@@ -4,5 +4,5 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
-	"include": ["test/rivet-http-topic-bus.test.ts"]
+	"include": ["test/rivet-http-topic-bus.test.ts", "test/rivet-bindle-topic-bus.test.ts", "test/rivet-bindle-topic-live.test.ts"]
 }

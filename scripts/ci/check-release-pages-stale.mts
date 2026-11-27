@@ -7,7 +7,7 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadReleaseHoboPullRequestPathFilters } from "../lib/release-hobo-path-filters.mts";
+import { loadReleasePagesPathFilters } from "../lib/release-hobo-path-filters.mts";
 import {
 	decidePagesDeploy,
 	githubPagesSource,
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
 	const decision = await decidePagesDeploy({
 		head,
 		force,
-		filters: loadReleaseHoboPullRequestPathFilters(root),
+		filters: loadReleasePagesPathFilters(root),
 		source: githubPagesSource({
 			repository,
 			token: process.env.GITHUB_TOKEN ?? "",

@@ -55,7 +55,7 @@ package packs
 #IsoDateTime: =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
 
 #BetterAuthSigningSecretWireRecord: {
-	secret_ref:       #SecretRef
+	secret_ref:       #SigningSecretRef
 	secret_scheme:    =~"^[a-z0-9-]+$"
 	secrets_port_id:  string & != ""
 	resolved_at_iso:  #IsoDateTime

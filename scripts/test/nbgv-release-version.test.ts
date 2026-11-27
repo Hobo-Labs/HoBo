@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	fixedTrainAlphaReleaseRef,
 	fixedTrainAlphaSemver,
+	nbgvGetVersionArgv,
 	parseVersionJsonHeightConfig,
 } from "../lib/nbgv-release-version.mts";
 import { parseReleaseRef } from "../lib/release-version.mts";
+
+const root = join(import.meta.dirname, "..", "..");
 
 const VERSION_JSON = `{
   "version": "0.0.0-alpha.{height}",
@@ -42,6 +47,26 @@ describe("fixedTrainAlphaSemver", () => {
 		expect(parsed.npmDistTag).toBe("alpha");
 		expect(parsed.train).toBe("full");
 		expect(parseReleaseRef(parsed.ref).semver).toBe(parsed.semver);
+	});
+});
+
+describe("nbgv get-version argv", () => {
+	it("activates the pinned pnpm tool so ignored root config still runs nbgv", () => {
+		const toml = readFileSync(join(root, "mise.toml"), "utf8");
+		const version = toml.match(/^pnpm\s*=\s*"([^"]+)"/m)?.[1];
+		expect(version).toBeTruthy();
+		expect(nbgvGetVersionArgv(root, "VersionHeight", "HEAD")).toEqual([
+			"exec",
+			`pnpm@${version}`,
+			"--",
+			"pnpm",
+			"exec",
+			"nbgv",
+			"get-version",
+			"HEAD",
+			"--variable",
+			"VersionHeight",
+		]);
 	});
 });
 

@@ -1,9 +1,34 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+	planBetterAuthBundle,
+	planBetterAuthRelationalMigrations,
+} from "@hobo/pack-better-auth";
 import { Schema } from "effect";
 
+import { parseBetterAuthHostDotEnv } from "./better-auth-host-harness.js";
+
 const isNonEmptyString = Schema.is(Schema.NonEmptyString);
+
+const SQLITE_AFFINITY = {
+	boolean: "INTEGER",
+	text: "TEXT",
+	"timestamp with time zone": "TEXT",
+} as const satisfies Record<string, string>;
+
+function sqliteAffinityForPostgresType(columnType: string): string | undefined {
+	switch (columnType) {
+		case "boolean":
+			return SQLITE_AFFINITY.boolean;
+		case "text":
+			return SQLITE_AFFINITY.text;
+		case "timestamp with time zone":
+			return SQLITE_AFFINITY["timestamp with time zone"];
+		default:
+			return undefined;
+	}
+}
 
 export interface SyntheticBetterAuthSession {
 	readonly sessionId: string;
@@ -12,20 +37,59 @@ export interface SyntheticBetterAuthSession {
 	readonly expiresAtIso: string;
 }
 
-const SESSION_TABLE_DDL = `
-CREATE TABLE IF NOT EXISTS session (
-  id TEXT PRIMARY KEY NOT NULL,
-  expiresAt TEXT NOT NULL,
-  token TEXT NOT NULL UNIQUE,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL,
-  userId TEXT NOT NULL
-)`;
+function quoteIdent(name: string): string {
+	return `"${name.replaceAll('"', '""')}"`;
+}
+
+function sqliteColumnSql(column: {
+	readonly name: string;
+	readonly type: string;
+	readonly nullable: boolean;
+	readonly primaryKey: boolean;
+	readonly unique: boolean;
+}): string {
+	const affinity = sqliteAffinityForPostgresType(column.type);
+	if (affinity === undefined) {
+		throw new Error(
+			`no sqlite affinity for Better Auth column type ${column.type}`,
+		);
+	}
+	const parts = [quoteIdent(column.name), affinity];
+	if (column.primaryKey) parts.push("PRIMARY KEY");
+	if (!column.nullable) parts.push("NOT NULL");
+	if (column.unique && !column.primaryKey) parts.push("UNIQUE");
+	return parts.join(" ");
+}
+
+function applyBetterAuthCreateTables(database: DatabaseSync): void {
+	const inputs = parseBetterAuthHostDotEnv();
+	const bundlePlan = planBetterAuthBundle(
+		inputs.configInput,
+		inputs.portsInput,
+	);
+	const planned = planBetterAuthRelationalMigrations(bundlePlan);
+	const tables = new Map(
+		planned.desiredSchema.tables.map((table) => [table.name, table]),
+	);
+	for (const step of planned.migrationPlan.steps) {
+		if (step.kind !== "create-table") continue;
+		const table = tables.get(step.table);
+		if (table === undefined) {
+			throw new Error(
+				`migration plan create-table ${step.table} is missing from the desired schema`,
+			);
+		}
+		const columns = table.columns.map((column) => sqliteColumnSql(column));
+		database.exec(
+			`CREATE TABLE IF NOT EXISTS ${quoteIdent(table.name)} (${columns.join(", ")})`,
+		);
+	}
+}
 
 export function openBetterAuthSessionStore(path: string): DatabaseSync {
 	mkdirSync(dirname(path), { recursive: true });
 	const database = new DatabaseSync(path);
-	database.exec(SESSION_TABLE_DDL);
+	applyBetterAuthCreateTables(database);
 	return database;
 }
 

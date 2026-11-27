@@ -27,6 +27,46 @@ describe("parseReleaseRef (semver gate)", () => {
 		expect(parsed.ghcrTag).toBe(ref);
 	});
 
+	it.each([
+		"v",
+		"sdk-v",
+		"cli-v",
+	])("encodes build metadata in the OCI tag for %s without changing the release ref", (prefix) => {
+		const ref = `${prefix}1.2.3-rc.1+build.9`;
+		const parsed = parseReleaseRef(ref);
+		expect(parsed.ref).toBe(ref);
+		expect(parsed.semver).toBe("1.2.3-rc.1+build.9");
+		expect(parsed.npmDistTag).toBe("rc");
+		expect(parsed.ghcrTag).toBe(`${prefix}1.2.3-rc.1_build.9`);
+		expect(ghcrImageTags("Hobo-Labs/HoBo", "hobo-sdk", parsed)).toEqual([
+			`ghcr.io/hobo-labs/hobo/hobo-sdk:${prefix}1.2.3-rc.1_build.9`,
+		]);
+	});
+
+	it("enforces the OCI tag length without conflating release refs", () => {
+		const prefix = "v1.2.3+";
+		const longest = `${prefix}${"a".repeat(128 - prefix.length)}`;
+		expect(parseReleaseRef(longest).ghcrTag).toHaveLength(128);
+		expect(() => parseReleaseRef(`${longest}a`)).toThrow(/OCI tag.*128/u);
+		expect(() => parseReleaseRef("v1.2.3_build.9")).toThrow(/invalid semver/u);
+	});
+
+	it("refuses an invalid OCI tag even if the parsed object is forged", () => {
+		const parsed = parseReleaseRef("v1.2.3");
+		expect(() =>
+			ghcrImageTags("Hobo-Labs/HoBo", "hobo-sdk", {
+				...parsed,
+				ghcrTag: "v1.2.3+build",
+			}),
+		).toThrow(/OCI tag/u);
+		expect(() =>
+			ghcrImageTags("Hobo-Labs/HoBo", "hobo-sdk", {
+				...parsed,
+				ghcrTag: "v1.2.4",
+			}),
+		).toThrow(/OCI tag.*release ref/u);
+	});
+
 	it("rejects unrecognized refs", () => {
 		expect(() => parseReleaseRef("pr-1684")).toThrow(
 			/unrecognized release ref/,

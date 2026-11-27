@@ -1,9 +1,8 @@
-import { describe, expect, it } from "vitest";
-
 import {
 	BetterAuthConfigError,
 	parseBetterAuthSecretRef,
 } from "@hobo/auth-adapter-contract";
+import { describe, expect, it } from "vitest";
 import { BetterAuthBundlePlanError } from "../src/errors.js";
 import { parseBetterAuthBundlePortRefs } from "../src/ports.js";
 
@@ -40,5 +39,52 @@ describe("parseBetterAuthBundlePortRefs", () => {
 				signingSecretRef: "hobo-secret://camp-prod/auth/signing-key",
 			}),
 		).toThrow(BetterAuthBundlePlanError);
+	});
+
+	it("rejects a missing port field", () => {
+		expect(() =>
+			parseBetterAuthBundlePortRefs({
+				relationalBindle: "auth_db",
+				httpBindle: "auth_api",
+			}),
+		).toThrow(BetterAuthBundlePlanError);
+		try {
+			parseBetterAuthBundlePortRefs({
+				relationalBindle: "auth_db",
+				httpBindle: "auth_api",
+			});
+		} catch (error) {
+			expect(error).toBeInstanceOf(BetterAuthBundlePlanError);
+			if (!(error instanceof BetterAuthBundlePlanError)) throw error;
+			expect(error.code).toBe("BETTER_AUTH_BUNDLE_PORT_MISSING");
+		}
+	});
+
+	it("rejects a port field that is not a non-empty string", () => {
+		for (const input of [
+			null,
+			["auth_db"],
+			{
+				relationalBindle: "",
+				httpBindle: "auth_api",
+				signingSecretRef: "hobo-secret://camp-prod/auth/signing-key",
+			},
+			{
+				relationalBindle: 12,
+				httpBindle: "auth_api",
+				signingSecretRef: "hobo-secret://camp-prod/auth/signing-key",
+			},
+		]) {
+			expect(() => parseBetterAuthBundlePortRefs(input)).toThrow(
+				BetterAuthBundlePlanError,
+			);
+			try {
+				parseBetterAuthBundlePortRefs(input);
+			} catch (error) {
+				expect(error).toBeInstanceOf(BetterAuthBundlePlanError);
+				if (!(error instanceof BetterAuthBundlePlanError)) throw error;
+				expect(error.code).toBe("BETTER_AUTH_BUNDLE_PORT_INVALID");
+			}
+		}
 	});
 });
