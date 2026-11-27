@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -148,7 +148,12 @@ export function checkoutFromBareMirror(
 		const ok =
 			checkout.ok &&
 			(!options.markerPath ||
-				existsSync(join(workDir, options.markerPath)));
+				options.markerPath
+					.split("\n")
+					.filter(Boolean)
+					.every((marker) =>
+						statSync(join(workDir, marker), { throwIfNoEntry: false })?.isFile(),
+					));
 		last = {
 			ok,
 			attempt,

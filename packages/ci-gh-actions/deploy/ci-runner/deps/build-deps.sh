@@ -174,16 +174,14 @@ if ! docker image inspect "$base" >/dev/null 2>&1; then
   repository="${GITHUB_REPOSITORY:-}"
   used_remote=0
   if [ -n "$repository" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-    actor="${GITHUB_ACTOR:-github-actions}"
-    remote_toolchain="ghcr.io/${repository,,}/hobo-ci-worker:${toolchain}"
-    if printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$actor" --password-stdin >/dev/null \
-      && timeout 45 docker manifest inspect "$remote_toolchain" >/dev/null 2>&1; then
-      echo "Using remote toolchain ${remote_toolchain} for build (manifest present; skipping full pull)"
+    if docker image inspect hobo-ci-worker:local >/dev/null 2>&1 \
+      && remote_toolchain="$(timeout 90 node --no-warnings scripts/ci/ensure-ci-worker-image.mts --published-digest | tail -n 1)" \
+      && [[ "$remote_toolchain" == "ghcr.io/${repository,,}/hobo-ci-worker@sha256:"* ]] \
+      && [[ "$remote_toolchain" =~ @sha256:[a-f0-9]{64}$ ]]; then
+      echo "Using remote toolchain ${remote_toolchain} for build (digest resolved; skipping full pull)"
       base="$remote_toolchain"
       used_remote=1
-      if docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
-        headroom_sample_image="hobo-ci-worker:local"
-      fi
+      headroom_sample_image="hobo-ci-worker:local"
     fi
   fi
   if [ "$used_remote" = 0 ]; then

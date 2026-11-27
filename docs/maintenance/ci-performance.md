@@ -33,10 +33,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   pull succeeds with less than a second of budget left. An unreadable manifest keeps the
   full pull budget and the default retries when that ref is the only source; the
   45-second one-attempt pull is only used when another source remains. `--published-status`
-  shares one 120-second budget across login and manifest inspect, with bounded retries
-  on a transient inspect, and does not pull the worker image. A present manifest is
-  published and a missing one is not. Exhausting that budget, or an inspect that stays
-  unreadable, is inconclusive, so the publisher does not treat it as a missing image. That job's timeout is 15 minutes so the wait can
+  shares a 120-second budget across login, bounded manifest retries, and a fallback
+  pull. A confirmed manifest is published without a pull; the publisher rebuilds only
+  if both manifest inspection and the pull report a missing image. Timeouts, network
+  errors, or exhaustion before the pull remain inconclusive. That job's timeout is 15
+  minutes so the wait can
   use the full `HOBO_CI_WORKER_PULL_BUDGET_SEC`. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
   immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
   an empty or invalid value fails the job instead of falling back to the version

@@ -177,6 +177,14 @@ describe("parseBetterAuthConfig", () => {
 
 	it.each([
 		[{ database: { profile: "kv.redis/v1" } }, "not a data-relational family"],
+		[
+			{ database: { profile: "data.mongodb/v1" } },
+			"a non-relational data profile",
+		],
+		[
+			{ database: { profile: "data.unknown/v1" } },
+			"an unregistered data profile",
+		],
 		[{ database: { profile: "relational" } }, "no version suffix"],
 		[{ database: {} }, "no profile"],
 		[{ database: { profile: "data.relational/v0" } }, "zero major version"],
