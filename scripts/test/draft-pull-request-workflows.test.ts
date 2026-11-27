@@ -18,6 +18,7 @@ import {
 	type LintActionsResult,
 	lintActionsRepository,
 	normalizeDraftIfExpression,
+	PROBE_READY_IF,
 	REQUIRED_JOB_DRAFT_IF_MESSAGE,
 	REQUIRED_PULL_REQUEST_TYPES,
 } from "../lint-actions.ts";
@@ -138,6 +139,42 @@ function assertDraftPolicyOnlyFailure(
 }
 
 describe("draft pull request CI policy", () => {
+	it("only starts PR fleet probes for ready events while retaining trunk and manual probes", () => {
+		const text = readFileSync(join(workflowDir, "fleet-probe.yml"), "utf8");
+		for (const job of ["pr-fleet", "trunk-fleet", "local-box-enrolled"]) {
+			const block = jobBlockFromText(text, job);
+			assert.ok(block.includes(`    if: ${PROBE_READY_IF}`), job);
+			for (const [event, draft, upstream, expected] of [
+				["pull_request_target", true, "", false],
+				["pull_request_target", false, "", true],
+				["workflow_run", false, "pull_request", false],
+				["workflow_run", false, "push", true],
+				["workflow_run", false, "merge_group", true],
+				["workflow_dispatch", false, "", true],
+			] as const) {
+				const values = new Map<string, string | boolean>([
+					["github.event_name", event],
+					["github.event.pull_request.draft", draft],
+					["github.event.workflow_run.event", upstream],
+				]);
+				assert.equal(
+					evaluateExpression(
+						PROBE_READY_IF,
+						(path) => values.get(path) ?? null,
+					),
+					expected,
+					`${job} ${event} draft=${draft} upstream=${upstream}`,
+				);
+			}
+		}
+		assert.match(
+			text,
+			/ref: \$\{\{ github\.event_name == 'pull_request_target' && github\.event\.pull_request\.base\.sha \|\| github\.sha \}\}/u,
+		);
+		const local = jobBlockFromText(text, "local-box").join("\n");
+		assert.match(local, /needs: local-box-enrolled/u);
+	});
+
 	it("does not run draft heads, even when the old opt-in label is added", () => {
 		for (const [event, draft, action, label, expected] of [
 			["pull_request", true, "opened", "", false],

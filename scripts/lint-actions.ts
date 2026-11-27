@@ -74,6 +74,9 @@ const allowedEnabled = new Set([
 	...activeCiFiles,
 ]);
 
+export const PROBE_READY_IF =
+	"(github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'";
+
 /**
  * The probe's one GitHub-hosted job: it reads whether a local box is enrolled
  * (`runnerRouting.localRunner` in `.hobo/ci.json`) with the route job's own
@@ -81,6 +84,7 @@ const allowedEnabled = new Set([
  */
 const PROBE_GATE_JOB = `  local-box-enrolled:
     name: local box enrolled
+    if: ${PROBE_READY_IF}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -90,6 +94,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: \${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
@@ -116,6 +121,21 @@ const PROBE_LOCAL_GATE = [
 function lintProbeWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
 	const jobsIndex = lines.indexOf("jobs:");
+	const eventControlled = /^  (?:workflow_run|pull_request_target):/m.test(
+		text,
+	);
+	if (eventControlled) {
+		const expected = `  workflow_run:
+    workflows: ["HoBo CI Fabric"]
+    types: [requested]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]`;
+		if (!text.includes(expected))
+			errors.push(
+				`${probeFile}: probe triggers must cover ready PRs and non-PR CI runs`,
+			);
+	}
 	const starts = lines.flatMap((line, index) =>
 		index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
 	);
@@ -127,6 +147,14 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 		while (block.length > 0 && block.at(-1)?.trim() === "") block.pop();
 		while (block.length > 0 && block.at(-1)?.trim().startsWith("#"))
 			block.pop();
+		if (
+			eventControlled &&
+			lines[start] !== "  local-box:" &&
+			!block.includes(`    if: ${PROBE_READY_IF}`)
+		)
+			errors.push(
+				`${probeFile}:${start + 1}: probe jobs must skip draft PR events`,
+			);
 		if (lines[start] === "  local-box-enrolled:") {
 			if (block.join("\n") !== PROBE_GATE_JOB)
 				errors.push(
