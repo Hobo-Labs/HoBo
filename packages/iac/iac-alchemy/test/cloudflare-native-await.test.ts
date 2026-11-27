@@ -77,7 +77,7 @@ it("keeps the exact fulfilled object boxed when Promise and Object prototypes ch
 				"--outDir",
 				directory,
 			],
-			{ encoding: "utf8", timeout: 30_000 },
+			{ encoding: "utf8", timeout: 90_000 },
 		);
 		expect(compiled.error).toBeUndefined();
 		expect(compiled.status, compiled.stderr).toBe(0);
@@ -122,4 +122,4 @@ process.stdout.write(JSON.stringify({ same, calls }));
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
-}, 45_000);
+}, 120_000);

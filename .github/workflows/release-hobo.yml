@@ -264,7 +264,7 @@ env:
 jobs:
   route:
     name: Route runners
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -1089,7 +1089,7 @@ jobs:
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:
@@ -1240,7 +1240,7 @@ jobs:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:
@@ -1927,7 +1927,7 @@ jobs:
 
   release-integration-measure-gate:
     name: HoBo release integration PR gate
-    if: always() && github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.draft == false
     needs: [release-hobo-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1944,7 +1944,7 @@ jobs:
 
   release-pr-gate:
     name: HoBo release PR gate (required)
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    if: always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     needs: [route, release-contract, release-realize, release-pages-browser-wit-smoke]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.

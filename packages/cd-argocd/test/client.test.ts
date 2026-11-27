@@ -174,6 +174,36 @@ describe("ArgoCdControlClient", () => {
 		expect(verdict.state).toBe("converged");
 	});
 
+	it.each([
+		"",
+		"  \t",
+	])("refuses a sync without a revision before contacting Argo CD", async (revision) => {
+		const http = vi.fn<HttpTransport>(async () => json(200, {}));
+		const resolver: CredentialResolver = {
+			resolve: vi.fn(async () => ({ token: "synthetic" })),
+		};
+		const client = createArgoCdControlClient(
+			{
+				apiBaseUrl: "https://argo.example",
+				application: "hobo-prod",
+				appNamespace: "argocd",
+				tokenRef: "owner://ARGO_TOKEN",
+			},
+			http,
+			resolver,
+		);
+		const result = await client.requestSync(
+			{ name: "hobo-prod", namespace: "argocd", revision },
+			ctx,
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reasons: [{ code: "argocd-body-invalid" }],
+		});
+		expect(http).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
+	});
+
 	it("sync posts revision to the sync endpoint", async () => {
 		const calls: string[] = [];
 		const http: HttpTransport = async (req) => {

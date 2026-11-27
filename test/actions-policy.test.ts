@@ -258,7 +258,7 @@ const pullRequestTrigger = `  pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
 `;
 const routeWithDraftGate = `  route:
-    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -273,8 +273,8 @@ on:
   push:
     branches: [main]
 ${pullRequestTrigger}jobs:
-${routeWithDraftGate}  pr-gate:
-    if: github.event_name == 'pull_request'
+${routeWithDraftGate}  pr-lane:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: hobo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -421,12 +421,13 @@ on:
   push:
     branches: [main]
 ${pullRequestTrigger}jobs:
-${routeWithDraftGate}  pr-gate:
-    if: github.event_name == 'pull_request'
+${routeWithDraftGate}  pr-lane:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: hobo
     steps:
       - run: true
   main-gate:
+    if: github.event_name != 'pull_request'
     runs-on: ${runsOn}
     steps:
       - run: true
@@ -564,7 +565,7 @@ jobs:
   hello-bindle-fixture-quarantine:
     if: >-
       github.event_name == 'pull_request' &&
-      (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) &&
+      (github.event.pull_request.draft == false) &&
       contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')
     runs-on: ${runsOn}
     steps:
@@ -748,7 +749,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				continue;
 			}
 			const quarantineCondition =
-				">- github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')";
+				">- github.event_name == 'pull_request' && (github.event.pull_request.draft == false) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')";
 			const prOnly =
 				(/github\.event_name == 'pull_request'/.test(condition) &&
 					!condition.includes("||")) ||
