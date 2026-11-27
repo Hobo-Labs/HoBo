@@ -811,7 +811,11 @@ export function draftGateEntryJobs(
 	if (jobIds.includes("route")) return ["route"];
 	if (file === "actions-lock.yml") return ["actions-lock"];
 	if (file === "release-hobo-pr.yml") return ["release-integration"];
-	if (file === "dev-env-smoke.yml" || file === "examples-e2e.yml")
+	if (
+		file === "dev-env-smoke.yml" ||
+		file === "examples-e2e.yml" ||
+		file === "fleet-enrollment.yml"
+	)
 		return jobIds;
 	return [];
 }

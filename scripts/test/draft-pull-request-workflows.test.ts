@@ -196,6 +196,7 @@ describe("draft pull request CI policy", () => {
 			"actions-lock.yml",
 			"dev-env-smoke.yml",
 			"examples-e2e.yml",
+			"fleet-enrollment.yml",
 			"hobo-ci.yml",
 			"pricing-ci.yml",
 			"release-hobo-pr.yml",
