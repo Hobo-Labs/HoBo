@@ -220,9 +220,20 @@ describe("main full gate workspace sharding", () => {
 			workflow,
 			/^ {2}workflow_dispatch:\n {4}inputs:\n {6}route:\n/mu,
 		);
+		const route = job("route");
+		const trusted = route.indexOf("      - id: trusted-route\n");
+		const decision = route.indexOf("      - id: route\n");
+		assert.ok(trusted > route.indexOf("path: .ci-trusted"));
+		assert.ok(decision > trusted);
+		assert.equal(route.slice(trusted, decision).includes("\n      - "), false);
+		const bootstrap = route.slice(trusted, decision);
+		assert.match(bootstrap, /set -euo pipefail/u);
+		assert.match(bootstrap, /workflowFile\(env\) !== "hobo-ci\.yml"/u);
+		assert.match(bootstrap, /merge_group=fleet/u);
+		assert.match(bootstrap, /merge_group=auto/u);
 		assert.match(
-			job("route"),
-			/route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && 'fleet'\) \|\| 'auto' \}\}/u,
+			route,
+			/route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && steps\.trusted-route\.outputs\.merge_group\) \|\| 'auto' \}\}/u,
 		);
 		assert.doesNotMatch(workflow, /vars\.HOBO_CI_/u);
 	});

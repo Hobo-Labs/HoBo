@@ -4407,7 +4407,7 @@ describe("the workflows that route", () => {
 		);
 		assert.match(
 			ci,
-			/id: route\n\s+uses: .*route-runner\n\s+with:\n\s+token: \$\{\{ github\.token \}\}\n\s+route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && 'fleet'\) \|\| 'auto' \}\}/,
+			/id: trusted-route\n[\s\S]*?\n\s+- id: route\n\s+uses: .*route-runner\n\s+with:\n\s+token: \$\{\{ github\.token \}\}\n\s+route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && steps\.trusted-route\.outputs\.merge_group\) \|\| 'auto' \}\}/,
 		);
 		assert.match(
 			ci,

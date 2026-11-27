@@ -345,18 +345,89 @@ describe("base-controlled attestation verification", () => {
 					: "ubuntu-24.04",
 			);
 			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
-			const routeStep = asList(route?.steps)
-				?.map(asObject)
-				.find((step) => step?.id === "route");
+			const steps = asList(route?.steps)?.map(asObject) ?? [];
+			const routeStep = steps.find((step) => step?.id === "route");
 			const withBlock = asObject(routeStep?.with);
-			assert.equal(
-				asText(withBlock?.route),
+			const routeInput =
 				workflow === "hobo-ci.yml"
-					? "${{ inputs.route || (github.event_name == 'merge_group' && 'fleet') || 'auto' }}"
-					: "auto",
+					? "${{ inputs.route || (github.event_name == 'merge_group' && steps.trusted-route.outputs.merge_group) || 'auto' }}"
+					: "auto";
+			assert.equal(asText(withBlock?.route), routeInput);
+			if (workflow !== "hobo-ci.yml") {
+				assert.equal(
+					steps.some((step) => step?.id === "trusted-route"),
+					false,
+				);
+				return;
+			}
+			const trustedAt = steps.findIndex((step) => step?.id === "trusted-route");
+			const routeAt = steps.findIndex((step) => step?.id === "route");
+			const checkoutAt = steps.findIndex(
+				(step) => asObject(step?.with)?.path === ".ci-trusted",
 			);
+			assert.ok(
+				trustedAt > checkoutAt,
+				"trusted-route follows the base checkout",
+			);
+			assert.equal(routeAt, trustedAt + 1);
+			assert.match(routeInput, /steps\.trusted-route\.outputs\.merge_group/u);
 		});
 	}
+
+	it("hobo-ci.yml pins merge-group fleet only when the trusted route-runner exempts it", () => {
+		const doc = workflowDocument(
+			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
+		);
+		const steps =
+			asList(asObject(asObject(doc.jobs)?.route)?.steps)?.map(asObject) ?? [];
+		const shell = asText(
+			steps.find((step) => step?.id === "trusted-route")?.run,
+		);
+		assert.ok(shell);
+		const workspace = mkdtempSync(join(tmpdir(), "hobo-trusted-route-pin-"));
+		const output = join(workspace, "out");
+		const file = join(
+			workspace,
+			".ci-trusted",
+			"scripts",
+			"ci",
+			"route-runner.mts",
+		);
+		const run = () =>
+			spawnSync("bash", ["-c", shell], {
+				cwd: workspace,
+				encoding: "utf8",
+				env: {
+					PATH: process.env.PATH ?? "",
+					GITHUB_OUTPUT: output,
+				},
+			});
+		try {
+			writeFileSync(output, "");
+			const missing = run();
+			assert.notEqual(missing.status, 0);
+			assert.match(
+				`${missing.stdout}${missing.stderr}`,
+				/trusted route-runner file is missing/u,
+			);
+			assert.equal(readFileSync(output, "utf8"), "");
+			mkdirSync(join(workspace, ".ci-trusted", "scripts", "ci"), {
+				recursive: true,
+			});
+			writeFileSync(file, 'workflowFile(env) !== "release-hobo.yml"\n');
+			writeFileSync(output, "");
+			const plain = run();
+			assert.equal(plain.status, 0, plain.stderr);
+			assert.equal(readFileSync(output, "utf8"), "merge_group=auto\n");
+			writeFileSync(file, 'workflowFile(env) !== "hobo-ci.yml" &&\n');
+			writeFileSync(output, "");
+			const exempt = run();
+			assert.equal(exempt.status, 0, exempt.stderr);
+			assert.equal(readFileSync(output, "utf8"), "merge_group=fleet\n");
+		} finally {
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	});
 
 	it("hobo-ci.yml leaves a full worktree after a merge-group route on a reused runner", () => {
 		const doc = workflowDocument(
