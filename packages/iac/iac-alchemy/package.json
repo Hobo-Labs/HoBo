@@ -86,6 +86,22 @@
 		"./cloudflare/r2": {
 			"types": "./dist/cloudflare-native-r2.d.ts",
 			"default": "./dist/cloudflare-native-r2.js"
+		},
+		"./aws/kv": {
+			"types": "./dist/aws-kv.d.ts",
+			"default": "./dist/aws-kv.js"
+		},
+		"./aws/kv-mapper": {
+			"types": "./dist/aws-kv-mapper.d.ts",
+			"default": "./dist/aws-kv-mapper.js"
+		},
+		"./aws/s3": {
+			"types": "./dist/aws-s3.d.ts",
+			"default": "./dist/aws-s3.js"
+		},
+		"./aws/s3-mapper": {
+			"types": "./dist/aws-s3-mapper.d.ts",
+			"default": "./dist/aws-s3-mapper.js"
 		}
 	},
 	"dependencies": {
@@ -99,7 +115,8 @@
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
 		"rivetkit": "3.0.0",
-		"ws": "^8.21.0"
+		"ws": "^8.21.0",
+		"@distilled.cloud/aws": "1.0.0-rc.20"
 	},
 	"peerDependenciesMeta": {
 		"@alchemy.run/aws": {
@@ -113,9 +130,14 @@
 		},
 		"rivetkit": {
 			"optional": true
+		},
+		"@distilled.cloud/aws": {
+			"optional": true
 		}
 	},
 	"devDependencies": {
+		"@hobo/identity": "workspace:*",
+		"@hobo/pack-better-auth": "workspace:*",
 		"@alchemy.run/aws": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
@@ -128,14 +150,16 @@
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
 		"@types/node": "^24.13.2",
-		"miniflare": "4.20260722.0"
+		"miniflare": "4.20260722.0",
+		"@distilled.cloud/aws": "1.0.0-rc.20"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json && tsc --noEmit -p tsconfig.aws-tests.json",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json && tsc --noEmit -p tsconfig.aws-tests.json && tsc --noEmit -p tsconfig.cloudflare-storage-tests.json",
 		"test": "vitest run",
+		"test:aws-emulator": "node --experimental-strip-types test/run-official-aws-emulator.mts",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}
 }
