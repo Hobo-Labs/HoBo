@@ -229,3 +229,6 @@ tenant isolation. Its Alchemy provider is simulated; it does not verify hosted
 Rivet deployment, networking or billing.
 
 The topic actor source fence includes the shared runtime topic journal.
+
+The local Rivet engine test uses a fixed test-only token instead of reading
+user credentials.
