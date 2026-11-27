@@ -15,7 +15,7 @@ Follow the repository rules in `AGENTS.md` for every task and harness.
 
 ## Landing
 
-- A workstream has at most one open pull request, ready for review. A stack lands as one unit through the pull request for its top layer, based on `main`; do not open a pull request per layer.
+- A workstream has at most one open pull request. Review and validate locally while it is draft, then mark it ready to run GitHub Actions. If a gate fails, return it to draft and fix the same branch. A stack lands as one unit through the pull request for its top layer, based on `main`; do not open a pull request per layer.
 - Update a pushed branch by merging `origin/main` in (`git merge origin/main`). Never rebase a pushed branch and never force-push; `gh stack rebase` and `gh stack sync` are only for unpushed local layers.
 - Never squash and never rebase-merge. Land with a merge commit (`gh pr merge <n> --merge`, or the merge queue with the merge-commit method); lower layers then show as merged because their commits are in `main`.
 - Before opening a pull request and before landing, check for supersession. Ancestry alone does not prove the carrier kept the work: compare the PR's changed paths and modes with the proposed carrier, and recheck both heads before closing. Keep distinct stack layers open for bottom-up review and merging, and keep any pull request open if the original changes cannot be established or the carrier differs.
@@ -34,4 +34,4 @@ git merge-base --is-ancestor <head> <other-open-pr-head> && echo 'ancestor of an
 
 ## `--finish`
 
-`/sdlc --finish` authorizes landing the current session: commit remaining work, fetch and merge the latest `origin/main` in, resolve conflicts keeping both sides' work, run the supersession check, open or update the one workstream pull request, push, review its combined diff against `main`, resolve every actionable review thread, repair real check failures, and land it with a merge commit. Billing or quota failures that stop checks from running do not block the merge; real test, lint, or type failures do.
+`/sdlc --finish` authorizes landing the current session: commit remaining work, fetch and merge the latest `origin/main` in, resolve conflicts keeping both sides' work, run the supersession check, open or update the one workstream pull request, push, review its combined diff against `main`, resolve every actionable review thread, repair real check failures, and land it with a merge commit. All applicable ready-state required checks and release jobs must actually pass; never bypass them for billing, quota, runner, or other failures.

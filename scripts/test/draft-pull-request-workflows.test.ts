@@ -31,9 +31,9 @@ const workflowDir = join(repoRoot, ".github", "workflows");
 const pullRequestOn =
 	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review, labeled]\n  push:\n    branches: [main]\n";
 const routeJobGood =
-	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 const trunkJob =
-	'  trunk:\n    runs-on: ${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}\n    steps:\n      - run: "true"\n';
+	'  trunk:\n    if: github.event_name != \'pull_request\'\n    runs-on: ${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}\n    steps:\n      - run: "true"\n';
 
 const actionsLockOn = `on:
   pull_request:
@@ -138,12 +138,12 @@ function assertDraftPolicyOnlyFailure(
 }
 
 describe("draft pull request CI policy", () => {
-	it("runs a draft head only when the dedicated label is added", () => {
+	it("does not run draft heads, even when the old opt-in label is added", () => {
 		for (const [event, draft, action, label, expected] of [
 			["pull_request", true, "opened", "", false],
 			["pull_request", true, "synchronize", "", false],
 			["pull_request", true, "labeled", "other", false],
-			["pull_request", true, "labeled", "ci:run-draft-checks", true],
+			["pull_request", true, "labeled", "ci:run-draft-checks", false],
 			["pull_request", false, "ready_for_review", "", true],
 			["merge_group", false, "checks_requested", "", true],
 		] as const) {
@@ -163,14 +163,14 @@ describe("draft pull request CI policy", () => {
 		}
 	});
 
-	it("keeps the required PR impact gate running after a skipped draft route", () => {
+	it("skips the required PR impact gate on drafts but keeps it fail-closed for ready PRs and the queue", () => {
 		const block = jobBlockFromText(
 			readFileSync(join(workflowDir, "hobo-ci.yml"), "utf8"),
 			"pr-gate",
 		).join("\n");
 		assert.match(
 			block,
-			/if: \$\{\{ always\(\) && \(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) \}\}/u,
+			/always\(\).*github\.event\.pull_request\.draft == false/u,
 		);
 		assert.match(
 			block,
@@ -178,7 +178,7 @@ describe("draft pull request CI policy", () => {
 		);
 	});
 
-	it("requires the labeled event so the draft check request can start", async () => {
+	it("requires the labeled event for label-selected ready PR lanes", async () => {
 		const withoutLabel = pullRequestOn.replace(
 			", ready_for_review, labeled",
 			", ready_for_review",
@@ -189,6 +189,88 @@ describe("draft pull request CI policy", () => {
 		);
 		assert.equal(result.exitCode, 1);
 		assert.match(result.stderr, /pull_request\.types must include labeled/u);
+	});
+
+	it("does not start always-running aggregate jobs on drafts", () => {
+		for (const [file, id, queue] of [
+			["hobo-ci.yml", "pr-gate", true],
+			["release-hobo-pr.yml", "release-integration-gate", true],
+			["release-hobo.yml", "release-pr-gate", true],
+			["release-hobo.yml", "release-integration-measure-gate", false],
+		] as const) {
+			const text = readFileSync(join(workflowDir, file), "utf8");
+			const block = jobBlockFromText(text, id);
+			const line = block.find((entry) => entry.startsWith("    if:"));
+			assert.ok(line, `${file}:${id} must have a job condition`);
+			const expression = line
+				.replace(/^\s*if:\s*/, "")
+				.replace(/^\$\{\{\s*/, "")
+				.replace(/\s*\}\}$/, "");
+			for (const [event, draft, expected] of [
+				["pull_request", true, false],
+				["pull_request", false, true],
+				["merge_group", false, queue],
+			] as const) {
+				const values = new Map<string, string | boolean>([
+					["github.event_name", event],
+					["github.event.pull_request.draft", draft],
+				]);
+				assert.equal(
+					evaluateExpression(expression, (path) => values.get(path) ?? null),
+					expected,
+					`${file}:${id} ${event} draft=${draft}`,
+				);
+			}
+		}
+	});
+
+	it("rejects the old label-based draft override", async () => {
+		const oldRoute = routeJobGood.replace(
+			"github.event.pull_request.draft == false }}",
+			"github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}",
+		);
+		assertDraftPolicyOnlyFailure(
+			await lintFixtureWorkflow(
+				"hobo-ci.yml",
+				`${pullRequestOn}jobs:\n${oldRoute}${trunkJob}`,
+			),
+			"hobo-ci.yml:.*: job route",
+		);
+	});
+
+	it("rejects an aggregate gate that starts after a skipped draft route", async () => {
+		const gate = `  pr-gate:
+    if: \${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    needs: [route]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		const result = await lintFixtureWorkflow(
+			"hobo-ci.yml",
+			`${pullRequestOn}jobs:\n${routeJobGood}${gate}${trunkJob}`,
+		);
+		assert.equal(result.exitCode, 1, result.stderr);
+		assert.match(
+			result.stderr,
+			/job pr-gate must skip draft pull_request runs/u,
+		);
+	});
+
+	it("rejects a new job that overrides the skipped route with a status function", async () => {
+		const gate = `  extra:
+    if: \${{ !cancelled() }}
+    needs: [route]
+    runs-on: hobo
+    steps:
+      - run: echo ok
+`;
+		const result = await lintFixtureWorkflow(
+			"hobo-ci.yml",
+			`${pullRequestOn}jobs:\n${routeJobGood}${gate}${trunkJob}`,
+		);
+		assert.equal(result.exitCode, 1, result.stderr);
+		assert.match(result.stderr, /job extra must skip draft pull_request runs/u);
 	});
 
 	it("lists every workflow that listens on pull_request", () => {

@@ -34,9 +34,9 @@ Use git as the source of truth for state, ownership, and history.
 5. Supersession check: if the head is already in `origin/main` or is an ancestor of another open
    PR's head (`git merge-base --is-ancestor <head> <other-head>`), do not open or keep a separate
    PR — close it with `Superseded by #N` (keep the branch).
-6. Open or update **one** PR per workstream, ready for review, not a long-lived draft (multi-layer
-   work: one PR for the top of the stack against `main`, not a PR per layer). A workstream has at
-   most one open PR; add commits to it instead of opening another.
+6. Open or update **one** PR per workstream (multi-layer work: one PR for the top of the stack
+   against `main`, not a PR per layer). Review and validate locally while it is a draft; mark it
+   ready for GitHub Actions, and return it to draft to fix a failed gate on the same branch.
 7. Request merge-commit auto-merge (`gh pr merge <n> --merge --auto`, or the merge queue with the
    merge-commit method) only when mergeability and required checks are clean. **Never squash,
    never rebase-merge.** Stacked work lands as one unit through the top PR — see the `sdlc`
@@ -60,15 +60,14 @@ git config --local remote.pushDefault origin
 
 ## Merge Discipline
 
-Do not claim completion, mark a PR ready, or merge while required checks are failing or pending
-**for real code reasons** (tests, lint, architecture, secret findings that executed).
+Review and validate changes locally while the PR is a draft. Mark it ready for review
+to start GitHub Actions; do not run CI on drafts. If a gate fails, return the PR to
+draft and repair the same branch before marking it ready again. Do not open another
+PR to fix the failing gate.
 
-**Billing / spending-limit / quota failures do not block merge.** When jobs never start
-(no runner, empty steps, "payments have failed", "spending limit needs to be increased"):
-document the exception on the PR, then **merge immediately** with a merge commit
-(`gh pr merge <n> --merge`; `--admin` if protection still requires green checks). Tell the
-user billing needs repair asynchronously — do not leave reviewed PRs open waiting on CI that
-cannot run.
+Queue or merge only after the current ready-state required checks and applicable
+release jobs actually pass. Pending, skipped, cancelled, unavailable, or failed
+checks are not passes. Never bypass branch protections or required checks.
 
 Address all review comments before merge. If another merge worker owns the final merge,
 report the exact remaining state instead of pretending it shipped.
