@@ -201,8 +201,13 @@ export const validateOnePasswordServiceAccount = async (
 		});
 		try {
 			await client.items.put(probe);
-		} finally {
+		} catch {
+			return "unverifiable";
+		}
+		try {
 			await client.items.delete(vaultId, probe.id);
+		} catch {
+			return "unverifiable";
 		}
 		return true;
 	} catch (error) {

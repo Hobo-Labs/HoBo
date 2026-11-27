@@ -245,6 +245,20 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 		}
 	});
 
+	it("refuses validation when attestation cleanup fails", async () => {
+		const token = parseOnePasswordServiceAccountToken(TOKEN);
+		if (token === undefined) throw new Error("Invalid fixture token.");
+		const fixture = validationSdk();
+		fixture.client.items.delete = async () => {
+			fixture.calls.push("delete");
+			throw new Error("cleanup refused");
+		};
+		await expect(
+			validateOnePasswordServiceAccount(token, VAULT, fixture.sdk),
+		).resolves.toBe("unverifiable");
+		expect(fixture.calls).toEqual(["read", "create", "update", "delete"]);
+	});
+
 	it("refuses a service account that cannot write to the configured vault", async () => {
 		const token = parseOnePasswordServiceAccountToken(TOKEN);
 		if (token === undefined) throw new Error("Invalid fixture token.");
