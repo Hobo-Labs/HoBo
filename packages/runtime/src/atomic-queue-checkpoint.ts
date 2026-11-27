@@ -101,7 +101,7 @@ function deliveryVector(message: DurableQueueDelivery): unknown[] {
 		message.deliveryAttempt,
 	]);
 }
-function resultVector(receipt: AtomicQueueReceipt): unknown[] {
+export function resultVector(receipt: AtomicQueueReceipt): unknown[] {
 	const result = receipt.result;
 	if (result.status === "rejected") return vector(["r", result.code]);
 	const value = result.value;

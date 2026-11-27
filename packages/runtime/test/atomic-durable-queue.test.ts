@@ -69,6 +69,10 @@ function memoryStore() {
 		advanceRevision: () => {
 			revision++;
 		},
+		seed: (newRevision: number, data: Uint8Array) => {
+			revision = newRevision;
+			bytes = new Uint8Array(data);
+		},
 	};
 }
 
@@ -216,6 +220,130 @@ describe("atomic durable queue provider", () => {
 			status: "unknown",
 		});
 	});
+	it("compacts and reopens without losing unexpired receipts or leases", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => clock,
+		});
+		const initial = await queue.enqueue(message(1));
+		const read = { operation: op(2), maxMessages: 1, visibilityTimeoutMs: 10 };
+		const lease = await queue.dequeue(read);
+		clock = 1005;
+		expect(await queue.compact()).toEqual({
+			status: "compacted",
+			prunedReceipts: 0,
+		});
+		const reopened = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => clock,
+		});
+		const writes = backing.calls();
+		expect(await reopened.enqueue(message(1))).toEqual(initial);
+		expect(await reopened.dequeue(read)).toEqual(lease);
+		expect(backing.calls()).toBe(writes);
+		clock = 1010;
+		expect(await reopened.dequeue({ ...read, operation: op(3) })).toMatchObject(
+			{ status: "committed", value: [{ leaseId: "l2" }] },
+		);
+		expect(
+			await reopened.complete({
+				operation: op(4),
+				messageId: "m1",
+				leaseId: "l1",
+			}),
+		).toEqual({ status: "rejected", code: "lease-lost" });
+	});
+	it("recovers a lost compaction response without losing a receipt", async () => {
+		const backing = memoryStore();
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => 1000,
+		});
+		const accepted = await queue.enqueue(message(1));
+		backing.loseNext();
+		expect(await queue.compact()).toEqual({ status: "unknown" });
+		const reopened = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => 1000,
+		});
+		expect(await reopened.enqueue(message(1))).toEqual(accepted);
+		expect(await reopened.compact()).toEqual({
+			status: "compacted",
+			prunedReceipts: 0,
+		});
+	});
+	it("fences a compaction competing with an enqueue", async () => {
+		const backing = memoryStore();
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits,
+			now: () => 1000,
+		});
+		await queue.enqueue(message(1));
+		const [compacted, added] = await Promise.all([
+			queue.compact(),
+			queue.enqueue(message(2, "other")),
+		]);
+		expect(
+			[compacted.status, added.status].filter((status) => status === "unknown"),
+		).toHaveLength(1);
+		if (added.status === "unknown")
+			expect(await queue.enqueue(message(2, "other"))).toMatchObject({
+				status: "committed",
+			});
+		else expect(await queue.compact()).toMatchObject({ status: "compacted" });
+		const delivery = await queue.dequeue({
+			operation: op(3),
+			maxMessages: 2,
+			visibilityTimeoutMs: 10,
+		});
+		if (delivery.status !== "committed") throw Error("expected delivery");
+		expect(delivery.value).toHaveLength(2);
+	});
+	it("reclaims a full event segment while keeping the log bounded", async () => {
+		const backing = memoryStore();
+		const bounds = { ...limits, retainedReceipts: 600 };
+		const events = Array.from(
+			{ length: ATOMIC_QUEUE_MAX_EVENTS },
+			(_, index) => ({
+				atMs: 1000,
+				request: {
+					kind: "dequeue" as const,
+					input: {
+						operation: durableQueueOperation(
+							1001,
+							String(index).padStart(16, "0"),
+						),
+						maxMessages: 1,
+						visibilityTimeoutMs: 10,
+					},
+				},
+			}),
+		);
+		backing.seed(events.length, encodeAtomicQueueLog(events, bounds));
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => 1001,
+		});
+		expect(await queue.enqueue(message(1))).toMatchObject({
+			status: "unknown",
+		});
+		expect(await queue.compact()).toEqual({
+			status: "compacted",
+			prunedReceipts: ATOMIC_QUEUE_MAX_EVENTS,
+		});
+		expect(await queue.enqueue(message(1))).toMatchObject({
+			status: "committed",
+		});
+	});
+
 	it("does not let modified UTF-8 helpers forge the durable log", () => {
 		const event = {
 			atMs: 1000,
@@ -249,7 +377,7 @@ describe("atomic durable queue provider", () => {
 			if (decode !== undefined)
 				Object.defineProperty(TextDecoder.prototype, "decode", decode);
 		}
-		expect(parsed).toEqual([event]);
+		expect(parsed.events).toEqual([event]);
 	});
 
 	it("bounds log length, rejects noncanonical data, and pins limits", () => {
@@ -258,7 +386,7 @@ describe("atomic durable queue provider", () => {
 			request: { kind: "enqueue" as const, input: message(1) },
 		};
 		const log = encodeAtomicQueueLog([event], limits);
-		expect(decodeAtomicQueueLog(log, limits)).toEqual([event]);
+		expect(decodeAtomicQueueLog(log, limits).events).toEqual([event]);
 		expect(() =>
 			decodeAtomicQueueLog(log, { ...limits, batchSize: 1 }),
 		).toThrow();
