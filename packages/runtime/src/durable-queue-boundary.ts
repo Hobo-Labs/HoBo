@@ -1,10 +1,10 @@
 import { types } from "node:util";
 import {
 	type DurableQueue,
+	type DurableQueueDelivery,
 	type DurableQueueLimits,
 	type DurableQueueOperation,
 	type DurableQueueOutcome,
-	type DurableQueueDelivery,
 	type DurableQueueRejectionCode,
 	parseDurableQueueOperation,
 } from "@hobo/core";
@@ -272,6 +272,13 @@ export function parseQueueSettlement(
 				),
 			}
 		: base;
+}
+export function parseQueueRedrive(value: unknown, limits: DurableQueueLimits) {
+	const input = record(value, ["operation", "messageId"]);
+	return {
+		operation: operation(input.operation, "port"),
+		messageId: text(input.messageId, limits.nameBytes),
+	};
 }
 type QueueResultKind = "enqueue" | "dequeue" | "settlement" | "extension";
 type QueueResultValue =

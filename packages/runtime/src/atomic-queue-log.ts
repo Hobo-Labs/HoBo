@@ -1,11 +1,12 @@
 import { types } from "node:util";
 import type { DurableQueueLimits } from "@hobo/core";
+import type { AtomicQueueRequest } from "./atomic-queue-transition.js";
 import {
 	parseQueueDequeue,
 	parseQueueEnqueue,
+	parseQueueRedrive,
 	parseQueueSettlement,
 } from "./durable-queue-boundary.js";
-import type { AtomicQueueRequest } from "./atomic-queue-transition.js";
 
 export const ATOMIC_QUEUE_MAX_EVENTS = 512;
 export const ATOMIC_QUEUE_MAX_BYTES = 256 * 1024;
@@ -28,7 +29,7 @@ const isArray = Array.isArray;
 const isSafe = Number.isSafeInteger;
 const apply = Reflect.apply;
 const from = Buffer.from;
-const toString = Buffer.prototype.toString;
+const bufferToString = Buffer.prototype.toString;
 const NativeTextDecoder = TextDecoder;
 const NativeTextEncoder = TextEncoder;
 const decodeText = TextDecoder.prototype.decode;
@@ -90,12 +91,15 @@ export function vector(values: unknown[]): unknown[] {
 	return values;
 }
 export function base64(value: Uint8Array): string {
-	return apply(toString, apply(from, Buffer, [value]), ["base64"]);
+	return apply(bufferToString, apply(from, Buffer, [value]), ["base64"]);
 }
 export function bytes(value: unknown, max: number): Uint8Array {
 	const encoded = text(value, Math.ceil(max / 3) * 4);
 	const decoded = apply(from, Buffer, [encoded, "base64"]);
-	if (decoded.length > max || apply(toString, decoded, ["base64"]) !== encoded)
+	if (
+		decoded.length > max ||
+		apply(bufferToString, decoded, ["base64"]) !== encoded
+	)
 		return invalid();
 	return new Uint8Array(decoded);
 }
@@ -121,6 +125,8 @@ export function encodeEvent(event: AtomicQueueEvent): unknown[] {
 			input.message.availableAtMs ?? null,
 		]);
 	}
+	if (request.kind === "redrive" && "messageId" in input)
+		return vector(["z", event.atMs, op.id, op.expiresAtMs, input.messageId]);
 	if (request.kind === "dequeue" && "maxMessages" in input)
 		return vector([
 			"d",
@@ -146,7 +152,8 @@ export function encodeEvent(event: AtomicQueueEvent): unknown[] {
 		]);
 	if (
 		(request.kind === "complete" || request.kind === "release") &&
-		"messageId" in input
+		"messageId" in input &&
+		"leaseId" in input
 	)
 		return vector([
 			request.kind === "complete" ? "c" : "r",
@@ -162,10 +169,20 @@ export function decodeEvent(
 	value: unknown,
 	limits: DurableQueueLimits,
 ): AtomicQueueEvent {
-	const event = tuple(value, 6, 8);
+	const event = tuple(value, 5, 8);
 	const kind = event[0];
 	const atMs = number(event[1]);
 	const operation = { id: text(event[2], 100), expiresAtMs: number(event[3]) };
+	if (kind === "z") {
+		if (event.length !== 5) return invalid();
+		return {
+			atMs,
+			request: {
+				kind: "redrive",
+				input: parseQueueRedrive({ operation, messageId: event[4] }, limits),
+			},
+		};
+	}
 	if (kind === "e") {
 		if (event.length !== 8) return invalid();
 		const raw = tuple(event[6], 0, limits.attributeCount);

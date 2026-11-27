@@ -1216,5 +1216,5 @@ table, including changed table names and authorization. A trusted owner
 must authorize and call the provider's `compact()` and `reclaimCompleted()`
 operations when needed. Reclaiming a completed message ends its message-key
 deduplication after live receipts expire. These storage reads and writes must be
-included in the supplied pricing model; exhausted messages still require a
-dead-letter or redrive capability.
+included in the supplied pricing model; the owner can explicitly redrive exhausted messages after their live receipts
+and final lease expire. Dead-letter export is not implemented.

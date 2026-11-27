@@ -9,6 +9,13 @@ import type {
 
 export type AtomicQueueRequest =
 	| {
+			readonly kind: "redrive";
+			readonly input: {
+				readonly operation: DurableQueueOperation;
+				readonly messageId: string;
+			};
+	  }
+	| {
 			readonly kind: "enqueue";
 			readonly input: Parameters<DurableQueue["enqueue"]>[0];
 	  }
@@ -115,6 +122,8 @@ export function messageSignature(
 }
 export function fingerprint(request: AtomicQueueRequest): string {
 	const input = request.input;
+	if (request.kind === "redrive" && "messageId" in input)
+		return `z${field(input.messageId)}`;
 	if (request.kind === "enqueue" && "message" in input)
 		return `e${field(input.message.idempotencyKey)}${messageSignature(input.message)}`;
 	if (request.kind === "dequeue" && "maxMessages" in input)
@@ -127,7 +136,8 @@ export function fingerprint(request: AtomicQueueRequest): string {
 		return `x${field(input.messageId)}${field(input.leaseId)}${input.visibilityTimeoutMs}`;
 	if (
 		(request.kind === "complete" || request.kind === "release") &&
-		"messageId" in input
+		"messageId" in input &&
+		"leaseId" in input
 	)
 		return `${request.kind === "complete" ? "c" : "r"}${field(input.messageId)}${field(input.leaseId)}`;
 	throw new TypeError("atomic_queue.invalid_request");
@@ -168,6 +178,11 @@ function copyRequest(request: AtomicQueueRequest): AtomicQueueRequest {
 	if (request.kind === "dequeue")
 		return {
 			kind: "dequeue",
+			input: { ...request.input, operation: { ...request.input.operation } },
+		};
+	if (request.kind === "redrive")
+		return {
+			kind: "redrive",
 			input: { ...request.input, operation: { ...request.input.operation } },
 		};
 	if (request.kind === "extendLease")
@@ -259,7 +274,55 @@ export function transitionAtomicQueue(
 	});
 	if (op.expiresAtMs - now > limits.operationWindowMs)
 		result = rejected("invalid-argument");
-	else if (request.kind === "enqueue") {
+	else if (request.kind === "redrive") {
+		let index = -1;
+		for (let position = 0; position < messages.length; position++)
+			if (messages[position]?.messageId === request.input.messageId) {
+				index = position;
+				break;
+			}
+		const current = messages[index];
+		let referenced = false;
+		for (let position = 0; position < retained.length; position++) {
+			const receipt = retained[position];
+			if (receipt === undefined || receipt.result.status !== "committed")
+				continue;
+			const value = receipt.result.value;
+			if (nativeArray(value)) {
+				for (let item = 0; item < value.length; item++)
+					if (value[item]?.messageId === request.input.messageId)
+						referenced = true;
+			} else if (
+				"messageId" in value &&
+				value.messageId === request.input.messageId
+			)
+				referenced = true;
+		}
+		if (
+			!current ||
+			current.completed ||
+			current.deliveryAttempt < limits.deliveryAttempts ||
+			(current.leaseId !== null && current.leaseExpiresAtMs > now) ||
+			referenced
+		)
+			result = rejected("unavailable");
+		else {
+			messages[index] = {
+				...current,
+				deliveryAttempt: 0,
+				leaseId: null,
+				leaseExpiresAtMs: 0,
+				availableAtMs: now,
+			};
+			result = {
+				status: "committed",
+				value: {
+					messageId: current.messageId,
+					idempotencyKey: current.idempotencyKey,
+				},
+			};
+		}
+	} else if (request.kind === "enqueue") {
 		const input = request.input.message;
 		const sig = messageSignature(input);
 		let existing: AtomicQueueMessage | undefined;
