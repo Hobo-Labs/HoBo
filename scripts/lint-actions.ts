@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { COVERED_JOBS } from "./ci/attestation.mts";
+import { evaluateExpression } from "./ci/attested-jobs.mts";
 import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
@@ -73,6 +74,9 @@ const allowedEnabled = new Set([
 	...activeCiFiles,
 ]);
 
+export const PROBE_READY_IF =
+	"(github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'";
+
 /**
  * The probe's one GitHub-hosted job: it reads whether a local box is enrolled
  * (`runnerRouting.localRunner` in `.hobo/ci.json`) with the route job's own
@@ -80,6 +84,7 @@ const allowedEnabled = new Set([
  */
 const PROBE_GATE_JOB = `  local-box-enrolled:
     name: local box enrolled
+    if: ${PROBE_READY_IF}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -89,6 +94,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: \${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
@@ -115,6 +121,21 @@ const PROBE_LOCAL_GATE = [
 function lintProbeWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
 	const jobsIndex = lines.indexOf("jobs:");
+	const eventControlled = /^  (?:workflow_run|pull_request_target):/m.test(
+		text,
+	);
+	if (eventControlled) {
+		const expected = `  workflow_run:
+    workflows: ["HoBo CI Fabric"]
+    types: [requested]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]`;
+		if (!text.includes(expected))
+			errors.push(
+				`${probeFile}: probe triggers must cover ready PRs and non-PR CI runs`,
+			);
+	}
 	const starts = lines.flatMap((line, index) =>
 		index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
 	);
@@ -126,6 +147,14 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 		while (block.length > 0 && block.at(-1)?.trim() === "") block.pop();
 		while (block.length > 0 && block.at(-1)?.trim().startsWith("#"))
 			block.pop();
+		if (
+			eventControlled &&
+			lines[start] !== "  local-box:" &&
+			!block.includes(`    if: ${PROBE_READY_IF}`)
+		)
+			errors.push(
+				`${probeFile}:${start + 1}: probe jobs must skip draft PR events`,
+			);
 		if (lines[start] === "  local-box-enrolled:") {
 			if (block.join("\n") !== PROBE_GATE_JOB)
 				errors.push(
@@ -707,18 +736,30 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 ] as const;
 
 export const CANONICAL_ENTRY_JOB_DRAFT_IF =
-	"github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')";
+	"github.event_name != 'pull_request' || github.event.pull_request.draft == false";
 
 export const REQUIRED_JOB_DRAFT_IF_MESSAGE = `job-level if must be ${CANONICAL_ENTRY_JOB_DRAFT_IF}`;
 
 const ALLOWLISTED_ENTRY_JOB_DRAFT_IF = new Map<string, string>([
 	[
 		"examples-e2e.yml:hello-bindle-fixture-quarantine",
-		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
+		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
 	],
 	[
 		"examples-e2e.yml:hello-bindle-fixture",
-		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+	],
+	...[
+		"hobo-ci.yml:pr-gate",
+		"release-hobo-pr.yml:release-integration-gate",
+		"release-hobo.yml:release-pr-gate",
+	].map((key): [string, string] => [
+		key,
+		"always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))",
+	]),
+	[
+		"release-hobo.yml:release-integration-measure-gate",
+		"always() && github.event_name == 'pull_request' && github.event.pull_request.draft == false",
 	],
 ]);
 
@@ -825,9 +866,13 @@ export function draftGateEntryJobs(
 	file: string,
 	jobIds: readonly string[],
 ): readonly string[] {
-	if (jobIds.includes("route")) return ["route"];
+	const aggregateJobs = jobIds.filter((id) =>
+		ALLOWLISTED_ENTRY_JOB_DRAFT_IF.has(`${file}:${id}`),
+	);
+	if (jobIds.includes("route")) return ["route", ...aggregateJobs];
 	if (file === "actions-lock.yml") return ["actions-lock"];
-	if (file === "release-hobo-pr.yml") return ["release-integration"];
+	if (file === "release-hobo-pr.yml")
+		return ["release-integration", ...aggregateJobs];
 	if (file === "dev-env-smoke.yml" || file === "examples-e2e.yml")
 		return jobIds;
 	return [];
@@ -878,7 +923,75 @@ function lintPullRequestDraftPolicy(
 		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
 		if (!jobLevelIfHasRequiredDraftGate(file, jobId, block)) {
 			errors.push(
-				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs unless explicitly requested (${REQUIRED_JOB_DRAFT_IF_MESSAGE})`,
+				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (job-level if must be ${expectedEntryJobDraftIf(file, jobId)})`,
+			);
+		}
+	}
+	for (const jobId of jobIds.filter((id) => !gateJobs.includes(id))) {
+		const start = lines.findIndex(
+			(line, index) => index > jobsIndex && line === `  ${jobId}:`,
+		);
+		const nextJob = lines.findIndex(
+			(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/.test(line),
+		);
+		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
+		const condition = extractJobLevelIf(block);
+		const hasNeeds = block.some((line) => /^    needs:\s*/.test(line));
+		if (
+			hasNeeds &&
+			!(
+				condition &&
+				/\b(?:always|cancelled|success|failure)\(\)/i.test(condition)
+			)
+		)
+			continue;
+		try {
+			const expression = (condition ?? "true").replaceAll(
+				/startsWith\(github\.ref,\s*'refs\/tags\/[^']*'\)/gi,
+				"false",
+			);
+			const labels = new Set([
+				"ci:run-draft-checks",
+				"hobo/e2e",
+				"hobo/e2e-quarantine",
+				...[
+					...expression.matchAll(
+						/github\.event\.label\.name\s*==\s*'([^']+)'/g,
+					),
+				].map((match) => match[1] ?? ""),
+			]);
+			const runsOnDraft = [
+				"opened",
+				"synchronize",
+				"reopened",
+				"labeled",
+				"unlabeled",
+				"edited",
+				"converted_to_draft",
+			].some((action) =>
+				[...labels].some((label) =>
+					evaluateExpression(expression, (path) => {
+						if (path === "github.event_name") return "pull_request";
+						if (path === "github.event.pull_request.draft") return true;
+						if (path === "github.event.action") return action;
+						if (path === "github.event.label.name") return label;
+						if (path === "github.event.pull_request.labels.*.name")
+							return [...labels];
+						if (path === "github.repository") return "Hobo-Labs/HoBo";
+						if (path === "github.ref") return "refs/pull/1/merge";
+						if (/^needs\..+\.result$/.test(path)) return "skipped";
+						if (/^needs\..+\.outputs\./.test(path)) return "";
+						return null;
+					}),
+				),
+			);
+			if (runsOnDraft)
+				errors.push(
+					`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs`,
+				);
+		} catch {
+			errors.push(
+				`${file}:${start + 1}: cannot verify that job ${jobId} skips draft pull_request runs`,
 			);
 		}
 	}

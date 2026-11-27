@@ -26,6 +26,7 @@ import {
 	resolveWorkerRemoteRef,
 	selectWorkerRepoDigest,
 	validatedWorkerDigestRef,
+	WORKER_PULL_EXTRACT_BUDGET_SEC,
 	workerPullBudgetSec,
 } from "../ci/ensure-ci-worker-image.mts";
 
@@ -234,6 +235,218 @@ describe("ensure-ci-worker-image", () => {
 			assert.match(recorded, /^timeout 1 docker pull /u);
 		} finally {
 			process.env.PATH = previousPath;
+			rmSync(bin, { recursive: true, force: true });
+		}
+	});
+
+	it("resumes one extract pull after a budget-cut timeout", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-extract-"));
+		const calls = join(bin, "calls");
+		const once = join(bin, "budget-cut");
+		const remote = "ghcr.io/hobo-labs/hobo/hobo-ci-worker:v1";
+		writeFileSync(calls, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			[
+				"#!/bin/sh",
+				`echo "timeout $*" >> "${calls}"`,
+				'seconds="$1"; shift',
+				`if [ ! -f "${once}" ]; then`,
+				`  : > "${once}"`,
+				`  echo "Download complete" | tee -a "${calls}"`,
+				`  echo "Pull complete" | tee -a "${calls}"`,
+				"  exit 124",
+				"fi",
+				'exec "$@"',
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1 $2" = "image inspect" ]; then exit 1; fi',
+				'if [ "$1" = pull ]; then exit 0; fi',
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "sleep"),
+			["#!/bin/sh", `echo "sleep $*" >> "${calls}"`, "exit 0", ""].join("\n"),
+			{ mode: 0o755 },
+		);
+		const previousPath = process.env.PATH;
+		const times = [0, 0, 2000];
+		try {
+			process.env.PATH = `${bin}:${previousPath ?? ""}`;
+			assert.equal(
+				pullWorkerFromGhcr(remote, {
+					attempts: 4,
+					budgetSec: 1,
+					now: () => times.shift() ?? 2000,
+					random: () => 1,
+				}),
+				true,
+			);
+			const recorded = readFileSync(calls, "utf8");
+			assert.deepEqual(
+				recorded.split("\n").filter((line) => line.startsWith("timeout ")),
+				[
+					`timeout 1 docker pull ${remote}`,
+					`timeout ${WORKER_PULL_EXTRACT_BUDGET_SEC} docker pull ${remote}`,
+				],
+			);
+			assert.match(recorded, /Download complete\nPull complete/u);
+			assert.ok(recorded.includes(`docker pull ${remote}`));
+			assert.doesNotMatch(recorded, /^sleep /mu);
+		} finally {
+			process.env.PATH = previousPath;
+			rmSync(bin, { recursive: true, force: true });
+		}
+	});
+
+	it("does not accept a stale mutable tag after a timed-out pull", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-stale-tag-"));
+		const calls = join(bin, "calls");
+		const tag = "ghcr.io/hobo-labs/hobo/hobo-ci-worker:v1";
+		writeFileSync(calls, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			[
+				"#!/bin/sh",
+				`echo "timeout $*" >> "${calls}"`,
+				"echo 'layer: Download complete'",
+				"exit 124",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				'if [ "$1 $2" = "image inspect" ]; then exit 0; fi',
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const previousPath = process.env.PATH;
+		try {
+			process.env.PATH = `${bin}:${previousPath ?? ""}`;
+			assert.equal(
+				pullWorkerFromGhcr(tag, { attempts: 1, budgetSec: 1 }),
+				false,
+			);
+			assert.equal(readFileSync(calls, "utf8").trim().split("\n").length, 2);
+			const pinned = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"d".repeat(64)}`;
+			assert.equal(
+				pullWorkerFromGhcr(pinned, { attempts: 1, budgetSec: 1 }),
+				true,
+			);
+		} finally {
+			process.env.PATH = previousPath;
+			rmSync(bin, { recursive: true, force: true });
+		}
+	});
+
+	it("retries a layerless release stall with the budget that remains", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-stall-"));
+		const calls = join(bin, "calls");
+		const stalled = join(bin, "stalled");
+		const out = join(bin, "out");
+		const digest = `sha256:${"d".repeat(64)}`;
+		writeFileSync(calls, "");
+		writeFileSync(out, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			[
+				"#!/bin/sh",
+				`echo "timeout $*" >> "${calls}"`,
+				'seconds="$1"',
+				"shift",
+				`if [ "$1 $2" = "docker pull" ] && [ ! -f "${stalled}" ]; then`,
+				`  : > "${stalled}"`,
+				"  /bin/sleep 2",
+				"  exit 124",
+				"fi",
+				'exec "$@"',
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(join(bin, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
+				'if [ "$1" = pull ]; then exit 0; fi',
+				'if [ "$1 $2" = "manifest inspect" ]; then exit 0; fi',
+				'if [ "$1 $2" = "image inspect" ]; then',
+				`  printf '%s\\n' '["ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}"]'`,
+				"  exit 0",
+				"fi",
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		try {
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--no-warnings",
+					"scripts/ci/ensure-ci-worker-image.mts",
+					"--resolve-digest",
+				],
+				{
+					cwd: join(import.meta.dirname, "..", ".."),
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:/usr/bin:/bin`,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_TOKEN: "token-for-test",
+						GITHUB_OUTPUT: out,
+						HOBO_CI_WORKER_PULL_BUDGET_SEC: "300",
+					},
+				},
+			);
+			assert.equal(result.status, 0, result.stderr);
+			const recorded = readFileSync(calls, "utf8");
+			const pullTimeouts = [
+				...recorded.matchAll(
+					/timeout (\d+) docker pull ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v/gu,
+				),
+			].map((match) => Number(match[1]));
+			assert.equal(pullTimeouts.length, 2);
+			const [first, second] = pullTimeouts;
+			assert.ok(first !== undefined && second !== undefined);
+			assert.ok(first > 120 && first <= 300);
+			assert.ok(second < first);
+			assert.ok(second > 120);
+			assert.equal(
+				recorded.match(
+					new RegExp(
+						`timeout ${WORKER_PULL_EXTRACT_BUDGET_SEC} docker pull `,
+						"gu",
+					),
+				)?.length ?? 0,
+				0,
+			);
+			assert.match(result.stdout, /worker image wait attempt 1/u);
+			assert.doesNotMatch(result.stdout, /resuming leftover layers/u);
+			assert.match(
+				readFileSync(out, "utf8"),
+				/^image_ref=ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker@sha256:[a-f0-9]{64}\n/u,
+			);
+		} finally {
 			rmSync(bin, { recursive: true, force: true });
 		}
 	});
@@ -1562,6 +1775,115 @@ describe("ensure-ci-worker-image", () => {
 			assert.match(recorded, /docker pull /u);
 			assert.doesNotMatch(recorded, /build\.sh/u);
 		});
+	});
+
+	it("refuses build.sh when a budget-cut resume still fails on the release path", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-extract-fail-"));
+		const calls = join(bin, "calls");
+		writeFileSync(calls, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			[
+				"#!/bin/sh",
+				`echo "timeout $*" >> "${calls}"`,
+				'case " $* " in *build.sh*) echo "build.sh $*" >> "${calls}"; exit 99 ;; esac',
+				'seconds="$1"; shift',
+				'if [ "$1 $2" = "docker pull" ]; then',
+				'  echo "Download complete"',
+				'  echo "Pull complete"',
+				"  exit 124",
+				"fi",
+				'exec "$@"',
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "sleep"),
+			["#!/bin/sh", `echo "sleep $*" >> "${calls}"`, "exit 0", ""].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
+				'if [ "$1 $2" = "image inspect" ]; then exit 1; fi',
+				'if [ "$1 $2" = "manifest inspect" ]; then exit 0; fi',
+				'if [ "$1" = pull ]; then exit 1; fi',
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const keys = [
+			"PATH",
+			"GITHUB_REPOSITORY",
+			"GITHUB_TOKEN",
+			"GITHUB_EVENT_NAME",
+			"GITHUB_REF",
+			"HOBO_RELEASE_VERSION",
+			"HOBO_CI_SKIP_GHCR_PULL",
+			"HOBO_CI_WORKER_IMAGE_REF",
+			"HOBO_CI_WORKER_PULL_BUDGET_SEC",
+		] as const;
+		const prev = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		try {
+			process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+			process.env.GITHUB_REPOSITORY = "Hobo-Labs/HoBo";
+			process.env.GITHUB_TOKEN = "token-for-test";
+			process.env.GITHUB_EVENT_NAME = "push";
+			delete process.env.GITHUB_REF;
+			delete process.env.HOBO_CI_SKIP_GHCR_PULL;
+			delete process.env.HOBO_CI_WORKER_IMAGE_REF;
+			process.env.HOBO_RELEASE_VERSION = "0.0.0-alpha.94";
+			process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC = "7";
+			const materialized = materializeCiWorkerImageResult();
+			assert.equal(materialized.ok, false);
+			if (materialized.ok || materialized.failure?.kind !== "pull_failed") {
+				assert.fail(
+					`expected pull_failed, got ${JSON.stringify(materialized)}`,
+				);
+			}
+			assert.equal(materialized.failure.budgetSec, 7);
+			const afterMaterialize = readFileSync(calls, "utf8");
+			assert.equal(
+				afterMaterialize.match(/timeout 7 docker pull /gu)?.length,
+				1,
+			);
+			assert.equal(
+				afterMaterialize.match(
+					new RegExp(
+						`timeout ${WORKER_PULL_EXTRACT_BUDGET_SEC} docker pull `,
+						"gu",
+					),
+				)?.length,
+				1,
+			);
+			assert.doesNotMatch(afterMaterialize, /build\.sh/u);
+			let thrown: Error | undefined;
+			try {
+				ensureCiWorkerImage();
+			} catch (error) {
+				if (!(error instanceof Error)) throw error;
+				thrown = error;
+			}
+			assert.ok(thrown, "release budget-cut resume failure must throw");
+			assert.match(
+				thrown.message,
+				/GHCR manifest present for .+ but pull failed \(budgetSec=7\); release path requires published ghcr\.io worker v[0-9a-f]+; refusing build\.sh \(avoids playwright CDN rebuild\)/u,
+			);
+			const recorded = readFileSync(calls, "utf8");
+			assert.doesNotMatch(recorded, /build\.sh/u);
+		} finally {
+			for (const key of keys) {
+				const value = prev[key];
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
 
 	it("reuses a local digest from HOBO_CI_WORKER_IMAGE_REF without pulling", () => {

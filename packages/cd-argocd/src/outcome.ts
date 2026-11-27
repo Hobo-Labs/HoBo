@@ -14,7 +14,7 @@ const REMEDIATION = {
 	[ARGCD_FAILURES.syncFailed]:
 		"Inspect the Application sync operation in Argo CD; fix manifests or policy.",
 	[ARGCD_FAILURES.bodyInvalid]:
-		"Fix the Argo CD API response handling in the adapter.",
+		"Correct the Argo CD request or check the API response.",
 	[ARGCD_FAILURES.credentialMissing]:
 		"Bind an Argo CD API token through the owner credential store.",
 	[ARGCD_FAILURES.runbookInvalid]:
