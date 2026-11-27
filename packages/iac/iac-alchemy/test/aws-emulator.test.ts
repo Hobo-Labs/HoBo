@@ -12,6 +12,7 @@ import * as SecretsManager from "@distilled.cloud/aws/secrets-manager";
 import { NodeHttpClient } from "@effect/platform-node";
 import { awsPlugin, getAwsStore } from "@emulators/aws";
 import { createServer } from "@emulators/core";
+import { createAtomicDurableQueue } from "@hobo/runtime/atomic-durable-queue";
 import * as Provider from "alchemy/Provider";
 import { noopSession } from "alchemy/Report";
 import { ResourceContext } from "alchemy/ResourceContext";
@@ -24,10 +25,9 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
-import { createAtomicDurableQueue } from "../../../runtime/src/atomic-durable-queue.js";
-import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import type { BindleRuntimeContext } from "../../../bindles/src/types.js";
+import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { awsBindleMappers } from "../src/aws.js";
 import {
 	awsHttpBindings,
@@ -36,15 +36,15 @@ import {
 import { startAwsHttpServer } from "../src/aws-http-server.js";
 import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsDynamoKvStore } from "../src/aws-kv.js";
+import {
+	awsDynamoKvBindleMappers,
+	withAwsDynamoKv,
+} from "../src/aws-kv-mapper.js";
 import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
 	awsDynamoDurableQueueMappers,
 	withAwsDynamoDurableQueue,
 } from "../src/aws-queue-mapper.js";
-import {
-	awsDynamoKvBindleMappers,
-	withAwsDynamoKv,
-} from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import {
@@ -1004,6 +1004,73 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					leaseId: "l2",
 				}),
 			).toMatchObject({ tag: "committed" });
+
+			let retained:
+				| import("@hobo/runtime/atomic-durable-queue").DurableQueue
+				| undefined;
+			let authorized = true;
+			const appDefinition = bindle("queue-app", (b) => {
+				const jobs = b.queue().allow("enqueue");
+				return {
+					jobs,
+					web: b
+						.web((context) => async () => {
+							retained = awsHttpBindings(context).queue("jobs");
+							const result = await retained.enqueue({
+								operation: {
+									id: "v1.10000.abcdefghijklmn06",
+									expiresAtMs: 10000,
+								},
+								message: {
+									idempotencyKey: "app-job",
+									body: new Uint8Array([3]),
+									attributes: [],
+								},
+							});
+							return Response.json(result);
+						})
+						.with(sessionReplay({ enabled: false }))
+						.dependsOn(jobs),
+				};
+			});
+			const selected = withAwsDynamoDurableQueue(appDefinition, { jobs: true });
+			const environmentValues = { HOBO_RESOURCE_0: table.tableName };
+			const source = defineAwsHttpSource({
+				bindle: selected,
+				applicationName: "web",
+				environment: environmentValues,
+				resolveStores: () => ({ jobs: reopenedQueue }),
+				verifyBinding: (claim) =>
+					authorized &&
+					claim.kind === "queue" &&
+					claim.grant.tableName === table.tableName,
+			});
+			const appResponse = await source.fetch(new Request("https://app.test"));
+			expect(appResponse.status).toBe(200);
+			expect(await appResponse.json()).toMatchObject({
+				status: "committed",
+				value: { idempotencyKey: "app-job" },
+			});
+			expect(retained).toBeDefined();
+			expect(
+				await retained?.enqueue({
+					operation: { id: "v1.10000.abcdefghijklmn07", expiresAtMs: 10000 },
+					message: {
+						idempotencyKey: "late",
+						body: new Uint8Array([4]),
+						attributes: [],
+					},
+				}),
+			).toMatchObject({ status: "unknown" });
+			environmentValues.HOBO_RESOURCE_0 = "wrong-table";
+			expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+				503,
+			);
+			environmentValues.HOBO_RESOURCE_0 = table.tableName;
+			authorized = false;
+			expect((await source.fetch(new Request("https://app.test"))).status).toBe(
+				503,
+			);
 		},
 		30000,
 	);

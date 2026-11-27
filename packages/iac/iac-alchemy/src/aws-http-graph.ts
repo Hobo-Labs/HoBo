@@ -9,7 +9,7 @@ import {
 
 export interface AwsHttpDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket" | "secret";
+	readonly kind: "kv" | "bucket" | "secret" | "queue";
 	readonly environment: string;
 	readonly allow: readonly string[];
 }
@@ -33,7 +33,9 @@ function name(value: unknown): value is string {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
-function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" | "secret" {
+function marker(
+	declaration: PrimitiveDeclaration,
+): "kv" | "bucket" | "secret" | "queue" {
 	if (declaration.annotations.length !== 1)
 		throw new Error(
 			"AWS application dependency requires an explicit runtime choice",
@@ -81,6 +83,18 @@ function marker(declaration: PrimitiveDeclaration): "kv" | "bucket" | "secret" {
 		fields.versionIdentity?.value === "persisted-uuid"
 	)
 		return "secret";
+	if (
+		Object.keys(fields).length === 4 &&
+		declaration.kind === "queue" &&
+		annotation.provider === "aws" &&
+		annotation.option === "dynamodb-durable-queue" &&
+		fields.runtime?.value === "node-js" &&
+		fields.consistency?.value === "strong" &&
+		fields.maxLogEvents?.value === 512 &&
+		fields.maxLogBytes?.value === 262_144
+	)
+		return "queue";
+
 	throw new Error(
 		"AWS application dependency requires an explicit runtime choice",
 	);
@@ -221,7 +235,9 @@ export function captureAwsHttpGraph<Requirements>(
 				? ["get", "set", "delete"]
 				: kind === "bucket"
 					? ["read", "write", "delete"]
-					: ["put", "access"];
+					: kind === "queue"
+						? ["enqueue", "dequeue"]
+						: ["put", "access"];
 		if (
 			dependency.declaredAllow.some(
 				(operation: string) => !allowed.includes(operation),
