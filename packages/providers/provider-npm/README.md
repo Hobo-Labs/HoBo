@@ -94,7 +94,7 @@ Desired state (`ResolveRequest.desired`, `NpmPackageVersionDesired` in
 - **Credentials (I9).** `credentialRef` resolves through the host. In
   `oidc-trusted-publishing` mode it yields the CI's OIDC ID token, exchanged at
   `POST /-/npm/v1/oidc/token/exchange/package/<name>` for a short-lived
-  publish token (unscoped names only; see below). In `anonymous` mode no
+  publish token. In `anonymous` mode no
   credential is resolved and no `authorization` header is sent: `read`
   observes a public package, and `reconcile`/`delete` are refused
   (`RESOLVER_CREDENTIAL_MISSING`) before any request. No token reaches an
@@ -108,11 +108,13 @@ Desired state (`ResolveRequest.desired`, `NpmPackageVersionDesired` in
   the same kind of token cannot help; bind an automation token, a granular
   token with bypass-2FA, or use OIDC trusted publishing.
 
-### Scoped names (impedance limit)
+### Scoped names
 
-HoBo sends scoped names unescaped (`/@scope/name`) because the core transport
-guard refuses `%2f` in paths; npm's own client (`npm-registry-fetch`,
-`libnpmpublish`) sends `@scope%2fname`. Evidence, probed against
+HoBo sends scoped names unescaped (`/@scope/name`) for registry reads and
+writes. The OIDC exchange uses `@scope%2fname` because only that form routes.
+The shared transport guard permits only the exact exchange path built from the
+validated name; encoded dots, backslashes, nested escapes and traversal remain
+forbidden. Evidence, probed against
 `registry.npmjs.org` on 2026-11-12 with unauthenticated or invalid-token
 requests (recorded in the pact metadata):
 
@@ -124,15 +126,9 @@ requests (recorded in the pact metadata):
 | `PUT /<name>` (publish, deprecate) | 401 `Basic, Bearer` | 404 for a new package | reaches an authenticated handler; success not captured |
 | `POST /-/npm/v1/oidc/token/exchange/package/<name>` | 404 `ResourceNotFound` | handler answers | **does not route** |
 
-So OIDC trusted publishing of a scoped name is refused up front
-(`RESOLVER_PRODUCT_UNSUPPORTED`): use token auth for scoped packages until the
-guard can carry an escaped scope separator. HoBo's own release does exactly
-that: its `hobo-release/npm-candidate` Camp binds the hobodev token
-(`owner://NPM_TOKEN`, from the owner's secret store) for the scoped `@hobo-labs/*` names. A successful unescaped publish or
-dist-tag move has not been captured; the opt-in live write lane
-(`HOBO_NPM_LIVE_PROMOTE_TAG`) moves one real dist-tag on a scoped package to
-close that gap. Verdaccio rewrites `/@scope/name` to the escaped form itself;
-GitHub Packages is unprobed.
+The release candidate Camp uses GitHub Actions OIDC for scoped packages.
+An authenticated scoped publish and dist-tag move still require a live test:
+the registry routing probes above did not perform a successful write.
 
 ## Architecture notes
 

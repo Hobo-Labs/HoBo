@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   merge_group:
     branches: [main]
     types: [checks_requested]
@@ -56,6 +56,7 @@ concurrency:
 jobs:
   route:
     name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -1265,7 +1266,9 @@ jobs:
     # This is the required check. It runs even if a prerequisite was skipped,
     # failed, or cancelled, and accepts only the event's complete validation:
     # each job succeeded, or the route job succeeded, reported a verified signed
-    # local run covering that job, and the job was skipped for it.
+    # local run covering that job, and the job was skipped for it. A draft
+    # pull request skips route until it is marked ready or labeled
+    # ci:run-draft-checks; that requested skip is not a failed validation.
     needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
@@ -1278,6 +1281,7 @@ jobs:
       - name: Require successful validation and workspace tests
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft && 'true' || 'false' }}
           PLAN_RESULT: ${{ needs.pr_gate_plan.result }}
           VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
@@ -1291,6 +1295,20 @@ jobs:
           PR_FABRIC: ${{ needs.route.outputs.pr-fabric-green }}
         run: |
           set -euo pipefail
+          # Drafts skip route, so every job this gate needs is skipped with it.
+          # Any other result still has to pass the checks below.
+          if [ "${EVENT_NAME:-}" = "pull_request" ] \
+            && [ "${PULL_REQUEST_DRAFT:-}" = "true" ] \
+            && [ "${ROUTE_RESULT:-}" = "skipped" ] \
+            && [ "${PLAN_RESULT:-}" = "skipped" ] \
+            && [ "${VALIDATION_RESULT:-}" = "skipped" ] \
+            && [ "${WORKSPACE_RESULT:-}" = "skipped" ] \
+            && [ "${AFFECTED_RESULT:-}" = "skipped" ] \
+            && [ "${SCRIPTS_RESULT:-}" = "skipped" ] \
+            && [ "${FORMAL_RESULT:-}" = "skipped" ]; then
+            echo "Draft pull request did not request checks"
+            exit 0
+          fi
           # A skipped job counts only when the route job itself succeeded and
           # reported a verified signed local run that covers that job by id.
           attested() {

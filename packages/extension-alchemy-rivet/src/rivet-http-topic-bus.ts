@@ -3,8 +3,11 @@ import { types } from "node:util";
 import type { Providers } from "@alchemy.run/rivet";
 import {
 	AlchemyIacError,
+	type AlchemyPrimitiveGraph,
 	type AlchemyPrimitiveInput,
 	type AlchemyPrimitiveMapper,
+	type BindleForAlchemy,
+	type PrimitiveDeclaration,
 } from "@hobo/iac-alchemy";
 import { bindRivetHttpSource } from "@hobo/iac-alchemy/rivet";
 import {
@@ -24,6 +27,13 @@ import {
 	type RivetHttpRequestObservation,
 } from "@hobo/iac-alchemy/rivet/runtime";
 import {
+	type BindleTopicProvisionOperation,
+	compileBindleTopicGrants,
+	createBindleTopicPreparation,
+	type createBindleTopicWitHost,
+	type prepareBindleTopicWitHost,
+} from "@hobo/runtime/durable-messaging-host";
+import {
 	createRivetDurableTopicClient,
 	isRivetDurableTopicBusBinding,
 	isRivetDurableTopicClientBoundTo,
@@ -35,6 +45,7 @@ import {
 	type RivetDurableTopicClientBinding,
 	type RivetDurableTopicClientOptions,
 } from "@hobo/runtime-rivet";
+import * as Effect from "effect/Effect";
 
 const isProxy = types.isProxy;
 const apply = Reflect.apply;
@@ -234,8 +245,12 @@ function clientOptions(input: unknown): RivetDurableTopicClientOptions {
 	return Object.freeze(result);
 }
 
+export type RivetHttpHandlerEntrypoint = () => (
+	request: Request,
+) => Response | Promise<Response>;
+
 export interface RivetHttpTopicBusApplication {
-	readonly http: RivetHttpBinding<RivetHttpEntrypoint>;
+	readonly http: RivetHttpBinding<RivetHttpHandlerEntrypoint>;
 	readonly bus: RivetDurableTopicBusBinding;
 	readonly client: RivetDurableTopicClient;
 }
@@ -266,10 +281,18 @@ export interface RivetHttpTopicBusApplicationOptions {
 const applications = new WeakMap<
 	object,
 	Readonly<{
-		http: RivetHttpBinding<RivetHttpEntrypoint>;
+		http: RivetHttpBinding<RivetHttpHandlerEntrypoint>;
 		bus: RivetDurableTopicBusBinding;
 		client: RivetDurableTopicClient;
 		verify: () => boolean;
+	}>
+>();
+const bindleApplications = new WeakMap<
+	object,
+	Readonly<{
+		bindleName: string;
+		applicationName: string;
+		grants: ReturnType<typeof compileBindleTopicGrants>;
 	}>
 >();
 
@@ -424,6 +447,263 @@ export function createRivetHttpTopicBusApplication(
 	return result;
 }
 
+export interface RivetBindleTopicBusApplicationOptions
+	extends Omit<RivetHttpTopicBusApplicationOptions, "application"> {
+	readonly bindle: Parameters<typeof createBindleTopicWitHost>[1];
+	readonly operations: readonly BindleTopicProvisionOperation[];
+	readonly hostOptions: (
+		client: RivetDurableTopicClient,
+	) => Parameters<typeof prepareBindleTopicWitHost>[3];
+	readonly application: (
+		host: ReturnType<typeof createBindleTopicWitHost>,
+	) => (request: Request) => Response | Promise<Response>;
+}
+
+export function createRivetBindleTopicBusApplication(
+	input: RivetBindleTopicBusApplicationOptions,
+): RivetHttpTopicBusApplication {
+	const data = fields(
+		input,
+		[
+			"actorName",
+			"bus",
+			"clientOptions",
+			"verifyScope",
+			"authorize",
+			"bindle",
+			"operations",
+			"hostOptions",
+			"application",
+		],
+		["authorizationTimeoutMs"],
+	);
+	if (
+		typeof data.hostOptions !== "function" ||
+		isProxy(data.hostOptions) ||
+		typeof data.application !== "function" ||
+		isProxy(data.application)
+	)
+		return invalid("the application and topic host factory are required");
+	const hostOptions = data.hostOptions;
+	const application = data.application;
+	let prepare: ReturnType<typeof createBindleTopicPreparation>;
+	const baseOptions = {
+		actorName: data.actorName,
+		bus: data.bus,
+		clientOptions: data.clientOptions,
+		verifyScope: data.verifyScope,
+		authorize: data.authorize,
+		application: () => {
+			let handler:
+				| ((request: Request) => Response | Promise<Response>)
+				| undefined;
+			return async (request: Request) => {
+				const result = await prepare();
+				if (result.status !== "ready") {
+					const failure = result.provisioning;
+					return Response.json(
+						{
+							status: "topic-unavailable",
+							reason:
+								failure.status === "incomplete"
+									? failure.outcome.tag
+									: failure.status,
+						},
+						{ status: 503 },
+					);
+				}
+				if (!matchesApplication(bound))
+					return Response.json(
+						{ status: "topic-unavailable", reason: "scope-unverified" },
+						{ status: 503 },
+					);
+				if (handler === undefined) {
+					const candidate: unknown = apply(application, undefined, [
+						result.application,
+					]);
+					if (
+						isRivetAsyncResult(candidate) ||
+						typeof candidate !== "function" ||
+						isProxy(candidate)
+					)
+						return invalid(
+							"the application must return a synchronous HTTP handler",
+						);
+					// SAFETY: the host returned a synchronous non-proxy handler.
+					handler = candidate as (
+						request: Request,
+					) => Response | Promise<Response>;
+				}
+				if (!matchesApplication(bound))
+					return Response.json(
+						{ status: "topic-unavailable", reason: "scope-unverified" },
+						{ status: 503 },
+					);
+				return handler(request);
+			};
+		},
+	};
+	if (data.authorizationTimeoutMs !== undefined)
+		Object.defineProperty(baseOptions, "authorizationTimeoutMs", {
+			value: data.authorizationTimeoutMs,
+			enumerable: true,
+		});
+	// SAFETY: the underlying adapter validates each captured field and callback.
+	const bound = createRivetHttpTopicBusApplication(
+		baseOptions as RivetHttpTopicBusApplicationOptions,
+	);
+	const options: unknown = apply(hostOptions, undefined, [bound.client]);
+	if (isRivetAsyncResult(options))
+		return invalid("the topic host factory must be synchronous");
+	const graph = fields(data.bindle, [
+		"bindleName",
+		"applicationName",
+		"resources",
+		"edges",
+		"bindings",
+	]);
+	if (!name(graph.bindleName) || !name(graph.applicationName))
+		return invalid("the Bindle identity is invalid");
+	// SAFETY: the compiler validates and snapshots the Bindle graph.
+	const grants = compileBindleTopicGrants({
+		applicationName: graph.applicationName,
+		resources: graph.resources,
+		edges: graph.edges,
+		bindings: graph.bindings,
+	} as Parameters<typeof compileBindleTopicGrants>[0]);
+	const resources: Record<
+		string,
+		{ kind: string; name: string; declaredAllow: string[]; dependsOn: string[] }
+	> = Object.create(null);
+	const edges: { from: string; to: string }[] = [];
+	const bindings: {
+		resourceName: string;
+		topic: string;
+		subscriptions: (typeof grants)[number]["grant"]["subscriptions"];
+	}[] = [];
+	const dependsOn: string[] = [];
+	for (let index = 0; index < grants.length; index++) {
+		const entry = grants[index];
+		if (!entry) return invalid("the Bindle grant is invalid");
+		const allow: string[] = [];
+		if (entry.grant.publish) allow[allow.length] = "publish";
+		if (entry.grant.subscriptions.length) allow[allow.length] = "subscribe";
+		resources[entry.resourceName] = {
+			kind: "topic",
+			name: entry.resourceName,
+			declaredAllow: allow,
+			dependsOn: [],
+		};
+		edges[edges.length] = {
+			from: graph.applicationName,
+			to: entry.resourceName,
+		};
+		bindings[bindings.length] = {
+			resourceName: entry.resourceName,
+			topic: entry.grant.topic,
+			subscriptions: entry.grant.subscriptions,
+		};
+		dependsOn[dependsOn.length] = "topic";
+	}
+	resources[graph.applicationName] = {
+		kind: "application",
+		name: graph.applicationName,
+		declaredAllow: [],
+		dependsOn,
+	};
+	const snapshot = {
+		bindleName: graph.bindleName,
+		applicationName: graph.applicationName,
+		resources,
+		edges,
+		bindings,
+	};
+	// SAFETY: preparation validates the normalized graph, operations, and host options.
+	prepare = createBindleTopicPreparation(
+		bound.client,
+		snapshot,
+		data.operations as readonly BindleTopicProvisionOperation[],
+		options as Parameters<typeof prepareBindleTopicWitHost>[3],
+	);
+	apply(weakSet, bindleApplications, [
+		bound,
+		Object.freeze({
+			bindleName: graph.bindleName,
+			applicationName: graph.applicationName,
+			grants,
+		}),
+	]);
+	return bound;
+}
+
+export function bindRivetBindleTopicEntrypoint<Requirements>(
+	bindle: BindleForAlchemy<RivetHttpEntrypoint, Requirements>,
+	application: RivetHttpTopicBusApplication,
+): BindleForAlchemy<RivetHttpEntrypoint, Requirements> {
+	if (
+		typeof bindle !== "object" ||
+		bindle === null ||
+		isProxy(bindle) ||
+		!matchesApplication(application)
+	)
+		return invalid("a verified application and Bindle are required");
+	// SAFETY: only applications created by the Bindle adapter have an entry here.
+	const captured = apply(weakGet, bindleApplications, [
+		application,
+	]) as ReturnType<typeof bindleApplications.get>;
+	if (captured === undefined)
+		return invalid("the application has no Bindle topic host");
+	const property = (key: string, required = true): unknown => {
+		const descriptor = Object.getOwnPropertyDescriptor(bindle, key);
+		if (descriptor === undefined && !required) return undefined;
+		if (descriptor === undefined || !Object.hasOwn(descriptor, "value"))
+			return invalid("Bindle fields must be own data");
+		return descriptor.value;
+	};
+	const nameValue = property("name");
+	const resources = property("resources");
+	const edges = property("edges");
+	const requirements = property("requirements");
+	const connectors = property("connectors", false);
+	const entrypoint = property("entrypoint");
+	if (
+		nameValue !== captured.bindleName ||
+		typeof entrypoint !== "function" ||
+		isProxy(entrypoint)
+	)
+		return invalid("the Bindle identity or entrypoint resolver is invalid");
+	const previous: unknown = apply(entrypoint, bindle, [
+		captured.applicationName,
+	]);
+	if (
+		isRivetAsyncResult(previous) ||
+		(previous !== undefined && previous !== application.http.entrypoint)
+	)
+		return invalid("the application already has a different entrypoint");
+	const result = {
+		name: nameValue,
+		resources,
+		edges,
+		requirements,
+		entrypoint: (name: string) =>
+			name === captured.applicationName
+				? application.http.entrypoint
+				: apply(entrypoint, bindle, [name]),
+	};
+	if (connectors !== undefined)
+		Object.defineProperty(result, "connectors", {
+			value: connectors,
+			enumerable: true,
+		});
+	if (!matchesApplication(application))
+		return invalid("the application is no longer verified");
+	// SAFETY: the Alchemy Bindle mapper validates and snapshots the captured graph before use.
+	return Object.freeze(result) as BindleForAlchemy<
+		RivetHttpEntrypoint,
+		Requirements
+	>;
+}
+
 export interface RivetHttpTopicBusPoolClaim
 	extends RivetPoolSource<RivetHttpEntrypoint> {
 	readonly application: RivetHttpTopicBusApplication;
@@ -554,6 +834,192 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 		api: describe(mappers.api),
 		web: describe(mappers.web),
 		service: describe(mappers.service),
+	});
+}
+
+export function createRivetBindleTopicBusMappers<Requirements>(
+	input: RivetHttpTopicBusMapperOptions,
+): Readonly<
+	Record<
+		"api" | "web" | "service" | "topic",
+		AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
+	>
+> {
+	const data = fields(input, [
+		"application",
+		"source",
+		"poolDigest",
+		"isolationDigest",
+		"poolHost",
+		"verifyPool",
+	]);
+	// SAFETY: the source parser validates and captures every field before invoking its verifier.
+	const source = bindRivetHttpSource(
+		data.source as RivetHttpTopicBusMapperOptions["source"],
+	);
+	const optionsRaw: unknown = Object.freeze({ ...data, source });
+	// SAFETY: the base mapper validates the captured application, pool and callback.
+	const options = optionsRaw as RivetHttpTopicBusMapperOptions;
+	const base = createRivetHttpTopicBusMappers<Requirements>(options);
+	const application = options.application;
+	// SAFETY: only applications created by the Bindle adapter have an entry here.
+	const captured = apply(weakGet, bindleApplications, [
+		application,
+	]) as ReturnType<typeof bindleApplications.get>;
+	if (
+		captured === undefined ||
+		captured.grants.length === 0 ||
+		source.resourceName !== captured.applicationName
+	)
+		return invalid("a Bindle application with named topics is required");
+	const names = captured.grants.map((grant) => grant.resourceName).sort();
+	const sourceKind = source.kind;
+	const owner = names[0];
+	if (owner === undefined) return invalid("a topic owner is required");
+	const matchesNames = (
+		actual: readonly string[],
+		expected: readonly string[],
+	) =>
+		actual.length === expected.length &&
+		[...actual].sort().every((name, index) => name === expected[index]);
+	const validateGraph = (graph: AlchemyPrimitiveGraph<Requirements>) => {
+		if (
+			!matchesApplication(application) ||
+			graph.bindleName !== captured.bindleName
+		)
+			return invalid("the Bindle topic application is no longer verified");
+		const app = graph.nodes[captured.applicationName];
+		if (
+			app === undefined ||
+			app.declaration.kind !== sourceKind ||
+			!matchesNames(app.dependencies, names)
+		)
+			return invalid(
+				"the application topic graph does not match the bound runtime",
+			);
+		const declaredTopics = Object.entries(graph.nodes)
+			.filter(([, row]) => row.declaration.kind === "topic")
+			.map(([key]) => key)
+			.sort();
+		if (!matchesNames(declaredTopics, names))
+			return invalid("the topic declarations do not match the bound runtime");
+		for (const { resourceName, grant } of captured.grants) {
+			const topic = graph.nodes[resourceName];
+			const allowed = [
+				...(grant.publish ? ["publish"] : []),
+				...(grant.subscriptions.length ? ["subscribe"] : []),
+			].sort();
+			if (
+				topic === undefined ||
+				topic.dependencies.length !== 0 ||
+				topic.declaration.annotations.length !== 0 ||
+				!matchesNames(topic.declaration.declaredAllow, allowed)
+			)
+				return invalid("a topic declaration does not match its runtime grant");
+		}
+		for (const [key, row] of Object.entries(graph.nodes))
+			if (
+				key !== captured.applicationName &&
+				row.dependencies.some((dependency) => names.includes(dependency))
+			)
+				return invalid("a topic is bound to another application");
+	};
+	const withoutDependencies = (
+		input: AlchemyPrimitiveInput<RivetHttpEntrypoint, Requirements>,
+	) => ({
+		...input,
+		declaration: { ...input.declaration, dependsOn: [] },
+		dependencyDeclarations: Object.freeze({}),
+	});
+	const appMapper = (
+		kind: "api" | "web" | "service",
+	): AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers> =>
+		Object.freeze<
+			AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
+		>({
+			resourceTypes: Object.freeze(["Rivet.DurableObject"]),
+			operations: base[kind].operations,
+			annotations: base[kind].annotations,
+			bindsEntrypoint: true,
+			limitations: Object.freeze([
+				"Only the captured application and its named asynchronous topics are bound; other dependencies require a separate mapping.",
+			]),
+			validateGraph,
+			validate: (input) => base[kind].validate(withoutDependencies(input)),
+			build: (input) => {
+				base[kind].validate(withoutDependencies(input));
+				const primary = input.dependencies[owner];
+				if (primary === undefined)
+					return invalid("the shared topic resource is missing");
+				return Effect.succeed({
+					primary,
+					resources: [],
+					sharedDependency: owner,
+					boundDependencies: [...names],
+					boundEntrypoint: application.http.entrypoint,
+				});
+			},
+		});
+	const topic: AlchemyPrimitiveMapper<
+		RivetHttpEntrypoint,
+		Requirements,
+		Providers
+	> = Object.freeze<
+		AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
+	>({
+		resourceTypes: Object.freeze(["Rivet.DurableObject"]),
+		operations: Object.freeze(["publish", "subscribe"]),
+		annotations: Object.freeze([]),
+		bindsEntrypoint: false,
+		validateGraph,
+		limitations: Object.freeze([
+			"Named asynchronous topics share the application's verified Rivet durable bus; journals are provisioned at application startup.",
+		]),
+		build: (input) => {
+			if (!names.includes(input.declaration.name))
+				return invalid("the topic was not captured by the application");
+			if (input.declaration.name !== owner) {
+				const primary = input.priorPrimitives?.[owner];
+				if (primary === undefined)
+					return invalid("the shared topic owner is missing");
+				return Effect.succeed({
+					primary,
+					resources: [],
+					sharedPrimitive: owner,
+					boundDependencies: [],
+				});
+			}
+			const declaration: PrimitiveDeclaration = {
+				kind: sourceKind,
+				name: captured.applicationName,
+				stableId: `${sourceKind}:${captured.applicationName}`,
+				declaredAllow: [],
+				dependsOn: [],
+				annotations: [],
+			};
+			return base[sourceKind]
+				.build({
+					bindleName: input.bindleName,
+					requirements: input.requirements,
+					declaration,
+					entrypoint: application.http.entrypoint,
+					dependencyDeclarations: {},
+					dependencies: {},
+				})
+				.pipe(
+					Effect.map((mapped) => ({
+						primary: mapped.primary,
+						resources: mapped.resources,
+						boundDependencies: [],
+					})),
+				);
+		},
+	});
+	return Object.freeze({
+		api: appMapper("api"),
+		web: appMapper("web"),
+		service: appMapper("service"),
+		topic,
 	});
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type */

@@ -9,6 +9,10 @@ import {
 	type ReasonStructuredDetail,
 	ReasonStructuredDetailSchema,
 } from "../_generated/cd_pb.js";
+import {
+	formatOciBlockedDetail,
+	validateOciReasonStructuredDetail,
+} from "./release-oci-detail.js";
 
 export const RELEASE_FREIGHT_DETAIL_KINDS = [
 	"scope-not-allowed",
@@ -123,6 +127,8 @@ export function validateReasonStructuredDetail(
 	detail: ReasonStructuredDetail | undefined,
 ): ReasonStructuredDetail | undefined {
 	if (!detail) return undefined;
+	const oci = validateOciReasonStructuredDetail(detail);
+	if (oci) return oci;
 	const credentialRef = detail.credentialRef?.trim() ?? "";
 	const requestedScope = detail.requestedScope?.trim() ?? "";
 	const kind = releaseFreightDetailKindOf(detail.detailKind?.trim() ?? "");
@@ -145,6 +151,8 @@ export function formatReleaseFreightBlockedDetail(
 ): string {
 	const validated = validateReasonStructuredDetail(detail);
 	if (!validated) return code.trim() || "unknown";
+	if (validated.detailKind.startsWith("oci-"))
+		return formatOciBlockedDetail(code, validated);
 	if (validated.detailKind === "repository-mismatch") {
 		const scope = validated.requestedScope;
 		const expectedRepository = scope.startsWith("github-app://")

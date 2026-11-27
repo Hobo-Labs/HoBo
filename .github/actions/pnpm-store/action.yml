@@ -3,14 +3,19 @@ description: >-
   Shared pnpm store. On the box worker the store is a host bind mount
   (HOBO_CI_PNPM_STORE_MOUNTED=1) and this is a no-op. An ARC pod names its
   node's shared store in HOBO_CI_PNPM_STORE_DIR, which scripts/ci/pnpm-install.mts
-  installs into. A self-hosted runner with neither installs from the registry:
-  on the fleet's network the ~1.3 GB actions/cache archive is slower still. GitHub-hosted PRs restore the store that main last
-  saved (keyed on pnpm-lock.yaml), and main saves it.
+  installs into. A self-hosted runner with neither installs from the registry
+  unless the caller opts into an Actions cache fallback. GitHub-hosted PRs
+  restore the store that main last saved (keyed on pnpm-lock.yaml), and main
+  saves it.
 inputs:
   mode:
     description: restore (PRs, merge queue) or save (push to main)
     required: false
     default: restore
+  cold-self-hosted-cache:
+    description: Allow an Actions cache restore when no shared store is mounted
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -19,6 +24,8 @@ runs:
       shell: bash
       env:
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        COLD_SELF_HOSTED_CACHE: ${{ inputs.cold-self-hosted-cache }}
+        CACHE_MODE: ${{ inputs.mode }}
       run: |
         set -euo pipefail
         # Read the process env here: an `if: env.X` expression only sees
@@ -35,8 +42,14 @@ runs:
           echo "use-cache=false" >> "$GITHUB_OUTPUT"
           echo "pnpm store is the node's shared store (${HOBO_CI_PNPM_STORE_DIR}); skipping actions/cache"
         elif [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
-          echo "use-cache=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=hobo-ci-cold-pnpm-store::self-hosted runner without a shared pnpm store; every package downloads from the registry (hobo ci fleet caches --apply mounts one)"
+          if [ "${COLD_SELF_HOSTED_CACHE}" = "true" ] && [ "${CACHE_MODE}" = "restore" ]; then
+            echo "use-cache=true" >> "$GITHUB_OUTPUT"
+            echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+            echo "self-hosted runner without a shared pnpm store; attempting the Actions cache"
+          else
+            echo "use-cache=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=hobo-ci-cold-pnpm-store::self-hosted runner without a shared pnpm store; every package downloads from the registry (hobo ci fleet caches --apply mounts one)"
+          fi
         else
           echo "use-cache=true" >> "$GITHUB_OUTPUT"
           echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"

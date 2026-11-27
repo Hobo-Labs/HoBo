@@ -9,7 +9,8 @@ tags: [hobo, ci, performance, maintenance]
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
-- **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one online Agent37 runner. Absent, offline-only, or unreadable overflow runners keep the prior route, with the reason recorded in the fallback warning and route notice. A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk` only when `runnerRouting.box.trunkLend` is `1`, then `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; with the committed `trunkLend: 0` it never lands on the cold trunk pool ([finding 167](../ci/findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)); the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
+- **Draft pull requests run CI on request.** Draft entry jobs normally skip expensive work. After reviewing a draft head, apply `ci:run-draft-checks` to trigger its applicable checks without changing draft status; if the label is already present, remove and reapply it after each new head. The release-integration workflow has no branch or path filters, so its PR shards also run on request. For PRs targeting main, an untested draft's required gates accept the route and shard skips that the draft policy requested; a failure, cancellation, or any other result still fails the gate. Mark the PR ready only after the current head's actual checks pass; `ready_for_review` starts them again. Non-PR workflows keep their existing triggers.
+- **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one idle online Agent37 runner. When overflow runners are absent, offline-only, or unreadable, the run keeps the prior route unless verified public compute on `ubuntu-24.04` is available; the reason and the fallback warning record whether the route changed or was retained. A readable label list with zero online runners is normal ephemeral JIT idle and does not saturate the pool. An unreadable runner page never saturates on its own (R3). A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk` only when `runnerRouting.box.trunkLend` is `1`, then `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; with the committed `trunkLend: 0` it never lands on the cold trunk pool ([finding 167](../ci/findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)); the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
 - **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
   pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
   no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
@@ -26,7 +27,15 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   matrix starts. `--resolve-digest` waits until the version tag is pullable from GHCR,
   pins the digest from that pulled image, and confirms the digest ref pulls, so release
   never races `ci-deps-publish.yml`'s
-  worker push on a green main run. That job's timeout is 15 minutes so the wait can
+  worker push on a green main run. A registry login failure during that wait is retried
+  until the same deadline and, if it is still failing, reported as a GHCR login failure
+  rather than a generic timeout. The digest confirmation pull still runs when the tag
+  pull succeeds with less than a second of budget left. An unreadable manifest keeps the
+  full pull budget and the default retries when that ref is the only source; the
+  45-second one-attempt pull is only used when another source remains. `--published-status`
+  shares one 120-second budget across login, manifest inspect, and the pull. Exhausting
+  that budget before a pull is inconclusive, so the publisher does not treat it as a
+  failed pull or a missing image. That job's timeout is 15 minutes so the wait can
   use the full `HOBO_CI_WORKER_PULL_BUDGET_SEC`. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
   immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
   an empty or invalid value fails the job instead of falling back to the version
@@ -51,7 +60,18 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
+- **Job disk headroom.** On a self-hosted runner, the first `ci-runner-preflight` step runs
+  `scripts/ci/runner-job-disk-prune.mts`. It samples free bytes with `df` on Docker's data root
+  (`docker info -f {{.DockerRootDir}}`) and on `GITHUB_WORKSPACE`. If either is below
+  `HOBO_CI_RUNNER_DISK_HEADROOM_GB` (default 12 GiB), it prunes dangling build cache older than
+  24 hours while retaining 4 GB. This step does not prune images; the existing following sweep
+  still removes untagged images older than a day. GitHub-hosted runners skip the step. The pnpm
+  store is left alone. Before and after free-byte samples are logged for both paths; a warning
+  remains if the safe cleanup cannot recover enough space. An invalid
+  `HOBO_CI_RUNNER_DISK_HEADROOM_GB` warns and skips the step. `df` (15s) and `docker` (120s)
+  are time-bounded, and a stuck mount or daemon degrades to a warning.
 - **Scripts test shards build what they import.** Each of the four deterministic `scripts-tests` shards derives `--filter=<name>...` arguments through `scripts/ci/scripts-test-imports.mts` from the tests' complete relative-import graph (including nested workspace packages and `src/` or `dist/` imports), adds the `affected-lanes` filters from the `HEAD^1..HEAD` tree diff, and builds that union before testing at `HOBO_TURBO_BUILD_CONCURRENCY` (default `100%`, not the serial `HOBO_TURBO_CONCURRENCY` test knob), with a six-minute limit. The shards restore the `main-build` Turbo cache and then the `scripts-tests` archive, which only shard 0 prunes and saves. No build job or `dist` artifact sits between the route job and the shards ([finding 166](../ci/findings/0166-scripts-tests-waited-for-a-separate-build-job.md)). An empty build base fails closed. The shards do not wait for `ci-deps-image`. The PR impact gate requires all four shards.
+- **Batch fleet pins fail closed.** If trusted routing fails for an initial pull-request or merge-group fleet pin, the wrapper fails the route instead of choosing the fleet without verification. See [runner routing](../../packages/ci/RUNNER-QUEUE.md).
 - **Hosted release-integration critical path.** `release-hobo-pr.yml` has unfiltered pull-request and merge-group triggers, four GitHub-hosted Vitest shards with an 8-minute job ceiling, and the `HoBo release integration PR gate`. Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the lane, fetch or object-verification failure fails the scope step, and only a successfully computed out-of-scope diff skips install and tests successfully. The protected `HoBo release PR gate (required)` no longer needs integration. Fabric and the release train carry temporary hosted PR shards until the new workflow is on `main`; the Fabric shards are not a PR-impact-gate dependency. PR sidecar jobs have no shared `pr-sidecar` cancellation group.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
@@ -67,8 +87,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `hobo ci fleet caches --apply`), which `scripts/ci/pnpm-install.mts` installs into when it is
   writable. A self-hosted runner with neither installs from the registry and the pnpm-store action warns
   `hobo-ci-cold-pnpm-store`: on `hobo-trunk` ARC pods that downloaded at 2–17 KiB/s per tarball and never
-  finished ([finding 160](../ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)). Only
-  GitHub-hosted runners use the `actions/cache` archive.
+  finished ([finding 160](../ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)).
+  GitHub-hosted runners use the `actions/cache` archive; the Pages smoke may
+  also attempt a bounded restore on a self-hosted runner with no shared store.
   **`hobo-ci-deps:local` must stay selectable after a worker toolchain promotion** — a label-only lag on
   `hobo.ci.toolchain` used to drop `HOBO_CI_DEPS_LAYER`, force a ~5m install, and leave S0 cold
   ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
@@ -84,6 +105,21 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) is a stall bound: pnpm's progress counters restart it, so
   an install that keeps downloading is never killed and restarted, and one that stops changing them for
   that long is killed and retried once with `--prefer-offline` against the store it already filled.
+- **Pages cold installs.** When no reusable deps layer is available, the browser-WIT
+  smoke installs the site closure, root tooling, pinned training dependencies,
+  try-site examples, and the runtime-Wasm toolchain. The job restores the most
+  recent main build's Turbo cache when available, builds the complete site
+  closure, and forces real componentization; a cache miss runs the same build.
+  Without a reusable deps layer or shared store, it attempts to restore the
+  main pnpm store for at most five minutes, then installs from the registry if
+  the cache is unavailable. A restored store is still checked by the frozen
+  lockfile install. The full smoke has a documented 45-minute job limit: on
+  cold runners cache restoration and installation can consume most of the job
+  before the required componentization and cleanup finish.
+  When the runner lacks zstd commands, it fetches a pinned Debian zstd package
+  for the cache restore. If the package is unavailable, the normal cache and
+  full-build fallback remain in effect. Node-local stores remain the preferred
+  way to avoid registry downloads.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and

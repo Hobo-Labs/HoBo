@@ -1,5 +1,5 @@
 import {
-	AUTH_ADAPTER_CONTRACT,
+	type AUTH_ADAPTER_CONTRACT,
 	BETTER_AUTH_ADAPTER_ID,
 	type BetterAuthConfig,
 } from "@hobo/auth-adapter-contract";

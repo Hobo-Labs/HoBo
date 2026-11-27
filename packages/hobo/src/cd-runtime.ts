@@ -63,6 +63,7 @@ import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
 import {
 	createDriftPolicy,
+	ociStructuredScopePayload,
 	releaseFreightRefusalOf,
 	releaseFreightStructuredFromFields,
 } from "@hobo/cd/reconcile";
@@ -93,6 +94,7 @@ import {
 	ResolverError,
 } from "@hobo/core";
 import { GithubPagesRefusal } from "@hobo/provider-github";
+import { OciRegistryRefusal } from "@hobo/provider-oci-registry";
 import type { Yard } from "@hobo/yards";
 import { agentRealizer } from "./cd-agent.js";
 import {
@@ -157,6 +159,7 @@ export type CdRuntimeOptions = Readonly<{
 	/** Extra topology sources (e.g. an imported ClusterProfile inventory). */
 	topology?: readonly TopologyReader[];
 	http?: HttpTransport;
+	verificationHttp?: HttpTransport;
 	credentials?: CredentialResolver;
 	registry?: PlannerRegistry;
 	realizers?: CdHostInputs["realizers"];
@@ -514,6 +517,7 @@ export async function openCdRuntime(
 				: undefined),
 		},
 		http,
+		verificationHttp: options.verificationHttp ?? http,
 		credentials,
 		artifactStore:
 			config.artifacts.backend === "memory"
@@ -940,6 +944,21 @@ function refusalOf(
 		const structured = releaseFreightStructuredFromFields({
 			credentialRef: ctx.credentialRef,
 			requestedScope: `cd-realize:${ctx.campId}`,
+			detailKind: error.reason,
+		});
+		if (structured) {
+			return { code, message: error.message, structured };
+		}
+	}
+	if (error instanceof OciRegistryRefusal && ctx) {
+		const realizeScope = `cd-realize:${ctx.campId}`;
+		const structured = releaseFreightStructuredFromFields({
+			credentialRef: ctx.credentialRef,
+			requestedScope: ociStructuredScopePayload(
+				error.reason,
+				error.scopePayload,
+				realizeScope,
+			),
 			detailKind: error.reason,
 		});
 		if (structured) {
