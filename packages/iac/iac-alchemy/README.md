@@ -87,8 +87,9 @@ For bounded Node.js S3 objects, use `withAwsS3(bindle, { assets: true })` and
 and DynamoDB on the same target, apply both target choices and pass
 `awsDynamoKvBindleMappers()` to `awsS3BindleMappers`. These target views retain
 the original neutral Bindle unchanged. The separate
-`createAwsS3Store` runtime requires a host-authenticated bucket and grant,
-per-key authorization, IAM and the AWS credentials and HTTP Effect layer. It
+`createAwsS3Store` runtime requires a host-authenticated bucket, owner account
+and grant, per-key authorization, IAM and the AWS credentials and HTTP Effect
+layer. Each operation sends S3's expected-owner condition. It
 supports objects up to 1 MiB, 1,024-byte keys, at most 1,024 body chunks and
 SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
