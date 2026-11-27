@@ -59,11 +59,14 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   keeps the release-path "manifest present … pull failed … refusing build.sh" error.
   An already-present image after a timeout counts only for a digest-qualified ref;
   a mutable tag needs a successful pull before it can be reused.
-  Those ensure steps have a 13-minute bound so the 540-second download, the extract
-  resume, and login plus manifest inspection fit under the step cap. The job cap
-  stays 20 minutes. The `release-oci-build-tag` matrix permits six parallel legs;
-  each uses a run- and image-specific candidate suffix so shared Docker daemons
-  keep their intermediate images and cleanup separate.
+  Those ensure steps, including the separate CLI and MCP jobs, have a 13-minute
+  bound so the 540-second download, the extract resume, and login plus manifest
+  inspection fit under the step cap. The
+  `release-oci-build-tag` matrix permits six parallel legs for SDK, codegen,
+  CI serve and site. The later CLI and MCP jobs load verified OCI layout
+  artifacts instead of rebuilding their prerequisites. Each image uses a run-
+  and image-specific candidate suffix so shared Docker daemons keep cleanup
+  separate. The CLI job has 30 minutes; the other image jobs keep 20.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
@@ -93,6 +96,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   are time-bounded, and a stuck mount or daemon degrades to a warning.
 - **Scripts test shards build what they import.** Each of the four deterministic `scripts-tests` shards derives `--filter=<name>...` arguments through `scripts/ci/scripts-test-imports.mts` from the tests' complete relative-import graph (including nested workspace packages and `src/` or `dist/` imports), adds the `affected-lanes` filters from the `HEAD^1..HEAD` tree diff, and builds that union before testing at `HOBO_TURBO_BUILD_CONCURRENCY` (default `100%`, not the serial `HOBO_TURBO_CONCURRENCY` test knob), with a six-minute limit. The shards restore the `main-build` Turbo cache and then the `scripts-tests` archive, which only shard 0 prunes and saves. No build job or `dist` artifact sits between the route job and the shards ([finding 166](../ci/findings/0166-scripts-tests-waited-for-a-separate-build-job.md)). An empty build base fails closed. The shards do not wait for `ci-deps-image`. The PR impact gate requires all four shards.
 - **Merge groups run on the trunk fleet.** HoBo CI Fabric `merge_group` runs put **Route runners** and **PR impact gate** on `hobo-trunk`. The route action still runs from the event-base checkout, so the route step pins `fleet` only when that checkout already exempts `hobo-ci.yml`; otherwise it stays `auto` and can fall back to `ubuntu-24.04`. Once the pin is `fleet`, the routed required checks ask for `hobo-trunk` too; the four Scripts tests shards ask for `agent37`, whose boxes install the workspace in about 20 s where the ARC pods took 3.5 to 6 minutes from a cold store. A saturated GitHub-hosted `ubuntu-24.04` queue had held those jobs past the merge queue's 16-minute check timeout (`checks_timed_out` evictions). Route runners then clears its sparse checkout, so a reused Agent37 workspace does not hand Scripts tests a tree with files missing. Pull-request, push and dispatch routing is unchanged.
+- **Scheduled main Fabric is a trunk event, and the S0 sparse list only names files that exist.** `TRUNK_EVENTS` in `scripts/ci/route-runner.mts` includes `schedule` along with `push`, `workflow_dispatch`, `merge_group`, and `workflow_run`, so those jobs ask for `hobo-trunk` rather than `hobo`. The main-gate S0 sparse file list (canonical `S0_ROOT_FILES` / `S0_FILE_PATHS` in `scripts/ci/checkout-cone.mts`, plus the inlined lists in `.github/workflows/hobo-ci.yml` and `.github/actions/hobo-checkout/action.yml`) only names files that exist in the tree. `scripts/test/s0-checkout-cone.test.ts` fails if a listed file is missing. This is the regression for Fabric 45998217336, which failed at sparse S0 checkout on a stale `.env.example` pathspec.
 - **Batch fleet pins fail closed.** If trusted routing fails for an initial pull-request or merge-group fleet pin, the wrapper fails the route instead of choosing the fleet without verification. See [runner routing](../../packages/ci/RUNNER-QUEUE.md).
 - **Hosted release-integration critical path.** `release-hobo-pr.yml` has unfiltered pull-request and merge-group triggers, four GitHub-hosted Vitest shards with an 8-minute job ceiling, and the `HoBo release integration PR gate`. Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the lane, fetch or object-verification failure fails the scope step, and only a successfully computed out-of-scope diff skips install and tests successfully. The protected `HoBo release PR gate (required)` no longer needs integration. Fabric and the release train carry temporary hosted PR shards until the new workflow is on `main`; the Fabric shards are not a PR-impact-gate dependency. PR sidecar jobs have no shared `pr-sidecar` cancellation group.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
@@ -127,6 +131,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) is a stall bound: pnpm's progress counters restart it, so
   an install that keeps downloading is never killed and restarted, and one that stops changing them for
   that long is killed and retried once with `--prefer-offline` against the store it already filled.
+- **Production release budgets.** The CLI image leg has 30 minutes for its SDK
+  prerequisite, image contract and artifact handoff; other image legs keep 20.
+  The Pages candidate publishing job has 30 minutes including setup; the stable
+  publishing job keeps 20. Each promotion step has a 19-minute limit and an
+  18-minute wall budget. In run 46026930551 the CLI image and Pages candidate
+  jobs hit their former 20-minute job limits during verified work.
 - **Pages cold installs.** When no reusable deps layer is available, the browser-WIT
   smoke installs the site closure, root tooling, pinned training dependencies,
   try-site examples, and the runtime-Wasm toolchain. The job restores the most
@@ -167,10 +177,22 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Main seeds a whole-workspace build cache.** The `main_build_cache` job builds every package on
   each push to main (on the routed runner, with the workspace shards' checkout and install, so the
   build hashes match theirs; on the box the shared host cache already holds them) and saves `.turbo/cache` under `turbo-<os>-main-build-…`, pruned with
-  `HOBO_TURBO_CACHE_KEEP_DAYS=0` to that tree's builds. Turbo-cache input `main-build: "true"`
+  `HOBO_TURBO_CACHE_KEEP_DAYS=0` to that tree's builds. On a deps-layer miss it pulls the published
+  `ghcr.io/<repository>/hobo-ci-deps:<checkout-key>` image (`packages: read`) and materializes
+  `/opt/hobo-deps`, then links and checks again. Materialize refuses tar members whose ancestor chain
+  inside `/opt/hobo-deps` contains a symlink, so extraction cannot write or delete outside the payload.
+  If key or repository resolution fails before a pull, a warm pnpm store still allows install;
+  otherwise the job fails as `hobo-ci-deps-layer-unavailable`. It does not build a deps image. `pnpm install` runs
+  only when a warm store is mounted (`HOBO_CI_PNPM_STORE_MOUNTED=1`), `HOBO_CI_PNPM_STORE_DIR` is a
+  non-empty directory, or `pnpm store path` already has entries. Otherwise the job fails with
+  `hobo-ci-deps-layer-unavailable` while the 20-minute limit still has time, instead of a cold
+  registry install. Turbo-cache input   `main-build: "true"`
   restores the newest one before the job's own caches; PR impact validation, the workspace shards,
   PR affected package lanes and both scripts-test jobs set it. A merge-queue-reused push still runs
-  this job. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
+  this job. The release workflow's `release-pages-browser-wit-smoke` job uses the same
+  `ci-deps-recovery` composite, with the job token passed as the `token` input so the GHCR
+  pull is authenticated. A miss does not fail that job: the step is `continue-on-error` and
+  the filtered Pages install still runs under the 45-minute limit. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
   one per CPU, capped at 1024 MB per build after a 768 MB reserve (`HOBO_TURBO_BUILD_CONCURRENCY`
   overrides it), then the unchanged test calls at the memory-derived `HOBO_TURBO_CONCURRENCY`
   ([finding 162](../ci/findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)).

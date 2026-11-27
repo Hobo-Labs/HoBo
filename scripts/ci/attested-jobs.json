@@ -837,7 +837,7 @@
 				"RELEASE_SPARSE_PATHS": ".github\nscripts\ntest/setup\npackages\nrelease\ndeploy\nsite\nexternal\nmedia\nexamples\nsrc\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n",
 				"HOBO_RELEASE_TURBO_BASE": "origin/main",
 				"RELEASE_PAGES_MATERIALIZE_PATHS": "examples/browser-runtime/wit\n",
-				"RELEASE_PAGES_SPARSE_PATHS": ".github\nscripts\nsite\npackages\ndocs\nrelease\nexternal\nexamples\nmedia\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n"
+				"RELEASE_PAGES_SPARSE_PATHS": ".github\nscripts\nsite\npackages\ndocs\nrelease\nexternal\nexamples\nsrc\nmedia\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n"
 			},
 			"env": {},
 			"outputs": {},
