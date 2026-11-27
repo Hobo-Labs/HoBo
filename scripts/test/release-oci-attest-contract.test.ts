@@ -112,11 +112,14 @@ describe("release-oci-attest composite action", () => {
 const RELEASE_PUBLISH_CHAIN_JOBS = [
 	"release-toolchain-image",
 	"release-oci-build-tag",
+	"release-oci-build-cli",
+	"release-oci-build-mcp",
 	"release-images",
 	"release-publish",
 	"release-attest",
 	"release-npm",
 	"release-pages",
+	"release-pages-stable",
 ] as const;
 
 function jobIfBlock(block: string): string {
@@ -142,11 +145,17 @@ describe("release attest workflow jobs", () => {
 		});
 	}
 
-	it("release-publish waits for a green OCI build matrix", () => {
+	it("release-publish waits for every OCI image build", () => {
 		const block = parseReleaseJobBlock(hoboWorkflow, "release-publish");
-		expect(jobIfBlock(block)).toContain(
-			"needs.release-oci-build-tag.result == 'success'",
-		);
+		const cond = jobIfBlock(block);
+		for (const id of [
+			"release-oci-build-tag",
+			"release-oci-build-cli",
+			"release-oci-build-mcp",
+		]) {
+			expect(cond).toContain(`needs.${id}.result == 'success'`);
+			expect(block).toMatch(new RegExp(`needs: \\[[^\\]]*\\b${id}\\b`));
+		}
 	});
 
 	it("release-attest grants packages:write for push-to-registry attestations", () => {
