@@ -1922,6 +1922,7 @@ export async function main(
 		});
 		if (
 			mergeGroupTrusted &&
+			workflowFile(env) !== "hobo-ci.yml" &&
 			pinned.tier === "fleet" &&
 			!(await hasVerifiedBatchCapacity(
 				env,
