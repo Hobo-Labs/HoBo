@@ -141,10 +141,12 @@ the store; the host must still authenticate it and authorize each operation.
 The store captures its allowed operations at construction, so later changes to
 application array prototypes do not change the captured grant.
 
-A Node.js HTTP host can bind the selected DynamoDB, S3 and versioned secret
-stores to a Bindle application with
+A Node.js HTTP host can serve a `web`, `api`, `service` or `ui` kit and bind
+the selected DynamoDB, S3 and versioned secret stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
-from `@hobo/iac-alchemy/aws/http-runtime`. Use `secret(name)` for a versioned
+from `@hobo/iac-alchemy/aws/http-runtime`. UI kits support HTTP serving only;
+the UI `render` and `drive` operations remain unsupported and cannot be granted.
+Use `secret(name)` for a versioned
 secret. The host supplies the selected Bindle, its application name, exactly
 the declared stores, and a synchronous verifier that authenticates each exact
 captured store grant. The runtime rejects forged stores, extra permissions and
@@ -1335,6 +1337,8 @@ necessary at dispatch.
 
 The bounded `AwsGraphCapture` model checks that accepted bindings match a
 captured graph despite later input or method changes, and rejects duplicate
-dependency names and mismatched declarations. It considers two resource names
-with arbitrary kinds, assumes snapshots and saved operations are faithful, and
+dependency names and mismatched declarations. It also checks that HTTP-served UI
+applications cannot grant `render` or `drive`. It considers two resource names
+with arbitrary kinds, a web or UI app, and one requested UI operation; it assumes
+snapshots and saved operations are faithful, and
 does not prove the TypeScript implementation or host fencing.

@@ -56,6 +56,11 @@ function check(name: string, model: string, cfg: string, violation?: string) {
 try {
 	check("AwsGraphCapture", source, config);
 	const cases = [
+		[
+			'/\\ (appKind # "ui" \\/ uiOp = "none")\n  /\\ Distinct(capturedEdges)',
+			"/\\ TRUE\n  /\\ Distinct(capturedEdges)",
+			"UiOperationsNotGranted",
+		],
 		["/\\ Distinct(capturedEdges)", "/\\ TRUE", "NoDuplicateBindings"],
 		[
 			'/\\ CountsMatch(capturedEdges, capturedDeclared)\n  /\\ phase\' = "accepted"',
@@ -79,6 +84,8 @@ try {
 		);
 	}
 	for (const invariant of [
+		"NoUiAccepted",
+		"NoUiOperationRejected",
 		"NoAcceptedAfterMethodChange",
 		"NoRejectedGraph",
 		"NoSameKindAccepted",
