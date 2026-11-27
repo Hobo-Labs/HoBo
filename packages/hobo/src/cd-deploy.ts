@@ -637,6 +637,121 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 				);
 			},
 		},
+		"pipeline graph": {
+			usage: "hobo deploy pipeline graph <name>",
+			summary:
+				"Promotion graph: pipeline nodes with availability (same data as the /v1/cd API)",
+			run: async (host, args, _flags, format) => {
+				const name = need(
+					args[0],
+					"<name>",
+					CD_DEPLOY_SUBCOMMANDS["pipeline graph"]?.usage ?? "",
+				);
+				const pipeline = await host.cd.pipelines.get(name);
+				if (!pipeline)
+					return notFound(
+						"pipeline graph",
+						format,
+						"pipeline",
+						name,
+						"hobo deploy pipeline list",
+					);
+				const nodes = [];
+				for (const node of pipeline.nodes) {
+					const available = await host.cd.pipelines.available({
+						pipeline: name,
+						node: node.name,
+					});
+					nodes.push({
+						name: node.name,
+						fromSources: node.fromSources,
+						fromNodes: node.fromNodes,
+						originSlots: node.originSlots ?? [],
+						availability: node.availability,
+						autoPromotion: node.autoPromotion,
+						available,
+					});
+				}
+				return done(
+					host,
+					"pipeline graph",
+					format,
+					"HOBO_CD_PIPELINE_GRAPH",
+					`pipeline ${name} graph`,
+					{
+						pipeline: name,
+						nodes,
+					},
+				);
+			},
+		},
+		"freight timeline": {
+			usage: "hobo deploy freight timeline <freight-id|alias>",
+			summary:
+				"Freight timeline across Camps (promotions, qualifications, approvals)",
+			run: async (host, args, _flags, format) => {
+				const ref = need(
+					args[0],
+					"<freight-id|alias>",
+					CD_DEPLOY_SUBCOMMANDS["freight timeline"]?.usage ?? "",
+				);
+				const freight = await freightOf(host.cd, ref);
+				if (!freight)
+					return notFound(
+						"freight timeline",
+						format,
+						"freight",
+						ref,
+						"hobo deploy freight list",
+					);
+				const id = asFreight(freight.freightId);
+				const qualifications = await host.cd.freight.qualifications(id);
+				const approvals = await host.cd.freight.approvals(id);
+				const promotions = (await host.cd.promotions.list()).filter(
+					(p) => p.freightId === id,
+				);
+				const timeline = [
+					{
+						at: freight.recordedAt,
+						kind: "recorded" as const,
+						detail: { by: freight.recordedBy },
+					},
+					...qualifications.map((q) => ({
+						at: q.qualifiedAt,
+						kind: "qualified" as const,
+						campId: q.campId,
+						detail: q,
+					})),
+					...approvals.map((a) => ({
+						at: a.approvedAt,
+						kind: "approved" as const,
+						campId: a.campId,
+						detail: a,
+					})),
+					...promotions.flatMap((p) =>
+						p.targetCampIds.map((campId) => ({
+							at: p.requestedAt,
+							kind: "promotion" as const,
+							campId,
+							detail: {
+								promotionId: p.promotionId,
+								state: p.state,
+								pipeline: p.pipeline,
+								node: p.node,
+							},
+						})),
+					),
+				].sort((a, b) => a.at.localeCompare(b.at));
+				return done(
+					host,
+					"freight timeline",
+					format,
+					"HOBO_CD_FREIGHT_TIMELINE",
+					`freight ${freight.alias} timeline`,
+					{ freight, timeline },
+				);
+			},
+		},
 		"pipeline list": {
 			usage: "hobo deploy pipeline list",
 			summary: "List pipelines",
