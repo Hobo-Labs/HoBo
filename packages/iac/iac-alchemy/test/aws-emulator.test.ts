@@ -67,6 +67,7 @@ async function mappedResources(
 	nativeKv = false,
 	nativeS3 = false,
 	readOnly = false,
+	queueName = "jobs",
 ) {
 	const definition = bindle("shop", (b) => ({
 		objects: nativeS3
@@ -79,7 +80,7 @@ async function mappedResources(
 				? b.kv().allow("get")
 				: b.kv().allow("get", "set", "delete")
 			: b.kv(),
-		jobs: b.queue(),
+		[queueName]: b.queue(),
 		events: b.topic(),
 	}));
 	const kvSelected = nativeKv
@@ -109,7 +110,7 @@ async function mappedResources(
 	const bucket = mapped.primary.objects;
 	if (!bucket || bucket.Type !== Bucket.Type)
 		throw new Error("bucket mapping missing");
-	const queue = mapped.primary.jobs;
+	const queue = mapped.primary[queueName];
 	if (!queue || queue.Type !== Queue.Type)
 		throw new Error("queue mapping missing");
 	const topic = mapped.primary.events;
@@ -1174,7 +1175,14 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				}),
 			);
 			const target = await precreateQueue(
-				(await mappedResources()).queue,
+				(
+					await mappedResources(
+						false,
+						false,
+						false,
+						`jobs${randomUUID().replaceAll("-", "")}`,
+					)
+				).queue,
 				sqsLayer,
 			);
 			const exportedBody = `dead-letter:${randomUUID()}:${inspected.messages[0].messageId}`;

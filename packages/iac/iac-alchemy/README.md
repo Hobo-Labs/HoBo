@@ -946,6 +946,8 @@ An existing copy of the same package may be supplied with
 `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The runner includes the secret runtime and HTTP ingress, mapper, and financial
 preview specifications alongside the storage and emulator tests.
+The queue export scenario uses a fresh mapped queue identity for each run so
+previous simulator messages cannot satisfy or obscure its delivery check.
 The pricing workflow uses HoBo's routed CI runner for the simulator job, with
 the same hosted fallback as the other pricing checks and a 40-minute job limit.
 The bounded-model job has a 60-minute overall limit; individual model-checking
