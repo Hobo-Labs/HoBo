@@ -35,6 +35,7 @@ import {
 	PromoteFailoverStandby,
 	ProposeBudgetSwitch,
 	SwitchTargetMatchesActive,
+	SwitchUtilizationThresholdNotReached,
 	type TypedFleetAllowance,
 } from "../src/domain/index.js";
 
@@ -45,6 +46,7 @@ const MS = (value: number) => decodeNonNegativeMs(value);
 const UPSTASH = decodeFleetMemberName("upstash");
 const TURSO = decodeFleetMemberName("turso");
 const BLOB = decodeFleetMemberName("blob");
+const CACHE_ROSTER = [BLOB, UPSTASH, TURSO] as const;
 
 const DEFAULT_MARKS = decodeRoutingHysteresisMarks({
 	switchAt: decodeUnitFraction(0.9),
@@ -135,6 +137,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 		const fleetId = FleetId.make("cache-fleet-prod");
 		const fleet = FleetAssignment.ref(fleetId);
 		const prefReason = NonEmptyReason.make("preferred-free");
+		const capReason = NonEmptyReason.make("target below budget cap");
 		const exhaustReason = NonEmptyReason.make("commands projected 90%");
 		const abortReason = NonEmptyReason.make("copy-replica-timeout");
 		const downReason = NonEmptyReason.make("writer-unreachable");
@@ -145,6 +148,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 					fleet,
 					new InitializeFleetAssignment({
 						active: BLOB,
+						members: [...CACHE_ROSTER],
 						marks: DEFAULT_MARKS,
 						nowMs: EPOCH(1_000),
 					}),
@@ -153,6 +157,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 					fleet,
 					new FleetAssignmentInitialized({
 						active: BLOB,
+						members: [...CACHE_ROSTER],
 						marks: DEFAULT_MARKS,
 						epoch: decodeEpochNumber(1),
 						decidedAtMs: EPOCH(1_000),
@@ -169,6 +174,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: BLOB,
 						cause: "preference",
 						reason: prefReason,
+						observedUtilization: null,
 						nowMs: EPOCH(5_000_000),
 					}),
 				),
@@ -179,6 +185,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: UPSTASH,
 						cause: "preference",
 						reason: prefReason,
+						observedUtilization: null,
 						nowMs: EPOCH(61_000),
 					}),
 				),
@@ -194,6 +201,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: UPSTASH,
 						cause: "exhaustion",
 						reason: exhaustReason,
+						observedUtilization: decodeUnitFraction(0.95),
 						nowMs: EPOCH(62_000),
 					}),
 				),
@@ -213,6 +221,7 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 						target: TURSO,
 						cause: "exhaustion",
 						reason: exhaustReason,
+						observedUtilization: null,
 						nowMs: EPOCH(63_000),
 					}),
 				),
@@ -232,8 +241,54 @@ describe("@hobo/backend-routing/domain BackendRouting (static invariants + BDD)"
 					fleet,
 					new ProposeBudgetSwitch({
 						target: UPSTASH,
+						cause: "budget-cap",
+						reason: capReason,
+						observedUtilization: decodeUnitFraction(0.85),
+						nowMs: EPOCH(62_500),
+					}),
+				),
+				Story.rejected(
+					new SwitchUtilizationThresholdNotReached({
+						observedUtilization: decodeUnitFraction(0.85),
+						requiredUtilization: DEFAULT_MARKS.switchBackBelow,
+					}),
+				),
+				Story.when(
+					fleet,
+					new ProposeBudgetSwitch({
+						target: UPSTASH,
+						cause: "budget-cap",
+						reason: capReason,
+						observedUtilization: decodeUnitFraction(0.75),
+						nowMs: EPOCH(62_600),
+					}),
+				),
+				Story.then(
+					fleet,
+					new FleetSwitchSealed({
+						from: BLOB,
+						target: UPSTASH,
+						cause: "budget-cap",
+						reason: capReason,
+						sealedAtMs: EPOCH(62_600),
+					}),
+				),
+				Story.when(fleet, new AbortSealedSwitch({ reason: abortReason })),
+				Story.then(
+					fleet,
+					new FleetSwitchAborted({
+						active: BLOB,
+						abortedTarget: UPSTASH,
+						reason: abortReason,
+					}),
+				),
+				Story.when(
+					fleet,
+					new ProposeBudgetSwitch({
+						target: UPSTASH,
 						cause: "preference",
 						reason: prefReason,
+						observedUtilization: null,
 						nowMs: EPOCH(4_000_000),
 					}),
 				),

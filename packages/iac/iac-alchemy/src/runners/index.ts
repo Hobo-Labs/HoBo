@@ -18,7 +18,9 @@ export {
 	type RunnerReleaseInput,
 } from "./ci-fleet-backend.js";
 export {
+	createInMemoryHostingerRunnerRegistry,
 	guardedHostingerRunnerTransport,
+	HOSTINGER_PINNED_API_ORIGIN,
 	HostingerRunner,
 	type HostingerRunnerAttr,
 	HostingerRunnerError,
@@ -26,10 +28,12 @@ export {
 	type HostingerRunnerProps,
 	HostingerRunnerProvider,
 	type HostingerRunnerProviderOptions,
+	type HostingerRunnerRegistry,
 	type HostingerRunnerTransport,
 	type HostingerRunnerTransportRequest,
 	type HostingerRunnerTransportResponse,
 	isAllowedHostingerFleetRoute,
+	resolveHostingerFleetUrl,
 } from "./hostinger.js";
 export {
 	createInMemoryLocalRunnerRegistry,

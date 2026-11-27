@@ -32,6 +32,7 @@ import {
 	type Realizer,
 	type ReasonRecord,
 	ReasonRecordSchema,
+	type ReasonStructuredDetail,
 	type ReconcileObservationRecord,
 	ReconcileObservationRecordSchema,
 	type ReconcilerId,
@@ -60,7 +61,11 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-import { createDriftPolicy } from "@hobo/cd/reconcile";
+import {
+	createDriftPolicy,
+	releaseFreightRefusalOf,
+	releaseFreightStructuredFromFields,
+} from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
 	RUNNER_FLEET_BINDLE,
@@ -87,6 +92,7 @@ import {
 	type PrincipalRef,
 	ResolverError,
 } from "@hobo/core";
+import { GithubPagesRefusal } from "@hobo/provider-github";
 import type { Yard } from "@hobo/yards";
 import { agentRealizer } from "./cd-agent.js";
 import {
@@ -914,18 +920,54 @@ export function withRunnerHostRealization(
 }
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */
-function refusalOf(error: Error) {
-	return {
-		code:
-			error instanceof ResolverError || error instanceof CatalogRealizerError
-				? error.code
-				: "realize-failed",
-		message: error.message,
-	};
+function refusalOf(
+	error: Error,
+	ctx?: Readonly<{ campId: string; credentialRef: string }>,
+) {
+	const refused = releaseFreightRefusalOf(error);
+	const code =
+		error instanceof ResolverError || error instanceof CatalogRealizerError
+			? error.code
+			: refused.code;
+	if (refused.structured) {
+		return {
+			code,
+			message: error.message,
+			structured: refused.structured,
+		};
+	}
+	if (error instanceof GithubPagesRefusal && ctx) {
+		const structured = releaseFreightStructuredFromFields({
+			credentialRef: ctx.credentialRef,
+			requestedScope: `cd-realize:${ctx.campId}`,
+			detailKind: error.reason,
+		});
+		if (structured) {
+			return { code, message: error.message, structured };
+		}
+	}
+	return { code, message: error.message };
 }
 
-function realizerReason(code: string, message: string, remediation: string) {
-	return create(ReasonRecordSchema, { code, message, remediation });
+function realizerReason(
+	code: string,
+	message: string,
+	remediation: string,
+	structured?: ReasonStructuredDetail,
+) {
+	if (structured) {
+		return create(ReasonRecordSchema, {
+			code,
+			message,
+			remediation,
+			structured,
+		});
+	}
+	return create(ReasonRecordSchema, {
+		code,
+		message,
+		remediation,
+	});
 }
 
 /**
@@ -1099,7 +1141,10 @@ export function createCatalogResolverRealizer(
 		} catch (error) {
 			return blocked(
 				input,
-				refusalOf(error instanceof Error ? error : new Error(String(error))),
+				refusalOf(error instanceof Error ? error : new Error(String(error)), {
+					campId: input.campId,
+					credentialRef: binding.credentialRef,
+				}),
 				resources,
 			);
 		}
@@ -1107,7 +1152,11 @@ export function createCatalogResolverRealizer(
 
 	function blocked(
 		input: RealizeInput,
-		{ code, message }: Readonly<{ code: string; message: string }>,
+		refusal: Readonly<{
+			code: string;
+			message: string;
+			structured?: ReasonStructuredDetail;
+		}>,
 		resources: Parameters<typeof observation>[3] = [],
 	): ReconcileObservationRecord {
 		return observation(
@@ -1115,9 +1164,10 @@ export function createCatalogResolverRealizer(
 			ReconcileStatus.BLOCKED,
 			[
 				realizerReason(
-					code,
-					message,
+					refusal.code,
+					refusal.message,
 					"Fix the cause the resolver names; the next pass re-observes and is idempotent.",
+					refusal.structured,
 				),
 			],
 			resources,

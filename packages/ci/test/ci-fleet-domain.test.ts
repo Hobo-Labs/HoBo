@@ -1,5 +1,6 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";
@@ -39,11 +40,12 @@ import {
 	RoutingAuditView,
 	RunnerBackend,
 	RunnerCapacityExhausted,
+	RunnerLabel,
 	RunnerPoolId,
 	RunnerPoolRegistered,
 	RunnerPoolSpec,
+	RunnerReleaseFailed,
 	RunnerStartBound,
-	RunnerLabel,
 	SlotId,
 	StartBindingConflict,
 	StationBudgetConfigured,
@@ -889,6 +891,8 @@ describe("CiFleet Alchemy Domain model", () => {
 					expiredJob,
 					new JobDispatchExpired({
 						reason: NonEmptyReason.make("queue-deadline-elapsed"),
+						stationId: station.id,
+						slotId: null,
 					}),
 				),
 				Story.succeed(RunnerBackend.provisionRunner, {
@@ -931,6 +935,186 @@ describe("CiFleet Alchemy Domain model", () => {
 				}),
 			),
 		);
+	});
+
+	it("expires bound jobs at deadline and releases runner slot capacity", async () => {
+		const boundDeadlineJob = JobDispatch.ref(
+			JobDispatchId.make("job-bound-deadline"),
+		);
+		const deadlineStory = Story.make(CiFleet, {
+			layer: CiFleetHandlers,
+			stub: [RunnerBackend],
+		});
+
+		await Effect.runPromise(
+			deadlineStory(
+				Story.clock("2026-11-24T01:00:00Z"),
+				Story.given(station, new RunnerPoolRegistered({ spec: LOCAL_POOL })),
+				Story.when(
+					boundDeadlineJob,
+					new ObserveJobDispatch({
+						stationId: station.id,
+						requirements: PRIVATE_JOB,
+						deadlineSeconds: PositiveSeconds.make(60),
+					}),
+				),
+				Story.then(
+					boundDeadlineJob,
+					new JobDispatchObserved({
+						stationId: station.id,
+						requirements: PRIVATE_JOB,
+						deadlineSeconds: PositiveSeconds.make(60),
+					}),
+				),
+				Story.then(
+					station,
+					new BalancedSlotReserved({
+						slotId: SlotId.make("slot-1-local-devbox"),
+						jobId: boundDeadlineJob.id,
+						poolId: LOCAL_POOL.poolId,
+						tier: "local",
+						runnerLabel: LOCAL_POOL.runnerLabel,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
+					}),
+				),
+				Story.call(RunnerBackend.provisionRunner, {
+					poolId: LOCAL_POOL.poolId,
+				}),
+				Story.succeed(RunnerBackend.provisionRunner, {
+					externalRunnerId: ExternalRunnerId.make("bound-runner"),
+				}),
+				Story.then(
+					boundDeadlineJob,
+					new RunnerStartBound({
+						stationId: station.id,
+						poolId: LOCAL_POOL.poolId,
+						tier: "local",
+						slotId: SlotId.make("slot-1-local-devbox"),
+						runnerLabel: LOCAL_POOL.runnerLabel,
+						externalRunnerId: ExternalRunnerId.make("bound-runner"),
+						attempts: PositiveAttempts.make(1),
+					}),
+				),
+				Story.advance("61 seconds"),
+				Story.call(RunnerBackend.releaseRunner, {
+					stationId: station.id,
+					slotId: SlotId.make("slot-1-local-devbox"),
+				}),
+				Story.succeed(RunnerBackend.releaseRunner, { released: true }),
+				Story.then(
+					boundDeadlineJob,
+					new JobDispatchExpired({
+						reason: NonEmptyReason.make("queue-deadline-elapsed"),
+						stationId: station.id,
+						slotId: SlotId.make("slot-1-local-devbox"),
+					}),
+				),
+				Story.then(
+					station,
+					new BalancedSlotReleased({
+						slotId: SlotId.make("slot-1-local-devbox"),
+						jobId: boundDeadlineJob.id,
+						poolId: LOCAL_POOL.poolId,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
+						settledMicros: NonNegativeMicros.make(0),
+					}),
+				),
+				Story.view(RoutingAuditView, boundDeadlineJob, {
+					_tag: "Expired",
+					stationId: station.id,
+					reason: NonEmptyReason.make("queue-deadline-elapsed"),
+				}),
+			),
+		);
+	});
+
+	it("surfaces releaseRunner failures instead of settling slot release", async () => {
+		const failingJob = JobDispatch.ref(JobDispatchId.make("job-release-fail"));
+		const slotId = SlotId.make("slot-1-local-devbox");
+		const releaseReason = NonEmptyReason.make("runner-not-found");
+
+		const exit = await Effect.runPromiseExit(
+			story(
+				Story.given(station, new RunnerPoolRegistered({ spec: LOCAL_POOL })),
+				Story.when(
+					failingJob,
+					new ObserveJobDispatch({
+						stationId: station.id,
+						requirements: PRIVATE_JOB,
+						deadlineSeconds: null,
+					}),
+				),
+				Story.then(
+					failingJob,
+					new JobDispatchObserved({
+						stationId: station.id,
+						requirements: PRIVATE_JOB,
+						deadlineSeconds: null,
+					}),
+				),
+				Story.then(
+					station,
+					new BalancedSlotReserved({
+						slotId,
+						jobId: failingJob.id,
+						poolId: LOCAL_POOL.poolId,
+						tier: "local",
+						runnerLabel: LOCAL_POOL.runnerLabel,
+						payer: LOCAL_POOL.payer,
+						reservedMicros: NonNegativeMicros.make(0),
+					}),
+				),
+				Story.call(RunnerBackend.provisionRunner, {
+					poolId: LOCAL_POOL.poolId,
+				}),
+				Story.succeed(RunnerBackend.provisionRunner, {
+					externalRunnerId: ExternalRunnerId.make("runner-x"),
+				}),
+				Story.then(
+					failingJob,
+					new RunnerStartBound({
+						stationId: station.id,
+						poolId: LOCAL_POOL.poolId,
+						tier: "local",
+						slotId,
+						runnerLabel: LOCAL_POOL.runnerLabel,
+						externalRunnerId: ExternalRunnerId.make("runner-x"),
+						attempts: PositiveAttempts.make(1),
+					}),
+				),
+				Story.when(
+					failingJob,
+					new CompleteJobDispatch({
+						settledMicros: NonNegativeMicros.make(0),
+						conclusion: "succeeded",
+					}),
+				),
+				Story.then(
+					failingJob,
+					new JobDispatchCompleted({
+						stationId: station.id,
+						slotId,
+						settledMicros: NonNegativeMicros.make(0),
+						conclusion: "succeeded",
+					}),
+				),
+				Story.call(RunnerBackend.releaseRunner, {
+					stationId: station.id,
+					slotId,
+				}),
+				Story.fail(
+					RunnerBackend.releaseRunner,
+					new RunnerReleaseFailed({ slotId, reason: releaseReason }),
+				),
+			),
+		);
+
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (exit._tag === "Failure") {
+			expect(Cause.pretty(exit.cause)).toContain("RunnerReleaseFailed");
+		}
 	});
 
 	runRunnerBackendConformance(

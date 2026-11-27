@@ -43,6 +43,8 @@ export {
 export {
 	JobCompletedPolicy,
 	JobCompletedPolicyLive,
+	JobExpiredPolicy,
+	JobExpiredPolicyLive,
 	JobObservedPolicy,
 	JobObservedPolicyLive,
 } from "./JobDispatch.policies.js";
@@ -50,6 +52,7 @@ export {
 	RunnerBackend,
 	RunnerCapacityExhausted,
 	RunnerProvisionFailed,
+	RunnerReleaseFailed,
 } from "./RunnerBackend.external.js";
 export {
 	BalancedSlotReleased,

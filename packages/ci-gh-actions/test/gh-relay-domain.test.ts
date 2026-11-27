@@ -1,11 +1,13 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import {
+	AcquireGhMachineSlot,
 	AnswerGhRelayJob,
 	ClearGhProviderHealth,
 	ConnectGhMachine,
@@ -28,6 +30,7 @@ import {
 	GhMachineResumed,
 	GhMachineSlotAcquired,
 	GhMachineSlotReleased,
+	GhMachineSlotUnavailable,
 	GhMachineTakenOver,
 	GhMinutesUsageSynced,
 	GhProtocolRejected,
@@ -45,14 +48,20 @@ import {
 	GhRelayJobQueued,
 	GhRelayJobRouted,
 	GhRelayJobWaiting,
+	GhRelayNodeId,
+	GhRelayRouteFacts,
 	GhRelayRouter,
 	GhRepoSlug,
+	GhRetryDisabled,
 	GhRetryLimitReached,
 	GhRouteDecisionRecorded,
 	GhRunnerLabel,
+	type GhRunnerOrderConfig,
 	GhRunnerOrderConfigured,
 	GhRunnerProtocol,
 	GhStaleAdvertKey,
+	isGhProviderLabel,
+	isGhRunnerLabelToken,
 	NonEmptyReason,
 	NonNegativeCents,
 	NonNegativeCount,
@@ -68,20 +77,36 @@ import {
 	RemoveGhMachine,
 	RequestGhJobAutoRetry,
 	ResumeGhMachine,
+	RouteGhJob,
 	SyncGhMinutesUsage,
 	SyncGhProviderSpend,
 	VerifyGhMachineAdvert,
 } from "../src/domain/index.js";
 
+const DEFAULT_ROUTE_FACTS = {
+	fleet: { enabled: true, taking: true, isolated: true },
+	ownerCanRead: true,
+} as const;
+
+const routeFactsForQueuedJob = () => [
+	Story.call(GhRelayRouteFacts.loadFacts, {
+		accountId: ACCOUNT,
+		repository: REPO,
+		actorId: ACTOR_OWNER,
+	}),
+	Story.succeed(GhRelayRouteFacts.loadFacts, DEFAULT_ROUTE_FACTS),
+];
+
 const story = Story.make(GhRelay, {
 	layer: GhRelayHandlers,
-	stub: [GhRunnerProtocol, GhLintSandbox],
+	stub: [GhRunnerProtocol, GhLintSandbox, GhRelayRouteFacts],
 });
 
 const ACCOUNT = GhAccountId.make("acct-gh-1");
 const REPO = GhRepoSlug.make("octo/app");
 const ACTOR_OWNER = GhActorId.make("42");
 const T0 = EpochMs.make(1_763_400_000_000);
+const PREDICT_NOW = DateTime.makeUnsafe(T0);
 const NODE_ID = "hobo-relay-node";
 
 const routerRef = GhRelayRouter.ref(ACCOUNT);
@@ -107,6 +132,7 @@ function jobContext(
 		readonly hasNonCheckSteps: boolean;
 		readonly pullRequestTitle: string | null;
 		readonly nowMs: EpochMs;
+		readonly claimNodeId: GhRelayNodeId;
 	}> = {},
 ) {
 	return {
@@ -131,6 +157,7 @@ function jobContext(
 		hasNonCheckSteps: overrides.hasNonCheckSteps ?? false,
 		pullRequestTitle: overrides.pullRequestTitle ?? null,
 		nowMs: overrides.nowMs ?? T0,
+		claimNodeId: overrides.claimNodeId ?? GhRelayNodeId.make("hobo-relay-node"),
 	};
 }
 
@@ -215,12 +242,14 @@ describe("@hobo/ci-gh-actions/domain RelayRunner runs-on syntax", () => {
 			kind: "route",
 			first: "blacksmith",
 			size: 16,
-			candidates: [{ step: "blacksmith", labels: [GhRunnerLabel.make("auto")] }],
+			candidates: [
+				{ step: "blacksmith", labels: [GhRunnerLabel.make("auto")] },
+			],
 		});
 
-		expect(
-			parseGhRelayInputs({ github: "${{ vars.RUNNER }}" }),
-		).toMatchObject({ ok: false });
+		expect(parseGhRelayInputs({ github: "${{ vars.RUNNER }}" })).toMatchObject({
+			ok: false,
+		});
 		expect(parseGhRunsOn("ubuntu-24.04")).toMatchObject({ ok: false });
 	});
 });
@@ -286,6 +315,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					}),
 				),
 				Story.when(jobMatrix1, new QueueGhRelayJob({ context: ctx1 })),
+				...routeFactsForQueuedJob(),
 				Story.then(jobMatrix1, new GhRelayJobQueued({ context: ctx1 })),
 				Story.then(
 					jobMatrix1,
@@ -343,6 +373,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					}),
 				),
 				Story.when(jobMatrix2, new QueueGhRelayJob({ context: ctx2 })),
+				...routeFactsForQueuedJob(),
 				Story.then(jobMatrix2, new GhRelayJobQueued({ context: ctx2 })),
 				Story.then(
 					jobMatrix2,
@@ -487,6 +518,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					}),
 				),
 				Story.when(jobPublic, new QueueGhRelayJob({ context: ctxPublic })),
+				...routeFactsForQueuedJob(),
 				Story.then(jobPublic, new GhRelayJobQueued({ context: ctxPublic })),
 				Story.then(
 					jobPublic,
@@ -541,10 +573,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 						notInOrder: [],
 					}),
 				),
-				Story.when(
-					routerRef,
-					new ClearGhProviderHealth({ provider: "depot" }),
-				),
+				Story.when(routerRef, new ClearGhProviderHealth({ provider: "depot" })),
 				Story.then(
 					routerRef,
 					new GhProviderHealthCleared({ provider: "depot" }),
@@ -569,6 +598,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					jobRecovered,
 					new QueueGhRelayJob({ context: ctxRecovered }),
 				),
+				...routeFactsForQueuedJob(),
 				Story.then(
 					jobRecovered,
 					new GhRelayJobQueued({ context: ctxRecovered }),
@@ -731,6 +761,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					}),
 				),
 				Story.when(compJob, new QueueGhRelayJob({ context: ctxComp })),
+				...routeFactsForQueuedJob(),
 				Story.then(compJob, new GhRelayJobQueued({ context: ctxComp })),
 				Story.then(
 					compJob,
@@ -860,6 +891,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					}),
 				),
 				Story.when(busyJob, new QueueGhRelayJob({ context: ctxBusy })),
+				...routeFactsForQueuedJob(),
 				Story.then(busyJob, new GhRelayJobQueued({ context: ctxBusy })),
 				Story.then(
 					busyJob,
@@ -907,6 +939,7 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 					}),
 				),
 				Story.when(waitJob, new QueueGhRelayJob({ context: ctxWait })),
+				...routeFactsForQueuedJob(),
 				Story.then(waitJob, new GhRelayJobQueued({ context: ctxWait })),
 				Story.then(
 					waitJob,
@@ -1236,5 +1269,392 @@ describe("@hobo/ci-gh-actions/domain GhRelay Alchemy Domain model", () => {
 			}).pipe(Effect.provide(invalidSandbox)),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);
+	});
+
+	it("rereads routing on any GhMachineSlotUnavailable after acquire and re-acquires before a routed reread answer", () => {
+		const machineId = GhMachineId.make("m-toctou");
+		const jobId = GhRelayJobId.make("job-toctou");
+		const fillerId = GhRelayJobId.make("job-toctou-filler");
+		const ctx = jobContext({
+			runsOn: [GhRunnerLabel.make("hobo/machine=self-hosted")],
+		});
+		const machineOnlyOrder = {
+			steps: [
+				{
+					key: "machine" as const,
+					minutesLimitPercent: null,
+					spendLimitCents: null,
+				},
+			],
+			skipUnhealthy: true,
+			autoSizeVcpus: 2,
+			retry: {
+				enabled: false,
+				target: "other" as const,
+				maxRetries: 1 as const,
+			},
+		} satisfies GhRunnerOrderConfig;
+		const machineSnapshot = (busy: number) => ({
+			machineId,
+			name: "studio",
+			runsOnLabel: GhRunnerLabel.make("hobo-machine-m-toctou"),
+			labels: [GhRunnerLabel.make("self-hosted")],
+			slots: PositiveSlots.make(1),
+			busy: NonNegativeCount.make(busy),
+			paused: false,
+			online: true,
+			sharing: "only_me" as const,
+			ownerId: ACTOR_OWNER,
+			ownerCanRead: true,
+			isolatedContainer: false,
+			adopted: false,
+		});
+		const routerState = {
+			orders: [{ repository: REPO, order: machineOnlyOrder }],
+			minutesUsed: null,
+			minutesIncluded: NonNegativeMinutes.make(2_000),
+			burnPerHour: null,
+			providerSpend: [],
+			providerHealth: [],
+			retries: [],
+		};
+		const routed = GhRelayRouter.predict(
+			routerState,
+			new RouteGhJob({
+				jobId,
+				context: ctx,
+				machines: [machineSnapshot(0)],
+				fleet: DEFAULT_ROUTE_FACTS.fleet,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(routed._tag).toBe("Accepted");
+		if (routed._tag === "Accepted") {
+			expect(
+				routed.events.find((event) => event._tag === "GhRouteDecisionRecorded"),
+			).toMatchObject({ outcome: "routed", step: "machine", machineId });
+		}
+		const acquireRace = GhMachinePool.predict(
+			{
+				machines: [
+					{
+						machineId,
+						name: "studio",
+						runsOnLabel: GhRunnerLabel.make("hobo-machine-m-toctou"),
+						labels: [GhRunnerLabel.make("self-hosted")],
+						slots: PositiveSlots.make(1),
+						activeJobIds: [fillerId],
+						paused: false,
+						online: true,
+						sharing: "only_me",
+						ownerId: ACTOR_OWNER,
+						advertKeyId: GhAdvertKeyId.make("key-race"),
+						isolatedContainer: false,
+						adopted: false,
+						lastSeenMs: T0,
+					},
+				],
+			},
+			new AcquireGhMachineSlot({
+				machineId,
+				jobId,
+				actorId: ACTOR_OWNER,
+				ownerCanRead: true,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(acquireRace).toMatchObject({
+			_tag: "Rejected",
+			rejection: new GhMachineSlotUnavailable({
+				machineId,
+				reason: "machine_full",
+			}),
+		});
+		const waiting = GhRelayRouter.predict(
+			routerState,
+			new RouteGhJob({
+				jobId,
+				context: ctx,
+				machines: [machineSnapshot(1)],
+				fleet: DEFAULT_ROUTE_FACTS.fleet,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(waiting._tag).toBe("Accepted");
+		if (waiting._tag === "Accepted") {
+			expect(
+				waiting.events.find(
+					(event) => event._tag === "GhRouteDecisionRecorded",
+				),
+			).toMatchObject({ outcome: "waiting", step: "machine", machineId });
+		}
+		const slotReopened = GhRelayRouter.predict(
+			routerState,
+			new RouteGhJob({
+				jobId,
+				context: ctx,
+				machines: [machineSnapshot(0)],
+				fleet: DEFAULT_ROUTE_FACTS.fleet,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(slotReopened._tag).toBe("Accepted");
+		if (slotReopened._tag === "Accepted") {
+			expect(
+				slotReopened.events.find(
+					(event) => event._tag === "GhRouteDecisionRecorded",
+				),
+			).toMatchObject({ outcome: "routed", step: "machine", machineId });
+		}
+		const acquireAfterReread = GhMachinePool.predict(
+			{
+				machines: [
+					{
+						machineId,
+						name: "studio",
+						runsOnLabel: GhRunnerLabel.make("hobo-machine-m-toctou"),
+						labels: [GhRunnerLabel.make("self-hosted")],
+						slots: PositiveSlots.make(1),
+						activeJobIds: [],
+						paused: false,
+						online: true,
+						sharing: "only_me",
+						ownerId: ACTOR_OWNER,
+						advertKeyId: GhAdvertKeyId.make("key-race"),
+						isolatedContainer: false,
+						adopted: false,
+						lastSeenMs: T0,
+					},
+				],
+			},
+			new AcquireGhMachineSlot({
+				machineId,
+				jobId,
+				actorId: ACTOR_OWNER,
+				ownerCanRead: true,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(acquireAfterReread._tag).toBe("Accepted");
+		if (acquireAfterReread._tag === "Accepted") {
+			expect(
+				acquireAfterReread.events.find(
+					(event) => event._tag === "GhMachineSlotAcquired",
+				),
+			).toMatchObject({ jobId, machineId });
+		}
+		const pausedRace = GhMachinePool.predict(
+			{
+				machines: [
+					{
+						machineId,
+						name: "studio",
+						runsOnLabel: GhRunnerLabel.make("hobo-machine-m-toctou"),
+						labels: [GhRunnerLabel.make("self-hosted")],
+						slots: PositiveSlots.make(1),
+						activeJobIds: [fillerId],
+						paused: true,
+						online: true,
+						sharing: "only_me",
+						ownerId: ACTOR_OWNER,
+						advertKeyId: GhAdvertKeyId.make("key-race"),
+						isolatedContainer: false,
+						adopted: false,
+						lastSeenMs: T0,
+					},
+				],
+			},
+			new AcquireGhMachineSlot({
+				machineId,
+				jobId,
+				actorId: ACTOR_OWNER,
+				ownerCanRead: true,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(pausedRace).toMatchObject({
+			_tag: "Rejected",
+			rejection: new GhMachineSlotUnavailable({
+				machineId,
+				reason: "paused",
+			}),
+		});
+	});
+
+	it("fails closed when runner order is not configured for the repository", () => {
+		const jobId = GhRelayJobId.make("job-unconfigured-1");
+		const ctx = jobContext({
+			runsOn: [GhRunnerLabel.make("hobo/github=ubuntu-24.04")],
+		});
+		const prediction = GhRelayRouter.predict(
+			{
+				orders: [],
+				minutesUsed: null,
+				minutesIncluded: NonNegativeMinutes.make(2_000),
+				burnPerHour: null,
+				providerSpend: [],
+				providerHealth: [],
+				retries: [],
+			},
+			new RouteGhJob({
+				jobId,
+				context: ctx,
+				machines: [],
+				fleet: null,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(prediction._tag).toBe("Accepted");
+		if (prediction._tag === "Accepted") {
+			const recorded = prediction.events.find(
+				(event) => event._tag === "GhRouteDecisionRecorded",
+			);
+			expect(recorded).toMatchObject({
+				outcome: "failed",
+				skipped: [{ step: "github", reason: "not_configured" }],
+			});
+		}
+	});
+
+	it("rejects runner labels that inject runs-on separators", () => {
+		expect(isGhRunnerLabelToken("self-hosted")).toBe(true);
+		expect(isGhRunnerLabelToken("evil,github=ubuntu-24.04")).toBe(false);
+		expect(isGhRunnerLabelToken("evil/github=ubuntu-24.04")).toBe(false);
+		expect(isGhRunnerLabelToken("evil=ubuntu-24.04")).toBe(false);
+		expect(
+			parseGhRelayInputs({
+				github: "ubuntu-24.04,depot=auto",
+			}),
+		).toMatchObject({
+			ok: false,
+		});
+	});
+
+	it("matches hosted provider labels exactly, not by prefix", () => {
+		expect(isGhProviderLabel("depot", "depot-ubuntu-24.04")).toBe(true);
+		expect(isGhProviderLabel("depot", "depot-ubuntu-24.04-impostor")).toBe(
+			false,
+		);
+		expect(isGhProviderLabel("boat", "boat")).toBe(true);
+		expect(isGhProviderLabel("boat", "boat-impostor")).toBe(false);
+	});
+
+	it("replies on idempotent acquire with the holding machine runs-on label", () => {
+		const machineId = GhMachineId.make("m-idem");
+		const jobId = GhRelayJobId.make("job-idem");
+		const connected = {
+			machines: [
+				{
+					machineId,
+					name: "primary",
+					runsOnLabel: GhRunnerLabel.make("hobo-machine-m-idem"),
+					labels: [GhRunnerLabel.make("self-hosted")],
+					slots: PositiveSlots.make(1),
+					activeJobIds: [jobId],
+					paused: false,
+					online: true,
+					sharing: "only_me" as const,
+					ownerId: ACTOR_OWNER,
+					advertKeyId: GhAdvertKeyId.make("key"),
+					isolatedContainer: false,
+					adopted: false,
+					lastSeenMs: T0,
+				},
+				{
+					machineId: GhMachineId.make("m-other"),
+					name: "other",
+					runsOnLabel: GhRunnerLabel.make("hobo-machine-m-other"),
+					labels: [GhRunnerLabel.make("self-hosted")],
+					slots: PositiveSlots.make(1),
+					activeJobIds: [],
+					paused: false,
+					online: true,
+					sharing: "only_me" as const,
+					ownerId: ACTOR_OWNER,
+					advertKeyId: GhAdvertKeyId.make("key-2"),
+					isolatedContainer: false,
+					adopted: false,
+					lastSeenMs: T0,
+				},
+			],
+		};
+		const prediction = GhMachinePool.predict(
+			connected,
+			new AcquireGhMachineSlot({
+				machineId,
+				jobId,
+				actorId: ACTOR_OWNER,
+				ownerCanRead: true,
+			}),
+			{ id: ACCOUNT, now: PREDICT_NOW },
+		);
+		expect(prediction._tag).toBe("Accepted");
+		if (prediction._tag === "Accepted") {
+			const acquired = prediction.events.find(
+				(event) => event._tag === "GhMachineSlotAcquired",
+			);
+			expect(acquired).toMatchObject({
+				runsOnLabel: GhRunnerLabel.make("hobo-machine-m-idem"),
+			});
+		}
+	});
+
+	it("refuses auto-retry when runner order is not configured", async () => {
+		await Effect.runPromise(
+			story(
+				Story.when(
+					routerRef,
+					new RequestGhJobAutoRetry({
+						repository: REPO,
+						runId: PositiveRunId.make(90),
+						jobName: "test",
+						deliveryId: GhDeliveryId.make("del-nc"),
+					}),
+				),
+				Story.rejected(new GhRetryDisabled({ repository: REPO })),
+			),
+		);
+	});
+
+	it("rejects protocol answers GitHub did not accept", async () => {
+		const refusedJob = GhRelayJob.ref(
+			GhRelayJobId.make("job-refused-protocol"),
+		);
+		const ctx = jobContext({
+			runsOn: [GhRunnerLabel.make("hobo-relay")],
+			checkSteps: [
+				{ check: "pr-title", types: ["feat"], tools: [], paths: [] },
+			],
+			pullRequestTitle: "feat: ok",
+		});
+		await Effect.runPromise(
+			story(
+				Story.when(refusedJob, new QueueGhRelayJob({ context: ctx })),
+				Story.then(refusedJob, new GhRelayJobQueued({ context: ctx })),
+				Story.then(
+					refusedJob,
+					new GhRelayJobClaimed({
+						accountId: ACCOUNT,
+						repository: REPO,
+						nodeId: NODE_ID,
+					}),
+				),
+				Story.call(GhRunnerProtocol.answerJob, { jobId: refusedJob.id }),
+				Story.succeed(GhRunnerProtocol.answerJob, { accepted: false }),
+				Story.saga(AnswerGhRelayJob, refusedJob, {
+					_tag: "Rejected",
+					rejection: new GhProtocolRejected({
+						reason: NonEmptyReason.make("GitHub refused the relay job answer."),
+					}),
+				}),
+				Story.then(
+					refusedJob,
+					new GhRelayJobFailed({
+						reason: NonEmptyReason.make("GhProtocolRejected"),
+						annotations: [NonEmptyReason.make("GhProtocolRejected")],
+					}),
+				),
+			),
+		);
 	});
 });

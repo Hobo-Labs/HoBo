@@ -106,7 +106,7 @@ function parseAssetDigests(
 	if (!isJsonObject(value)) {
 		throw new TypeError("Browser WIT runtime assetDigests are invalid");
 	}
-	if (Object.keys(value).sort().join("\0") !== assets.toSorted().join("\0")) {
+	if (Object.keys(value).sort().join("\0") !== [...assets].sort().join("\0")) {
 		throw new TypeError("Browser WIT runtime assetDigests are invalid");
 	}
 	const assetDigests: MutableSha256DigestMap = {};

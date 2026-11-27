@@ -30,7 +30,10 @@ export type AllowedHoboGitHubResourceKind =
 export class HoboGitHubPolicyError extends Data.TaggedError(
 	"HoboGitHubPolicyError",
 )<{
-	readonly code: "FORBIDDEN_SECRET_RESOURCE" | "INVALID_APP_ID" | "INVALID_INSTALLATION_ID";
+	readonly code:
+		| "FORBIDDEN_SECRET_RESOURCE"
+		| "INVALID_APP_ID"
+		| "INVALID_INSTALLATION_ID";
 	readonly message: string;
 }> {}
 
@@ -123,7 +126,11 @@ export function declareHoboGitHubRepositoryStack(
 						owner: spec.owner,
 						repository: spec.name,
 						url: spec.webhookUrl,
-						events: spec.webhookEvents ?? ["workflow_job", "push", "pull_request"],
+						events: spec.webhookEvents ?? [
+							"workflow_job",
+							"push",
+							"pull_request",
+						],
 						...(spec.webhookSigningSecret !== undefined
 							? { secret: spec.webhookSigningSecret }
 							: undefined),

@@ -464,7 +464,7 @@ function routingAccessPattern(): string {
 
 function needsJobReferencePattern(jobId: string): string {
 	const index = String.raw`\[\s*(?:${quoteAlternatives(jobId)})\s*\]`;
-	const nestedIndex = String.raw`(?:${index})+`;
+	const nestedIndex = `(?:${index})+`;
 	const dot = DOT_JOB_ID.test(jobId)
 		? String.raw`\.\s*${caseFoldLiteral(jobId)}(?![\w-])|`
 		: "";
@@ -542,7 +542,7 @@ function groupedNeeds(reference: string): string {
 function jobPropertyPattern(access: string): string {
 	const starFilter = String.raw`(?:\.\s*\*|\[\s*(?:${quoteAlternatives("*")}|\*)\s*\])`;
 	const nonLiteralIndex = String.raw`\[(?!\s*${staticNeedsIndex()}\s*\])[\s\S]*?\]`;
-	const nestedNonLiteralIndex = String.raw`(?:${nonLiteralIndex})+`;
+	const nestedNonLiteralIndex = `(?:${nonLiteralIndex})+`;
 	return `(?:${access}|${starFilter}|${nonLiteralIndex}|${nestedNonLiteralIndex})`;
 }
 

@@ -27,6 +27,7 @@ export {
 export {
 	GhLintSandbox,
 	GhProtocolRejected,
+	GhRelayRouteFacts,
 	GhRunnerProtocol,
 	GhSandboxFailed,
 } from "./GhRelay.externals.js";
@@ -84,6 +85,7 @@ export {
 export {
 	EpochMs,
 	GH_AUTO_SIZES,
+	GH_DEFAULT_LINT_TOOLS,
 	GH_HOSTED_PROVIDERS,
 	GH_LINT_TOOLS,
 	GH_STEP_KEYS,
@@ -103,6 +105,7 @@ export {
 	GhMachineSnapshot,
 	GhRelayJobId,
 	GhRelayJobStatusTag,
+	GhRelayNodeId,
 	GhRepoSlug,
 	GhRetryPolicyConfig,
 	GhRetryTarget,
@@ -128,6 +131,7 @@ export {
 	isGhGithubHostedLabel,
 	isGhHostedProviderKey,
 	isGhProviderLabel,
+	isGhRunnerLabelToken,
 	type ParsedGhRunsOn,
 	parseGhAutoSize,
 	parseGhRelayInputs,

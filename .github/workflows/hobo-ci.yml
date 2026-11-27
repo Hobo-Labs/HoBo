@@ -615,6 +615,7 @@ jobs:
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store
@@ -712,6 +713,7 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: CI trace
         if: always()
         uses: $/.github/actions/ci-trace
@@ -757,6 +759,7 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
@@ -765,6 +768,7 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
           preferred-job: pr_gate_validation
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store
@@ -830,13 +834,11 @@ jobs:
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        # Matrix children share one cache key (github.job is the job id, not the
-        # shard), so racing saves of the same key fight over the reservation;
-        # only shard 0 saves, like scripts-tests.
-        if: always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'
+        if: always() && (github.event_name == 'merge_group' || matrix.shard == 0) && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: CI trace
         if: always()
         uses: $/.github/actions/ci-trace
@@ -881,6 +883,7 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
           preferred-job: pr_gate_validation
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store
@@ -1221,7 +1224,7 @@ jobs:
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
-      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
         with:
           distribution: temurin
           java-version: "21"
@@ -1898,6 +1901,9 @@ jobs:
         id: deps-layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - uses: $/.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
+          save-playwright-cache: ${{ matrix.shard == 0 && 'true' || 'false' }}
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:

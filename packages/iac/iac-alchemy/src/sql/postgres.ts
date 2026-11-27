@@ -33,8 +33,7 @@ export interface NeonPostgresStackSpec {
 
 export function declareNeonPostgresStack(spec: NeonPostgresStackSpec) {
 	const branchName = selectDatabaseBranchForStage(spec.stage);
-	const isProduction =
-		spec.stage === "prod" || spec.stage === "production";
+	const isProduction = spec.stage === "prod" || spec.stage === "production";
 	return Effect.gen(function* () {
 		const project = yield* Neon.Project(spec.projectId, {
 			...(spec.projectName !== undefined
@@ -95,7 +94,9 @@ export function declarePlanetscalePostgresStack(
 			database,
 			name: branchName,
 			parentBranch: "main",
-			...(spec.replicas !== undefined ? { replicas: spec.replicas } : undefined),
+			...(spec.replicas !== undefined
+				? { replicas: spec.replicas }
+				: undefined),
 			...(spec.migrationsDir !== undefined
 				? { migrationsDir: spec.migrationsDir }
 				: undefined),

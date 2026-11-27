@@ -4,6 +4,8 @@ import * as Schema from "effect/Schema";
 import { Activity } from "effect/workflow";
 import {
 	CloudBackendTarget,
+	decodeLoweredTtlEvidence,
+	decodeNonNegativeSeconds,
 	EpochMs,
 	NonEmptyReason,
 	ProgressiveRampPlan,
@@ -36,9 +38,11 @@ export class TrafficRoutingBackend extends Domain.ExternalSystem(
 			args: {
 				routeId: TrafficRouteId,
 				ttlSeconds: TtlSeconds,
+				previousTtlSeconds: TtlSeconds,
 			},
 			success: {
 				appliedTtlSeconds: TtlSeconds,
+				waitedSeconds: Schema.Int,
 			},
 			error: [RoutingMutationAmbiguous],
 		},
@@ -75,6 +79,16 @@ export class TrafficRoutingBackend extends Domain.ExternalSystem(
 			},
 			error: [RoutingMutationAmbiguous],
 		},
+		restoreTtl: {
+			args: {
+				routeId: TrafficRouteId,
+				ttlSeconds: TtlSeconds,
+			},
+			success: {
+				appliedTtlSeconds: TtlSeconds,
+			},
+			error: [RoutingMutationAmbiguous],
+		},
 	},
 ) {}
 
@@ -86,6 +100,7 @@ export class ExecuteProgressiveCutover extends Domain.Saga(
 			to: CloudBackendTarget,
 			rampPlan: ProgressiveRampPlan,
 			lowTtlSeconds: TtlSeconds,
+			previousTtlSeconds: TtlSeconds,
 			completedAtMs: EpochMs,
 		},
 		rejects: [CutoverNotInProgress, CutoverPreconditionRefused],
@@ -106,27 +121,42 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 			to,
 			rampPlan,
 			lowTtlSeconds,
+			previousTtlSeconds,
 			completedAtMs,
 		}) {
+			const flagReconciliation = (reason: NonEmptyReason) =>
+				routes.send(key, new FlagCutoverReconciliation({ reason })).pipe(
+					Effect.catchTag("CutoverPreconditionRefused", () => Effect.void),
+					Effect.asVoid,
+				);
 			const lowered = yield* Activity.make({
 				name: "lower-dns-ttl",
-				success: Schema.Struct({ appliedTtlSeconds: TtlSeconds }),
+				success: Schema.Struct({
+					appliedTtlSeconds: TtlSeconds,
+					waitedSeconds: Schema.Int,
+				}),
 				error: RoutingMutationAmbiguous,
 				execute: backend.lowerTtl({
 					routeId: key,
 					ttlSeconds: lowTtlSeconds,
+					previousTtlSeconds,
 				}),
 			}).pipe(Effect.result);
 
 			if (lowered._tag === "Failure") {
 				yield* Activity.make({
 					name: "flag-ttl-reconciliation",
-					execute: routes
-						.send(
-							key,
-							new FlagCutoverReconciliation({ reason: lowered.failure.reason }),
-						)
-						.pipe(Effect.asVoid),
+					execute: flagReconciliation(lowered.failure.reason),
+				});
+				return;
+			}
+
+			if (lowered.success.waitedSeconds < previousTtlSeconds) {
+				yield* Activity.make({
+					name: "flag-ttl-wait-reconciliation",
+					execute: flagReconciliation(
+						NonEmptyReason.make("ttl-wait-insufficient"),
+					),
 				});
 				return;
 			}
@@ -138,11 +168,32 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 					.send(
 						key,
 						new RecordTtlLowered({
-							ttlSeconds: lowered.success.appliedTtlSeconds,
+							evidence: decodeLoweredTtlEvidence({
+								previousTtlSeconds,
+								loweredTtlSeconds: lowered.success.appliedTtlSeconds,
+								waitedSeconds: decodeNonNegativeSeconds(
+									lowered.success.waitedSeconds,
+								),
+							}),
 						}),
 					)
 					.pipe(Effect.asVoid),
-			});
+			}).pipe(
+				ExecuteProgressiveCutover.withCompensation(() =>
+					Activity.make({
+						name: "compensate-restore-ttl-after-record",
+						execute: backend
+							.restoreTtl({
+								routeId: key,
+								ttlSeconds: previousTtlSeconds,
+							})
+							.pipe(
+								Effect.catchTag("RoutingMutationAmbiguous", () => Effect.void),
+								Effect.asVoid,
+							),
+					}),
+				),
+			);
 
 			for (const weightPercent of rampPlan) {
 				const applied = yield* Activity.make({
@@ -159,14 +210,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				if (applied._tag === "Failure") {
 					yield* Activity.make({
 						name: `flag-weight-reconciliation-${weightPercent}`,
-						execute: routes
-							.send(
-								key,
-								new FlagCutoverReconciliation({
-									reason: applied.failure.reason,
-								}),
-							)
-							.pipe(Effect.asVoid),
+						execute: flagReconciliation(applied.failure.reason),
 					});
 					return;
 				}
@@ -204,14 +248,7 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 				if (health._tag === "Failure") {
 					yield* Activity.make({
 						name: `flag-health-reconciliation-${weightPercent}`,
-						execute: routes
-							.send(
-								key,
-								new FlagCutoverReconciliation({
-									reason: health.failure.reason,
-								}),
-							)
-							.pipe(Effect.asVoid),
+						execute: flagReconciliation(health.failure.reason),
 					});
 					return;
 				}
@@ -236,9 +273,25 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 									);
 						yield* Activity.make({
 							name: `flag-restore-reconciliation-${weightPercent}`,
-							execute: routes
-								.send(key, new FlagCutoverReconciliation({ reason }))
-								.pipe(Effect.asVoid),
+							execute: flagReconciliation(reason),
+						});
+						return;
+					}
+
+					const ttlRestored = yield* Activity.make({
+						name: `restore-ttl-${weightPercent}`,
+						success: Schema.Struct({ appliedTtlSeconds: TtlSeconds }),
+						error: RoutingMutationAmbiguous,
+						execute: backend.restoreTtl({
+							routeId: key,
+							ttlSeconds: previousTtlSeconds,
+						}),
+					}).pipe(Effect.result);
+
+					if (ttlRestored._tag === "Failure") {
+						yield* Activity.make({
+							name: `flag-ttl-restore-reconciliation-${weightPercent}`,
+							execute: flagReconciliation(ttlRestored.failure.reason),
 						});
 						return;
 					}
@@ -249,7 +302,10 @@ export const ExecuteProgressiveCutoverLive = ExecuteProgressiveCutover.toLayer(
 						execute: routes
 							.send(
 								key,
-								new RollbackTrafficCutover({ reason: health.success.summary }),
+								new RollbackTrafficCutover({
+									reason: health.success.summary,
+									rolledBackAtMs: completedAtMs,
+								}),
 							)
 							.pipe(Effect.asVoid),
 					});

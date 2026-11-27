@@ -54,6 +54,13 @@ export const RRULE_LIMITS = Object.freeze({
 } as const);
 
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
+
+function weekdayIndex(code: string): number | undefined {
+	for (let index = 0; index < WEEKDAYS.length; index += 1) {
+		if (WEEKDAYS[index] === code) return index;
+	}
+	return undefined;
+}
 const FREQUENCIES: readonly Frequency[] = [
 	"DAILY",
 	"WEEKLY",
@@ -107,7 +114,9 @@ function weekdayList(value: string): readonly WeekdaySpec[] | undefined {
 		if (match[1] !== undefined && (ordinal === 0 || Math.abs(ordinal) > 53))
 			return undefined;
 		const code = match[2];
-		const weekday = WEEKDAYS.findIndex((day) => day === code);
+		if (code === undefined) return undefined;
+		const weekday = weekdayIndex(code);
+		if (weekday === undefined) return undefined;
 		out.push({ weekday, ordinal });
 	}
 	return out;

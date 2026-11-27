@@ -347,18 +347,22 @@ function matchBroadTurbo(tokens: readonly string[]): string | undefined {
 		);
 	});
 	if (hasNarrowFlag) return undefined;
+	const tasks: string[] = [];
 	while (index < tokens.length) {
 		const token = tokens[index] ?? "";
 		if (token.startsWith("-")) {
 			index += 1;
 			continue;
 		}
-		if (BROAD_TEST_SCRIPTS.has(token.toLowerCase())) {
-			return `turbo ${token}`;
-		}
-		return undefined;
+		tasks.push(token.toLowerCase());
+		index += 1;
 	}
-	return undefined;
+	if (tasks.length === 0) return undefined;
+	if (tasks.includes("build") && tasks.includes("test")) {
+		return "turbo run build test";
+	}
+	const broad = tasks.find((task) => BROAD_TEST_SCRIPTS.has(task));
+	return broad === undefined ? undefined : `turbo ${broad}`;
 }
 
 function matchBroadVitest(tokens: readonly string[]): string | undefined {
@@ -401,9 +405,29 @@ function matchBroadStatement(statement: string): string | undefined {
 	if (first === "turbo") return matchBroadTurbo(args);
 	if (first === "vitest") return matchBroadVitest(args);
 	if (first === "npx" || first === "pnpx") {
-		const sub = args[0]?.split("/").at(-1)?.toLowerCase() ?? "";
-		if (sub === "turbo") return matchBroadTurbo(args.slice(1));
-		if (sub === "vitest") return matchBroadVitest(args.slice(1));
+		let subIndex = 0;
+		while (subIndex < args.length) {
+			const candidate = args[subIndex] ?? "";
+			if (candidate === "--") {
+				subIndex += 1;
+				break;
+			}
+			if (candidate.startsWith("-")) {
+				subIndex += 1;
+				if (
+					(candidate.startsWith("-p") || candidate.startsWith("--package")) &&
+					!candidate.includes("=") &&
+					!candidate.startsWith("--package=")
+				) {
+					subIndex += 1;
+				}
+				continue;
+			}
+			break;
+		}
+		const sub = args[subIndex]?.split("/").at(-1)?.toLowerCase() ?? "";
+		if (sub === "turbo") return matchBroadTurbo(args.slice(subIndex + 1));
+		if (sub === "vitest") return matchBroadVitest(args.slice(subIndex + 1));
 		return undefined;
 	}
 	if (!PACKAGE_RUNNERS.has(first)) return undefined;
@@ -418,10 +442,28 @@ function matchBroadStatement(statement: string): string | undefined {
 			continue;
 		}
 		const lower = token.toLowerCase();
+		if (lower === "turbo") {
+			return matchBroadTurbo(args.slice(index + 1));
+		}
 		if (lower === "exec" || lower === "dlx") {
-			const execCmd = args[index + 1]?.split("/").at(-1)?.toLowerCase() ?? "";
-			if (execCmd === "turbo") return matchBroadTurbo(args.slice(index + 2));
-			if (execCmd === "vitest") return matchBroadVitest(args.slice(index + 2));
+			let execIndex = index + 1;
+			while (execIndex < args.length) {
+				const candidate = args[execIndex] ?? "";
+				if (candidate === "--") {
+					execIndex += 1;
+					break;
+				}
+				if (candidate.startsWith("-")) {
+					execIndex += 1;
+					continue;
+				}
+				break;
+			}
+			const execCmd = args[execIndex]?.split("/").at(-1)?.toLowerCase() ?? "";
+			if (execCmd === "turbo")
+				return matchBroadTurbo(args.slice(execIndex + 1));
+			if (execCmd === "vitest")
+				return matchBroadVitest(args.slice(execIndex + 1));
 			return undefined;
 		}
 		if (lower === "run") {

@@ -7,7 +7,7 @@ import {
 	GhAdvertKeyId,
 	GhMachineId,
 	GhMachineSharing,
-	GhMachineSnapshot,
+	type GhMachineSnapshot,
 	GhRelayJobId,
 	GhRunnerLabel,
 	NonNegativeCount,
@@ -382,7 +382,13 @@ export class GhMachinePool extends Domain.Aggregate("GhMachinePool", {
 				});
 			}
 			if (machine.activeJobIds.includes(cmd.jobId)) {
-				return [];
+				return [
+					new GhMachineSlotAcquired({
+						machineId: machine.machineId,
+						jobId: cmd.jobId,
+						runsOnLabel: machine.runsOnLabel,
+					}),
+				];
 			}
 			if (!machine.online) {
 				return new GhMachineSlotUnavailable({
@@ -467,13 +473,19 @@ export class GhMachinePool extends Domain.Aggregate("GhMachinePool", {
 		GhMachineTakenOver: (state, event) => ({
 			machines: state.machines.map((entry) =>
 				entry.machineId === event.machineId
-					? { ...entry, advertKeyId: event.newKeyId, lastSeenMs: event.takenOverAtMs }
+					? {
+							...entry,
+							advertKeyId: event.newKeyId,
+							lastSeenMs: event.takenOverAtMs,
+						}
 					: entry,
 			),
 		}),
 		GhMachinePaused: (state, event) => ({
 			machines: state.machines.map((entry) =>
-				entry.machineId === event.machineId ? { ...entry, paused: true } : entry,
+				entry.machineId === event.machineId
+					? { ...entry, paused: true }
+					: entry,
 			),
 		}),
 		GhMachineResumed: (state, event) => ({
@@ -498,7 +510,12 @@ export class GhMachinePool extends Domain.Aggregate("GhMachinePool", {
 		GhMachineSlotAcquired: (state, event) => ({
 			machines: state.machines.map((entry) =>
 				entry.machineId === event.machineId
-					? { ...entry, activeJobIds: [...entry.activeJobIds, event.jobId] }
+					? {
+							...entry,
+							activeJobIds: entry.activeJobIds.includes(event.jobId)
+								? entry.activeJobIds
+								: [...entry.activeJobIds, event.jobId],
+						}
 					: entry,
 			),
 		}),
@@ -521,10 +538,14 @@ export class GhMachinePool extends Domain.Aggregate("GhMachinePool", {
 				(event): event is GhMachineSlotAcquired =>
 					event._tag === "GhMachineSlotAcquired",
 			);
-			const fallback =
-				state.machines[0]?.runsOnLabel ?? GhRunnerLabel.make("hobo-machine");
+			if (acquired !== undefined) {
+				return { runsOnLabel: acquired.runsOnLabel };
+			}
+			const holding = state.machines.find(
+				(entry) => entry.activeJobIds.length > 0,
+			);
 			return {
-				runsOnLabel: acquired?.runsOnLabel ?? fallback,
+				runsOnLabel: holding?.runsOnLabel ?? GhRunnerLabel.make("hobo-machine"),
 			};
 		},
 	},

@@ -1,3 +1,4 @@
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import {
 	VercelAlias,
@@ -25,9 +26,15 @@ export interface BudgetRoutingDecision {
 	readonly reason:
 		| "credits-preferred"
 		| "lowest-cost-within-budget"
-		| "incumbent-held-hysteresis"
-		| "budget-exhausted";
+		| "incumbent-held-hysteresis";
 }
+
+export class DualCloudBudgetRouterError extends Data.TaggedError(
+	"DualCloudBudgetRouterError",
+)<{
+	readonly reason: "budget-exhausted" | "no-healthy-offers";
+	readonly message: string;
+}> {}
 
 export function selectDualCloudBudgetTarget(input: {
 	readonly offers: readonly DualCloudServiceOffer[];
@@ -61,14 +68,18 @@ export function selectDualCloudBudgetTarget(input: {
 
 	const best = scored[0];
 	if (best === undefined) {
-		const fallback = healthy[0] ?? input.offers[0];
-		return {
-			selectedProvider: fallback?.provider ?? "cloudflare",
-			selectedBackendId: fallback?.backendId ?? "none",
-			fallbackProvider: undefined,
-			netCostMicros: Number.MAX_SAFE_INTEGER,
+		if (healthy.length === 0) {
+			throw new DualCloudBudgetRouterError({
+				reason: "no-healthy-offers",
+				message:
+					"dual-cloud budget router refuses to select from zero healthy offers",
+			});
+		}
+		throw new DualCloudBudgetRouterError({
 			reason: "budget-exhausted",
-		};
+			message:
+				"dual-cloud budget router refuses to select an offer above the budget ceiling",
+		});
 	}
 
 	const incumbent =
@@ -134,8 +145,12 @@ export function declareVercelServiceStack(input: VercelServiceStackInput) {
 				projectId: project.projectId,
 				serviceName: input.serviceName,
 				artifactDigest: input.artifactDigest,
-				...(input.runtime !== undefined ? { runtime: input.runtime } : undefined),
-				...(input.regions !== undefined ? { regions: input.regions } : undefined),
+				...(input.runtime !== undefined
+					? { runtime: input.runtime }
+					: undefined),
+				...(input.regions !== undefined
+					? { regions: input.regions }
+					: undefined),
 				...(input.credentialConfigKey !== undefined
 					? { credentialConfigKey: input.credentialConfigKey }
 					: undefined),

@@ -845,6 +845,9 @@ importers:
       '@hobo/policy':
         specifier: workspace:*
         version: link:../policy
+      '@hobo/provider-redaction':
+        specifier: workspace:*
+        version: link:../provider-redaction
       '@hobo/registry':
         specifier: workspace:*
         version: link:../registry

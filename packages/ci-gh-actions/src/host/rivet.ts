@@ -1,5 +1,6 @@
 import * as DomainRivet from "@alchemy.run/domain/Rivet";
 import type { PoolHost } from "@alchemy.run/rivet/Host";
+import type { JsonValue } from "@hobo/core";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { actor, setup } from "rivetkit";
@@ -8,11 +9,18 @@ import {
 	type GhLintSandbox,
 	GhRelay,
 	GhRelayHandlers,
-	type GhRelayJobId,
-	type GhRepoSlug,
-	type GhRunnerLabel,
+	GhRelayJobId,
+	type GhRelayJobId as GhRelayJobIdType,
+	GhRepoSlug,
+	type GhRepoSlug as GhRepoSlugType,
+	GhRunnerLabel,
+	type GhRunnerLabel as GhRunnerLabelType,
 	type GhRunnerProtocol,
 } from "../domain/index.js";
+import {
+	GhRelayRouteFactsFailClosed,
+	type GhRelayRouteFactsService,
+} from "./route-facts.js";
 
 export type GhRunnerProtocolService = Layer.Success<
 	ReturnType<typeof GhRunnerProtocol.toLayer>
@@ -43,6 +51,7 @@ export interface GhRelayRivetHostOptions<
 		SandboxErr,
 		SandboxReq
 	>;
+	readonly routeFacts?: Layer.Layer<GhRelayRouteFactsService>;
 }
 
 export function createGhRelayRivetLayer<
@@ -68,7 +77,12 @@ export function createGhRelayRivetLayer<
 	});
 	return GhRelay.layer(GhRelayHandlers).pipe(
 		Layer.provide(
-			Layer.mergeAll(rivetPlatform, options.runnerProtocol, options.lintSandbox),
+			Layer.mergeAll(
+				rivetPlatform,
+				options.runnerProtocol,
+				options.lintSandbox,
+				options.routeFacts ?? GhRelayRouteFactsFailClosed,
+			),
 		),
 	);
 }
@@ -113,11 +127,22 @@ export interface GhPickRunnerEvent {
 }
 
 export interface EnqueuePickRunnerInput {
-	readonly jobId: GhRelayJobId;
-	readonly repository: GhRepoSlug;
-	readonly runsOn: GhRunnerLabel;
+	readonly jobId: GhRelayJobIdType;
+	readonly repository: GhRepoSlugType;
+	readonly runsOn: GhRunnerLabelType;
 	readonly rescueAfterMs: number;
 }
+
+const EnqueuePickRunnerInputSchema = Schema.Struct({
+	jobId: GhRelayJobId,
+	repository: GhRepoSlug,
+	runsOn: GhRunnerLabel,
+	rescueAfterMs: Schema.Int,
+});
+
+const decodeEnqueuePickRunnerInput = Schema.decodeUnknownSync(
+	EnqueuePickRunnerInputSchema,
+);
 
 export interface ClaimPickRunnerInput {
 	readonly jobId: GhRelayJobId;
@@ -126,12 +151,11 @@ export interface ClaimPickRunnerInput {
 
 export interface AnswerPickRunnerInput {
 	readonly jobId: GhRelayJobId;
+	readonly nodeId: string;
 	readonly chosenRunner: GhRunnerLabel;
 }
 
-function toRecord(
-	row: typeof PickRunnerRowSchema.Type,
-): GhPickRunnerJobRecord {
+function toRecord(row: typeof PickRunnerRowSchema.Type): GhPickRunnerJobRecord {
 	return {
 		jobId: row.job_id,
 		repository: row.repository,
@@ -178,10 +202,8 @@ export function createGhPickRunnerRegistry(
 			},
 		}),
 		actions: {
-			enqueueJob: async (
-				c,
-				input: EnqueuePickRunnerInput,
-			): Promise<GhPickRunnerJobRecord> => {
+			enqueueJob: async (c, raw: JsonValue): Promise<GhPickRunnerJobRecord> => {
+				const input = decodeEnqueuePickRunnerInput(raw);
 				const existingRows = decodePickRunnerRows(
 					await c.db.execute(
 						"SELECT job_id, repository, runs_on, status, node_id, chosen_runner, queued_at_ms, rescue_at_ms FROM gh_pick_runner_jobs WHERE job_id = ?",
@@ -237,11 +259,21 @@ export function createGhPickRunnerRegistry(
 					input.nodeId,
 					input.jobId,
 				);
-				const claimed: GhPickRunnerJobRecord = {
-					...toRecord(existing),
-					status: "claimed",
-					nodeId: input.nodeId,
-				};
+				const afterClaim = decodePickRunnerRows(
+					await c.db.execute(
+						"SELECT job_id, repository, runs_on, status, node_id, chosen_runner, queued_at_ms, rescue_at_ms FROM gh_pick_runner_jobs WHERE job_id = ?",
+						input.jobId,
+					),
+				);
+				const row = afterClaim[0];
+				if (
+					row === undefined ||
+					row.status !== "claimed" ||
+					row.node_id !== input.nodeId
+				) {
+					return null;
+				}
+				const claimed = toRecord(row);
 				c.broadcast("relayUpdated", { action: "claimed", job: claimed });
 				return claimed;
 			},
@@ -260,17 +292,35 @@ export function createGhPickRunnerRegistry(
 				if (existing.status === "answered" || existing.status === "rescued") {
 					return toRecord(existing);
 				}
+				if (existing.status !== "claimed") {
+					return null;
+				}
+				if (existing.node_id !== input.nodeId) {
+					return null;
+				}
 
 				await c.db.execute(
-					"UPDATE gh_pick_runner_jobs SET status = 'answered', chosen_runner = ? WHERE job_id = ?",
+					"UPDATE gh_pick_runner_jobs SET status = 'answered', chosen_runner = ? WHERE job_id = ? AND status = 'claimed' AND node_id = ?",
 					input.chosenRunner,
 					input.jobId,
+					input.nodeId,
 				);
-				const answered: GhPickRunnerJobRecord = {
-					...toRecord(existing),
-					status: "answered",
-					chosenRunner: input.chosenRunner,
-				};
+				const afterAnswer = decodePickRunnerRows(
+					await c.db.execute(
+						"SELECT job_id, repository, runs_on, status, node_id, chosen_runner, queued_at_ms, rescue_at_ms FROM gh_pick_runner_jobs WHERE job_id = ?",
+						input.jobId,
+					),
+				);
+				const row = afterAnswer[0];
+				if (
+					row === undefined ||
+					row.status !== "answered" ||
+					row.node_id !== input.nodeId ||
+					row.chosen_runner !== input.chosenRunner
+				) {
+					return null;
+				}
+				const answered = toRecord(row);
 				c.broadcast("relayUpdated", { action: "answered", job: answered });
 				return answered;
 			},
@@ -286,6 +336,9 @@ export function createGhPickRunnerRegistry(
 				);
 				const existing = rows[0];
 				if (existing === undefined || existing.status !== "queued") {
+					return { rescued: false, jobId };
+				}
+				if (Date.now() < existing.rescue_at_ms) {
 					return { rescued: false, jobId };
 				}
 				await c.db.execute(

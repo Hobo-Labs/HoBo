@@ -7,8 +7,8 @@
 		},
 		{
 			"from": "packages/iac/iac-alchemy/test/core-isolation.test.ts",
-			"needs": ["@hobo/core#build"],
-			"why": "inspects shared package source and metadata through computed paths; the test dependency checker conservatively schedules core's build even though the scan does not execute it"
+			"needs": ["@hobo/core#build", "@hobo/dispatcher#build"],
+			"why": "scans dispatcher package sources on disk for the narrow @alchemy.run/domain allowance and negative isolation cases; core metadata paths use computed reaches under packages/core"
 		},
 		{
 			"from": "packages/runtime/test/durable-messaging-async-component.test.ts",

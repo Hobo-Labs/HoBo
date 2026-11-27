@@ -16,6 +16,13 @@ export class ConnectionNotAuthorized extends Domain.Rejection(
 	},
 ) {}
 
+export class ConnectionRebindRefused extends Domain.Rejection(
+	"ConnectionRebindRefused",
+	{
+		providerId: Schema.String,
+	},
+) {}
+
 export class ProviderConnectionAuthorized extends Domain.Event(
 	"ProviderConnectionAuthorized",
 	{
@@ -43,7 +50,7 @@ export class AuthorizeProviderConnection extends Domain.Command(
 			scopeRef: Schema.String,
 		},
 		events: [ProviderConnectionAuthorized],
-		rejects: [ConnectionAlreadyRevoked],
+		rejects: [ConnectionAlreadyRevoked, ConnectionRebindRefused],
 	},
 	{ description: "Authorize a station-scoped provider connection." },
 ) {}
@@ -84,6 +91,18 @@ export class ProviderConnection extends Domain.Aggregate("ProviderConnection", {
 		AuthorizeProviderConnection: (state, cmd) => {
 			if (state.status === "revoked") {
 				return new ConnectionAlreadyRevoked({
+					providerId: state.providerId ?? cmd.providerId,
+				});
+			}
+			if (state.status === "authorized") {
+				if (
+					state.providerId === cmd.providerId &&
+					state.stationId === cmd.stationId &&
+					state.scopeRef === cmd.scopeRef
+				) {
+					return [];
+				}
+				return new ConnectionRebindRefused({
 					providerId: state.providerId ?? cmd.providerId,
 				});
 			}

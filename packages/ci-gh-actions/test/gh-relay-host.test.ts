@@ -19,6 +19,7 @@ import {
 	GhMachineId,
 	GhRelayApi,
 	GhRelayJobId,
+	GhRelayNodeId,
 	GhRepoSlug,
 	GhRunnerLabel,
 	GhRunnerProtocol,
@@ -120,7 +121,11 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 					repository: REPO,
 					order: {
 						steps: [
-							{ key: "depot", minutesLimitPercent: null, spendLimitCents: null },
+							{
+								key: "depot",
+								minutesLimitPercent: null,
+								spendLimitCents: null,
+							},
 							{
 								key: "github",
 								minutesLimitPercent: null,
@@ -143,9 +148,7 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 						isPrivate: true,
 						isFork: false,
 						actorId: ACTOR,
-						runsOn: [
-							GhRunnerLabel.make("hobo/depot=auto/github=ubuntu-24.04"),
-						],
+						runsOn: [GhRunnerLabel.make("hobo/depot=auto/github=ubuntu-24.04")],
 						candidates: [],
 						first: null,
 						size: 8,
@@ -153,6 +156,7 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 						hasNonCheckSteps: false,
 						pullRequestTitle: null,
 						nowMs: T0,
+						claimNodeId: GhRelayNodeId.make("hobo-relay-node"),
 					},
 				});
 
@@ -209,6 +213,7 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 							hasNonCheckSteps: false,
 							pullRequestTitle: "feat: durable check",
 							nowMs: T0,
+							claimNodeId: GhRelayNodeId.make("hobo-relay-node"),
 						},
 					});
 					for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -252,82 +257,132 @@ describe("@hobo/ci-gh-actions/host portable hosting (InMemory, HTTP, SQLite, Riv
 		expect(buildLayer).toBeTypeOf("function");
 	});
 
-	it(
-		"persists pick-runner jobs in RivetKit SQLite, broadcasts relayUpdated events, and rescues stale queued jobs via setupTest",
-		async (testCtx) => {
-			const engine = await startLocalRivetTestEngine();
-			try {
-				const registry = createGhPickRunnerRegistry({
-					endpoint: engine.endpoint,
-					token: engine.token,
-					httpHost: engine.httpHost,
-					httpPort: engine.httpPort,
-					startEngine: false,
-					noWelcome: true,
-					shutdown: {
-						gracePeriodMs: 2_000,
-						disableSignalHandlers: true,
+	it("persists pick-runner jobs in RivetKit SQLite, broadcasts relayUpdated events, and rescues stale queued jobs via setupTest", async (testCtx) => {
+		const engine = await startLocalRivetTestEngine();
+		try {
+			const registry = createGhPickRunnerRegistry({
+				endpoint: engine.endpoint,
+				token: engine.token,
+				httpHost: engine.httpHost,
+				httpPort: engine.httpPort,
+				startEngine: false,
+				noWelcome: true,
+				shutdown: {
+					gracePeriodMs: 2_000,
+					disableSignalHandlers: true,
+				},
+			});
+
+			const { client } = await setupTest(testCtx, registry);
+			const handle = client.ghPickRunner.getOrCreate(["acct-rivet-1"]);
+			const conn = handle.connect();
+			const events: GhPickRunnerEvent[] = [];
+			conn.on("relayUpdated", (event: GhPickRunnerEvent) => {
+				events.push(event);
+			});
+
+			const queued = await conn.enqueueJob({
+				jobId: GhRelayJobId.make("gh-job-1"),
+				repository: REPO,
+				runsOn: GhRunnerLabel.make("hobo/depot=auto/github=ubuntu-24.04"),
+				rescueAfterMs: 60_000,
+			});
+			expect(queued.status).toBe("queued");
+
+			const claimed = await conn.claimJob({
+				jobId: GhRelayJobId.make("gh-job-1"),
+				nodeId: "relay-node-a",
+			});
+			expect(claimed?.status).toBe("claimed");
+			expect(claimed?.nodeId).toBe("relay-node-a");
+
+			const raced = await conn.claimJob({
+				jobId: GhRelayJobId.make("gh-job-1"),
+				nodeId: "relay-node-b",
+			});
+			expect(raced?.status).toBe("claimed");
+			expect(raced?.nodeId).toBe("relay-node-a");
+
+			const wrongNodeAnswer = await conn.answerJob({
+				jobId: GhRelayJobId.make("gh-job-1"),
+				nodeId: "relay-node-b",
+				chosenRunner: GhRunnerLabel.make("depot-ubuntu-24.04"),
+			});
+			expect(wrongNodeAnswer).toBeNull();
+
+			const answered = await conn.answerJob({
+				jobId: GhRelayJobId.make("gh-job-1"),
+				nodeId: "relay-node-a",
+				chosenRunner: GhRunnerLabel.make("depot-ubuntu-24.04"),
+			});
+			expect(answered?.status).toBe("answered");
+			expect(answered?.chosenRunner).toBe("depot-ubuntu-24.04");
+
+			const earlyRescue = await conn.rescueStaleJob(
+				GhRelayJobId.make("gh-job-1"),
+			);
+			expect(earlyRescue.rescued).toBe(false);
+
+			await conn.enqueueJob({
+				jobId: GhRelayJobId.make("gh-job-stale"),
+				repository: REPO,
+				runsOn: GhRunnerLabel.make("hobo-relay"),
+				rescueAfterMs: 80,
+			});
+
+			await expect
+				.poll(
+					async () => {
+						const jobs = await conn.listJobs();
+						return jobs.find((item) => item.jobId === "gh-job-stale")?.status;
 					},
-				});
+					{ timeout: 5_000, interval: 40 },
+				)
+				.toBe("rescued");
 
-				const { client } = await setupTest(testCtx, registry);
-				const handle = client.ghPickRunner.getOrCreate(["acct-rivet-1"]);
-				const conn = handle.connect();
-				const events: GhPickRunnerEvent[] = [];
-				conn.on("relayUpdated", (event: GhPickRunnerEvent) => {
-					events.push(event);
-				});
+			await vi.waitFor(() => {
+				expect(events.map((event) => event.action)).toEqual(
+					expect.arrayContaining(["queued", "claimed", "answered", "rescued"]),
+				);
+			});
 
-				const queued = await conn.enqueueJob({
-					jobId: GhRelayJobId.make("gh-job-1"),
-					repository: REPO,
-					runsOn: GhRunnerLabel.make("hobo/depot=auto/github=ubuntu-24.04"),
-					rescueAfterMs: 60_000,
-				});
-				expect(queued.status).toBe("queued");
+			await conn.dispose();
+		} finally {
+			await engine.stop();
+		}
+	}, 25_000);
 
-				const claimed = await conn.claimJob({
-					jobId: GhRelayJobId.make("gh-job-1"),
-					nodeId: "relay-node-a",
-				});
-				expect(claimed?.status).toBe("claimed");
-				expect(claimed?.nodeId).toBe("relay-node-a");
-
-				const answered = await conn.answerJob({
-					jobId: GhRelayJobId.make("gh-job-1"),
-					chosenRunner: GhRunnerLabel.make("depot-ubuntu-24.04"),
-				});
-				expect(answered?.status).toBe("answered");
-				expect(answered?.chosenRunner).toBe("depot-ubuntu-24.04");
-
-				await conn.enqueueJob({
-					jobId: GhRelayJobId.make("gh-job-stale"),
-					repository: REPO,
-					runsOn: GhRunnerLabel.make("hobo-relay"),
-					rescueAfterMs: 80,
-				});
-
-				await expect
-					.poll(
-						async () => {
-							const jobs = await conn.listJobs();
-							return jobs.find((item) => item.jobId === "gh-job-stale")?.status;
-						},
-						{ timeout: 5_000, interval: 40 },
-					)
-					.toBe("rescued");
-
-				await vi.waitFor(() => {
-					expect(events.map((event) => event.action)).toEqual(
-						expect.arrayContaining(["queued", "claimed", "answered", "rescued"]),
-					);
-				});
-
-				await conn.dispose();
-			} finally {
-				await engine.stop();
-			}
-		},
-		25_000,
-	);
+	it("rejects unvalidated pick-runner enqueue input at the Rivet boundary", async (testCtx) => {
+		const engine = await startLocalRivetTestEngine();
+		try {
+			const registry = createGhPickRunnerRegistry({
+				endpoint: engine.endpoint,
+				token: engine.token,
+				httpHost: engine.httpHost,
+				httpPort: engine.httpPort,
+				startEngine: false,
+				noWelcome: true,
+				shutdown: {
+					gracePeriodMs: 2_000,
+					disableSignalHandlers: true,
+				},
+			});
+			const { client } = await setupTest(testCtx, registry);
+			const conn = client.ghPickRunner
+				.getOrCreate(["acct-rivet-invalid"])
+				.connect();
+			await expect(
+				// SAFETY: assertion to `as never` is required at this boundary to exercise Rivet schema rejection.
+				conn.enqueueJob({
+					jobId: "",
+					repository: "not-a-repo-slug",
+					runsOn: GhRunnerLabel.make("hobo"),
+					rescueAfterMs: 10,
+				} as never),
+			).rejects.toThrow();
+			await conn.dispose();
+		} finally {
+			await engine.stop();
+		}
+	});
 });

@@ -33,6 +33,18 @@ export class BudgetExposureView extends Domain.View("BudgetExposureView", {
 			...state,
 			heldMicros: state.heldMicros + event.amountMicros,
 		}),
+		BudgetHoldReleased: (state, event) => ({
+			...state,
+			heldMicros: Math.max(0, state.heldMicros - event.releasedMicros),
+		}),
+		BudgetHoldResolved: (state) => ({
+			...state,
+			uncertainHoldCount: Math.max(0, state.uncertainHoldCount - 1),
+		}),
+		BudgetHoldsExpired: (state, event) => ({
+			...state,
+			heldMicros: Math.max(0, state.heldMicros - event.releasedMicros),
+		}),
 		BudgetHoldSettled: (state, event) => ({
 			...state,
 			settledMicros: state.settledMicros + event.settledMicros,
@@ -105,6 +117,9 @@ export class BrokerControlApi extends Domain.Api(
 			"ConfigureBudgetAccount",
 			"ReserveBudgetHold",
 			"SettleBudgetHold",
+			"ReleaseBudgetHold",
+			"ResolveBudgetHold",
+			"ExpireBudgetHolds",
 			"MarkBudgetHoldUncertain",
 			"AuthorizeProviderConnection",
 			"RevokeProviderConnection",

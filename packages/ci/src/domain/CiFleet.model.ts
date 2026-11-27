@@ -5,6 +5,8 @@ import { JobDispatch } from "./JobDispatch.aggregate.js";
 import {
 	JobCompletedPolicy,
 	JobCompletedPolicyLive,
+	JobExpiredPolicy,
+	JobExpiredPolicyLive,
 	JobObservedPolicy,
 	JobObservedPolicyLive,
 } from "./JobDispatch.policies.js";
@@ -16,7 +18,7 @@ export class CiFleet extends Domain.Model(
 	{
 		aggregates: [StationFleet, JobDispatch],
 		views: [FleetCapacityView, RoutingAuditView],
-		policies: [JobObservedPolicy, JobCompletedPolicy],
+		policies: [JobObservedPolicy, JobCompletedPolicy, JobExpiredPolicy],
 		sagas: [DispatchJob],
 	},
 	{
@@ -28,6 +30,7 @@ export class CiFleet extends Domain.Model(
 export const CiFleetHandlers = Layer.mergeAll(
 	JobObservedPolicyLive,
 	JobCompletedPolicyLive,
+	JobExpiredPolicyLive,
 	DispatchJobLive,
 );
 

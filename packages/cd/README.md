@@ -30,7 +30,7 @@ typed failures and a **Runbook** section; `konsistent` enforces the README).
 | `@hobo/cd/pipelines` | `src/pipelines/` | Pipeline graph, availability, lineage (D4, I16) |
 | `@hobo/cd/windows` | `src/windows/` | Change windows and overrides (D10, I17) |
 | `@hobo/cd/promotion` | `src/promotion/` | Promotion saga, gate, previews, Trails sequencing, rollback (D4, D11, D12) |
-| `@hobo/cd/reconcile` | `src/reconcile/` | Reconcilers, realizers, drift, retained fields (D5, D6, D22, I2–I5) |
+| `@hobo/cd/reconcile` | `src/reconcile/` | Reconcilers, realizers, drift, retained fields (D5, D6, D22, I2–I5). `RESOLVER_*` and `realize-failed` observations export generic operator text only; release Freight blocked verdicts add stable codes plus structured credential-scope fields authored by the release script. |
 | `@hobo/cd/verification` | `src/verification/` | Verification engine and health sources (D9, I5) |
 | `@hobo/cd/rollout` | `src/rollout/` | Capability lowering and the rollout orchestrator (D7, D8) |
 | `@hobo/cd/feed` | `src/feed/` | Delivery feed for agents (D5) |

@@ -1,17 +1,21 @@
 import * as DomainRivet from "@alchemy.run/domain/Rivet";
 import type { PoolHost } from "@alchemy.run/rivet/Host";
+import type { JsonValue } from "@hobo/core";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { actor, setup } from "rivetkit";
 import { db } from "rivetkit/db";
 import {
-	type CampTargetId,
+	CampTargetId,
+	type CampTargetId as CampTargetIdType,
 	type CdCampRealizer,
-	type CdPromotionId,
+	CdPromotionId,
+	type CdPromotionId as CdPromotionIdType,
 	CdRelease,
 	CdReleaseHandlers,
 	type CdVerificationGate,
-	type FreightDigest,
+	FreightDigest,
+	type FreightDigest as FreightDigestType,
 	type NonEmptyReason,
 } from "../domain/index.js";
 
@@ -110,11 +114,22 @@ export interface CdPromotionGateEvent {
 }
 
 export interface OpenCdPromotionGateInput {
-	readonly promotionId: CdPromotionId;
-	readonly campId: CampTargetId;
-	readonly freightDigest: FreightDigest;
+	readonly promotionId: CdPromotionIdType;
+	readonly campId: CampTargetIdType;
+	readonly freightDigest: FreightDigestType;
 	readonly deadlineMs: number;
 }
+
+const OpenCdPromotionGateInputSchema = Schema.Struct({
+	promotionId: CdPromotionId,
+	campId: CampTargetId,
+	freightDigest: FreightDigest,
+	deadlineMs: Schema.Int,
+});
+
+const decodeOpenCdPromotionGateInput = Schema.decodeUnknownSync(
+	OpenCdPromotionGateInputSchema,
+);
 
 export interface ResolveCdPromotionGateInput {
 	readonly promotionId: CdPromotionId;
@@ -167,10 +182,8 @@ export function createCdPromotionGateRegistry(
 			},
 		}),
 		actions: {
-			openGate: async (
-				c,
-				input: OpenCdPromotionGateInput,
-			): Promise<CdPromotionGateRecord> => {
+			openGate: async (c, raw: JsonValue): Promise<CdPromotionGateRecord> => {
+				const input = decodeOpenCdPromotionGateInput(raw);
 				const existingRows = decodeGateRows(
 					await c.db.execute(
 						"SELECT promotion_id, camp_id, freight_digest, status, summary, created_at_ms, deadline_at_ms FROM cd_promotion_gates WHERE promotion_id = ?",
@@ -254,6 +267,9 @@ export function createCdPromotionGateRegistry(
 				);
 				const existing = rows[0];
 				if (existing === undefined || existing.status !== "pending") {
+					return { expired: false, promotionId };
+				}
+				if (Date.now() < existing.deadline_at_ms) {
 					return { expired: false, promotionId };
 				}
 				await c.db.execute(
