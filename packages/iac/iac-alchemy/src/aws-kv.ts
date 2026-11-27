@@ -2,15 +2,9 @@
 import { types } from "node:util";
 import type { Credentials } from "@distilled.cloud/aws/Credentials";
 import * as DynamoDB from "@distilled.cloud/aws/dynamodb";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import type * as HttpClient from "effect/http/HttpClient";
 import type * as Layer from "effect/Layer";
-import {
-	type BoundaryBox,
-	createBoundaryDeferred,
-	raceBoundary,
-} from "./async-boundary.js";
+import { createAwsRuntimeBoundary } from "./aws-runtime-boundary.js";
 import { acceptSynchronousTrue } from "./synchronous-result.js";
 
 export const AWS_KV_MAX_KEY_BYTES = 2048;
@@ -30,10 +24,6 @@ const isProxy = types.isProxy;
 const tablePattern = /^[-A-Za-z0-9_.]{3,255}$/u;
 const regionPattern = /^[a-z0-9-]{3,63}$/u;
 const digestPattern = /^sha256:[a-f0-9]{64}$/u;
-const runCallback = Effect.runCallback;
-const isSuccess = Exit.isSuccess;
-const schedule = setTimeout;
-const cancel = clearTimeout;
 const define = Object.defineProperty;
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
 const byteLength = Object.getOwnPropertyDescriptor(
@@ -157,7 +147,6 @@ export function createAwsDynamoKvStore(options: {
 		grantEpoch: input.grantEpoch,
 		allow: Object.freeze(allow),
 	});
-	let inFlight = 0;
 	const authorized = (op: AwsKvOperation, key: string): boolean => {
 		try {
 			return (
@@ -186,19 +175,14 @@ export function createAwsDynamoKvStore(options: {
 		}
 		return key;
 	};
-	const perform = async <T>(
-		op: AwsKvOperation,
-		key: string,
-		effect: Effect.Effect<T, unknown, Credentials | HttpClient.HttpClient>,
-	): Promise<BoundaryBox<T>> => {
-		if (!authorized(op, key))
-			throw new AwsKvError("AWS_KV_DENIED", "operation is not authorized");
-		if (inFlight >= AWS_KV_MAX_IN_FLIGHT)
-			throw new AwsKvError("AWS_KV_CAPACITY", "too many outstanding calls");
-		inFlight++;
-		const completion = createBoundaryDeferred<T>();
-		const deadline = createBoundaryDeferred<T>();
-		const unavailable = () =>
+	const boundary = createAwsRuntimeBoundary<AwsKvOperation>({
+		layer,
+		authorize: authorized,
+		denied: () =>
+			new AwsKvError("AWS_KV_DENIED", "operation is not authorized"),
+		capacity: () =>
+			new AwsKvError("AWS_KV_CAPACITY", "too many outstanding calls"),
+		unavailable: (op) =>
 			new AwsKvError(
 				op === "get"
 					? "AWS_KV_READ_UNAVAILABLE"
@@ -206,41 +190,10 @@ export function createAwsDynamoKvStore(options: {
 				op === "get"
 					? "read failed"
 					: "mutation may have taken effect; reconcile before retry",
-			);
-		try {
-			runCallback(effect.pipe(Effect.provide(layer)), {
-				onExit(exit) {
-					inFlight--;
-					if (isSuccess(exit)) completion.resolve(exit.value);
-					else completion.reject(undefined);
-				},
-			});
-		} catch {
-			throw unavailable();
-		}
-		const timer = schedule(
-			() => deadline.reject(undefined),
-			AWS_KV_DEADLINE_MS,
-		);
-		try {
-			const value = await raceBoundary(completion.promise, deadline.promise);
-			if (!authorized(op, key)) throw new Error("authorization changed");
-			return value;
-		} catch {
-			throw unavailable();
-		} finally {
-			cancel(timer);
-		}
-	};
-	const beforeReturn = (op: AwsKvOperation, key: string): void => {
-		if (!authorized(op, key))
-			throw new AwsKvError(
-				op === "get"
-					? "AWS_KV_READ_UNAVAILABLE"
-					: "AWS_KV_MUTATION_OUTCOME_UNKNOWN",
-				"authorization changed before completion",
-			);
-	};
+			),
+	});
+	const perform = boundary.run;
+	const beforeReturn = boundary.beforeReturn;
 	const get = async (key: string): Promise<Uint8Array | undefined> => {
 		const checkedKey = keyOf(key);
 		const result = (

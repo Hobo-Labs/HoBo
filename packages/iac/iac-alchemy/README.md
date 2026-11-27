@@ -82,6 +82,19 @@ verifier and transport behave as specified; it does not prove those components.
 It models one bounded store and permits transport to remain in flight after a
 caller times out.
 
+For bounded Node.js S3 objects, use `withAwsS3(bindle, { assets: true })` and
+`awsS3BindleMappers()` from `@hobo/iac-alchemy/aws/s3-mapper`. To combine S3
+and DynamoDB on the same target, apply both target choices and pass
+`awsDynamoKvBindleMappers()` to `awsS3BindleMappers`. These target views retain
+the original neutral Bindle unchanged. The separate
+`createAwsS3Store` runtime requires a host-authenticated bucket and grant,
+per-key authorization, IAM and the AWS credentials and HTTP Effect layer. It
+supports objects up to 1 MiB, 1,024-byte keys, at most 1,024 body chunks and
+SHA-256 content-digest metadata. Failed writes and deletes have unknown
+outcomes; the host must fence ownership changes and reconcile them. It does not
+bind an application or WASI guest, implement blob events or version management,
+or authenticate the digest against a separate authority.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
@@ -944,3 +957,12 @@ and fence in-flight work. Values are limited to 256 KiB to leave room for keys a
 attributes within DynamoDB's item limit. If completion observation cannot be
 established after an effect may have started, its capacity remains occupied.
 This slice does not yet map the runtime into applications.
+The shared transport boundary permits at most 32 concurrent operations per
+store and uses a ten-second deadline. A deadline does not stop the provider.
+
+The optional Node.js S3 runtime supports bounded object reads, writes and
+deletes with per-key grants and a one MiB object limit. The host authenticates
+the bucket incarnation and IAM scope on each operation. Responses with invalid
+metadata or ranges consume at most one chunk so the stream scope closes;
+uncertain mutations require reconciliation. This runtime is not yet bound to
+applications.

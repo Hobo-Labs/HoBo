@@ -94,6 +94,14 @@
 		"./aws/kv-mapper": {
 			"types": "./dist/aws-kv-mapper.d.ts",
 			"default": "./dist/aws-kv-mapper.js"
+		},
+		"./aws/s3": {
+			"types": "./dist/aws-s3.d.ts",
+			"default": "./dist/aws-s3.js"
+		},
+		"./aws/s3-mapper": {
+			"types": "./dist/aws-s3-mapper.d.ts",
+			"default": "./dist/aws-s3-mapper.js"
 		}
 	},
 	"dependencies": {

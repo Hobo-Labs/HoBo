@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
@@ -27,6 +28,8 @@ import {
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
+import { createAwsS3Store } from "../src/aws-s3.js";
+import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import { mapBindleToAlchemy } from "../src/bindle.js";
 
 const credentials = {
@@ -34,23 +37,30 @@ const credentials = {
 	secretAccessKey: Redacted.make("local"),
 };
 
-async function mappedResources(nativeKv = false) {
+async function mappedResources(nativeKv = false, nativeS3 = false) {
 	const definition = bindle("shop", (b) => ({
-		objects: b.bucket(),
+		objects: nativeS3
+			? b.bucket().allow("read", "write", "delete")
+			: b.bucket(),
 		sessions: nativeKv ? b.kv().allow("get", "set", "delete") : b.kv(),
 		jobs: b.queue(),
 		events: b.topic(),
 	}));
-	const selected = nativeKv
+	const kvSelected = nativeKv
 		? withAwsDynamoKv(definition, { sessions: true })
 		: definition;
+	const selected = nativeS3
+		? withAwsS3(kvSelected, { objects: true })
+		: kvSelected;
+	const baseMappers = nativeKv
+		? awsDynamoKvBindleMappers()
+		: awsBindleMappers();
+	const mappers = nativeS3 ? awsS3BindleMappers(baseMappers) : baseMappers;
 	// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 	const mapped = await Effect.runPromise(
-		mapBindleToAlchemy(
-			selected,
-			nativeKv ? awsDynamoKvBindleMappers() : awsBindleMappers(),
-			{ assessRequirements: () => ({ status: "supported" as const }) },
-		).pipe(
+		mapBindleToAlchemy(selected, mappers, {
+			assessRequirements: () => ({ status: "supported" as const }),
+		}).pipe(
 			Effect.provideService(StackContext, {
 				name: "shop",
 				stage: "test",
@@ -244,7 +254,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				app.fetch(new Request(url, init)),
 			),
 		);
-		const { bucket } = await mappedResources();
+		const { bucket } = await mappedResources(false, true);
 		const first = await precreate(bucket, layer);
 		const second = await precreate(bucket, layer);
 		expect(second.bucketName).toBe(first.bucketName);
@@ -253,6 +263,30 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				.s3Buckets.all()
 				.map((entry) => entry.bucket_name),
 		).toEqual([first.bucketName]);
+		const objectStore = createAwsS3Store({
+			grant: {
+				bucketName: first.bucketName,
+				region: "us-east-1",
+				resourceEpoch: `sha256:${"a".repeat(64)}`,
+				grantEpoch: `sha256:${"b".repeat(64)}`,
+				allow: ["read", "write", "delete"],
+			},
+			verify: () => true,
+			layer,
+		});
+		const body = new Uint8Array([0, 255, 7]);
+		const digest = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+		const object = {
+			name: "object",
+			contentType: "application/octet-stream",
+			digest,
+			size: body.length,
+			body,
+		};
+		await objectStore.write(object);
+		expect(await objectStore.read(object.name)).toEqual(object);
+		await objectStore.delete(object.name);
+		expect(await objectStore.read(object.name)).toBeUndefined();
 	});
 
 	it("reports the unsupported queue tag check after the emulator creates the queue", async () => {
@@ -298,11 +332,57 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					connect: { ca, servername: "localhost" },
 				}),
 			);
-			const { bucket } = await mappedResources();
+			const { bucket } = await mappedResources(false, true);
 			const first = await precreate(bucket, layer);
 			const second = await precreate(bucket, layer);
 			expect(first.bucketArn).toBe(`arn:aws:s3:::${first.bucketName}`);
 			expect(second.bucketName).toBe(first.bucketName);
+			let authorized = true;
+			const store = createAwsS3Store({
+				grant: {
+					bucketName: first.bucketName,
+					region: "us-east-1",
+					resourceEpoch: `sha256:${"a".repeat(64)}`,
+					grantEpoch: `sha256:${"b".repeat(64)}`,
+					allow: ["read", "write", "delete"],
+				},
+				verify: (_grant, _operation, key) =>
+					authorized && key.startsWith("tenant-a/"),
+				layer,
+			});
+			const body = new Uint8Array([0, 255, 7]);
+			const digest = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+			const object = {
+				name: "tenant-a/object",
+				contentType: "application/octet-stream",
+				digest,
+				size: body.length,
+				body,
+			};
+			expect(await store.read(object.name)).toBeUndefined();
+			await store.write(object);
+			expect(await store.read(object.name)).toEqual(object);
+			const emptyBody = new Uint8Array();
+			const emptyObject = {
+				...object,
+				name: "tenant-a/empty",
+				size: 0,
+				body: emptyBody,
+				digest: `sha256:${createHash("sha256").update(emptyBody).digest("hex")}`,
+			};
+			await store.write(emptyObject);
+			expect(await store.read(emptyObject.name)).toEqual(emptyObject);
+			await store.delete(emptyObject.name);
+			await expect(store.read("tenant-b/object")).rejects.toMatchObject({
+				code: "AWS_S3_DENIED",
+			});
+			authorized = false;
+			await expect(store.delete(object.name)).rejects.toMatchObject({
+				code: "AWS_S3_DENIED",
+			});
+			authorized = true;
+			await store.delete(object.name);
+			expect(await store.read(object.name)).toBeUndefined();
 		},
 	);
 	official(
