@@ -162,7 +162,21 @@ export class FakePromotions implements PromotionService {
 	async promote(request: PromoteRequest): Promise<Outcome<PromotionRecord>> {
 		this.onPromote?.(request);
 		const existing = this.records.get(request.idempotencyKey);
-		if (existing) return { ok: true, value: existing };
+		if (existing) {
+			const prior = this.requests.find(
+				(item) => item.idempotencyKey === request.idempotencyKey,
+			);
+			if (
+				!prior ||
+				prior.freightId !== request.freightId ||
+				prior.pipeline !== request.pipeline ||
+				prior.node !== request.node ||
+				(prior.requestMode ?? "manual") !== (request.requestMode ?? "manual") ||
+				JSON.stringify(prior.targets) !== JSON.stringify(request.targets)
+			)
+				return { ok: false, reasons: [] };
+			return { ok: true, value: existing };
+		}
 		this.requests.push(request);
 		if (this.refuseNext) {
 			this.refuseNext = false;
@@ -182,6 +196,8 @@ export class FakePromotions implements PromotionService {
 			CD_STREAMS.promotion(record.promotionId),
 			CD_EVENTS.EnvPromoteRequested,
 			toJson(PromotionRecordSchema, record),
+			undefined,
+			{ promotionRequestMode: request.requestMode ?? "manual" },
 		);
 		return { ok: true, value: record };
 	}

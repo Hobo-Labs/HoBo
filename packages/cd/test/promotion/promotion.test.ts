@@ -184,6 +184,29 @@ describe("promotion saga (WP6)", () => {
 			expect(reused.reasons[0]?.code).toBe(PROMOTION_REASON.idempotencyReused);
 	});
 
+	it("persists request mode and rejects reusing a key with a different mode", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const input = {
+			freightId: fid("f1"),
+			targets: [camp("dev-1")],
+			idempotencyKey: "mode-key",
+			requestMode: "automatic" as const,
+		};
+		expect((await h.service.promote(input, h.ctx())).ok).toBe(true);
+		expect(
+			h.store.events(CD_EVENTS.EnvPromoteRequested)[0]?.meta
+				?.promotionRequestMode,
+		).toBe("automatic");
+		expect((await h.restart().promote(input, h.ctx())).ok).toBe(true);
+		const reused = await h
+			.restart()
+			.promote({ ...input, requestMode: "manual" }, h.ctx());
+		expect(reused.ok).toBe(false);
+		if (!reused.ok)
+			expect(reused.reasons[0]?.code).toBe(PROMOTION_REASON.idempotencyReused);
+	});
+
 	it("unqualified Freight is refused at prod (§10: lineage)", async () => {
 		const h = harness();
 		withPipeline(h);

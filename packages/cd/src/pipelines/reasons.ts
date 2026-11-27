@@ -25,6 +25,8 @@ export const PIPELINE_REASON = Object.freeze({
 	unauthorized: "pipeline-action-unauthorized",
 	proposalOnly: "pipeline-proposal-only",
 	conflict: "pipeline-journal-conflict",
+	originFreightUnavailable: "pipeline-origin-freight-unavailable",
+	promotionBlocked: "pipeline-promotion-blocked",
 } as const);
 
 // public-contract: metric names the pipeline controller emits (counters).
@@ -36,6 +38,7 @@ export const PIPELINE_METRIC = Object.freeze({
 	promotionRefused: "hobo.cd.pipeline.promotion_refused",
 	fanoutStarted: "hobo.cd.pipeline.fanout_started",
 	blocked: "hobo.cd.pipeline.tick_blocked",
+	autoPromotionHeld: "hobo.cd.pipeline.auto_promotion_held",
 	unreadable: "hobo.cd.pipeline.unreadable",
 } as const);
 

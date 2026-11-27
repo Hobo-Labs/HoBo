@@ -22,7 +22,9 @@ import {
 	RolloutStrategy,
 } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
+import { parseStarted, parseStatusFact } from "../fanout/facts.js";
 import type {
+	AutoPromotionHold,
 	CampId,
 	CdAuthorizer,
 	CdBase,
@@ -35,6 +37,7 @@ import type {
 	PipelineController,
 	PlacementEngine,
 	PlacementSubject,
+	PromoteByOriginRequest,
 	PromoteRequest,
 	PromotionService,
 	TelemetrySink,
@@ -54,6 +57,7 @@ import {
 } from "../windows/journal.js";
 import { CatchUpProjection } from "../windows/projection.js";
 import { refuse } from "../windows/reasons.js";
+import { autoPromotionFreightId } from "./auto-promotion.js";
 import {
 	type FreightFacts,
 	freightAvailability,
@@ -68,7 +72,7 @@ import {
 	topologicalOrder,
 	validatePipeline,
 } from "./graph.js";
-import { PIPELINE_METRIC, PIPELINE_REASON } from "./reasons.js";
+import { ORIGIN_SOURCES, PIPELINE_METRIC, PIPELINE_REASON } from "./reasons.js";
 
 /** Station and data subject a placed node's Placement decides for (composed by WP18). */
 export type PlacementContextResolver = (
@@ -175,11 +179,19 @@ export function createPipelineController(
 	const unreadable = new Set<string>();
 	const recordedAvailability = new Set<string>();
 	const sources = new Set<string>();
-	const requestedKeys = new Set<string>();
+	const requestedKeys = new Map<string, "automatic" | "manual" | undefined>();
 	/** Freight id → Camp id → latest env.Promoted time. */
 	const promotedAt = new Map<string, Map<string, number>>();
 	/** `${pipeline}|${node}` → Freight of the latest env.Promoted. */
 	const currentByNode = new Map<string, string>();
+	const holdByNode = new Map<string, AutoPromotionHold>();
+	type ManualPromotion = {
+		freightId: string;
+		heldAtMs: number;
+		fanoutId?: string;
+		pending: Map<string, Set<string>>;
+	};
+	const manualPromoteByNode = new Map<string, ManualPromotion>();
 
 	const metric = (
 		name: string,
@@ -216,9 +228,82 @@ export function createPipelineController(
 			const name = SOURCE_STREAM.exec(event.streamId)?.[1];
 			if (name) sources.add(name);
 		},
+		[CD_EVENTS.FanoutStarted]: (event) => {
+			const started = parseStarted(event.data);
+			if (!started?.pipeline || !started.node || !started.freightId) return;
+			const mode = event.meta?.promotionRequestMode;
+			if (
+				mode === "automatic" ||
+				(mode === undefined &&
+					started.idempotencyKey ===
+						pipelineKey(started.pipeline, started.node, started.freightId))
+			)
+				return;
+			const nodeKey = `${started.pipeline}|${started.node}`;
+			holdByNode.delete(nodeKey);
+			manualPromoteByNode.set(nodeKey, {
+				freightId: started.freightId,
+				heldAtMs: msOf(event.ts),
+				fanoutId: started.fanoutId,
+				pending: new Map(),
+			});
+		},
+		[CD_EVENTS.FanoutCompleted]: (event) => {
+			const status = parseStatusFact(event.data).status;
+			if (!status || status.state !== FanoutState.COMPLETED) return;
+			const nodeKey = `${status.pipeline}|${status.node}`;
+			if (manualPromoteByNode.get(nodeKey)?.fanoutId !== status.fanoutId)
+				return;
+			manualPromoteByNode.delete(nodeKey);
+			holdByNode.delete(nodeKey);
+		},
 		[CD_EVENTS.EnvPromoteRequested]: (event) => {
 			const key = idempotencyKeyIn(jsonOf(event.data));
-			if (key) requestedKeys.add(key);
+			const storedMode = event.meta?.promotionRequestMode;
+			if (key)
+				requestedKeys.set(
+					key,
+					storedMode === "automatic" || storedMode === "manual"
+						? storedMode
+						: undefined,
+				);
+			const record = decode(PromotionRecordSchema, event.data);
+			if (!record || record.pipeline === "" || record.node === "") return;
+			if (record.freightId === "" || record.promotionId === "") return;
+			const nodeKey = `${record.pipeline}|${record.node}`;
+			const current = manualPromoteByNode.get(nodeKey);
+			const mode = event.meta?.promotionRequestMode;
+			const autoKey = pipelineKey(
+				record.pipeline,
+				record.node,
+				record.freightId,
+			);
+			const legacyAuto =
+				mode === undefined &&
+				(record.idempotencyKey === autoKey ||
+					record.idempotencyKey.startsWith(`${autoKey}:approval:`) ||
+					record.idempotencyKey.startsWith(`${autoKey}:match:`) ||
+					(record.fanoutId !== "" && current?.fanoutId !== record.fanoutId));
+			if (mode === "automatic" || legacyAuto) return;
+			if (record.fanoutId !== "" && current?.fanoutId === record.fanoutId)
+				return;
+			if (
+				!current ||
+				current.freightId !== record.freightId ||
+				current.fanoutId !== (record.fanoutId || undefined)
+			) {
+				holdByNode.delete(nodeKey);
+				const manual: ManualPromotion = {
+					freightId: record.freightId,
+					heldAtMs: msOf(event.ts),
+					pending: new Map(),
+				};
+				if (record.fanoutId) manual.fanoutId = record.fanoutId;
+				manualPromoteByNode.set(nodeKey, manual);
+			}
+			manualPromoteByNode
+				.get(nodeKey)
+				?.pending.set(record.promotionId, new Set(record.targetCampIds));
 		},
 		[CD_EVENTS.EnvPromoted]: (event) => {
 			const record = decode(PromotionRecordSchema, event.data);
@@ -229,11 +314,21 @@ export function createPipelineController(
 			for (const campId of record.targetCampIds)
 				byCamp.set(campId, Math.max(byCamp.get(campId) ?? 0, at));
 			promotedAt.set(record.freightId, byCamp);
-			if (record.pipeline !== "" && record.node !== "")
-				currentByNode.set(
-					`${record.pipeline}|${record.node}`,
-					record.freightId,
-				);
+			if (record.pipeline !== "" && record.node !== "") {
+				const nodeKey = `${record.pipeline}|${record.node}`;
+				currentByNode.set(nodeKey, record.freightId);
+				const manual = manualPromoteByNode.get(nodeKey);
+				if (!manual || manual.fanoutId || manual.freightId !== record.freightId)
+					return;
+				const remaining = manual.pending.get(record.promotionId);
+				if (!remaining) return;
+				for (const campId of record.targetCampIds) remaining.delete(campId);
+				if (remaining.size === 0) manual.pending.delete(record.promotionId);
+				if (manual.pending.size === 0) {
+					manualPromoteByNode.delete(nodeKey);
+					holdByNode.delete(nodeKey);
+				}
+			}
 		},
 	});
 
@@ -358,15 +453,46 @@ export function createPipelineController(
 		targets: readonly string[],
 		key: string,
 		ctx: CdContext,
-	): Promise<void> {
-		if (requestedKeys.has(key) || targets.length === 0) return;
+		requestMode: "automatic" | "manual" = "automatic",
+	): Promise<Outcome<void>> {
+		const wasRequested = requestedKeys.has(key);
+		if (wasRequested) {
+			const priorMode = requestedKeys.get(key);
+			if (requestMode === "manual" && priorMode === undefined)
+				return refuse(
+					PIPELINE_REASON.conflict,
+					`promotion key ${key} predates recorded request modes`,
+					"Use a new idempotency key for the manual promotion.",
+					key,
+				);
+			if (priorMode !== undefined && priorMode !== requestMode)
+				return refuse(
+					PIPELINE_REASON.conflict,
+					`promotion key ${key} already uses a different request mode`,
+					"Use a new idempotency key for the manual promotion.",
+					key,
+				);
+			if (requestMode === "automatic") return { ok: true, value: undefined };
+		}
+		if (targets.length === 0)
+			return refuse(
+				PIPELINE_REASON.targets,
+				`pipeline ${pipeline.name}/${node.name} has no promotion targets`,
+				"Configure at least one target Camp before requesting a promotion.",
+				node.name,
+			);
 		const attributes = { pipeline: pipeline.name, node: node.name };
-		if (!(await windowsOpen(node, targets, ctx))) {
+		if (!wasRequested && !(await windowsOpen(node, targets, ctx))) {
 			metric(PIPELINE_METRIC.blocked, ctx.now(), {
 				...attributes,
 				reason: "window-closed",
 			});
-			return;
+			return refuse(
+				PIPELINE_REASON.promotionBlocked,
+				`the change window for ${pipeline.name}/${node.name} is closed`,
+				"Wait for the window to open or obtain a valid override.",
+				node.name,
+			);
 		}
 		const promote: PromoteRequest = {
 			// SAFETY: freightId comes from a FreightRecord the ledger returned.
@@ -374,6 +500,7 @@ export function createPipelineController(
 			// SAFETY: targets are Camp ids from the applied pipeline or a placement decision.
 			targets: targets.map((target) => target as CampId),
 			idempotencyKey: key,
+			requestMode,
 			pipeline: pipeline.name,
 			node: node.name,
 			intent: "promote",
@@ -384,14 +511,15 @@ export function createPipelineController(
 				: { ...promote, strategy: node.strategy };
 		const result = await deps.promotions.promote(withStrategy, ctx);
 		if (result.ok) {
-			requestedKeys.add(key);
+			requestedKeys.set(key, requestMode);
 			metric(PIPELINE_METRIC.promotionRequested, ctx.now(), attributes);
-		} else {
-			metric(PIPELINE_METRIC.promotionRefused, ctx.now(), {
-				...attributes,
-				code: result.reasons[0]?.code ?? "",
-			});
+			return { ok: true, value: undefined };
 		}
+		metric(PIPELINE_METRIC.promotionRefused, ctx.now(), {
+			...attributes,
+			code: result.reasons[0]?.code ?? "",
+		});
+		return result;
 	}
 
 	async function startFanout(
@@ -399,20 +527,42 @@ export function createPipelineController(
 		node: PipelineNodeRecord,
 		freightId: string,
 		ctx: CdContext,
-	): Promise<void> {
+		requestMode: "automatic" | "manual" = "automatic",
+		idempotencyKey = pipelineKey(pipeline.name, node.name, freightId),
+	): Promise<Outcome<void>> {
 		const attributes = { pipeline: pipeline.name, node: node.name };
 		const existing = await deps.fanout.list({
 			pipeline: pipeline.name,
 			node: node.name,
 		});
-		if (existing.some((status) => status.freightId === freightId)) return;
+		const prior = existing.find((status) => status.freightId === freightId);
+		if (prior) {
+			if (
+				prior.state === FanoutState.HALTED ||
+				prior.state === FanoutState.ROLLED_BACK ||
+				prior.state === FanoutState.SUPERSEDED ||
+				(requestMode === "manual" && prior.state === FanoutState.RUNNING)
+			)
+				return refuse(
+					PIPELINE_REASON.promotionBlocked,
+					`fan-out for ${pipeline.name}/${node.name} cannot proceed`,
+					"Resolve the fan-out state before requesting this Freight again.",
+					prior.fanoutId,
+				);
+			return { ok: true, value: undefined };
+		}
 		const context = await deps.placementContext?.({ pipeline, node });
 		if (!context) {
 			metric(PIPELINE_METRIC.blocked, ctx.now(), {
 				...attributes,
 				reason: "placement-context-missing",
 			});
-			return;
+			return refuse(
+				PIPELINE_REASON.promotionBlocked,
+				`placement context for ${pipeline.name}/${node.name} is unavailable`,
+				"Configure placement context before requesting the fan-out.",
+				node.name,
+			);
 		}
 		const decision = await deps.placement.decide(
 			{
@@ -429,7 +579,7 @@ export function createPipelineController(
 				...attributes,
 				reason: decision.reasons[0]?.code ?? "placement-refused",
 			});
-			return;
+			return decision;
 		}
 		const started = await deps.fanout.start(
 			{
@@ -443,17 +593,20 @@ export function createPipelineController(
 					node.departure === DepartureAction.UNSPECIFIED
 						? DepartureAction.ORPHAN_DATA
 						: node.departure,
-				idempotencyKey: pipelineKey(pipeline.name, node.name, freightId),
+				idempotencyKey,
+				requestMode,
 			},
 			ctx,
 		);
-		if (started.ok)
+		if (started.ok) {
 			metric(PIPELINE_METRIC.fanoutStarted, ctx.now(), attributes);
-		else
-			metric(PIPELINE_METRIC.blocked, ctx.now(), {
-				...attributes,
-				reason: started.reasons[0]?.code ?? "fanout-refused",
-			});
+			return { ok: true, value: undefined };
+		}
+		metric(PIPELINE_METRIC.blocked, ctx.now(), {
+			...attributes,
+			reason: started.reasons[0]?.code ?? "fanout-refused",
+		});
+		return started;
 	}
 
 	async function promoteCandidate(
@@ -563,6 +716,81 @@ export function createPipelineController(
 				ctx,
 			);
 		}
+	}
+
+	async function stableFreightForMatchNode(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		facts: readonly FreightFacts[],
+	): Promise<string | undefined> {
+		if (node.autoPromotion !== AutoPromotion.MATCH_NODE) return undefined;
+		if (!isPlaced(node))
+			return facts.find(
+				(fact) =>
+					fact.usable &&
+					fact.qualifications.some(
+						(qualification) =>
+							qualification.pipeline === pipeline.name &&
+							qualification.node === node.name,
+					),
+			)?.freight.freightId;
+		return (
+			await deps.fanout.qualified({
+				pipeline: pipeline.name,
+				node: node.name,
+			})
+		).stableFreightId;
+	}
+
+	async function refreshAutoPromotionHolds(ctx: CdContext): Promise<void> {
+		for (const [nodeKey, manual] of manualPromoteByNode) {
+			const split = nodeKey.indexOf("|");
+			if (split <= 0) continue;
+			const pipelineName = nodeKey.slice(0, split);
+			const nodeName = nodeKey.slice(split + 1);
+			const pipeline = pipelines.get(pipelineName);
+			const node = pipeline?.nodes.find((n) => n.name === nodeName);
+			if (!pipeline || !node) continue;
+			if (
+				node.autoPromotion === AutoPromotion.DISABLED ||
+				node.autoPromotion === AutoPromotion.UNSPECIFIED
+			)
+				continue;
+			const facts = await freightFacts(pipeline);
+			const placed = await placedViews(pipeline);
+			const list = candidates(pipeline, node, facts, placed, ctx.now());
+			const stable = await stableFreightForMatchNode(pipeline, node, facts);
+			const autoId = autoPromotionFreightId(
+				pipeline,
+				node,
+				list,
+				currentByNode,
+				stable,
+			);
+			if (autoId === undefined || manual.freightId === autoId) continue;
+			if (holdByNode.has(nodeKey)) continue;
+			const hold: AutoPromotionHold = Object.freeze({
+				pipeline: pipeline.name,
+				node: node.name,
+				freightId: manual.freightId,
+				heldAtMs: manual.heldAtMs,
+			});
+			holdByNode.set(nodeKey, hold);
+			metric(PIPELINE_METRIC.autoPromotionHeld, ctx.now(), {
+				pipeline: pipeline.name,
+				node: node.name,
+				freightId: manual.freightId,
+			});
+		}
+	}
+
+	function freightMatchesOrigin(
+		freight: FreightRecord,
+		origin: string,
+	): boolean {
+		const mapped = ORIGIN_SOURCES.get(origin);
+		if (mapped !== undefined) return freight.origin === mapped;
+		return freight.sourceName === origin;
 	}
 
 	async function recordAvailable(
@@ -718,8 +946,91 @@ export function createPipelineController(
 			);
 		},
 
+		async autoPromotionHolds() {
+			await projection.catchUp();
+			return [...holdByNode.values()].sort((a, b) => {
+				const byPipe =
+					a.pipeline < b.pipeline ? -1 : a.pipeline > b.pipeline ? 1 : 0;
+				if (byPipe !== 0) return byPipe;
+				return a.node < b.node ? -1 : a.node > b.node ? 1 : 0;
+			});
+		},
+
+		async promoteByOrigin(input: PromoteByOriginRequest, ctx) {
+			await projection.catchUp();
+			await refreshAutoPromotionHolds(ctx);
+			const pipeline = pipelines.get(input.pipeline);
+			const node = pipeline?.nodes.find((n) => n.name === input.node);
+			if (!pipeline || !node)
+				return {
+					ok: false,
+					reasons: refuse(
+						PIPELINE_REASON.unknownUpstream,
+						`pipeline ${input.pipeline} has no node ${input.node}`,
+						"Apply the pipeline first, or name an existing node.",
+						input.pipeline,
+					).reasons,
+				};
+			const facts = await freightFacts(pipeline);
+			const placed = await placedViews(pipeline);
+			const list = candidates(pipeline, node, facts, placed, ctx.now());
+			const match = list.find((candidate) =>
+				freightMatchesOrigin(candidate.freight, input.origin),
+			);
+			if (!match)
+				return {
+					ok: false,
+					reasons: refuse(
+						PIPELINE_REASON.originFreightUnavailable,
+						`no Freight available to ${input.pipeline}/${input.node} via ${input.origin}`,
+						"Wait for ingest from that source, or use origin: manifest and related pseudo-sources for pushed Freight.",
+						input.origin,
+					).reasons,
+				};
+			const freightId = match.freight.freightId;
+			const key =
+				input.idempotencyKey ||
+				`origin:${pipeline.name}:${node.name}:${freightId}`;
+			if (match.availability.lineage) {
+				const result = isPlaced(node)
+					? await startFanout(pipeline, node, freightId, ctx, "manual", key)
+					: await request(
+							pipeline,
+							node,
+							freightId,
+							node.campIds,
+							key,
+							ctx,
+							"manual",
+						);
+				if (!result.ok) return result;
+			} else {
+				if (match.availability.approvedCampIds.length === 0)
+					return refuse(
+						PIPELINE_REASON.originFreightUnavailable,
+						`no approved Camps can receive ${freightId}`,
+						"Wait for a qualifying approval or choose another Freight.",
+						freightId,
+					);
+				for (const campId of match.availability.approvedCampIds) {
+					const result = await request(
+						pipeline,
+						node,
+						freightId,
+						[campId],
+						`${key}:approval:${campId}`,
+						ctx,
+						"manual",
+					);
+					if (!result.ok) return result;
+				}
+			}
+			return { ok: true, value: { freightId } };
+		},
+
 		async tick(ctx) {
 			await projection.catchUp();
+			await refreshAutoPromotionHolds(ctx);
 			for (const name of [...pipelines.keys()].sort()) {
 				const pipeline = pipelines.get(name);
 				const order = pipeline ? topologicalOrder(pipeline) : undefined;
@@ -732,6 +1043,7 @@ export function createPipelineController(
 					const list = candidates(pipeline, node, facts, placed, ctx.now());
 					await recordAvailable(pipeline, node, list, ctx);
 					if (isPreview(node)) continue;
+					if (holdByNode.has(`${pipeline.name}|${node.name}`)) continue;
 					switch (node.autoPromotion) {
 						case AutoPromotion.NEWEST: {
 							const newest = list[0];
