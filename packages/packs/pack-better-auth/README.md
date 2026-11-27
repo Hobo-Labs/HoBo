@@ -19,7 +19,11 @@ infrastructure inside the adapter.
   `diffSchemaIr` from an empty postgres baseline (or supplied current schema)
   to the Better Auth `SchemaIr` for the bundle plan. The diff is scoped to
   pack-owned tables, so a host table is left in place. `drop-table`,
-  `drop-column`, `narrow-column`, and `drop-index` are refused.
+  `drop-column`, `narrow-column`, and `drop-index` are refused. Migration
+  planning accepts `data.relational/v1` and `data.postgres/v1`; its shared
+  schema definitions are immutable across plans.
+- Bundle replay records keep the configured base path and route pattern in
+  sync, and accept only registered relational v1 profiles.
 - `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
   governed data-plane migrations (not adapter-private DDL).
   `buildBetterAuthRelationalSchemaIr` adds `organization`, `member`, and
