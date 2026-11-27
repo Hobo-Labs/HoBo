@@ -1,5 +1,6 @@
 import * as DomainRivet from "@alchemy.run/domain/Rivet";
 import type { PoolHost } from "@alchemy.run/rivet/Host";
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { actor, setup } from "rivetkit";
@@ -7,12 +8,14 @@ import { db } from "rivetkit/db";
 import {
 	type CampTargetId,
 	type CdCampRealizer,
+	CdDeliveryFlow,
 	type CdPromotionId,
 	CdRelease,
 	CdReleaseHandlers,
 	type CdVerificationGate,
 	type FreightDigest,
 	type NonEmptyReason,
+	UnsupportedDeliveryFlow,
 } from "../domain/index.js";
 
 export type CdCampRealizerService = Layer.Success<
@@ -23,12 +26,32 @@ export type CdVerificationGateService = Layer.Success<
 	ReturnType<typeof CdVerificationGate.toLayer>
 >;
 
+export type CdDeliveryFlowService = Layer.Success<
+	ReturnType<typeof CdDeliveryFlow.toLayer>
+>;
+
+export const DefaultFailClosedDeliveryFlowLayer: Layer.Layer<CdDeliveryFlowService> =
+	CdDeliveryFlow.toLayer(
+		Effect.succeed({
+			publishRevision: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+			observePullRequest: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+			observeConvergence: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+			rollbackRevision: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+		}),
+	);
+
 export interface CdReleaseRivetHostOptions<
 	PoolReq,
 	RealizerErr,
 	RealizerReq,
 	GateErr,
 	GateReq,
+	FlowErr = never,
+	FlowReq = never,
 > {
 	readonly name?: string;
 	readonly main: string;
@@ -44,6 +67,7 @@ export interface CdReleaseRivetHostOptions<
 		GateErr,
 		GateReq
 	>;
+	readonly deliveryFlow?: Layer.Layer<CdDeliveryFlowService, FlowErr, FlowReq>;
 }
 
 export function createCdReleaseRivetLayer<
@@ -52,13 +76,17 @@ export function createCdReleaseRivetLayer<
 	RealizerReq,
 	GateErr,
 	GateReq,
+	FlowErr = never,
+	FlowReq = never,
 >(
 	options: CdReleaseRivetHostOptions<
 		PoolReq,
 		RealizerErr,
 		RealizerReq,
 		GateErr,
-		GateReq
+		GateReq,
+		FlowErr,
+		FlowReq
 	>,
 ) {
 	const rivetPlatform = DomainRivet.layerDurableObjects<PoolReq>({
@@ -67,9 +95,15 @@ export function createCdReleaseRivetLayer<
 		handler: options.handler ?? "default",
 		pool: options.pool,
 	});
+	const flowLayer = options.deliveryFlow ?? DefaultFailClosedDeliveryFlowLayer;
 	return CdRelease.layer(CdReleaseHandlers).pipe(
 		Layer.provide(
-			Layer.mergeAll(rivetPlatform, options.realizer, options.verificationGate),
+			Layer.mergeAll(
+				rivetPlatform,
+				options.realizer,
+				options.verificationGate,
+				flowLayer,
+			),
 		),
 	);
 }

@@ -13,6 +13,7 @@ import {
 	CampRealizationFailed,
 	CampTargetId,
 	CdCampRealizer,
+	CdDeliveryFlow,
 	CdFanout,
 	CdFanoutCampUpdated,
 	CdFanoutCompleted,
@@ -52,7 +53,7 @@ import {
 
 const story = Story.make(CdRelease, {
 	layer: CdReleaseHandlers,
-	stub: [CdCampRealizer, CdVerificationGate],
+	stub: [CdCampRealizer, CdVerificationGate, CdDeliveryFlow],
 });
 
 type CdCampRealizerService = Layer.Success<
