@@ -14,6 +14,13 @@ const SCHEDULE_JOB_TIMEOUT = /^hobo-ci\.yml:main-gate$/;
 type LongJob = Readonly<{ minutes: number; why: string }>;
 const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 	[
+		"release-hobo.yml:release-pages-browser-wit-smoke",
+		{
+			minutes: 45,
+			why: "The Pages release proof requires a frozen cold install and forced browser-WIT componentization; measured cache restoration and installation can exhaust the standard budget before the proof begins",
+		},
+	],
+	[
 		"fleet-integration.yml:fleet-verify",
 		{
 			minutes: 60,
@@ -25,6 +32,13 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 		{
 			minutes: 45,
 			why: "HoBo Fleet: the same sandbox, NATS and relay provisioning as fleet-verify, then every fleet *.integration.test.ts; splitting it would provision the sandbox runtime once per shard",
+		},
+	],
+	[
+		"pricing-ci.yml:aws-emulator",
+		{
+			minutes: 40,
+			why: "Alchemy AWS simulator: a self-hosted runner without a shared pnpm store spends most of a 20-minute cap downloading the workspace, then the job is cancelled during the simulator build before test:aws-emulator runs. Warm runners still finish in a few minutes; 40 covers one cold install plus that build and the emulator lane",
 		},
 	],
 ]);
@@ -110,6 +124,25 @@ describe("GitHub Actions job timeouts", () => {
 		/\.ya?ml$/i.test(name),
 	);
 	assert.ok(files.length > 0, "expected workflow files");
+
+	it("keeps the Pages release proof bounded to its documented budget", () => {
+		assert.doesNotThrow(() =>
+			assertJobTimeout(
+				"release-hobo.yml",
+				"release-pages-browser-wit-smoke",
+				"45",
+			),
+		);
+		assert.throws(
+			() =>
+				assertJobTimeout(
+					"release-hobo.yml",
+					"release-pages-browser-wit-smoke",
+					"46",
+				),
+			/exceeds its documented 45/,
+		);
+	});
 
 	for (const file of files) {
 		it(`${file} gives every job that runs steps an explicit timeout-minutes ≤20 (schedule exception on main-gate only, documented long jobs excepted)`, () => {
