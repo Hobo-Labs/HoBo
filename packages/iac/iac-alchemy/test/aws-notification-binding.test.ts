@@ -97,6 +97,7 @@ it("binds only the genuine publisher for the exact mapped topic", async () => {
 	for (const arn of [
 		"arn:aws:sns:us-east-1:111111111111:alerts",
 		"arn:aws:sns:us-west-2:000000000000:alerts",
+		"arn:aws-us-gov:sns:us-east-1:000000000000:alerts",
 	])
 		expect(
 			(await make(arn, port).fetch(new Request("https://app.test"))).status,

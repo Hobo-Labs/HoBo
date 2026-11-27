@@ -196,7 +196,8 @@ export function defineAwsHttpSource<Requirements>(options: {
 							!grant ||
 							(binding.kind === "kv" || binding.kind === "queue"
 								? !("tableName" in grant) ||
-									grant.tableName !== binding.physicalName
+									`arn:${grant.partition}:dynamodb:${grant.region}:${grant.accountId}:table/${grant.tableName}` !==
+										binding.physicalName
 								: binding.kind === "bucket"
 									? !("bucketName" in grant) ||
 										grant.bucketName !== binding.physicalName

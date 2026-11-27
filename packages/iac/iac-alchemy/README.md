@@ -158,7 +158,9 @@ slots until it settles.
 The host captures one bounded, deterministic graph for runtime binding and
 source registration; accessors, duplicate dependencies and missing edges fail
 before application logic runs. The source resolver must synchronously create
-branded stores for the exact provisioned names.
+branded stores for the exact provisioned identities. DynamoDB, SNS, KMS and Secrets Manager
+bindings use their full ARNs; S3 uses its globally scoped bucket name. The host
+verifies ownership epochs.
 For an Alchemy AWS Web Function, create a source in the application's entry
 module. The `host` below is your own authority: it creates the branded stores
 for the provided physical names, verifies each grant, and supplies AWS clients.
@@ -1252,15 +1254,15 @@ budget admission or enforce the estimate. This is a DynamoDB queue, with no SQS
 integration or automatic dead-lettering. An AWS HTTP application can declare the queue as
 a dependency and access it with `awsHttpBindings(context).queue("jobs")`.
 Compose `awsHttpBindleMappers` with `awsDynamoDurableQueueMappers` and configure
-`defineAwsHttpSource` to resolve the mapped table name to a queue constructed
+`defineAwsHttpSource` to resolve the mapped table ARN to a queue constructed
 with `createAwsQueueAtomicStore` and `createAtomicDurableQueue`. The source
-checks the factory identities and table name; the host must independently verify
+checks the factory identities and full table ARN; the host must independently verify
 the account, table incarnation, IAM permissions, queue limits, application grant
 and pricing. The binding exposes only declared enqueue/dequeue operations and
 expires with the HTTP request. A denied or revoked operation returns `unknown`
 with its operation identity because an earlier attempt may have committed.
 The official AWS Emulator test exercises this binding against the Alchemy-created
-table, including changed table names and authorization. A trusted owner
+table, including changed table ARNs and authorization. A trusted owner
 must authorize and call the provider's `compact()` and `reclaimCompleted()`
 operations when needed. Reclaiming a completed message ends its message-key
 deduplication after live receipts expire. These storage reads and writes must be

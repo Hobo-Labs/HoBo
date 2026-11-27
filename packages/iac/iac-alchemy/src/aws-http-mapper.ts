@@ -214,7 +214,7 @@ export function awsHttpBindleMappers<Requirements>(
 					);
 				const env: Record<
 					string,
-					| Table["tableName"]
+					| Table["tableArn"]
 					| Bucket["bucketName"]
 					| Secret["secretArn"]
 					| Topic["topicArn"]
@@ -245,7 +245,7 @@ export function awsHttpBindleMappers<Requirements>(
 					// SAFETY: the Alchemy mapper created this dependency with the checked resource type and FQN.
 					env[binding.environment] =
 						binding.kind === "kv" || binding.kind === "queue"
-							? (dependency as Table).tableName
+							? (dependency as Table).tableArn
 							: binding.kind === "bucket"
 								? (dependency as Bucket).bucketName
 								: binding.kind === "notify"

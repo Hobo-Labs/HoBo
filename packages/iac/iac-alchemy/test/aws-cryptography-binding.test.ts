@@ -102,6 +102,7 @@ it("binds only the genuine scoped key selected by the source", async () => {
 	for (const physicalName of [
 		`arn:aws:kms:us-east-1:111111111111:key/${keyId}`,
 		`arn:aws:kms:us-west-2:000000000000:key/${keyId}`,
+		`arn:aws-us-gov:kms:us-east-1:000000000000:key/${keyId}`,
 	])
 		expect(
 			(await make(physicalName, store).fetch(new Request("https://app.test")))
