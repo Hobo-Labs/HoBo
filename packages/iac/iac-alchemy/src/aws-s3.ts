@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-object-parameters, anti-slop/no-reflect-apply -- SAFETY: resource grants and object values cross an external host boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-object-parameters, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: resource grants and object values cross an external host boundary. */
 import { createHash } from "node:crypto";
 import { types } from "node:util";
 import type { Credentials } from "@distilled.cloud/aws/Credentials";
@@ -26,6 +26,7 @@ const getPrototype = Object.getPrototypeOf;
 const isArray = Array.isArray;
 const isProxy = types.isProxy;
 const define = Object.defineProperty;
+const accountPattern = /^\d{12}$/u;
 const bucketPattern = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/u;
 const ipPattern = /^\d+\.\d+\.\d+\.\d+$/u;
 const regionPattern = /^[a-z0-9-]{3,63}$/u;
@@ -52,6 +53,7 @@ const byteBuffer = Object.getOwnPropertyDescriptor(
 export type AwsS3Operation = "read" | "write" | "delete";
 export interface AwsS3Grant {
 	readonly bucketName: string;
+	readonly accountId: string;
 	readonly region: string;
 	readonly resourceEpoch: string;
 	readonly grantEpoch: string;
@@ -68,6 +70,17 @@ export interface AwsS3Store {
 	read(name: string): Promise<AwsS3Object | undefined>;
 	write(object: AwsS3Object): Promise<void>;
 	delete(name: string): Promise<void>;
+}
+const storeGrants = new WeakMap<object, AwsS3Grant>();
+const storeGrantGet = WeakMap.prototype.get;
+const storeGrantSet = WeakMap.prototype.set;
+const storeIsProxy = types.isProxy;
+const storeApply = Reflect.apply;
+
+export function inspectAwsS3Store(value: unknown): AwsS3Grant | undefined {
+	if (typeof value !== "object" || value === null || storeIsProxy(value))
+		return undefined;
+	return storeApply(storeGrantGet, storeGrants, [value]);
 }
 export class AwsS3Error extends Error {
 	constructor(
@@ -164,6 +177,7 @@ export function createAwsS3Store(options: {
 	if (
 		!ownData(input, [
 			"bucketName",
+			"accountId",
 			"region",
 			"resourceEpoch",
 			"grantEpoch",
@@ -175,6 +189,8 @@ export function createAwsS3Store(options: {
 		!matches(bucketPattern, input.bucketName) ||
 		apply(stringIncludes, input.bucketName, [".."]) ||
 		matches(ipPattern, input.bucketName) ||
+		typeof input.accountId !== "string" ||
+		!matches(accountPattern, input.accountId) ||
 		typeof input.region !== "string" ||
 		!matches(regionPattern, input.region) ||
 		typeof input.resourceEpoch !== "string" ||
@@ -206,6 +222,7 @@ export function createAwsS3Store(options: {
 	}
 	const grant: AwsS3Grant = Object.freeze({
 		bucketName: input.bucketName,
+		accountId: input.accountId,
 		region: input.region,
 		resourceEpoch: input.resourceEpoch,
 		grantEpoch: input.grantEpoch,
@@ -238,12 +255,13 @@ export function createAwsS3Store(options: {
 					: "mutation may have taken effect; reconcile before retry",
 			),
 	});
-	return Object.freeze({
+	const store = Object.freeze({
 		async read(name: string) {
 			const key = keyOf(name);
 			const effect = Effect.gen(function* () {
 				const response = yield* S3.getObject({
 					Bucket: grant.bucketName,
+					ExpectedBucketOwner: grant.accountId,
 					Key: key,
 					region: grant.region,
 				}).pipe(Effect.catchTag("NoSuchKey", () => Effect.succeed(undefined)));
@@ -323,6 +341,7 @@ export function createAwsS3Store(options: {
 				key,
 				S3.putObject({
 					Bucket: grant.bucketName,
+					ExpectedBucketOwner: grant.accountId,
 					Key: key,
 					region: grant.region,
 					Body: value,
@@ -340,6 +359,7 @@ export function createAwsS3Store(options: {
 				key,
 				S3.deleteObject({
 					Bucket: grant.bucketName,
+					ExpectedBucketOwner: grant.accountId,
 					Key: key,
 					region: grant.region,
 				}),
@@ -347,4 +367,6 @@ export function createAwsS3Store(options: {
 			boundary.beforeReturn("delete", key);
 		},
 	});
+	storeApply(storeGrantSet, storeGrants, [store, grant]);
+	return store;
 }
