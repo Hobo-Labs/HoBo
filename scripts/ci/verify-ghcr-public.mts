@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { parseChallenge } from "../../packages/providers/provider-oci-registry/src/session.ts";
 
 const PUBLIC_IMAGE =
 	/^ghcr\.io\/([a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+)@(sha256:[a-f0-9]{64})$/u;
@@ -22,6 +23,7 @@ const MAX_MANIFESTS = 256;
 const MAX_DEPTH = 8;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024 * 1024;
 const BLOB_CONCURRENCY = 4;
+const DEFAULT_TOKEN_RETRY_MS = [0, 2_000, 5_000, 10_000, 15_000] as const;
 const tokenSchema = z.object({
 	token: z
 		.string()
@@ -47,6 +49,123 @@ const imageSchema = z.object({
 	layers: z.array(descriptorSchema).max(MAX_BLOBS),
 });
 type Descriptor = z.infer<typeof descriptorSchema>;
+
+function tokenRetryDelaysMs(): readonly number[] {
+	const raw = process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS?.trim();
+	if (!raw) return DEFAULT_TOKEN_RETRY_MS;
+	const parsed = raw
+		.split(",")
+		.map((part) => Number(part.trim()))
+		.filter((value) => Number.isFinite(value) && value >= 0);
+	return parsed.length > 0 ? parsed : DEFAULT_TOKEN_RETRY_MS;
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readAnonymousToken(response: Response): Promise<string> {
+	if (!response.ok)
+		throw new Error(
+			`Anonymous GHCR token request failed with HTTP ${response.status}`,
+		);
+	let tokenDocument: unknown;
+	try {
+		tokenDocument = JSON.parse(
+			(await readBounded(response, 65536)).toString("utf8"),
+		);
+	} catch {
+		throw new Error("Anonymous GHCR token response is invalid");
+	}
+	const parsedToken = tokenSchema.safeParse(tokenDocument);
+	if (!parsedToken.success)
+		throw new Error("Anonymous GHCR token response is invalid");
+	return parsedToken.data.token;
+}
+
+async function requestAnonymousToken(
+	repository: string,
+	rootDigest: string,
+	fetcher: typeof fetch,
+): Promise<string> {
+	const delays = tokenRetryDelaysMs();
+	let lastStatus = 0;
+	for (let attempt = 0; attempt < delays.length; attempt++) {
+		const delay = delays[attempt] ?? 0;
+		if (delay > 0) await sleep(delay);
+		const direct = new URL("https://ghcr.io/token");
+		direct.searchParams.set("service", "ghcr.io");
+		direct.searchParams.set("scope", `repository:${repository}:pull`);
+		let tokenResponse = await fetchSafely(
+			fetcher,
+			direct,
+			{
+				redirect: "error",
+				signal: AbortSignal.timeout(15_000),
+			},
+			"token",
+		);
+		if (tokenResponse.status === 401) {
+			await tokenResponse.body?.cancel().catch(() => undefined);
+			const probe = await fetchSafely(
+				fetcher,
+				`https://ghcr.io/v2/${repository}/manifests/${rootDigest}`,
+				{
+					headers: { accept: MANIFEST_TYPES.join(", ") },
+					redirect: "error",
+					signal: AbortSignal.timeout(15_000),
+				},
+				"manifest",
+			);
+			if (probe.status === 401) {
+				const challenge = parseChallenge(
+					probe.headers.get("www-authenticate") ?? undefined,
+				);
+				await probe.body?.cancel().catch(() => undefined);
+				const realmText = challenge.params.realm;
+				if (challenge.scheme === "bearer" && realmText) {
+					let realm: URL;
+					try {
+						realm = new URL(realmText);
+					} catch {
+						throw new Error("Anonymous GHCR bearer realm is invalid");
+					}
+					if (
+						realm.protocol !== "https:" ||
+						realm.username !== "" ||
+						realm.password !== ""
+					)
+						throw new Error("Anonymous GHCR bearer realm is not permitted");
+					realm.searchParams.set(
+						"service",
+						challenge.params.service ?? "ghcr.io",
+					);
+					const scope =
+						challenge.params.scope ?? `repository:${repository}:pull`;
+					realm.searchParams.set("scope", scope);
+					tokenResponse = await fetchSafely(
+						fetcher,
+						realm,
+						{
+							redirect: "error",
+							signal: AbortSignal.timeout(15_000),
+						},
+						"token",
+					);
+				}
+			} else {
+				await probe.body?.cancel().catch(() => undefined);
+			}
+		}
+		lastStatus = tokenResponse.status;
+		if (tokenResponse.ok) return readAnonymousToken(tokenResponse);
+		await tokenResponse.body?.cancel().catch(() => undefined);
+		if (tokenResponse.status !== 401) break;
+	}
+	throw new Error(
+		`Anonymous GHCR token request failed with HTTP ${lastStatus}`,
+	);
+}
 
 async function fetchSafely(
 	fetcher: typeof fetch,
@@ -168,34 +287,7 @@ export async function verifyPublicGhcrImage(
 	const root = match[2];
 	if (!repository || !root)
 		throw new Error("Expected a digest-pinned GHCR image reference");
-	const tokenUrl = new URL("https://ghcr.io/token");
-	tokenUrl.searchParams.set("service", "ghcr.io");
-	tokenUrl.searchParams.set("scope", `repository:${repository}:pull`);
-	const tokenResponse = await fetchSafely(
-		fetcher,
-		tokenUrl,
-		{
-			redirect: "error",
-			signal: AbortSignal.timeout(15_000),
-		},
-		"token",
-	);
-	if (!tokenResponse.ok)
-		throw new Error(
-			`Anonymous GHCR token request failed with HTTP ${tokenResponse.status}`,
-		);
-	let tokenDocument: unknown;
-	try {
-		tokenDocument = JSON.parse(
-			(await readBounded(tokenResponse, 65536)).toString("utf8"),
-		);
-	} catch {
-		throw new Error("Anonymous GHCR token response is invalid");
-	}
-	const parsedToken = tokenSchema.safeParse(tokenDocument);
-	if (!parsedToken.success)
-		throw new Error("Anonymous GHCR token response is invalid");
-	const token = parsedToken.data.token;
+	const token = await requestAnonymousToken(repository, root, fetcher);
 	const visited = new Map<
 		string,
 		{
@@ -394,6 +486,8 @@ export async function verifyPublicGhcrImage(
 		bytes: totalBytes,
 	};
 }
+
+export { requestAnonymousToken };
 
 async function main(): Promise<void> {
 	if (process.argv.length !== 3)

@@ -78,6 +78,21 @@ function fixture() {
 	};
 }
 type Call = { url: string; options: RequestInit | undefined };
+function requestAuthorization(options: RequestInit | undefined): string | null {
+	if (!options?.headers) return null;
+	if (options.headers instanceof Headers)
+		return options.headers.get("authorization");
+	if (Array.isArray(options.headers)) {
+		for (const [key, value] of options.headers)
+			if (key.toLowerCase() === "authorization") return value;
+		return null;
+	}
+	// SAFETY: RequestInit.headers is Headers, string[][], or Record<string, string>; the branches above exclude the other shapes.
+	const record = options.headers as Record<string, string>;
+	for (const [key, value] of Object.entries(record))
+		if (key.toLowerCase() === "authorization") return value;
+	return null;
+}
 function registry(
 	f: ReturnType<typeof fixture>,
 	mutate?: (url: URL, response: Response) => Response,
@@ -147,17 +162,81 @@ test("verifies an anonymous index, runnable image, attestation and every referen
 });
 
 test("rejects anonymous denial and malformed references", async () => {
-	await assert.rejects(
-		verifyPublicGhcrImage(
-			fixture().ref,
-			async () => new Response("", { status: 401 }),
-		),
-		/HTTP 401/u,
-	);
+	const prev = process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS;
+	process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS = "0";
+	try {
+		await assert.rejects(
+			verifyPublicGhcrImage(
+				fixture().ref,
+				async () => new Response("", { status: 401 }),
+			),
+			/HTTP 401/u,
+		);
+	} finally {
+		if (prev === undefined) delete process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS;
+		else process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS = prev;
+	}
 	await assert.rejects(
 		verifyPublicGhcrImage(fixture().ref.replace("ghcr.io", "example.com")),
 		/Expected/u,
 	);
+});
+
+test("retries transient anonymous token 401 while GHCR visibility propagates", async () => {
+	const f = fixture();
+	const prev = process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS;
+	process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS = "0,0,0";
+	try {
+		let attempts = 0;
+		const a = registry(f, (url, res) => {
+			if (url.pathname === "/token") {
+				attempts += 1;
+				if (attempts < 3) return new Response("", { status: 401 });
+			}
+			return res;
+		});
+		const result = await verifyPublicGhcrImage(f.ref, a.fetcher);
+		assert.equal(result.manifestCount, 3);
+		assert.equal(attempts, 3);
+	} finally {
+		if (prev === undefined) delete process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS;
+		else process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS = prev;
+	}
+});
+
+test("exchanges anonymous bearer token via manifest challenge when direct token is denied", async () => {
+	const f = fixture();
+	const prev = process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS;
+	process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS = "0";
+	try {
+		let tokenCalls = 0;
+		const base = registry(f);
+		const fetcher: typeof fetch = async (input, init) => {
+			const url = new URL(String(input));
+			if (url.hostname === "ghcr.io" && url.pathname === "/token") {
+				tokenCalls += 1;
+				if (tokenCalls === 1) return new Response("", { status: 401 });
+			}
+			if (
+				url.hostname === "ghcr.io" &&
+				url.pathname.includes("/manifests/") &&
+				requestAuthorization(init) === null
+			)
+				return new Response("", {
+					status: 401,
+					headers: {
+						"www-authenticate":
+							'Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:hobo-labs/hobo-sdk:pull"',
+					},
+				});
+			return base.fetcher(input, init);
+		};
+		const result = await verifyPublicGhcrImage(f.ref, fetcher);
+		assert.equal(result.manifestCount, 3);
+	} finally {
+		if (prev === undefined) delete process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS;
+		else process.env.HOBO_GHCR_PUBLIC_VERIFY_RETRY_MS = prev;
+	}
 });
 
 test("rejects a changed child manifest and a missing or changed layer", async () => {
