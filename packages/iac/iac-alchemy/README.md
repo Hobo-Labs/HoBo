@@ -1229,3 +1229,6 @@ Dead-letter confirmation is an owner operation. The host must provide a durable,
 idempotent destination and verify its receipt; an unknown destination or queue
 outcome requires reconciliation. Price the destination and the additional queue
 reads and writes when supplying the financial model.
+
+Owner inspection supports a message-ID cursor for advancing past blocked
+exhausted messages. Compare revisions across pages and restart when required.

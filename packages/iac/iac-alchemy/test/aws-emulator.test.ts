@@ -1120,6 +1120,13 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				status: "available",
 				messages: [{ messageId: "m2", body: new Uint8Array([3]) }],
 			});
+			expect(
+				await afterReclamation.inspectExhausted({ afterMessageId: "m1" }),
+			).toMatchObject({
+				status: "available",
+				messages: [{ messageId: "m2" }],
+				nextCursor: null,
+			});
 			const redrive = {
 				operation: { id: "v1.30000.abcdefghijklmn11", expiresAtMs: 30000 },
 				messageId: "m2",
