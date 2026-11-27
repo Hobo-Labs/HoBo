@@ -57,6 +57,7 @@ import type {
 	CompleteExecutionInput,
 	EffectClaimInput,
 	EffectFenceInput,
+	ReleaseUnacceptedStartInput,
 	ReserveCapacityInput,
 	StrictFleetStore,
 } from "./strict-store.js";
@@ -1270,6 +1271,52 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				slot.incarnationId,
 			);
 			return { claim, idempotent: false };
+		});
+	}
+
+	releaseUnacceptedStart(input: ReleaseUnacceptedStartInput): Promise<boolean> {
+		return this.tx(() => {
+			const claim = this.claimByIdInside(input.claimId);
+			const key = executionKeyId(input.key);
+			if (
+				claim?.state !== "start-authorized" ||
+				claim.runnerSlotId !== input.slotId ||
+				executionKeyId(claim.key) !== key
+			)
+				return false;
+			const slot = this.slotInside(input.slotId);
+			if (slot?.state !== "bound") return false;
+			const removed = this.db
+				.prepare(
+					"DELETE FROM fleet_v2_execution_claims WHERE id=? AND state='start-authorized'",
+				)
+				.run(input.claimId).changes;
+			if (removed !== 1) return false;
+			slot.state = "registered";
+			this.saveSlot(slot);
+			const demand = this.demandInside(key);
+			if (demand?.state === "satisfied") {
+				const restored = clone(CiDemandSchema, demand);
+				restored.state = "eligible";
+				this.saveDemand(restored);
+			}
+			const rows = this.db
+				.prepare("SELECT id, body FROM fleet_v2_events")
+				.all();
+			for (const row of rows) {
+				const parsed = z
+					.object({ id: z.string(), body: z.string() })
+					.parse(row);
+				const event = fromJsonString(FleetEventSchema, parsed.body);
+				if (
+					event.type === FleetEventType.EXECUTION_START_AUTHORIZED &&
+					event.subjectId === claim.id
+				)
+					this.db
+						.prepare("DELETE FROM fleet_v2_events WHERE id=?")
+						.run(parsed.id);
+			}
+			return true;
 		});
 	}
 

@@ -64,6 +64,7 @@ import type {
 	CompleteExecutionInput,
 	EffectClaimInput,
 	EffectFenceInput,
+	ReleaseUnacceptedStartInput,
 	ReserveCapacityInput,
 	StrictFleetStore,
 } from "./strict-store.js";
@@ -1450,6 +1451,53 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				slot.incarnationId,
 			);
 			return { claim, idempotent: false };
+		});
+	}
+
+	releaseUnacceptedStart(input: ReleaseUnacceptedStartInput): Promise<boolean> {
+		return this.tx(async (client) => {
+			const claim = await this.claimByIdInside(client, input.claimId, true);
+			const key = executionKeyId(input.key);
+			if (
+				claim?.state !== "start-authorized" ||
+				claim.runnerSlotId !== input.slotId ||
+				executionKeyId(claim.key) !== key
+			)
+				return false;
+			const slot = await this.slotInside(client, input.slotId, true);
+			if (slot?.state !== "bound") return false;
+			const removed = await client.query(
+				"DELETE FROM hobo_ci_fleet_v2_execution_claims WHERE partition_id=$1 AND id=$2 AND state='start-authorized'",
+				[this.partition, input.claimId],
+			);
+			if (removed.rowCount !== 1) return false;
+			slot.state = "registered";
+			await this.saveSlot(client, slot);
+			const demand = await this.demandInside(client, key, true);
+			if (demand?.state === "satisfied") {
+				const restored = clone(CiDemandSchema, demand);
+				restored.state = "eligible";
+				await this.saveDemand(client, restored);
+			}
+			const events = await client.query(
+				"SELECT id, body FROM hobo_ci_fleet_v2_events WHERE partition_id=$1",
+				[this.partition],
+			);
+			for (const row of events.rows) {
+				const parsed = z
+					.object({ id: z.string(), body: z.string() })
+					.parse(row);
+				const event = fromJsonString(FleetEventSchema, parsed.body);
+				if (
+					event.type === FleetEventType.EXECUTION_START_AUTHORIZED &&
+					event.subjectId === claim.id
+				)
+					await client.query(
+						"DELETE FROM hobo_ci_fleet_v2_events WHERE partition_id=$1 AND id=$2",
+						[this.partition, parsed.id],
+					);
+			}
+			return true;
 		});
 	}
 

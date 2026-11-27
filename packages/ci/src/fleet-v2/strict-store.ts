@@ -50,6 +50,12 @@ export interface EffectFenceInput {
 	fence: number;
 }
 
+export interface ReleaseUnacceptedStartInput {
+	claimId: string;
+	slotId: string;
+	key: ParsedExecutionKey;
+}
+
 export interface CompleteExecutionInput {
 	claimId: string;
 	state: Exclude<ExecutionClaimState, "start-authorized" | "running">;
@@ -87,6 +93,7 @@ export interface StrictFleetStore {
 	bindStart(
 		input: ParsedStartBindingInput,
 	): Promise<{ claim: ExecutionClaim; idempotent: boolean }>;
+	releaseUnacceptedStart(input: ReleaseUnacceptedStartInput): Promise<boolean>;
 	completeExecution(input: CompleteExecutionInput): Promise<{
 		claim: ExecutionClaim;
 		settled: boolean;

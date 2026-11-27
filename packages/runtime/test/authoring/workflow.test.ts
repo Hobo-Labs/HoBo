@@ -459,13 +459,23 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done-b",
+				id: "scheduled-b",
 				streamId,
 				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "b", index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done-b",
+				streamId,
+				seq: 3,
 				type: "run.StepCompleted",
 				data: { name: "b", index: 0, result: 2 },
 			},
-			1,
+			2,
 		);
 		const wf = defineWorkflow({
 			name: "name-diverge",
@@ -498,23 +508,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done-a",
+				id: "scheduled-a",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: { name: "a", index: 0, result: 1 },
+				type: "run.StepScheduled",
+				data: { name: "a", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "done-b",
+				id: "done-a",
 				streamId,
 				seq: 3,
 				type: "run.StepCompleted",
-				data: { name: "b", index: 0, result: 2 },
+				data: { name: "a", index: 0, result: 1 },
 			},
 			2,
+		);
+		await engine.store.append(
+			{
+				id: "done-b",
+				streamId,
+				seq: 4,
+				type: "run.StepCompleted",
+				data: { name: "b", index: 0, result: 2 },
+			},
+			3,
 		);
 		const wf = defineWorkflow({
 			name: "dup-index",
@@ -548,23 +568,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		const completed = { name: "work", index: 0, result: { ok: true } };
 		await engine.store.append(
 			{
-				id: "done-1",
+				id: "scheduled",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: completed,
+				type: "run.StepScheduled",
+				data: { name: "work", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "done-2",
+				id: "done-1",
 				streamId,
 				seq: 3,
 				type: "run.StepCompleted",
 				data: completed,
 			},
 			2,
+		);
+		await engine.store.append(
+			{
+				id: "done-2",
+				streamId,
+				seq: 4,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			3,
 		);
 		let runs = 0;
 		const wf = defineWorkflow({
@@ -602,23 +632,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done",
+				id: "scheduled",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: { name: "work", index: 0, result: { ok: true } },
+				type: "run.StepScheduled",
+				data: { name: "work", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "failed",
+				id: "done",
 				streamId,
 				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "work", index: 0, result: { ok: true } },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId,
+				seq: 4,
 				type: "run.StepFailed",
 				data: { name: "work", index: 0, message: "nope" },
 			},
-			2,
+			3,
 		);
 		const wf = defineWorkflow({
 			name: "conflict-step",
@@ -690,17 +730,17 @@ describe("durable workflow: journal, restart, replay", () => {
 		const completed = { name: "work", index: 0, result: { ok: true } };
 		await engine.store.append(
 			{
-				id: "step-1",
+				id: "scheduled",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: completed,
+				type: "run.StepScheduled",
+				data: { name: "work", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "step-2",
+				id: "step-1",
 				streamId,
 				seq: 3,
 				type: "run.StepCompleted",
@@ -710,13 +750,23 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "terminal",
+				id: "step-2",
 				streamId,
 				seq: 4,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			3,
+		);
+		await engine.store.append(
+			{
+				id: "terminal",
+				streamId,
+				seq: 5,
 				type: "run.Completed",
 				data: { result: { ok: true } },
 			},
-			3,
+			4,
 		);
 		const wf = defineWorkflow({
 			name: "terminal-with-bad-step",
@@ -941,23 +991,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done",
+				id: "scheduled-early",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: { name: "early", index: 0, result: "ok" },
+				type: "run.StepScheduled",
+				data: { name: "early", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "scheduled",
+				id: "done",
 				streamId,
 				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "early", index: 0, result: "ok" },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 4,
 				type: "run.StepScheduled",
 				data: { name: "late", index: 5 },
 			},
-			2,
+			3,
 		);
 		let runs = 0;
 		const wf = defineWorkflow({
@@ -1004,13 +1064,23 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "later",
+				id: "scheduled-later",
 				streamId,
 				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "later", index: 1 },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "later",
+				streamId,
+				seq: 4,
 				type: "run.StepCompleted",
 				data: { name: "later", index: 1, result: "done" },
 			},
-			2,
+			3,
 		);
 		let runs = 0;
 		let holeEffects = 0;
@@ -1046,6 +1116,59 @@ describe("durable workflow: journal, restart, replay", () => {
 		).toBe(true);
 	});
 
+	it("refuses an outcome for a step that was never scheduled", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/unscheduled-outcome";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "unscheduled-outcome",
+					workflowName: "unscheduled-outcome",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "hole", index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "later",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "later", index: 1, result: "done" },
+			},
+			2,
+		);
+		let effects = 0;
+		const wf = defineWorkflow({
+			name: "unscheduled-outcome",
+			async run(ctx) {
+				effects += 1;
+				await ctx.step("hole", () => "first");
+				return ctx.step("later", () => "done");
+			},
+		});
+		await expect(engine.resume(wf, "unscheduled-outcome", {})).rejects.toThrow(
+			/unscheduled step outcome/,
+		);
+		expect(effects).toBe(0);
+		expect(await engine.journal("unscheduled-outcome")).toHaveLength(3);
+	});
+
 	it("resumes a schedule above the open journal tip", async () => {
 		const engine = createWorkflowEngine();
 		const streamId = "run/orphan-schedule";
@@ -1065,43 +1188,53 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done-0",
+				id: "scheduled-0",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: { name: "first", index: 0, result: "ok" },
+				type: "run.StepScheduled",
+				data: { name: "first", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "open",
+				id: "done-0",
 				streamId,
 				seq: 3,
-				type: "run.StepScheduled",
-				data: { name: "second", index: 1 },
+				type: "run.StepCompleted",
+				data: { name: "first", index: 0, result: "ok" },
 			},
 			2,
 		);
 		await engine.store.append(
 			{
-				id: "scheduled-2",
+				id: "open",
 				streamId,
 				seq: 4,
 				type: "run.StepScheduled",
-				data: { name: "third", index: 2 },
+				data: { name: "second", index: 1 },
 			},
 			3,
 		);
 		await engine.store.append(
 			{
-				id: "done-2",
+				id: "scheduled-2",
 				streamId,
 				seq: 5,
+				type: "run.StepScheduled",
+				data: { name: "third", index: 2 },
+			},
+			4,
+		);
+		await engine.store.append(
+			{
+				id: "done-2",
+				streamId,
+				seq: 6,
 				type: "run.StepCompleted",
 				data: { name: "third", index: 2, result: "later" },
 			},
-			4,
+			5,
 		);
 		let runs = 0;
 		let firstEffects = 0;
@@ -1528,13 +1661,23 @@ describe("durable workflow: journal, restart, replay", () => {
 		});
 		await engine.store.append(
 			{
-				id: "done",
+				id: "scheduled",
 				streamId,
 				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "read", index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 3,
 				type: "run.StepCompleted",
 				data: { name: "read", index: 0, result },
 			},
-			1,
+			2,
 		);
 		let readEffects = 0;
 		const wf = defineWorkflow({
@@ -2083,13 +2226,23 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done",
+				id: "scheduled",
 				streamId,
 				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "work", index: 0 },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 4,
 				type: "run.StepCompleted",
 				data: { name: "work", index: 0, result: "ok" },
 			},
-			2,
+			3,
 		);
 		let runs = 0;
 		let workEffects = 0;
@@ -2221,23 +2374,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "failed",
+				id: "scheduled",
 				streamId: "run/conflict-terminal",
 				seq: 2,
-				type: "run.StepFailed",
-				data: { name: "s", index: 0, message: "boom" },
+				type: "run.StepScheduled",
+				data: { name: "s", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "done",
+				id: "failed",
 				streamId: "run/conflict-terminal",
 				seq: 3,
+				type: "run.StepFailed",
+				data: { name: "s", index: 0, message: "boom" },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/conflict-terminal",
+				seq: 4,
 				type: "run.Completed",
 				data: { result: "nope" },
 			},
-			2,
+			3,
 		);
 		const wf = defineWorkflow({
 			name: "conflict-terminal",
@@ -2268,23 +2431,43 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done",
+				id: "scheduled-early",
 				streamId: "run/unconsumed",
 				seq: 2,
-				type: "run.StepCompleted",
-				data: { name: "early", index: 0, result: "ok" },
+				type: "run.StepScheduled",
+				data: { name: "early", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "failed",
+				id: "done",
 				streamId: "run/unconsumed",
 				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "early", index: 0, result: "ok" },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-later",
+				streamId: "run/unconsumed",
+				seq: 4,
+				type: "run.StepScheduled",
+				data: { name: "later", index: 1 },
+			},
+			3,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId: "run/unconsumed",
+				seq: 5,
 				type: "run.StepFailed",
 				data: { name: "later", index: 1, message: "later" },
 			},
-			2,
+			4,
 		);
 		const wf = defineWorkflow({
 			name: "unconsumed",
@@ -2315,13 +2498,23 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done",
+				id: "scheduled",
 				streamId: "run/unconsumed-failure",
 				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "later", index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/unconsumed-failure",
+				seq: 3,
 				type: "run.StepCompleted",
 				data: { name: "later", index: 0, result: "ok" },
 			},
-			1,
+			2,
 		);
 		const wf = defineWorkflow({
 			name: "unconsumed-failure",
@@ -2332,7 +2525,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		await expect(engine.resume(wf, "unconsumed-failure", {})).rejects.toThrow(
 			/unconsumed step outcome/,
 		);
-		expect(await engine.journal("unconsumed-failure")).toHaveLength(2);
+		expect(await engine.journal("unconsumed-failure")).toHaveLength(3);
 	});
 
 	it("rejects an orphan StepScheduled above consumed outcomes without appending run.Completed", async () => {
@@ -2354,23 +2547,33 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		await engine.store.append(
 			{
-				id: "done-0",
+				id: "scheduled-0",
 				streamId,
 				seq: 2,
-				type: "run.StepCompleted",
-				data: { name: "only", index: 0, result: "ok" },
+				type: "run.StepScheduled",
+				data: { name: "only", index: 0 },
 			},
 			1,
 		);
 		await engine.store.append(
 			{
-				id: "scheduled-5",
+				id: "done-0",
 				streamId,
 				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "only", index: 0, result: "ok" },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-5",
+				streamId,
+				seq: 4,
 				type: "run.StepScheduled",
 				data: { name: "orphan", index: 5 },
 			},
-			2,
+			3,
 		);
 		let effects = 0;
 		const wf = defineWorkflow({
@@ -2387,7 +2590,7 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 		expect(effects).toBe(0);
 		const journal = await engine.journal("orphan-scheduled");
-		expect(journal).toHaveLength(3);
+		expect(journal).toHaveLength(4);
 		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
 	});
 

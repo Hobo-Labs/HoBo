@@ -111,29 +111,6 @@ export function readReplayCommandTree(
 		}
 	}
 
-	function stepFor(index: number, name: string): ReplayStepCommand {
-		const previous = steps.get(index);
-		if (previous) {
-			if (previous.name !== name)
-				throw new Error(`step name differs from journal for ${runId}`);
-			return previous;
-		}
-		if (index !== steps.size)
-			throw new Error(`gapped step journal for ${runId}`);
-		const command: ReplayStepCommand = {
-			kind: "step",
-			index,
-			name,
-			parent: null,
-			active: true,
-			terminal: undefined,
-			children: [],
-		};
-		steps.set(index, command);
-		append(command);
-		return command;
-	}
-
 	for (const event of events) {
 		if (!Number.isSafeInteger(event.seq) || event.seq <= lastSeq) {
 			throw new Error("invalid workflow journal sequence");
@@ -323,7 +300,16 @@ export function readReplayCommandTree(
 					: `duplicate run.StepFailed for ${runId}`,
 			);
 		}
-		const step = stepFor(outcome.fact.index, outcome.fact.name);
+		const step = steps.get(outcome.fact.index);
+		if (!step) {
+			throw new Error(
+				outcome.fact.index === steps.size
+					? `unscheduled step outcome for ${runId}`
+					: `gapped step journal for ${runId}`,
+			);
+		}
+		if (step.name !== outcome.fact.name)
+			throw new Error(`step name differs from journal for ${runId}`);
 		if (step.parent !== null && !steps.get(step.parent)?.active) {
 			throw new Error(`workflow command parent is not active for ${runId}`);
 		}

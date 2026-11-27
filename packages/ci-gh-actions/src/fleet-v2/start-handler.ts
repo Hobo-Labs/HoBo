@@ -12,6 +12,7 @@ import {
 	type GithubAssignmentLookup,
 	type StartFenceBindRequest,
 	startFenceRequestSchema,
+	type VerifiedGithubAssignment,
 } from "./start-fence.js";
 
 const MAX_BODY = 64 * 1024;
@@ -74,7 +75,7 @@ function sameSecret(secret: string, hash: string): boolean {
 export function createStartFenceHandler(deps: {
 	store: Pick<
 		StrictFleetStore,
-		"runnerSlot" | "bindStart" | "executionClaimById"
+		"runnerSlot" | "bindStart" | "executionClaimById" | "releaseUnacceptedStart"
 	>;
 	lookupForSlot: (slot: RunnerSlot) => Promise<GithubAssignmentLookup>;
 }): (request: Request) => Promise<Response> {
@@ -117,7 +118,6 @@ export function createStartFenceHandler(deps: {
 					profileId: binding.profileId,
 				},
 			});
-			const result = await deps.store.bindStart(parsedBinding);
 			const matchesClaim = (claim: ExecutionClaim | undefined): boolean =>
 				claim !== undefined &&
 				claim.id === binding.claimId &&
@@ -125,29 +125,51 @@ export function createStartFenceHandler(deps: {
 				claim.profileId === binding.profileId &&
 				(claim.state === "start-authorized" || claim.state === "running") &&
 				executionKeyId(claim.key) === executionKeyId(parsedBinding.key);
-			if (!matchesClaim(result.claim))
-				return answer(503, { authorized: false });
-			const current = await lookup.lookupAssignment(binding.runnerName);
-			if (
-				!current ||
-				current.runnerName !== binding.runnerName ||
-				current.accountId !== binding.accountId ||
+			const matchesAssignment = (
+				current: VerifiedGithubAssignment | undefined,
+			): boolean =>
+				current !== undefined &&
+				current.runnerName === binding.runnerName &&
+				current.accountId === binding.accountId &&
 				executionKeyId(
 					parseExecutionKey(JSON.stringify(current.executionKey)),
-				) !== executionKeyId(parsedBinding.key)
-			)
+				) === executionKeyId(parsedBinding.key);
+			if (!matchesAssignment(await lookup.lookupAssignment(binding.runnerName)))
 				return answer(503, { authorized: false });
-			if (!matchesClaim(await deps.store.executionClaimById(binding.claimId)))
+			const existing = await deps.store.executionClaimById(binding.claimId);
+			if (existing && !matchesClaim(existing))
 				return answer(503, { authorized: false });
-			return answer(200, {
-				authorized: true,
-				slotId: binding.slotId,
-				claimId: binding.claimId,
-				accountId: binding.accountId,
-				profileId: binding.profileId,
-				runnerName: binding.runnerName,
-				executionKey: binding.executionKey,
-			});
+			const result = await deps.store.bindStart(parsedBinding);
+			let accepted = false;
+			try {
+				if (!matchesClaim(result.claim))
+					return answer(503, { authorized: false });
+				if (
+					!matchesAssignment(await lookup.lookupAssignment(binding.runnerName))
+				)
+					return answer(503, { authorized: false });
+				if (!matchesClaim(await deps.store.executionClaimById(binding.claimId)))
+					return answer(503, { authorized: false });
+				accepted = true;
+				return answer(200, {
+					authorized: true,
+					slotId: binding.slotId,
+					claimId: binding.claimId,
+					accountId: binding.accountId,
+					profileId: binding.profileId,
+					runnerName: binding.runnerName,
+					executionKey: binding.executionKey,
+				});
+			} finally {
+				if (!accepted && !result.idempotent)
+					await deps.store
+						.releaseUnacceptedStart({
+							claimId: binding.claimId,
+							slotId: binding.slotId,
+							key: parsedBinding.key,
+						})
+						.catch(() => false);
+			}
 		} catch {
 			return answer(503, { authorized: false });
 		}

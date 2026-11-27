@@ -266,3 +266,89 @@ it("routes a verified GitHub assignment through SQLite, with an idempotent recei
 		store.close();
 	}
 });
+
+it("removes a start binding when the assignment changes after commit", async () => {
+	const store = await initializedStore();
+	try {
+		let lookups = 0;
+		const verified = {
+			runnerName: body.runnerName,
+			accountId: body.accountId,
+			executionKey,
+		};
+		const startFence = createStartFenceHandler({
+			store,
+			lookupForSlot: async () => ({
+				async lookupAssignment() {
+					lookups += 1;
+					if (lookups < 3) return verified;
+					return {
+						...verified,
+						executionKey: {
+							githubJob: { ...executionKey.githubJob, jobId: "2" },
+						},
+					};
+				},
+			}),
+		});
+		const response = await startFence(
+			new Request("https://ci.example/v2/fleet/start-fence", {
+				method: "POST",
+				body: json(body),
+			}),
+		);
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ authorized: false });
+		expect(await store.executionClaimById(body.claimId)).toBeUndefined();
+		expect((await store.runnerSlot(body.slotId))?.state).toBe("registered");
+		expect(
+			(await store.demand(parseExecutionKey(json(executionKey))))?.state,
+		).toBe("eligible");
+		expect(
+			(await store.events()).filter(
+				(event) => event.type === FleetEventType.EXECUTION_START_AUTHORIZED,
+			),
+		).toHaveLength(0);
+	} finally {
+		store.close();
+	}
+});
+
+it("does not delete a claim that left start-authorized during the recheck", async () => {
+	const store = await initializedStore();
+	try {
+		let lookups = 0;
+		const startFence = createStartFenceHandler({
+			store,
+			lookupForSlot: async () => ({
+				async lookupAssignment() {
+					lookups += 1;
+					if (lookups === 3)
+						await store.completeExecution({
+							claimId: body.claimId,
+							state: "cancelled",
+							teardownConfirmed: false,
+						});
+					return {
+						runnerName: body.runnerName,
+						accountId: body.accountId,
+						executionKey,
+					};
+				},
+			}),
+		});
+		const response = await startFence(
+			new Request("https://ci.example/v2/fleet/start-fence", {
+				method: "POST",
+				body: json(body),
+			}),
+		);
+		expect(response.status).toBe(503);
+		expect((await store.executionClaimById(body.claimId))?.state).toBe(
+			"cancelled",
+		);
+		expect((await store.runnerSlot(body.slotId))?.state).toBe("draining");
+	} finally {
+		store.close();
+	}
+});

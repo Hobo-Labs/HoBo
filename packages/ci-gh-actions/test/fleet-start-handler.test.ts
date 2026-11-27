@@ -70,14 +70,21 @@ function fixture() {
 	const lookupAssignment = vi.fn(async () => assignment);
 	const lookupForSlot = vi.fn(async () => ({ lookupAssignment }));
 	const executionClaimById = vi.fn(async () => claim);
+	const releaseUnacceptedStart = vi.fn(async () => true);
 	return {
 		runnerSlot,
 		bindStart,
 		lookupAssignment,
 		lookupForSlot,
 		executionClaimById,
+		releaseUnacceptedStart,
 		handle: createStartFenceHandler({
-			store: { runnerSlot, bindStart, executionClaimById },
+			store: {
+				runnerSlot,
+				bindStart,
+				executionClaimById,
+				releaseUnacceptedStart,
+			},
 			lookupForSlot,
 		}),
 	};
@@ -97,8 +104,10 @@ it("returns a matching receipt only after binding and a fresh assignment recheck
 		executionKey,
 	});
 	expect(f.bindStart).toHaveBeenCalledOnce();
-	expect(f.lookupAssignment).toHaveBeenCalledTimes(2);
+	expect(f.lookupAssignment).toHaveBeenCalledTimes(3);
+	expect(f.executionClaimById).toHaveBeenCalledTimes(2);
 	expect(f.executionClaimById).toHaveBeenCalledWith(body.claimId);
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
 });
 it("rejects an invalid slot secret before querying GitHub", async () => {
 	const f = fixture();
@@ -108,6 +117,7 @@ it("rejects an invalid slot secret before querying GitHub", async () => {
 	expect(response.status).toBe(403);
 	expect(f.lookupForSlot).not.toHaveBeenCalled();
 	expect(f.bindStart).not.toHaveBeenCalled();
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
 });
 it("rejects a malformed body before querying the store", async () => {
 	const f = fixture();
@@ -126,6 +136,7 @@ it("never returns a receipt when GitHub rejects the initial assignment", async (
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(403);
 	expect(f.bindStart).not.toHaveBeenCalled();
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
 });
 it("does not issue a receipt when binding fails or is ambiguous", async () => {
 	const f = fixture();
@@ -133,17 +144,35 @@ it("does not issue a receipt when binding fails or is ambiguous", async () => {
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(503);
 	expect(await response.json()).toEqual({ authorized: false });
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
 });
-it("refuses a mismatched or terminal stored claim", async () => {
+it("rejects a terminal claim before binding", async () => {
+	const f = fixture();
+	f.executionClaimById.mockResolvedValueOnce(
+		create(ExecutionClaimSchema, { ...claim, state: "completed" }),
+	);
+	const response = await f.handle(request(body));
+	expect(response.status).toBe(503);
+	expect(f.bindStart).not.toHaveBeenCalled();
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
+});
+it("rolls back a binding when bindStart returns a claim the fence rejects", async () => {
 	const f = fixture();
 	f.bindStart.mockResolvedValueOnce({
 		claim: create(ExecutionClaimSchema, { ...claim, state: "completed" }),
-		idempotent: true,
+		idempotent: false,
 	});
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(503);
+	expect(await response.json()).toEqual({ authorized: false });
+	expect(f.releaseUnacceptedStart).toHaveBeenCalledOnce();
+	expect(f.releaseUnacceptedStart).toHaveBeenCalledWith({
+		claimId: body.claimId,
+		slotId: body.slotId,
+		key: f.bindStart.mock.calls[0]?.[0].key,
+	});
 });
-it("keeps a committed claim without issuing a receipt if assignment changes afterward", async () => {
+it("does not bind when the assignment changes before the commit", async () => {
 	const f = fixture();
 	f.lookupAssignment.mockResolvedValueOnce(assignment).mockResolvedValueOnce({
 		...assignment,
@@ -151,18 +180,51 @@ it("keeps a committed claim without issuing a receipt if assignment changes afte
 	});
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(503);
-	expect(f.bindStart).toHaveBeenCalledOnce();
+	expect(f.bindStart).not.toHaveBeenCalled();
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
 	expect(await response.json()).toEqual({ authorized: false });
 });
-it("withholds a receipt when the claim becomes terminal during the GitHub recheck", async () => {
+it("rolls back a start binding committed by this request when the assignment then changes", async () => {
 	const f = fixture();
-	f.executionClaimById.mockResolvedValueOnce(
-		create(ExecutionClaimSchema, { ...claim, state: "completed" }),
-	);
+	f.lookupAssignment
+		.mockResolvedValueOnce(assignment)
+		.mockResolvedValueOnce(assignment)
+		.mockResolvedValueOnce({
+			...assignment,
+			executionKey: { githubJob: { ...executionKey.githubJob, jobId: "2" } },
+		});
 	const response = await f.handle(request(body));
 	expect(response.status).toBe(503);
 	expect(f.bindStart).toHaveBeenCalledOnce();
-	expect(f.lookupAssignment).toHaveBeenCalledTimes(2);
+	expect(f.releaseUnacceptedStart).toHaveBeenCalledOnce();
+	expect(await response.json()).toEqual({ authorized: false });
+});
+it("does not roll back a previously accepted binding when a retry's assignment changes", async () => {
+	const f = fixture();
+	f.bindStart.mockResolvedValueOnce({ claim, idempotent: true });
+	f.lookupAssignment
+		.mockResolvedValueOnce(assignment)
+		.mockResolvedValueOnce(assignment)
+		.mockResolvedValueOnce({
+			...assignment,
+			executionKey: { githubJob: { ...executionKey.githubJob, jobId: "2" } },
+		});
+	const response = await f.handle(request(body));
+	expect(response.status).toBe(503);
+	expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
+});
+it("rolls back when the claim becomes terminal during the GitHub recheck", async () => {
+	const f = fixture();
+	f.executionClaimById
+		.mockResolvedValueOnce(claim)
+		.mockResolvedValueOnce(
+			create(ExecutionClaimSchema, { ...claim, state: "completed" }),
+		);
+	const response = await f.handle(request(body));
+	expect(response.status).toBe(503);
+	expect(f.bindStart).toHaveBeenCalledOnce();
+	expect(f.lookupAssignment).toHaveBeenCalledTimes(3);
+	expect(f.releaseUnacceptedStart).toHaveBeenCalledOnce();
 	expect(await response.json()).toEqual({ authorized: false });
 });
 it("rejects an oversized request before querying the store", async () => {
@@ -185,6 +247,7 @@ it("rejects generated incorrect binding secrets before GitHub or store binding",
 				expect(response.status).toBe(403);
 				expect(f.lookupForSlot).not.toHaveBeenCalled();
 				expect(f.bindStart).not.toHaveBeenCalled();
+				expect(f.releaseUnacceptedStart).not.toHaveBeenCalled();
 			},
 		),
 		{ seed: 614478, numRuns: 100 },
