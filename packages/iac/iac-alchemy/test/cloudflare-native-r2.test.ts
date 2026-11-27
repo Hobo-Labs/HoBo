@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Namespace } from "@alchemy.run/cloudflare/KV/Namespace";
 import { Providers } from "@alchemy.run/cloudflare/Providers";
@@ -9,6 +9,7 @@ import { Bucket } from "@alchemy.run/cloudflare/R2/Bucket";
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
+import * as Bundle from "alchemy/Bundle/Bundle";
 import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
@@ -681,6 +682,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 				(entry) => entry.type === Worker.Type && entry.fqn === "web",
 			);
 			expect(app?.news).toMatchObject({
+				main: relative(process.cwd(), main),
 				env: {
 					HOBO_RESOURCE_0: expect.objectContaining({
 						workerName: proxySource.resourceId,
@@ -706,14 +708,33 @@ describe("Cloudflare R2 Bindle mapping", () => {
 				path: `${name}.js`,
 				contents: source(name),
 			}));
+			if (app === undefined) throw new Error("mapped application missing");
+			const bundleDirectory = join(directory, "worker-bundle");
+			await Effect.runPromise(
+				Bundle.build(
+					{
+						input: main,
+						platform: "node",
+						resolve: { conditionNames: [...Bundle.NODE_CONDITION_NAMES] },
+						plugins: [],
+					},
+					{
+						dir: bundleDirectory,
+						format: "esm",
+						entryFileNames: "main.js",
+						codeSplitting: false,
+					},
+				),
+			);
 			const workerd = new Miniflare({
 				compatibilityDate: "2026-01-01",
+				compatibilityFlags: ["nodejs_compat"],
 				workers: [
 					{
-						name: "bridge",
+						name: app.fqn,
 						modules: true,
-						script: `export default { fetch(request, env) { return env.PROXY.fetch("https://hobo-r2.internal/read", { method: "POST", headers: { "x-hobo-r2-key": request.headers.get("x-hobo-r2-key") } }); } };`,
-						serviceBindings: { PROXY: proxy.fqn },
+						script: readFileSync(join(bundleDirectory, "main.js"), "utf8"),
+						serviceBindings: { HOBO_RESOURCE_0: proxy.fqn },
 					},
 					{
 						name: proxy.fqn,
@@ -728,23 +749,9 @@ describe("Cloudflare R2 Bindle mapping", () => {
 				await bucket.put("hello", new TextEncoder().encode("hello"), {
 					httpMetadata: { contentType: "text/plain" },
 				});
-				const simulatedProxy = await workerd.getWorker("bridge");
-				const result = await worker.fetch(new Request("https://app.test"), {
-					HOBO_RESOURCE_0: {
-						fetch: async (request: Request) => {
-							const response = await simulatedProxy.fetch(
-								"https://bridge.test/",
-								{
-									headers: Object.fromEntries(request.headers),
-								},
-							);
-							return new Response(await response.arrayBuffer(), {
-								status: response.status,
-								headers: Object.fromEntries(response.headers),
-							});
-						},
-					},
-				});
+				const mappedApplication = await workerd.getWorker(app.fqn);
+				const result = await mappedApplication.fetch("https://app.test/");
+				expect(result.status).toBe(200);
 				expect(await result.text()).toBe("hello");
 			} finally {
 				await workerd.dispose();
