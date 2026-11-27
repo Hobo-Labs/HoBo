@@ -2,7 +2,8 @@
 export const BETTER_AUTH_PACK_ID = "pack.better-auth/v1" as const;
 
 // public-contract: stable catalog definition identifier.
-export const BETTER_AUTH_PACK_DEFINITION_ID = "hobo.pack.better-auth/v1" as const;
+export const BETTER_AUTH_PACK_DEFINITION_ID =
+	"hobo.pack.better-auth/v1" as const;
 
 // public-contract: auth capability port this pack satisfies.
 export const BETTER_AUTH_AUTH_PORT = "hobo:auth" as const;

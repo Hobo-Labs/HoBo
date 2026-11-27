@@ -20,9 +20,9 @@
  */
 
 import {
+	BETTER_AUTH_CLAIMS_MAPPING_VERSION,
 	BetterAuthClaimsError,
 	type BetterAuthClaimsErrorCode,
-	BETTER_AUTH_CLAIMS_MAPPING_VERSION,
 } from "@hobo/auth-adapter-contract";
 import {
 	isJsonBoolean,

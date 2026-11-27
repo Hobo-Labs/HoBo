@@ -7,6 +7,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - "version.json"
       - "deploy/release-images/**"
@@ -26,10 +27,21 @@ on:
       - "scripts/ci/*release*"
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
+      - "scripts/ci/sdk-package-list.mts"
+      - "scripts/ci/verify-cli-sdk-artifacts.mts"
+      - "scripts/ci/cli-sdk-acceptance-child.mts"
+      - "scripts/test/verify-cli-sdk-artifacts.test.ts"
+      - "scripts/ci/bundle-cli-*.mts"
+      - "scripts/ci/run-cli-sdk-bundle.mts"
+      - "scripts/ci/bundle-sqlite-sdk.mts"
+      - "scripts/ci/vendor-runtime-grounding.mts"
+      - "scripts/test/bundle-cli-*.test.ts"
+      - "scripts/test/run-cli-sdk-bundle.test.ts"
       - "scripts/ci/build-release-site-prebuild.mts"
       - "scripts/ci/build-release-browser-wit-on-runner.mts"
       - "scripts/ci/publish-npm-sdk.mts"
       - "scripts/test/publish-npm-sdk.test.ts"
+      - "scripts/test/sdk-publication-guard.test.ts"
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
@@ -106,10 +118,21 @@ on:
       - "scripts/ci/*release*"
       - "scripts/ci/npm-publish-scope.mts"
       - "scripts/ci/stage-sdk-artifacts.mts"
+      - "scripts/ci/sdk-package-list.mts"
+      - "scripts/ci/verify-cli-sdk-artifacts.mts"
+      - "scripts/ci/cli-sdk-acceptance-child.mts"
+      - "scripts/test/verify-cli-sdk-artifacts.test.ts"
+      - "scripts/ci/bundle-cli-*.mts"
+      - "scripts/ci/run-cli-sdk-bundle.mts"
+      - "scripts/ci/bundle-sqlite-sdk.mts"
+      - "scripts/ci/vendor-runtime-grounding.mts"
+      - "scripts/test/bundle-cli-*.test.ts"
+      - "scripts/test/run-cli-sdk-bundle.test.ts"
       - "scripts/ci/build-release-site-prebuild.mts"
       - "scripts/ci/build-release-browser-wit-on-runner.mts"
       - "scripts/ci/publish-npm-sdk.mts"
       - "scripts/test/publish-npm-sdk.test.ts"
+      - "scripts/test/sdk-publication-guard.test.ts"
       - "scripts/ci/resolve-release-version.mts"
       - "scripts/ci/compute-release-version.mts"
       - "scripts/ci/check-release-relevant-push.mts"
@@ -241,6 +264,7 @@ env:
 jobs:
   route:
     name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -316,7 +340,6 @@ jobs:
       run: ${{ steps.version.outputs.run == 'true' }}
       release_ref: ${{ steps.version.outputs.release_ref }}
       release_sha: ${{ steps.version.outputs.release_sha }}
-      turbo_base: ${{ steps.scope.outputs.from }}
     steps:
       - name: Main train release after green CI (nbgv)
         if: >-
@@ -444,12 +467,16 @@ jobs:
           scripts/test/release-version.test.ts
           scripts/test/stage-release-oci-app.test.ts
           scripts/test/stage-sdk-artifacts.test.ts
+          scripts/test/bundle-cli-preflight.test.ts
+          scripts/test/run-cli-sdk-bundle.test.ts
           scripts/test/build-release-site-prebuild.test.ts
           scripts/test/build-release-browser-wit-on-runner.test.ts
           scripts/test/nbgv-release-version.test.ts
           scripts/test/release-freight.test.ts
           scripts/test/release-freight-cli.test.ts
           scripts/test/deploy-site.test.ts
+      - name: CLI declaration and SDK verification contracts
+        run: node --no-warnings --experimental-strip-types --test scripts/test/bundle-cli-declarations.test.ts scripts/test/verify-cli-sdk-artifacts.test.ts
       - name: Upload release contract vitest log
         if: failure() && steps.release_contract_tests.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -577,7 +604,7 @@ jobs:
       !cancelled() && needs.route.result == 'success' &&
       (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       HOBO_RELEASE_CHECKOUT_REF: ${{ github.sha }}
       HOBO_RELEASE_TURBO_BASE: ""
@@ -602,16 +629,59 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: $/.github/actions/pnpm-store
-      - name: Link deps layer or install
+      - name: Link Pages deps layer
+        id: pages-deps-layer
         run: |
           set -euo pipefail
           if node --experimental-strip-types scripts/ci/deps-layer.mts link \
             && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
             echo "reusing the runner's deps layer; skip pnpm install"
           else
-            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+            echo "match=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Prepare cache decompression
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v zstd >/dev/null 2>&1 && command -v unzstd >/dev/null 2>&1; then
+            exit 0
+          fi
+          case "$(uname -m)" in
+            x86_64) zstd_arch=amd64; zstd_sha=3f6f833ae2fd533a0c9238310aef1148f51a64aa5d5f1278451ddc793d4d6d15 ;;
+            aarch64|arm64) zstd_arch=arm64; zstd_sha=97a58383b0ad55cc8183e59cbb112f2eb55c3dc1e90de816fa5cfb983d5c2ff0 ;;
+            *) echo "No pinned zstd package for this runner; using the available cache"; exit 0 ;;
+          esac
+          cache_dir="$(mktemp -d "${RUNNER_TEMP}/hobo-pages-cache.XXXXXXXXXX")"
+          archive="${cache_dir}/zstd.deb"
+          if curl -fsSL --retry 1 --connect-timeout 5 --max-time 30 \
+              "https://deb.debian.org/debian/pool/main/libz/libzstd/zstd_1.5.4+dfsg2-5_${zstd_arch}.deb" -o "$archive" \
+            && printf '%s  %s\n' "$zstd_sha" "$archive" | sha256sum -c - \
+            && dpkg-deb -x "$archive" "${cache_dir}/extracted" \
+            && "${cache_dir}/extracted/usr/bin/zstd" --quiet --version >/dev/null; then
+            echo "${cache_dir}/extracted/usr/bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning::zstd cache restore unavailable; using the available cache"
+          fi
+      - name: Restore pnpm store when available
+        if: steps.pages-deps-layer.outputs.match != 'true'
+        uses: $/.github/actions/pnpm-store
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          cold-self-hosted-cache: "true"
+      - name: Install Pages dependencies
+        if: steps.pages-deps-layer.outputs.match != 'true'
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --config.confirmModulesPurge=false \
+            --filter 'hobo-site...' --filter hobo-design \
+            --filter 'ts-autocode-training...' --filter '@hobo/example-try-site...' \
+            --filter '@hobo/runtime-wasm...'
+      - name: Restore the main build cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          main-build: "true"
       - name: Componentize browser WIT runtime (Pages release path)
         run: node --no-warnings scripts/ci/build-release-browser-wit-on-runner.mts
 
@@ -980,7 +1050,6 @@ jobs:
       contents: read
       packages: read
     env:
-      HOBO_RELEASE_TURBO_BASE: ${{ needs.release-main-train-gate.outputs.run == 'true' && needs.release-main-train-gate.outputs.turbo_base || '' }}
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
       HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
@@ -1008,9 +1077,17 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
-      - name: Fetch previous release for affected builds
-        if: env.HOBO_RELEASE_TURBO_BASE != ''
-        run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 10
         # Without a token the GHCR pull is never tried, and a runner that does not
@@ -1041,7 +1118,16 @@ jobs:
           node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --keep-candidate
           HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=${{ matrix.image_id }} \
             pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+          node --no-warnings scripts/ci/release-oci-handoff.mts ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-release-oci-layout"
           node --no-warnings scripts/ci/build-release-oci-image.mts ${{ matrix.image_id }} --cleanup-only
+      - name: Upload verified OCI layout
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hobo-release-oci-layout-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-oci-layout
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   release-images:
     name: Release train images
@@ -1117,7 +1203,6 @@ jobs:
       id-token: write
       attestations: write
     env:
-      HOBO_RELEASE_TURBO_BASE: ${{ needs.release-main-train-gate.outputs.run == 'true' && needs.release-main-train-gate.outputs.turbo_base || '' }}
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
       HOBO_RELEASE_REVISION: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
@@ -1139,9 +1224,6 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
-      - name: Fetch previous release for affected builds
-        if: env.HOBO_RELEASE_TURBO_BASE != ''
-        run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
@@ -1181,20 +1263,27 @@ jobs:
         env:
           HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}
         run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
-      # The image is built and exported as an OCI image layout; its blobs go
-      # into the HoBo artifact store and its root digest becomes release
-      # Freight, promoted into hobo-release/oci-candidate through hobo deploy.
-      # The realizer (@hobo/provider-oci-registry) uploads config and layers
-      # (mounting from the toolchain image's repository when it can), PUTs the
-      # manifest by digest, then the release tag, with GITHUB_TOKEN, and
-      # observes both. Nothing else pushes. Anything but qualified fails this
-      # leg, so attestation, the signed tag and the GitHub Release never run.
-      - name: Build release image, publish it through hobo deploy (release Freight)
+      - name: Download verified OCI layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-oci-layout-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-oci-layout
+      - name: Publish verified image through hobo deploy (release Freight)
         # The token asks GHCR whether the tag is already published (finding 143).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/oci
+          HOBO_RELEASE_OCI_LAYOUT_DIR: ${{ runner.temp }}/hobo-release-oci-layout
         run: node --no-warnings scripts/ci/push-release-ghcr-images.mts --image ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-release-digest.txt"
+      - name: Verify anonymous GHCR pull by digest
+        run: |
+          set -euo pipefail
+          mapfile -t refs < "${RUNNER_TEMP}/hobo-release-digest.txt"
+          if [ "${#refs[@]}" -ne 1 ] || [ -z "${refs[0]}" ]; then
+            echo "::error::expected exactly one published image digest"
+            exit 1
+          fi
+          node --no-warnings scripts/ci/verify-ghcr-public.mts "${refs[0]}"
       - name: Upload the release Freight journal (oci)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -1374,11 +1463,6 @@ jobs:
 
   release-npm:
     name: npm publish train (SDK allowlist)
-    # The @hobo-labs packages have never been published: the first publish
-    # needs the one-time bootstrap in docs/release/pipelines.md (the hobodev
-    # NPM_TOKEN secret). Until the repository variable HOBO_NPM_PUBLISH is
-    # 'true' this job is skipped, not run to fail and take the tag and GitHub
-    # Release down with it.
     if: >-
       !cancelled() &&
       needs.route.result == 'success' &&
@@ -1455,15 +1539,8 @@ jobs:
         env:
           HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}
         run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
-      # Each tarball's Sigstore provenance bundle is signed keyless with this
-      # job's OIDC identity (id-token: write); tarballs and bundles are
-      # recorded as release Freight and promoted into hobo-release/npm-candidate
-      # through hobo deploy. Its realizer (@hobo/provider-npm) publishes each
-      # version with its bundle, using the hobodev token through env://NPM_TOKEN,
-      # and observes it. Nothing else publishes; any other verdict fails here.
       - name: Sign provenance, publish @hobo-labs through hobo deploy (release Freight)
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/npm
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release
@@ -1474,12 +1551,33 @@ jobs:
           path: ${{ runner.temp }}/hobo-release-cd/npm
           include-hidden-files: true
 
+  release-npm-required:
+    name: Required SDK publication must succeed
+    if: >-
+      !cancelled() &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        startsWith(github.ref, 'refs/tags/sdk-v') ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      ) &&
+      needs.release-npm.result != 'success'
+    needs: [release-main-train-gate, release-npm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail when the required SDK publication did not succeed
+        run: |
+          echo "::error::Required SDK publication was skipped or failed"
+          exit 1
+
   # The site is published from what gh-pages holds, not from the push that
   # triggered this run: a deploy that failed, a run that was cancelled, or a
   # commit that reached main in a merge-queue batch behind another is picked up
   # by the next green run. Apart from the train gate on purpose: it is two API
   # calls, and the site must not wait on dotnet and vitest to learn whether it
   # is stale.
+
   release-pages-gate:
     name: Pages freshness gate
     if: >-
@@ -1654,7 +1752,7 @@ jobs:
       needs.release-main-train-gate.outputs.run == 'true' &&
       needs.release-publish.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
-      (vars.HOBO_NPM_PUBLISH != 'true' || needs.release-npm.result == 'success') &&
+      needs.release-npm.result == 'success' &&
       needs.release-attest.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
       contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result) &&
@@ -1750,7 +1848,7 @@ jobs:
       (startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v')) &&
       needs.release-publish.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
-      (vars.HOBO_NPM_PUBLISH != 'true' || startsWith(github.ref, 'refs/tags/cli-v') || needs.release-npm.result == 'success') &&
+      (startsWith(github.ref, 'refs/tags/cli-v') || needs.release-npm.result == 'success') &&
       needs.release-attest.result == 'success' &&
       needs.release-hobo-cli.result == 'success'
     needs: [route, release-publish, release-npm, release-attest, release-hobo-cli]

@@ -139,6 +139,7 @@ export type {
 	AlchemyBindleMapping,
 	AlchemyBindleOptions,
 	AlchemyMappedPrimitive,
+	AlchemyPrimitiveGraph,
 	AlchemyPrimitiveInput,
 	AlchemyPrimitiveMapper,
 	AlchemyPrimitiveSupport,

@@ -17,9 +17,18 @@ infrastructure inside the adapter.
   plan; calls `assertBetterAuthRuntimeAvailable` when execution is requested.
 - `migrations.ts` — `planBetterAuthRelationalMigrations`: ADR-0160
   `diffSchemaIr` from an empty postgres baseline (or supplied current schema)
-  to the pinned Better Auth `SchemaIr` fixture — expand-only on first deploy.
+  to the Better Auth `SchemaIr` for the bundle plan. The diff is scoped to
+  pack-owned tables, so a host table is left in place. `drop-table`,
+  `drop-column`, `narrow-column`, and `drop-index` are refused. Migration
+  planning accepts `data.relational/v1` and `data.postgres/v1`; its shared
+  schema definitions are immutable across plans.
+- Bundle replay records keep the configured base path and route pattern in
+  sync, and accept only registered relational v1 profiles.
 - `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
   governed data-plane migrations (not adapter-private DDL).
+  `buildBetterAuthRelationalSchemaIr` adds `organization`, `member`, and
+  `invitation`, plus `session.activeOrganizationId`, when
+  `config.organizations.enabled` is set.
 - `secrets.ts` — `wireBetterAuthSigningSecret`: camp `SecretsPort` resolution at
   bundle init; the caller supplies the selected camp's authority, and only an
   unfragmented `hobo-secret` locator for that authority is accepted. Other

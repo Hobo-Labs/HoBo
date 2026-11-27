@@ -15,12 +15,12 @@ export {
 } from "./descriptor.js";
 
 export {
-	BETTER_AUTH_CONFIG_ERROR_CODES,
 	BETTER_AUTH_CLAIMS_ERROR_CODES,
-	type BetterAuthClaimsErrorCode,
-	type BetterAuthConfigErrorCode,
+	BETTER_AUTH_CONFIG_ERROR_CODES,
 	BetterAuthClaimsError,
+	type BetterAuthClaimsErrorCode,
 	BetterAuthConfigError,
+	type BetterAuthConfigErrorCode,
 	BetterAuthRuntimeUnavailableError,
 } from "./errors.js";
 
