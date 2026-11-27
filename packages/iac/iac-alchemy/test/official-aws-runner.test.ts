@@ -1,9 +1,50 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import {
+	awsEmulatorRunArgs,
+	prepareAwsEmulatorImage,
+} from "./aws-emulator-container.mts";
+
+it("stages the verified emulator for a Docker daemon without the runner's filesystem", () => {
+	const directory = mkdtempSync(join(tmpdir(), "hobo-aws-context-test-"));
+	try {
+		const executable = join(directory, "verified-emulator");
+		writeFileSync(executable, "fixture executable");
+		const context = prepareAwsEmulatorImage(
+			directory,
+			executable,
+			"base@sha256:abc",
+		);
+		expect(readFileSync(join(context, "aws-emulator"), "utf8")).toBe(
+			"fixture executable",
+		);
+		expect(readFileSync(join(context, "Dockerfile"), "utf8")).toBe(
+			"FROM base@sha256:abc\nCOPY --chmod=0755 aws-emulator /usr/local/bin/aws-emulator\n",
+		);
+		const args = awsEmulatorRunArgs("hobo-aws-test-fixture");
+		expect(args).not.toContain("--mount");
+		expect(args).toContain("--read-only");
+		expect(args).toContain("--cap-drop");
+		expect(args).toContain("ALL");
+		expect(args).toContain("no-new-privileges");
+		expect(args).toContain("/root:rw,noexec,nosuid,size=128m");
+		expect(args).toContain("/tmp:rw,noexec,nosuid,size=128m");
+		expect(args).toContain("127.0.0.1::9297");
+		expect(args).toContain("hobo-aws-test-fixture");
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
 
 it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
 	"rejects an unverified emulator package before invoking Docker",
