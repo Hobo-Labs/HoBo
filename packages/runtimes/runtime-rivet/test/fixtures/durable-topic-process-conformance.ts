@@ -220,6 +220,14 @@ export async function createProcessBusConformanceHost(
 	let barrier:
 		| { reached: () => void; wait: Promise<void>; release: () => void }
 		| undefined;
+	let concurrentBarrier:
+		| {
+				count: number;
+				reached: () => void;
+				wait: Promise<void>;
+				release: () => void;
+		  }
+		| undefined;
 	const releases: Array<() => void> = [];
 	const grants: Array<ReturnType<typeof createRivetDurableTopicMetadataGrant>> =
 		[];
@@ -280,9 +288,27 @@ export async function createProcessBusConformanceHost(
 		rejectNextDeadLetterWrite: unavailable,
 		blockNextReceiptLookup: unavailable,
 		switchAuthority: unavailable,
-		holdConcurrentMutations: unavailable,
+		async holdConcurrentMutations() {
+			if (concurrentBarrier !== undefined || barrier !== undefined)
+				return unavailable();
+			let reached = () => {};
+			const reachedPromise = new Promise<void>((resolve) => {
+				reached = resolve;
+			});
+			let release = () => {};
+			const wait = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			concurrentBarrier = { count: 0, reached, wait, release };
+			releases.push(release);
+			return { reached: reachedPromise, release: async () => release() };
+		},
 		async holdNextMutation(point) {
-			if (point !== "before-dispatch" || barrier !== undefined)
+			if (
+				point !== "before-dispatch" ||
+				barrier !== undefined ||
+				concurrentBarrier !== undefined
+			)
 				return unavailable();
 			let reached = () => {};
 			const reachedPromise = new Promise<void>((resolve) => {
@@ -312,6 +338,17 @@ export async function createProcessBusConformanceHost(
 					barrier = undefined;
 					held.reached();
 					await held.wait;
+					if (closed || boundEpoch !== epoch)
+						throw new Error("old worker fenced");
+				}
+				const paired = concurrentBarrier;
+				if (paired !== undefined && path !== "/events") {
+					paired.count++;
+					if (paired.count === 2) {
+						concurrentBarrier = undefined;
+						paired.reached();
+					}
+					await paired.wait;
 					if (closed || boundEpoch !== epoch)
 						throw new Error("old worker fenced");
 				}

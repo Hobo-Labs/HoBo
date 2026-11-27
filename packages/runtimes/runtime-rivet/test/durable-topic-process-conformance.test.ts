@@ -19,6 +19,12 @@ it("runs generic bus cases across real SQLite actor process termination", {
 		"transport-throw-after-commit",
 		"transport-disconnect-after-commit",
 		"operation-replay",
+		"concurrent-operations",
+		"concurrent-claims",
+		"ack-expiry-race",
+		"compact-publish-race",
+		"compact-earliest-race",
+		"compact-latest-race",
 		"detached-requests",
 		"fingerprint-fields",
 		"tenant-isolation",
@@ -161,6 +167,38 @@ it("reaps a newly started worker when close races a restart", {
 		expect(alive).toBe(false);
 	} finally {
 		release();
+		await host.controls.close();
+	}
+});
+
+it("fences both requests held at the paired dispatch barrier during teardown", {
+	timeout: 30_000,
+}, async () => {
+	const host = await createProcessBusConformanceHost();
+	try {
+		const first = createRivetDurableTopicClient(await host.open("tenant-a"));
+		const second = createRivetDurableTopicClient(await host.open("tenant-a"));
+		const firstOperation = durableMessagingOperation(
+			10_000,
+			"0000000000000011",
+		);
+		const secondOperation = durableMessagingOperation(
+			10_000,
+			"0000000000000012",
+		);
+		const barrier = await host.controls.holdConcurrentMutations();
+		const one = first.ensureTopic({ operation: firstOperation, topic: "one" });
+		const two = second.ensureTopic({
+			operation: secondOperation,
+			topic: "two",
+		});
+		await barrier.reached;
+		await host.controls.close();
+		expect(await Promise.all([one, two])).toEqual([
+			{ status: "unknown", operation: firstOperation },
+			{ status: "unknown", operation: secondOperation },
+		]);
+	} finally {
 		await host.controls.close();
 	}
 });
