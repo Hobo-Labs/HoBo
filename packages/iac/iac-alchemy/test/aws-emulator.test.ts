@@ -1081,7 +1081,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			const app = defineAwsHttpSource({
 				bindle: withAwsSnsNotification(definition, { alerts: true }),
 				applicationName: "web",
-				environment: { HOBO_RESOURCE_0: notification.topicName },
+				environment: { HOBO_RESOURCE_0: notification.topicArn },
 				resolveStores: () => ({ alerts: publisher }),
 				verifyBinding: (claim) =>
 					claim.kind === "notify" &&
