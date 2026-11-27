@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { Api, ApiProvider } from "@alchemy.run/aws/ApiGatewayV2";
 import { UserPool, UserPoolProvider } from "@alchemy.run/aws/Cognito";
 import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
@@ -387,6 +388,69 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 	});
 
 	const official = process.env.HOBO_ALCHEMY_AWS_EMULATOR === "1" ? it : it.skip;
+	official(
+		"provisions the mapped WebSocket API in the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			)
+				throw Error("AWS Emulator endpoint must be HTTPS loopback");
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw Error("AWS Emulator CA is required");
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca: await readFile(caPath), servername: "localhost" },
+				}),
+			);
+			const definition = bindle("shop", (b) => ({
+				socket: b.websocket().with(sessionReplay({ enabled: false })),
+			}));
+			// SAFETY: this only registers constructors in an isolated test stack.
+			const mapped = await Effect.runPromise(
+				mapBindleToAlchemy(definition, awsBindleMappers(), {
+					assessRequirements: () => ({ status: "supported" }),
+				}).pipe(
+					Effect.provideService(StackContext, {
+						name: "shop",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+			);
+			const resource = mapped.primary.socket;
+			if (!resource || resource.Type !== Api.Type)
+				throw Error("WebSocket API mapping missing");
+			// SAFETY: the resource type check and fixture provide the Alchemy lifecycle dependencies.
+			const api = resource as Api;
+			// SAFETY: this supplies all services used by the API provider.
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const provider = yield* Provider.Provider<Api>(Api.Type);
+					return yield* provider.reconcile({
+						id: api.LogicalId,
+						fqn: api.FQN,
+						instanceId: randomUUID(),
+						session: noopSession,
+						bindings: [],
+						news: api.Props,
+						olds: undefined,
+						output: undefined,
+					});
+				}).pipe(
+					Effect.provide(ApiProvider()),
+					Effect.provide(layer),
+				) as Effect.Effect<Api["Attributes"], Provider.ProviderError, never>,
+			);
+			expect(result.apiId).toBeTruthy();
+			expect(result.protocolType).toBe("WEBSOCKET");
+		},
+		30_000,
+	);
 	official(
 		"provisions the mapped auth user pool in the official AWS Emulator",
 		async () => {
