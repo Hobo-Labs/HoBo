@@ -247,6 +247,17 @@ describe("release-hobo publish jobs install order", () => {
 		expect(installIdx).toBeGreaterThan(fetchIdx);
 	});
 
+	it("release-oci-build-tag fetches the ts-autocode pin before install", () => {
+		const block = parseReleaseJobBlock(hoboWorkflow, "release-oci-build-tag");
+		const fetchIdx = block.indexOf("pnpm run pins:fetch ts-autocode");
+		const installIdx = block.indexOf(ROOT_PNPM_INSTALL);
+		expect(fetchIdx).toBeGreaterThan(0);
+		expect(installIdx).toBeGreaterThan(fetchIdx);
+		expect(
+			block.indexOf("scripts/ci/build-release-oci-image.mts"),
+		).toBeGreaterThan(installIdx);
+	});
+
 	it("materialize-release-version avoids npm deps (gate-trust or tag-ref parse)", () => {
 		const source = readFileSync(
 			join(root, "scripts/ci/materialize-release-version.mts"),
