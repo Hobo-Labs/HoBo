@@ -66,7 +66,6 @@ const storeGrantSet = WeakMap.prototype.set;
 const storeIsProxy = types.isProxy;
 const storeApply = Reflect.apply;
 
-/** Returns only the grant captured by a store created in this runtime instance. */
 export function inspectAwsDynamoKvStore(
 	value: unknown,
 ): AwsKvGrant | undefined {

@@ -77,7 +77,6 @@ const storeGrantSet = WeakMap.prototype.set;
 const storeIsProxy = types.isProxy;
 const storeApply = Reflect.apply;
 
-/** Returns only the grant captured by a store created in this runtime instance. */
 export function inspectAwsS3Store(value: unknown): AwsS3Grant | undefined {
 	if (typeof value !== "object" || value === null || storeIsProxy(value))
 		return undefined;

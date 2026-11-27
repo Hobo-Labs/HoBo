@@ -99,6 +99,10 @@ The bounded `AwsS3Objects` model uses one key and a collision-free abstract
 digest. It includes out-of-band objects with foreign metadata, oversized bodies
 and corrupted digests; it does not prove the hash implementation or provider.
 
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
