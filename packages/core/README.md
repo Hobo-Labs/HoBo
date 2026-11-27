@@ -22,6 +22,12 @@ on each operation. Operation identities use the same expiry-bound format as
 durable messaging. Unknown or expired outcomes require reconciliation. This
 port declares no provider implementation. The local JSON `Queue` API does not
 implement the component queue contract.
+The bounded `DurableQueue` model checks one host, one operation, two possible
+payloads, and two lease generations without modeling host restarts. It checks dispatch, retained capacity, conflicts,
+and stale-lease settlement, and reaches committed effects after unknown and
+expired outcomes. Provider commit, receipt durability, the clock and lease
+fencing are modeled as atomic trusted actions; the model is not a proof of an
+implementation or of eventual completion.
 
 `Messaging.ack` and `Messaging.nack` are asynchronous and must be awaited. Live
 adapters report a transport failure or deadline as `MESSAGING_SETTLEMENT_UNKNOWN`:
