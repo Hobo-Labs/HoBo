@@ -36,6 +36,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { isJsonString, parseJsonValue } from "../src/json.js";
 import {
 	createProcessKubectlTransport,
 	KubectlUnavailableError,
@@ -55,10 +56,7 @@ afterEach(() => {
  * Each entry is `[exitCode, stdout]`. An unlisted verb exits 0 silently, which
  * keeps a test from having to script calls it does not care about.
  */
-function fakeKubectl(script: Record<string, [number, string]> = {}): {
-	bin: string;
-	calls: () => string[][];
-} {
+function fakeKubectl(script: Record<string, [number, string]> = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-kubectl-"));
 	dirs.push(dir);
 	const bin = join(dir, "kubectl");
@@ -85,7 +83,14 @@ function fakeKubectl(script: Record<string, [number, string]> = {}): {
 				return readFileSync(log, "utf8")
 					.split("\n")
 					.filter(Boolean)
-					.map((line) => JSON.parse(line) as string[]);
+					.map((line) => {
+						const value = parseJsonValue(line);
+						if (!Array.isArray(value)) throw new Error("invalid argv log");
+						return value.map((entry) => {
+							if (!isJsonString(entry)) throw new Error("invalid argv");
+							return entry;
+						});
+					});
 			} catch {
 				return [];
 			}
@@ -98,13 +103,18 @@ function transport(
 	options: { context?: string } = {},
 ) {
 	const fake = fakeKubectl(script);
+	const config = {
+		kubectlBin: fake.bin,
+		env: { PATH: process.env.PATH ?? "" },
+		probeTimeoutMs: 8_000,
+	};
 	return {
 		...fake,
-		transport: createProcessKubectlTransport({
-			kubectlBin: fake.bin,
-			env: { PATH: process.env.PATH ?? "" },
-			...(options.context !== undefined ? { context: options.context } : {}),
-		}),
+		transport: createProcessKubectlTransport(
+			options.context === undefined
+				? config
+				: { ...config, context: options.context },
+		),
 	};
 }
 
@@ -129,9 +139,7 @@ describe("binary selection", () => {
 			.handle({ method: "GET", path: "/kubectl/version" })
 			.then((response) => {
 				expect(response.status).toBe(200);
-				expect((response.body as { kubectlBin: string }).kubectlBin).toBe(
-					fake.bin,
-				);
+				expect(response.body).toMatchObject({ kubectlBin: fake.bin });
 			});
 	});
 
@@ -163,7 +171,7 @@ describe("/kubectl/version", () => {
 			method: "GET",
 			path: "/kubectl/version",
 		});
-		expect(response.status).toBe(200);
+		expect(response.status, JSON.stringify(response.body)).toBe(200);
 		expect(response.body).toMatchObject({ ok: true, clientVersion: "v1.31.0" });
 	});
 
@@ -189,9 +197,9 @@ describe("/kubectl/version", () => {
 		});
 		expect(response.status).toBe(503);
 		expect(response.body).toMatchObject({ ok: false });
-		expect(String((response.body as { error: string }).error)).toContain(
-			"command not found",
-		);
+		expect(response.body).toMatchObject({
+			error: expect.stringContaining("command not found"),
+		});
 	});
 
 	it("reports `unknown` rather than failing when the JSON does not parse", async () => {
@@ -227,9 +235,9 @@ describe("/kubectl/cluster-info", () => {
 		});
 		expect(response.status).toBe(200);
 		expect(response.body).toMatchObject({ ok: true, reachable: true });
-		expect(String((response.body as { detail: string }).detail)).toContain(
-			"control plane",
-		);
+		expect(response.body).toMatchObject({
+			detail: expect.stringContaining("control plane"),
+		});
 	});
 
 	it("reports unreachable as 503 rather than throwing", async () => {
@@ -461,7 +469,9 @@ describe("/kubectl/http-proxy", () => {
 			body: { service: "web", path: "/health" },
 		});
 		expect(response.status).toBe(503);
-		expect(String((response.body as { error: string }).error)).toContain("web");
+		expect(response.body).toMatchObject({
+			error: expect.stringContaining("web"),
+		});
 	});
 });
 
@@ -518,8 +528,8 @@ describe("unknown paths", () => {
 			path: "/kubectl/frobnicate",
 		});
 		expect(response.status).toBe(404);
-		expect(String((response.body as { error: string }).error)).toContain(
-			"/kubectl/frobnicate",
-		);
+		expect(response.body).toMatchObject({
+			error: expect.stringContaining("/kubectl/frobnicate"),
+		});
 	});
 });
