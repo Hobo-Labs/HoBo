@@ -3,7 +3,7 @@ name: ts-autocode release (HoBo pins cone)
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "tools/pins/siblings.json"
       - "scripts/bootstrap-siblings.mts"
@@ -41,7 +41,7 @@ concurrency:
 jobs:
   route:
     name: Route runners
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
     # it is choosing against. The fleet while it takes jobs, an enrolled local
     # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).

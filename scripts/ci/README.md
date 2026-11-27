@@ -14,6 +14,21 @@ scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
 `PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
 Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
 
+## Draft pull request CI (Nov 2026)
+
+Pull request workflows listen only on `opened`, `synchronize`, `reopened`, and
+`ready_for_review`. The first routing job on each `pull_request`-triggered
+workflow carries `github.event_name != 'pull_request' || github.event.pull_request.draft == false`, so a draft schedules no runner jobs. Required aggregate gates
+(for example `pr-gate` in `hobo-ci.yml`) run only when the pull request is not a
+draft; their scripts fail closed if prerequisites were skipped without an
+attestation or merge-group PR Fabric reuse. A ready pull request whose gates are
+all green may enter the merge queue; any required failure sends the pull request
+back to draft for in-place fixes, then it is marked ready for review again to
+re-run CI. `decidePrFabricReuse` treats a green workflow conclusion without an
+executed route job or `pr-fabric-tested` artifact as non-reuseable evidence.
+Contract tests: `scripts/test/draft-pull-request-workflows.test.ts`,
+`scripts/test/pr-fabric-reuse.test.ts`, `scripts/test/merge-group-gate.test.ts`.
+
 ## Routing
 
 `route-runner.mts` is the route job of the six routed workflows. It runs on a
@@ -127,6 +142,8 @@ before the artifacts are accepted.
 Published package manifests retain workspace import names as npm aliases for
 their public package names. OCI app staging installs matching workspace-name
 links so the same packed modules resolve in the deployed app.
+Its Turbo builds honor the runner's `HOBO_TURBO_CONCURRENCY` memory limit.
+The staging test checks the configured-store fallback with no package manager on `PATH`.
 
 
 The SQLite SDK includes backend-routing and Fleet implementation code and their

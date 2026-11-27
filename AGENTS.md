@@ -12,6 +12,13 @@ over conflicting repository workflow guidance.
   dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Do not run GitHub Actions validation on draft pull requests. The first routing
+  job on every `pull_request` workflow skips draft events, so no Fabric runners
+  start until the pull request is marked ready for review. Review and validate
+  work locally while it stays draft. When every required ready-state gate is
+  green, the pull request may enter the merge queue. Any gate failure sends it
+  back to draft for in-place fixes on the same branch; mark it ready again to
+  re-run CI—do not open a new pull request to fix that branch's failing gates.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
