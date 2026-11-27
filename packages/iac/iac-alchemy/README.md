@@ -143,8 +143,9 @@ the declared stores, and a synchronous verifier that authenticates each exact
 captured store grant. The runtime rejects forged stores, extra permissions and
 unverified bindings, and retires scoped handles when the request ends. The
 bounded `AwsHttpSecret` model checks the secret write outcome and retained
-version ID across request retirement and grant revocation; it assumes the host
-verifier and provider behavior. The runtime buffers responses up to 1 MiB,
+version ID across request retirement and grant revocation; it assumes one
+request and write, a trusted host verifier, a captured token, provider
+idempotency and transport completion. The runtime buffers responses up to 1 MiB,
 1,024 chunks and 16 KiB of headers; a stalled handler keeps one of 32 capacity
 slots until it settles.
 The host captures one bounded, deterministic graph for runtime binding and
