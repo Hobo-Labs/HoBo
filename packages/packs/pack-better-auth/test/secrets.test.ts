@@ -2,12 +2,12 @@ import { parseBetterAuthConfig } from "@hobo/auth-adapter-contract";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
-import { BetterAuthBundlePlanError } from "../src/errors.js";
-import { planBetterAuthBundle } from "../src/plan.js";
+import type { BetterAuthBundlePlanError } from "../src/errors.js";
 import {
 	campSecretNameFromBetterAuthRef,
 	wireBetterAuthSigningSecret,
 } from "../src/index.js";
+import { planBetterAuthBundle } from "../src/plan.js";
 
 const CONFIG_INPUT = {
 	basePath: "/api/auth",

@@ -18,6 +18,7 @@ export {
 	type BetterAuthRelationalMigrationPlan,
 	planBetterAuthRelationalMigrations,
 } from "./migrations.js";
+
 export {
 	type BetterAuthBundlePlan,
 	planBetterAuthBundle,
@@ -30,7 +31,6 @@ export {
 	type BetterAuthBundlePlanRecord,
 	toBetterAuthBundlePlanRecord,
 } from "./record.js";
-
 export {
 	type BetterAuthSigningSecretWire,
 	campSecretNameFromBetterAuthRef,

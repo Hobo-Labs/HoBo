@@ -17,9 +17,14 @@ infrastructure inside the adapter.
   plan; calls `assertBetterAuthRuntimeAvailable` when execution is requested.
 - `migrations.ts` — `planBetterAuthRelationalMigrations`: ADR-0160
   `diffSchemaIr` from an empty postgres baseline (or supplied current schema)
-  to the pinned Better Auth `SchemaIr` fixture — expand-only on first deploy.
+  to the Better Auth `SchemaIr` for the bundle plan. The diff is scoped to
+  pack-owned tables, so a host table is left in place. `drop-table`,
+  `drop-column`, `narrow-column`, and `drop-index` are refused.
 - `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
   governed data-plane migrations (not adapter-private DDL).
+  `buildBetterAuthRelationalSchemaIr` adds `organization`, `member`, and
+  `invitation`, plus `session.activeOrganizationId`, when
+  `config.organizations.enabled` is set.
 - `secrets.ts` — `wireBetterAuthSigningSecret`: camp `SecretsPort` resolution at
   bundle init; the caller supplies the selected camp's authority, and only an
   unfragmented `hobo-secret` locator for that authority is accepted. Other
@@ -34,9 +39,6 @@ infrastructure inside the adapter.
   schema planning and bundle gating only; SQL execution and runtime wiring land
   in follow-up PRs per
   [`docs/maintenance/alchemy-auth-secrets-onboarding-audit.md`](../../../docs/maintenance/alchemy-auth-secrets-onboarding-audit.md).
-- **No organization plugin migration schema** yet. The migration planner refuses
-  organization-enabled bundles until the plugin's complete schema is represented;
-  it does not return a core-only plan for them.
 
 ## Parse, don't validate
 
