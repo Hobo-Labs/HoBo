@@ -52,6 +52,7 @@ function fixture() {
 	const installerBody = `#!/bin/sh
 cat > "$MISE_INSTALL_PATH" <<'MISE'
 #!/bin/sh
+printf 'target\\n' >> "$HOBO_MISE_TEST_USED"
 case "$1" in
   --version) echo '${version} linux-x64' ;;
   bin-paths) dirname "$0" ;;
@@ -90,12 +91,27 @@ esac
 `,
 	);
 	chmodSync(curl, 0o755);
+	const preinstalled = join(bin, "mise");
+	writeFileSync(
+		preinstalled,
+		`#!/bin/sh
+printf 'preinstalled\\n' >> "$HOBO_MISE_TEST_USED"
+case "$1" in
+  --version) echo '${version} linux-x64' ;;
+  bin-paths) dirname "$0" ;;
+  trust|install) exit 0 ;;
+  *) exit 1 ;;
+esac
+`,
+	);
+	chmodSync(preinstalled, 0o755);
 	const target = join(root, "tools", "mise");
 	mkdirSync(dirname(target), { recursive: true });
 	const output = join(root, "github-path");
 	writeFileSync(output, "");
 	const curlLog = join(root, "curl.log");
-	const run = () =>
+	const used = join(root, "used.log");
+	const run = (installPath = target) =>
 		spawnSync("bash", [join(actionDir, "hosted-toolchain.sh")], {
 			cwd: root,
 			encoding: "utf8",
@@ -104,14 +120,15 @@ esac
 				PATH: `${bin}:/usr/bin:/bin`,
 				RUNNER_ENVIRONMENT: "github-hosted",
 				GITHUB_PATH: output,
-				MISE_INSTALL_PATH: target,
+				MISE_INSTALL_PATH: installPath,
 				MISE_INSTALL_ATTEMPTS: "1",
 				MISE_INSTALL_RETRY_DELAY: "0",
 				HOBO_MISE_TEST_CURL_LOG: curlLog,
 				HOBO_MISE_TEST_INSTALLER: installer,
+				HOBO_MISE_TEST_USED: used,
 			},
 		});
-	return { root, installer, versionPath, target, curlLog, run };
+	return { root, installer, versionPath, target, output, curlLog, used, run };
 }
 
 describe("hosted mise bootstrap", () => {
@@ -121,6 +138,9 @@ describe("hosted mise bootstrap", () => {
 			const result = f.run();
 			assert.equal(result.status, 0, result.stderr);
 			assert.ok(existsSync(f.target));
+			assert.ok(
+				readFileSync(f.output, "utf8").split("\n").includes(dirname(f.target)),
+			);
 			assert.ok(
 				readFileSync(f.curlLog, "utf8").includes(
 					`https://mise.jdx.dev/v${version}/install.sh`,
@@ -152,6 +172,36 @@ describe("hosted mise bootstrap", () => {
 			assert.notEqual(result.status, 0);
 			assert.equal(existsSync(f.target), false);
 			assert.match(result.stderr, /checksum|digest/u);
+		} finally {
+			rmSync(f.root, { recursive: true, force: true });
+		}
+	});
+
+	it("uses the explicit installation when another mise is already on PATH", () => {
+		const f = fixture();
+		try {
+			writeFileSync(
+				f.target,
+				`#!/bin/sh\nprintf 'target\\n' >> "$HOBO_MISE_TEST_USED"\ncase "$1" in --version) echo '${version} linux-x64' ;; bin-paths) dirname "$0" ;; trust|install) exit 0 ;; *) exit 1 ;; esac\n`,
+			);
+			chmodSync(f.target, 0o755);
+			const result = f.run();
+			assert.equal(result.status, 0, result.stderr);
+			assert.equal(existsSync(f.curlLog), false);
+			assert.match(readFileSync(f.used, "utf8"), /^target\n/u);
+			assert.doesNotMatch(readFileSync(f.used, "utf8"), /preinstalled/u);
+		} finally {
+			rmSync(f.root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects a relative installation path before downloading", () => {
+		const f = fixture();
+		try {
+			const result = f.run("relative/mise");
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /absolute/u);
+			assert.equal(existsSync(f.curlLog), false);
 		} finally {
 			rmSync(f.root, { recursive: true, force: true });
 		}
