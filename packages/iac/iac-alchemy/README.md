@@ -1196,5 +1196,7 @@ epoch-fenced ownership. `withAwsDynamoDurableQueue` and
 `awsDynamoDurableQueueMappers` from `@hobo/iac-alchemy/aws/queue-mapper` select
 an Alchemy `AWS.DynamoDB.Table` for a HoBo queue. The mapper reports its 512-event
 and 256-KiB lifetime bounds, and the financial preview must cover that table or
-use an explicitly authorized unpriced path. This is a DynamoDB queue, with no
-SQS integration, compaction, dead-lettering or automatic application binding.
+use an explicitly authorized unpriced path. A supplied model must account for
+the expected table storage, reads and writes; individual queue calls do not run
+budget admission or enforce the estimate. This is a DynamoDB queue, with no SQS
+integration, compaction, dead-lettering or automatic application binding.
