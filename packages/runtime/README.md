@@ -642,3 +642,7 @@ The queue runtime exports request snapshot helpers so hosts can copy and validat
 a complete operation before invoking authorization callbacks. Factory inspection
 identifies the exact store and captured limits; the host must still authenticate
 that store and its authority.
+
+Queue checkpoints accept strictly increasing message identities with gaps, so a
+future authorized reclamation can preserve the monotonic next identity. Live
+receipts must still refer to a retained message.
