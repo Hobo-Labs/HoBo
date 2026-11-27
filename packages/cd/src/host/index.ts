@@ -14,19 +14,31 @@ import {
 } from "./rivet.js";
 
 export {
+	type CdDeliveryFlowAdapter,
+	createCdDeliveryFlowRouterLayer,
+} from "./flow-router.js";
+export {
 	type CdCampRealizerService,
 	type CdDeliveryFlowService,
 	type CdPromotionGateEvent,
 	type CdPromotionGateRecord,
 	type CdPromotionGateRegistryOptions,
 	type CdPromotionGateStatus,
+	type CdPullWatchEvent,
+	type CdPullWatchKind,
+	type CdPullWatchRecord,
+	type CdPullWatchResolutionStatus,
+	type CdPullWatchStatus,
 	type CdReleaseRivetHostOptions,
 	type CdVerificationGateService,
 	createCdPromotionGateRegistry,
+	createCdPullWatchRegistry,
 	createCdReleaseRivetLayer,
 	DefaultFailClosedDeliveryFlowLayer,
 	type OpenCdPromotionGateInput,
+	type RegisterCdPullWatchInput,
 	type ResolveCdPromotionGateInput,
+	type ResolveCdPullWatchInput,
 } from "./rivet.js";
 
 export function createCdReleaseInMemoryLayer<

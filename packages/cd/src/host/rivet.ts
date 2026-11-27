@@ -354,3 +354,297 @@ export function createCdPromotionGateRegistry(
 			: undefined),
 	});
 }
+
+const PullWatchKindSchema = Schema.Literals(["pull-request", "convergence"]);
+export type CdPullWatchKind = typeof PullWatchKindSchema.Type;
+
+const PullWatchStatusSchema = Schema.Literals([
+	"watching",
+	"pr-merged",
+	"pr-closed",
+	"converged",
+	"degraded",
+	"timed-out",
+]);
+export type CdPullWatchStatus = typeof PullWatchStatusSchema.Type;
+
+const PullWatchResolutionStatusSchema = Schema.Literals([
+	"pr-merged",
+	"pr-closed",
+	"converged",
+	"degraded",
+]);
+export type CdPullWatchResolutionStatus =
+	typeof PullWatchResolutionStatusSchema.Type;
+
+const PullWatchRowSchema = Schema.Struct({
+	delivery_run_id: Schema.NonEmptyString,
+	stage_id: Schema.NonEmptyString,
+	flow_target: Schema.NonEmptyString,
+	watch_kind: PullWatchKindSchema,
+	target_ref: Schema.NonEmptyString,
+	status: PullWatchStatusSchema,
+	revision: Schema.NullOr(Schema.String),
+	summary: Schema.NullOr(Schema.String),
+	created_at_ms: Schema.Int,
+	deadline_at_ms: Schema.Int,
+});
+
+const decodePullWatchRows = Schema.decodeUnknownSync(
+	Schema.Array(PullWatchRowSchema),
+);
+
+const RegisterPullWatchInputSchema = Schema.Struct({
+	deliveryRunId: Schema.NonEmptyString,
+	stageId: Schema.NonEmptyString,
+	flowTarget: Schema.NonEmptyString,
+	watchKind: PullWatchKindSchema,
+	targetRef: Schema.NonEmptyString,
+	deadlineMs: Schema.Int,
+});
+
+const decodeRegisterPullWatchInput = Schema.decodeUnknownSync(
+	RegisterPullWatchInputSchema,
+);
+
+const ResolvePullWatchInputSchema = Schema.Struct({
+	deliveryRunId: Schema.NonEmptyString,
+	status: PullWatchResolutionStatusSchema,
+	revision: Schema.NullOr(Schema.NonEmptyString),
+	summary: Schema.NonEmptyString,
+});
+
+const decodeResolvePullWatchInput = Schema.decodeUnknownSync(
+	ResolvePullWatchInputSchema,
+);
+
+const ExpirePullWatchKeySchema = Schema.NonEmptyString;
+const decodeExpirePullWatchKey = Schema.decodeUnknownSync(
+	ExpirePullWatchKeySchema,
+);
+
+export interface CdPullWatchRecord {
+	readonly deliveryRunId: string;
+	readonly stageId: string;
+	readonly flowTarget: string;
+	readonly watchKind: CdPullWatchKind;
+	readonly targetRef: string;
+	readonly status: CdPullWatchStatus;
+	readonly revision: string | null;
+	readonly summary: string | null;
+	readonly createdAtMs: number;
+	readonly deadlineAtMs: number;
+}
+
+export interface CdPullWatchEvent {
+	readonly action: "registered" | "resolved" | "expired";
+	readonly watch: CdPullWatchRecord;
+}
+
+export interface RegisterCdPullWatchInput {
+	readonly deliveryRunId: string;
+	readonly stageId: string;
+	readonly flowTarget: string;
+	readonly watchKind: CdPullWatchKind;
+	readonly targetRef: string;
+	readonly deadlineMs: number;
+}
+
+export interface ResolveCdPullWatchInput {
+	readonly deliveryRunId: string;
+	readonly status: CdPullWatchResolutionStatus;
+	readonly revision: string | null;
+	readonly summary: string;
+}
+
+function toPullWatchRecord(
+	row: typeof PullWatchRowSchema.Type,
+): CdPullWatchRecord {
+	return {
+		deliveryRunId: row.delivery_run_id,
+		stageId: row.stage_id,
+		flowTarget: row.flow_target,
+		watchKind: row.watch_kind,
+		targetRef: row.target_ref,
+		status: row.status,
+		revision: row.revision,
+		summary: row.summary,
+		createdAtMs: row.created_at_ms,
+		deadlineAtMs: row.deadline_at_ms,
+	};
+}
+
+export function createCdPullWatchRegistry(
+	options: CdPromotionGateRegistryOptions = {},
+) {
+	const pullWatch = actor({
+		db: db({
+			onMigrate: async (client) => {
+				await client.execute(`
+					CREATE TABLE IF NOT EXISTS cd_pull_watches (
+						delivery_run_id TEXT PRIMARY KEY,
+						stage_id TEXT NOT NULL,
+						flow_target TEXT NOT NULL,
+						watch_kind TEXT NOT NULL,
+						target_ref TEXT NOT NULL,
+						status TEXT NOT NULL,
+						revision TEXT,
+						summary TEXT,
+						created_at_ms INTEGER NOT NULL,
+						deadline_at_ms INTEGER NOT NULL
+					)
+				`);
+			},
+		}),
+		actions: {
+			registerWatch: async (
+				c,
+				rawInput: RegisterCdPullWatchInput | JsonValue,
+			): Promise<CdPullWatchRecord> => {
+				const input = decodeRegisterPullWatchInput(rawInput);
+				const existingRows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ?",
+						input.deliveryRunId,
+					),
+				);
+				const existing = existingRows[0];
+				if (existing !== undefined) {
+					return toPullWatchRecord(existing);
+				}
+
+				const nowMs = Date.now();
+				const deadlineMs = Math.max(10, Math.trunc(input.deadlineMs));
+				const deadlineAtMs = nowMs + deadlineMs;
+				await c.db.execute(
+					`INSERT INTO cd_pull_watches
+						(delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms)
+					VALUES (?, ?, ?, ?, ?, 'watching', NULL, NULL, ?, ?)`,
+					input.deliveryRunId,
+					input.stageId,
+					input.flowTarget,
+					input.watchKind,
+					input.targetRef,
+					nowMs,
+					deadlineAtMs,
+				);
+				const watch: CdPullWatchRecord = {
+					deliveryRunId: input.deliveryRunId,
+					stageId: input.stageId,
+					flowTarget: input.flowTarget,
+					watchKind: input.watchKind,
+					targetRef: input.targetRef,
+					status: "watching",
+					revision: null,
+					summary: null,
+					createdAtMs: nowMs,
+					deadlineAtMs,
+				};
+				await c.schedule.after(deadlineMs, "expireWatch", input.deliveryRunId);
+				c.broadcast("pullWatchUpdated", { action: "registered", watch });
+				return watch;
+			},
+			recordObservation: async (
+				c,
+				rawInput: ResolveCdPullWatchInput | JsonValue,
+			): Promise<CdPullWatchRecord | null> => {
+				const input = decodeResolvePullWatchInput(rawInput);
+				const rows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ?",
+						input.deliveryRunId,
+					),
+				);
+				const existing = rows[0];
+				if (existing === undefined) return null;
+				if (existing.status !== "watching") return toPullWatchRecord(existing);
+
+				await c.db.execute(
+					"UPDATE cd_pull_watches SET status = ?, revision = ?, summary = ? WHERE delivery_run_id = ? AND status = 'watching'",
+					input.status,
+					input.revision,
+					input.summary,
+					input.deliveryRunId,
+				);
+				const updated: CdPullWatchRecord = {
+					...toPullWatchRecord(existing),
+					status: input.status,
+					revision: input.revision,
+					summary: input.summary,
+				};
+				c.broadcast("pullWatchUpdated", { action: "resolved", watch: updated });
+				return updated;
+			},
+			expireWatch: async (
+				c,
+				rawDeliveryRunId: string | JsonValue,
+			): Promise<{
+				readonly expired: boolean;
+				readonly deliveryRunId: string;
+			}> => {
+				const deliveryRunId = decodeExpirePullWatchKey(rawDeliveryRunId);
+				const rows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ?",
+						deliveryRunId,
+					),
+				);
+				const existing = rows[0];
+				if (
+					existing === undefined ||
+					existing.status !== "watching" ||
+					Date.now() < existing.deadline_at_ms
+				) {
+					return { expired: false, deliveryRunId };
+				}
+				await c.db.execute(
+					"UPDATE cd_pull_watches SET status = 'timed-out', summary = 'pull-watch-deadline-elapsed' WHERE delivery_run_id = ? AND status = 'watching'",
+					deliveryRunId,
+				);
+				const expiredWatch: CdPullWatchRecord = {
+					...toPullWatchRecord(existing),
+					status: "timed-out",
+					summary: "pull-watch-deadline-elapsed",
+				};
+				c.broadcast("pullWatchUpdated", {
+					action: "expired",
+					watch: expiredWatch,
+				});
+				return { expired: true, deliveryRunId };
+			},
+			listWatches: async (c): Promise<readonly CdPullWatchRecord[]> => {
+				const rows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches ORDER BY created_at_ms ASC, delivery_run_id ASC",
+					),
+				);
+				return rows.map(toPullWatchRecord);
+			},
+		},
+	});
+
+	return setup({
+		use: {
+			pullWatch,
+		},
+		...(options.endpoint !== undefined
+			? { endpoint: options.endpoint }
+			: undefined),
+		...(options.token !== undefined ? { token: options.token } : undefined),
+		...(options.httpHost !== undefined
+			? { httpHost: options.httpHost }
+			: undefined),
+		...(options.httpPort !== undefined
+			? { httpPort: options.httpPort }
+			: undefined),
+		...(options.startEngine !== undefined
+			? { startEngine: options.startEngine }
+			: undefined),
+		...(options.noWelcome !== undefined
+			? { noWelcome: options.noWelcome }
+			: undefined),
+		...(options.shutdown !== undefined
+			? { shutdown: options.shutdown }
+			: undefined),
+	});
+}
