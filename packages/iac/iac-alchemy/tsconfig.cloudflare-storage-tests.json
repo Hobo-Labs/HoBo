@@ -4,5 +4,5 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
-	"include": ["test/cloudflare-native-r2.test.ts"]
+	"include": ["test/cloudflare-native-kv.test.ts", "test/cloudflare-native-r2.test.ts"]
 }

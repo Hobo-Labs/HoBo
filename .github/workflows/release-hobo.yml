@@ -604,7 +604,7 @@ jobs:
       !cancelled() && needs.route.result == 'success' &&
       (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       HOBO_RELEASE_CHECKOUT_REF: ${{ github.sha }}
       HOBO_RELEASE_TURBO_BASE: ""

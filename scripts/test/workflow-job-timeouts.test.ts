@@ -16,7 +16,7 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 	[
 		"release-hobo.yml:release-pages-browser-wit-smoke",
 		{
-			minutes: 35,
+			minutes: 45,
 			why: "The Pages release proof requires a frozen cold install and forced browser-WIT componentization; measured cache restoration and installation can exhaust the standard budget before the proof begins",
 		},
 	],
@@ -123,7 +123,7 @@ describe("GitHub Actions job timeouts", () => {
 			assertJobTimeout(
 				"release-hobo.yml",
 				"release-pages-browser-wit-smoke",
-				"35",
+				"45",
 			),
 		);
 		assert.throws(
@@ -131,9 +131,9 @@ describe("GitHub Actions job timeouts", () => {
 				assertJobTimeout(
 					"release-hobo.yml",
 					"release-pages-browser-wit-smoke",
-					"36",
+					"46",
 				),
-			/exceeds its documented 35/,
+			/exceeds its documented 45/,
 		);
 	});
 
