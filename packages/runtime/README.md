@@ -663,3 +663,13 @@ sequence monotonic. The operation ID must be persisted and reused after an
 unknown response; a replay returns its recorded result without redriving again.
 A rejected operation is final for that ID: use a new ID after resolving the
 reason for rejection. The operation does not move data to a dead-letter queue.
+
+A trusted owner can call `inspectExhausted()` to obtain at most `batchSize`
+exhausted messages whose final lease has expired, including copied payloads and
+attributes. `more` indicates another eligible message; process the returned
+messages and inspect again to advance. The returned revision and observation
+time describe a snapshot, which can become stale immediately. Inspection reads
+the store twice to recheck authorization and revision before disclosure. Hosts must
+revalidate and fence ownership before acting, protect payloads, and use an
+idempotent destination when exporting data. The component queue does not expose
+this inspection API.
