@@ -149,10 +149,15 @@ function pullLogHasFetchedLayers(logPath: string): boolean {
 	}
 }
 
+type TimedDockerPull = Readonly<{
+	status: number | null;
+	downloaded: boolean;
+}>;
+
 function runTimedDockerPull(
 	remote: string,
 	budgetSec: number,
-): { readonly status: number | null; readonly downloaded: boolean } {
+): TimedDockerPull {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-worker-pull-"));
 	const logPath = join(dir, "pull.log");
 	try {
