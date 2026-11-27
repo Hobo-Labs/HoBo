@@ -871,7 +871,7 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 				const app = defineAwsHttpSource({
 					bindle: withAwsKmsCryptography(appDefinition, { objects: true }),
 					applicationName: "web",
-					environment: { HOBO_RESOURCE_0: keyId },
+					environment: { HOBO_RESOURCE_0: keyArn },
 					resolveStores: () => ({ objects: crypto }),
 					verifyBinding: (claim) =>
 						claim.kind === "crypto" && claim.grant.keyId === keyId,

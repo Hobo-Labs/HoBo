@@ -88,7 +88,7 @@ it("binds only the genuine scoped key selected by the source", async () => {
 		});
 	expect(
 		await (
-			await make(keyId, store).fetch(new Request("https://app.test"))
+			await make(keyArn, store).fetch(new Request("https://app.test"))
 		).json(),
 	).toEqual({ status: "completed" });
 	expect(await retained?.encrypt(request)).toEqual({
@@ -99,20 +99,28 @@ it("binds only the genuine scoped key selected by the source", async () => {
 		(await make("wrong-key", store).fetch(new Request("https://app.test")))
 			.status,
 	).toBe(503);
+	for (const physicalName of [
+		`arn:aws:kms:us-east-1:111111111111:key/${keyId}`,
+		`arn:aws:kms:us-west-2:000000000000:key/${keyId}`,
+	])
+		expect(
+			(await make(physicalName, store).fetch(new Request("https://app.test")))
+				.status,
+		).toBe(503);
 	expect(
-		(await make(keyId, { ...store }).fetch(new Request("https://app.test")))
+		(await make(keyArn, { ...store }).fetch(new Request("https://app.test")))
 			.status,
 	).toBe(503);
 	expect(
 		(
-			await make(keyId, new Proxy(store, {})).fetch(
+			await make(keyArn, new Proxy(store, {})).fetch(
 				new Request("https://app.test"),
 			)
 		).status,
 	).toBe(503);
 	expect(
 		(
-			await make(keyId, store, () => false).fetch(
+			await make(keyArn, store, () => false).fetch(
 				new Request("https://app.test"),
 			)
 		).status,
@@ -207,7 +215,7 @@ it("rejects duplicate physical keys and mismatched permissions", () => {
 });
 
 it("rejects an operation when the source key changes during the request", async () => {
-	const environment = { HOBO_RESOURCE_0: keyId };
+	const environment = { HOBO_RESOURCE_0: keyArn };
 	let calls = 0;
 	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
 	const store = port(async () => {
@@ -244,7 +252,7 @@ it("rejects an operation when the source key changes during the request", async 
 });
 
 it("withholds an in-flight result when the source key changes", async () => {
-	const environment = { HOBO_RESOURCE_0: keyId };
+	const environment = { HOBO_RESOURCE_0: keyArn };
 	let finish!: (value: Response) => void;
 	let started!: () => void;
 	const dispatch = new Promise<void>((resolve) => {
@@ -291,7 +299,7 @@ it("withholds an in-flight result when the source key changes", async () => {
 });
 
 it("rechecks the source after a verifier changes its key", async () => {
-	const environment = { HOBO_RESOURCE_0: keyId };
+	const environment = { HOBO_RESOURCE_0: keyArn };
 	let armed = false;
 	let calls = 0;
 	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
@@ -333,7 +341,7 @@ it("rechecks the source after a verifier changes its key", async () => {
 });
 
 it("reports unknown if a provider verifier changes the source after the scoped check", async () => {
-	const environment = { HOBO_RESOURCE_0: keyId };
+	const environment = { HOBO_RESOURCE_0: keyArn };
 	let calls = 0;
 	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
 	const store = port(
@@ -376,7 +384,7 @@ it("reports unknown if a provider verifier changes the source after the scoped c
 });
 
 it("conservatively reports unknown when the source changes before a provider rejects", async () => {
-	const environment = { HOBO_RESOURCE_0: keyId };
+	const environment = { HOBO_RESOURCE_0: keyArn };
 	let calls = 0;
 	let result: Awaited<ReturnType<CryptographyPort["encrypt"]>> | undefined;
 	const store = port(
