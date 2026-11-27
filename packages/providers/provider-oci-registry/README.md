@@ -64,6 +64,8 @@ Anything else is refused by name rather than ignored.
    offset and resumes from it, with at most three status recoveries per blob.
    Invalid offsets and upload locations fail closed; the closing digest check
    and subsequent observation still apply.
+   Changes to this provider run the release workflow on ready pull requests and
+   merge groups.
 3. PUT each declared tag with the same bytes. A tag the desired state does not
    name is never written.
 4. Copy referrers (attestations, signatures, SBOMs) of the subject from the
