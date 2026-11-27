@@ -887,7 +887,12 @@
 				{
 					"name": "npm scope map + OCI manifest contract",
 					"id": "release_contract_tests",
-					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-git-tag.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-relevant-push.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/build-release-browser-wit-on-runner.test.ts scripts/test/nbgv-release-version.test.ts scripts/test/release-freight.test.ts scripts/test/release-freight-cli.test.ts scripts/test/deploy-site.test.ts",
+					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-git-tag.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-relevant-push.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/bundle-cli-preflight.test.ts scripts/test/run-cli-sdk-bundle.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/build-release-browser-wit-on-runner.test.ts scripts/test/nbgv-release-version.test.ts scripts/test/release-freight.test.ts scripts/test/release-freight-cli.test.ts scripts/test/deploy-site.test.ts",
+					"local": "run"
+				},
+				{
+					"name": "CLI declaration and SDK verification contracts",
+					"run": "node --no-warnings --experimental-strip-types --test scripts/test/bundle-cli-declarations.test.ts scripts/test/verify-cli-sdk-artifacts.test.ts",
 					"local": "run"
 				},
 				{

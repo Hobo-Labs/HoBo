@@ -21,6 +21,9 @@
 		"./wasi-blobstore": {
 			"types": "./src/generated/local-services/interfaces/wasi-blobstore-blobstore.d.ts"
 		},
+		"./runtime-primitives": {
+			"types": "./src/generated/runtime-primitives/interfaces/hobo-runtime-types.d.ts"
+		},
 		"./durable-messaging": {
 			"types": "./src/generated/durable-messaging-guest/interfaces/hobo-durable-messaging-messaging.d.ts"
 		}

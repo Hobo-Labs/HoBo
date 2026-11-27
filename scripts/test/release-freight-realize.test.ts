@@ -8,6 +8,7 @@
  * resolvers' contract tests run against).
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdtempSync,
@@ -19,8 +20,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { slow } from "../../packages/hobo/test/support/slow.js";
 import { ReleaseFreightBlockedError } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
+import { slow } from "../../packages/hobo/test/support/slow.js";
 import { camps } from "../../release/hobo-release.delivery.ts";
 import {
 	HOBO_CLI_DIST,
@@ -110,7 +111,6 @@ function ghcrWorld() {
 function withProbes(
 	inner: HttpTransport,
 	seen: TransportRequest[],
-	pages?: ReturnType<Fixtures["githubWorld"]>,
 ): HttpTransport {
 	return async (request) => {
 		seen.push(request);
@@ -118,16 +118,7 @@ function withProbes(
 			return { status: 401, headers: {}, body: "" };
 		if (request.url === "https://registry.npmjs.org/-/ping")
 			return { status: 200, headers: {}, body: "{}" };
-		if (
-			request.url ===
-			`https://api.github.com/repos/${OWNER}/${REPO}/pages/builds/latest`
-		) {
-			const build = pages?.builds.at(-1);
-			return build?.status === "built" &&
-				build.commit === pages?.refs.get("gh-pages")
-				? { status: 200, headers: {}, body: JSON.stringify(build) }
-				: { status: 404, headers: {}, body: "" };
-		}
+
 		return inner(request);
 	};
 }
@@ -161,10 +152,11 @@ const env = {
 	GITHUB_RUN_ID: "42",
 };
 
-function ownerNpmToken(token: string): ReleaseCredentials {
+function npmOidcToken(token: string): ReleaseCredentials {
 	return {
 		async resolve(ref) {
-			if (ref !== "owner://NPM_TOKEN") throw new Error(`no entry for ${ref}`);
+			if (ref !== "github-actions://npm-oidc")
+				throw new Error(`no entry for ${ref}`);
 			return { token };
 		},
 	};
@@ -593,7 +585,7 @@ describe.skipIf(!built)(
 				home,
 				env,
 				seams: {
-					...seams(withProbes(github, [], world), 700, fx.TOKEN),
+					...seams(withProbes(github, []), 700, fx.TOKEN),
 					credentials,
 				},
 			});
@@ -624,7 +616,7 @@ describe.skipIf(!built)(
 				dist,
 				home,
 				env,
-				seams: seams(withProbes(github, [], world), 700, fx.TOKEN),
+				seams: seams(withProbes(github, []), 700, fx.TOKEN),
 			});
 			const head = world.commits.get(world.head("gh-pages"));
 			expect(head?.message).toBe(`deploy: ${COMMIT}`);
@@ -640,6 +632,77 @@ describe.skipIf(!built)(
 					.mutations()
 					.filter((r) => r.method === "POST" && r.url.endsWith("/git/commits")),
 			).toHaveLength(1);
+			expect(journalText(home)).not.toContain(fx.TOKEN);
+		});
+
+		it.each([
+			["workflow", false],
+			["injected", true],
+		])("Pages: in-flight builds do not restart with %s credentials", async (_mode, injected) => {
+			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
+			const seen: TransportRequest[] = [];
+			const statuses: string[] = [];
+			let reads = 0;
+			const github: HttpTransport = async (request) => {
+				if (
+					request.method === "GET" &&
+					request.url.endsWith("/pages/builds/latest")
+				) {
+					const build = world.builds.at(-1);
+					if (build) {
+						reads++;
+						build.status =
+							reads <= 3 ? "queued" : reads <= 6 ? "building" : "built";
+						statuses.push(build.status);
+					}
+				}
+				return world.transport(request);
+			};
+			const dist = mkdtempSync(join(tmpdir(), "hobo-pages-in-flight-"));
+			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
+			const home = mkdtempSync(join(tmpdir(), "hobo-pages-workflow-token-"));
+			const sharedSeams = {
+				http: withProbes(github, seen),
+				now: clock(),
+				drive: { passes: 700, intervalMs: 0 },
+			};
+			const releaseSeams = injected
+				? { ...sharedSeams, credentials: githubAppInstallationToken(fx.TOKEN) }
+				: sharedSeams;
+			await qualifySiteRelease({
+				dist,
+				home,
+				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+				seams: releaseSeams,
+			});
+			expect(statuses).toContain("queued");
+			expect(statuses).toContain("building");
+			expect(statuses).toContain("built");
+			expect(
+				world
+					.mutations()
+					.filter(
+						(request) =>
+							request.method === "POST" &&
+							request.url.endsWith("/pages/builds"),
+					),
+			).toHaveLength(0);
+			const builds = seen.filter(
+				(request) =>
+					request.method === "GET" &&
+					request.url.endsWith("/pages/builds/latest"),
+			);
+			expect(builds.length).toBeGreaterThan(6);
+			expect(
+				builds.every(
+					(request) => request.headers.authorization === `Bearer ${fx.TOKEN}`,
+				),
+			).toBe(true);
+			const report = JSON.parse(
+				readFileSync(releaseReportPath(home, "pages"), "utf8"),
+			);
+			expect(report.channels.candidate.outcome).toBe("qualified");
+			expect(report.channels.stable.outcome).toBe("qualified");
 			expect(journalText(home)).not.toContain(fx.TOKEN);
 		});
 
@@ -681,7 +744,7 @@ describe.skipIf(!built)(
 				home,
 				env,
 				seams: {
-					http: withProbes(github, [], world),
+					http: withProbes(github, []),
 					now,
 					drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
 					credentials: githubAppInstallationToken(fx.TOKEN),
@@ -706,7 +769,7 @@ describe.skipIf(!built)(
 					home,
 					env,
 					seams: {
-						http: withProbes(world.transport, [], world),
+						http: withProbes(world.transport, []),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
 						credentials: githubAppInstallationToken(fx.TOKEN),
@@ -744,7 +807,7 @@ describe.skipIf(!built)(
 					home,
 					env,
 					seams: {
-						http: withProbes(github, [], world),
+						http: withProbes(github, []),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
 						credentials: githubAppInstallationToken(fx.TOKEN),
@@ -757,13 +820,17 @@ describe.skipIf(!built)(
 			expect(report.channels.candidate.outcome).toBe("blocked");
 		});
 
-		it("npm: candidate publishes the tarball with its signed Sigstore bundle through token auth, stable observes anonymously", async () => {
+		it("npm: scoped OIDC candidate publishes the signed tarball and stable observes anonymously", async () => {
 			const { npm, signer, sigstore } = fx;
-			const world = npm.registryWorld({ publicReads: true });
+			const world = npm.registryWorld({
+				publicReads: true,
+				bearer: npm.PUBLISH_TOKEN,
+				idToken: npm.ID_TOKEN,
+			});
 			const seen: TransportRequest[] = [];
 			const fixtures = {
 				...seams(withProbes(world.transport, seen)),
-				credentials: ownerNpmToken(npm.TOKEN),
+				credentials: npmOidcToken(npm.ID_TOKEN),
 			};
 			const build = signer.githubActionsBuild({
 				GITHUB_SERVER_URL: "https://github.com",
@@ -819,7 +886,23 @@ describe.skipIf(!built)(
 			const put = world.requests.find(
 				(r) => r.method === "PUT" && r.body?.includes("_attachments"),
 			);
-			expect(put?.headers.authorization).toBe(`Bearer ${npm.TOKEN}`);
+			expect(put?.headers.authorization).toBe(`Bearer ${npm.PUBLISH_TOKEN}`);
+			const exchange = world.requests.find(
+				(r) => r.method === "POST" && r.url.includes("/oidc/token/exchange/"),
+			);
+			expect(new URL(exchange?.url ?? "").pathname).toBe(
+				`/-/npm/v1/oidc/token/exchange/package/${npm.NAME.replace("/", "%2f")}`,
+			);
+			expect(exchange?.headers.authorization).toBe(`Bearer ${npm.ID_TOKEN}`);
+			expect(published?.versions?.["1.2.3"]?.dist.integrity).toBe(
+				`sha512-${createHash("sha512").update(npm.TARBALL).digest("base64")}`,
+			);
+			const putIndex = world.requests.indexOf(put!);
+			expect(
+				world.requests
+					.slice(putIndex + 1)
+					.some((r) => r.method === "GET" && r.url.includes("?write=true")),
+			).toBe(true);
 			const attachments = JSON.parse(put?.body ?? "{}")._attachments;
 			expect(attachments[`${npm.NAME}-1.2.3.sigstore`]?.data).toBe(
 				new TextDecoder().decode(signed.bundle),
@@ -840,7 +923,8 @@ describe.skipIf(!built)(
 			expect(
 				stableReads.every((r) => r.headers.authorization === undefined),
 			).toBe(true);
-			expect(journalText(home)).not.toContain(npm.TOKEN);
+			expect(journalText(home)).not.toContain(npm.PUBLISH_TOKEN);
+			expect(journalText(home)).not.toContain(npm.ID_TOKEN);
 		});
 
 		it("npm: a tarball without its Sigstore bundle blocks; nothing reaches the registry and nothing else publishes", async () => {
@@ -857,7 +941,7 @@ describe.skipIf(!built)(
 					env,
 					seams: {
 						...seams(http),
-						credentials: ownerNpmToken("npm_fixtureToken"),
+						credentials: npmOidcToken("eyJ.a.b"),
 					},
 					stored: [
 						{
