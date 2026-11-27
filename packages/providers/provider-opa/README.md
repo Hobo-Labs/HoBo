@@ -1,5 +1,7 @@
 # @hobo/provider-opa
 
+SDK releases stage this package as `@hobo-labs/provider-opa`.
+
 The OPA/Rego policy engine behind the broker's gate-plane port, extracted
 from `@hobo/broker`. The broker depends on this package
 and re-exports `createOpaGatePlane`, so existing imports keep working; the

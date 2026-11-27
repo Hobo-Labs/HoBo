@@ -101,6 +101,8 @@ const SDK_PACKAGE_DIRS = {
 	"@hobo/runtime-rivet": "packages/runtimes/runtime-rivet",
 	"@hobo/iac-alchemy": "packages/iac/iac-alchemy",
 	"@hobo/alchemy-rivet": "packages/extension-alchemy-rivet",
+	"@hobo/provider-cedar": "packages/providers/provider-cedar",
+	"@hobo/provider-opa": "packages/providers/provider-opa",
 } satisfies Record<string, string>;
 
 function findPackageDir(name: string): string {
