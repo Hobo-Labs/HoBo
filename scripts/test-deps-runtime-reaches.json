@@ -22,12 +22,12 @@
 		},
 		{
 			"from": "packages/extension-alchemy-rivet/test/rivet-bindle-topic-live.mjs",
-			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
+			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime#build", "@hobo/runtime-rivet#build"],
 			"why": "runs a spawned bindle topic live fixture that loads the adapter and runtime through computed module paths"
 		},
 		{
 			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.mjs",
-			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
+			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime#build", "@hobo/runtime-rivet#build"],
 			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
 		},
 		{
