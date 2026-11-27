@@ -18,6 +18,8 @@ it("replays a committed topic mutation after reopening a provider-neutral SQLite
 	const path = join(directory, "topic.db");
 	let sql = new DatabaseSync(path);
 	let loseReply = false;
+	let authorized = true;
+	let revokeAfterCommit = false;
 	const execute = async (query: string, ...values: unknown[]) => {
 		// SAFETY: the journal supplies only SQLite-compatible values to this fixture.
 		return sql.prepare(query).all(...(values as SQLInputValue[]));
@@ -30,6 +32,10 @@ it("replays a committed topic mutation after reopening a provider-neutral SQLite
 			// SAFETY: this transaction fixture exposes the required execute method.
 			const result = await run({ execute } as DurableTopicSqlExecutor);
 			sql.exec("COMMIT");
+			if (revokeAfterCommit) {
+				revokeAfterCommit = false;
+				authorized = false;
+			}
 			if (loseReply) {
 				loseReply = false;
 				throw new Error("lost commit response");
@@ -60,7 +66,7 @@ it("replays a committed topic mutation after reopening a provider-neutral SQLite
 				request: new TextEncoder().encode(JSON.stringify(request)),
 			},
 			() => timestamp,
-			() => true,
+			() => authorized,
 			(state, now, encoded) =>
 				reduceDurableTopic(
 					state,
@@ -97,6 +103,19 @@ it("replays a committed topic mutation after reopening a provider-neutral SQLite
 		expect(await apply("2", "publish", { ...message, topic: "other" })).toEqual(
 			{ status: "rejected", code: "operation-conflict" },
 		);
+		const revokedRequest = { operation: {}, topic: "revoked-after-commit" };
+		revokeAfterCommit = true;
+		expect(await apply("3", "ensure-topic", revokedRequest)).toMatchObject({
+			status: "unknown",
+		});
+		expect(await apply("3", "ensure-topic", revokedRequest)).toMatchObject({
+			status: "unknown",
+		});
+		authorized = true;
+		expect(await apply("3", "ensure-topic", revokedRequest)).toEqual({
+			status: "committed",
+			value: '{"topic":"revoked-after-commit"}',
+		});
 		expect(await apply("2", "publish", message, 10_000)).toMatchObject({
 			status: "expired",
 		});
@@ -107,6 +126,18 @@ it("replays a committed topic mutation after reopening a provider-neutral SQLite
 			.get("tenant", "app");
 		if (typeof row?.value !== "string") throw new Error("topic state missing");
 		const state = JSON.parse(row.value);
+		expect(
+			state.topics.filter(
+				(topic: { name: string }) => topic.name === "revoked-after-commit",
+			),
+		).toHaveLength(1);
+		expect(
+			state.events.filter(
+				(event: { kind: string; topic: string }) =>
+					event.kind === "topic-created" &&
+					event.topic === "revoked-after-commit",
+			),
+		).toHaveLength(1);
 		expect(state.messages).toHaveLength(1);
 		expect(state.messages[0]).toMatchObject({ id: "m1", sequence: 1 });
 	} finally {
