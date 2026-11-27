@@ -2,10 +2,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { durableMessagingOperation } from "@hobo/core";
+import { migrateDurableTopicJournal } from "@hobo/runtime/durable-topic-journal";
 import { ActorHandleRaw } from "rivetkit/client";
 import type { RawAccess } from "rivetkit/db";
 import { expect, it } from "vitest";
-import { migrateDurableReceiptJournal } from "../src/durable-receipt-journal.js";
 import { createRivetDurableTopicActor } from "../src/durable-topic-actor.js";
 import {
 	createRivetDurableTopicClient,
@@ -70,7 +70,7 @@ it("preserves malformed and lost-commit outcomes through the actor's SQLite jour
 			)
 			.digest("hex");
 	try {
-		await migrateDurableReceiptJournal(db);
+		await migrateDurableTopicJournal(db);
 		const actor = createRivetDurableTopicActor({
 			actorName,
 			semanticDigest,

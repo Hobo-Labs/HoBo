@@ -2,17 +2,20 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import {
 	DURABLE_MESSAGING_LIMITS,
 	durableMessagingOperation,
 } from "@hobo/core";
-import type { RawAccess } from "rivetkit/db";
 import { afterEach, describe, expect, it } from "vitest";
+import type {
+	DurableTopicSqlDatabase,
+	DurableTopicSqlExecutor,
+} from "../src/durable-topic-journal.js";
 import {
-	migrateDurableReceiptJournal,
-	runDurableReceiptJournal,
-} from "../src/durable-receipt-journal.js";
+	migrateDurableTopicJournal,
+	runDurableTopicJournal,
+} from "../src/durable-topic-journal.js";
 
 const databases: DatabaseSync[] = [];
 const directories: string[] = [];
@@ -46,10 +49,11 @@ function open(path = ":memory:") {
 				throw new Error("injected write failure");
 			}
 		}
-		return sql.prepare(query).all(...values);
+		// SAFETY: the journal supplies only SQLite-compatible values to this test fixture.
+		return sql.prepare(query).all(...(values as SQLInputValue[]));
 	};
 	const transaction = async <T>(
-		run: (tx: RawAccess) => Promise<T>,
+		run: (tx: DurableTopicSqlExecutor) => Promise<T>,
 	): Promise<T> => {
 		const previous = tail;
 		let release = () => {};
@@ -60,7 +64,7 @@ function open(path = ":memory:") {
 		sql.exec("BEGIN IMMEDIATE");
 		try {
 			// SAFETY: journal transactions use only execute in this fixture.
-			const result = await run({ execute } as RawAccess);
+			const result = await run({ execute } as DurableTopicSqlExecutor);
 			sql.exec("COMMIT");
 			if (loseCommit) {
 				loseCommit = false;
@@ -76,8 +80,8 @@ function open(path = ":memory:") {
 			release();
 		}
 	};
-	// SAFETY: the journal uses only these two RawAccess methods.
-	const db = { execute, transaction } as RawAccess;
+	// SAFETY: the journal uses only the database methods.
+	const db = { execute, transaction } as DurableTopicSqlDatabase;
 	return {
 		sql,
 		db,
@@ -110,7 +114,10 @@ function open(path = ":memory:") {
 }
 const operation = (nonce: string, expiry = 10_000) =>
 	durableMessagingOperation(expiry, nonce.padStart(16, "0"));
-const input = (nonce: string, bytes = new Uint8Array([1, 2])) => ({
+const input = (
+	nonce: string,
+	bytes: Uint8Array<ArrayBufferLike> = new Uint8Array([1, 2]),
+) => ({
 	operation: operation(nonce),
 	scope: { tenant: "tenant", instance: "instance" },
 	semanticDigest: `sha256:${"a".repeat(64)}`,
@@ -128,10 +135,10 @@ const rejected = () => ({
 	code: "capacity-exceeded" as const,
 });
 
-describe("Rivet actor-local durable receipt journal", () => {
+describe("SQLite durable topic receipt journal", () => {
 	it("refuses asynchronous host callbacks without leaking rejections", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const reject = () => Promise.reject(new Error("asynchronous callback"));
 		const cases = [
 			{
@@ -158,7 +165,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		Object.defineProperty(cases[2], "execute", { value: reject });
 		for (const { request, now, authorize, execute } of cases) {
 			expect(
-				await runDurableReceiptJournal(f.db, request, now, authorize, execute),
+				await runDurableTopicJournal(f.db, request, now, authorize, execute),
 			).toEqual({ status: "unknown", operation: request.operation });
 		}
 		let calls = 0;
@@ -168,7 +175,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		});
 		const request = input("async-disclosure");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_000,
@@ -185,10 +192,10 @@ describe("Rivet actor-local durable receipt journal", () => {
 		"expiry",
 	] as const)("fails closed on an oversized corrupted %s cell", async (field) => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const request = input("corrupt-cell");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_000,
@@ -209,7 +216,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 				)
 				.run(request.operation.id);
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_001,
@@ -226,11 +233,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 		directories.push(dir);
 		const path = join(dir, "journal.sqlite");
 		const first = open(path);
-		await migrateDurableReceiptJournal(first.db);
+		await migrateDurableTopicJournal(first.db);
 		const request = input("lost-restart");
 		first.loseNextCommitReply();
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				first.db,
 				request,
 				() => 1_000,
@@ -240,9 +247,9 @@ describe("Rivet actor-local durable receipt journal", () => {
 		).toEqual({ status: "unknown", operation: request.operation });
 		first.close();
 		const reopened = open(path);
-		await migrateDurableReceiptJournal(reopened.db);
+		await migrateDurableTopicJournal(reopened.db);
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				reopened.db,
 				request,
 				() => 1_001,
@@ -263,16 +270,16 @@ describe("Rivet actor-local durable receipt journal", () => {
 	});
 	it("collects expired receipts without allowing the expired ID to be reused", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const expired = { ...input("old"), operation: operation("old", 1_010) };
-		await runDurableReceiptJournal(
+		await runDurableTopicJournal(
 			f.db,
 			expired,
 			() => 1_000,
 			allowed,
 			() => committed("old"),
 		);
-		await runDurableReceiptJournal(
+		await runDurableTopicJournal(
 			f.db,
 			input("new"),
 			() => 1_010,
@@ -288,7 +295,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		).toBe(0);
 		let invoked = false;
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				expired,
 				() => 1_010,
@@ -304,7 +311,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			operation: { ...expired.operation, expiresAtMs: 9_999 },
 		};
 		await expect(
-			runDurableReceiptJournal(
+			runDurableTopicJournal(
 				f.db,
 				altered,
 				() => 1_010,
@@ -316,7 +323,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 	});
 	it("authorizes the detached verb, topic and operation before work and receipt disclosure", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const request = {
 			...input("19"),
 			request: new TextEncoder().encode('{"topic":"orders"}'),
@@ -336,7 +343,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			return committed("private");
 		};
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_000,
@@ -346,7 +353,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		).toEqual({ status: "committed", value: "private" });
 		const wrongVerb = { ...request, method: "consume" };
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				wrongVerb,
 				() => 1_001,
@@ -359,7 +366,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			request: new TextEncoder().encode('{"topic":"other"}'),
 		};
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				wrongTopic,
 				() => 1_001,
@@ -371,8 +378,8 @@ describe("Rivet actor-local durable receipt journal", () => {
 	});
 	it("rolls back a state write when receipt insertion fails, then safely retries", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
-		await runDurableReceiptJournal(
+		await migrateDurableTopicJournal(f.db);
+		await runDurableTopicJournal(
 			f.db,
 			input("20"),
 			() => 1_000,
@@ -382,7 +389,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		const request = input("21");
 		f.failNextReceiptWrite();
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_001,
@@ -401,7 +408,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 				.get(request.operation.id)?.n,
 		).toBe(0);
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_002,
@@ -410,7 +417,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			),
 		).toEqual({ status: "committed", value: "after" });
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_003,
@@ -424,7 +431,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("pins the independently authorized semantics and refuses missing or changed ownership", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const request = input("22");
 		const claims: string[] = [];
 		const authorize = (claim: {
@@ -441,7 +448,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			);
 		};
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_000,
@@ -455,7 +462,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			semanticDigest: `sha256:${"b".repeat(64)}`,
 		};
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				changed,
 				() => 1_001,
@@ -467,7 +474,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			.prepare("DELETE FROM hobo_dm_semantics WHERE tenant=? AND instance=?")
 			.run("tenant", "instance");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_001,
@@ -482,10 +489,10 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("preserves valid Unicode exactly and refuses malformed scalar strings", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const valid = input("24");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				valid,
 				() => 1_000,
@@ -494,7 +501,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			),
 		).toEqual({ status: "committed", value: "🙂" });
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				valid,
 				() => 1_001,
@@ -510,7 +517,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 						? committed("valid", malformed)
 						: committed(malformed, "valid");
 				expect(
-					await runDurableReceiptJournal(
+					await runDurableTopicJournal(
 						f.db,
 						request,
 						() => 1_001,
@@ -527,8 +534,8 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("durably rejects multibyte capacity overflow without changing state", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
-		await runDurableReceiptJournal(
+		await migrateDurableTopicJournal(f.db);
+		await runDurableTopicJournal(
 			f.db,
 			input("25"),
 			() => 1_000,
@@ -540,7 +547,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			committed("ok", "é".repeat(2_097_153)),
 		].entries()) {
 			const request = input(`capacity${index}`);
-			const result = await runDurableReceiptJournal(
+			const result = await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_001 + index * 2,
@@ -549,7 +556,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			);
 			expect(result).toEqual({ status: "rejected", code: "capacity-exceeded" });
 			expect(
-				await runDurableReceiptJournal(
+				await runDurableTopicJournal(
 					f.db,
 					request,
 					() => 1_002 + index * 2,
@@ -567,9 +574,9 @@ describe("Rivet actor-local durable receipt journal", () => {
 		directories.push(dir);
 		const path = join(dir, "journal.sqlite");
 		const first = open(path);
-		await migrateDurableReceiptJournal(first.db);
+		await migrateDurableTopicJournal(first.db);
 		const request = input("1");
-		const denial = await runDurableReceiptJournal(
+		const denial = await runDurableTopicJournal(
 			first.db,
 			request,
 			() => 1_000,
@@ -583,9 +590,9 @@ describe("Rivet actor-local durable receipt journal", () => {
 		).toBe(0);
 		first.close();
 		const reopened = open(path);
-		await migrateDurableReceiptJournal(reopened.db);
+		await migrateDurableTopicJournal(reopened.db);
 		let invoked = false;
-		const replay = await runDurableReceiptJournal(
+		const replay = await runDurableTopicJournal(
 			reopened.db,
 			request,
 			() => 1_001,
@@ -601,7 +608,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("passes only immutable snapshots to the reducer and fences mutated retries", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const bytes = new Uint8Array([1, 2]);
 		let iteratorReads = 0;
 		Object.defineProperty(bytes, Symbol.iterator, {
@@ -611,7 +618,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			},
 		});
 		const request = input("2", bytes);
-		const pending = runDurableReceiptJournal(
+		const pending = runDurableTopicJournal(
 			f.db,
 			request,
 			() => 1_000,
@@ -626,7 +633,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		expect(await pending).toEqual({ status: "committed", value: "AQI=" });
 		expect(iteratorReads).toBe(0);
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				input("2"),
 				() => 1_001,
@@ -637,7 +644,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			),
 		).toEqual({ status: "committed", value: "AQI=" });
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				input("2", bytes),
 				() => 1_001,
@@ -654,10 +661,10 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("serializes competing fingerprints and scopes receipts by tenant and instance", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const first = input("6");
 		const held = f.holdNextStateWrite();
-		const pending = runDurableReceiptJournal(
+		const pending = runDurableTopicJournal(
 			f.db,
 			first,
 			() => 1_000,
@@ -665,7 +672,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			() => committed("first"),
 		);
 		await held.reached;
-		const conflict = runDurableReceiptJournal(
+		const conflict = runDurableTopicJournal(
 			f.db,
 			input("6", new Uint8Array([9])),
 			() => 1_000,
@@ -685,7 +692,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			{ tenant: "tenant", instance: "other" },
 		]) {
 			expect(
-				await runDurableReceiptJournal(
+				await runDurableTopicJournal(
 					f.db,
 					{ ...first, scope },
 					() => 1_000,
@@ -701,11 +708,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("allows a pre-expiry transaction to commit late without admitting a post-expiry retry", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		let now = 1_000;
 		const held = f.holdNextStateWrite();
 		const request = { ...input("3"), operation: operation("3", 1_010) };
-		const pending = runDurableReceiptJournal(
+		const pending = runDurableTopicJournal(
 			f.db,
 			request,
 			() => now,
@@ -715,7 +722,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		await held.reached;
 		now = 1_010;
 		let retryInvoked = false;
-		const retry = runDurableReceiptJournal(
+		const retry = runDurableTopicJournal(
 			f.db,
 			request,
 			() => now,
@@ -742,11 +749,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 		"rollback",
 	] as const)("does not turn an expired retry into proof of noncommit after %s", async (failure) => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		let now = 1_000;
 		const held = f.holdNextStateWrite();
 		const request = { ...input("late"), operation: operation("late", 1_010) };
-		const original = runDurableReceiptJournal(
+		const original = runDurableTopicJournal(
 			f.db,
 			request,
 			() => now,
@@ -756,7 +763,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		await held.reached;
 		now = 1_010;
 		let invoked = false;
-		const retry = runDurableReceiptJournal(
+		const retry = runDurableTopicJournal(
 			f.db,
 			request,
 			() => now,
@@ -792,11 +799,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("returns unknown after response loss, failed writes or authorization revocation", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const request = input("4");
 		f.loseNextCommitReply();
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_000,
@@ -805,7 +812,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			),
 		).toEqual({ status: "unknown", operation: request.operation });
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_001,
@@ -816,7 +823,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			),
 		).toEqual({ status: "unknown", operation: request.operation });
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_001,
@@ -829,7 +836,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		const failed = input("5");
 		f.failNextStateWrite();
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				failed,
 				() => 1_001,
@@ -840,7 +847,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		let authorized = true;
 		const revoked = input("10");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				revoked,
 				() => 1_001,
@@ -853,7 +860,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		).toEqual({ status: "unknown", operation: revoked.operation });
 		authorized = true;
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				revoked,
 				() => 1_001,
@@ -867,11 +874,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("never gives a reducer SQL, transaction, savepoint, nested transaction or journal capabilities", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const request = input("11");
 		let observed: unknown;
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				request,
 				() => 1_000,
@@ -885,7 +892,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		expect(observed).toBeUndefined();
 		const second = input("12");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				second,
 				() => 1_001,
@@ -904,7 +911,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("fails closed on hostile proxies, shared buffers, clock regression and corrupt receipts", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const first = input("7");
 		let invoked = false;
 		const run = () => {
@@ -912,11 +919,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 			return committed("receipt");
 		};
 		expect(
-			await runDurableReceiptJournal(f.db, first, () => 1_000, allowed, run),
+			await runDurableTopicJournal(f.db, first, () => 1_000, allowed, run),
 		).toEqual({ status: "committed", value: "receipt" });
 		invoked = false;
 		expect(
-			await runDurableReceiptJournal(f.db, first, () => 999, allowed, run),
+			await runDurableTopicJournal(f.db, first, () => 999, allowed, run),
 		).toEqual({ status: "unknown", operation: first.operation });
 		f.sql
 			.prepare(
@@ -924,11 +931,11 @@ describe("Rivet actor-local durable receipt journal", () => {
 			)
 			.run(first.operation.id);
 		expect(
-			await runDurableReceiptJournal(f.db, first, () => 1_001, allowed, run),
+			await runDurableTopicJournal(f.db, first, () => 1_001, allowed, run),
 		).toEqual({ status: "unknown", operation: first.operation });
 		const shared = input("8", new Uint8Array(new SharedArrayBuffer(2)));
 		expect(
-			await runDurableReceiptJournal(f.db, shared, () => 1_001, allowed, run),
+			await runDurableTopicJournal(f.db, shared, () => 1_001, allowed, run),
 		).toEqual({ status: "unknown", operation: shared.operation });
 		let reads = 0;
 		const accessor = {
@@ -939,7 +946,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			},
 		};
 		expect(
-			await runDurableReceiptJournal(f.db, accessor, () => 1_001, allowed, run),
+			await runDurableTopicJournal(f.db, accessor, () => 1_001, allowed, run),
 		).toEqual({ status: "unknown", operation: accessor.operation });
 		const proxy = new Proxy(input("12"), {
 			getOwnPropertyDescriptor() {
@@ -948,7 +955,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			},
 		});
 		await expect(
-			runDurableReceiptJournal(f.db, proxy, () => 1_001, allowed, run),
+			runDurableTopicJournal(f.db, proxy, () => 1_001, allowed, run),
 		).rejects.toThrow();
 		expect(reads).toBe(0);
 		expect(invoked).toBe(false);
@@ -956,9 +963,9 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("does not garbage-collect a live receipt with corrupted expiry metadata", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const live = input("13");
-		await runDurableReceiptJournal(
+		await runDurableTopicJournal(
 			f.db,
 			live,
 			() => 1_000,
@@ -970,7 +977,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			.run(live.operation.id);
 		const unrelated = input("14");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				unrelated,
 				() => 1_001,
@@ -989,9 +996,9 @@ describe("Rivet actor-local durable receipt journal", () => {
 
 	it("preserves live receipts at capacity and rejects no work without a tombstone", async () => {
 		const f = open();
-		await migrateDurableReceiptJournal(f.db);
+		await migrateDurableTopicJournal(f.db);
 		const live = input("15");
-		await runDurableReceiptJournal(
+		await runDurableTopicJournal(
 			f.db,
 			live,
 			() => 1_000,
@@ -1019,7 +1026,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 		}
 		const excess = input("16");
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				excess,
 				() => 1_001,
@@ -1028,7 +1035,7 @@ describe("Rivet actor-local durable receipt journal", () => {
 			),
 		).toEqual({ status: "unknown", operation: excess.operation });
 		expect(
-			await runDurableReceiptJournal(
+			await runDurableTopicJournal(
 				f.db,
 				live,
 				() => 1_001,

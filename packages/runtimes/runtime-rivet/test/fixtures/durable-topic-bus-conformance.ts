@@ -3,8 +3,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { DurableMessagingConformanceHarness } from "@hobo/conformance";
+import { migrateDurableTopicJournal } from "@hobo/runtime/durable-topic-journal";
 import type { RawAccess } from "rivetkit/db";
-import { migrateDurableReceiptJournal } from "../../src/durable-receipt-journal.js";
 import { createRivetDurableTopicBusActor } from "../../src/durable-topic-actor.js";
 import { createRivetDurableTopicMetadataGrant } from "../../src/durable-topic-client.js";
 import type { RivetMessagingConformanceHost } from "./durable-topic-conformance.js";
@@ -177,7 +177,7 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 							: join(options.directory, `${tenant}.sqlite`),
 					);
 					try {
-						await migrateDurableReceiptJournal(created.db);
+						await migrateDurableTopicJournal(created.db);
 						return created;
 					} catch (error) {
 						created.sql.close();

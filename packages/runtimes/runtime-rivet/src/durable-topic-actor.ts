@@ -7,6 +7,11 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 import {
+	DURABLE_TOPIC_JOURNAL_BOUNDS,
+	migrateDurableTopicJournal,
+	runDurableTopicJournal,
+} from "@hobo/runtime/durable-topic-journal";
+import {
 	DURABLE_TOPIC_REDUCER_CAPABILITIES as RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
 	DURABLE_TOPIC_REDUCER_LIMITS as RIVET_DURABLE_TOPIC_BUS_LIMITS,
 	readDurableTopicAudit as readRivetTopicBusAudit,
@@ -19,11 +24,6 @@ import {
 	isStaticActorDefinition,
 } from "rivetkit";
 import { db, type RawAccess } from "rivetkit/db";
-import {
-	migrateDurableReceiptJournal,
-	RIVET_DURABLE_JOURNAL_BOUNDS,
-	runDurableReceiptJournal,
-} from "./durable-receipt-journal.js";
 import {
 	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
 	RIVET_DURABLE_TOPIC_LOG_LIMITS,
@@ -245,7 +245,7 @@ function canonical(input: unknown): string {
 function reply(status: number, body: Record<string, unknown>): Response {
 	const text = canonical(body);
 	if (
-		encoder.encode(text).byteLength > RIVET_DURABLE_JOURNAL_BOUNDS.receiptBytes
+		encoder.encode(text).byteLength > DURABLE_TOPIC_JOURNAL_BOUNDS.receiptBytes
 	)
 		return new Response(null, { status: 503 });
 	return new Response(text, {
@@ -343,7 +343,7 @@ async function readBody(
 			)
 				throw new Error("invalid chunk");
 			size += length;
-			if (size > RIVET_DURABLE_JOURNAL_BOUNDS.requestBytes)
+			if (size > DURABLE_TOPIC_JOURNAL_BOUNDS.requestBytes)
 				throw new Error("request too large");
 			const chunk = new Uint8Array(length);
 			intrinsicSet.call(chunk, next.value);
@@ -425,7 +425,7 @@ function buildTopicActor(
 						]),
 					)
 					.digest("hex")}`;
-	const database = db({ onMigrate: migrateDurableReceiptJournal });
+	const database = db({ onMigrate: migrateDurableTopicJournal });
 	const handle = async (
 		context: RivetDurableTopicContext,
 		request: Request,
@@ -451,7 +451,7 @@ function buildTopicActor(
 		const ingressClaim = Object.freeze({
 			actorName,
 			actorKey,
-			maxRequestBytes: RIVET_DURABLE_JOURNAL_BOUNDS.requestBytes,
+			maxRequestBytes: DURABLE_TOPIC_JOURNAL_BOUNDS.requestBytes,
 			maxChunkBytes: MAX_CHUNK_BYTES,
 			maxChunks: MAX_CHUNKS,
 			maxHeaderBytes: MAX_HEADER_BYTES,
@@ -546,7 +546,7 @@ function buildTopicActor(
 		if (!check()) return reply(503, { error: "authority-unavailable" });
 		try {
 			if (operation !== undefined) {
-				const outcome = await runDurableReceiptJournal(
+				const outcome = await runDurableTopicJournal(
 					context.db,
 					{ operation, scope, semanticDigest, method, request: bytes },
 					now,

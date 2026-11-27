@@ -7,13 +7,26 @@ import {
 	type DurableMessagingRejectionCode,
 	parseDurableMessagingOperation,
 } from "@hobo/core";
-import type { RawAccess } from "rivetkit/db";
 import { synchronousResult } from "./synchronous-result.js";
+
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type -- SAFETY: SQLite rows are heterogeneous external data validated by the journal before use. */
+export interface DurableTopicSqlExecutor {
+	execute<Row extends Record<string, unknown> = Record<string, unknown>>(
+		query: string,
+		...args: unknown[]
+	): Promise<Row[]>;
+}
+/* oxlint-enable anti-slop/no-unsafe-dictionary-type */
+export interface DurableTopicSqlDatabase extends DurableTopicSqlExecutor {
+	transaction<T>(
+		run: (tx: DurableTopicSqlExecutor) => Promise<T> | T,
+	): Promise<T>;
+}
 
 const MAX_REQUEST_BYTES = 131_072;
 const MAX_RECEIPT_BYTES = 262_144;
 const MAX_STATE_BYTES = 4_194_304;
-export const RIVET_DURABLE_JOURNAL_BOUNDS = Object.freeze({
+export const DURABLE_TOPIC_JOURNAL_BOUNDS = Object.freeze({
 	requestBytes: MAX_REQUEST_BYTES,
 	receiptBytes: MAX_RECEIPT_BYTES,
 	stateBytes: MAX_STATE_BYTES,
@@ -67,8 +80,8 @@ type JournalInput = {
 	readonly request: Uint8Array;
 };
 
-export async function migrateDurableReceiptJournal(
-	database: RawAccess,
+export async function migrateDurableTopicJournal(
+	database: DurableTopicSqlDatabase,
 ): Promise<void> {
 	await database.execute(
 		"CREATE TABLE IF NOT EXISTS hobo_dm_receipt_clock (tenant TEXT NOT NULL, instance TEXT NOT NULL, now_ms INTEGER NOT NULL, PRIMARY KEY (tenant, instance))",
@@ -136,8 +149,8 @@ function parsedDecision(status: unknown, value: unknown): Decision | undefined {
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: persisted SQLite rows and reducer outputs are validated before use. */
-export async function runDurableReceiptJournal(
-	database: RawAccess,
+export async function runDurableTopicJournal(
+	database: DurableTopicSqlDatabase,
 	input: JournalInput,
 	now: () => number,
 	authorized: (claim: AuthorityClaim) => boolean,

@@ -1,9 +1,9 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-object-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-unsafe-dictionary-type -- SAFETY: this fixture exercises actor HTTP and SQLite boundaries. */
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { durableMessagingOperation } from "@hobo/core";
+import { migrateDurableTopicJournal } from "@hobo/runtime/durable-topic-journal";
 import type { RawAccess } from "rivetkit/db";
 import { afterEach, describe, expect, it } from "vitest";
-import { migrateDurableReceiptJournal } from "../src/durable-receipt-journal.js";
 import {
 	createRivetDurableTopicActor,
 	createRivetDurableTopicBusActor,
@@ -94,7 +94,7 @@ function canonical(value: unknown): string {
 }
 async function fixture() {
 	const storage = sqlite();
-	await migrateDurableReceiptJournal(storage.db);
+	await migrateDurableTopicJournal(storage.db);
 	let clock = 1000;
 	let grant = true;
 	let serial = 0;

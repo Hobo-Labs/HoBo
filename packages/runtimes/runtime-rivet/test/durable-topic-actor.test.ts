@@ -1,10 +1,10 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-object-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get -- SAFETY: this fixture exercises raw actor HTTP and SQLite boundaries. */
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { durableMessagingOperation } from "@hobo/core";
+import { migrateDurableTopicJournal } from "@hobo/runtime/durable-topic-journal";
 import { isStaticActorDefinition } from "rivetkit";
 import type { RawAccess } from "rivetkit/db";
 import { afterEach, describe, expect, it } from "vitest";
-import { migrateDurableReceiptJournal } from "../src/durable-receipt-journal.js";
 import {
 	createRivetDurableTopicActor,
 	createRivetDurableTopicBusActor,
@@ -74,7 +74,7 @@ async function fixture(options?: {
 	verifyIngress?: () => boolean;
 }) {
 	const storage = sqlite();
-	await migrateDurableReceiptJournal(storage.db);
+	await migrateDurableTopicJournal(storage.db);
 	let authorized = true;
 	let ingress = true;
 	let scopeChanged = false;
@@ -193,7 +193,7 @@ describe("Rivet durable topic log actor", () => {
 
 	it("refuses rejected asynchronous scope and authorization callbacks", async () => {
 		const storage = sqlite();
-		await migrateDurableReceiptJournal(storage.db);
+		await migrateDurableTopicJournal(storage.db);
 		const reject = () => Promise.reject(new Error("asynchronous callback"));
 		const base: RivetDurableTopicBusOptions = {
 			actorName: "orders",

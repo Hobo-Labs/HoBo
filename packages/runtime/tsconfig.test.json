@@ -9,6 +9,9 @@
 		"test/fixtures/todo-api.ts",
 		"test/durable-messaging-host.test.ts",
 		"test/durable-topic-reducer-model.test.ts",
+		"test/durable-topic-journal.test.ts",
+		"test/durable-topic-portable.test.ts",
+		"test/durable-topic-journal-model.test.ts",
 		"test/durable-messaging-async-component.test.ts",
 		"test/durable-messaging-packaging.test.ts"
 	]
