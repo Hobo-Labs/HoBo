@@ -25,6 +25,49 @@ import {
 } from "../ci/stage-sdk-artifacts.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("stages the Alchemy and Rivet SDK packages with public dependencies", () => {
+		const root = join(import.meta.dirname, "..", "..");
+		const map = loadNpmScopeMap();
+		for (const [name, directory, published] of [
+			[
+				"@hobo/runtime-rivet",
+				"packages/runtimes/runtime-rivet",
+				"@hobo-labs/runtime-rivet",
+			],
+			[
+				"@hobo/iac-alchemy",
+				"packages/iac/iac-alchemy",
+				"@hobo-labs/iac-alchemy",
+			],
+			[
+				"@hobo/alchemy-rivet",
+				"packages/extension-alchemy-rivet",
+				"@hobo-labs/alchemy-rivet",
+			],
+		] as const) {
+			const manifest = JSON.parse(
+				readFileSync(join(root, directory, "package.json"), "utf8"),
+			);
+			expect(manifest.name).toBe(name);
+			expect(manifest.private).not.toBe(true);
+			expect(manifest.files).toContain("LICENSE");
+			expect(readFileSync(join(root, directory, "LICENSE"), "utf8")).toContain(
+				"MIT License",
+			);
+			expect(SDK_PACKAGES).toContain(name);
+			const staged = prepareSdkPackageManifest(manifest, map, "1.0.0");
+			expect(staged.name).toBe(published);
+			for (const dependency of Object.keys(manifest.dependencies ?? {}))
+				if (dependency.startsWith("@hobo/")) {
+					expect(map.packages[dependency]).toBeDefined();
+					expect(staged.dependencies?.[map.packages[dependency] ?? ""]).toBe(
+						"1.0.0",
+					);
+					expect(staged.dependencies?.[dependency]).toBeUndefined();
+				}
+		}
+	});
+
 	it("rewrites package imports before the pack worker runs", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-pack-scope-"));
 		try {

@@ -98,6 +98,9 @@ export function orderedSdkTarballPaths(artifactsDir: string): string[] {
 
 const SDK_PACKAGE_DIRS = {
 	"@hobo/runtime-local": "packages/runtimes/runtime-local",
+	"@hobo/runtime-rivet": "packages/runtimes/runtime-rivet",
+	"@hobo/iac-alchemy": "packages/iac/iac-alchemy",
+	"@hobo/alchemy-rivet": "packages/extension-alchemy-rivet",
 } satisfies Record<string, string>;
 
 function findPackageDir(name: string): string {

@@ -8,5 +8,8 @@ export const SDK_PACKAGES = [
 	"@hobo/runtime-local",
 	"@hobo/storage-sqlite",
 	"@hobo/wit",
+	"@hobo/runtime-rivet",
+	"@hobo/iac-alchemy",
+	"@hobo/alchemy-rivet",
 	"@hobo/cli",
 ] as const;
