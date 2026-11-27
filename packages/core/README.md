@@ -12,6 +12,12 @@ lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
+The asynchronous `NotificationPort` accepts a bounded, well-formed message and
+caller-chosen attempt ID. `accepted` means the provider accepted a submission,
+not that any recipient received it. `unknown` means it may have accepted the
+submission; the port does not promise deduplication or safe retry. A rejection
+describes only this attempt and does not settle an earlier unknown attempt.
+
 The asynchronous `DurableMessaging` port exposes finite limits and makes committed, rejected, unknown, and expired outcomes explicit. Implementations live outside core; the accompanying finite-state tests exercise bounded scenarios and do not prove an implementation correct.
 
 `DurableQueue` is the provider-neutral asynchronous byte-and-attribute queue
