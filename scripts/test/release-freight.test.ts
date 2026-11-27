@@ -1100,17 +1100,19 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 	it("bounds each Pages promote step with a wall under the step and the step under the job", () => {
 		const wallMs = 1_080_000;
 		const stepMs = 19 * 60_000;
-		const jobMs = 20 * 60_000;
 		expect(wallMs).toBeLessThan(stepMs);
-		expect(stepMs).toBeLessThan(jobMs);
 		expect(
 			releasePagesWallBudgetMs({
 				HOBO_RELEASE_PAGES_WALL_BUDGET_MS: String(wallMs),
 			}),
 		).toBe(wallMs);
-		for (const name of ["release-pages", "release-pages-stable"] as const) {
+		for (const [name, jobMinutes] of [
+			["release-pages", 30],
+			["release-pages-stable", 20],
+		] as const) {
 			const block = job(name);
-			expect(block).toMatch(/\n {4}timeout-minutes: 20\n/u);
+			expect(stepMs).toBeLessThan(jobMinutes * 60_000);
+			expect(block).toContain(`\n    timeout-minutes: ${jobMinutes}\n`);
 			expect(block).toMatch(/\n {8}timeout-minutes: 19\n/u);
 			expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1080000"');
 			expect(block).not.toMatch(/\n {8}timeout-minutes: 21\n/u);

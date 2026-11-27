@@ -123,9 +123,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   that long is killed and retried once with `--prefer-offline` against the store it already filled.
 - **Production release budgets.** The CLI image leg has 30 minutes for its SDK
   prerequisite, image contract and artifact handoff; other image legs keep 20.
-  The Pages publishing job has 30 minutes including setup, while its promotion
-  step retains its 21-minute step limit and 20-minute wall budget. In run
-  46026930551 both jobs hit their former 20-minute job limits during verified work.
+  The Pages candidate publishing job has 30 minutes including setup; the stable
+  publishing job keeps 20. Each promotion step has a 19-minute limit and an
+  18-minute wall budget. In run 46026930551 the CLI image and Pages candidate
+  jobs hit their former 20-minute job limits during verified work.
 - **Pages cold installs.** When no reusable deps layer is available, the browser-WIT
   smoke installs the site closure, root tooling, pinned training dependencies,
   try-site examples, and the runtime-Wasm toolchain. The job restores the most
