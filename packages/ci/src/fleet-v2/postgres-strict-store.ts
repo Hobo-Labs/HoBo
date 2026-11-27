@@ -1021,8 +1021,6 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
-	/** Effects belong to the incarnation that planned their slot (see the
-	 * SQLite store). */
 	private async assertEffectIncarnationCurrent(
 		client: PoolClient,
 		effect: Effect,

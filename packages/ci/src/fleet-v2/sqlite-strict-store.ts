@@ -857,9 +857,6 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
-	/** Effects belong to the incarnation that planned their slot; after a
-	 * restore, delivering a stale incarnation's effect would act on a world
-	 * the controller no longer believes in. */
 	private assertEffectIncarnationCurrent(effect: Effect): void {
 		const slot =
 			effect.subjectType === "runner-slot"

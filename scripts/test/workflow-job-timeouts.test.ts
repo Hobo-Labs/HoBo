@@ -27,6 +27,13 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 			why: "HoBo Fleet: the same sandbox, NATS and relay provisioning as fleet-verify, then every fleet *.integration.test.ts; splitting it would provision the sandbox runtime once per shard",
 		},
 	],
+	[
+		"fleet-enrollment.yml:strict-store",
+		{
+			minutes: 40,
+			why: "HoBo Fleet: Postgres store conformance via Testcontainers and the start-fence suite share one job; the 40-minute limit leaves time for those database tests after a slow dependency install",
+		},
+	],
 ]);
 
 function jobBlocks(text: string): { id: string; block: string }[] {

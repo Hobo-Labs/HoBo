@@ -9,7 +9,7 @@ const model=fileURLToPath(new URL('../models/PricingLatestTie.tla',import.meta.u
 const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-pricing-time-'));
 try {
   copyFileSync(model,path.join(scratch,'PricingLatestTie.tla'));
-  writeFileSync(path.join(scratch,'Legacy.cfg'),'SPECIFICATION Spec\nINVARIANT AllStable\n');
+  writeFileSync(path.join(scratch,'Legacy.cfg'),'CONSTANTS RejectConflict = TRUE\nSPECIFICATION Spec\nINVARIANT AllStable\n');
   const result=spawnSync('java',['-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-workers','1','-config','Legacy.cfg','PricingLatestTie.tla'],{cwd:scratch,encoding:'utf8'});
   if (result.error) throw result.error;
   const output=`${result.stdout}\n${result.stderr}`;

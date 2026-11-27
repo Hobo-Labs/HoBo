@@ -9,7 +9,7 @@ const model=fileURLToPath(new URL('../models/PricingSourceValues.tla',import.met
 const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-pricing-legacy-'));
 try {
   copyFileSync(model,path.join(scratch,'PricingSourceValues.tla'));
-  writeFileSync(path.join(scratch,'Legacy.cfg'),'SPECIFICATION Spec\nINVARIANT AllAmountSafe\n');
+  writeFileSync(path.join(scratch,'Legacy.cfg'),'CONSTANTS CheckBalance = TRUE\n          CheckCapacity = TRUE\n          CheckCharge = TRUE\n          CheckDerived = TRUE\n          CheckBasis = TRUE\n          CommitmentInCurrency = TRUE\nSPECIFICATION Spec\nINVARIANT AllAmountSafe\n');
   const result=spawnSync('java',['-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-workers','1','-config','Legacy.cfg','PricingSourceValues.tla'],{cwd:scratch,encoding:'utf8'});
   if (result.error) throw result.error;
   const output=`${result.stdout}\n${result.stderr}`;
