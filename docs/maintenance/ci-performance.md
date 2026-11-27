@@ -35,10 +35,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   supplied digest ref never falls back to the mutable version tag. Build and publish legs pull that digest under one overall
   `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
   four attempts and exponential backoff plus jitter instead of 120-second
-  per-attempt kills. A pull that `timeout` kills (exit 124) at that deadline gets one
-  immediate leftover-layer resume of `WORKER_PULL_EXTRACT_BUDGET_SEC` (150 seconds)
-  so layers already downloaded can finish extracting. A hard failure stays inside the
-  shared deadline and stops once that deadline is spent. A resume that still fails
+  per-attempt kills. A pull that `timeout` kills (exit 124) after docker has printed
+  `Download complete` or `Pull complete` gets one immediate leftover-layer resume of
+  `WORKER_PULL_EXTRACT_BUDGET_SEC` (150 seconds) so those layers can finish extracting.
+  A kill that fetched no layers, and any other hard failure, stays inside the shared
+  deadline and retries with what remains until that deadline is spent. A resume that still fails
   keeps the release-path "manifest present … pull failed … refusing build.sh" error.
   Those ensure steps have a 13-minute bound so the 540-second download, the extract
   resume, and login plus manifest inspection fit under the step cap. The job cap

@@ -4,7 +4,16 @@ import { spawnSync } from "node:child_process";
  * Resolve a digest-pinned hobo-ci-worker image for release OCI builds.
  * Prefers ghcr.io/hobo-ci-worker:${ciRunnerImageVersion}; avoids build.sh on release.
  */
-import { appendFileSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	mkdtempSync,
+	openSync,
+	readFileSync,
+	readSync,
+	rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 
@@ -112,11 +121,62 @@ export const DEFAULT_WORKER_PULL_BUDGET_SEC = 540;
 
 export const WORKER_PULL_EXTRACT_BUDGET_SEC = 150;
 
-function runTimedDockerPull(remote: string, budgetSec: number): number | null {
-	return spawnSync("timeout", [String(budgetSec), "docker", "pull", remote], {
-		cwd: root,
-		stdio: "inherit",
-	}).status;
+function pullLogHasFetchedLayers(logPath: string): boolean {
+	let fd: number;
+	try {
+		fd = openSync(logPath, "r");
+	} catch {
+		return false;
+	}
+	const buf = Buffer.alloc(64 * 1024);
+	let carry = "";
+	try {
+		while (true) {
+			const n = readSync(fd, buf, 0, buf.length, null);
+			if (n <= 0) break;
+			const window = carry + buf.toString("utf8", 0, n);
+			if (
+				window.includes("Download complete") ||
+				window.includes("Pull complete")
+			) {
+				return true;
+			}
+			carry = window.slice(-"Download complete".length);
+		}
+		return false;
+	} finally {
+		closeSync(fd);
+	}
+}
+
+function runTimedDockerPull(
+	remote: string,
+	budgetSec: number,
+): { readonly status: number | null; readonly downloaded: boolean } {
+	const dir = mkdtempSync(join(tmpdir(), "hobo-worker-pull-"));
+	const logPath = join(dir, "pull.log");
+	try {
+		// tee keeps the pull's progress on the job log. The copy is how a
+		// timeout kill (124) is told apart from a stall that fetched nothing.
+		const status = spawnSync(
+			"bash",
+			[
+				"-c",
+				'set -o pipefail; timeout "$1" docker pull "$2" 2>&1 | tee "$3"',
+				"bash",
+				String(budgetSec),
+				remote,
+				logPath,
+			],
+			{ cwd: root, stdio: "inherit" },
+		).status;
+		return {
+			status,
+			downloaded: status === 124 && pullLogHasFetchedLayers(logPath),
+		};
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 }
 
 function resumeLeftoverWorkerLayers(remote: string): boolean {
@@ -124,8 +184,8 @@ function resumeLeftoverWorkerLayers(remote: string): boolean {
 	console.log(
 		`GHCR pull killed at the shared budget (timeout 124); resuming leftover layers for ${WORKER_PULL_EXTRACT_BUDGET_SEC}s`,
 	);
-	const status = runTimedDockerPull(remote, WORKER_PULL_EXTRACT_BUDGET_SEC);
-	return status === 0 || dockerImagePresent(remote);
+	const pull = runTimedDockerPull(remote, WORKER_PULL_EXTRACT_BUDGET_SEC);
+	return pull.status === 0 || dockerImagePresent(remote);
 }
 
 export function workerPullBudgetSec(
@@ -203,9 +263,14 @@ export function pullWorkerFromGhcr(
 	for (let i = 1; i <= attempts; i++) {
 		const remainingMs = deadline - now();
 		if (remainingMs <= 0) break;
-		const status = runTimedDockerPull(remote, Math.ceil(remainingMs / 1000));
-		if (status === 0) return true;
-		if (status === 124) return resumeLeftoverWorkerLayers(remote);
+		const pull = runTimedDockerPull(remote, Math.ceil(remainingMs / 1000));
+		if (pull.status === 0) return true;
+		// Layers already on disk can finish extracting past the shared budget.
+		// A kill with no "Download complete" / "Pull complete" still has to
+		// retry with whatever deadline remains.
+		if (pull.status === 124 && pull.downloaded) {
+			return resumeLeftoverWorkerLayers(remote);
+		}
 		if (i < attempts) {
 			const backoffCap = Math.min(30, 5 * 2 ** (i - 1));
 			const backoff = Math.floor(random() * (backoffCap + 1));

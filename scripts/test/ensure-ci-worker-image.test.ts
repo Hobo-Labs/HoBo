@@ -307,6 +307,103 @@ describe("ensure-ci-worker-image", () => {
 		}
 	});
 
+	it("retries a layerless release stall with the budget that remains", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-stall-"));
+		const calls = join(bin, "calls");
+		const stalled = join(bin, "stalled");
+		const out = join(bin, "out");
+		const digest = `sha256:${"d".repeat(64)}`;
+		writeFileSync(calls, "");
+		writeFileSync(out, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			[
+				"#!/bin/sh",
+				`echo "timeout $*" >> "${calls}"`,
+				'seconds="$1"',
+				"shift",
+				`if [ "$1 $2" = "docker pull" ] && [ ! -f "${stalled}" ]; then`,
+				`  : > "${stalled}"`,
+				"  /bin/sleep 2",
+				"  exit 124",
+				"fi",
+				'exec "$@"',
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(join(bin, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
+				'if [ "$1" = pull ]; then exit 0; fi',
+				'if [ "$1 $2" = "manifest inspect" ]; then exit 0; fi',
+				'if [ "$1 $2" = "image inspect" ]; then',
+				`  printf '%s\\n' '["ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}"]'`,
+				"  exit 0",
+				"fi",
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		try {
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--no-warnings",
+					"scripts/ci/ensure-ci-worker-image.mts",
+					"--resolve-digest",
+				],
+				{
+					cwd: join(import.meta.dirname, "..", ".."),
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:/usr/bin:/bin`,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_TOKEN: "token-for-test",
+						GITHUB_OUTPUT: out,
+						HOBO_CI_WORKER_PULL_BUDGET_SEC: "300",
+					},
+				},
+			);
+			assert.equal(result.status, 0, result.stderr);
+			const recorded = readFileSync(calls, "utf8");
+			const pullTimeouts = [
+				...recorded.matchAll(
+					/timeout (\d+) docker pull ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v/gu,
+				),
+			].map((match) => Number(match[1]));
+			assert.equal(pullTimeouts.length, 2);
+			const [first, second] = pullTimeouts;
+			assert.ok(first !== undefined && second !== undefined);
+			assert.ok(first > 120 && first <= 300);
+			assert.ok(second < first);
+			assert.ok(second > 120);
+			assert.equal(
+				recorded.match(
+					new RegExp(
+						`timeout ${WORKER_PULL_EXTRACT_BUDGET_SEC} docker pull `,
+						"gu",
+					),
+				)?.length ?? 0,
+				0,
+			);
+			assert.match(result.stdout, /worker image wait attempt 1/u);
+			assert.doesNotMatch(result.stdout, /resuming leftover layers/u);
+			assert.match(
+				readFileSync(out, "utf8"),
+				/^image_ref=ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker@sha256:[a-f0-9]{64}\n/u,
+			);
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	});
+
 	function resolveDigestWithStub(
 		manifest: boolean,
 		login = true,
