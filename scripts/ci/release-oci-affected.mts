@@ -43,6 +43,7 @@ const RELEASE_BUILD_INPUTS = [
 	"scripts/ci/build-release-oci-image.mts",
 	"scripts/ci/stage-release-oci-app.mts",
 	"scripts/ci/stage-sdk-artifacts.mts",
+	"scripts/ci/sdk-artifact-manifest.mts",
 	"scripts/lib/release-oci-contract.mts",
 	"scripts/lib/ci-runner-contract.mts",
 	"tsconfig.base.json",
