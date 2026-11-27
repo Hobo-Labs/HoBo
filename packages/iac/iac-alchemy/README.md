@@ -799,7 +799,9 @@ migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
 to that file; there is no hand-written session DDL.
 `test/better-auth-cross-box-session.test.ts` shares one file-backed session
 database across two Alchemy host harness instances (two boxes, one relational
-URL). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+URL). `test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
+evidence steps (construction config → bundle plan → migrations → broker wire →
+first session). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
 fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, a file-backed `sqlite` path (the same session file, not an in-memory
 database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
