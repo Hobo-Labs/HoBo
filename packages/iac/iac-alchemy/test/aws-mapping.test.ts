@@ -1,5 +1,6 @@
 import { Table } from "@alchemy.run/aws/DynamoDB";
 import { Bucket } from "@alchemy.run/aws/S3";
+import { Secret } from "@alchemy.run/aws/SecretsManager";
 import { Topic } from "@alchemy.run/aws/SNS";
 import { Queue } from "@alchemy.run/aws/SQS";
 import { StackContext } from "alchemy/StackContext";
@@ -30,6 +31,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			objects: b.bucket(),
 			jobs: b.queue(),
 			events: b.topic(),
+			credentials: b.secret(),
 		}));
 		// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 		const mapped = await Effect.runPromise(
@@ -47,7 +49,12 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(mapped.primary.objects?.Type).toBe(Bucket.Type);
 		expect(mapped.primary.jobs?.Type).toBe(Queue.Type);
 		expect(mapped.primary.events?.Type).toBe(Topic.Type);
+		expect(mapped.primary.credentials?.Type).toBe(Secret.Type);
+		expect(mapped.primary.credentials?.Props).toEqual({
+			recoveryWindowInDays: 30,
+		});
 		expect(mapped.resources.map((resource) => resource.FQN).sort()).toEqual([
+			"credentials",
 			"events",
 			"jobs",
 			"objects",
@@ -56,7 +63,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 	});
 	it("reports infrastructure-only support and rejects runtime claims", () => {
 		const report = describeAwsPrimitiveSupport(CATALOG_ROWS);
-		for (const kind of ["kv", "bucket", "queue", "topic"]) {
+		for (const kind of ["kv", "bucket", "queue", "topic", "secret"]) {
 			const item = report.find((entry) => entry.kind === kind);
 			expect(item?.status).toBe("partial");
 			expect(item?.supportedOperations).toEqual([]);
