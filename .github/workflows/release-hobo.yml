@@ -631,8 +631,6 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      # Published GHCR layer or a warm store when nothing is mounted. A miss
-      # continues into the filtered Pages install (the cold-runner path).
       - uses: $/.github/actions/ci-deps-recovery
         continue-on-error: true
         with:
@@ -1086,6 +1084,7 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
         run: |

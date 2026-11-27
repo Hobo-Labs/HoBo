@@ -339,15 +339,19 @@ function applyWhiteout(payload: string, relative: string): boolean {
 }
 
 function parsePax(body: Buffer): PaxFields {
-	const text = body.toString("utf8");
 	const fields: PaxFields = {};
 	let offset = 0;
-	while (offset < text.length) {
-		const space = text.indexOf(" ", offset);
+	while (offset < body.length) {
+		const space = body.indexOf(0x20, offset);
 		if (space === -1) break;
-		const length = Number(text.slice(offset, space));
-		if (!Number.isInteger(length) || length <= 0) break;
-		const record = text.slice(space + 1, offset + length);
+		const length = Number(body.subarray(offset, space).toString("ascii"));
+		if (
+			!Number.isInteger(length) ||
+			length <= space - offset + 1 ||
+			offset + length > body.length
+		)
+			break;
+		const record = body.subarray(space + 1, offset + length).toString("utf8");
 		const eq = record.indexOf("=");
 		if (eq !== -1) {
 			const key = record.slice(0, eq);
@@ -538,8 +542,20 @@ export async function extractDepsTar(
 				const slice = pending.subarray(0, count);
 				pending = pending.subarray(count);
 				dataLeft -= count;
-				if (member?.fd !== undefined) writeSync(member.fd, slice);
-				else if (member?.capture) member.capture.push(Buffer.from(slice));
+				if (member?.fd !== undefined) {
+					let written = 0;
+					while (written < slice.length) {
+						const count = writeSync(
+							member.fd,
+							slice,
+							written,
+							slice.length - written,
+						);
+						if (count <= 0)
+							throw new Error("deps layer file write made no progress");
+						written += count;
+					}
+				} else if (member?.capture) member.capture.push(Buffer.from(slice));
 				if (dataLeft === 0) {
 					finishMember();
 					phase = padLeft > 0 ? "pad" : "header";
@@ -553,16 +569,20 @@ export async function extractDepsTar(
 		}
 	};
 
-	for await (const chunk of source) {
-		if (finishedArchive) continue;
-		const next: Buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-		pending = pending.length === 0 ? next : Buffer.concat([pending, next]);
-		pump();
+	try {
+		for await (const chunk of source) {
+			if (finishedArchive) continue;
+			const next: Buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			pending = pending.length === 0 ? next : Buffer.concat([pending, next]);
+			pump();
+		}
+		if (!finishedArchive && (phase !== "header" || dataLeft !== 0)) {
+			throw new Error("truncated deps layer tar");
+		}
+		if (!finishedArchive) queueHardlinks();
+	} finally {
+		if (member?.fd !== undefined) closeSync(member.fd);
 	}
-	if (!finishedArchive && (phase !== "header" || dataLeft !== 0)) {
-		throw new Error("truncated deps layer tar");
-	}
-	if (!finishedArchive) queueHardlinks();
 }
 
 function layerDecoder(mediaType: string, file: string): Readable {

@@ -436,6 +436,88 @@ describe("deps image refs and recovery", () => {
 });
 
 describe("registry materialize", () => {
+	it("extracts Unicode PAX paths using their byte lengths", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-pax-unicode-"));
+		try {
+			const source = join(root, "source");
+			const directory = join(source, "opt", "hobo-deps");
+			mkdirSync(directory, { recursive: true });
+			const name = `${"a".repeat(110)}-café.txt`;
+			writeFileSync(join(directory, name), "unicode filename\n");
+			const archive = gnuTar(source, ["opt"], false);
+			const payload = join(root, "payload");
+			await extractDepsTar(Readable.from([archive]), payload);
+			assert.deepEqual(readdirSync(payload), [name]);
+			assert.equal(
+				readFileSync(join(payload, name), "utf8"),
+				"unicode filename\n",
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("writes complete files when the filesystem returns a short write", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-short-write-"));
+		try {
+			const source = join(root, "source");
+			mkdirSync(join(source, "opt", "hobo-deps"), { recursive: true });
+			const expected = Buffer.alloc(16_384, 67);
+			writeFileSync(join(source, "opt", "hobo-deps", "file"), expected);
+			const archive = join(root, "input.tar");
+			writeFileSync(archive, gnuTar(source, ["opt"], false));
+			const child = `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
+const [, modulePath, archivePath, payload, mode] = process.argv.slice(1);
+const bytes = fs.readFileSync(archivePath);
+const original = fs.writeSync;
+try {
+  fs.writeSync = function(fd, data, ...args) {
+    if (Buffer.isBuffer(data)) {
+      if (mode === "stall") return 0;
+      const offset = args[0] ?? 0;
+      const length = args[1] ?? data.length - offset;
+      return original(fd, data, offset, Math.max(1, Math.floor(length / 2)));
+    }
+    return Reflect.apply(original, fs, [fd, data, ...args]);
+  };
+  syncBuiltinESMExports();
+  const { extractDepsTar } = await import(pathToFileURL(modulePath).href);
+  await extractDepsTar(Readable.from([bytes]), payload);
+} finally {
+  fs.writeSync = original;
+  syncBuiltinESMExports();
+}`;
+			const run = (mode: string) =>
+				spawnSync(
+					process.execPath,
+					[
+						"--experimental-strip-types",
+						"--input-type=module",
+						"-e",
+						child,
+						"short-write-fixture",
+						script,
+						archive,
+						join(root, mode),
+						mode,
+					],
+					{ encoding: "utf8" },
+				);
+			const short = run("short");
+			assert.equal(short.status, 0, short.stderr);
+			assert.ok(readFileSync(join(root, "short", "file")).equals(expected));
+			const stalled = run("stall");
+			assert.notEqual(stalled.status, 0);
+			assert.match(stalled.stderr, /write made no progress/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("extracts gzip and zstd layers, whiteouts, links, and long names", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-deps-archive-"));
 		const token = randomBytes(24).toString("hex");
