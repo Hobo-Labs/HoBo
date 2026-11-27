@@ -44,12 +44,6 @@ const vitest = join(
 );
 const command = (file: string, args: string[], timeout = 120_000) =>
 	execFileSync(file, args, { encoding: "utf8", timeout }).trim();
-const failureText = (error: unknown) => {
-	if (!(error instanceof Error)) return "";
-	const stderr =
-		"stderr" in error && typeof error.stderr === "string" ? error.stderr : "";
-	return `${error.message}\n${stderr}`;
-};
 const daemonSees = (source: string, token: string) => {
 	const result = spawnSync(
 		"docker",
@@ -186,15 +180,25 @@ try {
 		attempted = true;
 	};
 	if (bindSource) {
-		try {
-			start(bindSource);
-		} catch (error) {
-			if (!isMissingBindSource(failureText(error))) throw error;
+		// The missing-bind fallback reads the child's stderr. spawnSync returns
+		// that text; a thrown exec error would be an unparsed value.
+		const started = spawnSync(
+			"docker",
+			emulatorRunArgs({ name, image: runImage, bindSource }),
+			{ encoding: "utf8", timeout: 120_000 },
+		);
+		const detail = [
+			started.stdout,
+			started.stderr,
+			started.error?.message ?? "",
+		].join("\n");
+		if (started.status === 0) attempted = true;
+		else if (isMissingBindSource(detail)) {
 			console.error(
 				"AWS emulator bind source disappeared; copying it into a private image",
 			);
 			bindSource = undefined;
-		}
+		} else throw new Error(detail.trim() || "docker run failed");
 	}
 	if (!bindSource) {
 		const tag = `hobo-aws-emulator:${randomUUID()}`;
