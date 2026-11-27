@@ -172,24 +172,22 @@ headroom_sample_image="$base"
 if ! docker image inspect "$base" >/dev/null 2>&1; then
   export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"
   repository="${GITHUB_REPOSITORY:-}"
+  used_remote=0
   if [ -n "$repository" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
     actor="${GITHUB_ACTOR:-github-actions}"
-    printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$actor" --password-stdin >/dev/null
     remote_toolchain="ghcr.io/${repository,,}/hobo-ci-worker:${toolchain}"
-    if docker manifest inspect "$remote_toolchain" >/dev/null 2>&1; then
+    if printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$actor" --password-stdin >/dev/null \
+      && timeout 45 docker manifest inspect "$remote_toolchain" >/dev/null 2>&1; then
       echo "Using remote toolchain ${remote_toolchain} for build (manifest present; skipping full pull)"
       base="$remote_toolchain"
+      used_remote=1
       if docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
         headroom_sample_image="hobo-ci-worker:local"
       fi
-    else
-      echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
-      node --no-warnings scripts/ci/ensure-ci-worker-image.mts
-      base="hobo-ci-worker:${toolchain}"
-      headroom_sample_image="$base"
     fi
-  else
-    echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
+  fi
+  if [ "$used_remote" = 0 ]; then
+    echo "Toolchain hobo-ci-worker:${toolchain} not in this Docker context; resolving via ensure-ci-worker-image"
     node --no-warnings scripts/ci/ensure-ci-worker-image.mts
     base="hobo-ci-worker:${toolchain}"
     headroom_sample_image="$base"
@@ -332,7 +330,7 @@ else
 fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
 "${prune_command[@]}" -f --keep-storage "$cap"
-sample_path="$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" || sample_path="/"
+sample_path="$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$headroom_sample_image")" || sample_path="/"
 # A `host:` sample is read through a helper container; `df` in the recorder
 # cannot read it, so there is no peak to record from this job.
 if [[ "$sample_path" == host:* ]]; then
