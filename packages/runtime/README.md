@@ -689,3 +689,8 @@ queue write returns `unknown` with the same operation ID. Retry the same request
 first; if the queue changed, inspect again and reconcile the sink before issuing
 a new operation. Completed-message reclamation is separate and waits for live
 receipts to expire.
+
+`@hobo/runtime/durable-topic-reducer` exposes the bounded topic state
+transitions independently of a hosting provider. It does not persist state,
+serialize concurrent transitions, issue operation receipts, authenticate a
+caller or provide a messaging transport; a host must supply those guarantees.

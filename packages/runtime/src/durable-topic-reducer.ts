@@ -1,7 +1,7 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type -- SAFETY: persisted and incoming JSON are parsed and bounded before use. */
 import { DURABLE_MESSAGING_LIMITS } from "@hobo/core";
 
-export const RIVET_DURABLE_TOPIC_BUS_LIMITS = Object.freeze({
+export const DURABLE_TOPIC_REDUCER_LIMITS = Object.freeze({
 	...DURABLE_MESSAGING_LIMITS,
 	payloadBytes: 8_192,
 	attributeBytes: 2_048,
@@ -11,7 +11,7 @@ export const RIVET_DURABLE_TOPIC_BUS_LIMITS = Object.freeze({
 	topics: 32,
 	subscriptions: 16,
 });
-export const RIVET_DURABLE_TOPIC_BUS_CAPABILITIES = Object.freeze({
+export const DURABLE_TOPIC_REDUCER_CAPABILITIES = Object.freeze({
 	topicCreation: true,
 	publish: true,
 	readRetainedLog: false,
@@ -134,14 +134,14 @@ function scalar(
 }
 function name(value: unknown): value is string {
 	return (
-		scalar(value, RIVET_DURABLE_TOPIC_BUS_LIMITS.nameBytes, true) &&
+		scalar(value, DURABLE_TOPIC_REDUCER_LIMITS.nameBytes, true) &&
 		!/[\p{Cc}]/u.test(value)
 	);
 }
 function attributes(value: unknown): value is Attribute[] {
 	if (
 		!Array.isArray(value) ||
-		value.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.attributeCount
+		value.length > DURABLE_TOPIC_REDUCER_LIMITS.attributeCount
 	)
 		return false;
 	let size = 0;
@@ -150,27 +150,26 @@ function attributes(value: unknown): value is Attribute[] {
 		if (
 			!record(item) ||
 			!keysOnly(item, ["key", "value"]) ||
-			!scalar(item.key, RIVET_DURABLE_TOPIC_BUS_LIMITS.attributeBytes, true) ||
-			!scalar(item.value, RIVET_DURABLE_TOPIC_BUS_LIMITS.attributeBytes) ||
+			!scalar(item.key, DURABLE_TOPIC_REDUCER_LIMITS.attributeBytes, true) ||
+			!scalar(item.value, DURABLE_TOPIC_REDUCER_LIMITS.attributeBytes) ||
 			keys.has(item.key)
 		)
 			return false;
 		keys.add(item.key);
 		size += encoder.encode(item.key).length + encoder.encode(item.value).length;
-		if (size > RIVET_DURABLE_TOPIC_BUS_LIMITS.attributeBytes) return false;
+		if (size > DURABLE_TOPIC_REDUCER_LIMITS.attributeBytes) return false;
 	}
 	return true;
 }
 function payload(value: unknown): value is string {
 	if (
 		typeof value !== "string" ||
-		value.length >
-			Math.ceil(RIVET_DURABLE_TOPIC_BUS_LIMITS.payloadBytes / 3) * 4
+		value.length > Math.ceil(DURABLE_TOPIC_REDUCER_LIMITS.payloadBytes / 3) * 4
 	)
 		return false;
 	const bytes = Buffer.from(value, "base64");
 	return (
-		bytes.length <= RIVET_DURABLE_TOPIC_BUS_LIMITS.payloadBytes &&
+		bytes.length <= DURABLE_TOPIC_REDUCER_LIMITS.payloadBytes &&
 		bytes.toString("base64") === value
 	);
 }
@@ -217,7 +216,7 @@ function isDeadLetter(value: unknown): value is DeadLetter {
 		!name(value.originalMessageId) ||
 		!integer(value.originalSequence, 1) ||
 		!integer(value.deliveryAttempt, 1) ||
-		value.deliveryAttempt > RIVET_DURABLE_TOPIC_BUS_LIMITS.deliveryAttempts ||
+		value.deliveryAttempt > DURABLE_TOPIC_REDUCER_LIMITS.deliveryAttempts ||
 		!record(value.cause)
 	)
 		return false;
@@ -226,7 +225,7 @@ function isDeadLetter(value: unknown): value is DeadLetter {
 	return (
 		value.cause.kind === "nack" &&
 		keysOnly(value.cause, ["kind", "reason"]) &&
-		scalar(value.cause.reason, RIVET_DURABLE_TOPIC_BUS_LIMITS.reasonBytes)
+		scalar(value.cause.reason, DURABLE_TOPIC_REDUCER_LIMITS.reasonBytes)
 	);
 }
 function stateFromJson(encoded: string | undefined): State {
@@ -247,17 +246,17 @@ function stateFromJson(encoded: string | undefined): State {
 		]) ||
 		value.version !== 2 ||
 		!Array.isArray(value.topics) ||
-		value.topics.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.topics ||
+		value.topics.length > DURABLE_TOPIC_REDUCER_LIMITS.topics ||
 		!Array.isArray(value.messages) ||
-		value.messages.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedMessages ||
+		value.messages.length > DURABLE_TOPIC_REDUCER_LIMITS.retainedMessages ||
 		!Array.isArray(value.subscriptions) ||
-		value.subscriptions.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.subscriptions ||
+		value.subscriptions.length > DURABLE_TOPIC_REDUCER_LIMITS.subscriptions ||
 		!Array.isArray(value.deliveries) ||
 		value.deliveries.length >
-			RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedMessages *
-				RIVET_DURABLE_TOPIC_BUS_LIMITS.subscriptions ||
+			DURABLE_TOPIC_REDUCER_LIMITS.retainedMessages *
+				DURABLE_TOPIC_REDUCER_LIMITS.subscriptions ||
 		!Array.isArray(value.events) ||
-		value.events.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedEvents ||
+		value.events.length > DURABLE_TOPIC_REDUCER_LIMITS.retainedEvents ||
 		!integer(value.eventTail) ||
 		!integer(value.leaseCounter) ||
 		!integer(value.deadLetterCounter)
@@ -305,7 +304,7 @@ function stateFromJson(encoded: string | undefined): State {
 			item.topic === item.deadLetterTopic ||
 			!integer(item.maxDeliveryAttempts, 1) ||
 			item.maxDeliveryAttempts >
-				RIVET_DURABLE_TOPIC_BUS_LIMITS.deliveryAttempts ||
+				DURABLE_TOPIC_REDUCER_LIMITS.deliveryAttempts ||
 			(item.startAt !== "earliest" && item.startAt !== "latest") ||
 			!integer(item.startSequence, 1) ||
 			!integer(item.firstAvailableSequence, 1) ||
@@ -512,7 +511,7 @@ function stateFromJson(encoded: string | undefined): State {
 	}
 	if (
 		messages.length + deliveries.filter((item) => item.reserved).length >
-		RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedMessages
+		DURABLE_TOPIC_REDUCER_LIMITS.retainedMessages
 	)
 		throw new Error("invalid reserved capacity");
 	for (const [index, sub] of subscriptions.entries())
@@ -561,7 +560,7 @@ function stateFromJson(encoded: string | undefined): State {
 	const events: Event[] = [];
 	if (
 		value.events.length !==
-		Math.min(value.eventTail, RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedEvents)
+		Math.min(value.eventTail, DURABLE_TOPIC_REDUCER_LIMITS.retainedEvents)
 	)
 		throw new Error("missing audit events");
 	for (const [index, item] of value.events.entries()) {
@@ -647,7 +646,7 @@ function event(
 	if (messageId !== undefined) item.messageId = messageId;
 	if (consumerGroup !== undefined) item.consumerGroup = consumerGroup;
 	state.events.push(item);
-	if (state.events.length > RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedEvents)
+	if (state.events.length > DURABLE_TOPIC_REDUCER_LIMITS.retainedEvents)
 		state.events.shift();
 }
 function committed(
@@ -672,7 +671,7 @@ function reserveCapacity(
 	const reserved = state.deliveries.filter((item) => item.reserved).length;
 	if (
 		state.messages.length + reserved + messages + obligations >
-		RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedMessages
+		DURABLE_TOPIC_REDUCER_LIMITS.retainedMessages
 	)
 		throw new CapacityError();
 }
@@ -706,14 +705,14 @@ function transfer(
 	if (topic === undefined) throw new Error("missing dead letter topic");
 	if (!delivery.reserved) throw new Error("unreserved transfer");
 	if (
-		state.messages.length >= RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedMessages ||
+		state.messages.length >= DURABLE_TOPIC_REDUCER_LIMITS.retainedMessages ||
 		topic.tail >= Number.MAX_SAFE_INTEGER
 	)
 		throw new CapacityError();
 	let id = "";
 	for (
 		let count = 0;
-		count <= RIVET_DURABLE_TOPIC_BUS_LIMITS.retainedMessages;
+		count <= DURABLE_TOPIC_REDUCER_LIMITS.retainedMessages;
 		count++
 	) {
 		if (state.deadLetterCounter >= Number.MAX_SAFE_INTEGER)
@@ -755,7 +754,7 @@ function transfer(
 	return { id, sequence };
 }
 
-export function reduceRivetTopicBusWithDeclaredTopics(
+export function reduceDurableTopicWithDeclaredTopics(
 	prior: string | undefined,
 	method: string,
 	input: unknown,
@@ -765,7 +764,7 @@ export function reduceRivetTopicBusWithDeclaredTopics(
 	let state = prior;
 	if (state === undefined) {
 		for (const topic of topics) {
-			const initialized = reduceRivetTopicBus(
+			const initialized = reduceDurableTopic(
 				state,
 				"ensure-topic",
 				{ operation: {}, topic },
@@ -783,10 +782,10 @@ export function reduceRivetTopicBusWithDeclaredTopics(
 		)
 			throw new Error("declared topic missing from persisted state");
 	}
-	return reduceRivetTopicBus(state, method, input, now);
+	return reduceDurableTopic(state, method, input, now);
 }
 
-export function reduceRivetTopicBus(
+export function reduceDurableTopic(
 	prior: string | undefined,
 	method: string,
 	input: unknown,
@@ -802,7 +801,7 @@ export function reduceRivetTopicBus(
 			if (!keysOnly(input, ["operation", "topic"]) || !name(input.topic))
 				return rejected("invalid-argument");
 			if (!state.topics.some((topic) => topic.name === input.topic)) {
-				if (state.topics.length >= RIVET_DURABLE_TOPIC_BUS_LIMITS.topics)
+				if (state.topics.length >= DURABLE_TOPIC_REDUCER_LIMITS.topics)
 					throw new CapacityError();
 				state.topics.push({
 					name: input.topic,
@@ -832,7 +831,7 @@ export function reduceRivetTopicBus(
 				sub.topic === sub.deadLetterTopic ||
 				!integer(sub.maxDeliveryAttempts, 1) ||
 				sub.maxDeliveryAttempts >
-					RIVET_DURABLE_TOPIC_BUS_LIMITS.deliveryAttempts ||
+					DURABLE_TOPIC_REDUCER_LIMITS.deliveryAttempts ||
 				(sub.startAt !== "earliest" && sub.startAt !== "latest")
 			)
 				return rejected("invalid-argument");
@@ -867,7 +866,7 @@ export function reduceRivetTopicBus(
 			}
 			if (
 				state.subscriptions.length >=
-					RIVET_DURABLE_TOPIC_BUS_LIMITS.subscriptions ||
+					DURABLE_TOPIC_REDUCER_LIMITS.subscriptions ||
 				(sub.startAt === "latest" && topic.tail >= Number.MAX_SAFE_INTEGER)
 			)
 				throw new CapacityError();
@@ -967,9 +966,9 @@ export function reduceRivetTopicBus(
 				!name(input.topic) ||
 				!name(input.consumerGroup) ||
 				!integer(input.maxMessages, 1) ||
-				input.maxMessages > RIVET_DURABLE_TOPIC_BUS_LIMITS.batchSize ||
+				input.maxMessages > DURABLE_TOPIC_REDUCER_LIMITS.batchSize ||
 				!integer(input.visibilityTimeoutMs, 1) ||
-				input.visibilityTimeoutMs > RIVET_DURABLE_TOPIC_BUS_LIMITS.leaseMs
+				input.visibilityTimeoutMs > DURABLE_TOPIC_REDUCER_LIMITS.leaseMs
 			)
 				return rejected("invalid-argument");
 			const index = state.subscriptions.findIndex(
@@ -1075,7 +1074,7 @@ export function reduceRivetTopicBus(
 				!integer(input.sequence, 1) ||
 				!name(input.leaseId) ||
 				(method === "nack" &&
-					!scalar(input.reason, RIVET_DURABLE_TOPIC_BUS_LIMITS.reasonBytes))
+					!scalar(input.reason, DURABLE_TOPIC_REDUCER_LIMITS.reasonBytes))
 			)
 				return rejected("invalid-argument");
 			const index = state.subscriptions.findIndex(
@@ -1187,10 +1186,7 @@ export function reduceRivetTopicBus(
 		throw error;
 	}
 }
-export function readRivetTopicBusLog(
-	prior: string | undefined,
-	input: unknown,
-) {
+export function readDurableTopicLog(prior: string | undefined, input: unknown) {
 	const state = stateFromJson(prior);
 	if (
 		!record(input) ||
@@ -1198,7 +1194,7 @@ export function readRivetTopicBusLog(
 		!name(input.topic) ||
 		!integer(input.afterSequence) ||
 		!integer(input.limit, 1) ||
-		input.limit > RIVET_DURABLE_TOPIC_BUS_LIMITS.batchSize
+		input.limit > DURABLE_TOPIC_REDUCER_LIMITS.batchSize
 	)
 		return { status: "rejected", code: "invalid-argument" };
 	const topic = state.topics.find((item) => item.name === input.topic);
@@ -1229,7 +1225,7 @@ export function readRivetTopicBusLog(
 	};
 }
 
-export function readRivetTopicBusAudit(
+export function readDurableTopicAudit(
 	prior: string | undefined,
 	input: unknown,
 ) {
@@ -1239,7 +1235,7 @@ export function readRivetTopicBusAudit(
 		!keysOnly(input, ["afterSequence", "limit"]) ||
 		!integer(input.afterSequence) ||
 		!integer(input.limit, 1) ||
-		input.limit > RIVET_DURABLE_TOPIC_BUS_LIMITS.eventPageSize ||
+		input.limit > DURABLE_TOPIC_REDUCER_LIMITS.eventPageSize ||
 		input.afterSequence > state.eventTail
 	)
 		return { status: "rejected", code: "invalid-argument" };

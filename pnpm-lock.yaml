@@ -3896,6 +3896,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+      '@hobo/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
       '@rivetkit/rivetkit-wasm':
         specifier: 3.0.0
         version: 3.0.0
