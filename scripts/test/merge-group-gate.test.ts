@@ -292,10 +292,7 @@ describe("merge-group required gate", () => {
 		}
 		const failedPlan = run("true", { PLAN_RESULT: "failure" });
 		assert.notEqual(failedPlan.status, 0);
-		assert.match(
-			failedPlan.stderr,
-			/PR impact plan did not succeed: failure/u,
-		);
+		assert.match(failedPlan.stderr, /PR impact plan did not succeed: failure/u);
 		const mergeGroup = run("true", { EVENT_NAME: "merge_group" });
 		assert.notEqual(mergeGroup.status, 0);
 		assert.match(mergeGroup.stderr, /PR impact plan did not succeed: skipped/u);

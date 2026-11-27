@@ -1,9 +1,39 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import {
+	dockerBindSource,
+	emulatorScratchParent,
+	HOST_VISIBLE_JOB_MOUNT,
+} from "./official-aws-docker-path.mts";
+
+it("keeps emulator scratch on a path the host Docker daemon can mount", () => {
+	expect(emulatorScratchParent({}, "/tmp")).toBe("/tmp");
+	expect(
+		emulatorScratchParent({ HOBO_CI_HOST_JOB_DIRECTORY: "" }, "/tmp"),
+	).toBe("/tmp");
+	expect(
+		emulatorScratchParent({ HOBO_CI_HOST_JOB_DIRECTORY: "/host/job" }, "/tmp"),
+	).toBe(HOST_VISIBLE_JOB_MOUNT);
+	const executable = posix.join(
+		HOST_VISIBLE_JOB_MOUNT,
+		"hobo-official-aws-x/package/opt/aws-emulator/bin/aws-emulator",
+	);
+	expect(dockerBindSource(executable, {})).toBe(executable);
+	expect(
+		dockerBindSource(executable, { HOBO_CI_HOST_JOB_DIRECTORY: "/host/job" }),
+	).toBe(
+		"/host/job/hobo-official-aws-x/package/opt/aws-emulator/bin/aws-emulator",
+	);
+	expect(() =>
+		dockerBindSource("/tmp/hobo-official-aws-x/aws-emulator", {
+			HOBO_CI_HOST_JOB_DIRECTORY: "/host/job",
+		}),
+	).toThrow(/outside the host-visible job directory/u);
+});
 
 it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
 	"rejects an unverified emulator package before invoking Docker",
@@ -33,6 +63,8 @@ it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
 						PATH: [directory, process.env.PATH ?? ""].join(delimiter),
 						HOBO_AWS_EMULATOR_PACKAGE: archive,
 						HOBO_TEST_DOCKER_MARKER: marker,
+						// Keep this negative test off the host work mount.
+						HOBO_CI_HOST_JOB_DIRECTORY: "",
 					},
 					timeout: 30_000,
 				},

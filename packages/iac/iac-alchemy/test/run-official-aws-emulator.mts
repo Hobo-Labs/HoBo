@@ -12,6 +12,10 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	dockerBindSource,
+	emulatorScratchParent,
+} from "./official-aws-docker-path.mts";
 
 const version = "1.0.611";
 const digest =
@@ -20,7 +24,11 @@ const image =
 	"debian@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e";
 if (process.platform !== "linux" || process.arch !== "x64")
 	throw new Error("The pinned AWS emulator test requires Linux x64 and Docker");
-const scratch = mkdtempSync(join(tmpdir(), "hobo-official-aws-"));
+// /tmp is a private tmpfs in CI job containers, so the host daemon cannot
+// bind-mount it. Unpack onto the host-visible work directory instead.
+const scratch = mkdtempSync(
+	join(emulatorScratchParent(process.env, tmpdir()), "hobo-official-aws-"),
+);
 const name = `hobo-aws-test-${randomUUID()}`;
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
@@ -75,7 +83,7 @@ try {
 		"--tmpfs",
 		"/tmp:rw,noexec,nosuid,size=128m",
 		"--mount",
-		`type=bind,src=${executable},dst=/usr/local/bin/aws-emulator,readonly`,
+		`type=bind,src=${dockerBindSource(executable, process.env)},dst=/usr/local/bin/aws-emulator,readonly`,
 		"--publish",
 		"127.0.0.1::9297",
 		image,
