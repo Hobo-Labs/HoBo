@@ -5,12 +5,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
-
-import { cueBinary } from "./helpers/cue-binary.js";
 import {
 	planBetterAuthBundle,
 	toBetterAuthBundlePlanRecord,
 } from "../src/index.js";
+import { cueBinary } from "./helpers/cue-binary.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..", "..", "..");

@@ -17,9 +17,7 @@ const SQLITE_AFFINITY = {
 	"timestamp with time zone": "TEXT",
 } as const satisfies Record<string, string>;
 
-function sqliteAffinityForPostgresType(
-	columnType: string,
-): string | undefined {
+function sqliteAffinityForPostgresType(columnType: string): string | undefined {
 	switch (columnType) {
 		case "boolean":
 			return SQLITE_AFFINITY.boolean;

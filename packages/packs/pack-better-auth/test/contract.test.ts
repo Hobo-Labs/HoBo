@@ -192,7 +192,9 @@ function parseMigrationPactCases(text: string): readonly MigrationPactCase[] {
 			!isJsonArray(phases) ||
 			!isJsonArray(tables)
 		) {
-			malformed("migration response is missing planContract, phases, or tables");
+			malformed(
+				"migration response is missing planContract, phases, or tables",
+			);
 		}
 		const parsedPhases = phases.filter((phase) => isJsonString(phase));
 		const parsedTables = tables.filter((table) => isJsonString(table));
@@ -253,7 +255,9 @@ function parseSigningPactCases(text: string): readonly SigningPactCase[] {
 				!isJsonString(expectedSecretRef) ||
 				!isJsonString(expectedSecretScheme)
 			) {
-				malformed("success signing response is missing secretRef or secretScheme");
+				malformed(
+					"success signing response is missing secretRef or secretScheme",
+				);
 			}
 			cases.push({
 				description,
