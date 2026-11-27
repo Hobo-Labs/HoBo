@@ -12,6 +12,10 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	awsEmulatorRunArgs,
+	prepareAwsEmulatorImage,
+} from "./aws-emulator-container.mts";
 
 const version = "1.0.611";
 const digest =
@@ -31,6 +35,7 @@ const vitest = join(
 const command = (file: string, args: string[]) =>
 	execFileSync(file, args, { encoding: "utf8", timeout: 120_000 }).trim();
 let attempted = false;
+let imageAttempted = false;
 try {
 	const cached = process.env.HOBO_AWS_EMULATOR_PACKAGE;
 	const archive = join(scratch, "aws-emulator.deb");
@@ -58,39 +63,11 @@ try {
 	const executable = join(unpacked, "opt/aws-emulator/bin/aws-emulator");
 	if (!existsSync(executable))
 		throw new Error("AWS emulator executable is missing");
+	const context = prepareAwsEmulatorImage(scratch, executable, image);
+	imageAttempted = true;
+	command("docker", ["build", "--tag", name, context]);
 	attempted = true;
-	command("docker", [
-		"run",
-		"-d",
-		"--rm",
-		"--name",
-		name,
-		"--read-only",
-		"--cap-drop",
-		"ALL",
-		"--security-opt",
-		"no-new-privileges",
-		"--tmpfs",
-		"/root:rw,noexec,nosuid,size=128m",
-		"--tmpfs",
-		"/tmp:rw,noexec,nosuid,size=128m",
-		"--mount",
-		`type=bind,src=${executable},dst=/usr/local/bin/aws-emulator,readonly`,
-		"--publish",
-		"127.0.0.1::9297",
-		image,
-		"/usr/local/bin/aws-emulator",
-		"--bind",
-		"0.0.0.0",
-		"--port",
-		"9297",
-		"--auth",
-		"off",
-		"--telemetry",
-		"off",
-		"--idle-timeout",
-		"900",
-	]);
+	command("docker", awsEmulatorRunArgs(name));
 	const endpoint = command("docker", ["port", name, "9297/tcp"]);
 	const port = /^127\.0\.0\.1:(\d+)$/u.exec(endpoint)?.[1];
 	if (!port)
@@ -144,6 +121,11 @@ try {
 	if (attempted) {
 		try {
 			command("docker", ["rm", "-f", name]);
+		} catch {}
+	}
+	if (imageAttempted) {
+		try {
+			command("docker", ["image", "rm", name]);
 		} catch {}
 	}
 	rmSync(scratch, { recursive: true, force: true });
