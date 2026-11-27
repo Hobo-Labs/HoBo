@@ -3,7 +3,7 @@ package authadapter
 import "strings"
 
 #SigningSecretRef: strings.MaxRunes(2048) & (
-			=~"^(aws-sm|azure-kv|gcp-sm|hobo-token)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$" |
+	=~"^(aws-sm|azure-kv|gcp-sm|hobo-token)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$" |
 	=~"^(vault|op|infisical|hobo-secret)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*(#[A-Za-z0-9._-]+)?$") & !~"://\\.\\.?/" & !~"/\\.\\.?(/|#|$)"
 
 #DataProfileId: =~"^data\\.(relational|postgres|mysql|sqlite)/v1$"
@@ -21,6 +21,6 @@ import "strings"
 	secret_ref:                 #SigningSecretRef
 	database_profile:           #DataProfileId
 	email_and_password_enabled: bool
-	social_providers: [...#SocialProviderId]
-	organizations_enabled: bool
+	social_providers:           [...#SocialProviderId]
+	organizations_enabled:      bool
 }

@@ -15,6 +15,11 @@ export {
 	type BetterAuthBundlePlanErrorCode,
 } from "./errors.js";
 export {
+	type BetterAuthRelationalMigrationPlan,
+	planBetterAuthRelationalMigrations,
+} from "./migrations.js";
+
+export {
 	type BetterAuthBundlePlan,
 	planBetterAuthBundle,
 } from "./plan.js";
@@ -26,3 +31,8 @@ export {
 	type BetterAuthBundlePlanRecord,
 	toBetterAuthBundlePlanRecord,
 } from "./record.js";
+export {
+	type BetterAuthSigningSecretWire,
+	campSecretNameFromBetterAuthRef,
+	wireBetterAuthSigningSecret,
+} from "./secrets.js";

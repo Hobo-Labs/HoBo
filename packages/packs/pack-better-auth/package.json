@@ -19,7 +19,9 @@
 	},
 	"dependencies": {
 		"@hobo/auth-adapter-contract": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/bindings": "workspace:*",
+		"@hobo/core": "workspace:*",
+		"@hobo/identity": "workspace:*"
 	},
 	"devDependencies": {
 		"@hobo/capability-profiles": "workspace:*",

@@ -106,15 +106,15 @@ export function parseBetterAuthSecretRef<T>(input: T): BetterAuthSecretRef {
 			`secretRef exceeds the ${MAX_LOCATOR_LENGTH} character locator limit`,
 		);
 	}
-	if (hasControlCharacter(locator)) {
-		refuseLocator("secretRef contains control characters");
-	}
 	for (const marker of INLINE_SECRET_MARKERS) {
 		if (marker.test(locator)) {
 			refuseInline(
 				"secretRef looks like a plaintext credential, not a custody locator",
 			);
 		}
+	}
+	if (hasControlCharacter(locator)) {
+		refuseLocator("secretRef contains control characters");
 	}
 
 	const separator = locator.indexOf("://");
