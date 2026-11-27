@@ -12,6 +12,11 @@ over conflicting repository workflow guidance.
   dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Do not run GitHub Actions validation on draft pull requests. Review and
+  validate the work locally, then mark it ready for review to start CI. Queue a
+  PR only after its applicable ready-state checks and release jobs pass. If a
+  gate fails, return the PR to draft and fix it on the same branch before
+  marking it ready again; do not open a new PR to fix that PR's failing gates.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
