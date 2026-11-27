@@ -31,7 +31,7 @@ describe("renderPublication", () => {
 			golden("argo-cd.application.json.golden"),
 		);
 		expect(out.files[1]?.content).toBe(
-			golden("hobo-set.configmap.json.golden"),
+			golden("hobo-set.configmap.argocd.golden"),
 		);
 		expect(out.engineDocument).toEqual({
 			apiVersion: "argoproj.io/v1alpha1",
@@ -50,7 +50,7 @@ describe("renderPublication", () => {
 			golden("flux.kustomization.json.golden"),
 		);
 		expect(out.files[1]?.content).toBe(
-			golden("hobo-set.configmap.json.golden"),
+			golden("hobo-set.configmap.flux.golden"),
 		);
 	});
 

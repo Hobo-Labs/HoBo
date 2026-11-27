@@ -133,7 +133,7 @@ behavior, rendered Applications, and observable convergence.
 | **AppProject / RBAC** | `@hobo/cd/authz` + Station policy packs | **met-differently** | `authz` evaluates `@hobo/contracts` rules on the Station pack (`packages/cd/src/authz/README.md`). Not AppProject-shaped. `@hobo/policy` posture is separate (ADR-0182 D25). |
 | **OutOfSync / per-resource diff UI** | Drift events + `drift.DiffProposed` | **partial** | Reconciler emits drift; no Argo-like resource tree or live manifest diff UI. |
 | **ApplicationSet / matrix generators** | Placement + fan-out | **partial** | Fan-out is journal-driven over Camps; no Git-rendered ApplicationSet CRD. |
-| **Sync waves / hook ordering** | Rollout stages + change windows | **partial** | Promotion/rollout layer orders work; rendered manifests do **not** emit Argo `argocd.argoproj.io/sync-wave` annotations by default. |
+| **Sync waves / hook ordering** | Rollout stages + change windows | **partial** | Promotion/rollout layer orders work; Argo publisher emits `argocd.argoproj.io/sync-wave` on the Set ConfigMap (P6); per-resource waves not yet derived from rollout stages. |
 | **Automated sync policy (prune/self-heal)** | `render.ts` when `autoSync` | **pass** | When `autoSync` is set, render emits `spec.syncPolicy.automated{prune,selfHeal:true}` (`packages/cd-gitops/src/render.ts`; golden `test/golden/argo-cd.application.json.golden`). |
 | **Multi-cluster hub** | `cd-kube-fleet` (OCM/Karmada) | **met-differently** | Not Argo CD hub-spoke; fleet transports differ (ADR-0182 D26). |
 | **Notifications** | CDEvents + NOTIFY hooks | **partial** | Structured events; not Argo Notifications CRD integration. |
@@ -201,7 +201,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics — **implemented** (`@hobo/cd-argocd`, `ARGO_CD_SYNC_RUNBOOK`, `packages/cd-argocd/test/*.test.ts`) |
 | **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row — **implemented** (`auto-promotion.ts`, `promoteByOrigin`, `holds.test.ts`) |
 | **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row — **implemented** (`origin_slots`, `origin-slots.ts`) |
-| **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row (syncPolicy already in render when `autoSync`) |
+| **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row — **implemented** (ConfigMap `sync-wave: "0"`) |
 | **P7** | CLI/MCP: promotion graph + freight timeline first-class | Promotion UI partial |
 | **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
 | **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows |
