@@ -149,6 +149,10 @@
 		"./aws/queue-mapper": {
 			"types": "./dist/aws-queue-mapper.d.ts",
 			"default": "./dist/aws-queue-mapper.js"
+		},
+		"./aws/cryptography": {
+			"types": "./dist/aws-cryptography.d.ts",
+			"default": "./dist/aws-cryptography.js"
 		}
 	},
 	"dependencies": {
