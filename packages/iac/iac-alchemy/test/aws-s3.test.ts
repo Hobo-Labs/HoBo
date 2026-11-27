@@ -57,6 +57,32 @@ const object = {
 };
 
 describe("S3 bounded object runtime", () => {
+	it("captures exact permissions even if includes changes during construction", async () => {
+		const original = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"includes",
+		);
+		let call: Promise<void>;
+		let calls: () => number;
+		try {
+			Object.defineProperty(Array.prototype, "includes", {
+				value: () => true,
+				configurable: true,
+			});
+			const f = fixture(
+				async () => new Response(),
+				() => true,
+				{ ...grant, allow: ["read"] },
+			);
+			calls = f.calls;
+			call = f.store.delete("key");
+		} finally {
+			if (original)
+				Object.defineProperty(Array.prototype, "includes", original);
+		}
+		await expect(call).rejects.toMatchObject({ code: "AWS_S3_DENIED" });
+		expect(calls()).toBe(0);
+	});
 	it("does not broaden a grant when Array.includes is replaced", async () => {
 		const f = fixture(
 			async () => new Response(),
