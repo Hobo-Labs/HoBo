@@ -62,6 +62,26 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
+AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
+its provider choice outside the Bindle: pass the neutral Bindle through
+`withAwsDynamoKv(bindle, { cache: true })` and use
+`awsDynamoKvBindleMappers()` from `@hobo/iac-alchemy/aws/kv-mapper`. Install the
+optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
+`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS region,
+host-issued resource and grant epochs, an explicit operation allow-list, a
+per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
+The host must authenticate the actual table incarnation, never reuse a
+revoked epoch, fence outstanding requests during ownership changes, and enforce
+matching IAM permissions. Reads are strongly consistent; keys are limited to 2,048 UTF-8
+bytes and values to 256 KiB. A failed or timed-out write or delete has an
+unknown outcome and requires reconciliation. Each store retains capacity for a
+timed-out request until the transport settles. This subset does not bind a
+HoBo application or WASI guest to the table, implement transactions, or prevent
+out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
+verifier and transport behave as specified; it does not prove those components.
+It models one bounded store and permits transport to remain in flight after a
+caller times out.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
@@ -735,6 +755,16 @@ the RivetKit 3 runtime package in one host-shaped fixture. It imports the
 Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
 declarations (the same peer-aligned instances the adapter resolves) and builds
 its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
+`test/better-auth-session-durability.test.ts` simulates sign-in, a process
+restart (SQLite file reopen), and brokered signing-secret re-resolution so
+session rows and cookie integrity survive host recycle. The session file is
+the harness `sessionStorePath`. `openBetterAuthSessionStore` applies the pack
+migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
+to that file; there is no hand-written session DDL. `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
+state, a file-backed `sqlite` path (the same session file, not an in-memory
+database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
+broker wire (synthetic signing material only; no live Worker/D1 deploy).
 On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator`
 runs the mapped AWS resources and budget-routing scenarios against both the
 Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads

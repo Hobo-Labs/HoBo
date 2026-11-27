@@ -90,6 +90,10 @@
 		"./aws/kv": {
 			"types": "./dist/aws-kv.d.ts",
 			"default": "./dist/aws-kv.js"
+		},
+		"./aws/kv-mapper": {
+			"types": "./dist/aws-kv-mapper.d.ts",
+			"default": "./dist/aws-kv-mapper.js"
 		}
 	},
 	"dependencies": {
@@ -124,6 +128,8 @@
 		}
 	},
 	"devDependencies": {
+		"@hobo/identity": "workspace:*",
+		"@hobo/pack-better-auth": "workspace:*",
 		"@alchemy.run/aws": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
