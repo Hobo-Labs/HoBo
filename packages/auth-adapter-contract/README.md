@@ -8,6 +8,9 @@ Parse, don't validate: `BetterAuthConfig`, `BetterAuthSecretRef`, and
 `AuthAdapterDescriptor` are **parsed derived types** minted only at the config
 and locator boundaries.
 
+The database profile must be a registered relational capability profile; the
+durable CUE record accepts the same v1 profile family.
+
 ## Commands, events, and durability
 
 Stated explicitly rather than left silent: this package is a **parse boundary**

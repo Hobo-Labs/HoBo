@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+	createCapabilityProfileRegistry,
+	STANDARD_CAPABILITY_PROFILES,
+} from "@hobo/capability-profiles";
 import { describe, expect, it } from "vitest";
 import {
 	planBetterAuthBundle,
@@ -70,6 +74,97 @@ describe("BetterAuthBundlePlanRecord CUE", () => {
 		expect(fixture.claims_mapping_version).toBe("better-auth-claims/v1");
 		expect(fixture.parsed_config.database_profile).toBe("data.relational/v1");
 		expect(fixture.ports.relational_bindle).toBe("auth_db");
+	});
+
+	it("rejects replay records with inconsistent paths or unsupported profiles", () => {
+		const valid = toBetterAuthBundlePlanRecord(
+			planBetterAuthBundle(CONFIG_INPUT, PORTS),
+		);
+		const records = [
+			{ ...valid, base_path: "/api/other" },
+			{ ...valid, route_pattern: "/api/other/*" },
+			{
+				...valid,
+				parsed_config: {
+					...valid.parsed_config,
+					database_profile: "data.mongodb/v1",
+				},
+			},
+		];
+		const scratch = mkdtempSync(join(tmpdir(), "hobo-auth-replay-invalid-"));
+		try {
+			for (const [index, record] of records.entries()) {
+				const dataFile = join(scratch, `invalid-${index}.json`);
+				writeFileSync(dataFile, JSON.stringify(record));
+				const result = spawnSync(
+					cueBin,
+					[
+						"vet",
+						"-c",
+						"-d",
+						"#BetterAuthBundlePlanRecord",
+						"pack_better_auth.cue",
+						dataFile,
+					],
+					{ cwd: dataModels, encoding: "utf8" },
+				);
+				if (result.error) throw result.error;
+				expect(result.status, `invalid replay record ${index}`).not.toBe(0);
+			}
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps replay schemas aligned with registered relational profiles", () => {
+		const registry = createCapabilityProfileRegistry(
+			STANDARD_CAPABILITY_PROFILES,
+		);
+		const profiles = registry
+			.list()
+			.filter((profile) =>
+				registry.satisfies(profile.id, "data.relational/v1"),
+			);
+		expect(profiles.length).toBeGreaterThan(0);
+		const scratch = mkdtempSync(join(tmpdir(), "hobo-auth-profile-cue-"));
+		try {
+			for (const profile of profiles) {
+				const record = toBetterAuthBundlePlanRecord(
+					planBetterAuthBundle(
+						{ ...CONFIG_INPUT, database: { profile: profile.id } },
+						PORTS,
+					),
+				);
+				const packFile = join(scratch, "pack.json");
+				const contractFile = join(scratch, "contract.json");
+				writeFileSync(packFile, JSON.stringify(record));
+				writeFileSync(contractFile, JSON.stringify(record.parsed_config));
+				for (const [cwd, model, definition, data] of [
+					[
+						dataModels,
+						"pack_better_auth.cue",
+						"#BetterAuthBundlePlanRecord",
+						packFile,
+					],
+					[
+						join(repoRoot, "packages/auth-adapter-contract/data-models"),
+						"auth_adapter_contract.cue",
+						"#BetterAuthConfigRecord",
+						contractFile,
+					],
+				] as const) {
+					const result = spawnSync(
+						cueBin,
+						["vet", "-c", "-d", definition, model, data],
+						{ cwd, encoding: "utf8" },
+					);
+					if (result.error) throw result.error;
+					expect(result.status, `${profile.id}: ${result.stderr}`).toBe(0);
+				}
+			}
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
 	});
 
 	it("validates migration record profiles against the supported versions", () => {

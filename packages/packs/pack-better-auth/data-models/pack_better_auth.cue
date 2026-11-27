@@ -7,7 +7,7 @@ package packs
 #SigningSecretRef: =~"^(aws-sm|azure-kv|gcp-sm|hobo-secret|hobo-token|infisical|op|vault)://[^@\\s]+/[^@\\s]+$"
 #BindleName: =~"^[a-z][a-z0-9_-]{0,63}$"
 #BasePath: =~"^(/[a-z0-9][a-z0-9._~-]*)+$"
-#DataProfileId: =~"^data\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*/v[1-9][0-9]*$"
+#DataProfileId: =~"^data\\.(relational|postgres|mysql|sqlite)/v1$"
 #SocialProviderId: =~"^[a-z][a-z0-9-]*$"
 
 #BetterAuthBundlePortRefsRecord: {
@@ -37,8 +37,8 @@ package packs
 		#PortId & "hobo:secrets",
 	]
 	adapter_id:     #AdapterId
-	base_path:      #BasePath
-	route_pattern:  string & != ""
+	base_path:      #BasePath & parsed_config.base_path
+	route_pattern:  "\(base_path)/*"
 	ports:          #BetterAuthBundlePortRefsRecord
 	parsed_config:  #BetterAuthParsedConfigRecord
 }

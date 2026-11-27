@@ -2,7 +2,7 @@ package authadapter
 
 #SigningSecretRef: =~"^(aws-sm|azure-kv|gcp-sm|hobo-secret|hobo-token|infisical|op|vault)://[^@\\s]+/[^@\\s]+$"
 
-#DataProfileId: =~"^data\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*/v[1-9][0-9]*$"
+#DataProfileId: =~"^data\\.(relational|postgres|mysql|sqlite)/v1$"
 
 #BasePath: =~"^(/[a-z0-9][a-z0-9._~-]*)+$"
 

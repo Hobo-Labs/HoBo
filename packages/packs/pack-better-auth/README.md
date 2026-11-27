@@ -22,6 +22,8 @@ infrastructure inside the adapter.
   `drop-column`, `narrow-column`, and `drop-index` are refused. Migration
   planning accepts `data.relational/v1` and `data.postgres/v1`; its shared
   schema definitions are immutable across plans.
+- Bundle replay records keep the configured base path and route pattern in
+  sync, and accept only registered relational v1 profiles.
 - `fixtures/better-auth-schema-ir.ts` — canonical Better Auth table shapes for
   governed data-plane migrations (not adapter-private DDL).
   `buildBetterAuthRelationalSchemaIr` adds `organization`, `member`, and

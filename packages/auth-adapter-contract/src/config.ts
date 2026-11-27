@@ -18,6 +18,10 @@
  */
 
 import {
+	createCapabilityProfileRegistry,
+	STANDARD_CAPABILITY_PROFILES,
+} from "@hobo/capability-profiles";
+import {
 	BetterAuthConfigError,
 	type BetterAuthConfigErrorCode,
 } from "./errors.js";
@@ -81,6 +85,9 @@ const BASE_PATH = /^(?:\/[a-z0-9][a-z0-9._~-]*)+$/u;
 
 /** ADR-0151 capability-profile grammar, narrowed to the data primitive family. */
 const DATA_PROFILE = /^data\.[a-z0-9-]+(?:\.[a-z0-9-]+)*\/v[1-9][0-9]*$/u;
+const PROFILE_REGISTRY = createCapabilityProfileRegistry(
+	STANDARD_CAPABILITY_PROFILES,
+);
 
 /** A social-provider slug, e.g. `github`, `google`, `microsoft-entra`. */
 const SOCIAL_PROVIDER = /^[a-z][a-z0-9-]*$/u;
@@ -172,10 +179,14 @@ function parseDatabase<T>(value: T): { readonly profile: string } {
 	const block = expectObject(value, "database");
 	assertKnownKeys(block, "database", ["profile"]);
 	const profile = block.profile;
-	if (!isJsonString(profile) || !DATA_PROFILE.test(profile)) {
+	if (
+		!isJsonString(profile) ||
+		!DATA_PROFILE.test(profile) ||
+		!PROFILE_REGISTRY.satisfies(profile, "data.relational/v1")
+	) {
 		refuse(
 			"BETTER_AUTH_DATABASE_PROFILE_INVALID",
-			"database.profile must name a data-family capability profile",
+			"database.profile must name a registered relational capability profile",
 			'set database.profile to a relational capability profile, e.g. "data.relational/v1" (or a refinement such as "data.postgres/v1")',
 		);
 	}
