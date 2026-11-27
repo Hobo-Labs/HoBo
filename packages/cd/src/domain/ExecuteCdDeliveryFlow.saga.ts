@@ -503,6 +503,7 @@ export const ExecuteCdDeliveryFlowLive = ExecuteCdDeliveryFlow.toLayer(
 						stageId,
 						new CompleteStagePromotion({
 							deliveryRunId: key,
+							appliedRevision: finalConvergence.appliedRevision,
 							qualifiedAtMs: nowMs,
 							summary: verificationSummary,
 						}),

@@ -108,7 +108,7 @@ export const StagePromotionToDeliveryRunPolicyLive =
 							stageId: source.id,
 							campId: event.campId,
 							freightDigest: event.freightDigest,
-							previousRevision: null,
+							previousRevision: event.previousRevision,
 							flowKind: event.deliveryFlow,
 							flowTarget: event.flowTarget,
 							requiresApproval: event.requiresApproval,

@@ -12,6 +12,7 @@ import {
 	NonEmptyReason,
 	NonNegativeCount,
 	PositiveCount,
+	RevisionRef,
 	StageId,
 	StagePhase,
 	UniqueStageList,
@@ -104,6 +105,7 @@ export class StagePromotionStarted extends Domain.Event(
 		deliveryRunId: DeliveryRunId,
 		freightDigest: FreightDigest,
 		previousFreightDigest: Schema.NullOr(FreightDigest),
+		previousRevision: Schema.NullOr(RevisionRef),
 		campId: CampTargetId,
 		deliveryFlow: DeliveryFlowKind,
 		flowTarget: DeliveryFlowTarget,
@@ -143,6 +145,7 @@ export class StagePromotionCompleted extends Domain.Event(
 	{
 		deliveryRunId: DeliveryRunId,
 		freightDigest: FreightDigest,
+		appliedRevision: Schema.NullOr(RevisionRef),
 		qualifiedAtMs: EpochMs,
 		summary: NonEmptyReason,
 	},
@@ -240,6 +243,7 @@ export class CompleteStagePromotion extends Domain.Command(
 		target: StageId,
 		input: {
 			deliveryRunId: DeliveryRunId,
+			appliedRevision: Schema.NullOr(RevisionRef),
 			qualifiedAtMs: EpochMs,
 			summary: NonEmptyReason,
 		},
@@ -307,6 +311,7 @@ export const CdStageState = Schema.Union([
 	Schema.TaggedStruct("Idle", {
 		config: CdStageConfig,
 		currentFreightDigest: Schema.NullOr(FreightDigest),
+		currentRevision: Schema.NullOr(RevisionRef),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
 	}),
@@ -315,6 +320,7 @@ export const CdStageState = Schema.Union([
 		activeRunId: DeliveryRunId,
 		activeFreightDigest: FreightDigest,
 		currentFreightDigest: Schema.NullOr(FreightDigest),
+		currentRevision: Schema.NullOr(RevisionRef),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
 		pending: Schema.NullOr(QueuedStagePromotion),
@@ -324,6 +330,7 @@ export const CdStageState = Schema.Union([
 		activeRunId: DeliveryRunId,
 		activeFreightDigest: FreightDigest,
 		currentFreightDigest: Schema.NullOr(FreightDigest),
+		currentRevision: Schema.NullOr(RevisionRef),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
 		pending: Schema.NullOr(QueuedStagePromotion),
@@ -443,12 +450,14 @@ function buildPromotionStartEvent(
 	deliveryRunId: DeliveryRunId,
 	freightDigest: FreightDigest,
 	previousFreightDigest: FreightDigest | null,
+	previousRevision: RevisionRef | null,
 	requestedAtMs: EpochMs,
 ): StagePromotionStarted {
 	return new StagePromotionStarted({
 		deliveryRunId,
 		freightDigest,
 		previousFreightDigest,
+		previousRevision,
 		campId: config.campId,
 		deliveryFlow: config.deliveryFlow,
 		flowTarget: config.flowTarget,
@@ -510,6 +519,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						cmd.deliveryRunId,
 						cmd.freightDigest,
 						state.currentFreightDigest,
+						state.currentRevision,
 						cmd.nowMs,
 					),
 				];
@@ -576,9 +586,11 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 			const completed = new StagePromotionCompleted({
 				deliveryRunId: state.activeRunId,
 				freightDigest: state.activeFreightDigest,
+				appliedRevision: cmd.appliedRevision,
 				qualifiedAtMs: cmd.qualifiedAtMs,
 				summary: cmd.summary,
 			});
+			const nextRevision = cmd.appliedRevision ?? state.currentRevision;
 			if (state.pending !== null) {
 				return [
 					completed,
@@ -587,6 +599,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						state.pending.deliveryRunId,
 						state.pending.freightDigest,
 						state.activeFreightDigest,
+						nextRevision,
 						state.pending.requestedAtMs,
 					),
 				];
@@ -623,6 +636,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						state.pending.deliveryRunId,
 						state.pending.freightDigest,
 						state.currentFreightDigest,
+						state.currentRevision,
 						state.pending.requestedAtMs,
 					),
 				];
@@ -672,6 +686,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						state.pending.deliveryRunId,
 						state.pending.freightDigest,
 						state.currentFreightDigest,
+						state.currentRevision,
 						state.pending.requestedAtMs,
 					),
 				];
@@ -686,6 +701,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						_tag: "Idle" as const,
 						config: event.config,
 						currentFreightDigest: null,
+						currentRevision: null,
 						currentVerified: false,
 						lastVerifiedAtMs: null,
 					}
@@ -702,6 +718,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						activeRunId: event.deliveryRunId,
 						activeFreightDigest: event.freightDigest,
 						currentFreightDigest: state.currentFreightDigest,
+						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
 						pending: null,
@@ -726,6 +743,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						activeRunId: state.activeRunId,
 						activeFreightDigest: state.activeFreightDigest,
 						currentFreightDigest: state.currentFreightDigest,
+						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
 						pending: state.pending,
@@ -737,6 +755,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						_tag: "Idle" as const,
 						config: state.config,
 						currentFreightDigest: event.freightDigest,
+						currentRevision: event.appliedRevision ?? state.currentRevision,
 						currentVerified: true,
 						lastVerifiedAtMs: event.qualifiedAtMs,
 					}
@@ -747,6 +766,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						_tag: "Idle" as const,
 						config: state.config,
 						currentFreightDigest: state.currentFreightDigest,
+						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
 					}
@@ -759,6 +779,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						activeRunId: event.deliveryRunId,
 						activeFreightDigest: event.freightDigest,
 						currentFreightDigest: state.currentFreightDigest,
+						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
 						pending: null,
@@ -770,6 +791,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						_tag: "Idle" as const,
 						config: state.config,
 						currentFreightDigest: state.currentFreightDigest,
+						currentRevision: state.currentRevision,
 						currentVerified: false,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
 					}
