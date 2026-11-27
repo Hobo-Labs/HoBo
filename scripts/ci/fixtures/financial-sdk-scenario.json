@@ -1,0 +1,129 @@
+{
+  "action": "place",
+  "at": "2026-01-01T00:00:00Z",
+  "horizon": "2026-01-31T23:59:59Z",
+  "pricingCatalogHash": "sha256:713b18579d95a5e2dc131f3a3ea702a89f5acc06413626b706a08b8aed18340f",
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:713b18579d95a5e2dc131f3a3ea702a89f5acc06413626b706a08b8aed18340f",
+    "products": [
+      {
+        "id": "sandbox",
+        "providerId": "sandbox",
+        "meters": [
+          {
+            "dimension": "minute",
+            "unit": "minute",
+            "aggregation": "sum"
+          }
+        ]
+      }
+    ],
+    "rateCards": [
+      {
+        "id": "card-v1",
+        "version": "1",
+        "currency": "USD",
+        "effective": {
+          "start": "2025-01-01T00:00:00Z",
+          "end": "2027-01-01T00:00:00Z"
+        },
+        "charges": [
+          {
+            "base": {
+              "id": "runtime",
+              "invoiceBehavior": "itemized"
+            },
+            "usage": {
+              "dimension": "minute",
+              "timing": "arrears",
+              "perUnit": {
+                "decimal": "0.25",
+                "currency": "USD"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "state": {
+    "schema": "hobo.pricing/v1",
+    "view": "commercial-state",
+    "tenantId": "tenant-a",
+    "seq": "1",
+    "stateHash": "sha256:d17b347c9e788043779d2703dae72977400e28e5b43932a9741e30e8f0f09485",
+    "asOf": "2026-01-01T00:00:00Z",
+    "agreements": [
+      {
+        "id": "agreement-a",
+        "tenantId": "tenant-a",
+        "providerAccountRef": "account-a",
+        "productId": "sandbox",
+        "rateSchedule": [
+          {
+            "rateCardId": "card-v1",
+            "effective": {
+              "start": "2025-01-01T00:00:00Z",
+              "end": "2027-01-01T00:00:00Z"
+            }
+          }
+        ],
+        "status": "active",
+        "term": {
+          "start": "2025-01-01T00:00:00Z",
+          "end": "2027-01-01T00:00:00Z"
+        },
+        "billingPeriod": {
+          "interval": "monthly",
+          "anchor": "2026-01-01T00:00:00Z",
+          "timeZone": "UTC"
+        },
+        "cancellation": {
+          "refund": "none",
+          "fee": {
+            "decimal": "0",
+            "currency": "USD"
+          }
+        },
+        "evidence": {
+          "source": "fixture://provider-commercial-terms",
+          "observedAt": "2026-01-01T00:00:00Z",
+          "validFrom": "2026-01-01T00:00:00Z",
+          "validUntil": "2027-01-01T00:00:00Z",
+          "evidenceHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    ],
+    "completeness": "complete",
+    "observations": [
+      {
+        "source": "fixture://state",
+        "observedAt": "2026-01-01T00:00:00Z",
+        "validUntil": "2027-01-01T00:00:00Z",
+        "detail": "complete fixture"
+      }
+    ]
+  },
+  "candidate": [
+    {
+      "productRef": "sandbox",
+      "agreementRef": "agreement-a",
+      "direction": "add",
+      "usage": [
+        {
+          "dimension": "minute",
+          "quantity": {
+            "decimal": "4",
+            "unit": "minute"
+          },
+          "observedAt": "2026-01-01T00:00:00Z"
+        }
+      ]
+    }
+  ],
+  "options": {
+    "amortization": "provider-actual",
+    "allocationConvention": "marginal-consume"
+  }
+}

@@ -522,6 +522,9 @@ export async function verifyCliSdkArtifacts(
 	const index: RegistryIndex = new Map();
 	try {
 		let cliArchive: string | undefined;
+		let brokerArchive: string | undefined;
+		let pricingArchive: string | undefined;
+		let protobufRange: string | undefined;
 		for (const pkg of artifacts.packages) {
 			if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u.test(pkg.file))
 				throw new Error("Unsafe SDK artifact name");
@@ -539,10 +542,19 @@ export async function verifyCliSdkArtifacts(
 				);
 			addPackage(index, { manifest, archive: await readFile(file) });
 			if (pkg.workspace === "@hobo/cli") cliArchive = file;
+			if (pkg.workspace === "@hobo/pricing") pricingArchive = file;
+			if (pkg.workspace === "@hobo/broker") {
+				brokerArchive = file;
+				protobufRange = manifest.dependencies?.["@bufbuild/protobuf"];
+			}
 		}
 		if (!cliArchive) throw new Error("Staged SDK has no CLI archive");
 		await verifyArchiveBytes(cliArchive, workspace, temp);
 		assertCompleteSdkManifest(artifacts);
+		if (!brokerArchive) throw new Error("Staged SDK has no broker archive");
+		if (!pricingArchive) throw new Error("Staged SDK has no pricing archive");
+		if (!protobufRange)
+			throw new Error("Staged broker has no protobuf runtime dependency");
 		await indexInstalledPackages(workspace, index);
 		const cache = join(temp, "npm-cache");
 		const packs = join(temp, "packs");
@@ -586,6 +598,9 @@ export async function verifyCliSdkArtifacts(
 					"--no-fund",
 					...npm,
 					cliArchive,
+					brokerArchive,
+					pricingArchive,
+					`@bufbuild/protobuf@${protobufRange}`,
 				],
 				{
 					cwd: consumer,
@@ -621,6 +636,29 @@ export async function verifyCliSdkArtifacts(
 					maxBuffer: 16 * 1024 * 1024,
 					timeout: 120_000,
 				},
+			);
+			await cp(
+				join(
+					dirname(fileURLToPath(import.meta.url)),
+					"financial-sdk-acceptance-child.mts",
+				),
+				join(consumer, "financial-acceptance.mts"),
+			);
+			await cp(
+				join(
+					dirname(fileURLToPath(import.meta.url)),
+					"fixtures/financial-sdk-scenario.json",
+				),
+				join(consumer, "financial-scenario.json"),
+			);
+			await exec(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(consumer, "financial-acceptance.mts"),
+				],
+				{ cwd: consumer, env, maxBuffer: 16 * 1024 * 1024, timeout: 120_000 },
 			);
 			await writeFile(
 				join(consumer, "identity.ts"),
