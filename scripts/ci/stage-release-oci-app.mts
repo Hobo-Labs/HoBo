@@ -22,6 +22,7 @@ import {
 	relative,
 	resolve,
 } from "node:path";
+import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
 import {
 	orderedSdkTarballPaths,
 	type SdkArtifactManifest,
@@ -116,6 +117,7 @@ function run(root: string, command: string, args: readonly string[]): void {
 export function releaseOciTurboBuildArgs(
 	_root: string,
 	imageFilters: readonly string[],
+	env: NodeJS.ProcessEnv = process.env,
 ): string[] {
 	if (imageFilters.length === 0)
 		throw new Error("release OCI build requires at least one image filter");
@@ -124,6 +126,7 @@ export function releaseOciTurboBuildArgs(
 		"turbo",
 		"run",
 		"build",
+		...(env.HOBO_TURBO_CONCURRENCY?.trim() ? [turboConcurrencyArg(env)] : []),
 		...imageFilters.map((filter) => `--filter=${filter}`),
 	];
 }
@@ -302,6 +305,10 @@ export function releasePnpmStore(
 	root: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): string {
+	const configured = env.npm_config_store_dir?.trim();
+	if (configured && isAbsolute(configured) && !/[\r\n\0]/u.test(configured)) {
+		return resolve(configured);
+	}
 	const which = spawnSync("sh", ["-c", "command -v pnpm || true"], {
 		encoding: "utf8",
 		env,
@@ -318,10 +325,6 @@ export function releasePnpmStore(
 	const path = result.stdout?.trim() ?? "";
 	if (result.status === 0 && isAbsolute(path) && !/[\r\n\0]/u.test(path)) {
 		return path;
-	}
-	const configured = env.npm_config_store_dir?.trim();
-	if (configured && isAbsolute(configured) && !/[\r\n\0]/u.test(configured)) {
-		return resolve(configured);
 	}
 	const detail = (result.stderr || result.stdout || "").trim();
 	throw new Error(

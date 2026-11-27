@@ -46,6 +46,7 @@ const RELEASE_BUILD_INPUTS = [
 	"scripts/ci/sdk-artifact-manifest.mts",
 	"scripts/lib/release-oci-contract.mts",
 	"scripts/lib/ci-runner-contract.mts",
+	"scripts/lib/turbo-concurrency.ts",
 	"tsconfig.base.json",
 	"pnpm-workspace.yaml",
 	".npmrc",
