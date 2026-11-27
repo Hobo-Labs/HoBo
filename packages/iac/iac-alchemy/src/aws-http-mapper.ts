@@ -7,6 +7,7 @@ import type { Table } from "@alchemy.run/aws/DynamoDB";
 import { WebFunction } from "@alchemy.run/aws/Lambda";
 import type { Bucket } from "@alchemy.run/aws/S3";
 import type { Secret } from "@alchemy.run/aws/SecretsManager";
+import type { Topic } from "@alchemy.run/aws/SNS";
 import type { ResourceLike } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import { awsBindleMappers } from "./aws.js";
@@ -199,7 +200,7 @@ export function awsHttpBindleMappers<Requirements>(
 		annotations: ["hobo:session-replay"],
 		bindsEntrypoint: true,
 		limitations: [
-			"Node.js HTTP with selected bounded DynamoDB, S3, Secrets Manager and durable queue bindings; the host authenticates source, endpoint, stores, IAM and pricing inventory.",
+			"Node.js HTTP with selected bounded DynamoDB, S3, Secrets Manager, queue and SNS notification bindings; the host authenticates source, stores, IAM and pricing.",
 		],
 		validate,
 		build: (input) =>
@@ -212,7 +213,10 @@ export function awsHttpBindleMappers<Requirements>(
 					);
 				const env: Record<
 					string,
-					Table["tableName"] | Bucket["bucketName"] | Secret["secretArn"]
+					| Table["tableName"]
+					| Bucket["bucketName"]
+					| Secret["secretArn"]
+					| Topic["topicName"]
 				> = {};
 				for (const binding of graph.bindings) {
 					const dependency: ResourceLike | undefined =
@@ -222,7 +226,9 @@ export function awsHttpBindleMappers<Requirements>(
 							? "AWS.DynamoDB.Table"
 							: binding.kind === "bucket"
 								? "AWS.S3.Bucket"
-								: "AWS.SecretsManager.Secret";
+								: binding.kind === "notify"
+									? "AWS.SNS.Topic"
+									: "AWS.SecretsManager.Secret";
 					if (
 						!dependency ||
 						dependency.FQN !== binding.name ||
@@ -238,7 +244,9 @@ export function awsHttpBindleMappers<Requirements>(
 							? (dependency as Table).tableName
 							: binding.kind === "bucket"
 								? (dependency as Bucket).bucketName
-								: (dependency as Secret).secretArn;
+								: binding.kind === "notify"
+									? (dependency as Topic).topicName
+									: (dependency as Secret).secretArn;
 				}
 				const primary = yield* WebFunction(graph.applicationName, {
 					main: canonical,

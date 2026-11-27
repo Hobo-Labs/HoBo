@@ -9,7 +9,7 @@ import {
 
 export interface AwsHttpDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket" | "secret" | "queue";
+	readonly kind: "kv" | "bucket" | "secret" | "queue" | "notify";
 	readonly environment: string;
 	readonly allow: readonly string[];
 }
@@ -35,7 +35,7 @@ function name(value: unknown): value is string {
 }
 function marker(
 	declaration: PrimitiveDeclaration,
-): "kv" | "bucket" | "secret" | "queue" {
+): "kv" | "bucket" | "secret" | "queue" | "notify" {
 	if (declaration.annotations.length !== 1)
 		throw new Error(
 			"AWS application dependency requires an explicit runtime choice",
@@ -94,6 +94,16 @@ function marker(
 		fields.maxLogBytes?.value === 262_144
 	)
 		return "queue";
+	if (
+		Object.keys(fields).length === 3 &&
+		declaration.kind === "notify" &&
+		annotation.provider === "aws" &&
+		annotation.option === "sns-notification" &&
+		fields.runtime?.value === "node-js" &&
+		fields.maxBodyBytes?.value === 65_536 &&
+		fields.retries?.value === "none"
+	)
+		return "notify";
 
 	throw new Error(
 		"AWS application dependency requires an explicit runtime choice",
@@ -237,7 +247,9 @@ export function captureAwsHttpGraph<Requirements>(
 					? ["read", "write", "delete"]
 					: kind === "queue"
 						? ["enqueue", "dequeue"]
-						: ["put", "access"];
+						: kind === "notify"
+							? ["send"]
+							: ["put", "access"];
 		if (
 			dependency.declaredAllow.some(
 				(operation: string) => !allowed.includes(operation),
