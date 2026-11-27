@@ -20,6 +20,7 @@ import {
 	CHOOSE_SECRET_STORE_TOOL,
 	createStoreChoiceApp,
 	STORE_CHOICE_RESOURCE_URI,
+	STORE_CHOICE_TICKET_NOTIFICATION,
 	SUBMIT_STORE_CHOICE_TOOL,
 } from "../../src/mcp-store-choice.js";
 import type {
@@ -184,6 +185,7 @@ function connect(
 		rpc,
 		elicitation,
 		reply,
+		next,
 		init: () =>
 			rpc("initialize", {
 				protocolVersion: "2025-06-18",
@@ -513,7 +515,23 @@ describe("EVAL choose_secret_store: a private owner ceremony", () => {
 			expect(shown._meta).toMatchObject({
 				"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
 			});
-			const choiceTicket = z.string().parse(shown._meta?.hoboChoiceTicket);
+			expect(JSON.stringify(shown)).not.toContain("hoboChoiceTicket");
+			const note = z
+				.object({
+					_meta: z.object({
+						hoboChoiceTicket: z.string(),
+						"ui/resourceUri": z.literal(STORE_CHOICE_RESOURCE_URI),
+					}),
+				})
+				.parse(
+					(
+						await client.next(
+							(m) => m.method === STORE_CHOICE_TICKET_NOTIFICATION,
+						)
+					).params,
+				);
+			const choiceTicket = note._meta.hoboChoiceTicket;
+			expect(JSON.stringify(shown)).not.toContain(choiceTicket);
 			const page = z
 				.object({ contents: z.array(z.object({ text: z.string() })) })
 				.parse(
@@ -524,6 +542,24 @@ describe("EVAL choose_secret_store: a private owner ceremony", () => {
 					).result,
 				);
 			expect(page.contents[0]?.text).toContain(SUBMIT_STORE_CHOICE_TOOL);
+			expect(page.contents[0]?.text).not.toContain(choiceTicket);
+
+			const guessed = toolResult.parse(
+				(
+					await client.rpc("tools/call", {
+						name: SUBMIT_STORE_CHOICE_TOOL,
+						arguments: {
+							store: "infisical",
+							INFISICAL_PROJECT_ID: PRIVATE,
+							choiceTicket: "agent-guessed",
+						},
+					})
+				).result,
+			);
+			expect(guessed.structuredContent).toMatchObject({
+				status: "secure-form-unavailable",
+			});
+			expect(client.saved).toEqual({});
 
 			const recorded = toolResult.parse(
 				(
@@ -824,12 +860,36 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		expect(shown._meta).toMatchObject({
 			"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
 		});
+		expect(JSON.stringify(shown)).not.toContain("hoboChoiceTicket");
+		const guessed = relayToolResult(
+			await client.rpc("tools/call", {
+				name: SUBMIT_STORE_CHOICE_TOOL,
+				arguments: {
+					family: "cd",
+					store: "bitwarden",
+					choiceTicket: "agent-guessed",
+				},
+			}),
+		);
+		expect(guessed.isError).toBe(true);
+		expect(client.saved.size).toBe(0);
+		const note = z
+			.object({ _meta: z.object({ hoboChoiceTicket: z.string() }) })
+			.parse(
+				(
+					await client.next(
+						(m) => m.method === STORE_CHOICE_TICKET_NOTIFICATION,
+					)
+				).params,
+			);
+		expect(JSON.stringify(shown)).not.toContain(note._meta.hoboChoiceTicket);
+		expect(html).not.toContain(note._meta.hoboChoiceTicket);
 		await client.rpc("tools/call", {
 			name: SUBMIT_STORE_CHOICE_TOOL,
 			arguments: {
 				family: "cd",
 				store: "bitwarden",
-				choiceTicket: shown._meta?.hoboChoiceTicket ?? null,
+				choiceTicket: note._meta.hoboChoiceTicket,
 			},
 		});
 		expect(Object.fromEntries(client.saved)).toEqual({

@@ -18,13 +18,14 @@ import {
 import { createMemorySecretsPort } from "@hobo/identity";
 import { CapturedSecret } from "@hobo/mcp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 import { ownerForFamily } from "../src/cli.js";
+import { isJsonObject, isJsonString, type JsonObject } from "../src/json.js";
 import {
 	INFISICAL_CLI_SESSION,
 	OWNER_HANDOFF_SPECS,
 } from "../src/mcp-owner-channel.js";
 import { composeHoboMcp } from "../src/mcp-serve.js";
+import { STORE_CHOICE_TICKET_NOTIFICATION } from "../src/mcp-store-choice.js";
 import { ownerWriteGuard } from "../src/owner-write-guard.js";
 import { supportsOwnerGuard } from "./support/owner-guard-support.js";
 
@@ -1356,7 +1357,18 @@ describe("MCP owner store session", () => {
 		try {
 			const app = mcp.session.storeChoice;
 			if (!app) throw new Error("No store picker.");
-			const support = { apps: true, formElicitation: false };
+			const tickets: string[] = [];
+			const support = {
+				apps: true,
+				formElicitation: false,
+				notify(method: string, params: JsonObject) {
+					expect(method).toBe(STORE_CHOICE_TICKET_NOTIFICATION);
+					const meta = params._meta;
+					if (!isJsonObject(meta) || !isJsonString(meta.hoboChoiceTicket))
+						return;
+					tickets.push(meta.hoboChoiceTicket);
+				},
+			};
 			const args = { family: "cd", cwd: home };
 			const older = await app.callTool(
 				"choose_secret_store",
@@ -1370,8 +1382,15 @@ describe("MCP owner store session", () => {
 				support,
 				undefined,
 			);
-			const oldTicket = z.string().parse(older._meta?.hoboChoiceTicket);
-			const newTicket = z.string().parse(newer._meta?.hoboChoiceTicket);
+			expect(JSON.stringify(older)).not.toContain("hoboChoiceTicket");
+			expect(JSON.stringify(newer)).not.toContain("hoboChoiceTicket");
+			expect(tickets).toHaveLength(2);
+			const oldTicket = tickets[0];
+			const newTicket = tickets[1];
+			if (oldTicket === undefined || newTicket === undefined)
+				throw new Error("The host did not receive both picker tickets.");
+			expect(JSON.stringify({ older, newer })).not.toContain(oldTicket);
+			expect(JSON.stringify({ older, newer })).not.toContain(newTicket);
 			const selected = await app.callTool(
 				"submit_store_choice",
 				{

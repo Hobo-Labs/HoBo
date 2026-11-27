@@ -688,6 +688,7 @@ describe("injected CD SVID issuer", () => {
 				).toBe(true);
 				const memberId = parseMemberId(id);
 				const credentialUrl = `${fixtureFleetOrigin}/v1/fleet/members/${memberId}/credentials`;
+				const signsBeforeRefresh = sign.mock.calls.length;
 				const refreshed = await first.value.cd.enrollment.refresh(
 					{
 						memberId,
@@ -713,6 +714,13 @@ describe("injected CD SVID issuer", () => {
 						refreshed.reasons.map((r) => `${r.code}: ${r.message}`).join("; "),
 					);
 				svid = refreshed.value.svid;
+				expect(sign).toHaveBeenCalled();
+				expect(sign.mock.calls.length).toBeGreaterThan(signsBeforeRefresh);
+				expect(
+					JSON.parse(
+						Buffer.from(svid.split(".")[0] ?? "", "base64url").toString(),
+					),
+				).toMatchObject({ alg: "RS256", kid: expectedKey });
 			} finally {
 				await server.close();
 			}
@@ -739,6 +747,28 @@ describe("injected CD SVID issuer", () => {
 					body: new Uint8Array(),
 				});
 				expect(verified.ok).toBe(true);
+				const segments = svid.split(".");
+				const signature = segments[2] ?? "";
+				const mid = Math.max(0, Math.floor(signature.length / 2));
+				const flip = signature[mid] === "A" ? "B" : "A";
+				const broken = `${segments[0]}.${segments[1]}.${signature.slice(0, mid)}${flip}${signature.slice(mid + 1)}`;
+				const brokenProof = await mintDpopProof(
+					agentSign.signer,
+					agentSign.publicJwk,
+					{
+						htm: "GET",
+						htu: `${origin}/v1/cd/feed`,
+						nowMs: Date.now(),
+						accessToken: broken,
+					},
+				);
+				const rejected = await restarted.value.cd.enrollment.verify({
+					method: "GET",
+					path: "/v1/cd/feed",
+					headers: { authorization: `DPoP ${broken}`, dpop: brokenProof },
+					body: new Uint8Array(),
+				});
+				expect(rejected.ok).toBe(false);
 			} finally {
 				await restarted.value.close();
 			}

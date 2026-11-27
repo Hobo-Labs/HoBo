@@ -1,5 +1,11 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-known-value-widening -- SAFETY: test fixtures brand ids they mint and read controlled JSON at the test boundary. */
+import { parseTenantId } from "@hobo/core";
 import { ApprovalMode, MemberState, parseMemberId } from "@hobo/fleet";
+import {
+	createInMemoryKms,
+	JwtSvidIssuer,
+	verifyJwtWithJwks,
+} from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 import {
 	CampConditionType,
@@ -54,6 +60,7 @@ async function setup(
 	deny: Parameters<typeof createFakeAuthorizer>[0] = [],
 	withFleet = true,
 	authenticate?: DeliveryFleet["authenticate"],
+	agentIssuer?: JwtSvidIssuer,
 ) {
 	const clock = createClock();
 	const store = createFakeStore(clock);
@@ -76,6 +83,7 @@ async function setup(
 					: fixture.fleet
 				: undefined,
 			publicOrigin: "https://station.test",
+			...(agentIssuer === undefined ? undefined : { agentIssuer }),
 		});
 	return {
 		clock,
@@ -570,5 +578,141 @@ describe("revocation", () => {
 		const replica = s.make();
 		const ok = await replica.verify(await feedRequest(a.device, a.svid));
 		expect(ok.ok).toBe(true);
+	});
+});
+
+function cdIssuer(kid: string): JwtSvidIssuer {
+	const kms = createInMemoryKms();
+	kms.generateRsaKey(kid);
+	return new JwtSvidIssuer({
+		issuerUrl: "https://station.test",
+		kms,
+		activeKeyId: kid,
+		jwksKeyIds: [kid],
+	});
+}
+
+async function refreshAccepted(
+	s: Setup,
+	memberId: ReturnType<typeof parseMemberId>,
+	device: FleetDevice,
+) {
+	const { create } = await import("@bufbuild/protobuf");
+	const { CredentialRequestSchema } = await import("@hobo/fleet");
+	return s.enrollment.refresh(
+		{
+			memberId,
+			request: create(CredentialRequestSchema, {
+				generation: 1,
+				refreshNonce: new Uint8Array(16).fill(7),
+				agentVersion: "1.0.0",
+			}),
+			dpopProof: await device.proof(
+				"POST",
+				`${FLEET_ORIGIN}/v1/fleet/members/${memberId}/credentials`,
+			),
+		},
+		ctxAt(s.clock, { kind: "agent", id: memberId }),
+	);
+}
+
+describe("CD-signed agent SVIDs", () => {
+	it("signs the refresh with the issuer, verifies it, and rejects a replaced key", async () => {
+		const issuer = cdIssuer("cd-svid-a");
+		const s = await setup(railWith(), [], true, undefined, issuer);
+		const a = await accepted(s);
+		const memberId = parseMemberId(a.id);
+		const refreshed = await refreshAccepted(s, memberId, a.device);
+		if (!refreshed.ok) throw new Error(code(refreshed));
+		const svid = refreshed.value.svid;
+		expect(
+			JSON.parse(Buffer.from(svid.split(".")[0] ?? "", "base64url").toString()),
+		).toMatchObject({ alg: "RS256", kid: "cd-svid-a" });
+		const nowS = Math.floor(s.clock.now() / 1000);
+		const verified = await verifyJwtWithJwks(svid, issuer.jwks(), {
+			issuer: "https://station.test",
+			audience: "https://station.test",
+			now: nowS,
+		});
+		expect(verified.claims).toMatchObject({
+			sub: `spiffe://yard/test/agent/${memberId}`,
+			aud: ["https://station.test"],
+			iss: "https://station.test",
+		});
+		expect(verified.claims.exp).toBe(nowS + 900);
+		expect(verified.claims.iat).toBe(nowS);
+		const proof = await a.device.proof("GET", FEED_URL, svid);
+		expect(
+			(await s.enrollment.verify(await feedRequest(a.device, svid, proof))).ok,
+		).toBe(true);
+		expect(
+			code(await s.enrollment.verify(await feedRequest(a.device, svid, proof))),
+		).toBe("dpop-replayed");
+		const thief = await s.fixture.device();
+		expect((await s.enrollment.verify(await feedRequest(thief, svid))).ok).toBe(
+			false,
+		);
+		const replacement = createAgentEnrollment({
+			store: s.store,
+			tenant: TENANT,
+			now: s.clock.now,
+			authorizer: s.authorizer,
+			rails: createFakeRails(railWith()),
+			inventory: s.inventory,
+			telemetry: s.telemetry,
+			fleet: s.fixture.fleet,
+			publicOrigin: "https://station.test",
+			agentIssuer: cdIssuer("cd-svid-b"),
+		});
+		expect(
+			(
+				await replacement.verify(
+					await feedRequest(
+						a.device,
+						svid,
+						await a.device.proof("GET", FEED_URL, svid),
+					),
+				)
+			).ok,
+		).toBe(false);
+	});
+
+	it("refuses to issue an SVID when the fleet tenant is not a SPIFFE segment", async () => {
+		const s = await setup();
+		const a = await accepted(s);
+		const memberId = parseMemberId(a.id);
+		const broken = createAgentEnrollment({
+			store: s.store,
+			tenant: TENANT,
+			now: s.clock.now,
+			authorizer: s.authorizer,
+			rails: createFakeRails(railWith()),
+			inventory: s.inventory,
+			telemetry: s.telemetry,
+			fleet: { ...s.fixture.fleet, tenant: parseTenantId("bad/tenant") },
+			publicOrigin: "https://station.test",
+			agentIssuer: cdIssuer("cd-svid-a"),
+		});
+		const { create } = await import("@bufbuild/protobuf");
+		const { CredentialRequestSchema } = await import("@hobo/fleet");
+		expect(
+			code(
+				await broken.refresh(
+					{
+						memberId,
+						request: create(CredentialRequestSchema, {
+							generation: 1,
+							refreshNonce: new Uint8Array(16).fill(7),
+							agentVersion: "1.0.0",
+						}),
+						dpopProof: await a.device.proof(
+							"POST",
+							`${FLEET_ORIGIN}/v1/fleet/members/${memberId}/credentials`,
+						),
+					},
+					ctxAt(s.clock, { kind: "agent", id: memberId }),
+				),
+			),
+		).toBe("svid-invalid");
 	});
 });

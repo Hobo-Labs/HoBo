@@ -116,6 +116,7 @@ export interface McpStdioSession {
 	storeSupport: StoreChoiceSupport;
 	/** Send a request to the client (set by the transport: elicitation). */
 	request?: ClientRequest;
+	notify?: (method: string, params: JsonObject) => void;
 }
 
 export function createMcpStdioSession(
@@ -480,7 +481,9 @@ export async function handleMcpMessage(
 				const outcome = await session.storeChoice.callTool(
 					params.name,
 					isJsonObject(params.arguments) ? params.arguments : {},
-					session.storeSupport,
+					session.notify === undefined
+						? session.storeSupport
+						: { ...session.storeSupport, notify: session.notify },
 					session.request,
 				);
 				return { jsonrpc: "2.0", id, result: outcome };
@@ -704,7 +707,10 @@ export async function serveMcpStdio(options: {
 	const asking = new AsyncLocalStorage<Set<string>>();
 	const askedFor = new Map<string, Set<string>>();
 	let next = 0;
-	if (options.session !== undefined)
+	if (options.session !== undefined) {
+		options.session.notify = (method, params) => {
+			write({ jsonrpc: "2.0", method, params });
+		};
 		options.session.request = (method, params) => {
 			next += 1;
 			const id = `hobo-${next}`;
@@ -733,6 +739,7 @@ export async function serveMcpStdio(options: {
 			write({ jsonrpc: "2.0", id, method, params });
 			return answer;
 		};
+	}
 	/** The client cancelled one of its requests: withdraw what it asked for. */
 	const cancelled = (requestId: string) => {
 		for (const id of askedFor.get(requestId) ?? []) {

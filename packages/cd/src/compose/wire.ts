@@ -506,6 +506,9 @@ export function wireContinuousDelivery(
 		...(input.publicOrigin === undefined
 			? undefined
 			: { publicOrigin: input.publicOrigin }),
+		...(input.agentIssuer === undefined
+			? undefined
+			: { agentIssuer: input.agentIssuer }),
 	});
 	const feed = f.createDeliveryFeedHandler({
 		...base,

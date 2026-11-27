@@ -161,6 +161,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SETUP_ERROR`](#hobo_ci_setup_error) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_STORE_CHOICE`](#hobo_ci_store_choice) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_NEEDS_SIGN_IN`](#hobo_ci_store_needs_sign_in) | `packages/hobo-ci/src/prepare.ts` |
+| [`HOBO_CI_STORE_OPERATION_UNCERTAIN`](#hobo_ci_store_operation_uncertain) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_UNAVAILABLE`](#hobo_ci_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_UP_NO_BRANCH`](#hobo_ci_up_no_branch) | `packages/hobo/src/ci-up-relay.ts` |
@@ -2068,6 +2069,20 @@ A handed-off run shows no sign-in page: {owner.id} must open without one.
 What to do:
 
 - Choose the store and give its non-secret ids when the run asks; they are kept in your own HoBo settings.
+
+### HOBO_CI_STORE_OPERATION_UNCERTAIN
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+A store operation may have completed and needs reconciliation before retrying.
+```
+
+What to do:
+
+- Reconcile the store operation before trying setup again.
 
 ### HOBO_CI_STORE_UNAVAILABLE
 

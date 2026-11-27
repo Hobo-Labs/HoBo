@@ -13,9 +13,11 @@ identity: the single-use `hft_` bootstrap token, the identity and SIGN keys,
 the key bundle, the member SVID, DPoP proofs and their replay store, and
 revocation. This module keeps what is delivery policy: the Camp-set scope of a
 token, the two grants with Rail rules, governance through the delivery
-authorizer, and the accepted Camps. It defines no JOSE or DPoP code of its own
-(O23); proofs are minted with `@hobo/fleet/keys` `mintDpopProof` and verified
-by the fleet's `authenticate`.
+authorizer, and the accepted Camps. Proofs are minted with `@hobo/fleet/keys`
+`mintDpopProof`. When `agentIssuer` is set, refreshed member SVIDs are signed
+by that issuer and `verify` checks them with its JWKS before the fleet proof
+and the enrollment record; otherwise the fleet's `authenticate` verifies the
+fleet-issued SVID.
 
 ## Lifecycle
 

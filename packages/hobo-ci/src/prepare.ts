@@ -43,6 +43,7 @@ import {
 	storeIdOf,
 	storeSignInGuidance,
 } from "./owner-store.js";
+import { OwnerStoreOperationUncertainError } from "./owner-store-errors.js";
 import { APP_HANDOFF_PAGE, createAppRemotely } from "./remote-app.js";
 
 /** Where the owner finds each CI setting a remote run asks for. */
@@ -251,8 +252,14 @@ export async function prepareGithubConnection(
 		});
 		try {
 			ownerLocator(deps).assertCurrent?.();
-		} catch {
+		} catch (error) {
 			handoff.clear();
+			if (error instanceof OwnerStoreOperationUncertainError)
+				return refused(
+					"HOBO_CI_STORE_OPERATION_UNCERTAIN",
+					"A store operation may have completed and needs reconciliation before retrying.",
+					["Reconcile the store operation before trying setup again."],
+				);
 			return refused(
 				"HOBO_CI_OWNER_CHOICE_CHANGED",
 				"The owner changed the selected store while this operation was running.",

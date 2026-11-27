@@ -27,6 +27,7 @@ import type {
 	MemberId,
 	RegistryView,
 } from "@hobo/fleet";
+import type { JwtSvidIssuer } from "@hobo/identity";
 import type {
 	ArtifactKind,
 	ArtifactRef,
@@ -1393,6 +1394,7 @@ export interface CdFactories {
 			readonly inventory: CampInventory;
 			readonly fleet?: DeliveryFleet | undefined;
 			readonly publicOrigin?: string;
+			readonly agentIssuer?: JwtSvidIssuer;
 		},
 	): AgentEnrollment;
 	/** "./agent" (WP11) */

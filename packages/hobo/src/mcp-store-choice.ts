@@ -51,6 +51,8 @@ export const SUBMIT_STORE_CHOICE_TOOL = "submit_store_choice";
 export const SUBMIT_OWNER_PAGE_TOOL = "submit_owner_page";
 // public-contract: the MCP App resource of the store picker.
 export const STORE_CHOICE_RESOURCE_URI = "ui://hobo/store-choice";
+export const STORE_CHOICE_TICKET_NOTIFICATION =
+	"notifications/hobo/store-choice";
 const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 const MCP_APPS_EXTENSION_ID = "io.modelcontextprotocol/ui";
 
@@ -65,6 +67,7 @@ export const STORE_CHOICE_TOOL_NAMES: readonly string[] = Object.freeze([
 export type StoreChoiceSupport = Readonly<{
 	formElicitation: boolean;
 	apps: boolean;
+	notify?: (method: string, params: JsonObject) => void;
 }>;
 
 export const NO_STORE_CHOICE_SUPPORT: StoreChoiceSupport = Object.freeze({
@@ -921,6 +924,12 @@ export function createStoreChoiceApp(
 					tickets.delete(tickets.keys().next().value ?? "");
 				const id = randomUUID();
 				tickets.set(id, ticket);
+				support.notify?.(STORE_CHOICE_TICKET_NOTIFICATION, {
+					_meta: {
+						"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+						hoboChoiceTicket: id,
+					},
+				});
 				return {
 					...result(
 						"HoBo's store picker is shown to the owner. Their answer goes to HoBo only; it connects the store when they submit it.",
@@ -928,7 +937,6 @@ export function createStoreChoiceApp(
 					),
 					_meta: {
 						"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
-						hoboChoiceTicket: id,
 					},
 				};
 			}

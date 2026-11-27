@@ -24,6 +24,7 @@ import {
 	githubAppConnected,
 	loadGithubAppCredentials,
 	type OpenedSecretStore,
+	OwnerStoreOperationUncertainError,
 	prepareGithubConnection,
 	resolveGithubAppExpectation,
 	resolveGithubAppHost,
@@ -1131,6 +1132,56 @@ describe("prepareGithubConnection", () => {
 		expect(errorShown).toMatch(/no user or organization/);
 		expect(outcome).toMatchObject({ kind: "refused" });
 		expect((await store.port.access("HOBO_CI_SETTINGS")).status).not.toBe("ok");
+	});
+
+	it("reports a started store operation as uncertain rather than a changed owner choice", async () => {
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: {
+				HOBO_CI_GITHUB_OWNER_TYPE: "Organization",
+				HOBO_CI_GITHUB_OWNER: "not a login",
+			},
+			locator: {
+				...memorySettings(),
+				assertCurrent() {
+					throw new OwnerStoreOperationUncertainError();
+				},
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: {
+				code: "HOBO_CI_STORE_OPERATION_UNCERTAIN",
+				message:
+					"A store operation may have completed and needs reconciliation before retrying.",
+				remediation: [
+					"Reconcile the store operation before trying setup again.",
+				],
+			},
+		});
+	});
+
+	it("reports a changed owner choice when the selected store moved", async () => {
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: {
+				HOBO_CI_GITHUB_OWNER_TYPE: "Organization",
+				HOBO_CI_GITHUB_OWNER: "not a login",
+			},
+			locator: {
+				...memorySettings(),
+				assertCurrent() {
+					throw new Error("selection moved");
+				},
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: {
+				code: "HOBO_CI_OWNER_CHOICE_CHANGED",
+				message:
+					"The owner changed the selected store while this operation was running.",
+				remediation: ["Run hobo ci up again for the selected store."],
+			},
+		});
 	});
 });
 
