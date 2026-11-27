@@ -8,6 +8,10 @@ Parse, don't validate: `BetterAuthConfig`, `BetterAuthSecretRef`, and
 `AuthAdapterDescriptor` are **parsed derived types** minted only at the config
 and locator boundaries.
 
+The database profile must be a registered standard capability that refines
+`data.relational/v1`; unknown and non-relational profiles are refused. The CUE
+replay schemas are checked against that same catalog in tests.
+
 ## Commands, events, and durability
 
 Stated explicitly rather than left silent: this package is a **parse boundary**

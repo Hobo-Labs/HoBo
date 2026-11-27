@@ -10,6 +10,10 @@ const workflow = readFileSync(
 	join(root, ".github/workflows/hobo-ci.yml"),
 	"utf8",
 );
+const pricingWorkflow = readFileSync(
+	join(root, ".github/workflows/pricing-ci.yml"),
+	"utf8",
+);
 const action = readFileSync(
 	join(root, ".github/actions/hobo-repo-checkout/action.yml"),
 	"utf8",
@@ -37,6 +41,23 @@ describe("hobo-repo-checkout wiring", () => {
 		expect(block).toContain('bootstrap-composite-actions: "false"');
 		expect(block).toContain("marker: scripts/ci/ci-trace.mts");
 		expect(block).toContain("submodules: recursive");
+	});
+
+	it("the pricing gate verifies the preflight script before running it", () => {
+		const block = pricingWorkflow.slice(
+			pricingWorkflow.indexOf("\n  pricing-gate:"),
+			pricingWorkflow.indexOf("\n  pricing-models:"),
+		);
+		expect(block).toContain("uses: $/.github/actions/hobo-repo-checkout");
+		expect(block).toContain("scripts/ci-runner-preflight.mts");
+		const miseLock = readFileSync(join(root, "mise.lock"), "utf8");
+		const sidecar = miseLock.match(/aube = \{ path = "([^"]+)"/)?.[1];
+		expect(sidecar).toBeTruthy();
+		expect(block).toContain(`${sidecar}/aube-lock.yaml`);
+		expect(block).toContain(`${sidecar}/package.json`);
+		expect(block.indexOf("hobo-repo-checkout")).toBeLessThan(
+			block.indexOf("uses: $/.github/actions/ci-runner-preflight"),
+		);
 	});
 
 	it("disables a prior sparse cone before remote checkout attempts", () => {
@@ -90,32 +111,60 @@ describe("hobo-repo-checkout wiring", () => {
 		).toHaveLength(6);
 		expect(action).toContain("sleep 8");
 	});
+
+	it("retries an apparently successful checkout when its marker is missing", () => {
+		const work = mkdtempSync(join(tmpdir(), "hobo-checkout-marker-"));
+		const verifier = join(
+			root,
+			".github/actions/hobo-repo-checkout/verify-marker.sh",
+		);
+		try {
+			const verify = (marker: string) =>
+				spawnSync("bash", [verifier], {
+					cwd: work,
+					env: { ...process.env, CHECKOUT_MARKER: marker },
+					encoding: "utf8",
+				});
+			expect(verify("").status).toBe(0);
+			expect(verify("required.mts").status).not.toBe(0);
+			writeFileSync(join(work, "required.mts"), "export {};\n");
+			expect(verify("required.mts").status).toBe(0);
+			expect(verify("required.mts\nsecond file").status).not.toBe(0);
+			writeFileSync(join(work, "second file"), "present\n");
+			expect(verify("required.mts\nsecond file\n").status).toBe(0);
+
+			for (const attempt of [1, 2]) {
+				expect(action).toContain(`id: verify${attempt}`);
+				expect(action).toContain(
+					`steps.remote${attempt}.outcome != 'success' || steps.verify${attempt}.outcome != 'success'`,
+				);
+			}
+			expect(action).toContain("id: verify3");
+			expect(action).toContain('steps.verify3.outcome }}" = "success"');
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
+	});
+
+	it("allows remote fallback after a failed mirror checkout", () => {
+		const mirrorStep = action.slice(
+			action.indexOf("name: Checkout from bare mirror"),
+			action.indexOf(
+				"name: Disable box git mirror after mirror checkout failure",
+			),
+		);
+		expect(mirrorStep).toContain("continue-on-error: true");
+	});
+
 	it.each([
-		1, 2,
-	])("checks the marker after remote attempt %i before retrying", (attempt) => {
+		1, 2, 3,
+	])("checks the marker after remote attempt %i before proceeding", (attempt) => {
 		const block = action
 			.split(`    - name: Verify remote checkout (attempt ${attempt})\n`)[1]
 			?.split("\n    - name: ")[0];
-		const markerCheck = block?.split("      run: |\n")[1];
-		if (!markerCheck) throw new Error("marker check is absent");
-		const script = markerCheck
-			.split("\n")
-			.map((line) => line.replace(/^        /, ""))
-			.join("\n");
-		const directory = mkdtempSync(join(tmpdir(), "hobo-checkout-marker-"));
-		try {
-			const run = (marker: string) =>
-				spawnSync("/bin/bash", ["-e", "-o", "pipefail", "-c", script], {
-					cwd: directory,
-					env: { CHECKOUT_MARKER: marker },
-					encoding: "utf8",
-				});
-			expect(run("").status).toBe(0);
-			expect(run("marker").status).toBe(1);
-			writeFileSync(join(directory, "marker"), "ok");
-			expect(run("marker").status).toBe(0);
-		} finally {
-			rmSync(directory, { recursive: true, force: true });
-		}
+		expect(block).toContain(`id: verify${attempt}`);
+		expect(block).toContain(
+			'run: bash "${GITHUB_ACTION_PATH}/verify-marker.sh"',
+		);
 	});
 });
