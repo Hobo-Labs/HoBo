@@ -294,7 +294,10 @@ describe("draft pull request CI policy", () => {
 			),
 			true,
 		);
-		const quarantine = jobBlockFromText(text, "hello-bindle-fixture-quarantine");
+		const quarantine = jobBlockFromText(
+			text,
+			"hello-bindle-fixture-quarantine",
+		);
 		assert.equal(
 			jobLevelIfHasRequiredDraftGate(
 				"examples-e2e.yml",
