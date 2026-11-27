@@ -49,6 +49,9 @@ importers:
       '@hobo/cloud':
         specifier: workspace:*
         version: link:packages/cloud
+      '@jridgewell/sourcemap-codec':
+        specifier: 1.5.5
+        version: 1.5.5
       '@oxlint/plugins':
         specifier: 1.79.0
         version: 1.79.0

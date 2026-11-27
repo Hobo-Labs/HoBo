@@ -6,10 +6,12 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleCliDeclarations } from "./bundle-cli-declarations.mts";
 import { bundleCliSdk, prepareCliSdkManifest } from "./bundle-cli-sdk.mts";
+import { loadNpmScopeMap } from "./npm-publish-scope.mts";
+import { rewriteStagedSdkDirectory } from "./rewrite-sdk-specifiers.mts";
 
 const workspacePackages = [
 	"backend-routing",
@@ -39,6 +41,28 @@ const licenseHash =
 const portable = (path: string) => path.replaceAll("\\", "/");
 const hash = (file: string) =>
 	createHash("sha256").update(readFileSync(file)).digest("hex");
+
+export function rewriteCliSdkOutputs(
+	staging: string,
+	outputs: Record<string, string>,
+	packages: Readonly<Record<string, string>>,
+): void {
+	const base = realpathSync(staging);
+	const paths = Object.keys(outputs);
+	for (const path of paths) {
+		if (
+			!path.startsWith("dist/") ||
+			path.includes("\\") ||
+			path.split("/").some((part) => !part || part === "." || part === "..")
+		)
+			throw new Error("unsafe CLI bundle output path");
+		const file = realpathSync(join(base, path));
+		if (!file.startsWith(`${base}${sep}`) || hash(file) !== outputs[path])
+			throw new Error(`CLI bundle output changed before rewrite: ${path}`);
+	}
+	rewriteStagedSdkDirectory(join(base, "dist"), packages);
+	for (const path of paths) outputs[path] = hash(join(base, path));
+}
 
 function declarationFiles(dir: string): string[] {
 	return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -125,6 +149,7 @@ export async function runCliSdkBundle(
 	provenance.outputs["dist/index.d.ts"] = hash(
 		join(staging, "dist/index.d.ts"),
 	);
+	rewriteCliSdkOutputs(staging, provenance.outputs, loadNpmScopeMap().packages);
 	writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
 }
 

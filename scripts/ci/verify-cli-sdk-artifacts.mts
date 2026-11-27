@@ -631,7 +631,7 @@ export async function verifyCliSdkArtifacts(
 					"const rootToSub: typeof subParse = rootParse; const subToRoot: typeof rootParse = subParse;",
 					"const rootVerbsToSub: typeof subVerbs = rootVerbs; const subVerbsToRoot: typeof rootVerbs = subVerbs;",
 					"void [rootToSub, subToRoot, rootVerbsToSub, subVerbsToRoot];",
-					'import type { ComponentHostPort, Streamer, ParsedComponentDescriptor, ProviderDescriptor, LinkRequest, HttpRequest } from "@hobo/core";',
+					'import type { ComponentHostPort, Streamer, ParsedComponentDescriptor, ProviderDescriptor, LinkRequest, HttpRequest } from "@hobo-labs/core";',
 					"declare const host: ComponentHostPort; declare const streamer: Streamer;",
 					"declare const component: ParsedComponentDescriptor; declare const providers: readonly ProviderDescriptor[];",
 					"declare const links: readonly LinkRequest[]; declare const probe: HttpRequest;",

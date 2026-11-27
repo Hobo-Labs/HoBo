@@ -12,6 +12,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, join, resolve } from "node:path";
 import {
 	isArray,
@@ -21,19 +22,15 @@ import {
 } from "../lib/pins-json.ts";
 import { releaseSemverFromEnv } from "../lib/release-version.mts";
 import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
-import { prepareCliSdkManifest } from "./bundle-cli-sdk.mts";
 import {
 	bundleSqliteSdk,
 	prepareSqliteSdkManifest,
 } from "./bundle-sqlite-sdk.mts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
 import { SDK_PACKAGES } from "./sdk-package-list.mts";
-import {
-	prepareRuntimeGroundingManifest,
-	vendorRuntimeGrounding,
-} from "./vendor-runtime-grounding.mts";
 
 const root = join(import.meta.dirname, "..", "..");
+const require = createRequire(import.meta.url);
 
 export { SDK_PACKAGES };
 
@@ -127,26 +124,56 @@ export function prepareSdkPackageManifest(
 	map: ReturnType<typeof loadNpmScopeMap>,
 	version: string,
 ) {
-	const prepared =
-		manifest.name === "@hobo/runtime"
-			? prepareRuntimeGroundingManifest(
-					manifest,
-					JSON.parse(
-						readFileSync(
-							join(
-								root,
-								"external/ts-autocode/packages/grounding/package.json",
-							),
-							"utf8",
-						),
-					),
-				)
-			: manifest.name === "@hobo/cli"
-				? prepareCliSdkManifest(manifest, root)
-				: prepareSqliteSdkManifest(manifest, root);
-	return applyScopeToManifest({ ...prepared, name: manifest.name }, map, {
-		version,
-	});
+	let prepared: Omit<WorkspaceManifest, "name"> & { name?: string } = manifest;
+	if (manifest.name === "@hobo/runtime") {
+		// SAFETY: package preparation runs after dependencies are installed.
+		const { prepareRuntimeGroundingManifest } =
+			require("./vendor-runtime-grounding.mts") as typeof import("./vendor-runtime-grounding.mts");
+		prepared = prepareRuntimeGroundingManifest(
+			manifest,
+			JSON.parse(
+				readFileSync(
+					join(root, "external/ts-autocode/packages/grounding/package.json"),
+					"utf8",
+				),
+			),
+		);
+	} else if (manifest.name === "@hobo/cli") {
+		// SAFETY: package preparation runs after dependencies are installed.
+		const { prepareCliSdkManifest } =
+			require("./bundle-cli-sdk.mts") as typeof import("./bundle-cli-sdk.mts");
+		prepared = prepareCliSdkManifest(manifest, root);
+	} else {
+		prepared = prepareSqliteSdkManifest(manifest, root);
+	}
+	const staged = applyScopeToManifest(
+		{ ...prepared, name: manifest.name },
+		map,
+		{
+			version,
+		},
+	);
+	for (const field of [
+		"dependencies",
+		"devDependencies",
+		"peerDependencies",
+		"optionalDependencies",
+	] as const) {
+		const deps = staged[field];
+		if (!deps) continue;
+		for (const [name, range] of Object.entries(deps)) {
+			const published = map.packages[name];
+			if (!published) continue;
+			const prefix = `npm:${published}@`;
+			if (!range.startsWith(prefix)) continue;
+			const publicRange = range.slice(prefix.length);
+			if (deps[published] !== undefined && deps[published] !== publicRange)
+				throw new Error(`conflicting public SDK dependency ${published}`);
+			deps[published] = publicRange;
+			delete deps[name];
+		}
+	}
+	return staged;
 }
 
 export function runCliSdkBundleSync(root: string, staging: string): void {
@@ -208,12 +235,28 @@ function stageOnePackage(
 		bundleSqliteSdk(pkgStaging, pkgDir, root);
 	}
 	if (workspaceName === "@hobo/runtime") {
+		// SAFETY: package staging runs after dependencies are installed.
+		const { vendorRuntimeGrounding } =
+			require("./vendor-runtime-grounding.mts") as typeof import("./vendor-runtime-grounding.mts");
 		vendorRuntimeGrounding({
 			runtimeDir: pkgStaging,
 			groundingDir: join(root, "external/ts-autocode/packages/grounding"),
 			licenseFile: join(root, "external/ts-autocode/LICENSE"),
 		});
 	}
+	// SAFETY: staging runs after dependency installation; checkout bootstrap imports do not load the transformer.
+	const { rewriteStagedSdkDirectory } =
+		require("./rewrite-sdk-specifiers.mts") as typeof import("./rewrite-sdk-specifiers.mts");
+	const scope = loadNpmScopeMap();
+	const packages = Object.fromEntries(
+		SDK_PACKAGES.map((name) => {
+			const published = scope.packages[name];
+			if (!published)
+				throw new Error(`npm-scope-map: no public name for ${name}`);
+			return [name, published];
+		}),
+	);
+	rewriteStagedSdkDirectory(join(pkgStaging, "dist"), packages);
 	writeFileSync(
 		join(pkgStaging, "package.json"),
 		`${JSON.stringify(staged, null, "\t")}\n`,

@@ -1,12 +1,48 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "vitest";
-import { resetCliSdkDist, runCliSdkBundle } from "../ci/run-cli-sdk-bundle.mts";
+import {
+	resetCliSdkDist,
+	rewriteCliSdkOutputs,
+	runCliSdkBundle,
+} from "../ci/run-cli-sdk-bundle.mts";
 
 const root = join(import.meta.dirname, "../..");
+
+it("rewrites CLI imports and records the exact transformed output", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "hobo-cli-scope-provenance-"));
+	try {
+		await mkdir(join(dir, "dist"));
+		const file = join(dir, "dist/index.js");
+		const source = 'import "@hobo/core";\n';
+		await writeFile(file, source);
+		const outputs = {
+			"dist/index.js": createHash("sha256").update(source).digest("hex"),
+		};
+		rewriteCliSdkOutputs(dir, outputs, { "@hobo/core": "@hobo-labs/core" });
+		const result = await readFile(file, "utf8");
+		assert.match(result, /@hobo-labs\/core/);
+		assert.equal(
+			outputs["dist/index.js"],
+			createHash("sha256").update(result).digest("hex"),
+		);
+		await writeFile(file, "tampered");
+		assert.throws(
+			() => rewriteCliSdkOutputs(dir, outputs, {}),
+			/changed before rewrite/,
+		);
+		assert.throws(
+			() => rewriteCliSdkOutputs(dir, { "dist/../escape": "" }, {}),
+			/unsafe CLI bundle output path/,
+		);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
 
 it("refuses an unreviewed declaration package license before producing a bundle", async () => {
 	const temp = await mkdtemp(join(tmpdir(), "hobo-cli-declaration-license-"));
