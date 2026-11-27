@@ -1970,6 +1970,12 @@ jobs:
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
+      - name: Verify the Pages candidate is still deployed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node --no-warnings scripts/ci/check-release-pages-stale.mts
+          --head "$HOBO_RELEASE_CHECKOUT_REF" --require-deployed-head
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install

@@ -74,6 +74,9 @@ When `scripts/ci/attested-jobs.json` changes, bump `SHADOW_PLAN_BLOB` in
 Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
+While holding the Pages publish slot, the stable job verifies that `gh-pages`
+still names its exact candidate source before promotion. A superseded or
+unverifiable source fails the job so it cannot report a stale promotion as passed.
 
 Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
 (including `src` for the gh-pages deps checkout-key path and `examples` for
