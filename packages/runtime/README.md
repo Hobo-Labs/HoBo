@@ -678,7 +678,8 @@ After an owner has independently confirmed a durable external dead-letter export
 it can call `confirmExhaustedExport({ operation, messageId, expectedRevision,
 exportReceipt })` with the inspection revision and a bounded destination receipt.
 The queue records that receipt and marks the exhausted message completed using a
-conditional write. It does not send or verify the external export: the trusted
+conditional write and verifies the historical revision when replaying the log.
+It does not send or verify the external export: the trusted
 host must authenticate the receipt, ensure destination durability and idempotency,
 and reconcile unknown sink and queue outcomes. A stale inspection or uncertain
 queue write returns `unknown` with the same operation ID. Retry the same request
