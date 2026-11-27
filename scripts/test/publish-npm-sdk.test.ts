@@ -1,21 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+	NPM_OIDC_REF,
 	type NpmReleaseProvenance,
-	npmPublishCliPrefix,
-	PINNED_NPM_CLI,
+	npmWorkflowCredentials,
 	publishNpmSdkArtifacts,
 	SIGSTORE_BUNDLE_MEDIA_TYPE,
 } from "../ci/publish-npm-sdk.mts";
 
-describe("npm CLI pinning (publisher whoami check only)", () => {
-	it("pins npm 11.21.1 via npx", () => {
-		expect(npmPublishCliPrefix()).toEqual(["npx", "-y", PINNED_NPM_CLI]);
-		expect(PINNED_NPM_CLI).toBe("npm@11.21.1");
-	});
-});
-
 describe("release-hobo release-npm hosted runner contract", () => {
-	it("signs and publishes on ubuntu-24.04 with the job's OIDC identity and the npm token", async () => {
+	it("signs and publishes on ubuntu-24.04 with the job's OIDC identity", async () => {
 		const { readFileSync } = await import("node:fs");
 		const { join } = await import("node:path");
 		const root = join(import.meta.dirname, "..", "..");
@@ -36,7 +29,7 @@ describe("release-hobo release-npm hosted runner contract", () => {
 		expect(block).toMatch(/environment:\s*release/u);
 		// Keyless Sigstore signing needs the job's GitHub OIDC token.
 		expect(block).toMatch(/id-token:\s*write/u);
-		expect(block).toMatch(/NPM_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/u);
+		expect(block).not.toMatch(/secrets\.NPM_TOKEN/u);
 		expect(block).not.toMatch(/ci-runner-preflight/u);
 		expect(block).toMatch(/jdx\/mise-action@/u);
 	});
@@ -75,7 +68,7 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 	});
 	const base = {
 		stagingDir: "/tmp/x",
-		credentials: ownerNpm("npm_fixtureToken"),
+		credentials: ownerNpm("eyJ.a.b"),
 		releaseRef: "v0.0.0-alpha.9",
 		freightHome: "/tmp/cd",
 	};
@@ -97,7 +90,6 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 					stage: () => staged,
 					tarballs: () => ["/tmp/x/core.tgz"],
 					sign: fakeSigner(signed),
-					whoami: () => {},
 					qualify: async () => qualified,
 				},
 			),
@@ -105,46 +97,14 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 		expect(signed).toEqual([]);
 	});
 
-	it("refuses without the owner store's npm token: a scoped name cannot use npm's OIDC exchange, and there is no other publisher", async () => {
-		const deps = {
-			stage: () => staged,
-			whoami: () => {},
-			qualify: async () => qualified,
-		};
-		const asked: string[] = [];
-		await expect(
-			publishNpmSdkArtifacts(
-				{ ...base, credentials: ownerNpm(" ", asked) },
-				deps,
-			),
-		).rejects.toThrow(/owner:\/\/NPM_TOKEN.*choose_secret_store/);
-		expect(asked).toEqual(["owner://NPM_TOKEN"]);
-		await expect(
-			publishNpmSdkArtifacts(
-				{
-					stagingDir: base.stagingDir,
-					releaseRef: base.releaseRef,
-					freightHome: base.freightHome,
-				},
-				deps,
-			),
-		).rejects.toThrow(/never reads from the environment/);
-	});
-
-	it("checks the publisher before anything is signed or recorded", async () => {
+	it("refuses a missing or invalid workload identity before signing", async () => {
 		const signed: string[] = [];
 		await expect(
-			publishNpmSdkArtifacts(base, {
-				stage: () => staged,
-				tarballs: () => ["/tmp/x/core.tgz"],
-				read: () => new Uint8Array([1]),
-				sign: fakeSigner(signed),
-				whoami: () => {
-					throw new Error("npm publisher must be hobodev, got someone");
-				},
-				qualify: async () => qualified,
-			}),
-		).rejects.toThrow(/hobodev/);
+			publishNpmSdkArtifacts(
+				{ ...base, credentials: ownerNpm(" ") },
+				{ stage: () => staged, sign: fakeSigner(signed) },
+			),
+		).rejects.toThrow(/OIDC identity is invalid/);
 		expect(signed).toEqual([]);
 	});
 
@@ -155,7 +115,6 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 				tarballs: () => ["/tmp/x/core.tgz"],
 				read: () => new Uint8Array([1]),
 				sign: fakeSigner([]),
-				whoami: () => {},
 				qualify: async () => ({
 					freightId: "sha256:x",
 					verdict: {
@@ -182,7 +141,6 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 			tarballs: () => ["/tmp/x/core.tgz"],
 			read: () => new Uint8Array([1, 2, 3]),
 			sign: fakeSigner(signed),
-			whoami: () => {},
 			qualify: async (given) => {
 				input = given;
 				return qualified;
@@ -213,5 +171,76 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 		expect(new TextDecoder().decode(input?.stored?.[1]?.bytes)).toBe(
 			'{"bundle":"@hobo-labs/core"}',
 		);
+	});
+});
+
+describe("npm workflow workload identity", () => {
+	it("requests an npm-audience ID token only for its candidate camp", async () => {
+		const seen: string[] = [];
+		const credentials = npmWorkflowCredentials(
+			{
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://pipelines.actions.githubusercontent.com/token?request=1",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-token",
+			},
+			async (input, init) => {
+				seen.push(String(input));
+				expect(new Headers(init?.headers).get("authorization")).toBe(
+					"bearer request-token",
+				);
+				expect(init?.redirect).toBe("error");
+				return Response.json({ value: "eyJ.a.b" });
+			},
+		);
+		expect(
+			await credentials.resolve(
+				NPM_OIDC_REF,
+				"cd-realize:hobo-release/npm-candidate",
+			),
+		).toEqual({ token: "eyJ.a.b" });
+		expect(new URL(seen[0] ?? "").searchParams.get("audience")).toBe(
+			"npm:registry.npmjs.org",
+		);
+		await expect(
+			credentials.resolve(NPM_OIDC_REF, "cd-realize:other"),
+		).rejects.toThrow(/not authorized/);
+		expect(seen).toHaveLength(1);
+	});
+
+	it("never sends the GitHub request token to an untrusted host", async () => {
+		let called = false;
+		const credentials = npmWorkflowCredentials(
+			{
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://actions.githubusercontent.com.attacker.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-token",
+			},
+			async () => {
+				called = true;
+				return Response.json({});
+			},
+		);
+		await expect(
+			credentials.resolve(NPM_OIDC_REF, "npm.publish"),
+		).rejects.toThrow(/unavailable/);
+		expect(called).toBe(false);
+	});
+	it("fails closed without disclosing a rejected or malformed identity response", async () => {
+		for (const response of [
+			new Response("sensitive-response", { status: 401 }),
+			new Response("sensitive-response", { status: 200 }),
+		]) {
+			const credentials = npmWorkflowCredentials(
+				{
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://pipelines.actions.githubusercontent.com/token",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-token",
+				},
+				async () => response,
+			);
+			await expect(
+				credentials.resolve(NPM_OIDC_REF, "npm.publish"),
+			).rejects.toThrow(/GitHub Actions OIDC/);
+		}
 	});
 });

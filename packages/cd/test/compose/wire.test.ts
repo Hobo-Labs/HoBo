@@ -88,6 +88,27 @@ describe("wireContinuousDelivery", () => {
 		}
 	});
 
+	it("routes verification HTTP separately while retaining provider HTTP", () => {
+		const providerHttp: CdComposeInput["http"] = async () => ({
+			status: 200,
+			headers: {},
+			body: "provider",
+		});
+		const verificationHttp: CdComposeInput["http"] = async () => ({
+			status: 404,
+			headers: {},
+			body: "probe",
+		});
+		wireContinuousDelivery(
+			input(log, calls, { http: providerHttp, verificationHttp }),
+		);
+		expect(argsOf(calls, "createHealthSources").http).toBe(verificationHttp);
+		expect(argsOf(calls, "createVerificationEngine").http).toBe(
+			verificationHttp,
+		);
+		expect(argsOf(calls, "createArtifactVerifier").http).toBe(providerHttp);
+	});
+
 	it("exposes every ContinuousDelivery member on the facade", () => {
 		const cd = wireContinuousDelivery(input(log, calls));
 		for (const key of [

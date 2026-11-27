@@ -1,0 +1,26 @@
+{
+	"consumer": { "name": "HoboAuthAuthoring" },
+	"provider": { "name": "HoboAuthAdapterContract" },
+	"interactions": [
+		{
+			"description": "parseBetterAuthConfig accepts a brokered locator-only config",
+			"request": {
+				"method": "invoke",
+				"path": "parseBetterAuthConfig",
+				"body": {
+					"basePath": "/api/auth",
+					"secretRef": "hobo-secret://camp-prod/auth/better-auth-signing-key",
+					"database": { "profile": "data.relational/v1" }
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"contract": "hobo.auth-adapter/v1",
+					"adapterId": "better-auth",
+					"basePath": "/api/auth"
+				}
+			}
+		}
+	]
+}

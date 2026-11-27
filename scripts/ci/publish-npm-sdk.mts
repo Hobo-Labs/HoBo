@@ -18,7 +18,6 @@
  * unverified provenance (fail closed), while npm's per-package statement
  * carries no Bindle declaration hash for the verified attestation ingest.
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -34,11 +33,7 @@ import {
 } from "./stage-sdk-artifacts.mts";
 
 const root = join(import.meta.dirname, "..", "..");
-const EXPECTED_PUBLISHER = "hobodev";
-export const NPM_TOKEN_REF = "owner://NPM_TOKEN";
-const NPM_TOKEN_UNAVAILABLE = `npm publishes through hobo deploy with the hobodev token, which HoBo resolves as ${NPM_TOKEN_REF} from the owner's store session and never reads from the environment: run HoBo MCP's choose_secret_store and publish through HoBo (npm's OIDC exchange cannot serve a scoped @hobo-labs name)`;
-export const PINNED_NPM_CLI = "npm@11.21.1";
-/** The media type of the Sigstore bundle npm attaches (`<name>-<version>.sigstore`). */
+export const NPM_OIDC_REF = "github-actions://npm-oidc";
 export const SIGSTORE_BUNDLE_MEDIA_TYPE =
 	"application/vnd.dev.sigstore.bundle.v0.3+json";
 const CD_PROVENANCE_DIST = join(
@@ -50,30 +45,59 @@ const CD_PROVENANCE_DIST = join(
 	"index.js",
 );
 
-export function npmPublishCliPrefix(): readonly string[] {
-	return ["npx", "-y", PINNED_NPM_CLI];
-}
-
-/** The token must belong to the hobodev publisher before anything is recorded. */
-function assertPublisher(token: string): void {
-	const env: NodeJS.ProcessEnv = { ...process.env, NODE_AUTH_TOKEN: token };
-	delete env.NPM_TOKEN;
-	const result = spawnSync(
-		npmPublishCliPrefix()[0] ?? "npx",
-		[...npmPublishCliPrefix().slice(1), "whoami"],
-		{ env, encoding: "utf8" },
-	);
-	if (result.status !== 0) {
-		throw new Error(
-			`npm whoami failed; check ${NPM_TOKEN_REF} for the hobodev publisher`,
-		);
-	}
-	const user = (result.stdout ?? "").trim();
-	if (user !== EXPECTED_PUBLISHER) {
-		throw new Error(
-			`npm publisher must be ${EXPECTED_PUBLISHER}, got ${user || "(empty)"}`,
-		);
-	}
+export function npmWorkflowCredentials(
+	env: Readonly<Record<string, string | undefined>>,
+	fetchImpl: typeof fetch = fetch,
+): ReleaseCredentials {
+	return {
+		async resolve(ref, scope) {
+			if (
+				ref !== NPM_OIDC_REF ||
+				(scope !== "npm.publish" &&
+					scope !== "cd-realize:hobo-release/npm-candidate" &&
+					scope !== "cd-realize:hobo-release-npm/npm-candidate")
+			)
+				throw new Error(
+					"npm workload identity is not authorized for this scope",
+				);
+			const adapter = await import(
+				pathToFileURL(
+					join(
+						root,
+						"packages",
+						"adapters",
+						"adapter-infisical",
+						"dist",
+						"auth.js",
+					),
+				).href
+			);
+			const restrictedFetch: typeof fetch = async (input, init) => {
+				const url = new URL(String(input));
+				if (
+					url.protocol !== "https:" ||
+					url.hostname !== "pipelines.actions.githubusercontent.com" ||
+					url.username ||
+					url.password ||
+					url.port ||
+					url.hash
+				)
+					throw new Error("GitHub Actions OIDC endpoint is invalid");
+				return fetchImpl(input, init);
+			};
+			let token: string;
+			try {
+				token = await adapter.githubActionsJwtSource({
+					env,
+					audience: "npm:registry.npmjs.org",
+					fetch: restrictedFetch,
+				})();
+			} catch {
+				throw new Error("GitHub Actions OIDC identity is unavailable");
+			}
+			return { token };
+		},
+	};
 }
 
 /** One tarball's signed provenance: the bundle bytes and what was signed, by whom. */
@@ -110,7 +134,6 @@ export async function sigstoreNpmProvenance(
 	};
 }
 
-/** Seams for tests; production staging, signing, Freight and whoami by default. */
 export type NpmPublishDeps = {
 	readonly stage?: (dir: string) => SdkArtifactManifest;
 	readonly tarballs?: (dir: string) => string[];
@@ -119,7 +142,6 @@ export type NpmPublishDeps = {
 	readonly qualify?: (
 		input: Parameters<typeof qualifyReleaseCandidate>[0],
 	) => Promise<Awaited<ReturnType<typeof qualifyReleaseCandidate>>>;
-	readonly whoami?: (token: string) => void;
 };
 
 /**
@@ -147,14 +169,15 @@ export async function publishNpmSdkArtifacts(
 			"npm publish needs release Freight: set HOBO_RELEASE_CD_HOME to the hobo deploy journal directory",
 		);
 	}
-	const credentials = options.credentials;
-	const resolved = await credentials
-		?.resolve(NPM_TOKEN_REF, "npm.publish")
-		.catch(() => undefined);
-	const token = resolved?.token?.trim() ?? "";
-	if (credentials === undefined || token === "")
-		throw new Error(NPM_TOKEN_UNAVAILABLE);
-	(deps.whoami ?? assertPublisher)(token);
+	const credentials =
+		options.credentials ?? npmWorkflowCredentials(process.env);
+	const identity = await credentials.resolve(NPM_OIDC_REF, "npm.publish");
+	if (
+		!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/u.test(
+			identity.token ?? "",
+		)
+	)
+		throw new Error("GitHub Actions OIDC identity is invalid");
 	const manifest = (deps.stage ?? stageSdkArtifactsDir)(options.stagingDir);
 	const tarballs = (deps.tarballs ?? orderedSdkTarballPaths)(
 		options.stagingDir,
