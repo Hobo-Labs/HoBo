@@ -1089,6 +1089,44 @@ mapping and budget outcomes are exercised against the Vercel Labs emulator and
 the opt-in official AWS Emulator; these tests do not establish production
 deployment or IAM behavior.
 
+### AWS static queue schedules
+
+The opt-in static schedule mapper creates an Alchemy `AWS.Scheduler.Schedule`
+for a schedule that depends on exactly one SQS queue. Its cadence is UTC and
+supports wildcard day and weekday fields, and numeric, wildcard or step minute,
+hour and month fields. It rejects other cron
+forms before registering resources. Supply a nonempty SQS message body and an
+existing Scheduler execution role for each declared schedule.
+
+```ts
+import { bindle, cadence } from "@hobo/bindles";
+import { awsBindleMappers } from "@hobo/iac-alchemy/aws";
+import { awsStaticScheduleMappers } from "@hobo/iac-alchemy/aws/schedule";
+
+const app = bindle("repair", (b) => {
+	const queue = b.queue();
+	return { queue, tick: b.schedule().dependsOn(queue).with(cadence("*/15 * * * *")) };
+});
+const mappers = awsStaticScheduleMappers(awsBindleMappers(), {
+	tick: { roleArn: "arn:aws:iam::123456789012:role/scheduler-send", input: '{"kind":"repair"}' },
+});
+```
+
+Pass `app` and `mappers` to `mapBindleToAlchemy` with the normal requirement,
+source and financial checks. The inventory includes both the schedule and its
+queue; bounded-budget routing requires supplied pricing that covers both.
+Authorized unpriced routing bypasses budget evaluation as described above. The
+role is an existing external resource, so the trusted host must authenticate its
+account, trust policy and permission to send to the exact queue. AWS may deliver
+more than once or after the scheduled minute. The mapping does not implement the
+dynamic HoBo scheduler port, queue consumption, or application bindings. The
+official emulator test checks resource reconciliation and message delivery; it
+does not establish production timing or IAM behavior.
+The bounded `AwsStaticSchedule` model covers invalid targets and configuration,
+complete budget coverage and explicit unpriced admission. It treats the host's
+role authentication and the financial engine's admission decision as trusted
+inputs; it does not prove provider delivery or the implementation itself.
+
 ### AWS Vite websites
 
 The AWS Vite mapper maps an assets-only web application to Alchemy's
