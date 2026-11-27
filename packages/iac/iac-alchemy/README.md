@@ -1183,5 +1183,15 @@ is not proof of a conflict or of no effect. Each queue requires a dedicated,
 exclusively owned table and host-verified resource epoch; deleting or recreating
 that table without fencing can lose receipts or permit an ABA revision. This
 storage layer does not yet implement queue messages, leases, the SQS mapping, or
-component bindings. The official AWS Emulator test resets its test record and checks conditional
-writes, reopening, and concurrent writers against an Alchemy-created table.
+component bindings. The official AWS Emulator test resets its test record and
+checks conditional writes, reopening, and concurrent writers against an
+Alchemy-created table.
+
+`@hobo/iac-alchemy/aws/queue-store` exports the DynamoDB atomic store for use
+with `@hobo/runtime/atomic-durable-queue` and its asynchronous component host.
+The official AWS Emulator test runs a host through this store, including a lost
+write response, provider reopening, redelivery and stale-lease rejection. The
+store requires a dedicated table with a string `pk` partition key and exclusive,
+epoch-fenced ownership. This composition does not yet map a HoBo queue to an
+Alchemy resource, integrate SQS, provide compaction or dead-lettering, or bind a
+queue into an application automatically.

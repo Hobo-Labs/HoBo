@@ -24,6 +24,8 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
+import { createAtomicDurableQueue } from "../../../runtime/src/atomic-durable-queue.js";
+import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import type { BindleRuntimeContext } from "../../../bindles/src/types.js";
 import { awsBindleMappers } from "../src/aws.js";
@@ -728,6 +730,111 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			expect(await atomic.compareAndSwap(2, new Uint8Array([4]))).toEqual({
 				status: "unknown",
 			});
+			authorized = true;
+			await store.delete("queue-state");
+			let clock = 1000;
+			let loseResponse = true;
+			const lossy = {
+				load: atomic.load,
+				async compareAndSwap(revision: number, bytes: Uint8Array) {
+					const written = await atomic.compareAndSwap(revision, bytes);
+					if (loseResponse && written.status === "committed") {
+						loseResponse = false;
+						return { status: "unknown" as const };
+					}
+					return written;
+				},
+			};
+			const bounds = {
+				nameBytes: 32,
+				payloadBytes: 64,
+				attributeCount: 2,
+				attributeBytes: 32,
+				batchSize: 2,
+				delayMs: 1000,
+				leaseMs: 100,
+				operationWindowMs: 10000,
+				deliveryAttempts: 2,
+				retainedMessages: 4,
+				retainedReceipts: 20,
+			};
+			const hostOptions = {
+				limits: bounds,
+				maxInFlight: 2,
+				timeoutMs: 5000,
+				now: () => clock,
+				authorize: () => true,
+			};
+			const firstQueue = createAtomicDurableQueue({
+				store: lossy,
+				limits: bounds,
+				now: () => clock,
+			});
+			const firstHost = createDurableQueueWitHost(firstQueue, hostOptions);
+			const operation = (n: number) => ({
+				id: `v1.10000.abcdefghijklmn${String(n).padStart(2, "0")}`,
+				expiresAtMs: 10000n,
+			});
+			const enqueue = {
+				operation: operation(1),
+				message: {
+					idempotencyKey: "job",
+					body: new Uint8Array([0, 255, 7]),
+					attributes: [{ key: "kind", value: "job" }],
+				},
+			};
+			expect(await firstHost.enqueue(enqueue)).toMatchObject({
+				tag: "unknown",
+			});
+			const reopenedQueue = createAtomicDurableQueue({
+				store: atomic,
+				limits: bounds,
+				now: () => clock,
+			});
+			const reopenedHost = createDurableQueueWitHost(
+				reopenedQueue,
+				hostOptions,
+			);
+			expect(await reopenedHost.enqueue(enqueue)).toEqual({
+				tag: "committed",
+				val: { messageId: "m1", idempotencyKey: "job" },
+			});
+			const delivery = await reopenedHost.dequeue({
+				operation: operation(2),
+				maxMessages: 1,
+				visibilityTimeoutMs: 10n,
+			});
+			expect(delivery).toMatchObject({
+				tag: "committed",
+				val: [
+					{ messageId: "m1", leaseId: "l1", body: new Uint8Array([0, 255, 7]) },
+				],
+			});
+			clock = 1010;
+			expect(
+				await reopenedHost.dequeue({
+					operation: operation(3),
+					maxMessages: 1,
+					visibilityTimeoutMs: 10n,
+				}),
+			).toMatchObject({
+				tag: "committed",
+				val: [{ messageId: "m1", leaseId: "l2" }],
+			});
+			expect(
+				await reopenedHost.complete({
+					operation: operation(4),
+					messageId: "m1",
+					leaseId: "l1",
+				}),
+			).toEqual({ tag: "rejected", val: "lease-lost" });
+			expect(
+				await reopenedHost.complete({
+					operation: operation(5),
+					messageId: "m1",
+					leaseId: "l2",
+				}),
+			).toEqual({ tag: "committed", val: { messageId: "m1", leaseId: "l2" } });
 		},
 		30_000,
 	);
