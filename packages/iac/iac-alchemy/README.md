@@ -1102,6 +1102,8 @@ Official AWS Emulator tests cover priced, denied-unpriced and explicitly
 authorized-unpriced admission before creating the mapped user pool.
 The notification declaration maps to its own SNS topic; sending, recipients and
 subscriptions are not implemented, so `notify().allow("send")` is rejected.
+The official AWS Emulator also checks priced, denied-unpriced and authorized
+unpriced admission before creating the notification topic.
 Explicitly selected KV, S3, queue and secret runtimes support the bounded
 operations and HTTP bindings described above; unsupported operations are
 reported explicitly. Budget-based
