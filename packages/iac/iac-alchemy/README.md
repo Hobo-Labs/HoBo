@@ -1123,7 +1123,9 @@ declarations requiring those operations are rejected. The host controls key
 policy and deletion and must reconcile an unknown creation before retrying.
 The simulator suite exercises Alchemy key reconciliation and native KMS
 encryption against a pinned Moto image because the official AWS Emulator does
-not currently implement KMS. This does not establish HoBo crypto runtime support.
+not currently implement KMS. It also checks priced, denied-unpriced and
+authorized-unpriced admission before KMS key creation. This does not establish
+HoBo crypto runtime support.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
 protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
