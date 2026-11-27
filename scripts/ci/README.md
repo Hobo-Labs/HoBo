@@ -240,8 +240,9 @@ SDK staging runs `verify-cli-sdk-artifacts.mts` before returning a manifest.
 The verifier checks the exact SDK allowlist, source and license provenance,
 every shipped CLI output, and a clean consumer installed from a loopback-only
 registry. The consumer imports core by its published package name and checks
-missing-pricing denial and a supplied model with a held SQLite budget
-reservation using the staged broker and pricing packages. Failure removes the
+missing-pricing denial, a supplied model with a held SQLite budget reservation,
+and denial when another reservation exceeds the budget using the staged broker
+and pricing packages. Failure removes the
 manifest so a previous or incomplete run cannot
 be published. The offline acceptance disables third-party lifecycle scripts
 while repacking test dependencies; it does not replace verification of a

@@ -39,7 +39,7 @@ const authority = createSqliteBudgetAdmissionAuthority({
 			periodId: "2026-01",
 			policyRevision: "r1",
 		},
-		limitMicros: 3_000_000,
+		limitMicros: 2_000_000,
 		observedAt: "2026-01-01T00:00:00Z",
 		validUntil: end,
 		providerAccounts: [
@@ -117,6 +117,10 @@ try {
 	assert.equal(admitted.status, "admitted");
 	assert.equal(admitted.budget?.evaluation, "allowed");
 	assert.equal(admitted.budget?.reservation, "held");
+	assert.equal(authority.read(now).reservedMicros, 1_500_000);
+	const exhausted = await financial.admit("over-budget-attempt", plan);
+	assert.equal(exhausted.status, "denied");
+	assert.equal(exhausted.code, "budget.exhausted");
 	assert.equal(authority.read(now).reservedMicros, 1_500_000);
 } finally {
 	authority.close();
