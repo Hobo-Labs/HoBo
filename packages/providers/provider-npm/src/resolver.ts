@@ -34,15 +34,6 @@
  * short-lived publish token. Neither ever reaches an outcome, an error or a
  * record (I9).
  *
- * Scoped names travel unescaped (`/@scope/name`) because the transport guard
- * refuses `%2f` in paths, while npm's own client sends `@scope%2fname`. Probed
- * against registry.npmjs.org on 2026-11-12 (README "Scoped names"): packument
- * and dist-tag reads route both forms identically, and dist-tag PUTs reach the
- * same auth check in both forms; the OIDC exchange routes only the escaped
- * form (unescaped is a route-level 404), so trusted publishing of a scoped
- * name is refused here as an impedance limit. A successful unescaped publish
- * or dist-tag move is not yet captured; the opt-in live lane exercises it.
- *
  * Reads that confirm a mutation use `?write=true`: npmjs serves plain packument
  * GETs from its CDN (`cache-control: public, max-age=300`), so a plain read can
  * miss a publish that landed; `?write=true` reaches the origin uncached.
@@ -238,11 +229,6 @@ export function createNpmResolvers(
 				`${registry.kind} publishes only scoped packages, not ${name}`,
 				"name the package @owner/name",
 			);
-		if (options.auth === "oidc-trusted-publishing" && name.startsWith("@"))
-			unsupported(
-				`npm OIDC trusted publishing of the scoped package ${name} is not supported: the registry routes the token exchange only for the %2f-escaped name, which the HoBo transport guard refuses`,
-				"bind token auth (an automation or granular access token) for scoped packages",
-			);
 		const version = desired.version;
 		if (!isJsonString(version) || !VERSION.test(version))
 			reject(
@@ -341,7 +327,14 @@ export function createNpmResolvers(
 	}
 
 	async function session(t: Target, supplied: HttpTransport): Promise<Session> {
-		const transport = guardTransport(supplied, registry.policy);
+		const exchangePath = `/-/npm/v1/oidc/token/exchange/package/${t.name.replace("/", "%2f")}`;
+		const transport =
+			options.auth === "oidc-trusted-publishing" && t.name.startsWith("@")
+				? guardTransport(supplied, {
+						...registry.policy,
+						allowedEncodedPaths: [exchangePath],
+					})
+				: guardTransport(supplied, registry.policy);
 		const anonymous = options.auth === "anonymous";
 		const credential = anonymous
 			? ""
@@ -385,11 +378,7 @@ export function createNpmResolvers(
 				);
 			let exchanged: TransportResponse;
 			try {
-				exchanged = await raw(
-					"POST",
-					`/-/npm/v1/oidc/token/exchange/package/${t.name}`,
-					credential,
-				);
+				exchanged = await raw("POST", exchangePath, credential);
 			} catch (error) {
 				if (error instanceof ResolverError) throw error;
 				return reject(

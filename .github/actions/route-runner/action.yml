@@ -220,13 +220,17 @@ runs:
         case " push workflow_dispatch merge_group workflow_run " in
           *" ${GITHUB_EVENT_NAME} "*) fleet=hobo-trunk ;;
         esac
-        # Without a decision, a PR batch fails closed; other automatic routes use
-        # the tier this step is running on. A run pinned to the fleet stays on
-        # the fleet. A second ask outputs nothing, so the first route stands.
+        # Without a decision, PR and merge-group batches cannot pin the fleet:
+        # their route must be verified before candidate code reaches a runner.
+        # Other fleet pins retain their fallback. A second ask outputs nothing,
+        # so the first route stands.
         # The titled warning is what a monitor counts (hobo-ci-route-fallback).
         without_a_decision() {
           if [ "${include_own_run}" = "true" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); keeping the run's route"
+          elif [ "${route}" = "fleet" ] && { [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; }; then
+            echo "::error title=hobo-ci-route-fallback::Batch fleet routing was not verified ($1); no batch was queued"
+            return 1
           elif [ "${route}" = "fleet" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
             { echo "runner=${fleet}"; echo "tier=fleet"; echo "shard_runner=${fleet}"; } >> "$GITHUB_OUTPUT"

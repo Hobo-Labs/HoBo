@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { parseBetterAuthConfig } from "../src/index.js";
 import {
 	isJsonArray,
 	isJsonObject,
@@ -11,7 +12,6 @@ import {
 	type JsonObject,
 	parseJsonValue,
 } from "../src/json.js";
-import { parseBetterAuthConfig } from "../src/index.js";
 
 type PactInteractionCase = {
 	readonly description: string;
@@ -21,28 +21,34 @@ type PactInteractionCase = {
 	readonly expectedBasePath: string;
 };
 
+function malformed(detail: string): never {
+	throw new Error(`malformed pact interaction: ${detail}`);
+}
+
 function parsePactInteractions(text: string): readonly PactInteractionCase[] {
 	const root = parseJsonValue(text);
-	if (!isJsonObject(root)) {
-		throw new Error("pact must be a JSON object");
-	}
+	if (!isJsonObject(root)) throw new Error("pact must be a JSON object");
 	const interactions = root.interactions;
-	if (!isJsonArray(interactions)) {
-		throw new Error("pact interactions must be an array");
-	}
+	if (!isJsonArray(interactions))
+		throw new Error("interactions must be an array");
 	const cases: PactInteractionCase[] = [];
 	for (const entry of interactions) {
-		if (!isJsonObject(entry)) continue;
+		if (!isJsonObject(entry)) malformed("interaction must be an object");
 		const description = entry.description;
-		if (!isJsonString(description)) continue;
 		const request = entry.request;
-		if (!isJsonObject(request)) continue;
-		const body = request.body;
-		if (!isJsonObject(body)) continue;
 		const response = entry.response;
-		if (!isJsonObject(response)) continue;
+		if (
+			!isJsonString(description) ||
+			!isJsonObject(request) ||
+			!isJsonObject(response)
+		) {
+			malformed("interaction is missing description, request, or response");
+		}
+		const body = request.body;
 		const responseBody = response.body;
-		if (!isJsonObject(responseBody)) continue;
+		if (!isJsonObject(body) || !isJsonObject(responseBody)) {
+			malformed("interaction body is missing");
+		}
 		const expectedContract = responseBody.contract;
 		const expectedAdapterId = responseBody.adapterId;
 		const expectedBasePath = responseBody.basePath;
@@ -51,7 +57,7 @@ function parsePactInteractions(text: string): readonly PactInteractionCase[] {
 			!isJsonString(expectedAdapterId) ||
 			!isJsonString(expectedBasePath)
 		) {
-			continue;
+			malformed("success response is missing contract fields");
 		}
 		cases.push({
 			description,
@@ -68,14 +74,30 @@ const pactFile = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"../contracts/pacts/auth-adapter-config-boundary.pact.json",
 );
-const interactions = parsePactInteractions(readFileSync(pactFile, "utf8"));
+const cases = parsePactInteractions(readFileSync(pactFile, "utf8"));
 
 describe("auth-adapter-config boundary pact", () => {
 	it("loads every interaction from the pact file", () => {
-		expect(interactions.length).toBeGreaterThan(0);
+		const root = parseJsonValue(readFileSync(pactFile, "utf8"));
+		if (!isJsonObject(root) || !isJsonArray(root.interactions)) {
+			throw new Error("pact interactions missing");
+		}
+		const { interactions } = root;
+		expect(interactions.length).toBe(1);
+		expect(cases.length).toBe(interactions.length);
 	});
 
-	for (const interaction of interactions) {
+	it("throws on a malformed interaction", () => {
+		expect(() =>
+			parsePactInteractions(
+				JSON.stringify({
+					interactions: [{ description: "broken" }],
+				}),
+			),
+		).toThrow(/malformed pact interaction/u);
+	});
+
+	for (const interaction of cases) {
 		it(interaction.description, () => {
 			const config = parseBetterAuthConfig(interaction.configBody);
 			expect(config.contract).toBe(interaction.expectedContract);

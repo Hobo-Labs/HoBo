@@ -1,10 +1,10 @@
 import { createHmac } from "node:crypto";
+import { createMemorySecretsPort } from "@hobo/identity";
 import {
 	campSecretNameFromBetterAuthRef,
 	planBetterAuthBundle,
 	wireBetterAuthSigningSecret,
 } from "@hobo/pack-better-auth";
-import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
 import {

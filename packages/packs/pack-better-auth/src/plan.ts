@@ -33,8 +33,11 @@ function refuse(
 
 export function planBetterAuthBundle(
 	configInput: JsonValue,
-	portsInput: BetterAuthBundlePortRefs,
-	options?: { readonly runtimePresent?: boolean; readonly forExecution?: boolean },
+	portsInput: JsonValue,
+	options?: {
+		readonly runtimePresent?: boolean;
+		readonly forExecution?: boolean;
+	},
 ): BetterAuthBundlePlan {
 	const config = parseBetterAuthConfig(configInput);
 	const ports = parseBetterAuthBundlePortRefs(portsInput);

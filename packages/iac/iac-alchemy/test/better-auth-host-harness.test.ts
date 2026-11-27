@@ -52,7 +52,7 @@ describe("better-auth Alchemy host harness", () => {
 			});
 			expect(wire.secretsPortId).toBe("secrets:better-auth-host");
 			expect(JSON.stringify(wire)).not.toContain(SYNTHETIC_SIGNING);
-			expect(harness.sqlite).toBe(":memory:");
+			expect(harness.sqlite).toBe(harness.sessionStorePath);
 		} finally {
 			harness.dispose();
 		}

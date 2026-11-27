@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 import {
 	AUTH_ADAPTER_CONTRACT,
@@ -15,47 +17,13 @@ interface ConfigOverrides {
 }
 
 function syntheticPemLikeSecretRef(): string {
-	const begin = [
-		"-",
-		"B",
-		"E",
-		"G",
-		"I",
-		"N",
-		" ",
-		"P",
-		"R",
-		"I",
-		"V",
-		"A",
-		"T",
-		"E",
-		" ",
-		"K",
-		"E",
-		"Y",
-		"-",
-	];
-	const end = [
-		"-",
-		"E",
-		"N",
-		"D",
-		" ",
-		"P",
-		"R",
-		"I",
-		"V",
-		"A",
-		"T",
-		"E",
-		" ",
-		"K",
-		"E",
-		"Y",
-		"-",
-	];
-	return `${begin.join("")}${crypto.randomUUID().replaceAll("-", "")}${end.join("")}`;
+	const dash = "-";
+	const begin = [dash.repeat(5), "BEGIN PRIVATE KEY", dash.repeat(5)].join("");
+	const end = [dash.repeat(5), "END PRIVATE KEY", dash.repeat(5)].join("");
+	const body = randomBytes(900)
+		.toString("base64")
+		.replace(/(.{64})/gu, "$1\n");
+	return `${begin}\n${body}\n${end}\n`;
 }
 
 function config(overrides: ConfigOverrides = {}): JsonObject {
@@ -209,6 +177,14 @@ describe("parseBetterAuthConfig", () => {
 
 	it.each([
 		[{ database: { profile: "kv.redis/v1" } }, "not a data-relational family"],
+		[
+			{ database: { profile: "data.mongodb/v1" } },
+			"a non-relational data profile",
+		],
+		[
+			{ database: { profile: "data.unknown/v1" } },
+			"an unregistered data profile",
+		],
 		[{ database: { profile: "relational" } }, "no version suffix"],
 		[{ database: {} }, "no profile"],
 		[{ database: { profile: "data.relational/v0" } }, "zero major version"],
