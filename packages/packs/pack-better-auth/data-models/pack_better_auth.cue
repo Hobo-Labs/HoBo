@@ -52,7 +52,7 @@ import "strings"
 #BetterAuthRelationalMigrationRecord: {
 	pack_id:                  #PackId
 	relational_bindle:        #BindleName
-	database_profile:         =~"^data\\.(relational|postgres)/v[0-9]+$"
+	database_profile:         =~"^data\\.(relational|postgres)/v1$"
 	migration_plan_contract:  "hobo.migration-plan/v1"
 	migration_plan_digest:    =~"^sha256:[0-9a-f]{64}$"
 	expand_step_count:        int & >=0

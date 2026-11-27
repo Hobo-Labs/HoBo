@@ -253,7 +253,7 @@ describe("merge-group required gate", () => {
 		}
 	});
 
-	it("accepts a fully skipped pull request only when that draft did not request checks", () => {
+	it("rejects fully skipped pull request checks even for a draft", () => {
 		const script = shellForStep(
 			gate,
 			"Require successful validation and workspace tests",
@@ -282,20 +282,14 @@ describe("merge-group required gate", () => {
 					...extra,
 				},
 			});
-		const accepted = run("true");
-		assert.equal(accepted.status, 0, accepted.stderr);
-		assert.match(accepted.stdout, /Draft pull request did not request checks/u);
-		for (const draft of ["false", ""]) {
+		for (const draft of ["true", "false", ""]) {
 			const rejected = run(draft);
 			assert.notEqual(rejected.status, 0, draft);
 			assert.match(rejected.stderr, /PR impact plan did not succeed: skipped/u);
 		}
 		const failedPlan = run("true", { PLAN_RESULT: "failure" });
 		assert.notEqual(failedPlan.status, 0);
-		assert.match(
-			failedPlan.stderr,
-			/PR impact plan did not succeed: failure/u,
-		);
+		assert.match(failedPlan.stderr, /PR impact plan did not succeed: failure/u);
 		const mergeGroup = run("true", { EVENT_NAME: "merge_group" });
 		assert.notEqual(mergeGroup.status, 0);
 		assert.match(mergeGroup.stderr, /PR impact plan did not succeed: skipped/u);
@@ -1282,7 +1276,7 @@ describe("release required gate", () => {
 		}
 	});
 
-	it("accepts a fully skipped release gate only when that draft did not request checks", () => {
+	it("rejects a fully skipped release gate even for a draft", () => {
 		const skipped = {
 			EVENT_NAME: "pull_request",
 			ROUTE_RESULT: "skipped",
@@ -1302,13 +1296,7 @@ describe("release required gate", () => {
 					...extra,
 				},
 			});
-		const accepted = run("true");
-		assert.equal(accepted.status, 0, accepted.stderr);
-		assert.match(
-			accepted.stdout,
-			/Draft pull request did not request release checks/u,
-		);
-		for (const draft of ["false", ""]) {
+		for (const draft of ["true", "false", ""]) {
 			const rejected = run(draft);
 			assert.notEqual(rejected.status, 0, draft);
 			assert.match(rejected.stdout, /Runner routing did not succeed/u);
