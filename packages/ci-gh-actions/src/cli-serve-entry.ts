@@ -60,10 +60,12 @@ export {
 	describeWorkflowSkip,
 	describeWorkflowWarning,
 	planWorkflow,
+	restoreWorkflowPlan,
 	type WorkflowApplyResult,
 	type WorkflowInitOptions,
 	type WorkflowJobPlan,
 	type WorkflowPlan,
+	type WorkflowRestoreResult,
 	type WorkflowSkipReason,
 	type WorkflowWarning,
 } from "./workflow-init.js";

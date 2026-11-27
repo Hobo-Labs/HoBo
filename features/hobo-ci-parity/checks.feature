@@ -19,7 +19,7 @@ Feature: Runner-less check parity with RelayRunner
     Then each tool ran in a HoBo sandbox with no network
     And the job carries one result per tool
 
-  @parity @C03 @t1 @pending
+  @parity @C03 @t1
   Scenario: C03 A broken runnerOrder is refused with the parser's sentence
     Given ".hobo/ci.json" holds a runnerOrder with no steps
     When "hobo ci route --github ubuntu-24.04" runs in that checkout

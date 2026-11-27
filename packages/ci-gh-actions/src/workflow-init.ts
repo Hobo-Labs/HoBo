@@ -1196,6 +1196,85 @@ export function applyWorkflowPlan(
 	return { source: rewritten, changed, refused };
 }
 
+export type WorkflowRestoreResult = Readonly<{
+	source: string;
+	restored: number;
+}>;
+
+const RESTORE_WAS_COMMENT = /^was[ \t]+([^\r\n#]+?)(?:[ \t]+#.*)?$/u;
+
+function isRestorableFleetLabel(label: string, fleetLabel: string): boolean {
+	const lowered = label.toLowerCase();
+	if (lowered === fleetLabel.toLowerCase()) return true;
+	return HOBO_RUNNER_LABELS.some((known) => known === lowered);
+}
+
+export function restoreWorkflowPlan(
+	source: string,
+	options?: Readonly<{ fleetLabel?: string }>,
+): WorkflowRestoreResult {
+	const doc = parseDocument(source);
+	if (doc.errors.length > 0) return { source, restored: 0 };
+	const root = doc.contents;
+	const writtenJobs = isMap(root) ? writtenUnder(root, "jobs") : undefined;
+	const jobs = follow(doc, writtenJobs);
+	if (!isMap(root) || !isMap(jobs)) return { source, restored: 0 };
+
+	const fleetLabel = options?.fleetLabel ?? DEFAULT_FLEET_LABEL;
+	const edits: Array<Readonly<{ start: number; end: number; text: string }>> =
+		[];
+
+	for (const pair of jobs.items) {
+		const entry = isNode(pair.value) ? pair.value : undefined;
+		const job = follow(doc, entry);
+		if (!isMap(job)) continue;
+		const runsOn = writtenUnder(job, "runs-on");
+		if (!isScalar(runsOn)) continue;
+		const currentValue = stringOf(runsOn);
+		if (
+			currentValue === undefined ||
+			!isRestorableFleetLabel(currentValue, fleetLabel)
+		) {
+			continue;
+		}
+		const comment = runsOn.comment?.trim();
+		if (!comment) continue;
+		const match = RESTORE_WAS_COMMENT.exec(comment);
+		const original = match?.[1]?.trim();
+		if (!original) continue;
+		const range = runsOn.range;
+		if (!range) continue;
+		const rawStart = range[0];
+		const rawEnd = range[1];
+		const lineEnd = source.indexOf("\n", rawEnd);
+		const sliceEnd = lineEnd === -1 ? source.length : lineEnd;
+		const lineTail = source.slice(rawEnd, sliceEnd);
+		const cr = lineTail.endsWith("\r") ? "\r" : "";
+		const rawToken = source.slice(rawStart, rawEnd);
+		const quote =
+			rawToken.startsWith('"') && rawToken.endsWith('"')
+				? '"'
+				: rawToken.startsWith("'") && rawToken.endsWith("'")
+					? "'"
+					: "";
+		edits.push({
+			start: rawStart,
+			end: sliceEnd,
+			text: `${labelText(original, quote)}${cr}`,
+		});
+	}
+
+	if (edits.length === 0) return { source, restored: 0 };
+	const restoredSource = [...edits]
+		.sort((left, right) => right.start - left.start)
+		.reduce(
+			(text, edit) =>
+				text.slice(0, edit.start) + edit.text + text.slice(edit.end),
+			source,
+		);
+	return { source: restoredSource, restored: edits.length };
+}
+
 export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 	switch (reason) {
 		case "reusable_workflow":

@@ -22,7 +22,7 @@ Feature: Security parity with RelayRunner
     When the relay answers it
     Then the relay started no process
 
-  @parity @X04 @t2 @pending
+  @parity @X04 @t2
   Scenario: X04 The new MCP tools need only the read scope
     Given a token with only the read scope
     Then every new MCP tool answers it
