@@ -1,8 +1,6 @@
 ------------------------- MODULE AwsSecretVersions -------------------------
 EXTENDS Naturals, FiniteSets, TLC
 
-\* The caller persists the chosen token before dispatch. AWS idempotency,
-\* host authorization, timeout delivery and transport completion are assumptions.
 CONSTANTS Tokens, Payloads
 VARIABLES state, slot, grant, token, payload, versions, writes, response, responseVerified
 vars == <<state, slot, grant, token, payload, versions, writes, response, responseVerified>>
