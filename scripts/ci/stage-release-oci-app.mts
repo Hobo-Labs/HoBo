@@ -22,6 +22,7 @@ import {
 	relative,
 	resolve,
 } from "node:path";
+import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
 import {
 	orderedSdkTarballPaths,
 	SDK_PACKAGES,
@@ -116,6 +117,7 @@ function run(root: string, command: string, args: readonly string[]): void {
 export function releaseOciTurboBuildArgs(
 	_root: string,
 	imageFilters: readonly string[],
+	env: NodeJS.ProcessEnv = process.env,
 ): string[] {
 	if (imageFilters.length === 0)
 		throw new Error("release OCI build requires at least one image filter");
@@ -124,6 +126,7 @@ export function releaseOciTurboBuildArgs(
 		"turbo",
 		"run",
 		"build",
+		...(env.HOBO_TURBO_CONCURRENCY?.trim() ? [turboConcurrencyArg(env)] : []),
 		...imageFilters.map((filter) => `--filter=${filter}`),
 	];
 }

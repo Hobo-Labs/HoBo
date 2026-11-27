@@ -134,6 +134,8 @@ before the artifacts are accepted.
 Published package manifests retain workspace import names as npm aliases for
 their public package names. OCI app staging installs matching workspace-name
 links so the same packed modules resolve in the deployed app.
+Its Turbo builds honor the runner's `HOBO_TURBO_CONCURRENCY` memory limit.
+The staging test checks the configured-store fallback with no package manager on `PATH`.
 
 
 The SQLite SDK includes backend-routing and Fleet implementation code and their
