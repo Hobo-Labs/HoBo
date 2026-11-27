@@ -20,7 +20,14 @@ mise_version_file=packages/ci-gh-actions/deploy/ci-runner/mise-version.txt
 if [ -f mise.toml ] && [ -f scripts/lib/mise-path.sh ] && [ -f "${mise_version_file}" ]; then
 	export MISE_EXPERIMENTAL=1
 	export PATH="${HOME}/.local/bin:${PATH}"
-	if ! command -v mise >/dev/null 2>&1; then
+	source scripts/lib/mise-path.sh
+	if [[ -n "${MISE_INSTALL_PATH:-}" && "$MISE_INSTALL_PATH" != /* ]]; then
+		echo "mise: install path must be absolute" >&2
+		exit 1
+	fi
+	if [[ -n "${MISE_INSTALL_PATH:-}" && -f "$MISE_INSTALL_PATH" && -x "$MISE_INSTALL_PATH" ]]; then
+		mise_ensure_on_path
+	elif [[ -n "${MISE_INSTALL_PATH:-}" ]] || ! command -v mise >/dev/null 2>&1; then
 		mise_version="$(tr -d '[:space:]' <"${mise_version_file}")"
 		if [[ ! "$mise_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 			echo "::error::invalid pinned mise version" >&2
@@ -42,15 +49,18 @@ if [ -f mise.toml ] && [ -f scripts/lib/mise-path.sh ] && [ -f "${mise_version_f
 		MISE_VERSION="v${mise_version}"
 		MISE_INSTALL_URL="file://${installer_dir}/${installer_name}"
 		export MISE_VERSION MISE_INSTALL_URL
-		# shellcheck source=scripts/lib/mise-path.sh
-		source scripts/lib/mise-path.sh
 		mise_ensure_on_path
 	fi
-	mise trust ./mise.toml
-	mise install
-	echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
-	mise bin-paths >>"${GITHUB_PATH}"
-	echo "hosted toolchain: $(mise --version), tools from mise.lock"
+	hobo_mise trust ./mise.toml
+	hobo_mise install
+	if [[ -n "${MISE_INSTALL_PATH:-}" ]]; then
+		mise_bin_dir="${MISE_INSTALL_PATH%/*}"
+		echo "${mise_bin_dir:-/}" >>"${GITHUB_PATH}"
+	else
+		echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
+	fi
+	hobo_mise bin-paths >>"${GITHUB_PATH}"
+	echo "hosted toolchain: $(hobo_mise --version), tools from mise.lock"
 	exit 0
 fi
 
