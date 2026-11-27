@@ -208,4 +208,31 @@ describe("ArgoCdControlClient", () => {
 				?.includes(encodeURIComponent("hobo-prod")),
 		).toBe(true);
 	});
+
+	it("reports a missing credential before requesting a sync", async () => {
+		const http = vi.fn<HttpTransport>();
+		const client = createArgoCdControlClient(
+			{
+				apiBaseUrl: "https://argo.example",
+				application: "hobo-prod",
+				appNamespace: "argocd",
+				tokenRef: "owner://ARGO_TOKEN",
+			},
+			http,
+			{
+				async resolve() {
+					return {};
+				},
+			},
+		);
+		const result = await client.requestSync(
+			{ name: "hobo-prod", namespace: "argocd", revision: REV },
+			ctx,
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reasons: [{ code: "argocd-credential-missing" }],
+		});
+		expect(http).not.toHaveBeenCalled();
+	});
 });
