@@ -266,3 +266,5 @@ The Rivet topic actor uses the provider-neutral bounded reducer from
 
 The actor uses the provider-neutral SQLite topic receipt journal from
 `@hobo/runtime/durable-topic-journal`.
+
+The bounded topic models are shared with the provider-neutral runtime.
