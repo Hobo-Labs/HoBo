@@ -444,7 +444,8 @@ const familyArg: JsonObject = {
 	family: {
 		type: "string",
 		enum: ["ci", "cd"],
-		description: "The lifecycle the store serves; both use the same session.",
+		description:
+			"The lifecycle family (ci or cd); CI and CD store sessions are separate.",
 	},
 	cwd: {
 		type: "string",
