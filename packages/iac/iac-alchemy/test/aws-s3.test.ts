@@ -14,6 +14,7 @@ import {
 const defineTest = Object.defineProperty;
 const grant: AwsS3Grant = {
 	bucketName: "mapped-bucket",
+	accountId: "000000000000",
 	region: "us-east-1",
 	resourceEpoch: `sha256:${"a".repeat(64)}`,
 	grantEpoch: `sha256:${"b".repeat(64)}`,
@@ -158,6 +159,32 @@ describe("S3 bounded object runtime", () => {
 		).rejects.toMatchObject({ code: "AWS_S3_OBJECT_INVALID" });
 		expect(f.calls()).toBe(0);
 	});
+	it("sends the expected AWS account on every object request", async () => {
+		const owners: (string | null)[] = [];
+		const f = fixture(async (_url, init) => {
+			owners.push(
+				new Headers(init?.headers).get("x-amz-expected-bucket-owner"),
+			);
+			return init?.method === "GET"
+				? new Response("<Error><Code>NoSuchKey</Code></Error>", {
+						status: 404,
+						headers: { "content-type": "application/xml" },
+					})
+				: new Response(null, { status: 200 });
+		});
+		expect(await f.store.read(object.name)).toBeUndefined();
+		await f.store.write(object);
+		await f.store.delete(object.name);
+		expect(owners).toEqual([grant.accountId, grant.accountId, grant.accountId]);
+		expect(() =>
+			fixture(
+				async () => new Response(),
+				() => true,
+				{ ...grant, accountId: "bad" },
+			),
+		).toThrow("AWS_S3_GRANT_INVALID");
+	});
+
 	it("enforces operation and key scope and reports revoked writes as uncertain", async () => {
 		let allowed = true;
 		const f = fixture(
