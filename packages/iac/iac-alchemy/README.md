@@ -83,6 +83,7 @@ The bounded `AwsSecretOrdering` model checks sorting and tie rejection for three
 versions; it assumes the provider reports truthful timestamps.
 The provider's creation timestamps are its only ordering evidence, so equal
 timestamps cannot establish which version is newer.
+An `AWSCURRENT` label does not establish the order of tied older versions.
 String-valued secrets and WASI bindings are not supported. HTTP applications
 may use scoped secret bindings as described below.
 The `AwsSecretVersions` bounded model assumes persisted IDs, provider
