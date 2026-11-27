@@ -49,3 +49,5 @@ owned by the consuming packages (`@hobo/cli`, `@hobo/stage-gate`, `@hobo/hobo`),
 as a supported external toolchain. Ship-target context:
 [`docs/design/launch-ship-targets.md`](../../docs/design/launch-ship-targets.md),
 [ADR-0139](../../docs/design/adr/07-portability-extensibility.md#adr-0139).
+
+The published SDK package is `@hobo-labs/componentize`.

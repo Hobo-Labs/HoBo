@@ -34,6 +34,21 @@
 		"@hobo/replay": "@hobo-labs/replay",
 		"@hobo/adapter-hono": "@hobo-labs/adapter-hono",
 		"@hobo/schema-tools": "@hobo-labs/schema-tools",
-		"@hobo/pricing": "@hobo-labs/pricing"
+		"@hobo/pricing": "@hobo-labs/pricing",
+		"@hobo/bindings": "@hobo-labs/bindings",
+		"@hobo/manifest-capability": "@hobo-labs/manifest-capability",
+		"@hobo/manifest-request": "@hobo-labs/manifest-request",
+		"@hobo/capability-profiles": "@hobo-labs/capability-profiles",
+		"@hobo/provider-redaction": "@hobo-labs/provider-redaction",
+		"@hobo/claims": "@hobo-labs/claims",
+		"@hobo/manifest-declaration": "@hobo-labs/manifest-declaration",
+		"@hobo/manifest-plan": "@hobo-labs/manifest-plan",
+		"@hobo/cloud": "@hobo-labs/cloud",
+		"@hobo/registry": "@hobo-labs/registry",
+		"@hobo/ci": "@hobo-labs/ci",
+		"@hobo/trust": "@hobo-labs/trust",
+		"@hobo/cd": "@hobo-labs/cd",
+		"@hobo/componentize": "@hobo-labs/componentize",
+		"@hobo/patterns": "@hobo-labs/patterns"
 	}
 }
