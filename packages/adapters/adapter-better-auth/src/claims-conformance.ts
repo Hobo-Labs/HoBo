@@ -17,15 +17,15 @@
  */
 
 import {
+	BETTER_AUTH_CLAIMS_MAPPING_VERSION,
+	BetterAuthClaimsError,
+	type BetterAuthClaimsErrorCode,
+} from "@hobo/auth-adapter-contract";
+import {
 	BETTER_AUTH_ACCEPTED_CLAIM_KEYS,
 	type MappedPrincipal,
 	mapClaimsToPrincipal,
 } from "./claims.js";
-import {
-	BetterAuthClaimsError,
-	type BetterAuthClaimsErrorCode,
-} from "./errors.js";
-import { BETTER_AUTH_CLAIMS_MAPPING_VERSION } from "./ids.js";
 import { isJsonObject, type JsonObject } from "./json.js";
 
 export type ClaimsMappingExpectation =

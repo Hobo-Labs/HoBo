@@ -295,7 +295,7 @@ describe("Rivet HTTP application with a durable topic bus", () => {
 		expect(() => createRivetHttpTopicBusMappers(input)).toThrow();
 	});
 
-	it("previews a real DurableObject and rejects legacy topic dependencies", async () => {
+	it("previews a real DurableObject and rejects unbound topic dependencies", async () => {
 		const f = fixture();
 		const main = "/src/main.ts";
 		const registry = setup({

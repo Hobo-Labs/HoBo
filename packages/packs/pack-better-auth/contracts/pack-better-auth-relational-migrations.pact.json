@@ -1,0 +1,26 @@
+{
+	"consumer": { "name": "hobo-pack-better-auth" },
+	"provider": { "name": "hobo-schema-diff-engine" },
+	"interactions": [
+		{
+			"description": "an empty postgres baseline diffs to expand-only Better Auth table creates",
+			"request": {
+				"method": "POST",
+				"path": "/schema/diff",
+				"body": {
+					"currentDialect": "postgres",
+					"currentTables": [],
+					"desiredPackId": "pack.better-auth/v1"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"planContract": "hobo.migration-plan/v1",
+					"phases": ["expand"],
+					"tables": ["account", "session", "user", "verification"]
+				}
+			}
+		}
+	]
+}
