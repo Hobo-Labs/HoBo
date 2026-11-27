@@ -38,7 +38,7 @@ runs:
         set -e
         output_file="${GITHUB_OUTPUT:-}"
         outputs_missing=0
-        if [ -z "$output_file" ] || [ ! -f "$output_file" ] || ! grep -q '^materialized=' "$output_file"; then
+        if [ -z "$output_file" ] || [ ! -f "$output_file" ] || ! grep -q '^materialized=' "$output_file" || ! grep -q '^source=' "$output_file" || ! grep -q '^install=' "$output_file"; then
           outputs_missing=1
         fi
         if [ "$status" -ne 0 ] && [ "$outputs_missing" -eq 1 ]; then
@@ -46,7 +46,11 @@ runs:
             echo "::warning title=hobo-ci-deps-materialize-timeout::GHCR deps materialize exceeded 8 minutes"
           fi
           if [ -n "$output_file" ]; then
-            printf '%s\n' 'materialized=false' 'source=failed' 'install=false' >> "$output_file" || true
+            install=false
+            if [ "$(node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts --check-warm-store 2>/dev/null || true)" = 'true' ]; then
+              install=true
+            fi
+            printf '%s\n' 'materialized=false' 'source=failed' "install=$install" >> "$output_file" || true
           fi
           exit 0
         fi

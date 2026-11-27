@@ -1314,5 +1314,14 @@ function defaultDocker(deadline: number): DepsDocker | undefined {
 
 const invoked = process.argv[1] ? resolve(process.argv[1]) : undefined;
 if (invoked && resolve(invoked) === fileURLToPath(import.meta.url)) {
-	process.exit(await runMaterializeCli());
+	if (process.argv[2] === "--check-warm-store") {
+		const env = process.env;
+		console.log(
+			warmPnpmStore({ env, storePath: () => pnpmStorePath(env) })
+				? "true"
+				: "false",
+		);
+	} else {
+		process.exit(await runMaterializeCli());
+	}
 }

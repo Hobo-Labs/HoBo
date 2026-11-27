@@ -891,6 +891,7 @@ describe("Actions runner policy", () => {
 			readonly nodeOutput?: string;
 			readonly timeoutStatus?: number;
 			readonly githubOutput?: string | null;
+			readonly warmStore?: boolean;
 		}) => {
 			const root = mkdtempSync(join(tmpdir(), "hobo-deps-wrap-"));
 			try {
@@ -904,7 +905,7 @@ describe("Actions runner policy", () => {
 				);
 				writeFileSync(
 					node,
-					'#!/bin/sh\nif [ -n "${FAKE_NODE_OUTPUT:-}" ]; then printf \'%s\\n\' "$FAKE_NODE_OUTPUT" >> "$GITHUB_OUTPUT"; fi\nexit "${FAKE_NODE_STATUS:-0}"\n',
+					'#!/bin/sh\nif [ "${4:-}" = "--check-warm-store" ]; then printf \'%s\\n\' "${FAKE_WARM_STORE:-false}"; exit 0; fi\nif [ -n "${FAKE_NODE_OUTPUT:-}" ]; then printf \'%s\\n\' "$FAKE_NODE_OUTPUT" >> "$GITHUB_OUTPUT"; fi\nexit "${FAKE_NODE_STATUS:-0}"\n',
 				);
 				chmodSync(timeout, 0o755);
 				chmodSync(node, 0o755);
@@ -914,6 +915,7 @@ describe("Actions runner policy", () => {
 					PATH: `${root}${delimiter}${process.env.PATH ?? ""}`,
 					FAKE_NODE_STATUS: String(input.nodeStatus),
 					FAKE_NODE_OUTPUT: input.nodeOutput ?? "",
+					FAKE_WARM_STORE: String(input.warmStore === true),
 				};
 				delete env.GITHUB_OUTPUT;
 				if (input.githubOutput !== null && input.githubOutput !== undefined) {
@@ -953,15 +955,37 @@ describe("Actions runner policy", () => {
 			/::warning title=hobo-ci-deps-materialize-timeout::/,
 		);
 		assert.match(timedOut.output, /^install=false$/mu);
+		const timedOutWarm = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "",
+			warmStore: true,
+		});
+		assert.equal(timedOutWarm.status, 0);
+		assert.match(timedOutWarm.output, /^install=true$/mu);
+		const partialWarm = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "materialized=true\n",
+			warmStore: true,
+		});
+		assert.equal(partialWarm.status, 0);
+		assert.match(
+			partialWarm.output,
+			/materialized=false\nsource=failed\ninstall=true\n$/u,
+		);
 		const unset = runWrapper({ nodeStatus: 1, githubOutput: null });
 		assert.equal(unset.status, 0, `${unset.stdout}${unset.stderr}`);
 		const decided = runWrapper({
 			nodeStatus: 9,
-			githubOutput: "materialized=true\ninstall=false\n",
+			githubOutput: "materialized=true\nsource=local\ninstall=false\n",
 			nodeOutput: "",
 		});
 		assert.equal(decided.status, 9);
-		assert.equal(decided.output, "materialized=true\ninstall=false\n");
+		assert.equal(
+			decided.output,
+			"materialized=true\nsource=local\ninstall=false\n",
+		);
 		const succeeded = runWrapper({
 			nodeStatus: 0,
 			githubOutput: "",

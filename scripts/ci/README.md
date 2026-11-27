@@ -77,6 +77,8 @@ Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../pac
 While holding the Pages publish slot, the stable job verifies that `gh-pages`
 still names its exact candidate source before promotion. A superseded or
 unverifiable source fails the job so it cannot report a stale promotion as passed.
+If dependency-layer materialization times out without a complete decision, the
+recovery action checks the pnpm store again and installs only when it is warm.
 
 Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
 (including `src` for the gh-pages deps checkout-key path and `examples` for

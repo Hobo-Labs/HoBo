@@ -404,6 +404,51 @@ describe("deps image refs and recovery", () => {
 		}
 	});
 
+	it("reports the warm store to the timeout recovery wrapper", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-warm-store-cli-"));
+		try {
+			const empty = join(root, "empty");
+			const filled = join(root, "filled");
+			mkdirSync(empty);
+			mkdirSync(filled);
+			writeFileSync(join(filled, "package"), "1");
+			const pnpm = join(root, "pnpm");
+			writeFileSync(
+				pnpm,
+				'#!/bin/sh\nprintf "%s\\n" "$HOBO_TEST_STORE_PATH"\n',
+			);
+			chmodSync(pnpm, 0o755);
+			for (const [store, expected] of [
+				[empty, "false"],
+				[filled, "true"],
+			] as const) {
+				const result = spawnSync(
+					process.execPath,
+					[
+						"--experimental-strip-types",
+						"--no-warnings",
+						script,
+						"--check-warm-store",
+					],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							PATH: root,
+							HOBO_CI_PNPM_STORE_MOUNTED: "",
+							HOBO_CI_PNPM_STORE_DIR: "",
+							HOBO_TEST_STORE_PATH: store,
+						},
+					},
+				);
+				assert.equal(result.status, 0, result.stderr);
+				assert.equal(result.stdout.trim(), expected);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("publishes a runner-temp payload when the default directory is not writable", async () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-payload-dir-"));
 		try {
