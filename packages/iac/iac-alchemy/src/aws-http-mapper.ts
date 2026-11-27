@@ -29,6 +29,11 @@ import {
 } from "./source-fence.js";
 import { acceptSynchronousTrue } from "./synchronous-result.js";
 
+const apply = Reflect.apply;
+const arraySome = Array.prototype.some;
+const descriptor = Object.getOwnPropertyDescriptor;
+const own = Object.hasOwn;
+
 export function awsWebFunctionSource(
 	bindleName: string,
 	applicationName: string,
@@ -69,18 +74,24 @@ export function awsHttpBindleMappers<Requirements>(
 		typeof options !== "object" ||
 		types.isProxy(options) ||
 		Reflect.ownKeys(options).length !== 7 ||
-		[
-			"source",
-			"main",
-			"authType",
-			"maxEnvironments",
-			"rateLimit",
-			"sourceFence",
-			"verifySource",
-		].some((key) => {
-			const field = Object.getOwnPropertyDescriptor(options, key);
-			return !field || !Object.hasOwn(field, "value") || !field.enumerable;
-		})
+		apply(
+			arraySome,
+			[
+				"source",
+				"main",
+				"authType",
+				"maxEnvironments",
+				"rateLimit",
+				"sourceFence",
+				"verifySource",
+			],
+			[
+				(key: string) => {
+					const field = descriptor(options, key);
+					return !field || !own(field, "value") || !field.enumerable;
+				},
+			],
+		)
 	)
 		throw new AlchemyIacError(
 			"ENTRYPOINT_UNSUPPORTED",
