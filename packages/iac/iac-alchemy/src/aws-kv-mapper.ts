@@ -1,11 +1,7 @@
-import { types } from "node:util";
 import type { Providers } from "@alchemy.run/aws";
 import { awsBindleMappers } from "./aws.js";
-import type {
-	AlchemyPrimitiveMapper,
-	BindleForAlchemy,
-	PrimitiveDeclaration,
-} from "./bindle.js";
+import { withAwsTargetSelection } from "./aws-target-selection.js";
+import type { AlchemyPrimitiveMapper, BindleForAlchemy } from "./bindle.js";
 import { AlchemyIacError } from "./plan.js";
 
 export function awsDynamoKv() {
@@ -24,63 +20,7 @@ export function withAwsDynamoKv<Entrypoint, Requirements>(
 	bindle: BindleForAlchemy<Entrypoint, Requirements>,
 	choices: Readonly<Record<string, true>>,
 ): BindleForAlchemy<Entrypoint, Requirements> {
-	if (
-		!choices ||
-		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: provider choices cross an external boundary.
-		typeof choices !== "object" ||
-		types.isProxy(choices) ||
-		Array.isArray(choices) ||
-		Object.getOwnPropertySymbols(choices).length !== 0
-	)
-		throw new AlchemyIacError(
-			"BINDLE_INVALID",
-			"KV choices must be a bounded record",
-		);
-	const fields = Object.getOwnPropertyDescriptors(choices);
-	const names = Object.keys(fields);
-	if (
-		names.length === 0 ||
-		names.length > 256 ||
-		names.some(
-			(name) =>
-				fields[name]?.value !== true || fields[name]?.enumerable !== true,
-		)
-	)
-		throw new AlchemyIacError(
-			"BINDLE_INVALID",
-			"KV choices must contain own true values",
-		);
-	const resources: Record<string, PrimitiveDeclaration> = Object.create(null);
-	for (const [name, declaration] of Object.entries(bindle.resources)) {
-		if (!Object.hasOwn(fields, name)) {
-			resources[name] = declaration;
-			continue;
-		}
-		if (declaration.kind !== "kv" || declaration.annotations.length !== 0)
-			throw new AlchemyIacError(
-				"BINDLE_INVALID",
-				"KV choice must name an unannotated KV resource",
-			);
-		resources[name] = Object.freeze({
-			...declaration,
-			annotations: Object.freeze([awsDynamoKv()]),
-		});
-	}
-	if (names.some((name) => !Object.hasOwn(resources, name)))
-		throw new AlchemyIacError(
-			"BINDLE_INVALID",
-			"KV choice names an unknown resource",
-		);
-	const result = {
-		name: bindle.name,
-		resources: Object.freeze(resources),
-		edges: bindle.edges,
-		requirements: bindle.requirements,
-		entrypoint: (name: string) => bindle.entrypoint(name),
-	};
-	return bindle.connectors === undefined
-		? Object.freeze(result)
-		: Object.freeze({ ...result, connectors: bindle.connectors });
+	return withAwsTargetSelection(bindle, choices, "kv", "KV", awsDynamoKv());
 }
 
 export function awsDynamoKvBindleMappers<Entrypoint, Requirements>() {
