@@ -1,7 +1,7 @@
 Feature: Hosted provider parity with RelayRunner
   Hosted runner providers are named in the runner order by their own labels.
   One scenario per gauntlet case; the case catalog is cases.json beside
-  this file. A scenario tagged @pending waits for the work package that
+  this file. A scenario tagged waits for the work package that
   builds it.
 
   @parity @P01 @t1
@@ -71,7 +71,7 @@ Feature: Hosted provider parity with RelayRunner
       | ubuntu-24.04              | github     |
       | my-own-runner             | none       |
 
-  @parity @P04 @t1 @pending
+  @parity @P04 @t1
   Scenario: P04 Every routable provider has dated list prices per size
     Then every hosted provider in the runner order has a financial model
     And each price names its source page and the day it was read

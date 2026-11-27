@@ -1,6 +1,6 @@
 Feature: Security parity with RelayRunner
   What the relay may see and do. One scenario per gauntlet case; the case
-  catalog is cases.json beside this file. A scenario tagged @pending waits
+  catalog is cases.json beside this file. A scenario tagged waits
   for the work package that builds it.
 
   @parity @X01 @t2
@@ -22,7 +22,7 @@ Feature: Security parity with RelayRunner
     When the relay answers it
     Then the relay started no process
 
-  @parity @X04 @t2 @pending
+  @parity @X04 @t2
   Scenario: X04 The new MCP tools need only the read scope
     Given a token with only the read scope
     Then every new MCP tool answers it

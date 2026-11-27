@@ -1,7 +1,7 @@
 Feature: Routing parity with RelayRunner
   The runner order decides where a job runs when HoBo CI claims it; no
   workflow job routes another. One scenario per gauntlet case; the case
-  catalog is cases.json beside this file. A scenario tagged @pending waits
+  catalog is cases.json beside this file. A scenario tagged waits
   for the work package that builds it.
 
   @parity @R01 @t2 @t3
@@ -91,21 +91,21 @@ Feature: Routing parity with RelayRunner
     When the relay answers the relay job
     Then the relay job succeeds on "hobo" from the "fleet" step
 
-  @parity @R07 @t1 @t2 @pending
+  @parity @R07 @t1 @t2
   Scenario: R07 GitHub-hosted runners are used while under the minutes limit with a two-hour runway
     Given the owner's measured Actions minutes are read by the billing reader
     When the minutes used pass the limit, or the burn would pass it within two hours
     Then the github step is passed over with "minutes_limit" or "minutes_runway"
     And when the minutes cannot be read, the github step is still used
 
-  @parity @R08 @t1 @t2 @pending
+  @parity @R08 @t1 @t2
   Scenario: R08 A provider is used while under its monthly spend limit, summed from the ledger
     Given the ledger holds this month's spend on depot
     When the spend reaches the depot spend limit
     Then the depot step is passed over with "spend_limit"
     And with no ledger entry the depot step is still used
 
-  @parity @R09 @t1 @t2 @pending
+  @parity @R09 @t1 @t2
   Scenario: R09 A provider that misses three jobs in thirty minutes is skipped, tried again with back-off and can be cleared
     Given depot missed three jobs within thirty minutes
     Then the depot step is passed over with "provider_unhealthy"
@@ -113,20 +113,20 @@ Feature: Routing parity with RelayRunner
     And a trial job is let through after the back-off
     And "hobo ci provider-health clear depot" clears it
 
-  @parity @R10 @t2 @pending
+  @parity @R10 @t2
   Scenario: R10 A job that lost its runner is retried at most twice and never twice for one delivery
     Given a job failed before its own steps ran
     When its workflow_run completed webhook is delivered twice
     Then the failed jobs are re-run once
     And no job is retried more than twice
 
-  @parity @R11 @t1 @t2 @pending
+  @parity @R11 @t1 @t2
   Scenario: R11 A job picks its own size and a runner type to try first
     Given a job asking for "size: 8" and "first: depot"
     When the relay job is answered
     Then the depot step is tried first with an 8 vCPU label
 
-  @parity @R12 @t2 @pending
+  @parity @R12 @t2
   Scenario: R12 A re-run of failed jobs is routed again when HoBo CI claims it
     Given a run whose job on a HoBo label failed
     When the failed jobs are re-run
@@ -139,7 +139,7 @@ Feature: Routing parity with RelayRunner
     When two poll intervals pass
     Then the relay job is completed
 
-  @parity @R14 @t2 @pending
+  @parity @R14 @t2
   Scenario: R14 Each leg of a matrix job on a HoBo label is routed when HoBo CI claims it
     Given a workflow whose matrix job of three legs has runs-on set to a HoBo label
     When HoBo CI claims each leg
