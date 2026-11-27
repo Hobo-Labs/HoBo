@@ -59,8 +59,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   keeps the release-path "manifest present … pull failed … refusing build.sh" error.
   An already-present image after a timeout counts only for a digest-qualified ref;
   a mutable tag needs a successful pull before it can be reused.
-  Those ensure steps have a 13-minute bound so the 540-second download, the extract
-  resume, and login plus manifest inspection fit under the step cap. The
+  Those ensure steps, including the separate CLI and MCP jobs, have a 13-minute
+  bound so the 540-second download, the extract resume, and login plus manifest
+  inspection fit under the step cap. The
   `release-oci-build-tag` matrix permits six parallel legs for SDK, codegen,
   CI serve and site. The later CLI and MCP jobs load verified OCI layout
   artifacts instead of rebuilding their prerequisites. Each image uses a run-

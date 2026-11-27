@@ -184,6 +184,18 @@ describe("release-hobo publish and attest, one image per job", () => {
 		);
 		expect(cli).not.toContain("build-release-oci-image.mts hobo-sdk");
 		const mcp = job("release-oci-build-mcp", "release-images");
+		for (const [name, block] of [
+			["base images", matrix],
+			["CLI", cli],
+			["MCP", mcp],
+		]) {
+			expect(
+				block,
+				`${name} must retain the worker pull recovery budget`,
+			).toMatch(
+				/- name: Ensure digest-pinned content-keyed toolchain image\n\s+timeout-minutes: 13\n/u,
+			);
+		}
 		expect(mcp).toContain(
 			"name: Build all OCI images on tag (gate publish) (hobo-mcp)",
 		);

@@ -1169,7 +1169,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOBO_CI_WORKER_IMAGE_REF: ${{ needs.release-toolchain-image.outputs.image_ref }}
@@ -1256,7 +1256,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOBO_CI_WORKER_IMAGE_REF: ${{ needs.release-toolchain-image.outputs.image_ref }}
