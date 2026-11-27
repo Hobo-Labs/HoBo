@@ -315,4 +315,133 @@ describe("@hobo/storage-sqlite createSqliteDomainPlatform", () => {
 			reopened.close();
 		}
 	});
+
+	it("delivers multi-aggregate policy chains without re-entrant outbox or aggregate lock deadlocks", async () => {
+		const MirrorId = Schema.String.pipe(Schema.brand("MirrorId"));
+
+		class MirrorRecorded extends Domain.Event("MirrorRecorded", {
+			sourceId: CounterId,
+			delta: Schema.Int,
+		}) {}
+
+		class RecordMirror extends Domain.Command("RecordMirror", {
+			target: MirrorId,
+			input: {
+				sourceId: CounterId,
+				delta: Schema.Int,
+			},
+			events: [MirrorRecorded],
+			rejects: [],
+		}) {}
+
+		class MirrorAggregate extends Domain.Aggregate("MirrorAggregate", {
+			id: MirrorId,
+			state: Schema.Struct({ mirrored: Schema.Int }),
+			initial: { mirrored: 0 },
+			commands: [RecordMirror],
+			decide: {
+				RecordMirror: (_state, cmd) => [
+					new MirrorRecorded({ sourceId: cmd.sourceId, delta: cmd.delta }),
+				],
+			},
+			evolve: {
+				MirrorRecorded: (state, event) => ({
+					mirrored: state.mirrored + event.delta,
+				}),
+			},
+		}) {}
+
+		class MirrorView extends Domain.View("MirrorView", {
+			from: [MirrorAggregate],
+			key: MirrorAggregate,
+			state: Schema.Struct({ mirrored: Schema.Int }),
+			initial: { mirrored: 0 },
+			evolve: {
+				MirrorRecorded: (state, event) => ({
+					mirrored: state.mirrored + event.delta,
+				}),
+			},
+		}) {}
+
+		class ForwardToMirrorPolicy extends Domain.Policy("ForwardToMirrorPolicy", {
+			from: CounterAggregate,
+			on: [Incremented],
+		}) {}
+
+		class EchoBackPolicy extends Domain.Policy("EchoBackPolicy", {
+			from: MirrorAggregate,
+			on: [MirrorRecorded],
+		}) {}
+
+		class ChainedDomain extends Domain.Model("ChainedDomain", {
+			aggregates: [CounterAggregate, MirrorAggregate],
+			views: [CounterSummaryView, MirrorView],
+			policies: [ForwardToMirrorPolicy, EchoBackPolicy],
+		}) {}
+
+		const ForwardToMirrorPolicyLive = ForwardToMirrorPolicy.toLayer(
+			Effect.gen(function* () {
+				const mirrors = yield* MirrorAggregate;
+				return Effect.fn(function* ({ source, event }) {
+					if (event.delta <= 0) return;
+					yield* mirrors
+						.send(
+							MirrorId.make(`mirror-${source.id}`),
+							new RecordMirror({ sourceId: source.id, delta: event.delta }),
+						)
+						.pipe(Effect.asVoid);
+				});
+			}),
+		);
+
+		const EchoBackPolicyLive = EchoBackPolicy.toLayer(
+			Effect.gen(function* () {
+				const counters = yield* CounterAggregate;
+				return Effect.fn(function* ({ event }) {
+					yield* counters
+						.send(event.sourceId, new IncrementCounter({ delta: 0 }))
+						.pipe(Effect.asVoid);
+				});
+			}),
+		);
+
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sqlite-domain-policy-chain-"));
+		tempDirs.push(dir);
+		const dbPath = join(dir, "chained.sqlite");
+		const counterId = CounterId.make("counter-chain-1");
+		const mirrorId = MirrorId.make(`mirror-${counterId}`);
+		const driver = createNodeSqliteDriver({ path: dbPath });
+		try {
+			const layer = ChainedDomain.layer(
+				Layer.mergeAll(ForwardToMirrorPolicyLive, EchoBackPolicyLive),
+			).pipe(Layer.provide(createSqliteDomainPlatform(driver)));
+
+			const snapshots = await Effect.runPromise(
+				Effect.gen(function* () {
+					const counters = yield* CounterAggregate;
+					const counterViews = yield* CounterSummaryView;
+					const mirrorViews = yield* MirrorView;
+					yield* counters.send(counterId, new IncrementCounter({ delta: 4 }), {
+						commandId: "cmd-chain-1",
+					});
+					const counterSnapshot = Option.getOrThrow(
+						yield* counterViews.get(counterId),
+					);
+					const mirrorSnapshot = Option.getOrThrow(
+						yield* mirrorViews.get(mirrorId),
+					);
+					return { counterSnapshot, mirrorSnapshot };
+				}).pipe(Effect.provide(layer)),
+			);
+
+			expect(snapshots.counterSnapshot).toEqual({ total: 4, updates: 2 });
+			expect(snapshots.mirrorSnapshot).toEqual({ mirrored: 4 });
+			const remaining = driver
+				.prepare("SELECT COUNT(*) AS n FROM domain_outbox WHERE model_name = ?")
+				.get("ChainedDomain");
+			expect(Number(remaining?.n)).toBe(0);
+		} finally {
+			driver.close();
+		}
+	});
 });
