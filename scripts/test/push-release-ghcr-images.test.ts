@@ -136,6 +136,99 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(attest).toContain("if: steps.digest.outputs.present == 'true'");
 		expect(workflow).not.toContain("name: hobo-release-digests\n");
 	});
+
+	it("loads the sdk and cli layouts instead of rebuilding them for later images", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		const { mainTrainReleasePhase } = await import(
+			"../../packages/ci-gh-actions/src/admission-order.ts"
+		);
+		const { storageClassForJob } = await import(
+			"../../packages/ci-gh-actions/src/isolated-worker/storage-job-classes.ts"
+		);
+		const { workflowJobTimeoutMinutes } = await import(
+			"../../packages/ci-gh-actions/src/isolated-worker/workflow-job-timeout.ts"
+		);
+		const workflow = readFileSync(
+			join(
+				import.meta.dirname,
+				"..",
+				"..",
+				".github/workflows/release-hobo.yml",
+			),
+			"utf8",
+		);
+		const job = (id: string, next: string) =>
+			workflow.slice(
+				workflow.indexOf(`\n  ${id}:\n`),
+				workflow.indexOf(`\n  ${next}:\n`),
+			);
+		const matrix = job("release-oci-build-tag", "release-oci-build-cli");
+		expect(matrix).toContain(
+			"image_id: [hobo-sdk, hobo-codegen, hobo-ci-serve, hobo-site]",
+		);
+		expect(matrix).not.toContain("build-release-oci-image.mts hobo-sdk");
+		expect(matrix).not.toContain("build-release-oci-image.mts hobo-cli");
+		const cli = job("release-oci-build-cli", "release-oci-build-mcp");
+		expect(cli).toContain(
+			"name: Build all OCI images on tag (gate publish) (hobo-cli)",
+		);
+		expect(cli).toContain(
+			"HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-hobo-cli",
+		);
+		expect(cli).toContain(
+			'load-release-oci-layout.mts hobo-sdk "${RUNNER_TEMP}/hobo-release-oci-layout-hobo-sdk"',
+		);
+		expect(cli).toContain(
+			"build-release-oci-image.mts hobo-cli --keep-candidate",
+		);
+		expect(cli).not.toContain("build-release-oci-image.mts hobo-sdk");
+		const mcp = job("release-oci-build-mcp", "release-images");
+		for (const [name, block] of [
+			["base images", matrix],
+			["CLI", cli],
+			["MCP", mcp],
+		]) {
+			expect(
+				block,
+				`${name} must retain the worker pull recovery budget`,
+			).toMatch(
+				/- name: Ensure digest-pinned content-keyed toolchain image\n\s+timeout-minutes: 13\n/u,
+			);
+		}
+		expect(mcp).toContain(
+			"name: Build all OCI images on tag (gate publish) (hobo-mcp)",
+		);
+		expect(mcp).toContain(
+			"HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-hobo-mcp",
+		);
+		expect(mcp).toContain(
+			'load-release-oci-layout.mts hobo-sdk "${RUNNER_TEMP}/hobo-release-oci-layout-hobo-sdk"',
+		);
+		expect(mcp).toContain(
+			'load-release-oci-layout.mts hobo-cli "${RUNNER_TEMP}/hobo-release-oci-layout-hobo-cli"',
+		);
+		expect(mcp).toContain(
+			"build-release-oci-image.mts hobo-mcp --keep-candidate",
+		);
+		expect(mcp).not.toContain("build-release-oci-image.mts hobo-sdk");
+		expect(mcp).not.toContain("build-release-oci-image.mts hobo-cli");
+		expect(workflow).not.toContain("build-release-oci-image.mts hobo-sdk");
+		for (const name of [
+			"Build all OCI images on tag (gate publish) (hobo-cli)",
+			"Build all OCI images on tag (gate publish) (hobo-mcp)",
+		]) {
+			expect(mainTrainReleasePhase(name)).toBe(2);
+			expect(storageClassForJob(name)).toBe("runner_image");
+			expect(workflowJobTimeoutMinutes(name)).toBe(20);
+		}
+		expect(mainTrainReleasePhase("Publish GitHub Pages (site/) (stable)")).toBe(
+			3,
+		);
+		expect(storageClassForJob("Publish GitHub Pages (site/) (stable)")).toBe(
+			"release_trunk",
+		);
+	});
 });
 
 describe("release-images job", () => {
