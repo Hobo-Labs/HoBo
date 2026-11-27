@@ -11,6 +11,7 @@ import { Secret, SecretProvider } from "@alchemy.run/aws/SecretsManager";
 import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
 import { Queue, QueueProvider } from "@alchemy.run/aws/SQS";
 import * as SecretsManager from "@distilled.cloud/aws/secrets-manager";
+import * as SNS from "@distilled.cloud/aws/sns";
 import * as SQS from "@distilled.cloud/aws/sqs";
 import { NodeHttpClient } from "@effect/platform-node";
 import { awsPlugin, getAwsStore } from "@emulators/aws";
@@ -43,6 +44,7 @@ import {
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
+import { createAwsNotificationPublisher } from "../src/aws-notification.js";
 import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
 	awsDynamoDurableQueueMappers,
@@ -796,6 +798,97 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				`arn:aws:sns:us-east-1:000000000000:${notification.topicName}`,
 			);
 			expect(notification.topicArn).not.toBe(first.topicArn);
+			const queueName = `notification-${randomUUID()}`;
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const target = await Effect.runPromise(
+				SQS.createQueue({
+					QueueName: queueName,
+					Attributes: {
+						Policy: JSON.stringify({
+							Version: "2012-10-17",
+							Statement: [
+								{
+									Effect: "Allow",
+									Principal: { Service: "sns.amazonaws.com" },
+									Action: "sqs:SendMessage",
+									Resource: `arn:aws:sqs:us-east-1:000000000000:${queueName}`,
+									Condition: {
+										ArnEquals: { "aws:SourceArn": notification.topicArn },
+									},
+								},
+							],
+						}),
+					},
+				}).pipe(Effect.provide(layer)) as Effect.Effect<
+					{ QueueUrl?: string },
+					unknown,
+					never
+				>,
+			);
+			if (!target.QueueUrl) throw Error("subscriber queue URL unavailable");
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const subscription = await Effect.runPromise(
+				SNS.subscribe({
+					TopicArn: notification.topicArn,
+					Protocol: "sqs",
+					Endpoint: `arn:aws:sqs:us-east-1:000000000000:${queueName}`,
+				}).pipe(Effect.provide(layer)) as Effect.Effect<
+					{ SubscriptionArn?: string },
+					unknown,
+					never
+				>,
+			);
+			if (!subscription.SubscriptionArn)
+				throw Error("subscriber ARN unavailable");
+			const epoch = `sha256:${"a".repeat(64)}`;
+			const publisher = createAwsNotificationPublisher({
+				grant: {
+					topicName: notification.topicName,
+					accountId: "000000000000",
+					partition: "aws",
+					region: "us-east-1",
+					resourceEpoch: epoch,
+					grantEpoch: epoch,
+				},
+				verify: () => true,
+				layer,
+			});
+			const body = `notification 🌎 ${randomUUID()}`;
+			const sent = await publisher.send({
+				attemptId: "abcdefghijklmnop",
+				body,
+			});
+			expect(sent.status).toBe("accepted");
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const received = await Effect.runPromise(
+				SQS.receiveMessage({
+					QueueUrl: target.QueueUrl,
+					WaitTimeSeconds: 5,
+					MaxNumberOfMessages: 10,
+				}).pipe(Effect.provide(layer)) as Effect.Effect<
+					{ Messages?: { Body?: string }[] },
+					unknown,
+					never
+				>,
+			);
+			expect(
+				received.Messages?.some(
+					(message) =>
+						message.Body && JSON.parse(message.Body).Message === body,
+				),
+			).toBe(true);
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			await Effect.runPromise(
+				SNS.unsubscribe({ SubscriptionArn: subscription.SubscriptionArn }).pipe(
+					Effect.provide(layer),
+				) as Effect.Effect<unknown, unknown, never>,
+			);
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			await Effect.runPromise(
+				SQS.deleteQueue({ QueueUrl: target.QueueUrl }).pipe(
+					Effect.provide(layer),
+				) as Effect.Effect<unknown, unknown, never>,
+			);
 		},
 	);
 	official(

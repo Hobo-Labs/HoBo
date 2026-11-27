@@ -12,6 +12,10 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
+		"./notification": {
+			"types": "./dist/ports/notification.d.ts",
+			"default": "./dist/ports/notification.js"
+		},
 		"./aws-sigv4": {
 			"types": "./dist/ports/aws-sigv4.d.ts",
 			"default": "./dist/ports/aws-sigv4.js"

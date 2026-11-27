@@ -12,7 +12,8 @@ lock and capped-ring helpers; bindings in `@hobo/kv-redis-compatible` and
 `TrafficRoutingPort` adds provider-neutral, tenant-scoped multi-backend routing
 intent with explicit `full | partial | none` realization and capability notes.
 
-The asynchronous `NotificationPort` accepts a bounded, well-formed message and
+The `@hobo/core/notification` entrypoint exports the asynchronous notification
+contract. The asynchronous `NotificationPort` accepts a bounded, well-formed message and
 caller-chosen attempt ID. `accepted` means the provider accepted a submission,
 not that any recipient received it. `unknown` means it may have accepted the
 submission; the port does not promise deduplication or safe retry. A rejection
