@@ -64,8 +64,8 @@ they are scoped separately in that subsection.
 
 | State | Kargo primitive map (§) | Argo CD primitive map (§) | Cross-cutting scorecard (§) |
 | --- | --- | --- | --- |
-| pass | 10 | 1 | 4 |
-| partial | 5 | 6 | 6 |
+| pass | 11 | 1 | 4 |
+| partial | 4 | 6 | 6 |
 | built-not-proven | 0 | 4 | 0 |
 | not-built | 0 | 0 | 0 |
 | met-differently | 2 | 2 | 0 |
@@ -81,7 +81,7 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 | **Warehouse** | Freight source (`@hobo/cd/sources`) | **pass** | Pull discovery, forward-only cursors, assembly; broader than Kargo (package registries, HTTP index, HoBo CI, Rails). `packages/cd/src/sources/README.md`. |
 | **Freight** | Freight ledger (`@hobo/cd/freight`) | **pass** | Content-addressed manifest; alias; yank/retire/approve. Not CRD-compatible with Kargo. |
 | **Stage** | Pipeline node (`@hobo/cd/pipelines`) | **pass** | Camps or Placement per node; graph validation in `apply`. |
-| **requestedFreight / origin slots** | Per-node `from_sources` (+ source subscriptions) | **partial** | Nodes admit Freight via `from_sources` (`cd.proto`). A Freight **source** already assembles multiple subscriptions (`INDEPENDENT` / `SAME_VERSION` in `sources/README.md`). Gap: Kargo-style **named origin slots** with independent auto-promotion candidates per slot. |
+| **requestedFreight / origin slots** | Per-node `origin_slots[]` + `from_sources` | **pass** | `FreightOriginSlotRecord` + per-slot auto-promotion (`origin-slots.ts`, `packages/cd/test/pipelines/origin-slots.test.ts`, P5). |
 | **Availability OneOf / All** | `ONE_OF` / `ALL` | **pass** | `packages/cd/test/pipelines/availability.test.ts` (`Kargo parity:`). |
 | **Soak** | `required_soak_ms` | **pass** | Measured from upstream `env.Promoted`. Same test file. |
 | **QUORUM (fleet)** | `QUORUM` + Placement | **pass** | Beyond Kargo; documented in pipelines README. |
@@ -200,7 +200,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Cross-cutting: `CdEngineRegistry` — **implemented** (`engines.ts`, `cd-gitops` bridge) |
 | **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics — **implemented** (`@hobo/cd-argocd`, `ARGO_CD_SYNC_RUNBOOK`, `packages/cd-argocd/test/*.test.ts`) |
 | **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row — **implemented** (`auto-promotion.ts`, `promoteByOrigin`, `holds.test.ts`) |
-| **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row |
+| **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row — **implemented** (`origin_slots`, `origin-slots.ts`) |
 | **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row (syncPolicy already in render when `autoSync`) |
 | **P7** | CLI/MCP: promotion graph + freight timeline first-class | Promotion UI partial |
 | **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
