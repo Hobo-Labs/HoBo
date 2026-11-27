@@ -9,11 +9,14 @@ import {
 	AWS_KV_MAX_VALUE_BYTES,
 	type AwsKvGrant,
 	createAwsDynamoKvStore,
+	inspectAwsDynamoKvStore,
 } from "../src/aws-kv.js";
 
 const defineTest = Object.defineProperty;
 const grant: AwsKvGrant = {
 	tableName: "mapped-table",
+	accountId: "000000000000",
+	partition: "aws",
 	region: "us-east-1",
 	resourceEpoch: `sha256:${"a".repeat(64)}`,
 	grantEpoch: `sha256:${"b".repeat(64)}`,
@@ -47,6 +50,32 @@ function fixture(
 }
 
 describe("DynamoDB KV runtime", () => {
+	it("captures exact permissions even if includes changes during construction", async () => {
+		const original = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"includes",
+		);
+		let call: Promise<void>;
+		let calls: () => number;
+		try {
+			Object.defineProperty(Array.prototype, "includes", {
+				value: () => true,
+				configurable: true,
+			});
+			const f = fixture(
+				async () => new Response(),
+				() => true,
+				{ ...grant, allow: ["get"] },
+			);
+			calls = f.calls;
+			call = f.store.delete("key");
+		} finally {
+			if (original)
+				Object.defineProperty(Array.prototype, "includes", original);
+		}
+		await expect(call).rejects.toMatchObject({ code: "AWS_KV_DENIED" });
+		expect(calls()).toBe(0);
+	});
 	it("does not broaden a grant when Array.includes is replaced", async () => {
 		const f = fixture(
 			async () => new Response(),
@@ -163,6 +192,34 @@ describe("DynamoDB KV runtime", () => {
 		}
 		expect(failure).toMatchObject({ code: "AWS_KV_GRANT_INVALID" });
 	});
+	it("retains immutable store identity and rejects lookalikes", () => {
+		const f = fixture(async () => new Response());
+		const captured = inspectAwsDynamoKvStore(f.store);
+		expect(captured).toEqual(grant);
+		expect(Object.isFrozen(captured)).toBe(true);
+		expect(Object.isFrozen(captured?.allow)).toBe(true);
+		expect(inspectAwsDynamoKvStore({ ...f.store })).toBeUndefined();
+		const descriptor = Object.getOwnPropertyDescriptor(
+			WeakMap.prototype,
+			"get",
+		);
+		let forged: AwsKvGrant | undefined;
+		let real: AwsKvGrant | undefined;
+		try {
+			Object.defineProperty(WeakMap.prototype, "get", {
+				value: () => grant,
+				configurable: true,
+			});
+			forged = inspectAwsDynamoKvStore({ ...f.store });
+			real = inspectAwsDynamoKvStore(f.store);
+		} finally {
+			if (descriptor)
+				Object.defineProperty(WeakMap.prototype, "get", descriptor);
+		}
+		expect(forged).toBeUndefined();
+		expect(real).toEqual(grant);
+	});
+
 	it("rejects invalid grants and values without making a request", async () => {
 		const transport = vi.fn(async () => new Response("{}"));
 		expect(() =>
@@ -186,6 +243,30 @@ describe("DynamoDB KV runtime", () => {
 		});
 		expect(f.calls()).toBe(0);
 	});
+	it("addresses every operation to the exact partition, account, region and table ARN", async () => {
+		const tables: unknown[] = [];
+		const f = fixture(async (url, init) => {
+			const data: { TableName?: unknown } = await new Request(url, init).json();
+			tables.push(data.TableName);
+			return new Response("{}", { status: 200 });
+		});
+		expect(await f.store.get("key")).toBeUndefined();
+		await f.store.set({ key: "key", value: new Uint8Array([7]) });
+		await f.store.delete("key");
+		expect(tables).toEqual(
+			Array(3).fill(
+				"arn:aws:dynamodb:us-east-1:000000000000:table/mapped-table",
+			),
+		);
+		expect(() =>
+			fixture(
+				async () => new Response(),
+				() => true,
+				{ ...grant, accountId: "bad" },
+			),
+		).toThrow("AWS_KV_GRANT_INVALID");
+	});
+
 	it("enforces explicit operations and reports mutations whose authorization changes as unknown", async () => {
 		let authorized = true;
 		const f = fixture(

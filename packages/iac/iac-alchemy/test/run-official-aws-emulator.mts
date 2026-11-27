@@ -118,6 +118,8 @@ try {
 			"run",
 			"test/aws-mapping.test.ts",
 			"test/aws-kv.test.ts",
+			"test/aws-s3.test.ts",
+			"test/aws-http-runtime.test.ts",
 			"test/aws-emulator.test.ts",
 			"test/aws-budget-emulator.test.ts",
 			"test/aws-vite.test.ts",
