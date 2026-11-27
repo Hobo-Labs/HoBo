@@ -23,7 +23,7 @@ const CONFIG_INPUT = {
 	emailAndPassword: { enabled: true },
 	socialProviders: ["github", "google"],
 	organizations: { enabled: true },
-} as const;
+};
 
 const PORTS = {
 	relationalBindle: "auth_db",
