@@ -1332,3 +1332,9 @@ AWS HTTP graph capture uses saved array and object operations to preserve the
 validated dependency and permission snapshot when application callbacks alter
 mutable JavaScript prototypes. Provider-side ownership and fencing checks remain
 necessary at dispatch.
+
+The bounded `AwsGraphCapture` model checks that accepted bindings match a
+captured graph despite later input or method changes, and rejects duplicate
+dependency names and mismatched declarations. It considers two resource names
+with arbitrary kinds, assumes snapshots and saved operations are faithful, and
+does not prove the TypeScript implementation or host fencing.
