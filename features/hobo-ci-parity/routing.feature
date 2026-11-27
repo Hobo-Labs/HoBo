@@ -1,7 +1,7 @@
 Feature: Routing parity with RelayRunner
   The runner order decides where a job runs when HoBo CI claims it; no
   workflow job routes another. One scenario per gauntlet case; the case
-  catalog is cases.json beside this file. A scenario tagged waits
+  catalog is cases.json beside this file. A scenario tagged @pending waits
   for the work package that builds it.
 
   @parity @R01 @t2 @t3

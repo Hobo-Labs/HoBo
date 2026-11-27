@@ -1,7 +1,7 @@
 Feature: Runner-less check parity with RelayRunner
   A relay job made only of HoBo check steps is completed by the relay with
   no runner. One scenario per gauntlet case; the case catalog is cases.json
-  beside this file. A scenario tagged waits for the work package
+  beside this file. A scenario tagged @pending waits for the work package
   that builds it.
 
   @parity @C01 @t2 @t3

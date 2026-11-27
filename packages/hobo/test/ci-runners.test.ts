@@ -122,7 +122,10 @@ describe("hobo ci runners list|adopt|release (M10)", () => {
 		const adoptData = JSON.parse(adopted.stdout).data;
 		expect(adoptData.label).toMatch(/^hobo-runner-[0-9a-f]{8}$/u);
 		expect(adoptData.changed).toBe(true);
-		expect(calls).toContainEqual(["POST", "/orgs/octo/actions/runners/7/labels"]);
+		expect(calls).toContainEqual([
+			"POST",
+			"/orgs/octo/actions/runners/7/labels",
+		]);
 
 		const db = new DatabaseSync(join(home, "ci", "machines.sqlite"));
 		try {
@@ -134,10 +137,117 @@ describe("hobo ci runners list|adopt|release (M10)", () => {
 			db.close();
 		}
 
-		const released = await cli.run(["ci", "runners", "release", "7", "--json"], {
-			cwd: home,
-		});
+		const released = await cli.run(
+			["ci", "runners", "release", "7", "--json"],
+			{
+				cwd: home,
+			},
+		);
 		expect(released.exitCode).toBe(0);
 		expect(JSON.parse(released.stdout).data.removed).toEqual([adoptData.label]);
+
+		const badRepo = await cli.run(
+			["ci", "runners", "list", "--repo", "not-a-repo"],
+			{ cwd: home },
+		);
+		expect(badRepo.exitCode).not.toBe(0);
+
+		const badId = await cli.run(["ci", "runners", "adopt", "7abc"], {
+			cwd: home,
+		});
+		expect(badId.exitCode).not.toBe(0);
+
+		const extraArg = await cli.run(["ci", "runners", "list", "unexpected"], {
+			cwd: home,
+		});
+		expect(extraArg.exitCode).not.toBe(0);
+	});
+
+	it("uses default GitHub App installation credentials and repo owner fallback on /user 403", async () => {
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-runners-app-"));
+		dirs.push(home);
+		let labels = [{ name: "self-hosted" }, { name: "Linux" }, { name: "X64" }];
+		const fakeFetch: typeof fetch = async (input, init) => {
+			const url = String(input);
+			const method = init?.method ?? "GET";
+			if (method === "GET" && url.endsWith("/user")) {
+				return new Response("forbidden for installation token", {
+					status: 403,
+				});
+			}
+			if (method === "GET" && url.endsWith("/repos/octo/app")) {
+				return Response.json({
+					private: true,
+					owner: { id: 42, login: "octo", type: "Organization" },
+				});
+			}
+			if (method === "GET" && url.includes("/repos/octo/app/actions/runners")) {
+				return Response.json({ runners: [] });
+			}
+			if (
+				method === "GET" &&
+				url.includes("/orgs/octo/actions/runner-groups")
+			) {
+				return Response.json({ runner_groups: [{ id: 1 }] });
+			}
+			if (
+				method === "GET" &&
+				url.includes("/orgs/octo/actions/runners?per_page=100&page=1")
+			) {
+				return Response.json({
+					runners: [
+						{
+							id: 9,
+							name: "app-box",
+							os: "Linux",
+							status: "online",
+							busy: false,
+							runner_group_id: 1,
+							labels,
+						},
+					],
+				});
+			}
+			if (
+				method === "POST" &&
+				url.endsWith("/orgs/octo/actions/runners/9/labels")
+			) {
+				const parsed = JSON.parse(String(init?.body ?? "{}"));
+				labels = [
+					...labels,
+					...parsed.labels.map((name: string) => ({ name })),
+				];
+				return Response.json({ labels });
+			}
+			return new Response("not found", { status: 404 });
+		};
+
+		const cli = createHoboCli({
+			commands: {
+				ci: createCiCommand({
+					env: { HOBO_HOME: home },
+					now: () => 1_763_400_000_000,
+					git: async (args) =>
+						args[0] === "rev-parse" ? home : "git@github.com:octo/app.git",
+					fetch: fakeFetch,
+					ownerCredentials: () => ({
+						resolve: async () => ({
+							token: "ghs_app_installation_token",
+							source: "owner://GITHUB_APP_INSTALLATION",
+						}),
+					}),
+					commands: [createCiRunnersCommand()],
+				}),
+			},
+		});
+
+		const adopted = await cli.run(
+			["ci", "runners", "adopt", "9", "--sharing", "only-me", "--json"],
+			{ cwd: home },
+		);
+		expect(adopted.exitCode, adopted.stdout + adopted.stderr).toBe(0);
+		expect(JSON.parse(adopted.stdout).data.label).toMatch(
+			/^hobo-runner-[0-9a-f]{8}$/u,
+		);
 	});
 });

@@ -49,7 +49,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_APP_NOT_CREATED`](#hobo_ci_app_not_created) | `packages/hobo-ci/src/remote-app.ts` |
 | [`HOBO_CI_APP_TIMEOUT`](#hobo_ci_app_timeout) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_UNVERIFIED`](#hobo_ci_app_unverified) | `packages/hobo/src/ci-app-create.ts` |
-| [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-activity.ts` |
+| [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-runners.ts` |
 | [`HOBO_CI_CONFIG_INVALID`](#hobo_ci_config_invalid) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_CONFIG_SERVICE_ERROR`](#hobo_ci_config_service_error) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_CONFIG_SERVICE_UNCONFIGURED`](#hobo_ci_config_service_unconfigured) | `packages/hobo/src/ci-app-create.ts` |
@@ -135,7 +135,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
-| [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
+| [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`, `packages/hobo/src/ci-runners.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_RUN_FAILED`](#hobo_ci_run_failed) | `packages/hobo/src/ci-runs.ts` |
@@ -464,7 +464,7 @@ What to do: follow the message.
 
 ### HOBO_CI_AUTH_REQUIRED
 
-Returned from `packages/hobo/src/ci-activity.ts`.
+Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-runners.ts`.
 
 Messages:
 
@@ -482,6 +482,10 @@ The CI relay did not accept the account credential. Check the HOBO_CI_ACCOUNT_TO
 
 ```text
 The CI account credential cannot read this relay's records: it needs the policy:read scope.
+```
+
+```text
+Connect HoBo's GitHub App (`hobo ci connect`) before listing or adopting self-hosted runners.
 ```
 
 What to do:
@@ -1714,7 +1718,7 @@ What to do: follow the message.
 
 ### HOBO_CI_RELAY_ERROR
 
-Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`.
+Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`, `packages/hobo/src/ci-runners.ts`.
 
 Messages:
 

@@ -1,7 +1,7 @@
 Feature: Hosted provider parity with RelayRunner
   Hosted runner providers are named in the runner order by their own labels.
   One scenario per gauntlet case; the case catalog is cases.json beside
-  this file. A scenario tagged waits for the work package that
+  this file. A scenario tagged @pending waits for the work package that
   builds it.
 
   @parity @P01 @t1

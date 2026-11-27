@@ -1,7 +1,7 @@
 Feature: Machine parity with RelayRunner
   A machine is a computer its owner connects so relay jobs can run on it.
   One scenario per gauntlet case; the case catalog is cases.json beside
-  this file. A scenario tagged waits for the work package that
+  this file. A scenario tagged @pending waits for the work package that
   builds it.
 
   @parity @M01 @t2

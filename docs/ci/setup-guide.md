@@ -26,11 +26,12 @@ Use this guide when setting up HoBo CI for a GitHub Actions repository from a si
        "steps": [
          { "key": "machine" },
          { "key": "depot", "spendLimitUsd": 50 },
-         { "key": "github", "minutesLimitPercent": 80 }
+         { "key": "github", "minutesLimitPercent": 80 },
+         { "key": "github" }
        ],
        "skipUnhealthy": true,
        "autoSizeVcpus": 4,
-       "retry": { "enabled": true, "target": "other", "maxRetries": 2 }
+       "retry": { "enabled": true, "runner": "other", "max": 2 }
      },
      "checks": {
        "prTitle": { "types": ["feat", "fix", "chore", "docs", "refactor", "test"] },
@@ -58,7 +59,7 @@ Use this guide when setting up HoBo CI for a GitHub Actions repository from a si
 5. **Optionally connect a personal machine or adopt an existing self-hosted runner:**
 
    ```sh
-   hobo ci machine connect
+   hobo ci machine connect --repo <owner/name>
    hobo ci runners list
    hobo ci runners adopt <runner-id>
    ```

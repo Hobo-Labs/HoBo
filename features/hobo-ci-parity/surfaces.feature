@@ -1,7 +1,7 @@
 Feature: Surface parity with RelayRunner
   The CLI, MCP tools, read API, dashboard and setup aids people and agents
   use. One scenario per gauntlet case; the case catalog is cases.json beside
-  this file. A scenario tagged waits for the work package that
+  this file. A scenario tagged @pending waits for the work package that
   builds it.
 
   @parity @S01 @t2

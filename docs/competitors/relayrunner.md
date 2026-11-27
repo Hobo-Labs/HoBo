@@ -233,14 +233,16 @@ points are not scorecard cases.
 
 ## Threats and lessons
 
-1. **The relay job is the product.** HoBo has none by rule: it never routes inside a
-   workflow, a workflow only sets `runs-on` to a HoBo label, and routing on claim is not
-   built yet. Relay mode claims only check jobs, and that claim waits on one live run.
+1. **Production proof beats simulator proof.** HoBo's `GhRelay` Alchemy Domain, Rivet host,
+   RelayRunner-compatible `runs-on` parser, and all 62 T1/T2 gauntlet scenarios pass in the
+   simulator; closing the remaining two T3 cases (`R01`, `C01`) requires live production runs
+   on a deployed relay.
 2. **Onboarding is a feature.** One command on a laptop is the bar. `hobo ci machine
-   connect` meets it in the simulator; the relay-mode path is still longer.
+   connect` and `hobo ci runners adopt` meet it in the CLI and simulator; the relay-mode
+   setup still requires deploying a relay and binding a secret store.
 3. **Reasons beat status.** "No runner available: the machine is paused" is what makes
-   fail-fast acceptable. HoBo's walk fails with that sentence as an annotation (R04, T1);
-   no job shows it in production until HoBo CI routes on claim.
+   fail-fast acceptable. HoBo's walk and `GhRelay` domain fail with that sentence as an
+   annotation (R04, T1); live production verification closes the loop on `R01`/`C01`.
 4. **Parity is a scorecard, not a list.** A capability counts when its scenario passes at its
    tier; the [scorecard](../ci/parity-scorecard.md) is regenerated, not edited.
 

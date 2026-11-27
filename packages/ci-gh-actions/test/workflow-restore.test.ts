@@ -33,4 +33,32 @@ describe("restoreWorkflowPlan (S09)", () => {
 		expect(restored.restored).toBe(2);
 		expect(restored.source).toBe(original);
 	});
+
+	it("ignores block scalars, non-HoBo runs-on lines, and strips trailing comment notes", () => {
+		const source = [
+			"name: CI",
+			"on: push",
+			"jobs:",
+			"  keep:",
+			"    runs-on: ubuntu-24.04 # was ubuntu-22.04",
+			"    steps:",
+			"      - run: |",
+			"          echo 'runs-on: hobo # was ubuntu-24.04'",
+			"  routed:",
+			"    runs-on: hobo # was ubuntu-24.04 # operator note",
+			"    steps:",
+			"      - run: pnpm test",
+			"",
+		].join("\n");
+
+		const restored = restoreWorkflowPlan(source);
+		expect(restored.restored).toBe(1);
+		expect(restored.source).toContain(
+			"runs-on: ubuntu-24.04 # was ubuntu-22.04",
+		);
+		expect(restored.source).toContain(
+			"echo 'runs-on: hobo # was ubuntu-24.04'",
+		);
+		expect(restored.source).toContain("  routed:\n    runs-on: ubuntu-24.04\n");
+	});
 });

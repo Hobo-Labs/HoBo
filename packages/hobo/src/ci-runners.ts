@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
@@ -17,6 +17,7 @@ import {
 	listAdoptableRunners,
 	RunnerAdoptionError,
 	type RunnerAdoptionGithub,
+	type RunnerLabelsBody,
 	releaseRunner,
 	runnerAdopter,
 } from "@hobo/ci-gh-actions/cli-serve";
@@ -27,6 +28,7 @@ import {
 	localMachineRegistryPath,
 	type OpenedMachineRegistry,
 } from "./ci-machine.js";
+import { defaultInstallationToken } from "./ci-machine-connect.js";
 
 export type CiRunnersDeps = Readonly<{
 	openGithub?: (
@@ -34,14 +36,20 @@ export type CiRunnersDeps = Readonly<{
 		repository: string,
 	) => Promise<RunnerAdoptionGithub | undefined>;
 	openRegistry?: (context: CiCommandContext) => Promise<OpenedMachineRegistry>;
+	fetch?: typeof fetch;
+	githubApiBase?: string;
 }>;
 
 const ACTIONS = ["list", "adopt", "release"] as const;
 type RunnersAction = (typeof ACTIONS)[number];
 
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
+const POSITIVE_INTEGER_PATTERN = /^[1-9]\d*$/u;
+const DEFAULT_GITHUB_API_BASE = "https://api.github.com";
+
 const HELP = [
 	"hobo ci runners list [--repo owner/name] [--json]",
-	"hobo ci runners adopt <runner-id> [--repo owner/name] [--sharing only_me|anyone] [--account <id>] [--json]",
+	"hobo ci runners adopt <runner-id> [--repo owner/name] [--sharing only_me|only-me|anyone] [--account <id>] [--json]",
 	"hobo ci runners release <runner-id> [--repo owner/name] [--account <id>] [--json]",
 ].join("\n");
 
@@ -49,8 +57,12 @@ function isAction(word: string | undefined): word is RunnersAction {
 	return ACTIONS.some((action) => action === word);
 }
 
-function isSharing(word: string | undefined): word is MachineSharing {
-	return MACHINE_SHARING.some((sharing) => sharing === word);
+function normalizeSharing(
+	word: string | undefined,
+): MachineSharing | undefined {
+	if (word === undefined) return undefined;
+	const normalized = word === "only-me" ? "only_me" : word;
+	return MACHINE_SHARING.find((sharing) => sharing === normalized);
 }
 
 function usage(message: string): CommandResult {
@@ -82,6 +94,47 @@ async function openLocalRegistry(
 	};
 }
 
+function createGithubAppAdoptionClient(
+	token: string,
+	apiBase: string,
+	fetchImpl: typeof fetch,
+): RunnerAdoptionGithub {
+	const base = apiBase.replace(/\/+$/u, "");
+	return {
+		request(
+			method: "GET" | "POST" | "DELETE",
+			path: string,
+			body: RunnerLabelsBody | undefined,
+		): Promise<Response> {
+			const headers = {
+				accept: "application/vnd.github+json",
+				authorization: `Bearer ${token}`,
+				"user-agent": "hobo-cli",
+				"x-github-api-version": "2022-11-28",
+				...(body === undefined
+					? undefined
+					: { "content-type": "application/json" }),
+			};
+			return fetchImpl(`${base}${path}`, {
+				method,
+				headers,
+				...(body === undefined ? undefined : { body: JSON.stringify(body) }),
+			});
+		},
+	};
+}
+
+async function defaultOpenGithub(
+	context: CiCommandContext,
+	repository: string,
+	apiBase: string,
+	fetchImpl: typeof fetch,
+): Promise<RunnerAdoptionGithub | undefined> {
+	const token = await defaultInstallationToken(repository, context.credentials);
+	if (!token) return undefined;
+	return createGithubAppAdoptionClient(token, apiBase, fetchImpl);
+}
+
 async function recordAdoptedAdvert(
 	registry: MachineRegistry,
 	accountId: string,
@@ -106,6 +159,7 @@ function parseRunnersArgs(args: readonly string[]) {
 
 export function createCiRunnersCommand(deps: CiRunnersDeps = {}): CiCommand {
 	const openRegistry = deps.openRegistry ?? openLocalRegistry;
+	const apiBase = deps.githubApiBase ?? DEFAULT_GITHUB_API_BASE;
 	return {
 		name: "runners",
 		summary:
@@ -131,15 +185,35 @@ export function createCiRunnersCommand(deps: CiRunnersDeps = {}): CiCommand {
 				);
 			}
 
-			const local = await context.localRepository(parsed.values.repo);
-			const repository = local.repository;
+			const expectedPositionals = action === "list" ? 1 : 2;
+			if (parsed.positionals.length > expectedPositionals) {
+				return usage(
+					`Unexpected extra argument "${parsed.positionals[expectedPositionals] ?? ""}".`,
+				);
+			}
+
+			const explicitRepo = parsed.values.repo;
+			if (
+				explicitRepo !== undefined &&
+				!REPOSITORY_PATTERN.test(explicitRepo)
+			) {
+				return usage(`Invalid --repo "${explicitRepo}". Expected owner/name.`);
+			}
+
+			const repository =
+				explicitRepo ?? (await context.localRepository(undefined)).repository;
 			if (!repository) {
 				return usage("Pass --repo owner/name or run inside a GitHub checkout.");
 			}
 
 			const github = deps.openGithub
 				? await deps.openGithub(context, repository)
-				: undefined;
+				: await defaultOpenGithub(
+						context,
+						repository,
+						apiBase,
+						deps.fetch ?? context.fetch,
+					);
 			if (!github) {
 				return {
 					ok: false,
@@ -169,25 +243,29 @@ export function createCiRunnersCommand(deps: CiRunnersDeps = {}): CiCommand {
 				}
 
 				const rawId = parsed.positionals[1];
-				const runnerId = rawId ? Number.parseInt(rawId, 10) : Number.NaN;
-				if (!Number.isInteger(runnerId) || runnerId <= 0) {
+				if (!rawId || !POSITIVE_INTEGER_PATTERN.test(rawId)) {
+					return usage(`Pass a positive numeric runner id to ${action}.`);
+				}
+				const runnerId = Number.parseInt(rawId, 10);
+				if (!Number.isSafeInteger(runnerId) || runnerId <= 0) {
 					return usage(`Pass a positive numeric runner id to ${action}.`);
 				}
 
 				if (action === "adopt") {
 					const sharingValue = parsed.values.sharing;
-					if (sharingValue !== undefined && !isSharing(sharingValue)) {
+					const normalizedSharing = normalizeSharing(sharingValue);
+					if (sharingValue !== undefined && normalizedSharing === undefined) {
 						return usage(
 							`--sharing must be one of: ${MACHINE_SHARING.join(", ")}.`,
 						);
 					}
-					const adopter = await runnerAdopter(github);
+					const adopter = await runnerAdopter(github, repository);
 					const adopted = await adoptRunner(github, {
 						repository,
 						runnerId,
 						accountId,
 						adopter,
-						sharing: sharingValue,
+						sharing: normalizedSharing,
 						nowMs: context.now(),
 					});
 					const opened = await openRegistry(context);
@@ -217,16 +295,21 @@ export function createCiRunnersCommand(deps: CiRunnersDeps = {}): CiCommand {
 					repository,
 					runnerId,
 				});
-				const opened = await openRegistry(context);
-				try {
-					await removeMachine(opened.registry, {
-						accountId,
-						id: `github-runner-${runnerId}`,
-						by: "cli",
-						nowMs: context.now(),
-					});
-				} finally {
-					opened.close();
+				const shouldOpenRegistry =
+					deps.openRegistry !== undefined ||
+					existsSync(localMachineRegistryPath(context.env));
+				if (shouldOpenRegistry) {
+					const opened = await openRegistry(context);
+					try {
+						await removeMachine(opened.registry, {
+							accountId,
+							id: `github-runner-${runnerId}`,
+							by: "cli",
+							nowMs: context.now(),
+						});
+					} finally {
+						opened.close();
+					}
 				}
 				return {
 					message:

@@ -1,6 +1,6 @@
 Feature: Security parity with RelayRunner
   What the relay may see and do. One scenario per gauntlet case; the case
-  catalog is cases.json beside this file. A scenario tagged waits
+  catalog is cases.json beside this file. A scenario tagged @pending waits
   for the work package that builds it.
 
   @parity @X01 @t2

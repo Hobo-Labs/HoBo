@@ -58,6 +58,7 @@ import {
 	GhLintSandbox,
 	GhRelayApi,
 	GhRelayJobId,
+	GhRelayNodeId,
 	GhRepoSlug,
 	GhRunnerLabel,
 	GhRunnerProtocol,
@@ -316,6 +317,10 @@ type ExtendedState = {
 	jobEnvLeaked: boolean;
 	brokenRouteOutput: string;
 	brokenRouteExitCode: number;
+	r11Request: Readonly<{ size: number; first: string }> | undefined;
+	r14Results: readonly string[];
+	m04Slots: number;
+	releaseHeldJob: (() => void) | undefined;
 	insightStore: ParityInsightStore;
 	insightRuns: readonly InsightRun[];
 	initRepoDir: string | undefined;
@@ -323,7 +328,6 @@ type ExtendedState = {
 	initBeforeHead: string;
 	mcpToolNames: string[];
 	mcpScope: string;
-	mcpReadAllOk: boolean;
 	mcpMutated: boolean;
 	readApiResponses: ReadonlyMap<
 		string,
@@ -331,7 +335,6 @@ type ExtendedState = {
 	>;
 	multiMachineAnswers: RelayJobAnswer[];
 	machineId: string;
-	machinePausedFinished: boolean;
 };
 
 let ext: ExtendedState;
@@ -390,6 +393,10 @@ Before({ tags: "@parity" }, () => {
 		jobEnvLeaked: false,
 		brokenRouteOutput: "",
 		brokenRouteExitCode: 0,
+		r11Request: undefined,
+		r14Results: [],
+		m04Slots: 0,
+		releaseHeldJob: undefined,
 		insightStore: new ParityInsightStore(),
 		insightRuns: [],
 		initRepoDir: undefined,
@@ -397,16 +404,18 @@ Before({ tags: "@parity" }, () => {
 		initBeforeHead: "",
 		mcpToolNames: [],
 		mcpScope: RELAY_MCP_INSIGHT_SCOPE,
-		mcpReadAllOk: false,
 		mcpMutated: false,
 		readApiResponses: new Map(),
 		multiMachineAnswers: [],
 		machineId: "m-ext-1",
-		machinePausedFinished: false,
 	};
 });
 
 After({ tags: "@parity" }, async () => {
+	ext.releaseHeldJob?.();
+	if (ext.worker) {
+		await settleWorker(ext.worker);
+	}
 	ext.healthStore?.close();
 	ext.sqliteDb?.close();
 	for (const dir of ext.tempDirs.splice(0)) {
@@ -628,16 +637,36 @@ When(
 		)?.reason;
 		if (overReason) ext.minutesSkipReasons.push(overReason);
 
+		const runwayReader = new GithubMinutesReader({
+			fetch: async () =>
+				Response.json({
+					usageItems: [
+						{
+							product: "Actions",
+							sku: "Actions Linux",
+							unitType: "Minutes",
+							quantity: 1_500,
+							pricePerUnit: 0.006,
+							grossAmount: 9,
+							discountAmount: 9,
+							netAmount: 0,
+						},
+					],
+				}),
+			baseUrl: "https://api.github.com",
+			token: async () => "installation-token",
+			plan: async () => "free",
+			recentMinutes: async () => 400,
+			now: () => ext.nowMs,
+			cacheMs: 0,
+		});
+		const runwayUsage = await runwayReader.usage("octo");
 		const runwayJournal = new InMemoryRouteJournal();
 		await answerRelayJob(msg, {
 			order,
 			facts: new InMemoryRouteFactsSource(() => ({
 				...NO_ROUTE_FACTS,
-				minutes: {
-					usedMinutes: 1_500,
-					includedMinutes: 2_000,
-					burnPerHour: 100,
-				},
+				minutes: runwayUsage,
 			})),
 			journal: runwayJournal,
 			nowMs: ext.nowMs,
@@ -1103,20 +1132,18 @@ Given(
 				},
 			],
 		});
-		ext.brokenRouteOutput = JSON.stringify({ size, first });
+		ext.r11Request = { size, first };
 	},
 );
 
 When("the relay job is answered", async () => {
-	const parsed: Readonly<{ size: number; first: string }> = JSON.parse(
-		ext.brokenRouteOutput,
-	);
+	assert.ok(ext.r11Request, "R11 request parameters exist");
 	ext.routeAnswer = await ext.routeDriver.answer(
 		testRelayJobMessage({
 			repository: REPO,
 			inputs: [
-				["size", String(parsed.size)],
-				["first", parsed.first],
+				["size", String(ext.r11Request.size)],
+				["first", ext.r11Request.first],
 				["machine", "self-hosted"],
 				["depot", "auto"],
 				["github", "ubuntu-24.04"],
@@ -1182,7 +1209,7 @@ Then(
 Given(
 	"a workflow whose matrix job of three legs has runs-on set to a HoBo label",
 	() => {
-		ext.brokenRouteOutput = "";
+		ext.r14Results = [];
 	},
 );
 
@@ -1245,6 +1272,7 @@ When("HoBo CI claims each leg", async () => {
 						hasNonCheckSteps: false,
 						pullRequestTitle: null,
 						nowMs: EpochMs.make(T0),
+						claimNodeId: GhRelayNodeId.make("parity-node-1"),
 					},
 				});
 				for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -1259,12 +1287,11 @@ When("HoBo CI claims each leg", async () => {
 			return routed;
 		}).pipe(Effect.scoped, Effect.provide(world)),
 	);
-	ext.brokenRouteOutput = JSON.stringify(results);
+	ext.r14Results = results;
 });
 
 Then("each leg runs where the runner order sends it", () => {
-	const results: readonly string[] = JSON.parse(ext.brokenRouteOutput);
-	assert.deepEqual(results, [
+	assert.deepEqual(ext.r14Results, [
 		"node-20:depot:depot-ubuntu-24.04-4",
 		"node-22:depot:depot-ubuntu-24.04-4",
 		"node-24:depot:depot-ubuntu-24.04-4",
@@ -1418,43 +1445,76 @@ Then("no runner stays registered once both are done", () => {
 	assert.deepEqual(ext.github.runners(), []);
 });
 
-Given("a connected machine with {int} slots", (slots: number) => {
+Given("a connected machine with {int} slots", async (slots: number) => {
 	ext.multiMachineAnswers = [];
+	ext.m04Slots = slots;
+	ext.github = new GithubSimulator();
+	ext.github.addRepository(REPO, true);
+	ext.registry = new InMemoryMachineRegistry();
+	const github = simulatorMachineGithub(ext.github);
+	let releaseAll = () => {};
+	const gate = new Promise<void>((resolveGate) => {
+		releaseAll = resolveGate;
+	});
+	ext.releaseHeldJob = releaseAll;
+	const { program, runs } = simulatedRunnerProgram(ext.github, {
+		hold: () => gate,
+	});
+	ext.workerRuns = runs;
+	const docker = new FakeContainerDriver(program);
+	const worker = createMachineWorker({
+		profile: {
+			id: "m-slots",
+			name: "slots-box",
+			os: "linux",
+			arch: "x64",
+			isolation: "container",
+			...OWNER,
+		},
+		identity: generateMachineIdentity().identity,
+		sink: registryAdvertSink(ext.registry, OWNER),
+		jobs: githubQueueJobSource({
+			github,
+			repositories: [REPO],
+			label: machineRunsOnLabel("m-slots"),
+			pollMs: 0,
+		}),
+		github,
+		executor: containerExecutor({
+			docker,
+			image: "runner:test",
+			arch: "x64",
+			env: {},
+			wait: () => tick(),
+		}),
+		concurrency: slots,
+		sharing: "only_me",
+		now: () => ext.nowMs,
+		emit: () => {},
+	});
+	ext.worker = worker;
+	await worker.tick();
 	ext.routeDriver.commitOrder(
 		REPO,
 		JSON.stringify({ steps: [{ key: "machine" }, { key: "github" }] }),
 	);
-	ext.brokenRouteOutput = String(slots);
 });
 
 When("three relay jobs that fit it are answered", async () => {
-	const slots = Number.parseInt(ext.brokenRouteOutput, 10);
-	let busy = 0;
+	assert.ok(ext.worker);
 	for (let index = 0; index < 3; index += 1) {
-		ext.routeDriver.setFacts({
-			...NO_ROUTE_FACTS,
-			machines: [
-				{
-					id: "m-slots",
-					name: "slots-box",
-					runsOn: "hobo-machine-m-slots",
-					labels: ["self-hosted", "Linux", "X64"],
-					online: true,
-					paused: false,
-					slots,
-					busy,
-					sharing: "only_me",
-					ownerId: "42",
-					ownerCanRead: true,
-					lastPickedAtMs: 0,
-					repository: undefined,
-				},
-			],
+		const candidates = await registryMachineCandidates(ext.registry, {
+			accountId: PARITY_ACCOUNT,
+			nowMs: ext.nowMs,
+			readers: new Set(["42"]),
 		});
+		ext.routeDriver.setFacts({ ...NO_ROUTE_FACTS, machines: candidates });
 		const answer = await ext.routeDriver.answer(
 			testRelayJobMessage({
 				jobId: `slot-job-${index}`,
 				repository: REPO,
+				actorId: "42",
+				triggeringActorId: "42",
 				inputs: [
 					["machine", "self-hosted"],
 					["github", "ubuntu-24.04"],
@@ -1462,8 +1522,24 @@ When("three relay jobs that fit it are answered", async () => {
 			}),
 		);
 		ext.multiMachineAnswers.push(answer);
-		if (outputOf(answer, "step") === "machine") busy += 1;
+		if (outputOf(answer, "step") === "machine") {
+			ext.github.queueJob({
+				repository: REPO,
+				name: `slot-work-${index}`,
+				labels: [outputOf(answer, "runner")],
+			});
+			ext.nowMs += 100;
+			await ext.worker.tick();
+			for (let waitTurn = 0; waitTurn < 50; waitTurn += 1) {
+				if (ext.worker.status().running >= index + 1) break;
+				await tick();
+			}
+			ext.nowMs += 100;
+			await ext.worker.tick();
+		}
 	}
+	ext.releaseHeldJob?.();
+	await settleWorker(ext.worker);
 });
 
 Then("two route to the machine and the third does not", () => {
@@ -1471,6 +1547,7 @@ Then("two route to the machine and the third does not", () => {
 		outputOf(answer, "step"),
 	);
 	assert.deepEqual(steps, ["machine", "machine", "github"]);
+	assert.equal(ext.workerRuns.length, ext.m04Slots);
 });
 
 Given("a connected machine running one job", async () => {
@@ -1479,20 +1556,66 @@ Given("a connected machine running one job", async () => {
 	await mkdir(join(home, "ci"), { recursive: true });
 	const db = new DatabaseSync(join(home, "ci", "machines.sqlite"));
 	ext.sqliteDb = db;
-	ext.sqliteRegistry = new SqliteMachineRegistry(db);
-	await ext.sqliteRegistry.put(
-		testMachineAdvert({
+	const sqliteRegistry = new SqliteMachineRegistry(db);
+	ext.sqliteRegistry = sqliteRegistry;
+	ext.github = new GithubSimulator();
+	ext.github.addRepository(REPO, true);
+	const github = simulatorMachineGithub(ext.github);
+	let releaseJob = () => {};
+	const gate = new Promise<void>((resolveGate) => {
+		releaseJob = resolveGate;
+	});
+	ext.releaseHeldJob = releaseJob;
+	const { program, runs } = simulatedRunnerProgram(ext.github, {
+		hold: () => gate,
+	});
+	ext.workerRuns = runs;
+	const docker = new FakeContainerDriver(program);
+	const worker = createMachineWorker({
+		profile: {
 			id: ext.machineId,
-			accountId: PARITY_ACCOUNT,
-			runsOn: machineRunsOnLabel(ext.machineId),
-			labels: ["self-hosted", "Linux", "X64"],
-			slots: 2,
-			busy: 1,
-			paused: false,
-			lastSeenMs: ext.nowMs,
+			name: "pause-box",
+			os: "linux",
+			arch: "x64",
+			isolation: "container",
+			...OWNER,
+		},
+		identity: generateMachineIdentity().identity,
+		sink: registryAdvertSink(sqliteRegistry, OWNER),
+		jobs: githubQueueJobSource({
+			github,
+			repositories: [REPO],
+			label: machineRunsOnLabel(ext.machineId),
+			pollMs: 0,
 		}),
-	);
-	ext.machinePausedFinished = true;
+		github,
+		executor: containerExecutor({
+			docker,
+			image: "runner:test",
+			arch: "x64",
+			env: {},
+			wait: () => tick(),
+		}),
+		concurrency: 2,
+		sharing: "only_me",
+		now: () => ext.nowMs,
+		emit: () => {},
+	});
+	ext.worker = worker;
+	await worker.tick();
+	ext.github.queueJob({
+		repository: REPO,
+		name: "in-flight-job",
+		labels: [machineRunsOnLabel(ext.machineId)],
+	});
+	ext.nowMs += 100;
+	await worker.tick();
+	for (let waitTurn = 0; waitTurn < 100 && runs.length === 0; waitTurn += 1) {
+		await tick();
+	}
+	assert.equal(worker.status().running, 1);
+	ext.nowMs += 100;
+	await worker.tick();
 });
 
 Then(
@@ -1533,13 +1656,15 @@ Then(
 );
 
 Then("its running job finishes", async () => {
-	assert.equal(ext.machinePausedFinished, true);
-	assert.ok(ext.sqliteRegistry);
-	const existing = (await ext.sqliteRegistry.list(PARITY_ACCOUNT)).find(
-		(machine) => machine.id === ext.machineId,
-	);
-	assert.ok(existing);
-	await ext.sqliteRegistry.put({ ...existing, busy: 0 });
+	assert.ok(ext.worker);
+	assert.ok(ext.releaseHeldJob);
+	assert.equal(ext.worker.status().running, 1);
+	ext.releaseHeldJob();
+	await settleWorker(ext.worker);
+	ext.nowMs += 100;
+	await ext.worker.tick();
+	assert.equal(ext.worker.status().running, 0);
+	assert.equal(ext.workerRuns[0]?.finished, true);
 });
 
 Then("the next relay job that fits routes to it", async () => {
@@ -2406,10 +2531,8 @@ Then("every new MCP tool answers it", async () => {
 		})
 	).length;
 	const afterMachines = (await world.registry.list("acct-1")).length;
-	ext.mcpReadAllOk = true;
 	ext.mcpMutated =
 		beforeDecisions !== afterDecisions || beforeMachines !== afterMachines;
-	assert.equal(ext.mcpReadAllOk, true);
 });
 
 Then("no MCP tool changes anything", () => {

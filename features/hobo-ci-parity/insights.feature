@@ -1,7 +1,7 @@
 Feature: Insight parity with RelayRunner
   What happened to each job, what it cost and how to make CI faster. One
   scenario per gauntlet case; the case catalog is cases.json beside this
-  file. A scenario tagged waits for the work package that builds
+  file. A scenario tagged @pending waits for the work package that builds
   it.
 
   @parity @I01 @t2

@@ -133,6 +133,15 @@ describe("hobo ci provider-health (R09)", () => {
 			cwd: home,
 		});
 		expect(malformed.exitCode).not.toBe(0);
+		const emptyLabel = await cli.run(
+			["ci", "provider-health", "clear", "depot", ""],
+			{ cwd: home },
+		);
+		expect(emptyLabel.exitCode).not.toBe(0);
+		const unknownFlag = await cli.run(["ci", "provider-health", "--bogus"], {
+			cwd: home,
+		});
+		expect(unknownFlag.exitCode).not.toBe(0);
 		expect(malformed.stdout + malformed.stderr).toContain("Usage:");
 	});
 
