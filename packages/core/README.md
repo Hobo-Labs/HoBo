@@ -20,8 +20,9 @@ without invoking accessors or proxy traps. Zero delay or zero attributes are
 explicit supported limits; the host must enforce the selected limits and scope
 on each operation. Operation identities use the same expiry-bound format as
 durable messaging. Unknown or expired outcomes require reconciliation. This
-port declares no provider implementation. The local JSON `Queue` API does not
-implement the component queue contract.
+port declares no provider implementation. `delivery-exhausted` explicitly
+reports a retained message that can no longer be redelivered automatically.
+The local JSON `Queue` API does not implement the component queue contract.
 The bounded `DurableQueue` model checks one host, one operation, two possible
 payloads, and two lease generations without modeling host restarts. It checks dispatch, retained capacity, conflicts,
 and stale-lease settlement, and reaches committed effects after unknown and

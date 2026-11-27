@@ -105,6 +105,22 @@ describe("durable queue component boundary", () => {
 		])
 			expect(() => parseQueueDequeue(input, limits)).toThrow();
 	});
+	it("validates numeric port times separately from component u64 times", () => {
+		const input = { ...request(), operation: { id: op.id, expiresAtMs: 1234 } };
+		expect(parseQueueEnqueue(input, limits, "port").operation.expiresAtMs).toBe(
+			1234,
+		);
+		expect(() => parseQueueEnqueue(input, limits)).toThrow();
+		expect(() => parseQueueEnqueue(request(), limits, "port")).toThrow();
+		expect(
+			parseQueueDequeue(
+				{ operation: input.operation, maxMessages: 1, visibilityTimeoutMs: 10 },
+				limits,
+				"port",
+			).visibilityTimeoutMs,
+		).toBe(10);
+	});
+
 	it("validates settlement fields and extension limits", () => {
 		const input = { operation: op, messageId: "message", leaseId: "lease" };
 		expect(parseQueueSettlement(input, limits, false).leaseId).toBe("lease");

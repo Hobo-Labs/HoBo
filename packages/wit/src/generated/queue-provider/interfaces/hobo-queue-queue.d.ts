@@ -47,11 +47,13 @@ export interface Operation {
  *
  * ## `"lease-lost"`
  *
+ * ## `"delivery-exhausted"`
+ *
  * ## `"capacity-exceeded"`
  *
  * ## `"unavailable"`
  */
-export type RejectionCode = 'invalid-argument' | 'unauthorized' | 'not-found' | 'unsupported' | 'operation-conflict' | 'message-conflict' | 'lease-lost' | 'capacity-exceeded' | 'unavailable';
+export type RejectionCode = 'invalid-argument' | 'unauthorized' | 'not-found' | 'unsupported' | 'operation-conflict' | 'message-conflict' | 'lease-lost' | 'delivery-exhausted' | 'capacity-exceeded' | 'unavailable';
 export interface MessageAttribute {
   key: string,
   value: string,
