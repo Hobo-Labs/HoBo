@@ -9,6 +9,7 @@ import {
 	AWS_S3_MAX_OBJECT_BYTES,
 	type AwsS3Grant,
 	createAwsS3Store,
+	inspectAwsS3Store,
 } from "../src/aws-s3.js";
 
 const defineTest = Object.defineProperty;
@@ -136,6 +137,15 @@ describe("S3 bounded object runtime", () => {
 		).toThrow("AWS_S3_GRANT_INVALID");
 		expect(invoked).toBe(false);
 	});
+	it("retains immutable store identity and rejects lookalikes", () => {
+		const f = fixture(async () => new Response());
+		const captured = inspectAwsS3Store(f.store);
+		expect(captured).toEqual(grant);
+		expect(Object.isFrozen(captured)).toBe(true);
+		expect(Object.isFrozen(captured?.allow)).toBe(true);
+		expect(inspectAwsS3Store({ ...f.store })).toBeUndefined();
+	});
+
 	it("rejects invalid grants, keys and object metadata without a request", async () => {
 		expect(() =>
 			fixture(
