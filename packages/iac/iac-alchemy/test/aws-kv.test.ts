@@ -14,6 +14,8 @@ import {
 const defineTest = Object.defineProperty;
 const grant: AwsKvGrant = {
 	tableName: "mapped-table",
+	accountId: "000000000000",
+	partition: "aws",
 	region: "us-east-1",
 	resourceEpoch: `sha256:${"a".repeat(64)}`,
 	grantEpoch: `sha256:${"b".repeat(64)}`,
@@ -186,6 +188,30 @@ describe("DynamoDB KV runtime", () => {
 		});
 		expect(f.calls()).toBe(0);
 	});
+	it("addresses every operation to the exact partition, account, region and table ARN", async () => {
+		const tables: unknown[] = [];
+		const f = fixture(async (url, init) => {
+			const data: { TableName?: unknown } = await new Request(url, init).json();
+			tables.push(data.TableName);
+			return new Response("{}", { status: 200 });
+		});
+		expect(await f.store.get("key")).toBeUndefined();
+		await f.store.set({ key: "key", value: new Uint8Array([7]) });
+		await f.store.delete("key");
+		expect(tables).toEqual(
+			Array(3).fill(
+				"arn:aws:dynamodb:us-east-1:000000000000:table/mapped-table",
+			),
+		);
+		expect(() =>
+			fixture(
+				async () => new Response(),
+				() => true,
+				{ ...grant, accountId: "bad" },
+			),
+		).toThrow("AWS_KV_GRANT_INVALID");
+	});
+
 	it("enforces explicit operations and reports mutations whose authorization changes as unknown", async () => {
 		let authorized = true;
 		const f = fixture(
