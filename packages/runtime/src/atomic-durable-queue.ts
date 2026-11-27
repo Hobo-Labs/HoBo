@@ -28,6 +28,7 @@ import {
 import {
 	parseQueueDequeue,
 	parseQueueEnqueue,
+	parseQueueExportConfirmation,
 	parseQueueRedrive,
 	parseQueueSettlement,
 } from "./durable-queue-boundary.js";
@@ -114,6 +115,16 @@ export interface AtomicDurableQueue extends DurableQueue {
 	compact(): Promise<AtomicQueueCompactionOutcome>;
 	reclaimCompleted(): Promise<AtomicQueueReclamationOutcome>;
 	inspectExhausted(): Promise<AtomicQueueExhaustedSnapshot>;
+	confirmExhaustedExport(input: {
+		readonly operation: DurableQueueOperation;
+		readonly messageId: string;
+		readonly expectedRevision: number;
+		readonly exportReceipt: string;
+	}): Promise<
+		import("@hobo/core").DurableQueueOutcome<
+			import("@hobo/core").DurableQueueEnqueueReceipt
+		>
+	>;
 	redriveExhausted(input: {
 		readonly operation: DurableQueueOperation;
 		readonly messageId: string;
@@ -276,6 +287,11 @@ export function createAtomicDurableQueue(
 				limits,
 			);
 			if (!next.changed) return outcome(next.outcome);
+			if (
+				request.kind === "confirmExport" &&
+				request.input.expectedRevision !== loaded.revision
+			)
+				return uncertain(op);
 			if (loaded.events.length >= ATOMIC_QUEUE_MAX_EVENTS) return uncertain(op);
 			loaded.events[loaded.events.length] = { atMs: current, request };
 			const encoded = encodeAtomicQueueLog(
@@ -491,6 +507,15 @@ export function createAtomicDurableQueue(
 			} catch {
 				return outcome({ status: "unknown" as const });
 			}
+		},
+		confirmExhaustedExport(input) {
+			return begin(() => {
+				const request = parseQueueExportConfirmation(input, limits);
+				// SAFETY: export confirmations return message receipts or noncommitted outcomes.
+				return run({ kind: "confirmExport", input: request }) as ReturnType<
+					AtomicDurableQueue["confirmExhaustedExport"]
+				>;
+			});
 		},
 		redriveExhausted(input) {
 			return begin(() => {

@@ -9,6 +9,7 @@ import { Secret, SecretProvider } from "@alchemy.run/aws/SecretsManager";
 import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
 import { Queue, QueueProvider } from "@alchemy.run/aws/SQS";
 import * as SecretsManager from "@distilled.cloud/aws/secrets-manager";
+import * as SQS from "@distilled.cloud/aws/sqs";
 import { NodeHttpClient } from "@effect/platform-node";
 import { awsPlugin, getAwsStore } from "@emulators/aws";
 import { createServer } from "@emulators/core";
@@ -1052,6 +1053,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				value: { idempotencyKey: "app-job" },
 			});
 			expect(retained).toBeDefined();
+			expect(retained).not.toHaveProperty("confirmExhaustedExport");
 			expect(retained).not.toHaveProperty("inspectExhausted");
 			expect(retained).not.toHaveProperty("redriveExhausted");
 			expect(retained).not.toHaveProperty("reclaimCompleted");
@@ -1143,6 +1145,76 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			).toMatchObject({
 				status: "committed",
 				value: [{ messageId: "m2", deliveryAttempt: 1 }],
+			});
+			clock = 20010;
+			expect(
+				await afterRedrive.dequeue({
+					...appDelivery,
+					operation: { id: "v1.30000.abcdefghijklmn13", expiresAtMs: 30000 },
+				}),
+			).toMatchObject({
+				status: "committed",
+				value: [{ messageId: "m2", deliveryAttempt: 2 }],
+			});
+			clock = 30000;
+			const inspected = await afterRedrive.inspectExhausted();
+			if (inspected.status !== "available" || !inspected.messages[0])
+				throw Error("missing exhausted message");
+			const sqsLayer = Layer.mergeAll(
+				environment(endpoint.origin, "queue"),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca: await readFile(caPath), servername: "localhost" },
+				}),
+			);
+			const target = await precreateQueue(
+				(await mappedResources()).queue,
+				sqsLayer,
+			);
+			const exportedBody = `dead-letter:${randomUUID()}:${inspected.messages[0].messageId}`;
+			// SAFETY: the test layer supplies the SQS credentials and emulator transport.
+			const sent = await Effect.runPromise(
+				SQS.sendMessage({
+					QueueUrl: target.queueUrl,
+					MessageBody: exportedBody,
+				}).pipe(Effect.provide(sqsLayer)) as Effect.Effect<
+					{ MessageId?: string },
+					unknown,
+					never
+				>,
+			);
+			if (!sent.MessageId) throw Error("destination receipt unavailable");
+			// SAFETY: the test layer supplies the SQS credentials and emulator transport.
+			const received = await Effect.runPromise(
+				SQS.receiveMessage({
+					QueueUrl: target.queueUrl,
+					MaxNumberOfMessages: 10,
+				}).pipe(Effect.provide(sqsLayer)) as Effect.Effect<
+					{ Messages?: { Body?: string }[] },
+					unknown,
+					never
+				>,
+			);
+			expect(
+				received.Messages?.some((message) => message.Body === exportedBody),
+			).toBe(true);
+			const confirmation = {
+				operation: { id: "v1.40000.abcdefghijklmn14", expiresAtMs: 40000 },
+				messageId: inspected.messages[0].messageId,
+				expectedRevision: inspected.revision,
+				exportReceipt: createHash("sha256")
+					.update(sent.MessageId)
+					.digest("hex")
+					.slice(0, 32),
+			};
+			expect(
+				await afterRedrive.confirmExhaustedExport(confirmation),
+			).toMatchObject({ status: "committed", value: { messageId: "m2" } });
+			expect(
+				await afterRedrive.confirmExhaustedExport(confirmation),
+			).toMatchObject({ status: "committed" });
+			expect(await afterRedrive.inspectExhausted()).toMatchObject({
+				status: "available",
+				messages: [],
 			});
 		},
 		30000,

@@ -280,6 +280,27 @@ export function parseQueueRedrive(value: unknown, limits: DurableQueueLimits) {
 		messageId: text(input.messageId, limits.nameBytes),
 	};
 }
+export function parseQueueExportConfirmation(
+	value: unknown,
+	limits: DurableQueueLimits,
+) {
+	const input = record(value, [
+		"operation",
+		"messageId",
+		"expectedRevision",
+		"exportReceipt",
+	]);
+	return {
+		operation: operation(input.operation, "port"),
+		messageId: text(input.messageId, limits.nameBytes),
+		expectedRevision: integer(
+			input.expectedRevision,
+			Number.MAX_SAFE_INTEGER,
+			0,
+		),
+		exportReceipt: text(input.exportReceipt, limits.nameBytes),
+	};
+}
 type QueueResultKind = "enqueue" | "dequeue" | "settlement" | "extension";
 type QueueResultValue =
 	| { readonly messageId: string; readonly idempotencyKey: string }

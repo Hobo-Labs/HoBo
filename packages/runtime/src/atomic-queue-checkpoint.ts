@@ -119,7 +119,8 @@ export function resultVector(receipt: AtomicQueueReceipt): unknown[] {
 	}
 	if (
 		receipt.request.kind === "enqueue" ||
-		receipt.request.kind === "redrive"
+		receipt.request.kind === "redrive" ||
+		receipt.request.kind === "confirmExport"
 	) {
 		if (!("idempotencyKey" in value) || "body" in value) return invalid();
 		return vector(["e", value.messageId, value.idempotencyKey]);
@@ -151,7 +152,9 @@ function decodeResult(
 	else if (
 		raw[0] === "e" &&
 		raw.length === 3 &&
-		(request.kind === "enqueue" || request.kind === "redrive")
+		(request.kind === "enqueue" ||
+			request.kind === "redrive" ||
+			request.kind === "confirmExport")
 	)
 		response = {
 			status: "committed",
@@ -176,7 +179,7 @@ function decodeResult(
 		response = { status: "committed", value: deliveries };
 	} else return invalid();
 	const expected =
-		request.kind === "redrive"
+		request.kind === "redrive" || request.kind === "confirmExport"
 			? {
 					kind: "enqueue" as const,
 					idempotencyKey: typeof raw[2] === "string" ? raw[2] : "",
@@ -264,7 +267,7 @@ function validateReceipt(
 ): void {
 	if (result.status === "rejected") return;
 	const value = result.value;
-	if (request.kind === "redrive") {
+	if (request.kind === "redrive" || request.kind === "confirmExport") {
 		if (
 			!("messageId" in value) ||
 			!("idempotencyKey" in value) ||
