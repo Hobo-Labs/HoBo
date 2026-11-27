@@ -253,51 +253,6 @@ describe("merge-group required gate", () => {
 		}
 	});
 
-	it("accepts a fully skipped pull request only when that draft did not request checks", () => {
-		const script = shellForStep(
-			gate,
-			"Require successful validation and workspace tests",
-		);
-		const skipped = {
-			EVENT_NAME: "pull_request",
-			ROUTE_RESULT: "skipped",
-			PLAN_RESULT: "skipped",
-			VALIDATION_RESULT: "skipped",
-			WORKSPACE_RESULT: "skipped",
-			AFFECTED_RESULT: "skipped",
-			SCRIPTS_RESULT: "skipped",
-			FORMAL_RESULT: "skipped",
-			ATTESTED: "",
-			ATTESTED_JOBS: "",
-			PR_FABRIC: "",
-			STATE_MACHINES: "",
-		};
-		const run = (draft: string, extra: Record<string, string> = {}) =>
-			spawnSync("bash", ["-c", script], {
-				encoding: "utf8",
-				env: {
-					...process.env,
-					...skipped,
-					PULL_REQUEST_DRAFT: draft,
-					...extra,
-				},
-			});
-		const accepted = run("true");
-		assert.equal(accepted.status, 0, accepted.stderr);
-		assert.match(accepted.stdout, /Draft pull request did not request checks/u);
-		for (const draft of ["false", ""]) {
-			const rejected = run(draft);
-			assert.notEqual(rejected.status, 0, draft);
-			assert.match(rejected.stderr, /PR impact plan did not succeed: skipped/u);
-		}
-		const failedPlan = run("true", { PLAN_RESULT: "failure" });
-		assert.notEqual(failedPlan.status, 0);
-		assert.match(failedPlan.stderr, /PR impact plan did not succeed: failure/u);
-		const mergeGroup = run("true", { EVENT_NAME: "merge_group" });
-		assert.notEqual(mergeGroup.status, 0);
-		assert.match(mergeGroup.stderr, /PR impact plan did not succeed: skipped/u);
-	});
-
 	it("requires the plan, validation, all workspace shards, and the PR package lanes", () => {
 		assert.match(planner, /needs: \[route\]/u);
 		assert.match(
@@ -1244,8 +1199,6 @@ describe("release required gate", () => {
 									const run = spawnSync("bash", ["-c", script], {
 										env: {
 											...process.env,
-											GITHUB_EVENT_NAME: "pull_request",
-											PULL_REQUEST_DRAFT: "false",
 											CONTRACT_RESULT: contract,
 											REALIZE_RESULT: realize,
 											BROWSER_WIT_SMOKE_RESULT: browserWitSmoke,
@@ -1278,43 +1231,6 @@ describe("release required gate", () => {
 								}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
-		}
-	});
-
-	it("accepts a fully skipped release pull request only when that draft did not request checks", () => {
-		const skipped = {
-			GITHUB_EVENT_NAME: "pull_request",
-			PULL_REQUEST_DRAFT: "true",
-			ROUTE_RESULT: "skipped",
-			CONTRACT_RESULT: "skipped",
-			REALIZE_RESULT: "skipped",
-			BROWSER_WIT_SMOKE_RESULT: "skipped",
-			ATTESTED: "",
-			ATTESTED_JOBS: "",
-		};
-		const run = (extra: Record<string, string> = {}) =>
-			spawnSync("bash", ["-c", script], {
-				encoding: "utf8",
-				env: { ...process.env, ...skipped, ...extra },
-			});
-		const accepted = run();
-		assert.equal(accepted.status, 0, accepted.stderr);
-		assert.match(accepted.stdout, /Draft pull request did not request checks/u);
-		for (const extra of [
-			{ PULL_REQUEST_DRAFT: "false" },
-			{ PULL_REQUEST_DRAFT: "" },
-			{ GITHUB_EVENT_NAME: "merge_group" },
-			{ CONTRACT_RESULT: "failure" },
-			{ REALIZE_RESULT: "success" },
-			{ ROUTE_RESULT: "success" },
-			{ BROWSER_WIT_SMOKE_RESULT: "failure" },
-		]) {
-			const rejected = run(extra);
-			assert.notEqual(rejected.status, 0, JSON.stringify(extra));
-			assert.match(
-				rejected.stderr + rejected.stdout,
-				/did not succeed|must pass/u,
-			);
 		}
 	});
 });

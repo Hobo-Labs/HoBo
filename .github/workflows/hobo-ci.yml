@@ -1305,7 +1305,6 @@ jobs:
       - name: Require successful validation and workspace tests
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft && 'true' || 'false' }}
           PLAN_RESULT: ${{ needs.pr_gate_plan.result }}
           VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
@@ -1319,20 +1318,6 @@ jobs:
           PR_FABRIC: ${{ needs.route.outputs.pr-fabric-green }}
         run: |
           set -euo pipefail
-          # Drafts skip route, so every job this gate needs is skipped with it.
-          # Any other result still has to pass the checks below.
-          if [ "${EVENT_NAME:-}" = "pull_request" ] \
-            && [ "${PULL_REQUEST_DRAFT:-}" = "true" ] \
-            && [ "${ROUTE_RESULT:-}" = "skipped" ] \
-            && [ "${PLAN_RESULT:-}" = "skipped" ] \
-            && [ "${VALIDATION_RESULT:-}" = "skipped" ] \
-            && [ "${WORKSPACE_RESULT:-}" = "skipped" ] \
-            && [ "${AFFECTED_RESULT:-}" = "skipped" ] \
-            && [ "${SCRIPTS_RESULT:-}" = "skipped" ] \
-            && [ "${FORMAL_RESULT:-}" = "skipped" ]; then
-            echo "Draft pull request did not request checks"
-            exit 0
-          fi
           # A skipped job counts only when the route job itself succeeded and
           # reported a verified signed local run that covers that job by id.
           attested() {

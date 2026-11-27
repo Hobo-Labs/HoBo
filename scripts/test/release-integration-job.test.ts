@@ -405,57 +405,6 @@ describe("release integration pull-request and merge-queue lane", () => {
 		);
 	});
 
-	it("accepts a skipped release integration shard only for an unrequested draft pull request", () => {
-		const scripts = [
-			namedStep(
-				job(pr, "release-integration-gate"),
-				"Require successful release integration shards",
-			).run,
-			namedStep(
-				job(train, "release-integration-measure-gate"),
-				"Require successful release integration shards",
-			).run,
-		];
-		const run = (script: string, env: Record<string, string>) =>
-			spawnSync("bash", ["-c", script], {
-				encoding: "utf8",
-				env: { ...process.env, ...env },
-			});
-		for (const script of scripts) {
-			const accepted = run(script, {
-				GITHUB_EVENT_NAME: "pull_request",
-				PULL_REQUEST_DRAFT: "true",
-				INTEGRATION_RESULT: "skipped",
-			});
-			assert.equal(accepted.status, 0, accepted.stderr);
-			assert.match(
-				accepted.stdout,
-				/Draft pull request did not request release integration shards/u,
-			);
-			for (const env of [
-				{
-					GITHUB_EVENT_NAME: "pull_request",
-					PULL_REQUEST_DRAFT: "false",
-					INTEGRATION_RESULT: "skipped",
-				},
-				{
-					GITHUB_EVENT_NAME: "pull_request",
-					PULL_REQUEST_DRAFT: "true",
-					INTEGRATION_RESULT: "failure",
-				},
-				{
-					GITHUB_EVENT_NAME: "merge_group",
-					PULL_REQUEST_DRAFT: "true",
-					INTEGRATION_RESULT: "skipped",
-				},
-			]) {
-				const rejected = run(script, env);
-				assert.notEqual(rejected.status, 0, JSON.stringify(env));
-				assert.match(rejected.stdout, /must pass/u);
-			}
-		}
-	});
-
 	it("fails both integration-only gates on cancelled, skipped, failed, or missing results", () => {
 		for (const [workflow, id] of [
 			[pr, "release-integration-gate"],
@@ -468,12 +417,7 @@ describe("release integration pull-request and merge-queue lane", () => {
 			for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
 				const run = spawnSync("bash", ["-c", gate.run], {
 					encoding: "utf8",
-					env: {
-						...process.env,
-						GITHUB_EVENT_NAME: "pull_request",
-						PULL_REQUEST_DRAFT: "false",
-						INTEGRATION_RESULT: result,
-					},
+					env: { ...process.env, INTEGRATION_RESULT: result },
 				});
 				assert.equal(
 					run.status === 0,
