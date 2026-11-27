@@ -6,12 +6,13 @@ import {
 } from "../../src/_generated/cd_pb.js";
 import {
 	CD_ENGINE_KIND,
+	clusterSyncRegistration,
 	createCdEngineRegistry,
 	gitopsPublisherRegistration,
 	LEGACY_PUBLISHER_TARGET,
 	registrationsFromPublisherPorts,
 } from "../../src/compose/engines.js";
-import type { PublisherPort } from "../../src/ports.js";
+import type { ClusterSyncPort, PublisherPort } from "../../src/ports.js";
 
 function fakePublisher(target: string): PublisherPort {
 	return Object.freeze({
@@ -100,5 +101,37 @@ describe("CdEngineRegistry", () => {
 		]);
 		expect(regs[0]?.kind).toBe(CD_ENGINE_KIND.GITOPS_PUBLISHER);
 		expect(LEGACY_PUBLISHER_TARGET.get("argo")).toBe("argo-cd");
+	});
+
+	it("resolves cluster sync engines separately from publishers", () => {
+		const cluster: ClusterSyncPort = Object.freeze({
+			target: "cluster:ctrl",
+			async getWorkload() {
+				return { ok: true, value: {} };
+			},
+			async requestSync() {
+				return { ok: true, value: undefined };
+			},
+			async observeSync() {
+				return {
+					state: "converging",
+					healthy: false,
+					appliedRevision: "",
+				};
+			},
+		});
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("argo-cd", fakePublisher("pub")),
+			clusterSyncRegistration("argo-cd-control", cluster),
+		]);
+		const pub = registry.publisher("argo-cd");
+		expect(pub.ok).toBe(true);
+		const ctl = registry.clusterSync("argo-cd-control");
+		expect(ctl.ok).toBe(true);
+		if (ctl.ok) expect(ctl.value.target).toBe("cluster:ctrl");
+		const wrong = registry.clusterSync("argo-cd");
+		expect(wrong.ok).toBe(false);
+		if (wrong.ok) throw new Error("expected refusal");
+		expect(wrong.reasons[0]?.code).toBe("compose-engine-not-cluster-sync");
 	});
 });
