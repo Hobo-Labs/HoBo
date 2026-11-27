@@ -43,7 +43,7 @@ concurrency:
 jobs:
   release-integration:
     name: HoBo release integration shard
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     strategy:
       fail-fast: false
       matrix:
@@ -155,25 +155,16 @@ jobs:
 
   release-integration-gate:
     name: HoBo release integration PR gate
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    if: always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     needs: [release-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require successful release integration shards
         env:
-          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft && 'true' || 'false' }}
           INTEGRATION_RESULT: ${{ needs.release-integration.result }}
         run: |
           set -euo pipefail
-          # The shard job is skipped on a draft until the PR is ready or labeled
-          # ci:run-draft-checks. A failure, cancellation, or any other skip still fails.
-          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
-            && [ "${PULL_REQUEST_DRAFT:-}" = "true" ] \
-            && [ "${INTEGRATION_RESULT:-}" = "skipped" ]; then
-            echo "Draft pull request did not request release integration shards"
-            exit 0
-          fi
           if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
             echo "::error::HoBo release integration shards must pass (result=${INTEGRATION_RESULT:-})"
             exit 1
