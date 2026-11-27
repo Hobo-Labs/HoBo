@@ -161,6 +161,7 @@ export interface DomainOutbox {
 	drainPending(
 		modelName: string,
 		deliver: (delivery: Delivery) => Effect.Effect<void>,
+		inFlightIds?: Set<number>,
 	): Effect.Effect<void>;
 	count(modelName: string): number;
 }
@@ -205,20 +206,35 @@ export function makeDomainOutbox(driver: SqliteDriver): DomainOutbox {
 				}
 			});
 		},
-		drainPending(modelName, deliver) {
+		drainPending(modelName, deliver, inFlightIds) {
 			return Effect.gen(function* () {
 				const maxPasses = 32;
 				for (let pass = 0; pass < maxPasses; pass += 1) {
 					const rows = listStmt.all(modelName, 64);
 					if (rows.length === 0) return;
+					let deliveredInPass = 0;
 					for (const row of rows) {
 						const id = asNumber(row.id, "id");
+						if (inFlightIds?.has(id)) continue;
 						const delivery = decodeDelivery(
 							asText(row.delivery_json, "delivery_json"),
 						);
-						yield* deliver(delivery);
-						deleteByIdsStmt.run(modelName, id);
+						inFlightIds?.add(id);
+						yield* deliver(delivery).pipe(
+							Effect.tap(() =>
+								Effect.sync(() => {
+									deleteByIdsStmt.run(modelName, id);
+								}),
+							),
+							Effect.ensuring(
+								Effect.sync(() => {
+									inFlightIds?.delete(id);
+								}),
+							),
+						);
+						deliveredInPass += 1;
 					}
+					if (deliveredInPass === 0) return;
 				}
 				throw new DomainPersistenceError("domain_outbox.drain", -1);
 			});

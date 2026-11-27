@@ -1,17 +1,42 @@
-// Gitea / Forgejo REST adapter (API v1): multi-file ChangeFiles commit.
-//   head   GET  /repos/{o}/{r}/branches/{branch}
-//   read   GET  /repos/{o}/{r}/contents/{path}?ref={sha}
-//   commit POST /repos/{o}/{r}/contents
-//          { branch, message, files: [{ operation, path, content(base64), sha? }] }
-// An update carries the file's current blob sha, so a concurrent writer makes
-// the commit fail (409/422 → `gitops-host-conflict`). The API has no parent
-// guard for newly created files; the publisher re-reads before each commit.
-
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, JsonObject } from "@hobo/core";
 import type { GitRepositoryRecord } from "../_generated/gitops_pb.js";
 import { GitopsError } from "../errors.js";
 import { encodePath, hostFailure, ok, parseJson, pick, send } from "../http.js";
-import type { GitHostClient } from "./types.js";
+import { isJsonNumber } from "../json.js";
+import type {
+	GitHostClient,
+	PullRequestInfo,
+	PullRequestState,
+} from "./types.js";
+
+function giteaPrState(body: JsonObject): PullRequestState {
+	if (body.merged === true || pick(body, "merged_at") !== undefined) {
+		return "merged";
+	}
+	return pick(body, "state") === "closed" ? "closed" : "open";
+}
+
+function giteaPrInfo(body: JsonObject, what: string): PullRequestInfo {
+	const rawNumber = body.number;
+	const id = isJsonNumber(rawNumber) ? String(rawNumber) : pick(body, "number");
+	const url = pick(body, "html_url") ?? pick(body, "url");
+	if (id === undefined || url === undefined) {
+		throw new GitopsError(
+			"gitops-host-response-invalid",
+			`${what}: missing pull request number or html_url`,
+		);
+	}
+	const mergeCommitSha =
+		pick(body, "merged_commit_id") ?? pick(body, "merged_commit_sha");
+	return {
+		id,
+		url,
+		state: giteaPrState(body),
+		headBranch: pick(body, "head.ref") ?? "",
+		baseBranch: pick(body, "base.ref") ?? "",
+		...(mergeCommitSha !== undefined ? { mergeCommitSha } : undefined),
+	};
+}
 
 export function createGiteaClient(
 	repo: GitRepositoryRecord,
@@ -24,10 +49,10 @@ export function createGiteaClient(
 		"content-type": "application/json",
 	});
 	return {
-		async head() {
+		async head(branch = repo.branch) {
 			const response = await send(http, {
 				method: "GET",
-				url: `${base}/branches/${encodePath(repo.branch)}`,
+				url: `${base}/branches/${encodePath(branch)}`,
 				headers: await headers(),
 			});
 			if (!ok(response)) throw hostFailure(response, "read branch");
@@ -59,13 +84,13 @@ export function createGiteaClient(
 				blobId: pick(body, "sha") ?? "",
 			};
 		},
-		async commit({ message, changes }) {
+		async commit({ message, changes, branch = repo.branch }) {
 			const response = await send(http, {
 				method: "POST",
 				url: `${base}/contents`,
 				headers: await headers(),
 				body: JSON.stringify({
-					branch: repo.branch,
+					branch,
 					message,
 					files: changes.map((c) => ({
 						operation: c.exists ? "update" : "create",
@@ -83,6 +108,83 @@ export function createGiteaClient(
 					"commit: no commit.sha",
 				);
 			return sha;
+		},
+		async createBranch({ name, fromSha }) {
+			const response = await send(http, {
+				method: "POST",
+				url: `${base}/branches`,
+				headers: await headers(),
+				body: JSON.stringify({
+					new_branch_name: name,
+					old_ref_name: fromSha,
+				}),
+			});
+			if (!ok(response)) throw hostFailure(response, "create branch");
+		},
+		async openPullRequest({
+			headBranch,
+			baseBranch = repo.branch,
+			title,
+			body,
+		}) {
+			const response = await send(http, {
+				method: "POST",
+				url: `${base}/pulls`,
+				headers: await headers(),
+				body: JSON.stringify({
+					head: headBranch,
+					base: baseBranch,
+					title,
+					body,
+				}),
+			});
+			if (!ok(response)) throw hostFailure(response, "open pull request");
+			return giteaPrInfo(
+				parseJson(response, "open pull request"),
+				"open pull request",
+			);
+		},
+		async getPullRequest(prId) {
+			const response = await send(http, {
+				method: "GET",
+				url: `${base}/pulls/${encodeURIComponent(prId)}`,
+				headers: await headers(),
+			});
+			if (!ok(response)) throw hostFailure(response, "get pull request");
+			return giteaPrInfo(
+				parseJson(response, "get pull request"),
+				"get pull request",
+			);
+		},
+		async mergePullRequest({ prId, method = "merge", commitTitle }) {
+			const response = await send(http, {
+				method: "POST",
+				url: `${base}/pulls/${encodeURIComponent(prId)}/merge`,
+				headers: await headers(),
+				body: JSON.stringify({
+					Do: method,
+					...(commitTitle !== undefined
+						? { MergeTitleField: commitTitle }
+						: undefined),
+				}),
+			});
+			if (!ok(response)) throw hostFailure(response, "merge pull request");
+			const updated = await send(http, {
+				method: "GET",
+				url: `${base}/pulls/${encodeURIComponent(prId)}`,
+				headers: await headers(),
+			});
+			if (!ok(updated)) return { merged: true };
+			const info = giteaPrInfo(
+				parseJson(updated, "get merged pull request"),
+				"get merged pull request",
+			);
+			return {
+				merged: true,
+				...(info.mergeCommitSha !== undefined
+					? { mergeCommitSha: info.mergeCommitSha }
+					: undefined),
+			};
 		},
 	};
 }

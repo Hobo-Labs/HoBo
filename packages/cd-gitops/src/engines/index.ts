@@ -1,8 +1,3 @@
-// Engine observation: read the engine's own status API and decide whether the
-// published revision has converged. Convergence is claimed only when the
-// engine reports the exact revision applied and healthy (I5); anything else —
-// including an unreadable status — is CONVERGING or BLOCKED with a reason.
-
 import type { HttpTransport, JsonObject, JsonValue } from "@hobo/core";
 import { GitopsEngine } from "../_generated/gitops_pb.js";
 import type { PublisherConfig } from "../config.js";
@@ -14,8 +9,9 @@ import type { EngineDocumentRef } from "../render.js";
 export type EngineVerdict = Readonly<{
 	state: "converged" | "converging" | "blocked";
 	healthy: boolean;
-	/** Revision the engine reports as applied, if any. */
 	appliedRevision: string;
+	outOfSyncCount?: number;
+	outOfSyncResources?: readonly string[];
 	reason?: Readonly<{ code: GitopsFailureCode; message: string }>;
 }>;
 
@@ -41,14 +37,32 @@ const num = (value: JsonValue | undefined, fallback: number): number =>
 
 function sameRevision(reported: string, published: string): boolean {
 	if (reported === "" || published === "") return false;
-	// Flux reports `<branch>@sha1:<sha>`; Argo CD reports the bare sha.
 	const sha = reported.includes(":")
 		? reported.slice(reported.lastIndexOf(":") + 1)
 		: reported;
 	return sha === published;
 }
 
-/** Argo CD Application status → verdict. */
+function extractArgoOutOfSyncResources(
+	app: JsonObject,
+): readonly string[] | undefined {
+	const resources = get(app, "status", "resources");
+	if (!Array.isArray(resources)) return undefined;
+	const outOfSync: string[] = [];
+	for (const item of resources) {
+		if (!isJsonObject(item)) continue;
+		const status = str(item.status);
+		if (status === "Synced") continue;
+		const kind = str(item.kind) || "Resource";
+		const namespace = str(item.namespace);
+		const name = str(item.name) || "unnamed";
+		outOfSync.push(
+			namespace !== "" ? `${kind}/${namespace}/${name}` : `${kind}/${name}`,
+		);
+	}
+	return outOfSync;
+}
+
 export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 	const sync = str(get(app, "status", "sync", "status"));
 	const applied = str(get(app, "status", "sync", "revision"));
@@ -57,6 +71,14 @@ export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 	const opRevision = str(
 		get(app, "status", "operationState", "syncResult", "revision"),
 	);
+	const outOfSyncResources = extractArgoOutOfSyncResources(app);
+	const resourceDiff =
+		outOfSyncResources !== undefined
+			? {
+					outOfSyncCount: outOfSyncResources.length,
+					outOfSyncResources,
+				}
+			: {};
 	const onRevision = sameRevision(applied, revision);
 	if (
 		(phase === "Failed" || phase === "Error") &&
@@ -66,6 +88,7 @@ export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 			state: "blocked",
 			healthy: false,
 			appliedRevision: applied,
+			...resourceDiff,
 			reason: {
 				code: "gitops-engine-degraded",
 				message: `Argo CD sync ${phase}: ${str(get(app, "status", "operationState", "message"))}`,
@@ -73,31 +96,41 @@ export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 		};
 	}
 	if (onRevision && sync === "Synced" && health === "Healthy") {
-		return { state: "converged", healthy: true, appliedRevision: applied };
+		return {
+			state: "converged",
+			healthy: true,
+			appliedRevision: applied,
+			...resourceDiff,
+		};
 	}
 	if (onRevision && sync === "Synced" && health === "Degraded") {
 		return {
 			state: "blocked",
 			healthy: false,
 			appliedRevision: applied,
+			...resourceDiff,
 			reason: {
 				code: "gitops-engine-degraded",
 				message: "Argo CD reports the revision Degraded",
 			},
 		};
 	}
+	const driftSuffix =
+		outOfSyncResources !== undefined && outOfSyncResources.length > 0
+			? ` outOfSync=[${outOfSyncResources.join(", ")}]`
+			: "";
 	return {
 		state: "converging",
 		healthy: false,
 		appliedRevision: applied,
+		...resourceDiff,
 		reason: {
 			code: "gitops-engine-not-converged",
-			message: `Argo CD sync=${sync || "unknown"} health=${health || "unknown"} revision=${applied || "none"}, want ${revision}`,
+			message: `Argo CD sync=${sync || "unknown"} health=${health || "unknown"} revision=${applied || "none"}, want ${revision}${driftSuffix}`,
 		},
 	};
 }
 
-/** Flux Kustomization status → verdict. */
 export function fluxVerdict(
 	kustomization: JsonObject,
 	revision: string,
@@ -138,7 +171,18 @@ export function fluxVerdict(
 	};
 }
 
-/** Read the engine document's live status and decide. Never throws for I/O. */
+function unobservableVerdict(
+	code: GitopsFailureCode,
+	message: string,
+): EngineVerdict {
+	return {
+		state: "converging",
+		healthy: false,
+		appliedRevision: "",
+		reason: { code, message },
+	};
+}
+
 export async function observeEngine(
 	config: PublisherConfig,
 	ref: EngineDocumentRef,
@@ -146,15 +190,6 @@ export async function observeEngine(
 	http: HttpTransport,
 	token: () => Promise<string>,
 ): Promise<EngineVerdict> {
-	const unobservable = (
-		code: GitopsFailureCode,
-		message: string,
-	): EngineVerdict => ({
-		state: "converging",
-		healthy: false,
-		appliedRevision: "",
-		reason: { code, message },
-	});
 	try {
 		const base = config.endpoint.apiBaseUrl;
 		const url =
@@ -167,14 +202,14 @@ export async function observeEngine(
 			headers: { authorization: `Bearer ${await token()}` },
 		});
 		if (response.status === 404) {
-			return unobservable(
+			return unobservableVerdict(
 				"gitops-engine-not-found",
 				`${ref.kind} ${ref.namespace}/${ref.name} does not exist yet`,
 			);
 		}
 		if (!ok(response)) {
 			const failure = hostFailure(response, `observe ${ref.kind}`);
-			return unobservable("gitops-engine-unobservable", failure.message);
+			return unobservableVerdict("gitops-engine-unobservable", failure.message);
 		}
 		const body = parseJson(response, `observe ${ref.kind}`);
 		return config.engine === GitopsEngine.ARGO_CD
@@ -186,7 +221,224 @@ export async function observeEngine(
 			error.code === "gitops-credential-missing"
 		)
 			throw error;
-		return unobservable(
+		return unobservableVerdict(
+			"gitops-engine-unobservable",
+			error instanceof Error ? error.message : String(error),
+		);
+	}
+}
+
+export type TriggerArgoSyncOptions = Readonly<{
+	appNamespace?: string;
+	prune?: boolean;
+}>;
+
+export async function triggerArgoSync(
+	config: PublisherConfig,
+	appName: string,
+	revision: string,
+	http: HttpTransport,
+	token: () => Promise<string>,
+	options?: TriggerArgoSyncOptions,
+): Promise<Readonly<{ triggered: true; appName: string; revision: string }>> {
+	if (config.engine !== GitopsEngine.ARGO_CD) {
+		throw new GitopsError(
+			"gitops-config-invalid",
+			"triggerArgoSync requires an Argo CD publisher config",
+		);
+	}
+	const appNamespace = options?.appNamespace ?? config.endpoint.namespace;
+	const response = await send(http, {
+		method: "POST",
+		url: `${config.endpoint.apiBaseUrl}/api/v1/applications/${encodeURIComponent(appName)}/sync`,
+		headers: {
+			authorization: `Bearer ${await token()}`,
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			revision,
+			prune: options?.prune ?? config.prune,
+			dryRun: false,
+			appNamespace,
+		}),
+	});
+	if (!ok(response)) {
+		throw hostFailure(response, `trigger Argo CD sync for ${appName}`);
+	}
+	return { triggered: true, appName, revision };
+}
+
+export type ObserveArgoSelectorOptions = Readonly<{
+	appNamespace?: string;
+	triggerSync?: boolean;
+}>;
+
+export async function observeArgoApplicationsBySelector(
+	config: PublisherConfig,
+	selector: string,
+	revision: string,
+	http: HttpTransport,
+	token: () => Promise<string>,
+	options?: ObserveArgoSelectorOptions,
+): Promise<EngineVerdict> {
+	if (config.engine !== GitopsEngine.ARGO_CD) {
+		throw new GitopsError(
+			"gitops-config-invalid",
+			"observeArgoApplicationsBySelector requires an Argo CD publisher config",
+		);
+	}
+	const appNamespace = options?.appNamespace ?? config.endpoint.namespace;
+	try {
+		const url = `${config.endpoint.apiBaseUrl}/api/v1/applications?selector=${encodeURIComponent(selector)}&appNamespace=${encodeURIComponent(appNamespace)}`;
+		const fetchSelectorItems = async (): Promise<
+			| Readonly<{ ok: true; items: JsonObject[] }>
+			| Readonly<{ ok: false; verdict: EngineVerdict }>
+		> => {
+			const response = await send(http, {
+				method: "GET",
+				url,
+				headers: { authorization: `Bearer ${await token()}` },
+			});
+			if (response.status === 404) {
+				return {
+					ok: false,
+					verdict: unobservableVerdict(
+						"gitops-engine-not-found",
+						`no Argo CD Applications matched selector "${selector}"`,
+					),
+				};
+			}
+			if (!ok(response)) {
+				const failure = hostFailure(
+					response,
+					`observe Argo CD Applications for selector "${selector}"`,
+				);
+				return {
+					ok: false,
+					verdict: unobservableVerdict(
+						"gitops-engine-unobservable",
+						failure.message,
+					),
+				};
+			}
+			const body = parseJson(
+				response,
+				`observe Argo CD Applications for selector "${selector}"`,
+			);
+			const rawItems = body.items;
+			const parsedItems: JsonObject[] = Array.isArray(rawItems)
+				? rawItems.filter((item): item is JsonObject => isJsonObject(item))
+				: [];
+			if (parsedItems.length === 0) {
+				return {
+					ok: false,
+					verdict: unobservableVerdict(
+						"gitops-engine-not-found",
+						`no Argo CD Applications matched selector "${selector}"`,
+					),
+				};
+			}
+			return { ok: true, items: parsedItems };
+		};
+
+		const initial = await fetchSelectorItems();
+		if (!initial.ok) return initial.verdict;
+		let items = initial.items;
+
+		if (options?.triggerSync === true) {
+			let triggeredAny = false;
+			for (const item of items) {
+				const name = str(get(item, "metadata", "name"));
+				if (name === "") continue;
+				if (argoVerdict(item, revision).state === "converged") continue;
+				const itemNamespace =
+					str(get(item, "metadata", "namespace")) || appNamespace;
+				await triggerArgoSync(config, name, revision, http, token, {
+					appNamespace: itemNamespace,
+				});
+				triggeredAny = true;
+			}
+			if (triggeredAny) {
+				const refreshed = await fetchSelectorItems();
+				if (!refreshed.ok) return refreshed.verdict;
+				items = refreshed.items;
+			}
+		}
+
+		const verdicts = items.map((item) => ({
+			name: str(get(item, "metadata", "name")) || "unnamed",
+			verdict: argoVerdict(item, revision),
+		}));
+
+		const allOutOfSync: string[] = [];
+		for (const entry of verdicts) {
+			if (entry.verdict.outOfSyncResources !== undefined) {
+				for (const res of entry.verdict.outOfSyncResources) {
+					allOutOfSync.push(`${entry.name}:${res}`);
+				}
+			}
+		}
+
+		const blocked = verdicts.filter(
+			(entry) => entry.verdict.state === "blocked",
+		);
+		if (blocked.length > 0) {
+			const detail = blocked
+				.map(
+					(entry) =>
+						`${entry.name}: ${entry.verdict.reason?.message ?? "degraded"}`,
+				)
+				.join("; ");
+			return {
+				state: "blocked",
+				healthy: false,
+				appliedRevision: blocked[0]?.verdict.appliedRevision ?? "",
+				outOfSyncCount: allOutOfSync.length,
+				outOfSyncResources: allOutOfSync,
+				reason: {
+					code: "gitops-engine-degraded",
+					message: `Argo CD selector "${selector}" degraded (${blocked.length}/${verdicts.length}): ${detail}`,
+				},
+			};
+		}
+
+		if (verdicts.every((entry) => entry.verdict.state === "converged")) {
+			return {
+				state: "converged",
+				healthy: true,
+				appliedRevision: revision,
+				outOfSyncCount: 0,
+				outOfSyncResources: [],
+			};
+		}
+
+		const converging = verdicts.filter(
+			(entry) => entry.verdict.state !== "converged",
+		);
+		const detail = converging
+			.map(
+				(entry) =>
+					`${entry.name}: ${entry.verdict.reason?.message ?? "converging"}`,
+			)
+			.join("; ");
+		return {
+			state: "converging",
+			healthy: false,
+			appliedRevision: verdicts[0]?.verdict.appliedRevision ?? "",
+			outOfSyncCount: allOutOfSync.length,
+			outOfSyncResources: allOutOfSync,
+			reason: {
+				code: "gitops-engine-not-converged",
+				message: `Argo CD selector "${selector}" converging (${verdicts.length - converging.length}/${verdicts.length} converged): ${detail}`,
+			},
+		};
+	} catch (error) {
+		if (
+			error instanceof GitopsError &&
+			error.code === "gitops-credential-missing"
+		)
+			throw error;
+		return unobservableVerdict(
 			"gitops-engine-unobservable",
 			error instanceof Error ? error.message : String(error),
 		);

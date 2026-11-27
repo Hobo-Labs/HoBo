@@ -107,3 +107,13 @@ Argo CD namespace `argocd`, project `default`, destination
 | Camp BLOCKED with `gitops-engine-degraded` | — | Read the engine's conditions; roll back through HoBo (`hobo deploy rollback`), never by editing Git by hand. |
 | `gitops-set-too-large` | — | Resolved set > 900 KiB: split the Bindle or use an agent reconciler for that Camp. |
 | Broker policy still says `engine: argo` | — | Works through the `argo-cd` publisher; configure a publisher named `argo-cd`. |
+
+## Pull-based CD Delivery Flows (`CdDeliveryFlow`)
+
+In addition to the legacy `PublisherPort`, `@hobo/cd-gitops` implements `@hobo/cd/domain`'s `CdDeliveryFlow` external system for EffectTS + Alchemy Domain + Rivet workflows:
+
+- **Direct pull (`gitops-pull`)**: commits rendered documents and/or typed manifest updates (`applyJsonPathUpdate`, `applyYamlScalarUpdate`, `applyKustomizeImageUpdate`) to the stage branch and observes convergence via Argo CD (`observeEngine`, `observeArgoApplicationsBySelector`, optional `triggerArgoSync`) or Flux (`observeEngine`).
+- **PR-based pull (`gitops-pr-pull`)**: creates a deterministic promotion branch (`createBranch`), commits rendered documents/manifest updates, opens a Pull Request / Merge Request (`openPullRequest`) across GitHub, GitLab, Gitea/Forgejo, or Bitbucket Cloud, observes PR state (`getPullRequest` → `Open` / `Merged` / `Closed`), and observes Argo CD or Flux convergence on the merge commit SHA.
+- **Rollback**: restores the previous revision's files via a direct commit (`gitops-pull`) or rollback PR (`gitops-pr-pull`) when convergence reports `Degraded` or verification fails.
+- **Pluggable routing**: register `createArgoCdPullFlowAdapter` and `createFluxPullFlowAdapter` alongside other flow targets (such as HoBo Agent or Octopus Deploy) in `@hobo/cd/host`'s `createCdDeliveryFlowRouterLayer`.
+

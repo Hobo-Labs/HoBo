@@ -440,6 +440,69 @@ export function createSqliteDomainPlatform(
 				yield* claim(modelName, id);
 				yield* resumeDurableSideEffects;
 				const persistAggregate = makePersistAggregateTransaction(modelName);
+				let outboxBootDrained = false;
+				const inFlightOutboxIds = new Set<number>();
+				const pendingDeliveries: Array<{
+					readonly delivery: Delivery;
+					readonly outboxId: number | undefined;
+					readonly deliver: (delivery: Delivery) => Effect.Effect<void>;
+				}> = [];
+				let drainingDeliveries = false;
+				const drainDeliveryQueue: Effect.Effect<void> = Effect.suspend(() => {
+					if (drainingDeliveries) {
+						return Effect.void;
+					}
+					drainingDeliveries = true;
+					return Effect.gen(function* () {
+						while (pendingDeliveries.length > 0) {
+							const next = pendingDeliveries.shift();
+							if (next === undefined) break;
+							yield* next.deliver(next.delivery).pipe(
+								Effect.tap(() =>
+									next.outboxId !== undefined
+										? outbox.dropStaged(modelName, [next.outboxId])
+										: Effect.void,
+								),
+								Effect.ensuring(
+									Effect.sync(() => {
+										if (next.outboxId !== undefined) {
+											inFlightOutboxIds.delete(next.outboxId);
+										}
+									}),
+								),
+							);
+						}
+					}).pipe(
+						Effect.ensuring(
+							Effect.sync(() => {
+								drainingDeliveries = false;
+								while (pendingDeliveries.length > 0) {
+									const leftover = pendingDeliveries.shift();
+									if (leftover?.outboxId !== undefined) {
+										inFlightOutboxIds.delete(leftover.outboxId);
+									}
+								}
+							}),
+						),
+					);
+				});
+				const deliverStagedOutbox = (
+					deliveries: ReadonlyArray<Delivery>,
+					stagedOutbox: ReadonlyArray<number>,
+					deliver: (delivery: Delivery) => Effect.Effect<void>,
+				) =>
+					Effect.suspend(() => {
+						for (let index = 0; index < deliveries.length; index += 1) {
+							const delivery = deliveries[index];
+							if (delivery === undefined) continue;
+							pendingDeliveries.push({
+								delivery,
+								outboxId: stagedOutbox[index],
+								deliver,
+							});
+						}
+						return drainDeliveryQueue;
+					});
 				const host: ModelHost = {
 					aggregate: (_aggregate, kit) =>
 						Effect.gen(function* () {
@@ -512,89 +575,130 @@ export function createSqliteDomainPlatform(
 								command,
 								meta,
 							) =>
-								lock.withPermits(1)(
-									Effect.gen(function* () {
-										if (!outboxBootDrained) {
-											outboxBootDrained = true;
-											yield* outbox.drainPending(modelName, (delivery) =>
-												kit.deliver(delivery),
-											);
-										}
-										const existingReceiptRow = loadReceiptStmt.get(
+								Effect.gen(function* () {
+									if (!outboxBootDrained) {
+										outboxBootDrained = true;
+										yield* outbox.drainPending(
 											modelName,
-											kit.name,
-											instanceId,
-											meta.commandId,
+											(delivery) => kit.deliver(delivery),
+											inFlightOutboxIds,
 										);
-										if (existingReceiptRow !== undefined) {
-											const parsed: SendResult = decodeAccepted(
-												JSON.parse(
-													asText(
-														existingReceiptRow.receipt_json,
-														"receipt_json",
-													),
-												),
+									}
+									let ownedOutboxIds: ReadonlyArray<number> = [];
+									let handedOff = false;
+									return yield* Effect.gen(function* () {
+										const committed = yield* lock.withPermits(1)(
+											Effect.gen(function* () {
+												const existingReceiptRow = loadReceiptStmt.get(
+													modelName,
+													kit.name,
+													instanceId,
+													meta.commandId,
+												);
+												if (existingReceiptRow !== undefined) {
+													const parsed: SendResult = decodeAccepted(
+														JSON.parse(
+															asText(
+																existingReceiptRow.receipt_json,
+																"receipt_json",
+															),
+														),
+													);
+													return {
+														_tag: "Duplicate" as const,
+														accepted: parsed,
+													};
+												}
+												const current = readAggregate(instanceId);
+												const result = yield* kit.handle({
+													id: instanceId,
+													state: current.state,
+													version: current.version,
+													command,
+													commandId: meta.commandId,
+													context: meta.context,
+													now: now(),
+													...(meta.correlationId !== undefined
+														? { correlationId: meta.correlationId }
+														: undefined),
+													...(meta.trace !== undefined
+														? { trace: meta.trace }
+														: undefined),
+													...(meta.link !== undefined
+														? { link: meta.link }
+														: undefined),
+												});
+												if (result._tag === "Rejected") {
+													return {
+														_tag: "Rejected" as const,
+														result,
+													};
+												}
+												const receipt: ReceiptJson = {
+													stream: `${kit.name}/${instanceId}`,
+													version: result.version,
+													events: result.events.map((entry) => entry.event),
+													reply: result.reply,
+												};
+												const accepted: SendResult = {
+													_tag: "Accepted",
+													receipt,
+												};
+												const stagedOutbox = persistAggregate({
+													aggregateName: kit.name,
+													instanceId,
+													expectedVersion: current.version,
+													state: result.state,
+													newVersion: result.version,
+													events: result.events,
+													receipt: {
+														commandId: meta.commandId,
+														accepted,
+													},
+													deliveries: result.deliveries,
+												});
+												ownedOutboxIds = stagedOutbox;
+												for (const outboxId of stagedOutbox) {
+													inFlightOutboxIds.add(outboxId);
+												}
+												yield* announce(instanceId, result.version);
+												return {
+													_tag: "Committed" as const,
+													accepted,
+													deliveries: result.deliveries,
+													stagedOutbox,
+												};
+											}),
+										);
+										if (committed._tag === "Rejected") {
+											return committed.result;
+										}
+										if (committed._tag === "Duplicate") {
+											yield* outbox.drainPending(
+												modelName,
+												(delivery) => kit.deliver(delivery),
+												inFlightOutboxIds,
 											);
-											yield* outbox.drainPending(modelName, (delivery) =>
-												kit.deliver(delivery),
-											);
-											return parsed;
+											return committed.accepted;
 										}
-										const current = readAggregate(instanceId);
-										const result = yield* kit.handle({
-											id: instanceId,
-											state: current.state,
-											version: current.version,
-											command,
-											commandId: meta.commandId,
-											context: meta.context,
-											now: now(),
-											...(meta.correlationId !== undefined
-												? { correlationId: meta.correlationId }
-												: undefined),
-											...(meta.trace !== undefined
-												? { trace: meta.trace }
-												: undefined),
-											...(meta.link !== undefined
-												? { link: meta.link }
-												: undefined),
-										});
-										if (result._tag === "Rejected") {
-											return result;
-										}
-										const receipt: ReceiptJson = {
-											stream: `${kit.name}/${instanceId}`,
-											version: result.version,
-											events: result.events.map((entry) => entry.event),
-											reply: result.reply,
-										};
-										const accepted: SendResult = {
-											_tag: "Accepted",
-											receipt,
-										};
-										const stagedOutbox = persistAggregate({
-											aggregateName: kit.name,
-											instanceId,
-											expectedVersion: current.version,
-											state: result.state,
-											newVersion: result.version,
-											events: result.events,
-											receipt: {
-												commandId: meta.commandId,
-												accepted,
-											},
-											deliveries: result.deliveries,
-										});
-										yield* announce(instanceId, result.version);
-										for (const delivery of result.deliveries) {
-											yield* kit.deliver(delivery);
-										}
-										yield* outbox.dropStaged(modelName, stagedOutbox);
-										return accepted;
-									}),
-								);
-
-							let outboxBootDrained = false;
+										handedOff = true;
+										yield* deliverStagedOutbox(
+											committed.deliveries,
+											committed.stagedOutbox,
+											kit.deliver,
+										);
+										return committed.accepted;
+									}).pipe(
+										Effect.ensuring(
+											Effect.sync(() => {
+												if (handedOff) return;
+												for (const outboxId of ownedOutboxIds) {
+													inFlightOutboxIds.delete(outboxId);
+												}
+											}),
+										),
+									);
+								});
 
 							const armPersistedSchedule = (
 								instanceId: string,
@@ -787,33 +891,58 @@ export function createSqliteDomainPlatform(
 										),
 									),
 								seed: (instanceId, events) =>
-									lock.withPermits(1)(
-										Effect.gen(function* () {
-											const current = readAggregate(instanceId);
-											const result = yield* kit.seed({
-												id: instanceId,
-												state: current.state,
-												version: current.version,
-												events,
-												commandId: `seed:${instanceId}:${current.version}`,
-												now: now(),
-											});
-											const stagedOutbox = persistAggregate({
-												aggregateName: kit.name,
-												instanceId,
-												expectedVersion: current.version,
-												state: result.state,
-												newVersion: result.version,
-												events: result.events,
-												deliveries: result.deliveries,
-											});
-											yield* announce(instanceId, result.version);
-											for (const delivery of result.deliveries) {
-												yield* kit.deliver(delivery);
-											}
-											yield* outbox.dropStaged(modelName, stagedOutbox);
-										}),
-									),
+									Effect.gen(function* () {
+										let ownedOutboxIds: ReadonlyArray<number> = [];
+										let handedOff = false;
+										yield* Effect.gen(function* () {
+											const seeded = yield* lock.withPermits(1)(
+												Effect.gen(function* () {
+													const current = readAggregate(instanceId);
+													const result = yield* kit.seed({
+														id: instanceId,
+														state: current.state,
+														version: current.version,
+														events,
+														commandId: `seed:${instanceId}:${current.version}`,
+														now: now(),
+													});
+													const stagedOutbox = persistAggregate({
+														aggregateName: kit.name,
+														instanceId,
+														expectedVersion: current.version,
+														state: result.state,
+														newVersion: result.version,
+														events: result.events,
+														deliveries: result.deliveries,
+													});
+													ownedOutboxIds = stagedOutbox;
+													for (const outboxId of stagedOutbox) {
+														inFlightOutboxIds.add(outboxId);
+													}
+													yield* announce(instanceId, result.version);
+													return {
+														deliveries: result.deliveries,
+														stagedOutbox,
+													};
+												}),
+											);
+											handedOff = true;
+											yield* deliverStagedOutbox(
+												seeded.deliveries,
+												seeded.stagedOutbox,
+												kit.deliver,
+											);
+										}).pipe(
+											Effect.ensuring(
+												Effect.sync(() => {
+													if (handedOff) return;
+													for (const outboxId of ownedOutboxIds) {
+														inFlightOutboxIds.delete(outboxId);
+													}
+												}),
+											),
+										);
+									}),
 							};
 							return store;
 						}),
