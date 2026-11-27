@@ -106,9 +106,13 @@ resolution contracts are exercised in
 [`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
 Release `--resolve-digest` pins the worker only when `docker image inspect` lists
 exactly one matching `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:<64 lowercase hex>`.
-The publisher gives a confirmed manifest up to nine minutes to pull. It rebuilds
-only when both the manifest inspection and pull explicitly report a missing image;
-timeouts and network errors stop the publisher without overwriting the tag.
+Only a normal docker failure (status 1) can prove a worker manifest is missing;
+timeouts and other statuses stay unknown. If the remaining probe budget is already
+gone, the probe returns `budget-exhausted` before starting a pull. With no injected
+clock, a confirmed present manifest may use `PUBLISHED_WORKER_PULL_BUDGET_SEC`
+(nine minutes) for that pull, and only when the remaining budget is not already 0.
+The publisher rebuilds only when both the manifest inspection and the pull report
+the image missing.
 
 
 ## SDK release artifacts
