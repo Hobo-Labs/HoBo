@@ -185,6 +185,17 @@ describe("bounded atomic queue transitions", () => {
 		).toEqual(second.outcome);
 	});
 
+	it("reports identifier exhaustion before generated IDs exceed name bounds", () => {
+		const state = {
+			...emptyAtomicQueueState(),
+			nextMessage: 1_000_000_000_000_000,
+		};
+		expect(apply(state, enqueue(1)).outcome).toEqual({
+			status: "rejected",
+			code: "capacity-exceeded",
+		});
+	});
+
 	it("records delayed-message and attempt-limit decisions", () => {
 		const input: AtomicQueueRequest = {
 			kind: "enqueue",
