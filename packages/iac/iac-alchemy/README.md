@@ -1,5 +1,8 @@
 # @hobo/iac-alchemy
 
+This adapter is currently a private workspace package. The imports below work
+inside this repository; the package is not in the public SDK release allowlist.
+
 This optional IaC adapter uses the external `alchemy` 2.0 beta.87 library. The
 host supplies an Alchemy stack, runtime layer, runtime directory, target scope
 and an injected financial port to `createAlchemyIacProvider`. It implements the
