@@ -62,6 +62,62 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
+AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
+its provider choice outside the Bindle: pass the neutral Bindle through
+`withAwsDynamoKv(bindle, { cache: true })` and use
+`awsDynamoKvBindleMappers()` from `@hobo/iac-alchemy/aws/kv-mapper`. Install the
+optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
+`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS partition, owner account and region,
+host-issued resource and grant epochs, an explicit operation allow-list, a
+per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
+The host must authenticate the actual table incarnation, never reuse a
+revoked epoch, fence outstanding requests during ownership changes, and enforce
+matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
+bytes and values to 256 KiB. A failed or timed-out write or delete has an
+unknown outcome and requires reconciliation. Each store retains capacity for a
+timed-out request until the transport settles. This subset does not bind a
+HoBo application or WASI guest to the table, implement transactions, or prevent
+out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
+verifier and transport behave as specified; it does not prove those components.
+It models one bounded store and permits transport to remain in flight after a
+caller times out.
+
+For bounded Node.js S3 objects, use `withAwsS3(bindle, { assets: true })` and
+`awsS3BindleMappers()` from `@hobo/iac-alchemy/aws/s3-mapper`. To combine S3
+and DynamoDB on the same target, apply both target choices and pass
+`awsDynamoKvBindleMappers()` to `awsS3BindleMappers`. These target views retain
+the original neutral Bindle unchanged. The separate
+`createAwsS3Store` runtime requires a host-authenticated bucket, owner account
+and grant, per-key authorization, IAM and the AWS credentials and HTTP Effect
+layer. Each operation sends S3's expected-owner condition. It
+supports objects up to 1 MiB, 1,024-byte keys, at most 1,024 body chunks and
+SHA-256 content-digest metadata. Failed writes and deletes have unknown
+outcomes; the host must fence ownership changes and reconcile them. It does not
+bind an application or WASI guest, implement blob events or version management,
+or authenticate the digest against a separate authority.
+The bounded `AwsS3Objects` model uses one key and a collision-free abstract
+digest. It includes out-of-band objects with foreign metadata, oversized bodies
+and corrupted digests; it does not prove the hash implementation or provider.
+
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+The store captures its allowed operations at construction, so later changes to
+application array prototypes do not change the captured grant.
+
+A Node.js HTTP host can bind those two AWS stores to a Bindle application with
+`createAwsBindleApplication` and read them through `awsHttpBindings(context)`
+from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
+Bindle, its application name, exactly the declared stores, and a synchronous
+verifier that authenticates each exact captured store grant. The runtime rejects forged stores,
+extra permissions and unverified bindings, and retires scoped handles when the
+request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
+headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host must authenticate HTTP requests, independently enforce IAM and fence
+in-flight AWS operations across grant or resource ownership changes. This host
+adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
+request bodies, stream responses, or provide connectors or session replay.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
@@ -735,6 +791,19 @@ the RivetKit 3 runtime package in one host-shaped fixture. It imports the
 Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
 declarations (the same peer-aligned instances the adapter resolves) and builds
 its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
+`test/better-auth-session-durability.test.ts` simulates sign-in, a process
+restart (SQLite file reopen), and brokered signing-secret re-resolution so
+session rows and cookie integrity survive host recycle. The session file is
+the harness `sessionStorePath`. `openBetterAuthSessionStore` applies the pack
+migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
+to that file; there is no hand-written session DDL.
+`test/better-auth-cross-box-session.test.ts` shares one file-backed session
+database across two Alchemy host harness instances (two boxes, one relational
+URL). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
+state, a file-backed `sqlite` path (the same session file, not an in-memory
+database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
+broker wire (synthetic signing material only; no live Worker/D1 deploy).
 On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator`
 runs the mapped AWS resources and budget-routing scenarios against both the
 Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
@@ -903,3 +972,23 @@ nine-resource graph, and its source and plan fences must verify before apply.
 Application dependencies and server-side rendering are not supported by this
 mapping. The emulator test exercises the mapped CloudFront key-value store;
 it does not deploy the complete site.
+
+### Bounded AWS key-value runtime
+
+The optional Node.js DynamoDB runtime supports bounded get, set and delete
+operations with explicit grants. A timed-out request retains capacity until
+its transport settles; uncertain mutations require reconciliation. The host
+must authenticate the table incarnation and each operation, enforce AWS permissions
+and fence in-flight work. Values are limited to 256 KiB to leave room for keys and
+attributes within DynamoDB's item limit. If completion observation cannot be
+established after an effect may have started, its capacity remains occupied.
+This slice does not yet map the runtime into applications.
+The shared transport boundary permits at most 32 concurrent operations per
+store and uses a ten-second deadline. A deadline does not stop the provider.
+
+The optional Node.js S3 runtime supports bounded object reads, writes and
+deletes with per-key grants and a one MiB object limit. The host authenticates
+the bucket incarnation and IAM scope on each operation. Responses with invalid
+metadata or ranges consume at most one chunk so the stream scope closes;
+uncertain mutations require reconciliation. This runtime is not yet bound to
+applications.

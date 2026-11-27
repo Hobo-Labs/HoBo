@@ -2,7 +2,8 @@
 	"extends": "../../../tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
+		"rootDir": ".",
 		"types": ["node"]
 	},
-	"include": ["test/cloudflare-native-r2.test.ts"]
+	"include": ["src", "test"]
 }
