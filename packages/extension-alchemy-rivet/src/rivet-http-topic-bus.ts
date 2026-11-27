@@ -46,6 +46,7 @@ import {
 	type RivetDurableTopicClientOptions,
 } from "@hobo/runtime-rivet";
 import * as Effect from "effect/Effect";
+import { rivetTopicUnavailable } from "./rivet-topic-unavailable.js";
 
 const isProxy = types.isProxy;
 const apply = Reflect.apply;
@@ -501,22 +502,14 @@ export function createRivetBindleTopicBusApplication(
 				const result = await prepare();
 				if (result.status !== "ready") {
 					const failure = result.provisioning;
-					return Response.json(
-						{
-							status: "topic-unavailable",
-							reason:
-								failure.status === "incomplete"
-									? failure.outcome.tag
-									: failure.status,
-						},
-						{ status: 503 },
+					return rivetTopicUnavailable(
+						failure.status === "incomplete"
+							? failure.outcome.tag
+							: failure.status,
 					);
 				}
 				if (!matchesApplication(bound))
-					return Response.json(
-						{ status: "topic-unavailable", reason: "scope-unverified" },
-						{ status: 503 },
-					);
+					return rivetTopicUnavailable("scope-unverified");
 				if (handler === undefined) {
 					const candidate: unknown = apply(application, undefined, [
 						result.application,
@@ -535,10 +528,7 @@ export function createRivetBindleTopicBusApplication(
 					) => Response | Promise<Response>;
 				}
 				if (!matchesApplication(bound))
-					return Response.json(
-						{ status: "topic-unavailable", reason: "scope-unverified" },
-						{ status: 503 },
-					);
+					return rivetTopicUnavailable("scope-unverified");
 				return handler(request);
 			};
 		},
