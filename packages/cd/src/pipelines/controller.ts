@@ -72,6 +72,11 @@ import {
 	topologicalOrder,
 	validatePipeline,
 } from "./graph.js";
+import {
+	candidatesForSlot,
+	effectiveSlotNode,
+	pipelineKeyForSlot,
+} from "./origin-slots.js";
 import { ORIGIN_SOURCES, PIPELINE_METRIC, PIPELINE_REASON } from "./reasons.js";
 
 /** Station and data subject a placed node's Placement decides for (composed by WP18). */
@@ -184,6 +189,7 @@ export function createPipelineController(
 	const promotedAt = new Map<string, Map<string, number>>();
 	/** `${pipeline}|${node}` → Freight of the latest env.Promoted. */
 	const currentByNode = new Map<string, string>();
+	const promotedFreightByNode = new Map<string, Map<string, true>>();
 	const holdByNode = new Map<string, AutoPromotionHold>();
 	type ManualPromotion = {
 		freightId: string;
@@ -317,6 +323,10 @@ export function createPipelineController(
 			if (record.pipeline !== "" && record.node !== "") {
 				const nodeKey = `${record.pipeline}|${record.node}`;
 				currentByNode.set(nodeKey, record.freightId);
+				const history = promotedFreightByNode.get(nodeKey) ?? new Map();
+				history.delete(record.freightId);
+				history.set(record.freightId, true);
+				promotedFreightByNode.set(nodeKey, history);
 				const manual = manualPromoteByNode.get(nodeKey);
 				if (!manual || manual.fanoutId || manual.freightId !== record.freightId)
 					return;
@@ -614,11 +624,18 @@ export function createPipelineController(
 		node: PipelineNodeRecord,
 		candidate: Candidate,
 		ctx: CdContext,
+		slotName?: string,
 	): Promise<void> {
 		const freightId = candidate.freight.freightId;
-		const key = pipelineKey(pipeline.name, node.name, freightId);
+		const key = slotName
+			? pipelineKeyForSlot(
+					pipelineKey(pipeline.name, node.name, freightId),
+					slotName,
+				)
+			: pipelineKey(pipeline.name, node.name, freightId);
 		if (candidate.availability.lineage) {
-			if (isPlaced(node)) await startFanout(pipeline, node, freightId, ctx);
+			if (isPlaced(node))
+				await startFanout(pipeline, node, freightId, ctx, "automatic", key);
 			else await request(pipeline, node, freightId, node.campIds, key, ctx);
 			return;
 		}
@@ -639,8 +656,13 @@ export function createPipelineController(
 		node: PipelineNodeRecord,
 		facts: readonly FreightFacts[],
 		ctx: CdContext,
+		slotName?: string,
+		slotCandidates?: readonly Candidate[],
 	): Promise<void> {
 		const attributes = { pipeline: pipeline.name, node: node.name };
+		const allowed = slotCandidates
+			? new Set(slotCandidates.map((candidate) => candidate.freight.freightId))
+			: undefined;
 		let stable: string | undefined;
 		let domain: readonly string[];
 		let settled: ReadonlySet<string>;
@@ -661,6 +683,7 @@ export function createPipelineController(
 			const newest = facts.find(
 				(fact) =>
 					fact.usable &&
+					(!allowed || allowed.has(fact.freight.freightId)) &&
 					fact.qualifications.some(
 						(q) => q.pipeline === pipeline.name && q.node === node.name,
 					),
@@ -673,7 +696,7 @@ export function createPipelineController(
 					.map((q) => q.campId) ?? [],
 			);
 		}
-		if (!stable) return;
+		if (!stable || (allowed && !allowed.has(stable))) return;
 		// SAFETY: stable is a Freight id the ledger or fan-out controller recorded.
 		if (!(await deps.freight.isUsable(stable as FreightId))) return;
 		const fanouts = isPlaced(node)
@@ -707,12 +730,14 @@ export function createPipelineController(
 				)
 			)
 				continue;
+			const baseKey = pipelineKey(pipeline.name, node.name, stable);
+			const key = slotName ? pipelineKeyForSlot(baseKey, slotName) : baseKey;
 			await request(
 				pipeline,
 				node,
 				stable,
 				[campId],
-				`${pipelineKey(pipeline.name, node.name, stable)}:match:${campId}`,
+				`${key}:match:${campId}`,
 				ctx,
 			);
 		}
@@ -742,6 +767,34 @@ export function createPipelineController(
 		).stableFreightId;
 	}
 
+	function currentUpstreamFreight(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		facts: readonly FreightFacts[],
+		slotName?: string,
+	): string | undefined {
+		const upstream = node.fromNodes[0];
+		if (!upstream) return undefined;
+		const key = `${pipeline.name}|${upstream}`;
+		if (!slotName) return currentByNode.get(key);
+		const slot = node.originSlots.find((item) => item.name === slotName);
+		if (!slot) return undefined;
+		const history = promotedFreightByNode.get(key);
+		if (!history) return undefined;
+		const byId = new Map(facts.map((fact) => [fact.freight.freightId, fact]));
+		for (const freightId of [...history.keys()].reverse()) {
+			const fact = byId.get(freightId);
+			if (!fact) return undefined;
+			if (
+				slot.fromSources.some((source) =>
+					freightMatchesOrigin(fact.freight, source),
+				)
+			)
+				return freightId;
+		}
+		return undefined;
+	}
+
 	async function refreshAutoPromotionHolds(ctx: CdContext): Promise<void> {
 		for (const [nodeKey, manual] of manualPromoteByNode) {
 			const split = nodeKey.indexOf("|");
@@ -751,23 +804,55 @@ export function createPipelineController(
 			const pipeline = pipelines.get(pipelineName);
 			const node = pipeline?.nodes.find((n) => n.name === nodeName);
 			if (!pipeline || !node) continue;
-			if (
-				node.autoPromotion === AutoPromotion.DISABLED ||
-				node.autoPromotion === AutoPromotion.UNSPECIFIED
-			)
-				continue;
 			const facts = await freightFacts(pipeline);
 			const placed = await placedViews(pipeline);
 			const list = candidates(pipeline, node, facts, placed, ctx.now());
-			const stable = await stableFreightForMatchNode(pipeline, node, facts);
-			const autoId = autoPromotionFreightId(
-				pipeline,
-				node,
-				list,
-				currentByNode,
-				stable,
-			);
-			if (autoId === undefined || manual.freightId === autoId) continue;
+			const slots = node.originSlots ?? [];
+			const lanes = slots.length
+				? slots.map((slot) => ({
+						node: effectiveSlotNode(node, slot),
+						list: candidatesForSlot(list, slot),
+						slot: slot.name,
+					}))
+				: [{ node, list, slot: undefined }];
+			let competing = false;
+			for (const lane of lanes) {
+				const allowed = new Set(lane.list.map((c) => c.freight.freightId));
+				const laneFacts = lane.slot
+					? facts.filter((fact) => allowed.has(fact.freight.freightId))
+					: facts;
+				let stable = await stableFreightForMatchNode(
+					pipeline,
+					lane.node,
+					laneFacts,
+				);
+				if (lane.slot && stable && !allowed.has(stable)) stable = undefined;
+				const laneCurrent = new Map(currentByNode);
+				const upstream = lane.node.fromNodes[0];
+				if (lane.slot && upstream) {
+					const key = `${pipeline.name}|${upstream}`;
+					const current = currentUpstreamFreight(
+						pipeline,
+						lane.node,
+						facts,
+						lane.slot,
+					);
+					if (current) laneCurrent.set(key, current);
+					else laneCurrent.delete(key);
+				}
+				const autoId = autoPromotionFreightId(
+					pipeline,
+					lane.node,
+					lane.list,
+					laneCurrent,
+					stable,
+				);
+				if (autoId !== undefined && manual.freightId !== autoId) {
+					competing = true;
+					break;
+				}
+			}
+			if (!competing) continue;
 			if (holdByNode.has(nodeKey)) continue;
 			const hold: AutoPromotionHold = Object.freeze({
 				pipeline: pipeline.name,
@@ -791,6 +876,46 @@ export function createPipelineController(
 		const mapped = ORIGIN_SOURCES.get(origin);
 		if (mapped !== undefined) return freight.origin === mapped;
 		return freight.sourceName === origin;
+	}
+
+	async function runAutoPromotion(
+		pipeline: PipelineRecord,
+		node: PipelineNodeRecord,
+		list: readonly Candidate[],
+		facts: readonly FreightFacts[],
+		ctx: CdContext,
+		slotName?: string,
+	): Promise<void> {
+		switch (node.autoPromotion) {
+			case AutoPromotion.NEWEST: {
+				const newest = list[0];
+				if (newest)
+					await promoteCandidate(pipeline, node, newest, ctx, slotName);
+				break;
+			}
+			case AutoPromotion.MATCH_UPSTREAM: {
+				const current = currentUpstreamFreight(pipeline, node, facts, slotName);
+				const match = list.find(
+					(candidate) =>
+						candidate.freight.freightId === current &&
+						candidate.availability.lineage,
+				);
+				if (match) await promoteCandidate(pipeline, node, match, ctx, slotName);
+				break;
+			}
+			case AutoPromotion.MATCH_NODE:
+				await matchNode(
+					pipeline,
+					node,
+					facts,
+					ctx,
+					slotName,
+					slotName ? list : undefined,
+				);
+				break;
+			default:
+				break;
+		}
 	}
 
 	async function recordAvailable(
@@ -1044,31 +1169,28 @@ export function createPipelineController(
 					await recordAvailable(pipeline, node, list, ctx);
 					if (isPreview(node)) continue;
 					if (holdByNode.has(`${pipeline.name}|${node.name}`)) continue;
-					switch (node.autoPromotion) {
-						case AutoPromotion.NEWEST: {
-							const newest = list[0];
-							if (newest) await promoteCandidate(pipeline, node, newest, ctx);
-							break;
-						}
-						case AutoPromotion.MATCH_UPSTREAM: {
-							const upstream = node.fromNodes[0];
-							const current = upstream
-								? currentByNode.get(`${pipeline.name}|${upstream}`)
-								: undefined;
-							const match = list.find(
-								(candidate) =>
-									candidate.freight.freightId === current &&
-									candidate.availability.lineage,
+					const originSlots = node.originSlots ?? [];
+					if (originSlots.length > 0) {
+						for (const slot of originSlots) {
+							const slotList = candidatesForSlot(list, slot);
+							const slotNode = effectiveSlotNode(node, slot);
+							if (
+								slotNode.autoPromotion === AutoPromotion.DISABLED ||
+								slotNode.autoPromotion === AutoPromotion.UNSPECIFIED
+							)
+								continue;
+							await runAutoPromotion(
+								pipeline,
+								slotNode,
+								slotList,
+								facts,
+								ctx,
+								slot.name,
 							);
-							if (match) await promoteCandidate(pipeline, node, match, ctx);
-							break;
 						}
-						case AutoPromotion.MATCH_NODE:
-							await matchNode(pipeline, node, facts, ctx);
-							break;
-						default:
-							break;
+						continue;
 					}
+					await runAutoPromotion(pipeline, node, list, facts, ctx);
 				}
 			}
 		},

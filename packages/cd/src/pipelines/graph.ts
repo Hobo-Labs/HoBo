@@ -21,6 +21,7 @@ import {
 import { PIPELINE_SCHEMA, SHADOW_REQUIRED } from "../events.js";
 import type { CampTopology } from "../ports.js";
 import { reason } from "../windows/reasons.js";
+import { validateOriginSlots } from "./origin-slots.js";
 import { ORIGIN_SOURCES, PIPELINE_REASON, PROJECT_LABEL } from "./reasons.js";
 
 const SLUG = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -203,13 +204,23 @@ export function validatePipeline(
 				at,
 			);
 
-		if (node.fromSources.length === 0 && node.fromNodes.length === 0)
+		if (
+			node.fromSources.length === 0 &&
+			node.fromNodes.length === 0 &&
+			(node.originSlots ?? []).length === 0
+		)
 			add(
 				PIPELINE_REASON.noSource,
 				`node "${node.name}" has no source`,
-				"Add a Freight source to a root node, or an upstream node.",
+				"Add a Freight source to a root node, an origin slot, or an upstream node.",
 				at,
 			);
+		validateOriginSlots(
+			{ ...node, originSlots: node.originSlots ?? [] },
+			at,
+			facts.sources,
+			add,
+		);
 		for (const source of node.fromSources)
 			if (!facts.sources.has(source) && !ORIGIN_SOURCES.has(source))
 				add(

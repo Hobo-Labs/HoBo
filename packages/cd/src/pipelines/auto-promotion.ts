@@ -1,12 +1,13 @@
 import {
 	AutoPromotion,
+	type FreightRecord,
 	type PipelineNodeRecord,
 	type PipelineRecord,
 } from "../_generated/cd_pb.js";
 import type { NodeAvailability } from "./availability.js";
 
 export type PromotionCandidate = Readonly<{
-	freight: Readonly<{ freightId: string }>;
+	freight: FreightRecord;
 	availability: NodeAvailability;
 }>;
 

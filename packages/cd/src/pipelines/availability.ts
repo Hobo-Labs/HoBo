@@ -154,7 +154,10 @@ export function freightAvailability(
 
 	const paths: { via: string; at: number }[] = [];
 	const recordedAt = ms(freight.recordedAt) ?? input.nowMs;
-	for (const source of input.node.fromSources) {
+	const admittedSources = new Set(input.node.fromSources);
+	for (const slot of input.node.originSlots ?? [])
+		for (const source of slot.fromSources) admittedSources.add(source);
+	for (const source of admittedSources) {
 		const origin = ORIGIN_SOURCES.get(source);
 		const matches =
 			origin === undefined
