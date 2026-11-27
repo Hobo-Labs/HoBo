@@ -23,7 +23,7 @@ const CONFIG_INPUT = {
 	emailAndPassword: { enabled: true },
 	socialProviders: ["github", "google"],
 	organizations: { enabled: true },
-} as const;
+};
 
 const PORTS = {
 	relationalBindle: "auth_db",
@@ -70,5 +70,48 @@ describe("BetterAuthBundlePlanRecord CUE", () => {
 		expect(fixture.claims_mapping_version).toBe("better-auth-claims/v1");
 		expect(fixture.parsed_config.database_profile).toBe("data.relational/v1");
 		expect(fixture.ports.relational_bindle).toBe("auth_db");
+	});
+
+	it("validates migration record profiles against the supported versions", () => {
+		const scratch = mkdtempSync(
+			join(tmpdir(), "hobo-pack-better-auth-migration-"),
+		);
+		try {
+			const dataFile = join(scratch, "migration.json");
+			for (const [profile, valid] of [
+				["data.relational/v1", true],
+				["data.postgres/v1", true],
+				["data.relational/v2", false],
+				["data.postgres/v0", false],
+			] as const) {
+				writeFileSync(
+					dataFile,
+					JSON.stringify({
+						pack_id: "pack.better-auth/v1",
+						relational_bindle: "auth_db",
+						database_profile: profile,
+						migration_plan_contract: "hobo.migration-plan/v1",
+						migration_plan_digest: `sha256:${"a".repeat(64)}`,
+						expand_step_count: 1,
+					}),
+				);
+				const result = spawnSync(
+					cueBin,
+					[
+						"vet",
+						"-c",
+						"-d",
+						"#BetterAuthRelationalMigrationRecord",
+						"pack_better_auth.cue",
+						dataFile,
+					],
+					{ cwd: dataModels, encoding: "utf8" },
+				);
+				if (result.error) throw result.error;
+				expect(result.status === 0, profile).toBe(valid);
+			}
+		} finally {
+			rmSync(scratch, { recursive: true, force: true });
+		}
 	});
 });
