@@ -430,3 +430,5 @@ default must pixel-match a pre-axis baseline build (pass
 renders differently from ink, so a dead boot script cannot pass trivially.
 Output: screenshot corpus + `findings.md` under `runs/design-audit/`
 (gitignored). Exit code = number of failed checks.
+
+Pages freshness checks compare changes since the deployed commit against the site workflow’s sparse checkout and materialized inputs, including the media catalogue, shared packages, docs, and examples. Unknown checkout configuration triggers a deploy.

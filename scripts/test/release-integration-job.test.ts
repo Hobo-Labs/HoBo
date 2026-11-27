@@ -197,8 +197,17 @@ function runScope(root: string, base: string, path = process.env.PATH) {
 }
 
 describe("release integration pull-request and merge-queue lane", () => {
-	it("uses an unfiltered pull_request and merge_group trigger", () => {
-		assert.equal(trigger(pr, "pull_request"), null);
+	it("runs for pull requests without path or branch filters and for merge groups", () => {
+		const pullRequest = asObject(trigger(pr, "pull_request"));
+		assert.deepEqual(asList(pullRequest?.types), [
+			"opened",
+			"synchronize",
+			"reopened",
+			"ready_for_review",
+			"labeled",
+		]);
+		assert.equal(pullRequest?.paths, undefined);
+		assert.equal(pullRequest?.branches, undefined);
 		assert.equal(trigger(pr, "merge_group"), null);
 	});
 

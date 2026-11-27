@@ -31,7 +31,7 @@ it("executes a verified native async component across delayed and lost replies",
 		const witPath = join(dir, "probe.wit");
 		await writeFile(
 			witPath,
-			`${original}\nworld bridge-test {\n  import messaging;\n  export run: async func() -> string;\n}\n`,
+			`${original}\nworld bridge-test {\n  import messaging;\n  export run: async func() -> string;\n  export run-scoped: async func() -> string;\n}\n`,
 		);
 		const guest = `import { limits, ensureTopic, publish, consume } from '${DURABLE_MESSAGING_WIT_INTERFACE}';
 export async function run() {
@@ -42,6 +42,14 @@ export async function run() {
   const published = await publish({ operation: { id: 'v1.2000000000000.publishnonce1234', expiresAtMs: 2000000000000n }, topic: 'orders', message: { id: 'msg', subject: 'created', payload: new Uint8Array([4, 5]), attributes: [] } });
   const received = await consume({ operation: { id: 'v1.2000000000000.consumenonce1234', expiresAtMs: 2000000000000n }, topic: 'orders', consumerGroup: 'workers', maxMessages: 1, visibilityTimeoutMs: 10n });
   return lost.tag + ':' + replay.tag + ':' + replay.val.topic + ':' + published.val.sequence + ':' + received.val[0].message.payload[0];
+}
+export async function runScoped() {
+  const operation = { id: 'v1.2000000000000.scopednonce12345', expiresAtMs: 2000000000000n };
+  const request = { operation, topic: 'orders', message: { id: 'msg', subject: 'created', payload: new Uint8Array([4, 5]), attributes: [] } };
+  const allowed = await publish(request);
+  const denied = await publish({ ...request, operation: { id: 'v1.2000000000000.deniednonce12345', expiresAtMs: 2000000000000n }, topic: 'other' });
+  const received = await consume({ operation: { id: 'v1.2000000000000.scopedconsume123', expiresAtMs: 2000000000000n }, topic: 'orders', consumerGroup: 'workers', maxMessages: 1, visibilityTimeoutMs: 10n });
+  return allowed.tag + ':' + denied.tag + ':' + received.val[0].message.payload[0];
 }`;
 		const binaryPath = join(dir, "probe.wasm");
 		const builderPath = join(dir, "build.mjs");
@@ -54,7 +62,7 @@ import { writeFile } from 'node:fs/promises';
 const built = await componentize({ witPath: ${JSON.stringify(witPath)}, jsSource: ${JSON.stringify(guest)}, world: 'bridge-test', stubWasi: true });
 await writeFile(${JSON.stringify(binaryPath)}, built.component);
 const operations = ['limits', 'ensure-topic', 'ensure-subscription', 'publish', 'consume', 'ack', 'nack', 'compact', 'events'];
-const output = await transpile(${JSON.stringify(binaryPath)}, { name: 'probe', instantiation: 'async', asyncMode: 'jspi', asyncImports: operations.map((operation) => ${JSON.stringify(DURABLE_MESSAGING_WIT_INTERFACE)} + '#' + operation), asyncExports: ['run'], wasiShim: false });
+const output = await transpile(${JSON.stringify(binaryPath)}, { name: 'probe', instantiation: 'async', asyncMode: 'jspi', asyncImports: operations.map((operation) => ${JSON.stringify(DURABLE_MESSAGING_WIT_INTERFACE)} + '#' + operation), asyncExports: ['run', 'run-scoped'], wasiShim: false });
 await writeFiles(output.files, { baseDir: ${JSON.stringify(out)} });
 `,
 		);
@@ -86,7 +94,7 @@ await writeFiles(output.files, { baseDir: ${JSON.stringify(out)} });
 		await writeFile(
 			driver,
 			`import { readFile } from 'node:fs/promises';
-import { createDurableMessagingWitHost, createDurableMessagingLifecycle, createDurableMessagingLimitsGrant, instantiateDurableMessagingAsync, DURABLE_MESSAGING_WIT_INTERFACE } from ${JSON.stringify(hostUrl)};
+import { createBindleTopicWitHost, createDurableMessagingWitHost, createDurableMessagingLifecycle, createDurableMessagingLimitsGrant, instantiateDurableMessagingAsync, DURABLE_MESSAGING_WIT_INTERFACE } from ${JSON.stringify(hostUrl)};
 import { DURABLE_MESSAGING_LIMITS } from ${JSON.stringify(coreUrl)};
 import { instantiate } from ${JSON.stringify(moduleUrl)};
 let attempts = 0;
@@ -102,6 +110,23 @@ const started = await instantiateDurableMessagingAsync(host, { component, verify
 if (started.status !== 'started') throw new Error('component start unresolved');
 const result = await started.value.run();
 if (result !== 'unknown:committed:orders:7:9' || attempts !== 2 || !durable) throw new Error('unexpected component response: ' + result);
+const scoped = createBindleTopicWitHost(port, {
+  bindleName: 'shop',
+  applicationName: 'web',
+  resources: {
+    web: { kind: 'web', name: 'web', declaredAllow: [], dependsOn: ['topic'] },
+    orders: { kind: 'topic', name: 'orders', declaredAllow: ['publish', 'subscribe'], dependsOn: [] },
+  },
+  edges: [{ from: 'web', to: 'orders' }],
+  bindings: [{ resourceName: 'orders', topic: 'orders', subscriptions: [{ consumerGroup: 'workers', deadLetterTopic: 'orders-dlq' }] }],
+}, {
+  limitsGrant: createDurableMessagingLimitsGrant(), lifecycle: createDurableMessagingLifecycle(),
+  verify: (claim) => claim.port === port && claim.bindleName === 'shop' && claim.applicationName === 'web' && claim.binding.resourceName === 'orders' && (claim.subscription === undefined || claim.subscription.deadLetterTopic === 'orders-dlq'),
+});
+const scopedStarted = await instantiateDurableMessagingAsync(scoped.host, { component, verify: (candidate) => candidate.digest === component.digest && candidate.instantiate === factory && candidate.imports.length === 1 && candidate.imports[0] === DURABLE_MESSAGING_WIT_INTERFACE });
+if (scopedStarted.status !== 'started') throw new Error('scoped component start unresolved');
+const scopedResult = await scopedStarted.value.runScoped();
+if (scopedResult !== 'committed:unknown:9' || seen.has('v1.2000000000000.deniednonce12345')) throw new Error('unexpected scoped component response: ' + scopedResult);
 console.log('verified-component-ok');
 `,
 		);

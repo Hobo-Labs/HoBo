@@ -1504,6 +1504,17 @@ describe("the script reading the slip", () => {
 	const fleetUpPages = (path: string): JsonValue => {
 		const ago = (seconds: number) =>
 			new Date(SLIP_NOW - seconds * 1000).toISOString();
+		if (path.includes("/actions/runners"))
+			return {
+				runners: [
+					{
+						name: "hobo-1",
+						status: "online",
+						busy: false,
+						labels: [{ name: "hobo" }],
+					},
+				],
+			};
 		return path.includes("/jobs")
 			? {
 					jobs: [
@@ -3032,13 +3043,14 @@ describe("hobo pool saturation overflow", () => {
 		);
 		assert.deepEqual(
 			hoboPoolSaturation({
-				runners: undefined,
+				runners: { online: 2, busy: 0 },
 				cpuPercent: 93,
 				label: "hobo",
 			}),
 			{
 				saturated: true,
-				summary: "the hobo pool has no idle capacity (host node CPU 93%)",
+				summary:
+					"the hobo pool has no idle capacity (0 of 2 online hobo runners busy; host node CPU 93%)",
 			},
 		);
 		assert.equal(
@@ -3051,25 +3063,21 @@ describe("hobo pool saturation overflow", () => {
 		);
 	});
 
-	it("never saturates on unreadable evidence alone (R3)", () => {
+	it("never saturates on an unreadable runner page or a readable zero-online pool", () => {
 		const unknown = hoboPoolSaturation({
 			runners: undefined,
 			cpuPercent: undefined,
 			label: "hobo",
 		});
 		assert.equal(unknown.saturated, false);
-		assert.match(
-			unknown.summary,
-			/hobo pool saturation unknown \(repository runner list unreadable; host node CPU unknown\)/u,
-		);
-		assert.equal(
-			hoboPoolSaturation({
-				runners: { online: 0, busy: 0 },
-				cpuPercent: undefined,
-				label: "hobo",
-			}).saturated,
-			false,
-		);
+		assert.match(unknown.summary, /saturation unknown.*unreadable/u);
+		const empty = hoboPoolSaturation({
+			runners: { online: 0, busy: 0 },
+			cpuPercent: undefined,
+			label: "hobo-trunk",
+		});
+		assert.equal(empty.saturated, false);
+		assert.match(empty.summary, /0 online runners on a readable page/u);
 	});
 
 	const poolPages = (
@@ -3188,9 +3196,10 @@ describe("hobo pool saturation overflow", () => {
 						routingConfig: COMMITTED,
 						eventPayload,
 						fetch: async (url, init) =>
-							String(url).includes("/git/")
+							publicRepo(url) ??
+							(String(url).includes("/git/")
 								? Response.json({ message: "Not Found" }, { status: 404 })
-								: fetch(url, init),
+								: fetch(url, init)),
 						now: () => SLIP_NOW,
 					},
 				),
@@ -3276,7 +3285,24 @@ describe("hobo pool saturation overflow", () => {
 		}
 	});
 
-	it("keeps the fleet when neither leg can be read: unreadable is not saturation (R3)", async () => {
+	it("keeps hobo without a fallback warning when the readable runner page lists zero online pool runners", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages({ runners: [] }, undefined),
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.match(decision.reason, /0 online runners on a readable page/u);
+		assert.ok(
+			!warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					(line.includes("0 online runners on a readable page") ||
+						line.includes("the run stays on hobo")),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("keeps the fleet without agent37 overflow or a pool-saturation fallback warning when the runner page is unreadable", async () => {
 		const { decision, lines } = await overflowRoute(
 			poolPages(
 				{ message: "Resource not accessible by integration" },
@@ -3284,21 +3310,40 @@ describe("hobo pool saturation overflow", () => {
 			),
 		);
 		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
-		assert.match(
-			decision.reason,
-			/hobo pool saturation unknown \(repository runner list unreadable; host node CPU unknown\)/u,
-		);
+		assert.match(decision.reason, /saturation unknown.*unreadable/u);
 		assert.ok(
-			!warningsIn(lines).some((line) =>
-				line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+			!warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					(line.includes("saturation unknown") ||
+						line.includes("the run stays on hobo")),
 			),
 			lines.join("\n"),
 		);
 	});
 
+	it("uses verified public compute when the pool is saturated and agent37 capacity is unavailable", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(busyPool(2, 2, null), undefined),
+			{
+				GITHUB_REPOSITORY_ID: "1274791462",
+				GITHUB_REPOSITORY_OWNER_ID: "344805935",
+			},
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["github", "ubuntu-24.04"],
+		);
+		assert.match(
+			decision.reason,
+			/public standard-runner compute was verified/u,
+		);
+		assert.match(lines.join("\n"), /using verified public compute/u);
+	});
+
 	it("overflows on host CPU above the limit alone, and names the percent", async () => {
 		const { decision, lines } = await overflowRoute(
-			poolPages(busyPool(0), "93"),
+			poolPages(busyPool(2, 0), "93"),
 		);
 		assert.deepEqual(
 			[decision.tier, decision.runner],
@@ -3319,7 +3364,7 @@ describe("hobo pool saturation overflow", () => {
 	it("does not overflow on host CPU at the limit or a value that is not an integer", async () => {
 		for (const value of ["90", "93.5", "busy"]) {
 			const { decision, lines } = await overflowRoute(
-				poolPages({ runners: [] }, value),
+				poolPages(busyPool(2, 1), value),
 			);
 			assert.deepEqual(
 				[decision.tier, decision.runner],
