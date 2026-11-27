@@ -8,16 +8,20 @@ import {
 function col(
 	overrides: Partial<SchemaColumn> & Pick<SchemaColumn, "name" | "type">,
 ): SchemaColumn {
-	return {
+	return Object.freeze({
 		nullable: false,
 		primaryKey: false,
 		unique: false,
 		...overrides,
-	};
+	});
 }
 
 function tbl(name: string, columns: readonly SchemaColumn[]): SchemaTable {
-	return { name, columns, indexes: [] };
+	return Object.freeze({
+		name,
+		columns: Object.freeze([...columns]),
+		indexes: Object.freeze([]),
+	});
 }
 
 const user: SchemaTable = tbl("user", [
