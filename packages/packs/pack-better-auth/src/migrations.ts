@@ -74,10 +74,7 @@ export function planBetterAuthRelationalMigrations(
 	options?: { readonly currentSchema?: SchemaIr },
 ): BetterAuthRelationalMigrationPlan {
 	const profile = bundlePlan.config.database.profile;
-	if (
-		!/^data\.relational\/v[1-9]/u.test(profile) &&
-		!profile.startsWith("data.postgres/v")
-	) {
+	if (profile !== "data.relational/v1" && profile !== "data.postgres/v1") {
 		refuseIncompatibleProfile(profile);
 	}
 	const currentSchema = options?.currentSchema ?? emptyPostgresSchemaIr();

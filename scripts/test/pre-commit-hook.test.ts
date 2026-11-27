@@ -5,6 +5,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	symlinkSync,
@@ -30,6 +31,33 @@ function tempDir(): string {
 	return dir;
 }
 
+function osBinWithoutPackageManagers(): string {
+	const hide = new Set([
+		"pnpm",
+		"npm",
+		"npx",
+		"yarn",
+		"yarnpkg",
+		"corepack",
+		"bun",
+		"pnpx",
+	]);
+	const dest = join(tempDir(), "bin-os");
+	mkdirSync(dest);
+	for (const dir of ["/usr/bin", "/bin"]) {
+		if (!existsSync(dir)) continue;
+		for (const name of readdirSync(dir)) {
+			if (hide.has(name)) continue;
+			const to = join(dest, name);
+			if (existsSync(to)) continue;
+			try {
+				symlinkSync(join(dir, name), to);
+			} catch {}
+		}
+	}
+	return dest;
+}
+
 // Node alone on PATH beside git and sh: the hook must not need a package
 // manager, and the directory node ships in also holds pnpm and npm.
 const nodeBin = join(tempDir(), "bin");
@@ -41,7 +69,7 @@ writeFileSync(globalConfig, "");
 /** Nothing inherited from whoever runs the suite: no opt-out, no base, no outer repository. */
 const baseEnv = {
 	HOME: tempDir(),
-	PATH: [nodeBin, "/usr/bin", "/bin"].join(":"),
+	PATH: [nodeBin, osBinWithoutPackageManagers()].join(":"),
 	GIT_CONFIG_GLOBAL: globalConfig,
 	GIT_CONFIG_NOSYSTEM: "1",
 	GIT_AUTHOR_NAME: "fixture",
@@ -135,10 +163,12 @@ const QUOTED = "main';touch${IFS}PWNED;#";
 
 describe(".githooks/pre-commit", () => {
 	it("runs with no package manager on PATH", () => {
-		const probe = spawnSync("/bin/sh", ["-c", "command -v pnpm npm"], {
-			env: baseEnv,
-		});
-		assert.notEqual(probe.status, 0);
+		for (const name of ["pnpm", "npm"]) {
+			const probe = spawnSync("/bin/sh", ["-c", `command -v ${name}`], {
+				env: baseEnv,
+			});
+			assert.notEqual(probe.status, 0, name);
+		}
 		const repo = fixture();
 		const result = hook(repo);
 		assert.equal(result.status, 0, result.stderr);

@@ -405,7 +405,7 @@ describe("release integration pull-request and merge-queue lane", () => {
 		);
 	});
 
-	it("accepts a skipped release integration shard only for an unrequested draft pull request", () => {
+	it("rejects skipped release integration shards even for a draft", () => {
 		const run = (script: string, env: Record<string, string>) =>
 			spawnSync("bash", ["-c", script], {
 				encoding: "utf8",
@@ -419,17 +419,12 @@ describe("release integration pull-request and merge-queue lane", () => {
 				job(workflow, id),
 				"Require successful release integration shards",
 			);
-			const accepted = run(gate.run, {
-				GITHUB_EVENT_NAME: "pull_request",
-				PULL_REQUEST_DRAFT: "true",
-				INTEGRATION_RESULT: "skipped",
-			});
-			assert.equal(accepted.status, 0, `${id}: ${accepted.stderr}`);
-			assert.match(
-				accepted.stdout,
-				/Draft pull request did not request release integration shards/u,
-			);
 			for (const env of [
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					PULL_REQUEST_DRAFT: "true",
+					INTEGRATION_RESULT: "skipped",
+				},
 				{
 					GITHUB_EVENT_NAME: "pull_request",
 					PULL_REQUEST_DRAFT: "false",

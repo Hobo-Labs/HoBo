@@ -401,6 +401,7 @@ describe("affected release OCI images", () => {
 		"mise.lock",
 		"packages/ci-gh-actions/deploy/ci-runner/Dockerfile",
 		"scripts/ci/build-release-oci-image.mts",
+		"scripts/lib/turbo-concurrency.ts",
 		"tsconfig.base.json",
 	])("builds every image when the shared layer input %s changes", (path) => {
 		expect(affected({ [path]: "changed\n" })).toEqual(ALL);
