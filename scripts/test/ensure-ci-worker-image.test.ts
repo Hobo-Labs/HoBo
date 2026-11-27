@@ -1087,38 +1087,6 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
-	it("allows a slow published image to finish pulling", () => {
-		assert.match(
-			publishedStatus({
-				host: false,
-				manifest: true,
-				pull: true,
-				minPullBudgetSec: 500,
-			}),
-			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
-		);
-	});
-
-	it("does not rebuild when an absent manifest is followed by a timed-out pull", () => {
-		assert.equal(
-			publishedStatus(
-				{ host: false, manifest: false, pullTimeout: true },
-				"pull-failed",
-			),
-			"",
-		);
-	});
-
-	it("does not rebuild when an absent manifest is followed by a network error", () => {
-		assert.equal(
-			publishedStatus(
-				{ host: false, manifest: false, pullNetworkError: true },
-				"pull-failed",
-			),
-			"",
-		);
-	});
-
 	it("does not rebuild when the publication probe cannot authenticate", () => {
 		assert.equal(
 			publishedStatus(

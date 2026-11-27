@@ -318,13 +318,13 @@ function probeWorkerPull(
 		{ cwd: root, encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] },
 	);
 	if (result.status === 0) return "pullable";
-	if (result.status !== 1) return "unknown";
-	const classified = classifyWorkerManifestInspect(
-		1,
+	return classifyWorkerManifestInspect(
+		result.status,
 		result.stderr ?? "",
 		remote,
-	);
-	return classified === "missing" ? "missing" : "unknown";
+	) === "missing"
+		? "missing"
+		: "unknown";
 }
 
 function probeWorkerPublication(
@@ -345,11 +345,12 @@ function probeWorkerPublication(
 	const manifestBudget = Math.min(45, remainingSec());
 	if (manifestBudget <= 0) return "budget-exhausted";
 	const manifestStatus = workerManifestStatus(remote, token, manifestBudget);
-	if (remainingSec() <= 0) return "budget-exhausted";
-	const pullBudget =
-		options === undefined && manifestStatus === "present"
+	const pullBudget = options
+		? remainingSec()
+		: manifestStatus === "present"
 			? PUBLISHED_WORKER_PULL_BUDGET_SEC
 			: remainingSec();
+	if (pullBudget <= 0) return "budget-exhausted";
 	const pullStatus = probeWorkerPull(remote, pullBudget);
 	if (pullStatus === "pullable") return "pullable";
 	if (manifestStatus === "missing" && pullStatus === "missing")
