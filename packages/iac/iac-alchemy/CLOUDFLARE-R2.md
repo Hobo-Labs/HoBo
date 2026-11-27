@@ -160,3 +160,8 @@ independently enforce any bounds assumed by the quote; otherwise the ordinary
 unknown-pricing policy applies. To use eventual KV in the same view, pass its
 `verifyNamespace` and `verifyGrant` authorities in the mapper's `kv` option and
 apply both explicit target views to the Bindle.
+
+The workerd integration test configures an emulated R2 service from the mapped
+bucket and grant identities and exercises an application read through the real
+proxy. A Node bridge forwards the request; this test does not deploy the
+application itself to workerd or establish production Cloudflare behavior.

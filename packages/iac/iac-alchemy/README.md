@@ -316,6 +316,8 @@ dependency edge; it must return that primitive's exact primary resource and no
 additional resources, actions or bindings. The shared resource appears once
 in the mapped inventory; the mapper and host remain responsible for proving the
 application binding and for accounting for all usage of that resource.
+The bounded `SharedMapping` model treats graph validation as a trusted,
+synchronous decision; it does not prove a provider's validator or code.
 `describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
 coverage; it does not authenticate them, price their resources, or authorize
 routing. Hosts must attest the mapping and its execution environment.
@@ -648,9 +650,8 @@ uses durable transactions, idempotent enqueue keys and fenced delivery leases.
 The host supplies authorization, a trusted clock, source fencing and exclusive
 pool verification. The actor retains at most 10,000 messages and rejects new
 ones at capacity. A timeout or lost response leaves the outcome unknown;
-consumers must reconcile leases and fence their own effects. This queue is not a
-mapping for HoBo's WIT queue or asynchronous durable topic ABI, so
-those Bindle capabilities remain unsupported.
+consumers must reconcile leases and fence their own effects. This queue does not
+map HoBo's WIT queue or asynchronous durable topic ABI.
 The finite `model/RivetQueue.tla` checks queue retry, lease and completion
 decisions for one key, two payloads, at most two leases and three clock values.
 It assumes atomic transactions and a trusted clock; it does not prove the
@@ -689,9 +690,10 @@ prove those assumptions, the implementation or the provider.
 
 The separate optional `@hobo/alchemy-rivet` composition package maps the
 Rivet retained-log and asynchronous topic-bus actors to Alchemy
-`Rivet.DurableObject` resources. Its capability profiles distinguish the two;
-neither implements the legacy synchronous topic ABI. Host-owned source, pool,
-storage and authorization evidence is required for both.
+`Rivet.DurableObject` resources. Its capability profiles distinguish the two.
+The scoped topic composition can bind one HTTP application and its named
+asynchronous topics to a shared resource. Host-owned source, pool, storage and
+authorization evidence is required.
 
 The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
 declarations to Alchemy Cloudflare components, including Workers, Vite websites,
@@ -743,6 +745,14 @@ fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
 state, a file-backed `sqlite` path (the same session file, not an in-memory
 database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
 broker wire (synthetic signing material only; no live Worker/D1 deploy).
+On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator`
+runs the mapped AWS resources and budget-routing scenarios against both the
+Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
+and verifies a pinned official package, starts an isolated loopback-only
+container, and removes it afterward. An existing copy of the same package may
+be supplied with `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
+The pricing workflow uses HoBo's routed CI runner for the simulator job, with
+the same hosted fallback as the other pricing checks and a 20-minute job limit.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 

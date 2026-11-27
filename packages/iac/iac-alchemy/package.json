@@ -136,8 +136,9 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json && tsc --noEmit -p tsconfig.aws-tests.json",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json && tsc --noEmit -p tsconfig.aws-tests.json && tsc --noEmit -p tsconfig.cloudflare-storage-tests.json",
 		"test": "vitest run",
+		"test:aws-emulator": "node --experimental-strip-types test/run-official-aws-emulator.mts",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}
 }
