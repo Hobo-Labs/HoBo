@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { COVERED_JOBS } from "./ci/attestation.mts";
+import { evaluateExpression } from "./ci/attested-jobs.mts";
 import { verifyPinnedActionSha } from "./lib/verify-action-pins.mts";
 
 const lintActionsRepoRoot = join(import.meta.dirname, "..");
@@ -13,9 +14,18 @@ const yamlModulePath = requireFromRepo.resolve("yaml", {
 	paths: [join(lintActionsRepoRoot, "packages/ci-gh-actions")],
 });
 const yamlMod = await import(yamlModulePath);
-const { parseDocument } = yamlMod;
+const { parseDocument, isScalar, isMap, isSeq, isPair, isNode } = yamlMod;
 if (parseDocument === undefined) {
 	throw new Error("yaml package missing parseDocument");
+}
+type YamlAstNode = Readonly<{
+	range?: readonly [number, number, number] | null;
+	value?: unknown;
+}>;
+
+function isYamlStringKey(key: YamlAstNode | string): key is string {
+	const coerced = `${key}`;
+	return coerced === key;
 }
 
 export type LintActionsResult = Readonly<{
@@ -73,6 +83,9 @@ const allowedEnabled = new Set([
 	...activeCiFiles,
 ]);
 
+export const PROBE_READY_IF =
+	"(github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'";
+
 /**
  * The probe's one GitHub-hosted job: it reads whether a local box is enrolled
  * (`runnerRouting.localRunner` in `.hobo/ci.json`) with the route job's own
@@ -80,6 +93,7 @@ const allowedEnabled = new Set([
  */
 const PROBE_GATE_JOB = `  local-box-enrolled:
     name: local box enrolled
+    if: ${PROBE_READY_IF}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -89,6 +103,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: \${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
@@ -115,6 +130,21 @@ const PROBE_LOCAL_GATE = [
 function lintProbeWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
 	const jobsIndex = lines.indexOf("jobs:");
+	const eventControlled = /^  (?:workflow_run|pull_request_target):/m.test(
+		text,
+	);
+	if (eventControlled) {
+		const expected = `  workflow_run:
+    workflows: ["HoBo CI Fabric"]
+    types: [requested]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]`;
+		if (!text.includes(expected))
+			errors.push(
+				`${probeFile}: probe triggers must cover ready PRs and non-PR CI runs`,
+			);
+	}
 	const starts = lines.flatMap((line, index) =>
 		index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
 	);
@@ -126,6 +156,14 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 		while (block.length > 0 && block.at(-1)?.trim() === "") block.pop();
 		while (block.length > 0 && block.at(-1)?.trim().startsWith("#"))
 			block.pop();
+		if (
+			eventControlled &&
+			lines[start] !== "  local-box:" &&
+			!block.includes(`    if: ${PROBE_READY_IF}`)
+		)
+			errors.push(
+				`${probeFile}:${start + 1}: probe jobs must skip draft PR events`,
+			);
 		if (lines[start] === "  local-box-enrolled:") {
 			if (block.join("\n") !== PROBE_GATE_JOB)
 				errors.push(
@@ -599,6 +637,7 @@ const TRUNK_EVENTS = new Set([
 	"workflow_dispatch",
 	"merge_group",
 	"workflow_run",
+	"schedule",
 ]);
 
 function hasTrunkEvent(lines: readonly string[], jobsIndex: number): boolean {
@@ -707,18 +746,30 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 ] as const;
 
 export const CANONICAL_ENTRY_JOB_DRAFT_IF =
-	"github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')";
+	"github.event_name != 'pull_request' || github.event.pull_request.draft == false";
 
 export const REQUIRED_JOB_DRAFT_IF_MESSAGE = `job-level if must be ${CANONICAL_ENTRY_JOB_DRAFT_IF}`;
 
 const ALLOWLISTED_ENTRY_JOB_DRAFT_IF = new Map<string, string>([
 	[
 		"examples-e2e.yml:hello-bindle-fixture-quarantine",
-		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
+		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
 	],
 	[
 		"examples-e2e.yml:hello-bindle-fixture",
-		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+	],
+	...[
+		"hobo-ci.yml:pr-gate",
+		"release-hobo-pr.yml:release-integration-gate",
+		"release-hobo.yml:release-pr-gate",
+	].map((key): [string, string] => [
+		key,
+		"always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))",
+	]),
+	[
+		"release-hobo.yml:release-integration-measure-gate",
+		"always() && github.event_name == 'pull_request' && github.event.pull_request.draft == false",
 	],
 ]);
 
@@ -825,9 +876,13 @@ export function draftGateEntryJobs(
 	file: string,
 	jobIds: readonly string[],
 ): readonly string[] {
-	if (jobIds.includes("route")) return ["route"];
+	const aggregateJobs = jobIds.filter((id) =>
+		ALLOWLISTED_ENTRY_JOB_DRAFT_IF.has(`${file}:${id}`),
+	);
+	if (jobIds.includes("route")) return ["route", ...aggregateJobs];
 	if (file === "actions-lock.yml") return ["actions-lock"];
-	if (file === "release-hobo-pr.yml") return ["release-integration"];
+	if (file === "release-hobo-pr.yml")
+		return ["release-integration", ...aggregateJobs];
 	if (file === "dev-env-smoke.yml" || file === "examples-e2e.yml")
 		return jobIds;
 	return [];
@@ -878,7 +933,75 @@ function lintPullRequestDraftPolicy(
 		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
 		if (!jobLevelIfHasRequiredDraftGate(file, jobId, block)) {
 			errors.push(
-				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs unless explicitly requested (${REQUIRED_JOB_DRAFT_IF_MESSAGE})`,
+				`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs (job-level if must be ${expectedEntryJobDraftIf(file, jobId)})`,
+			);
+		}
+	}
+	for (const jobId of jobIds.filter((id) => !gateJobs.includes(id))) {
+		const start = lines.findIndex(
+			(line, index) => index > jobsIndex && line === `  ${jobId}:`,
+		);
+		const nextJob = lines.findIndex(
+			(line, index) => index > start && /^  [A-Za-z0-9_-]+:$/.test(line),
+		);
+		const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob);
+		const condition = extractJobLevelIf(block);
+		const hasNeeds = block.some((line) => /^    needs:\s*/.test(line));
+		if (
+			hasNeeds &&
+			!(
+				condition &&
+				/\b(?:always|cancelled|success|failure)\(\)/i.test(condition)
+			)
+		)
+			continue;
+		try {
+			const expression = (condition ?? "true").replaceAll(
+				/startsWith\(github\.ref,\s*'refs\/tags\/[^']*'\)/gi,
+				"false",
+			);
+			const labels = new Set([
+				"ci:run-draft-checks",
+				"hobo/e2e",
+				"hobo/e2e-quarantine",
+				...[
+					...expression.matchAll(
+						/github\.event\.label\.name\s*==\s*'([^']+)'/g,
+					),
+				].map((match) => match[1] ?? ""),
+			]);
+			const runsOnDraft = [
+				"opened",
+				"synchronize",
+				"reopened",
+				"labeled",
+				"unlabeled",
+				"edited",
+				"converted_to_draft",
+			].some((action) =>
+				[...labels].some((label) =>
+					evaluateExpression(expression, (path) => {
+						if (path === "github.event_name") return "pull_request";
+						if (path === "github.event.pull_request.draft") return true;
+						if (path === "github.event.action") return action;
+						if (path === "github.event.label.name") return label;
+						if (path === "github.event.pull_request.labels.*.name")
+							return [...labels];
+						if (path === "github.repository") return "Hobo-Labs/HoBo";
+						if (path === "github.ref") return "refs/pull/1/merge";
+						if (/^needs\..+\.result$/.test(path)) return "skipped";
+						if (/^needs\..+\.outputs\./.test(path)) return "";
+						return null;
+					}),
+				),
+			);
+			if (runsOnDraft)
+				errors.push(
+					`${file}:${start + 1}: job ${jobId} must skip draft pull_request runs`,
+				);
+		} catch {
+			errors.push(
+				`${file}:${start + 1}: cannot verify that job ${jobId} skips draft pull_request runs`,
 			);
 		}
 	}
@@ -1155,6 +1278,124 @@ function lintWorkflowYaml(
 	}
 }
 
+export const COMPOSITE_STEP_UNSUPPORTED_KEYS = [
+	"timeout-minutes",
+	"runs-on",
+	"needs",
+	"strategy",
+	"concurrency",
+	"services",
+	"container",
+	"permissions",
+	"outputs",
+] as const;
+
+const COMPOSITE_STEP_UNSUPPORTED = new Set<string>(
+	COMPOSITE_STEP_UNSUPPORTED_KEYS,
+);
+
+type YamlSourceLine = Readonly<{ line: number }>;
+
+type YamlMapKey = Readonly<{
+	text: string;
+	source: YamlSourceLine | undefined;
+}>;
+
+function sourceLineFromNode(
+	text: string,
+	node: YamlAstNode,
+): YamlSourceLine | undefined {
+	const start = node.range?.[0];
+	if (start === undefined) return undefined;
+	return { line: text.slice(0, start).split("\n").length };
+}
+
+function mapKeyText(key: YamlAstNode | string): string | undefined {
+	if (isYamlStringKey(key)) return key;
+	if (!isScalar(key)) return undefined;
+	const { value } = key;
+	const coerced = `${value}`;
+	return coerced === value ? coerced : undefined;
+}
+
+function parseYamlMapKey(
+	key: YamlAstNode | string,
+	text: string,
+): YamlMapKey | undefined {
+	const keyText = mapKeyText(key);
+	if (keyText === undefined) return undefined;
+	const source = isYamlStringKey(key)
+		? undefined
+		: isNode(key)
+			? sourceLineFromNode(text, key)
+			: undefined;
+	return { text: keyText, source };
+}
+
+function compositeStepKeyLine(
+	text: string,
+	stepIndex: number,
+	key: string,
+): number | undefined {
+	const lines = text.split("\n");
+	let stepsStarted = false;
+	let currentStep = -1;
+	let inStep = false;
+	const stepStart = /^\s+-\s/;
+	const stepKey = new RegExp(`^\\s+${key}\\s*:`);
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index] ?? "";
+		if (/^\s*steps:\s*$/.test(line)) {
+			stepsStarted = true;
+			continue;
+		}
+		if (!stepsStarted) continue;
+		if (stepStart.test(line)) {
+			currentStep++;
+			inStep = currentStep === stepIndex;
+			continue;
+		}
+		if (currentStep > stepIndex) break;
+		if (inStep && stepKey.test(line)) return index + 1;
+	}
+	return undefined;
+}
+
+export function lintCompositeStepFields(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
+	const doc = parseDocument(text, { uniqueKeys: true });
+	for (const error of doc.errors) {
+		errors.push(`${file}: invalid action YAML: ${error.message.trim()}`);
+	}
+	const using = doc.get("runs")?.get("using");
+	const usingKey =
+		using === null || using === undefined
+			? undefined
+			: parseYamlMapKey(using, text);
+	if (usingKey?.text !== "composite") return;
+	const steps = doc.get("runs")?.get("steps");
+	if (steps === null || steps === undefined || !isSeq(steps)) return;
+	for (const [index, step] of steps.items.entries()) {
+		if (!isMap(step)) continue;
+		for (const pair of step.items) {
+			if (!isPair(pair)) continue;
+			const parsedKey = parseYamlMapKey(pair.key, text);
+			if (parsedKey === undefined) continue;
+			const key = parsedKey.text;
+			if (!COMPOSITE_STEP_UNSUPPORTED.has(key)) continue;
+			const line =
+				parsedKey.source?.line ?? compositeStepKeyLine(text, index, key);
+			const at = line === undefined ? file : `${file}:${line}`;
+			errors.push(
+				`${at}: composite step ${index + 1} must not set ${key} (unsupported in composite actions; use shell timeout or workflow jobs instead)`,
+			);
+		}
+	}
+}
+
 function lintCompositeActions(errors: string[], githubRoot: string): void {
 	const actionsRoot = join(githubRoot, "actions");
 	if (!existsSync(actionsRoot)) return;
@@ -1171,6 +1412,7 @@ function lintCompositeActions(errors: string[], githubRoot: string): void {
 			const text = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 			lintPinnedActionRefs(errors, rel, text);
 			lintRouting(errors, rel, text);
+			lintCompositeStepFields(errors, rel, text);
 		}
 	};
 	walk(actionsRoot);
