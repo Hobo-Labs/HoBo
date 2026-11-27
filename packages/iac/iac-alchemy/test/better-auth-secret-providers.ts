@@ -3,7 +3,8 @@ export const BETTER_AUTH_SECRET_PROVIDER_STACK = Object.freeze([
 	"infisical",
 ] as const);
 
-export type BetterAuthSecretProviderId = (typeof BETTER_AUTH_SECRET_PROVIDER_STACK)[number];
+export type BetterAuthSecretProviderId =
+	(typeof BETTER_AUTH_SECRET_PROVIDER_STACK)[number];
 
 export function resolveBetterAuthSecretProviderStack(options: {
 	readonly stage: string;
