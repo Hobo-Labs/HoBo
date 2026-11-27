@@ -875,7 +875,7 @@ describe("ensure-ci-worker-image", () => {
 					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
 					'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
 					`if [ "$1 $2" = "manifest inspect" ]; then ${manifestInspectScript(bin, stub)}; fi`,
-					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
+					`if [ "$1" = "pull" ]; then ${pullOk ? "exit 0" : "echo 'manifest unknown' >&2; exit 1"}; fi`,
 					"exit 0",
 					"",
 				].join("\n"),
@@ -903,6 +903,9 @@ describe("ensure-ci-worker-image", () => {
 			login?: boolean;
 			unreadable?: boolean;
 			manifestStderr?: string;
+			minPullBudgetSec?: number;
+			pullTimeout?: boolean;
+			pullNetworkError?: boolean;
 		},
 		expectInconclusive?:
 			| "pull-failed"
@@ -915,7 +918,13 @@ describe("ensure-ci-worker-image", () => {
 		try {
 			writeFileSync(
 				join(bin, "timeout"),
-				["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+				[
+					"#!/bin/sh",
+					`if [ "$2 $3" = "docker pull" ] && [ "$1" -lt ${stub.minPullBudgetSec ?? 0} ]; then exit 124; fi`,
+					"shift",
+					'exec "$@"',
+					"",
+				].join("\n"),
 				{ mode: 0o755 },
 			);
 			writeFileSync(
@@ -925,7 +934,7 @@ describe("ensure-ci-worker-image", () => {
 					`if [ "$1 $2" = "image inspect" ]; then exit ${stub.host ? 0 : 1}; fi`,
 					`if [ "$1" = "login" ]; then cat > /dev/null; exit ${stub.login === false ? 1 : 0}; fi`,
 					`if [ "$1 $2" = "manifest inspect" ]; then ${manifestInspectScript(bin, stub)}; fi`,
-					`if [ "$1" = "pull" ]; then exit ${pullOk ? 0 : 1}; fi`,
+					`if [ "$1" = "pull" ]; then ${stub.pullTimeout ? "exit 124" : pullOk ? "exit 0" : stub.pullNetworkError ? "echo 'connection reset' >&2; exit 1" : "echo 'manifest unknown' >&2; exit 1"}; fi`,
 					"exit 0",
 					"",
 				].join("\n"),
@@ -978,6 +987,38 @@ describe("ensure-ci-worker-image", () => {
 		assert.match(
 			publishedStatus({ host: true, manifest: true, pull: true }),
 			/^version=v[0-9a-f]+\nneeded=false\nghcr=true\n$/u,
+		);
+	});
+
+	it("allows a slow published image to finish pulling", () => {
+		assert.match(
+			publishedStatus({
+				host: false,
+				manifest: true,
+				pull: true,
+				minPullBudgetSec: 500,
+			}),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
+		);
+	});
+
+	it("does not rebuild when an absent manifest is followed by a timed-out pull", () => {
+		assert.equal(
+			publishedStatus(
+				{ host: false, manifest: false, pullTimeout: true },
+				"pull-failed",
+			),
+			"",
+		);
+	});
+
+	it("does not rebuild when an absent manifest is followed by a network error", () => {
+		assert.equal(
+			publishedStatus(
+				{ host: false, manifest: false, pullNetworkError: true },
+				"pull-failed",
+			),
+			"",
 		);
 	});
 
