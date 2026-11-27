@@ -2,18 +2,40 @@ package hobo:queue@0.1.0;
 
 /// stability: experimental
 interface queue {
-  enum queue-error-code {
-    invalid-argument,
-    not-found,
-    lease-lost,
-    deadline-exceeded,
-    provider-error,
+  record queue-limits {
+    name-bytes: u32,
+    payload-bytes: u32,
+    attribute-count: u32,
+    attribute-bytes: u32,
+    batch-size: u32,
+    delay-ms: u64,
+    lease-ms: u64,
+    operation-window-ms: u64,
+    delivery-attempts: u32,
+    retained-messages: u32,
+    retained-receipts: u32,
   }
 
-  record queue-error {
-    code: queue-error-code,
-    message: option<string>,
-    retryable: bool,
+  variant limits-outcome {
+    available(queue-limits),
+    unavailable,
+  }
+
+  record operation {
+    id: string,
+    expires-at-ms: u64,
+  }
+
+  enum rejection-code {
+    invalid-argument,
+    unauthorized,
+    not-found,
+    unsupported,
+    operation-conflict,
+    message-conflict,
+    lease-lost,
+    capacity-exceeded,
+    unavailable,
   }
 
   record message-attribute {
@@ -28,12 +50,18 @@ interface queue {
     available-at-ms: option<u64>,
   }
 
-  record enqueue-result {
+  record enqueue-request {
+    operation: operation,
+    message: queue-message,
+  }
+
+  record enqueue-receipt {
     message-id: string,
     idempotency-key: string,
   }
 
   record dequeue-request {
+    operation: operation,
     max-messages: u32,
     visibility-timeout-ms: u64,
   }
@@ -48,19 +76,58 @@ interface queue {
     delivery-attempt: u32,
   }
 
-  enqueue: func(message: queue-message) -> result<enqueue-result, queue-error>;
+  record settlement-request {
+    operation: operation,
+    message-id: string,
+    lease-id: string,
+  }
 
-  dequeue: func(request: dequeue-request) -> result<list<leased-message>, queue-error>;
-
-  complete: func(message-id: string, lease-id: string) -> result<_, queue-error>;
-
-  extend-lease: func(
+  record extend-lease-request {
+    operation: operation,
     message-id: string,
     lease-id: string,
     visibility-timeout-ms: u64,
-  ) -> result<leased-message, queue-error>;
+  }
 
-  release: func(message-id: string, lease-id: string) -> result<_, queue-error>;
+  record settlement-receipt {
+    message-id: string,
+    lease-id: string,
+  }
+
+  variant enqueue-outcome {
+    committed(enqueue-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant dequeue-outcome {
+    committed(list<leased-message>),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant settlement-outcome {
+    committed(settlement-receipt),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  variant extension-outcome {
+    committed(leased-message),
+    rejected(rejection-code),
+    unknown(operation),
+    expired(operation),
+  }
+
+  limits: async func() -> limits-outcome;
+  enqueue: async func(input: enqueue-request) -> enqueue-outcome;
+  dequeue: async func(input: dequeue-request) -> dequeue-outcome;
+  complete: async func(input: settlement-request) -> settlement-outcome;
+  extend-lease: async func(input: extend-lease-request) -> extension-outcome;
+  release: async func(input: settlement-request) -> settlement-outcome;
 }
 
 world queue-guest {
