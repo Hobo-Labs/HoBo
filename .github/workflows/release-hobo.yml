@@ -1933,9 +1933,18 @@ jobs:
     steps:
       - name: Require successful release integration shards
         env:
+          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft && 'true' || 'false' }}
           INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
         run: |
           set -euo pipefail
+          # The shard job is skipped on a draft until the PR is ready or labeled
+          # ci:run-draft-checks. A failure, cancellation, or any other skip still fails.
+          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
+            && [ "${PULL_REQUEST_DRAFT:-}" = "true" ] \
+            && [ "${INTEGRATION_RESULT:-}" = "skipped" ]; then
+            echo "Draft pull request did not request release integration shards"
+            exit 0
+          fi
           if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
             echo "::error::HoBo release integration shards must pass (result=${INTEGRATION_RESULT:-})"
             exit 1
@@ -1945,6 +1954,8 @@ jobs:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     needs: [route, release-contract, release-realize, release-pages-browser-wit-smoke]
+    # A draft pull request skips route until it is marked ready or labeled
+    # ci:run-draft-checks; that requested skip is not a failed validation.
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1952,6 +1963,7 @@ jobs:
     steps:
       - name: Fail closed when release contract is red
         env:
+          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft && 'true' || 'false' }}
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
           REALIZE_RESULT: ${{ needs.release-realize.result }}
           BROWSER_WIT_SMOKE_RESULT: ${{ needs.release-pages-browser-wit-smoke.result }}
@@ -1960,6 +1972,17 @@ jobs:
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
         run: |
           set -euo pipefail
+          # Drafts skip route, so every job this gate needs is skipped with it.
+          # Any other result still has to pass the checks below.
+          if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
+            && [ "${PULL_REQUEST_DRAFT:-}" = "true" ] \
+            && [ "${ROUTE_RESULT:-}" = "skipped" ] \
+            && [ "${CONTRACT_RESULT:-}" = "skipped" ] \
+            && [ "${REALIZE_RESULT:-}" = "skipped" ] \
+            && [ "${BROWSER_WIT_SMOKE_RESULT:-}" = "skipped" ]; then
+            echo "Draft pull request did not request checks"
+            exit 0
+          fi
           # A skipped job counts only when the route job itself succeeded and
           # reported a verified signed local run that covers that job by id.
           attested() {

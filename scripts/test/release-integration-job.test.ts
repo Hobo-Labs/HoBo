@@ -406,56 +406,54 @@ describe("release integration pull-request and merge-queue lane", () => {
 	});
 
 	it("accepts a skipped release integration shard only for an unrequested draft pull request", () => {
-		const gate = namedStep(
-			job(pr, "release-integration-gate"),
-			"Require successful release integration shards",
-		);
-		const trainGate = namedStep(
-			job(train, "release-integration-measure-gate"),
-			"Require successful release integration shards",
-		);
+		const scripts = [
+			namedStep(
+				job(pr, "release-integration-gate"),
+				"Require successful release integration shards",
+			).run,
+			namedStep(
+				job(train, "release-integration-measure-gate"),
+				"Require successful release integration shards",
+			).run,
+		];
 		const run = (script: string, env: Record<string, string>) =>
 			spawnSync("bash", ["-c", script], {
 				encoding: "utf8",
 				env: { ...process.env, ...env },
 			});
-		const accepted = run(gate.run, {
-			GITHUB_EVENT_NAME: "pull_request",
-			PULL_REQUEST_DRAFT: "true",
-			INTEGRATION_RESULT: "skipped",
-		});
-		assert.equal(accepted.status, 0, accepted.stderr);
-		assert.match(
-			accepted.stdout,
-			/Draft pull request did not request release integration shards/u,
-		);
-		for (const env of [
-			{
-				GITHUB_EVENT_NAME: "pull_request",
-				PULL_REQUEST_DRAFT: "false",
-				INTEGRATION_RESULT: "skipped",
-			},
-			{
+		for (const script of scripts) {
+			const accepted = run(script, {
 				GITHUB_EVENT_NAME: "pull_request",
 				PULL_REQUEST_DRAFT: "true",
-				INTEGRATION_RESULT: "failure",
-			},
-			{
-				GITHUB_EVENT_NAME: "merge_group",
-				PULL_REQUEST_DRAFT: "true",
 				INTEGRATION_RESULT: "skipped",
-			},
-		]) {
-			const rejected = run(gate.run, env);
-			assert.notEqual(rejected.status, 0, JSON.stringify(env));
-			assert.match(rejected.stdout, /must pass/u);
+			});
+			assert.equal(accepted.status, 0, accepted.stderr);
+			assert.match(
+				accepted.stdout,
+				/Draft pull request did not request release integration shards/u,
+			);
+			for (const env of [
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					PULL_REQUEST_DRAFT: "false",
+					INTEGRATION_RESULT: "skipped",
+				},
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					PULL_REQUEST_DRAFT: "true",
+					INTEGRATION_RESULT: "failure",
+				},
+				{
+					GITHUB_EVENT_NAME: "merge_group",
+					PULL_REQUEST_DRAFT: "true",
+					INTEGRATION_RESULT: "skipped",
+				},
+			]) {
+				const rejected = run(script, env);
+				assert.notEqual(rejected.status, 0, JSON.stringify(env));
+				assert.match(rejected.stdout, /must pass/u);
+			}
 		}
-		const trainRejected = run(trainGate.run, {
-			GITHUB_EVENT_NAME: "pull_request",
-			PULL_REQUEST_DRAFT: "true",
-			INTEGRATION_RESULT: "skipped",
-		});
-		assert.notEqual(trainRejected.status, 0, trainRejected.stdout);
 	});
 
 	it("fails both integration-only gates on cancelled, skipped, failed, or missing results", () => {

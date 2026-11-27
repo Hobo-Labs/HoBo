@@ -1247,6 +1247,8 @@ describe("release required gate", () => {
 									const run = spawnSync("bash", ["-c", script], {
 										env: {
 											...process.env,
+											GITHUB_EVENT_NAME: "pull_request",
+											PULL_REQUEST_DRAFT: "false",
 											CONTRACT_RESULT: contract,
 											REALIZE_RESULT: realize,
 											BROWSER_WIT_SMOKE_RESULT: browserWitSmoke,
@@ -1279,6 +1281,43 @@ describe("release required gate", () => {
 								}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("accepts a fully skipped release pull request only when that draft did not request checks", () => {
+		const skipped = {
+			GITHUB_EVENT_NAME: "pull_request",
+			PULL_REQUEST_DRAFT: "true",
+			ROUTE_RESULT: "skipped",
+			CONTRACT_RESULT: "skipped",
+			REALIZE_RESULT: "skipped",
+			BROWSER_WIT_SMOKE_RESULT: "skipped",
+			ATTESTED: "",
+			ATTESTED_JOBS: "",
+		};
+		const run = (extra: Record<string, string> = {}) =>
+			spawnSync("bash", ["-c", script], {
+				encoding: "utf8",
+				env: { ...process.env, ...skipped, ...extra },
+			});
+		const accepted = run();
+		assert.equal(accepted.status, 0, accepted.stderr);
+		assert.match(accepted.stdout, /Draft pull request did not request checks/u);
+		for (const extra of [
+			{ PULL_REQUEST_DRAFT: "false" },
+			{ PULL_REQUEST_DRAFT: "" },
+			{ GITHUB_EVENT_NAME: "merge_group" },
+			{ CONTRACT_RESULT: "failure" },
+			{ REALIZE_RESULT: "success" },
+			{ ROUTE_RESULT: "success" },
+			{ BROWSER_WIT_SMOKE_RESULT: "failure" },
+		]) {
+			const rejected = run(extra);
+			assert.notEqual(rejected.status, 0, JSON.stringify(extra));
+			assert.match(
+				rejected.stderr + rejected.stdout,
+				/did not succeed|must pass/u,
+			);
 		}
 	});
 });
