@@ -4,6 +4,7 @@ import {
 	parseQueueDequeue,
 	parseQueueEnqueue,
 	parseQueueSettlement,
+	parseQueueProviderOutcome,
 } from "../src/durable-queue-boundary.js";
 
 const limits = {
@@ -120,5 +121,148 @@ describe("durable queue component boundary", () => {
 		expect(() =>
 			parseQueueSettlement({ ...input, unexpected: true }, limits, false),
 		).toThrow();
+	});
+});
+
+describe("durable queue provider outcome boundary", () => {
+	const expected = { id: op.id, expiresAtMs: 1234 };
+	const item = () => ({
+		messageId: "msg",
+		leaseId: "lease",
+		idempotencyKey: "job",
+		body: new Uint8Array([1, 2]),
+		attributes: [{ key: "k", value: "v" }],
+		leaseExpiresAtMs: 3000,
+		deliveryAttempt: 1,
+	});
+	it("preserves matching uncertainty and rejects a different operation identity", () => {
+		expect(
+			parseQueueProviderOutcome(
+				{ status: "unknown", operation: expected },
+				expected,
+				limits,
+				{ kind: "enqueue", idempotencyKey: "job" },
+			),
+		).toEqual({ status: "unknown", operation: expected });
+		expect(() =>
+			parseQueueProviderOutcome(
+				{
+					status: "unknown",
+					operation: { ...expected, id: "v1.1234.ponmlkjihgfedcba" },
+				},
+				expected,
+				limits,
+				{ kind: "enqueue", idempotencyKey: "job" },
+			),
+		).toThrow();
+	});
+	it("requires known rejection codes and exactly shaped responses", () => {
+		expect(
+			parseQueueProviderOutcome(
+				{ status: "rejected", code: "lease-lost" },
+				expected,
+				limits,
+				{ kind: "settlement", messageId: "msg", leaseId: "lease" },
+			),
+		).toEqual({ status: "rejected", code: "lease-lost" });
+		expect(() =>
+			parseQueueProviderOutcome(
+				{ status: "rejected", code: "invented" },
+				expected,
+				limits,
+				{ kind: "enqueue" },
+			),
+		).toThrow();
+		expect(() =>
+			parseQueueProviderOutcome(
+				{ status: "rejected", code: "lease-lost", value: "hidden" },
+				expected,
+				limits,
+				{ kind: "enqueue" },
+			),
+		).toThrow();
+	});
+	it("matches receipts to the request and refuses duplicate deliveries", () => {
+		expect(() =>
+			parseQueueProviderOutcome(
+				{
+					status: "committed",
+					value: { messageId: "msg", idempotencyKey: "other" },
+				},
+				expected,
+				limits,
+				{ kind: "enqueue", idempotencyKey: "job" },
+			),
+		).toThrow();
+		expect(() =>
+			parseQueueProviderOutcome(
+				{ status: "committed", value: { messageId: "msg", leaseId: "other" } },
+				expected,
+				limits,
+				{ kind: "settlement", messageId: "msg", leaseId: "lease" },
+			),
+		).toThrow();
+		expect(() =>
+			parseQueueProviderOutcome(
+				{ status: "committed", value: [item(), item()] },
+				expected,
+				limits,
+				{ kind: "dequeue", maxMessages: 2 },
+			),
+		).toThrow();
+	});
+	it("copies delivery bytes and verifies leased response bounds", () => {
+		const response = item();
+		const parsed = parseQueueProviderOutcome(
+			{ status: "committed", value: [response] },
+			expected,
+			limits,
+			{ kind: "dequeue", maxMessages: 1 },
+		);
+		response.body[0] = 7;
+		if (parsed.status !== "committed" || !Array.isArray(parsed.value))
+			throw Error("expected delivery");
+		expect(parsed.value[0].body[0]).toBe(1);
+		expect(() =>
+			parseQueueProviderOutcome(
+				{ status: "committed", value: [{ ...item(), deliveryAttempt: 0 }] },
+				expected,
+				limits,
+				{ kind: "dequeue", maxMessages: 1 },
+			),
+		).toThrow();
+		expect(() =>
+			parseQueueProviderOutcome(
+				{
+					status: "committed",
+					value: [{ ...item(), leaseExpiresAtMs: Number.MAX_SAFE_INTEGER + 1 }],
+				},
+				expected,
+				limits,
+				{ kind: "dequeue", maxMessages: 1 },
+			),
+		).toThrow();
+	});
+	it("refuses a mismatched extension and provider getters without invoking them", () => {
+		expect(() =>
+			parseQueueProviderOutcome(
+				{ status: "committed", value: item() },
+				expected,
+				limits,
+				{ kind: "extension", messageId: "msg", leaseId: "other" },
+			),
+		).toThrow();
+		let called = 0;
+		const bad = {
+			status: "committed",
+			get value() {
+				called++;
+				throw Error("getter");
+			},
+		};
+		expect(() =>
+			parseQueueProviderOutcome(bad, expected, limits, { kind: "extension" }),
+		).toThrow();
+		expect(called).toBe(0);
 	});
 });

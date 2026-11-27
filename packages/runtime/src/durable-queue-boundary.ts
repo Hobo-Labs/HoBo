@@ -2,6 +2,10 @@ import { types } from "node:util";
 import {
 	type DurableQueue,
 	type DurableQueueLimits,
+	type DurableQueueOperation,
+	type DurableQueueOutcome,
+	type DurableQueueDelivery,
+	type DurableQueueRejectionCode,
 	parseDurableQueueOperation,
 } from "@hobo/core";
 
@@ -240,5 +244,128 @@ export function parseQueueSettlement(
 				visibilityTimeoutMs: u64(input.visibilityTimeoutMs, limits.leaseMs, 1),
 			}
 		: base;
+}
+type QueueResultKind = "enqueue" | "dequeue" | "settlement" | "extension";
+type QueueResultValue =
+	| { readonly messageId: string; readonly idempotencyKey: string }
+	| readonly DurableQueueDelivery[]
+	| { readonly messageId: string; readonly leaseId: string }
+	| DurableQueueDelivery;
+
+const rejectionCodes: readonly DurableQueueRejectionCode[] = [
+	"invalid-argument",
+	"unauthorized",
+	"not-found",
+	"unsupported",
+	"operation-conflict",
+	"message-conflict",
+	"lease-lost",
+	"capacity-exceeded",
+	"unavailable",
+];
+
+function providerOperation(
+	value: unknown,
+	expected: DurableQueueOperation,
+): DurableQueueOperation {
+	const actual = parseDurableQueueOperation(value);
+	if (actual.id !== expected.id || actual.expiresAtMs !== expected.expiresAtMs)
+		return invalid();
+	return expected;
+}
+
+function delivery(
+	value: unknown,
+	limits: DurableQueueLimits,
+): DurableQueueDelivery {
+	const item = record(value, [
+		"messageId",
+		"leaseId",
+		"idempotencyKey",
+		"body",
+		"attributes",
+		"leaseExpiresAtMs",
+		"deliveryAttempt",
+	]);
+	const attrs = array(item.attributes, limits.attributeCount);
+	let total = 0;
+	const attributes = attrs.map((entry) => {
+		const attr = record(entry, ["key", "value"]);
+		const key = text(attr.key, limits.attributeBytes);
+		const val = text(attr.value, limits.attributeBytes, true);
+		total += utf8Length(key, "utf8") + utf8Length(val, "utf8");
+		if (total > limits.attributeBytes) return invalid();
+		return { key, value: val };
+	});
+	return {
+		messageId: text(item.messageId, limits.nameBytes),
+		leaseId: text(item.leaseId, limits.nameBytes),
+		idempotencyKey: text(item.idempotencyKey, limits.nameBytes),
+		body: bytes(item.body, limits.payloadBytes),
+		attributes,
+		leaseExpiresAtMs: integer(item.leaseExpiresAtMs, Number.MAX_SAFE_INTEGER),
+		deliveryAttempt: integer(item.deliveryAttempt, limits.deliveryAttempts, 1),
+	};
+}
+
+export function parseQueueProviderOutcome(
+	value: unknown,
+	expected: DurableQueueOperation,
+	limits: DurableQueueLimits,
+	request: {
+		readonly kind: QueueResultKind;
+		readonly messageId?: string;
+		readonly leaseId?: string;
+		readonly idempotencyKey?: string;
+		readonly maxMessages?: number;
+	},
+): DurableQueueOutcome<QueueResultValue> {
+	const outer = record(value, ["status"], ["value", "code", "operation"]);
+	if (outer.status === "unknown" || outer.status === "expired") {
+		const result = record(value, ["status", "operation"]);
+		return {
+			status: outer.status,
+			operation: providerOperation(result.operation, expected),
+		};
+	}
+	if (outer.status === "rejected") {
+		const result = record(value, ["status", "code"]);
+		const code = rejectionCodes.find((candidate) => candidate === result.code);
+		if (code === undefined) return invalid();
+		return { status: "rejected", code };
+	}
+	if (outer.status !== "committed") return invalid();
+	const result = record(value, ["status", "value"]);
+	if (request.kind === "enqueue") {
+		const receipt = record(result.value, ["messageId", "idempotencyKey"]);
+		const messageId = text(receipt.messageId, limits.nameBytes);
+		const idempotencyKey = text(receipt.idempotencyKey, limits.nameBytes);
+		if (idempotencyKey !== request.idempotencyKey) return invalid();
+		return { status: "committed", value: { messageId, idempotencyKey } };
+	}
+	if (request.kind === "dequeue") {
+		if (request.maxMessages === undefined) return invalid();
+		const items = array(result.value, request.maxMessages).map((item) =>
+			delivery(item, limits),
+		);
+		const ids = new Set(items.map((item) => item.messageId));
+		if (ids.size !== items.length) return invalid();
+		return { status: "committed", value: items };
+	}
+	if (request.kind === "extension") {
+		const item = delivery(result.value, limits);
+		if (
+			item.messageId !== request.messageId ||
+			item.leaseId !== request.leaseId
+		)
+			return invalid();
+		return { status: "committed", value: item };
+	}
+	const receipt = record(result.value, ["messageId", "leaseId"]);
+	const messageId = text(receipt.messageId, limits.nameBytes);
+	const leaseId = text(receipt.leaseId, limits.nameBytes);
+	if (messageId !== request.messageId || leaseId !== request.leaseId)
+		return invalid();
+	return { status: "committed", value: { messageId, leaseId } };
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply, anti-slop/no-unsafe-dictionary-type */
