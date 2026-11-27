@@ -1,34 +1,3 @@
-/**
- * Decide which turbo lanes the PR impact gate runs for a set of changed paths.
- *
- * Package lanes run for changed packages and examples, including packages one
- * level down in a pnpm-workspace group (`packages/providers/<name>`). Root build inputs that
- * every turbo task hashes (workspace, tsconfig and biome config, toolchain pins,
- * vendored sources) and any deleted package run the whole workspace. Root
- * package.json and turbo.json edits are compared with their base: scripts-only
- * manifest edits, root `//#` task edits, and package-qualified task edits
- * (`@scope/name#task`) do not change every workspace package's tasks. A
- * package-qualified task selects that package. globalDependencies edits,
- * shared task edits, every other edit to those files, or a missing or
- * unparsable base/head run the whole workspace. A package-qualified task
- * whose package is not exactly one workspace package does too.
- * `mise.toml` and `mise.lock` are compared with their base too: a pin of a tool
- * no workspace task runs (the secret scanner, the shell linter, the SBOM tool)
- * changes the runner image, not a package's build or test. Any other edit to
- * them, or a missing base, runs the whole workspace.
- * `pnpm-lock.yaml` alone runs the whole workspace too; with changed
- * package paths it only filters those packages (Turbo still hashes the lockfile).
- * Everything outside packages/ and examples/ (workflows, root
- * scripts, root tests, draft proofs, docs) is not a package-lane input: the
- * same gate covers it with test:root, the contract guard and agent:check, and
- * the main full gate runs the whole workspace after merge. Dependents are not
- * added, matching the previous rg-based filter.
- *
- * CLI: `git diff --name-only BASE...HEAD | node --import tsx scripts/ci/affected-lanes.mts --base=BASE`
- * prints one turbo argument per line (empty output = skip, `--filter=*` = run
- * all). With `--main-gate` it prints `repo-wide` or `affected` instead (see
- * mainGateScope). Omitting `--base` retains fail-closed path-only behavior.
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
@@ -64,6 +33,10 @@ const tagOf = Object.prototype.toString;
 
 function isJsonObject<T>(value: T): value is T & JsonObject {
 	return tagOf.call(value) === "[object Object]";
+}
+
+function isJsonString(value: JsonValue | undefined): value is string {
+	return tagOf.call(value) === "[object String]";
 }
 
 function parseRootObject(text: string | undefined): JsonObject | undefined {
@@ -111,12 +84,6 @@ function rootManifestWidens(readRootFile: ReadRootFile | undefined): boolean {
 	);
 }
 
-/**
- * Package names whose turbo task definitions changed, or `undefined` when the
- * edit can change every package (shared task, globalDependencies, globalEnv,
- * a missing or unparsable side). Root `//#` tasks are omitted: no workspace
- * package runs them. A measured package override changes that one package.
- */
 function turboPackageNames(
 	readRootFile: ReadRootFile | undefined,
 ): readonly string[] | undefined {
@@ -142,7 +109,6 @@ function turboPackageNames(
 		if (jsonEqual(baseTasks[task], headTasks[task])) continue;
 		if (task.startsWith("//#")) continue;
 		const hash = task.indexOf("#");
-		// A shared task (`build`, `test`) has no package. `#task` is not one.
 		if (hash <= 0) return undefined;
 		packages.add(task.slice(0, hash));
 	}
@@ -151,7 +117,6 @@ function turboPackageNames(
 
 let cachedPackageDirs: Map<string, string> | undefined;
 
-/** Repo-relative directory of a workspace package, if exactly one exists. */
 function workspacePackageDir(name: string): string | undefined {
 	cachedPackageDirs ??= indexWorkspacePackages();
 	const dir = cachedPackageDirs.get(name);
@@ -175,7 +140,7 @@ function indexWorkspacePackages(): Map<string, string> {
 			let packageName: string | undefined;
 			try {
 				const value: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
-				if (isJsonObject(value) && typeof value.name === "string")
+				if (isJsonObject(value) && isJsonString(value.name))
 					packageName = value.name;
 			} catch {
 				continue;

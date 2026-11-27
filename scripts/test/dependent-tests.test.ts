@@ -1231,6 +1231,29 @@ describe("exportTarget", () => {
 });
 
 describe("planCommands", () => {
+	it("adds the empty-suite option only when the package script omits it", () => {
+		const scoped: TestPlan = {
+			mode: "scoped",
+			full: [],
+			subsets: new Map([["packages/subset", ["test/example.test.ts"]]]),
+			vitestShards: new Map([["packages/sharded", { count: 2, indexes: [0] }]]),
+			skipped: [],
+		};
+		const commands = planCommands(
+			scoped,
+			[],
+			"1",
+			() => [],
+			undefined,
+			(dir) =>
+				dir === "packages/subset"
+					? "vitest run --passWithNoTests"
+					: "vitest run",
+		);
+		assert.equal(commands[0]?.includes("--passWithNoTests"), false);
+		assert.equal(commands[1]?.includes("--passWithNoTests"), true);
+	});
+
 	const plan: TestPlan = {
 		mode: "scoped",
 		full: ["packages/lib"],

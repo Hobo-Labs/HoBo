@@ -1247,6 +1247,17 @@ export type GraphTask = Readonly<{
 /** The task graph turbo would run for `turbo run test` over these dirs. */
 export type TestGraph = (dirs: readonly string[]) => readonly GraphTask[];
 
+function packageTestScript(dir: string): string | undefined {
+	try {
+		const manifest = parseManifest(readFileSync(`${dir}/package.json`, "utf8"));
+		const scripts = manifest?.scripts;
+		if (!isObject(scripts)) return undefined;
+		return isString(scripts.test) ? scripts.test : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * The `pnpm` argument lists that run a plan.
  *
@@ -1315,6 +1326,7 @@ export function planCommands(
 	concurrency: string,
 	graph: TestGraph,
 	buildConcurrency?: string,
+	readTestScript: (dir: string) => string | undefined = packageTestScript,
 ): readonly (readonly string[])[] {
 	const test = ["exec", "turbo", "run", "test"];
 	const parallel = `--concurrency=${concurrency}`;
@@ -1323,6 +1335,10 @@ export function planCommands(
 		return [[...test, ...affected, parallel, ...turboArgs]];
 	const slices = plan.vitestShards ?? new Map<string, VitestShardSlices>();
 	const commands: string[][] = [];
+	const passWithNoTests = (dir: string): readonly string[] =>
+		/(?:^|\s)--passWithNoTests(?:\s|=|$)/u.test(readTestScript(dir) ?? "")
+			? []
+			: ["--passWithNoTests"];
 	const buildFirst = buildConcurrency !== undefined && affected.length === 0;
 	const buildPass = (tasks: readonly GraphTask[]) => {
 		const builds = tasks
@@ -1381,7 +1397,7 @@ export function planCommands(
 			"--only",
 			parallel,
 			"--",
-			"--passWithNoTests",
+			...passWithNoTests(dir),
 			...files,
 		]);
 	for (const [dir, spec] of [...slices].sort(([a], [b]) => a.localeCompare(b)))
@@ -1392,7 +1408,7 @@ export function planCommands(
 				"--only",
 				parallel,
 				"--",
-				"--passWithNoTests",
+				...passWithNoTests(dir),
 				`--shard=${index + 1}/${spec.count}`,
 			]);
 	return commands;
