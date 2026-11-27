@@ -1,8 +1,14 @@
-import { DURABLE_MESSAGING_CONFORMANCE_CASES } from "@hobo/conformance";
+import {
+	DURABLE_MESSAGING_CONFORMANCE_CASES,
+	runDurableMessagingConformance,
+} from "@hobo/conformance";
 import { durableMessagingOperation } from "@hobo/core";
 import { expect, it } from "vitest";
 import { createRivetDurableTopicClient } from "../src/durable-topic-client.js";
-import { runRivetMessagingConformance } from "./fixtures/durable-topic-conformance.js";
+import {
+	createRivetMessagingConformanceHarness,
+	runRivetMessagingConformance,
+} from "./fixtures/durable-topic-conformance.js";
 import { createProcessBusConformanceHost } from "./fixtures/durable-topic-process-conformance.js";
 
 it("runs generic bus cases across real SQLite actor process termination", {
@@ -37,6 +43,7 @@ it("runs generic bus cases across real SQLite actor process termination", {
 		"fingerprint-fields",
 		"tenant-isolation",
 		"audit-pagination",
+		"audit-retention",
 		"topic-capacity",
 		"bounds",
 	]);
@@ -355,4 +362,52 @@ it("fails closed when the replacement owner cannot become ready", {
 	} finally {
 		await host.controls.close();
 	}
+});
+
+it("detects altered retained audit events in the bounded compaction profile", {
+	timeout: 60_000,
+}, async () => {
+	const report = await runDurableMessagingConformance(
+		async () => {
+			const harness = await createRivetMessagingConformanceHarness(
+				await createProcessBusConformanceHost(),
+			);
+			return {
+				...harness,
+				async connect(tenant) {
+					const client = await harness.connect(tenant);
+					return {
+						...client,
+						async events(input) {
+							const outcome = await client.events(input);
+							if (
+								outcome.status !== "ok" ||
+								input.afterSequence === 0 ||
+								outcome.events.length === 0
+							)
+								return outcome;
+							return {
+								...outcome,
+								events: outcome.events.map((event, index) =>
+									index === 0
+										? {
+												...event,
+												kind:
+													event.kind === "published"
+														? ("compacted" as const)
+														: ("published" as const),
+											}
+										: event,
+								),
+							};
+						},
+					};
+				},
+			};
+		},
+		{ case: "audit-retention", caseTimeoutMs: 30_000 },
+	);
+	expect(report.cases).toMatchObject([
+		{ name: "audit-retention", status: "fail" },
+	]);
 });

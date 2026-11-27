@@ -289,3 +289,6 @@ The process harness can replace the owner using the same SQLite directory. An
 unverified replacement cannot dispatch; a verified replacement may reconcile
 receipts after the old process has terminated and its grants are retired. A
 failed replacement closes the test host instead of leaving a dispatchable owner.
+
+The separate-process suite exercises audit retention using one topic and
+bounded publication and compaction cycles.

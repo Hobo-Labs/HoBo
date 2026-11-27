@@ -4,6 +4,7 @@ import {
 	DURABLE_MESSAGING_LIMITS,
 	type DurableMessaging,
 	type DurableMessagingDelivery,
+	type DurableMessagingEvent,
 	type DurableMessagingLimits,
 	type DurableMessagingMessage,
 	type DurableMessagingOperation,
@@ -2174,9 +2175,137 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 	);
 }
 
+async function auditRetentionByCompaction(
+	harness: DurableMessagingConformanceHarness,
+	client: DurableMessaging,
+) {
+	const limits = client.limits;
+	const total = limits.retainedEvents + 2;
+	requireProfile(
+		limits.retainedEvents >= 2 &&
+			limits.retainedEvents <= 128 &&
+			limits.topics >= 2 &&
+			limits.retainedMessages >= 1 &&
+			limits.retainedReceipts >= total + 1 &&
+			limits.eventPageSize >= 2 &&
+			limits.nameBytes >= 20 &&
+			limits.payloadBytes >= 1 &&
+			limits.operationWindowMs >= 1_000,
+		"audit retention harness limits are not configured for this case",
+	);
+	const next = operations(harness, Math.min(limits.operationWindowMs, 10_000));
+	const expected: Array<
+		Pick<DurableMessagingEvent, "kind" | "topic" | "messageId">
+	> = [];
+	const matches = (events: readonly DurableMessagingEvent[]) =>
+		events.every((entry) => {
+			const item = expected[entry.sequence - 1];
+			return (
+				item !== undefined &&
+				entry.kind === item.kind &&
+				entry.topic === item.topic &&
+				(item.messageId === undefined || entry.messageId === item.messageId)
+			);
+		});
+	await committed(client.ensureTopic({ operation: next(), topic: "audit" }));
+	expected.push({ kind: "topic-created", topic: "audit" });
+	let sequence = 0;
+	while (expected.length < total) {
+		const id = `audit-message-${sequence + 1}`;
+		const receipt = await committed(
+			client.publish({
+				operation: next(),
+				topic: "audit",
+				message: {
+					id,
+					subject: "audit",
+					payload: new Uint8Array([1]),
+					attributes: [],
+				},
+			}),
+		);
+		sequence++;
+		requireCondition(
+			receipt.messageId === id && receipt.sequence === sequence,
+			"audit publication did not retain its sequence",
+		);
+		expected.push({ kind: "published", topic: "audit", messageId: id });
+		if (expected.length < total) {
+			const result = await committed(
+				client.compact({
+					operation: next(),
+					topic: "audit",
+					throughSequence: sequence,
+				}),
+			);
+			requireCondition(
+				result.topic === "audit" &&
+					result.removedMessages === 1 &&
+					result.firstAvailableSequence === sequence + 1,
+				"audit compaction did not remove exactly one message",
+			);
+			expected.push({ kind: "compacted", topic: "audit" });
+		}
+	}
+	const gap = await client.events({ afterSequence: 0, limit: 2 });
+	ensureAuditOutcome(gap);
+	if (gap.status !== "gap")
+		throw new DurableMessagingConformanceFailure(
+			"old audit cursor did not report the retention gap",
+		);
+	requireCondition(
+		gap.firstAvailableSequence >= 3 &&
+			gap.firstAvailableSequence <= total + 1 &&
+			gap.latestSequence === total,
+		"audit gap gave an invalid floor or tail",
+	);
+	const floor = gap.firstAvailableSequence;
+	const page = await client.events({ afterSequence: floor - 1, limit: 2 });
+	ensureAuditOutcome(page);
+	movingAuditGap(page, floor - 1, total);
+	requireCondition(
+		page.status === "ok" &&
+			matches(page.events) &&
+			validDurableAuditPage(page, floor - 1, 2, total) &&
+			page.firstAvailableSequence === floor,
+		"audit did not resume at the retained floor",
+	);
+	await harness.restart();
+	const reopened = await harness.connect("tenant-a");
+	await committed(
+		reopened.ensureTopic({ operation: next(), topic: "audit-next" }),
+	);
+	expected.push({ kind: "topic-created", topic: "audit-next" });
+	const nextPage = await reopened.events({ afterSequence: total, limit: 2 });
+	ensureAuditOutcome(nextPage);
+	requireCondition(
+		(nextPage.status === "ok" &&
+			matches(nextPage.events) &&
+			validDurableAuditPage(nextPage, total, 2, total + 1) &&
+			nextPage.events.length === 1) ||
+			(nextPage.status === "gap" &&
+				nextPage.firstAvailableSequence === total + 2 &&
+				nextPage.latestSequence === total + 1),
+		"audit sequence was reused or reset after retention and restart",
+	);
+	const future = await reopened.events({ afterSequence: total + 2, limit: 1 });
+	ensureAuditOutcome(future, true);
+	requireCondition(
+		future.status === "rejected" && future.code === "invalid-argument",
+		"future audit cursor was accepted",
+	);
+}
+
 async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	const client = await harness.connect("tenant-a");
 	validateLimits(client.limits);
+	if (
+		client.limits.retainedEvents > 32 ||
+		client.limits.topics < client.limits.retainedEvents + 3
+	) {
+		await auditRetentionByCompaction(harness, client);
+		return;
+	}
 	requireProfile(
 		client.limits.retainedEvents >= 2 &&
 			client.limits.retainedEvents <= 32 &&
