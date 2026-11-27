@@ -15,3 +15,6 @@ to check the assignments against Turbo's dry-run graph.
 The fleet enrollment workflow runs both jobs for ready pull requests and for
 drafts explicitly labeled `ci:run-draft-checks`. New runs wait for earlier runs
 on the same ref instead of canceling them.
+
+The AWS budget emulator tests exercise priced and unpriced admission when a
+provider operation has an uncertain outcome.

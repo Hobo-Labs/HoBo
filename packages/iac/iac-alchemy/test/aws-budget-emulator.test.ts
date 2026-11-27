@@ -28,6 +28,7 @@ import {
 	IacUnpricedPolicyProofSchema,
 	IacUnpricedScopeProofSchema,
 } from "../../../broker/src/_generated/yard_placement_pb.js";
+import { hostingQuoteDigest } from "../../../broker/src/budget-authority.js";
 import { createSqliteBudgetAdmissionAuthority } from "../../../broker/src/budget-sqlite.js";
 import {
 	createIacFinancialServices,
@@ -255,7 +256,7 @@ function fixture(
 				inventoryHash: priced.inventoryHash,
 				modelHash: priced.modelHash,
 				quoteHash: priced.quote.quoteHash,
-				maximumMicros: 1_500_000,
+				maximumMicrosExact: 1_500_000n,
 				observedAt: "2026-01-01T00:00:00Z",
 				validUntil: END,
 				providerAccounts: [
@@ -268,6 +269,7 @@ function fixture(
 			proof: create(HostingPolicyProofSchema, {
 				requestDigest,
 				quoteId: quote.quoteId,
+				quoteDigest: hostingQuoteDigest(quote),
 				identity,
 				effect: "allow",
 				policyHash: "policy:1",
