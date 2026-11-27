@@ -725,6 +725,35 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	it("rejects probes that can run for draft PR events or read an untrusted checkout", () => {
+		const guard =
+			"    if: (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'\n";
+		assert.notEqual(
+			lintFile("fleet-probe.yml", committedProbe.replace(guard, "")),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"fleet-probe.yml",
+				committedProbe.replace(
+					"github.event.workflow_run.event != 'pull_request'",
+					"true",
+				),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"fleet-probe.yml",
+				committedProbe.replace(
+					"          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}\n",
+					"",
+				),
+			),
+			0,
+		);
+	});
+
 	it("rejects a probe that asks for another runner, runs something, or holds permissions", () => {
 		assert.notEqual(
 			probe('    runs-on: ubuntu-24.04\n    steps:\n      - run: "true"\n'),

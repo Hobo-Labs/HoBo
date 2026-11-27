@@ -21,8 +21,27 @@ if [ -f mise.toml ] && [ -f scripts/lib/mise-path.sh ] && [ -f "${mise_version_f
 	export MISE_EXPERIMENTAL=1
 	export PATH="${HOME}/.local/bin:${PATH}"
 	if ! command -v mise >/dev/null 2>&1; then
-		MISE_VERSION="v$(tr -d '[:space:]' <"${mise_version_file}")"
-		export MISE_VERSION
+		mise_version="$(tr -d '[:space:]' <"${mise_version_file}")"
+		if [[ ! "$mise_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+			echo "::error::invalid pinned mise version" >&2
+			exit 1
+		fi
+		installer_name="mise-v${mise_version}-install.sh"
+		pin_file="$(dirname "${BASH_SOURCE[0]}")/mise-installer.sha256"
+		if ! checksum="$(awk -v name="$installer_name" '$2 == name && $1 ~ /^[0-9a-f]+$/ && length($1) == 64 { value=$1; count++ } END { if (count != 1) exit 1; print value }' "$pin_file")"; then
+			echo "::error::no unique checksum for ${installer_name}" >&2
+			exit 1
+		fi
+		installer_dir="$(mktemp -d /tmp/hobo-mise-installer.XXXXXXXX)"
+		trap 'rm -rf "${installer_dir}"' EXIT
+		curl -fsSL --retry 3 --retry-all-errors -o "${installer_dir}/${installer_name}" "https://mise.jdx.dev/v${mise_version}/install.sh"
+		if ! (cd "$installer_dir" && printf '%s  %s\n' "$checksum" "$installer_name" | sha256sum --check --status); then
+			echo "::error::mise installer checksum mismatch" >&2
+			exit 1
+		fi
+		MISE_VERSION="v${mise_version}"
+		MISE_INSTALL_URL="file://${installer_dir}/${installer_name}"
+		export MISE_VERSION MISE_INSTALL_URL
 		# shellcheck source=scripts/lib/mise-path.sh
 		source scripts/lib/mise-path.sh
 		mise_ensure_on_path
