@@ -70,13 +70,17 @@ optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
 `@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS region,
 host-issued resource and grant epochs, an explicit operation allow-list, a
 per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
-The host must authenticate the actual table incarnation and enforce matching
-IAM permissions. Reads are strongly consistent; keys are limited to 2,048 UTF-8
+The host must authenticate the actual table incarnation, never reuse a
+revoked epoch, fence outstanding requests during ownership changes, and enforce
+matching IAM permissions. Reads are strongly consistent; keys are limited to 2,048 UTF-8
 bytes and values to 256 KiB. A failed or timed-out write or delete has an
 unknown outcome and requires reconciliation. Each store retains capacity for a
 timed-out request until the transport settles. This subset does not bind a
 HoBo application or WASI guest to the table, implement transactions, or prevent
-out-of-band AWS access.
+out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
+verifier and transport behave as specified; it does not prove those components.
+It models one bounded store and permits transport to remain in flight after a
+caller times out.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
