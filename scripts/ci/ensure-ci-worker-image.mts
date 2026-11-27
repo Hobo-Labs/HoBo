@@ -726,6 +726,37 @@ export interface CiWorkerImagePresence {
 }
 
 /**
+ * Publication check for `--published-status`. A present GHCR manifest is
+ * published and a missing one is not. This does not pull: a cold `docker pull`
+ * of the worker image spent the publisher's job budget before the deps build
+ * could start. Digest resolution still pulls through `probeWorkerPublication`.
+ */
+function probePublishedWorkerManifest(
+	repo: string,
+	version: string,
+	token: string,
+	options?: Readonly<{ now?: () => number }>,
+): WorkerPublicationProbe {
+	const now = options?.now ?? Date.now;
+	const deadline = now() + WORKER_PUBLISH_PROBE_BUDGET_SEC * 1000;
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	const loginMs = Math.floor(deadline - now());
+	if (loginMs <= 0) return "budget-exhausted";
+	if (!dockerLoginGhcr(actor, token, loginMs)) return "login-failed";
+	const remainingSec = () =>
+		Math.max(0, Math.floor((deadline - now()) / 1000));
+	if (remainingSec() <= 0) return "budget-exhausted";
+	const status = probeWorkerPublicationManifest(
+		remoteWorkerTag(repo, version),
+		token,
+		{ budgetSec: remainingSec(), now },
+	);
+	if (status === "present") return "pullable";
+	if (status === "missing") return "missing";
+	return remainingSec() <= 0 ? "budget-exhausted" : "manifest-unavailable";
+}
+
+/**
  * Whether this tree's worker image (by content key) is on this host and in GHCR.
  * The publisher in ci-deps-publish.yml asks this after every green main run,
  * because a main push whose CI run was dropped never built or published the
@@ -740,7 +771,7 @@ export function ciWorkerImagePublished(options?: {
 	const token = ghcrAuthToken();
 	const ghcrProbe =
 		repo && token
-			? probeWorkerPublication(
+			? probePublishedWorkerManifest(
 					repo,
 					version,
 					token,

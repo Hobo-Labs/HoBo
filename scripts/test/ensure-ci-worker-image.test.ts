@@ -1027,37 +1027,38 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
-	it("recognizes a pullable image when the manifest probe is unreadable", () => {
+	it("does not treat an unreadable manifest as published when a pull would succeed", () => {
 		withWorkerPublishStub(
 			{ host: false, manifest: false, pull: true, unreadable: true },
 			() => {
 				const status = ciWorkerImagePublished();
-				assert.equal(status.ghcr, true);
+				assert.equal(status.ghcr, false);
+				assert.equal(status.ghcrProbe, "manifest-unavailable");
 			},
 		);
-		assert.match(
-			publishedStatus({
-				host: false,
-				manifest: false,
-				pull: true,
-				unreadable: true,
-			}),
-			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
+		assert.equal(
+			publishedStatus(
+				{
+					host: false,
+					manifest: false,
+					pull: true,
+					unreadable: true,
+				},
+				"manifest-unavailable",
+			),
+			"",
 		);
 	});
 
-	it("refuses to infer a missing image from an incomplete pull", () => {
+	it("treats a readable manifest as published without pulling", () => {
 		withWorkerPublishStub({ host: false, manifest: true, pull: false }, () => {
 			const status = ciWorkerImagePublished();
-			assert.equal(status.ghcr, false);
-			assert.equal(status.ghcrProbe, "pull-failed");
+			assert.equal(status.ghcr, true);
+			assert.equal(status.ghcrProbe, "pullable");
 		});
-		assert.equal(
-			publishedStatus(
-				{ host: false, manifest: true, pull: false },
-				"pull-failed",
-			),
-			"",
+		assert.match(
+			publishedStatus({ host: false, manifest: true, pull: false }),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
 		);
 	});
 
@@ -1244,7 +1245,7 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
-	it("shares one publication-probe budget and does not call a pull it never reached", () => {
+	it("shares one publication-probe budget and does not pull to decide publication", () => {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-probe-budget-"));
 		const calls = join(bin, "calls");
 		const clock = join(bin, "clock");
@@ -1334,16 +1335,16 @@ describe("ensure-ci-worker-image", () => {
 			assert.equal(shared.ghcr, true);
 			const recorded = readFileSync(calls, "utf8");
 			assert.match(recorded, /timeout 45 docker manifest inspect /u);
-			assert.match(recorded, /timeout 70 docker pull /u);
-			assert.doesNotMatch(recorded, /timeout 120 docker pull /u);
+			assert.doesNotMatch(recorded, /docker pull /u);
 
 			writeFileSync(calls, "");
 			writeFileSync(clock, "0");
 			delete process.env.PROBE_CLOCK;
 			process.env.PULL_STATUS = "1";
-			const pulled = ciWorkerImagePublished({ now });
-			assert.equal(pulled.ghcrProbe, "pull-failed");
-			assert.match(readFileSync(calls, "utf8"), /docker pull /u);
+			const published = ciWorkerImagePublished({ now });
+			assert.equal(published.ghcrProbe, "pullable");
+			assert.equal(published.ghcr, true);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /docker pull /u);
 		} finally {
 			for (const key of keys) {
 				const value = prev[key];
