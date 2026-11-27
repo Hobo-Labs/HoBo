@@ -7,6 +7,7 @@ import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import { AGENT_FAILURES } from "../agent/errors.js";
 import { FEED_FAILURES } from "../feed/errors.js";
 import type { Refusal } from "../ports.js";
+import { validateReasonStructuredDetail } from "./release-freight-detail.js";
 
 // public-contract: reason codes the reconcile module writes.
 export const RECONCILE_FAILURES = Object.freeze({
@@ -167,6 +168,8 @@ const SAFE_REALIZER_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
 	],
 ]);
 
+const GENERIC_REALIZER_CONDITION = "The realizer reported a condition.";
+
 export function sanitizeReasons(
 	entries: readonly ReasonRecord[],
 	subject: string,
@@ -182,13 +185,26 @@ export function sanitizeReasons(
 			source === "realizer"
 				? "realizer-detail-redacted"
 				: "transport-detail-redacted";
+		const structured = validateReasonStructuredDetail(entry.structured);
+		const message =
+			source === "realizer"
+				? GENERIC_REALIZER_CONDITION
+				: "The reconciler transport reported a condition.";
+		const code = remediation === undefined ? fallback : entry.code;
+		const remediationText = remediation ?? RECONCILE_FAILURES[fallback];
+		if (structured) {
+			return create(ReasonRecordSchema, {
+				code,
+				message,
+				remediation: remediationText,
+				subject,
+				structured,
+			});
+		}
 		return create(ReasonRecordSchema, {
-			code: remediation === undefined ? fallback : entry.code,
-			message:
-				source === "realizer"
-					? "The realizer reported a condition."
-					: "The reconciler transport reported a condition.",
-			remediation: remediation ?? RECONCILE_FAILURES[fallback],
+			code,
+			message,
+			remediation: remediationText,
 			subject,
 		});
 	});

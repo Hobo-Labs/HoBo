@@ -4,9 +4,9 @@ import {
 	ExternalRunnerId,
 	JobDispatchId,
 	NonEmptyReason,
+	RunnerLabel,
 	RunnerPoolId,
 	RunnerTier,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "./ids.js";
@@ -27,6 +27,14 @@ export class RunnerProvisionFailed extends Domain.Rejection(
 	},
 ) {}
 
+export class RunnerReleaseFailed extends Domain.Rejection(
+	"RunnerReleaseFailed",
+	{
+		slotId: SlotId,
+		reason: NonEmptyReason,
+	},
+) {}
+
 export class RunnerBackend extends Domain.ExternalSystem("RunnerBackend", {
 	provisionRunner: {
 		args: {
@@ -34,7 +42,7 @@ export class RunnerBackend extends Domain.ExternalSystem("RunnerBackend", {
 			jobId: JobDispatchId,
 			poolId: RunnerPoolId,
 			tier: RunnerTier,
-			runsOn: RunsOnLabel,
+			runnerLabel: RunnerLabel,
 			slotId: SlotId,
 		},
 		success: {
@@ -50,5 +58,6 @@ export class RunnerBackend extends Domain.ExternalSystem("RunnerBackend", {
 		success: {
 			released: Schema.Boolean,
 		},
+		error: [RunnerReleaseFailed],
 	},
 }) {}

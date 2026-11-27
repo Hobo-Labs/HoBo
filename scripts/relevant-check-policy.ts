@@ -413,6 +413,67 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const domainModelChanged = touchedAny([
+		/^packages\/(?:backend-routing|broker|cd|ci|ci-gh-actions|dispatcher|stations)\/src\/domain\//u,
+		/^packages\/(?:backend-routing|broker|cd|ci|ci-gh-actions|dispatcher|stations)\/test\/.*-domain\.test\.ts$/u,
+		/^scripts\/check-domain-boundaries\.mts$/u,
+	]);
+	if (domainModelChanged) {
+		checks.push({
+			command: "pnpm",
+			args: ["run", "lint:domain-boundaries"],
+			reason:
+				"Alchemy Domain packages changed; verify no raw I/O in domain, secret-shaped fields, Domain.verify, and Story BDD coverage",
+		});
+	}
+
+	const effectAlchemyChanged =
+		files.some(
+			(file) =>
+				PACKAGE_TYPESCRIPT.test(file) &&
+				/^packages\/(?:backend-routing|broker|cd|ci|ci-gh-actions|dispatcher|stations)\//u.test(
+					file,
+				),
+		) ||
+		touchedAny([
+			/^scripts\/check-effect-tsgo\.mts$/u,
+			/^tsconfig\.base\.json$/u,
+			/^tsconfig\.json$/u,
+		]);
+	if (effectAlchemyChanged) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"run",
+				"typecheck:effect",
+				"--",
+				staged ? "--staged" : `--base=${options.base}`,
+			],
+			reason:
+				"Effect/Alchemy workspace paths changed; run @effect/tsgo on impacted packages",
+		});
+	}
+
+	const relayChecksChanged = touchedAny([
+		/^packages\/ci-gh-actions\/src\/relay-checks\//u,
+		/^packages\/ci-gh-actions\/test\/relay-checks\.test\.ts$/u,
+	]);
+	if (relayChecksChanged) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"--filter",
+				"@hobo/ci-gh-actions",
+				"exec",
+				"vitest",
+				"run",
+				"test/relay-checks.test.ts",
+			],
+			reason:
+				"GH relay lint/check tooling changed; run the relay-checks unit lane",
+		});
+	}
+
 	const shellChanged =
 		automationChanged ||
 		files.some((file) => file.endsWith(".sh") || file.endsWith(".bash"));

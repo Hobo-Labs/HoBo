@@ -1,13 +1,13 @@
 import * as Schema from "effect/Schema";
 import { compareCodeUnits } from "../order.js";
 import {
+	DispatchCategory,
 	decodeNonNegativeMicros,
 	decodeNonNegativeUnits,
-	DispatchCategory,
 	NonNegativeMicros,
 	NonNegativeSlots,
 	NonNegativeUnits,
-	PositiveUnits,
+	type PositiveUnits,
 	ProviderId,
 	ScopedAccountId,
 	scopedAccountId,
@@ -65,7 +65,8 @@ export const NoEligibleDispatchCandidate = Schema.TaggedStruct("NoEligible", {
 	category: DispatchCategory,
 	excluded: Schema.Array(RankedExcludedCandidate),
 });
-export type NoEligibleDispatchCandidate = typeof NoEligibleDispatchCandidate.Type;
+export type NoEligibleDispatchCandidate =
+	typeof NoEligibleDispatchCandidate.Type;
 
 export const DispatchSelectionOutcome = Schema.Union([
 	SelectedDispatchCandidate,
@@ -135,8 +136,7 @@ export function selectDispatchCandidate(
 			request.incumbentProviderId === candidate.providerId
 				? 0
 				: candidate.switchingMicros;
-		const computedMicros =
-			paidUnits * candidate.listUnitMicros + switchingCost;
+		const computedMicros = paidUnits * candidate.listUnitMicros + switchingCost;
 		const requiredMicros = Math.max(computedMicros, request.estimatedMicros);
 
 		if (

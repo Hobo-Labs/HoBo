@@ -11,6 +11,7 @@ export type DomainBoundaryViolation = Readonly<{
 	rule:
 		| "domain-no-raw-io"
 		| "domain-no-secret-fields"
+		| "domain-no-host-layer-import"
 		| "domain-verify-required"
 		| "domain-story-required";
 	message: string;
@@ -50,13 +51,84 @@ const FORBIDDEN_IO_MODULES = new Set([
 ]);
 
 const SECRET_FIELD_PATTERN =
-	/\b(token|apiKey|secret|password|privateKey|accessToken|refreshToken)\s*:/gu;
+	/(?:"([^"]+)"|(?:\b(token|apiKey|api_key|secret|password|privateKey|accessToken|refreshToken|clientSecret|githubToken|credential)))\s*:/giu;
+
+const SECRET_FIELD_ALLOWED = new Set(
+	[
+		"token",
+		"apikey",
+		"secret",
+		"password",
+		"privatekey",
+		"accesstoken",
+		"refreshtoken",
+		"clientsecret",
+		"githubtoken",
+		"credential",
+	].map((name) => name.toLowerCase()),
+);
+
+const HOST_LAYER_IMPORT_SCAN_DIRS = [
+	"packages/ci/src/host",
+	"packages/ci-ado/src",
+	"packages/ci-cf/src",
+	"packages/ci-dagger/src",
+] as const;
+
+const DOMAIN_PURE_IMPORT_PREFIXES = [
+	"rivetkit",
+	"@alchemy.run/",
+	"effect",
+	"@effect/",
+] as const;
 
 function toPosix(pathValue: string): string {
 	return pathValue.replaceAll("\\", "/");
 }
 
+function resolveImportSegments(specifier: string): readonly string[] {
+	const parts: string[] = [];
+	for (const segment of toPosix(specifier).split("/")) {
+		if (segment === "" || segment === ".") continue;
+		if (segment === "..") {
+			if (parts.length > 0) parts.pop();
+			continue;
+		}
+		parts.push(segment);
+	}
+	return parts;
+}
+
+function hostLayerEscapeSpecifier(specifier: string): boolean {
+	if (!specifier.includes("..")) return false;
+	const parts = resolveImportSegments(specifier);
+	if (parts[0] === "host") return true;
+	return parts[0] === "ci-gh-actions" || parts.includes("ci-gh-actions");
+}
+
+export { hostLayerEscapeSpecifier };
+
+export function isDomainPureImport(specifier: string): boolean {
+	const normalized = toPosix(specifier);
+	return DOMAIN_PURE_IMPORT_PREFIXES.some((prefix) => {
+		const bare = prefix.replace(/\/$/u, "");
+		if (normalized === bare) return true;
+		if (prefix.endsWith("/")) return normalized.startsWith(prefix);
+		return normalized.startsWith(`${bare}/`);
+	});
+}
+
+function isHostLayerEscape(specifier: string): boolean {
+	return hostLayerEscapeSpecifier(specifier);
+}
+
+function normalizeSecretFieldName(fieldName: string): string | null {
+	const normalized = fieldName.replaceAll("_", "").toLowerCase();
+	return SECRET_FIELD_ALLOWED.has(normalized) ? normalized : null;
+}
+
 function isForbiddenIoSpecifier(specifier: string): boolean {
+	if (isDomainPureImport(specifier)) return false;
 	if (FORBIDDEN_IO_MODULES.has(specifier)) return true;
 	for (const mod of FORBIDDEN_IO_MODULES) {
 		if (!mod.startsWith("node:") && specifier.startsWith(`${mod}/`))
@@ -131,6 +203,13 @@ export function checkDomainBoundaries(rootDir: string): DomainBoundaryReport {
 			const source = readFileSync(absFile, "utf8");
 
 			for (const entry of importSpecifiersOf(source, absFile)) {
+				if (isHostLayerEscape(entry.specifier)) {
+					violations.push({
+						file: relFile,
+						rule: "domain-no-host-layer-import",
+						message: `domain must not import the host layer via "${entry.specifier}"`,
+					});
+				}
 				if (isForbiddenIoSpecifier(entry.specifier)) {
 					violations.push({
 						file: relFile,
@@ -148,14 +227,17 @@ export function checkDomainBoundaries(rootDir: string): DomainBoundaryReport {
 				const seenFields = new Set<string>();
 				let match = SECRET_FIELD_PATTERN.exec(source);
 				while (match !== null) {
-					const fieldName = match[1];
-					if (fieldName !== undefined && !seenFields.has(fieldName)) {
-						seenFields.add(fieldName);
-						violations.push({
-							file: relFile,
-							rule: "domain-no-secret-fields",
-							message: `secret-shaped schema field "${fieldName}" is prohibited in Domain.Event / Domain.Aggregate`,
-						});
+					const raw = match[1] ?? match[2];
+					if (raw !== undefined) {
+						const normalized = normalizeSecretFieldName(raw);
+						if (normalized !== null && !seenFields.has(normalized)) {
+							seenFields.add(normalized);
+							violations.push({
+								file: relFile,
+								rule: "domain-no-secret-fields",
+								message: `secret-shaped schema field "${raw}" is prohibited in Domain.Event / Domain.Aggregate`,
+							});
+						}
 					}
 					match = SECRET_FIELD_PATTERN.exec(source);
 				}
@@ -194,6 +276,24 @@ export function checkDomainBoundaries(rootDir: string): DomainBoundaryReport {
 					message:
 						"package declares Domain.Model(...) without an Alchemy Domain BDD Story.make(...) test under test/",
 				});
+			}
+		}
+	}
+
+	for (const relDir of HOST_LAYER_IMPORT_SCAN_DIRS) {
+		const scanRoot = join(rootDir, relDir);
+		for (const absFile of listTsFiles(scanRoot)) {
+			const relFile = toPosix(relative(rootDir, absFile));
+			checkedFiles.push(relFile);
+			const source = readFileSync(absFile, "utf8");
+			for (const entry of importSpecifiersOf(source, absFile)) {
+				if (isHostLayerEscape(entry.specifier)) {
+					violations.push({
+						file: relFile,
+						rule: "domain-no-host-layer-import",
+						message: `module must not import the host layer via "${entry.specifier}"`,
+					});
+				}
 			}
 		}
 	}

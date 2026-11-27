@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/gh-relay-domain.test.ts",
+    "test/gh-relay-host.test.ts",
+    "test/support/rivet-test-engine.ts"
+  ]
+}

@@ -1,8 +1,8 @@
+import * as Cron from "effect/Cron";
 import * as ClusterCron from "effect/cluster/ClusterCron";
 import * as ClusterSchema from "effect/cluster/ClusterSchema";
 import * as Entity from "effect/cluster/Entity";
 import * as Singleton from "effect/cluster/Singleton";
-import * as Cron from "effect/Cron";
 import * as Effect from "effect/Effect";
 import * as Rpc from "effect/rpc/Rpc";
 import * as Schema from "effect/Schema";
@@ -17,7 +17,7 @@ export const ClusterRunnerPoolSpec = Schema.Struct({
 	poolId: Schema.String,
 	tier: RunnerTier,
 	role: PoolRole,
-	runsOn: Schema.String,
+	runnerLabel: Schema.String,
 	concurrency: Schema.Int,
 	costPerMinuteMicros: Schema.Int,
 	payer: Schema.String,
@@ -49,7 +49,7 @@ export const DispatchedLeaseSchema = Schema.Struct({
 	jobId: Schema.String,
 	poolId: Schema.String,
 	tier: RunnerTier,
-	runsOn: Schema.String,
+	runnerLabel: Schema.String,
 	reservedMicros: Schema.Int,
 	expiresAtMs: Schema.Int,
 });
@@ -142,7 +142,7 @@ interface InternalLeaseState {
 	readonly jobId: string;
 	readonly poolId: string;
 	readonly tier: RunnerTier;
-	readonly runsOn: string;
+	readonly runnerLabel: string;
 	readonly payer: string;
 	readonly reservedMicros: number;
 	readonly expiresAtMs: number;
@@ -159,7 +159,7 @@ const TIER_ORDER = {
 	hostinger: 1,
 	agent37: 2,
 	boat: 3,
-	github: 4,
+	hosted: 4,
 } as const satisfies Record<RunnerTier, number>;
 
 export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
@@ -210,7 +210,7 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 							jobId: existing.jobId,
 							poolId: existing.poolId,
 							tier: existing.tier,
-							runsOn: existing.runsOn,
+							runnerLabel: existing.runnerLabel,
 							reservedMicros: existing.reservedMicros,
 							expiresAtMs: existing.expiresAtMs,
 						});
@@ -250,7 +250,10 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 							reasons.push(`${pool.spec.poolId}:not-isolated`);
 							continue;
 						}
-						if (requirements.publicRepository && !pool.spec.publicRepositories) {
+						if (
+							requirements.publicRepository &&
+							!pool.spec.publicRepositories
+						) {
 							reasons.push(`${pool.spec.poolId}:private-only`);
 							continue;
 						}
@@ -333,7 +336,7 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 						jobId,
 						poolId: chosen.pool.spec.poolId,
 						tier: chosen.pool.spec.tier,
-						runsOn: chosen.pool.spec.runsOn,
+						runnerLabel: chosen.pool.spec.runnerLabel,
 						payer: chosen.pool.spec.payer,
 						reservedMicros: chosen.costMicros,
 						expiresAtMs: nowMs + Math.max(1_000, leaseTtlMs),
@@ -348,7 +351,7 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 						jobId: lease.jobId,
 						poolId: lease.poolId,
 						tier: lease.tier,
-						runsOn: lease.runsOn,
+						runnerLabel: lease.runnerLabel,
 						reservedMicros: lease.reservedMicros,
 						expiresAtMs: lease.expiresAtMs,
 					});
@@ -416,7 +419,10 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 export function createFleetLeaseReaperSingleton(options: {
 	readonly stationIds: readonly string[];
 	readonly nowMs: () => number;
-	readonly onReaped?: (stationId: string, reapedSlotIds: readonly string[]) => void;
+	readonly onReaped?: (
+		stationId: string,
+		reapedSlotIds: readonly string[],
+	) => void;
 }) {
 	return Singleton.make(
 		"hobo-ci-fleet-lease-reaper",
@@ -436,7 +442,10 @@ export function createFleetHealthSweepCron(options: {
 	readonly stationIds: readonly string[];
 	readonly cronExpression?: string;
 	readonly nowMs: () => number;
-	readonly onSweep?: (stationId: string, reapedSlotIds: readonly string[]) => void;
+	readonly onSweep?: (
+		stationId: string,
+		reapedSlotIds: readonly string[],
+	) => void;
 }) {
 	const cron = Cron.parseUnsafe(options.cronExpression ?? "*/5 * * * *");
 	return ClusterCron.make({

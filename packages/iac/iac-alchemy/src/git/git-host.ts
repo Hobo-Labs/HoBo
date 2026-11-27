@@ -17,7 +17,10 @@ export type GitHostRegistryKind = "durable-object" | "d1";
 export class HoboGitHostConfigError extends Data.TaggedError(
 	"HoboGitHostConfigError",
 )<{
-	readonly code: "INVALID_HOST_NAME" | "INVALID_DEFAULT_BRANCH" | "RESERVED_OWNER";
+	readonly code:
+		| "INVALID_HOST_NAME"
+		| "INVALID_DEFAULT_BRANCH"
+		| "RESERVED_OWNER";
 	readonly message: string;
 }> {}
 

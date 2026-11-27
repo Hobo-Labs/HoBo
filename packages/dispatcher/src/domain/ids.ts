@@ -16,10 +16,14 @@ export const CATEGORY_DIMENSION_MAP = {
 export type CategoryDimension<C extends DispatchCategory> =
 	(typeof CATEGORY_DIMENSION_MAP)[C];
 
-export const ProviderId = Schema.NonEmptyString.pipe(Schema.brand("ProviderId"));
+export const ProviderId = Schema.NonEmptyString.pipe(
+	Schema.brand("ProviderId"),
+);
 export type ProviderId = typeof ProviderId.Type;
 
-export const DispatchId = Schema.NonEmptyString.pipe(Schema.brand("DispatchId"));
+export const DispatchId = Schema.NonEmptyString.pipe(
+	Schema.brand("DispatchId"),
+);
 export type DispatchId = typeof DispatchId.Type;
 
 export const ReservationId = Schema.NonEmptyString.pipe(
@@ -37,8 +41,7 @@ export const NonEmptyReason = Schema.NonEmptyString.pipe(
 );
 export type NonEmptyReason = typeof NonEmptyReason.Type;
 
-const SCOPED_ACCOUNT_PATTERN =
-	/^(?:runner|build-machine|traffic-backend):.+$/u;
+const SCOPED_ACCOUNT_PATTERN = /^(?:runner|build-machine|traffic-backend):.+$/u;
 
 export const ScopedAccountId = Schema.String.check(
 	Schema.isPattern(SCOPED_ACCOUNT_PATTERN),

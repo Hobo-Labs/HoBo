@@ -349,18 +349,21 @@ describe("merge-group required gate", () => {
 		assert.doesNotMatch(workspace, /--shard="\$SHARD\/8"/u);
 	});
 
-	it("leaves turbo concurrency to memory-env and lets only shard 0 save the cache", () => {
+	it("leaves turbo concurrency to memory-env and gives merge-group shards independent saves", () => {
 		const testsStep = workspace.slice(
 			workspace.indexOf("name: Workspace tests"),
 		);
 		assert.doesNotMatch(testsStep, /HOBO_TURBO_CONCURRENCY:/u);
 		for (const name of ["workspace_tests", "main_workspace_tests"])
 			assert.match(job(name), /ci-runner-preflight/u, name);
-		for (const block of [workspace, job("main_workspace_tests")])
-			assert.match(
-				block,
-				/if: always\(\) && matrix\.shard == 0 && steps\.turbo-prune\.outputs\.save != 'false'/u,
-			);
+		assert.match(
+			workspace,
+			/if: always\(\) && \(github\.event_name == 'merge_group' \|\| matrix\.shard == 0\) && steps\.turbo-prune\.outputs\.save != 'false'/u,
+		);
+		assert.match(
+			job("main_workspace_tests"),
+			/if: always\(\) && matrix\.shard == 0 && steps\.turbo-prune\.outputs\.save != 'false'/u,
+		);
 	});
 
 	it("never treats a failed, cancelled, skipped, or unknown prerequisite as success", {
@@ -818,16 +821,27 @@ describe("merge-group required gate", () => {
 		);
 	});
 
-	it("prefers the same-run validation cache before older cache entries", () => {
-		assert.match(workspace, /preferred-job: pr_gate_validation/u);
+	it("prefers same-run validation and shard caches before older entries", () => {
+		for (const block of [validation, workspace])
+			assert.equal(
+				block.match(
+					/shared-run: \$\{\{ github\.event_name == 'merge_group' \}\}/gu,
+				)?.length,
+				2,
+			);
 		assert.match(affected, /preferred-job: pr_gate_validation/u);
 		assert.match(
 			cacheAction,
-			/inputs\.preferred-job.*github\.sha.*github\.run_attempt/u,
+			/github\.run_id.*github\.run_attempt.*inputs\.preferred-job/u,
+		);
+		assert.match(cacheAction, /github\.job.*strategy\.job-index/u);
+		assert.match(
+			cacheAction,
+			/steps\.shared-prerequisite\.outputs\.cache-hit != 'true'.*steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
 		);
 		assert.match(
 			cacheAction,
-			/steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
+			/inputs\.preferred-job.*github\.sha.*github\.run_attempt/u,
 		);
 	});
 });
@@ -1152,7 +1166,11 @@ describe("release required gate", () => {
 		);
 		assert.equal(helper(script), helper(prGate));
 		assert.match(gate, /name: HoBo release PR gate \(required\)/u);
-		assert.match(gate, /needs: \[route, release-contract, release-realize\]/u);
+		assert.match(
+			gate,
+			/needs: \[route, release-contract, release-realize, release-pages-browser-wit-smoke\]/u,
+		);
+		assert.match(gate, /BROWSER_WIT_SMOKE_RESULT/u);
 		assert.doesNotMatch(gate, /release-hobo-integration|INTEGRATION_RESULT/u);
 	});
 
@@ -1161,6 +1179,7 @@ describe("release required gate", () => {
 		const routes = ["success", "failure", "skipped", ""];
 		const flags = ["true", "false", "TRUE", ""];
 		const realizes = ["success", "failure", "skipped"];
+		const browserWitSmokes = ["success", "failure", "skipped"];
 		const lists = [
 			'["release-contract"]',
 			'["ci-guard","release-contract"]',
@@ -1175,37 +1194,41 @@ describe("release required gate", () => {
 				for (const route of routes)
 					for (const flag of flags)
 						for (const list of lists)
-							for (const realize of realizes) {
-								const run = spawnSync("bash", ["-c", script], {
-									env: {
-										...process.env,
-										CONTRACT_RESULT: contract,
-										REALIZE_RESULT: realize,
-										ROUTE_RESULT: route,
-										ATTESTED: flag,
-										ATTESTED_JOBS: list,
-									},
-								});
-								const attested =
-									route === "success" &&
-									flag === "true" &&
-									list.includes('"release-contract"');
-								const expected =
-									route === "success" &&
-									realize === "success" &&
-									(contract === "success" ||
-										(contract === "skipped" && attested));
-								const label = JSON.stringify({
-									contract,
-									route,
-									flag,
-									list,
-									realize,
-								});
-								assert.equal(run.status === 0, expected, label);
-								if (contract === "failure" || contract === "cancelled")
-									assert.notEqual(run.status, 0, label);
-							}
+							for (const realize of realizes)
+								for (const browserWitSmoke of browserWitSmokes) {
+									const run = spawnSync("bash", ["-c", script], {
+										env: {
+											...process.env,
+											CONTRACT_RESULT: contract,
+											REALIZE_RESULT: realize,
+											BROWSER_WIT_SMOKE_RESULT: browserWitSmoke,
+											ROUTE_RESULT: route,
+											ATTESTED: flag,
+											ATTESTED_JOBS: list,
+										},
+									});
+									const attested =
+										route === "success" &&
+										flag === "true" &&
+										list.includes('"release-contract"');
+									const expected =
+										route === "success" &&
+										realize === "success" &&
+										browserWitSmoke === "success" &&
+										(contract === "success" ||
+											(contract === "skipped" && attested));
+									const label = JSON.stringify({
+										contract,
+										route,
+										flag,
+										list,
+										realize,
+										browserWitSmoke,
+									});
+									assert.equal(run.status === 0, expected, label);
+									if (contract === "failure" || contract === "cancelled")
+										assert.notEqual(run.status, 0, label);
+								}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

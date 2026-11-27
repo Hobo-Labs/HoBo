@@ -27,7 +27,7 @@ is what gets linked as C01's `t3Run` in
 | --- | --- |
 | [`checks.ts`](checks.ts) | `createRelayChecks`: the handler, the step rules, the title check, the lint check and the `check.completed` event |
 | [`config.ts`](config.ts) | `parseRelayChecksConfig`: the strict `checks` block of `.hobo/ci.json` |
-| [`lint.ts`](lint.ts) | The five lint tools, the `LintSandbox` port, and how tool output becomes annotations |
+| [`lint.ts`](lint.ts) | Seven lint tools (`oxfmt`, `zizmor` optional until the lint image ships), the `LintSandbox` port, and how tool output becomes annotations |
 | [`source.ts`](source.ts) | `RelayCheckSource` and `GithubRelayCheckSource`: what a check reads of GitHub |
 | [`docker-sandbox.ts`](docker-sandbox.ts) | `createDockerLintSandbox`: the lint tools in a fresh container with no network |
 

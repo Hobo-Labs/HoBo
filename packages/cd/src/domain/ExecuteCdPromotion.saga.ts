@@ -132,19 +132,40 @@ export const ExecuteCdPromotionLive = ExecuteCdPromotion.toLayer(
 					campId,
 					freightDigest,
 				}),
-			}).pipe(Effect.result);
+			}).pipe(
+				ExecuteCdPromotion.withCompensation(({ realizationRef }) =>
+					Activity.make({
+						name: "compensate-rollback-realized-camp",
+						execute: realizer
+							.rollbackCamp({
+								promotionId: key,
+								campId,
+								realizationRef,
+							})
+							.pipe(
+								Effect.catchTag("CampRealizationFailed", () => Effect.void),
+								Effect.asVoid,
+							),
+					}),
+				),
+				Effect.catchTag("CampRealizationFailed", (failure) =>
+					Effect.gen(function* () {
+						yield* Activity.make({
+							name: "record-realization-failure",
+							execute: promotions
+								.send(key, new FailCdPromotion({ reason: failure.reason }))
+								.pipe(Effect.asVoid),
+						});
+						return null;
+					}),
+				),
+			);
 
-			if (realized._tag === "Failure") {
-				yield* Activity.make({
-					name: "record-realization-failure",
-					execute: promotions
-						.send(key, new FailCdPromotion({ reason: realized.failure.reason }))
-						.pipe(Effect.asVoid),
-				});
+			if (realized === null) {
 				return;
 			}
 
-			const realizationRef = realized.success.realizationRef;
+			const { realizationRef } = realized;
 
 			yield* Activity.make({
 				name: "record-realization",

@@ -112,7 +112,11 @@ these verify the fleet's provider enrollment, funding or health.
 `@hobo/storage-sqlite/domain-platform` exposes `createSqliteDomainPlatform` and
 `initSqliteDomainTables`, implementing `@alchemy.run/domain/Platform` on top of
 any `SqliteDriver`. Aggregates, ordered event logs, idempotent command receipts,
-materialized views, policy dedupe records, and projection checkpoints persist in
-SQLite tables across full process restarts without requiring an external cloud
-database.
+materialized views, policy dedupe records, projection checkpoints, a
+transactional domain outbox, persisted aggregate schedules, and workflow
+timer/pending-run metadata persist in SQLite tables across full process
+restarts without requiring an external cloud database. Aggregate and view
+commits stage outbound deliveries in the same SQLite transaction as state
+writes and drop outbox rows only after inline delivery succeeds; SQLite
+refusals surface as `DomainPersistenceError`.
 

@@ -8,6 +8,7 @@ export {
 	FleetAssignmentInitialized,
 	FleetAssignmentState,
 	FleetFailoverPromoted,
+	FleetMemberNotInRoster,
 	FleetNotInitialized,
 	FleetSwitchAborted,
 	FleetSwitchAlreadyInFlight,
@@ -20,6 +21,7 @@ export {
 	ProposeBudgetSwitch,
 	SwitchSealedFleetState,
 	SwitchTargetMatchesActive,
+	SwitchUtilizationThresholdNotReached,
 	UnassignedFleetState,
 } from "./FleetAssignment.aggregate.js";
 export {

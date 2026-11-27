@@ -1,14 +1,12 @@
 import type { RelayJobAnnotation } from "@hobo/ci";
+import {
+	GH_DEFAULT_LINT_TOOLS,
+	GH_LINT_TOOLS,
+	type GhLintTool,
+} from "../domain/ids.js";
 
-// public-contract: the tools the lint check runs, in the order it runs them.
-export const LINT_TOOLS = [
-	"actionlint",
-	"shellcheck",
-	"oxlint",
-	"ruff",
-	"typos",
-] as const;
-export type LintTool = (typeof LINT_TOOLS)[number];
+export const LINT_TOOLS = GH_LINT_TOOLS;
+export type LintTool = GhLintTool;
 
 export const LINT_TOOL_TIMEOUT_MS = 5 * 60_000;
 export const LINT_CHECK_BUDGET_MS = 8 * 60_000;
@@ -27,10 +25,12 @@ export const LINT_TOOL_COMMANDS: ReadonlyMap<LintTool, readonly string[]> =
 			],
 		],
 		["oxlint", ["oxlint", "--format", "unix"]],
+		["oxfmt", ["oxfmt", "--check", "."]],
 		[
 			"ruff",
 			["ruff", "check", "--no-cache", "--output-format", "concise", "."],
 		],
+		["zizmor", ["zizmor", "--format", "plain", ".github/workflows"]],
 		["typos", ["typos", "--format", "brief"]],
 	]);
 
@@ -40,6 +40,7 @@ export type LintRun = Readonly<{
 	archive: Uint8Array;
 	timeoutMs: number;
 	network: "none";
+	paths?: readonly string[] | undefined;
 }>;
 
 export type LintRunResult = Readonly<{
@@ -70,13 +71,95 @@ export type LintToolResult = Readonly<{
 const FINDING = /^(.+?):(\d+):(\d+):\s*(.+)$/u;
 const NOT_INSTALLED = 127;
 
+export function lintPathsOf(
+	text: string | undefined,
+):
+	| Readonly<{ ok: true; paths: readonly string[] }>
+	| Readonly<{ ok: false; problem: string }> {
+	if (text === undefined || text.trim() === "") return { ok: true, paths: [] };
+	const patterns = [
+		...new Set(
+			text
+				.split(/[\r\n,]+/u)
+				.map((entry) => entry.trim())
+				.filter((entry) => entry !== ""),
+		),
+	];
+	for (const pattern of patterns) {
+		if (pattern.startsWith("/") || pattern.includes(".."))
+			return {
+				ok: false,
+				problem: `the lint path pattern "${pattern}" must be relative to the repository root`,
+			};
+	}
+	return { ok: true, paths: patterns };
+}
+
+function globToRegExp(pattern: string): RegExp {
+	const normalized = pattern.replace(/^\.\//u, "");
+	let regex = "^";
+	for (let index = 0; index < normalized.length; index += 1) {
+		const ch = normalized[index] ?? "";
+		if (ch === "*" && normalized[index + 1] === "*") {
+			if (normalized[index + 2] === "/") {
+				regex += "(?:.*/)?";
+				index += 2;
+			} else {
+				regex += ".*";
+				index += 1;
+			}
+			continue;
+		}
+		if (ch === "*") {
+			regex += "[^/]*";
+			continue;
+		}
+		if (ch === "?") {
+			regex += "[^/]";
+			continue;
+		}
+		regex += ch.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
+	}
+	regex += "$";
+	return new RegExp(regex, "u");
+}
+
+export function matchesLintPaths(
+	file: string,
+	paths: readonly string[],
+): boolean {
+	if (paths.length === 0) return true;
+	const normalized = file.replace(/^\.\//u, "");
+	let matched = false;
+	let sawPositive = false;
+	for (const raw of paths) {
+		if (raw.startsWith("!")) {
+			const negated = raw.slice(1).trim();
+			if (negated !== "" && globToRegExp(negated).test(normalized))
+				matched = false;
+			continue;
+		}
+		sawPositive = true;
+		if (globToRegExp(raw).test(normalized)) matched = true;
+	}
+	if (!sawPositive) {
+		for (const raw of paths) {
+			const negated = raw.slice(1).trim();
+			if (negated !== "" && globToRegExp(negated).test(normalized))
+				return false;
+		}
+		return true;
+	}
+	return matched;
+}
+
 export function lintToolsOf(
 	text: string | undefined,
 ):
 	| Readonly<{ ok: true; tools: readonly LintTool[] }>
 	| Readonly<{ ok: false; problem: string }> {
 	if (text === undefined || text.trim() === "")
-		return { ok: true, tools: LINT_TOOLS };
+		return { ok: true, tools: [...GH_DEFAULT_LINT_TOOLS] };
 	const named = [
 		...new Set(
 			text
@@ -101,7 +184,7 @@ export function lintToolsOf(
 	};
 }
 
-export function lintFindings(
+function gccStyleLintFindings(
 	tool: LintTool,
 	output: string,
 ): readonly LintFinding[] {
@@ -120,6 +203,193 @@ export function lintFindings(
 	return findings;
 }
 
+function oxfmtLintFindings(
+	tool: LintTool,
+	output: string,
+): readonly LintFinding[] {
+	const gcc = gccStyleLintFindings(tool, output);
+	if (gcc.length > 0) return gcc;
+	const findings: LintFinding[] = [];
+	for (const raw of output.split(/\r?\n/u)) {
+		const line = raw.trim();
+		if (line === "") continue;
+		if (
+			line.startsWith("Checking formatting") ||
+			line.startsWith("Finished in") ||
+			line.startsWith("All matched files") ||
+			line.startsWith("Format issues found") ||
+			line.startsWith("No config found")
+		)
+			continue;
+		const fileOnly = /^([^:]+?)(?:\s+\(\d+ms\))?\s*$/u.exec(line);
+		if (fileOnly?.[1] === undefined) continue;
+		const file = fileOnly[1].replace(/^\.\//u, "");
+		if (!/[./]/u.test(file)) continue;
+		findings.push({
+			tool,
+			file,
+			line: 1,
+			column: 1,
+			message: "formatting differs",
+		});
+	}
+	return findings;
+}
+
+type JsonValue =
+	| null
+	| boolean
+	| number
+	| string
+	| readonly JsonValue[]
+	| { readonly [key: string]: JsonValue };
+
+function jsonObject(
+	value: JsonValue | undefined,
+): { readonly [key: string]: JsonValue } | undefined {
+	if (value === undefined || value === null || Array.isArray(value))
+		return undefined;
+	if (Object.getPrototypeOf(value) !== Object.prototype) return undefined;
+	// SAFETY: Null, arrays, and non-plain objects are rejected above.
+	return value as { readonly [key: string]: JsonValue };
+}
+
+function jsonArray(
+	value: JsonValue | undefined,
+): readonly JsonValue[] | undefined {
+	if (value === undefined) return undefined;
+	return Array.isArray(value) ? value : undefined;
+}
+
+function jsonString(value: JsonValue | undefined): string | undefined {
+	if (Object.prototype.toString.call(value) !== "[object String]") {
+		return undefined;
+	}
+	// SAFETY: The [object String] tag means the JSON leaf is a string primitive.
+	return value as string;
+}
+
+function jsonNumber(value: JsonValue | undefined): number | undefined {
+	if (Object.prototype.toString.call(value) !== "[object Number]") {
+		return undefined;
+	}
+	// SAFETY: The [object Number] tag means the JSON leaf is a number primitive.
+	return value as number;
+}
+
+function parseLintToolJson(text: string): JsonValue | undefined {
+	try {
+		// SAFETY: JSON.parse returns only JSON-serializable leaves encoded as JsonValue.
+		return JSON.parse(text) as JsonValue;
+	} catch {
+		return undefined;
+	}
+}
+
+function zizmorJsonFindings(
+	tool: LintTool,
+	rows: readonly JsonValue[],
+): readonly LintFinding[] {
+	const findings: LintFinding[] = [];
+	for (const row of rows) {
+		const record = jsonObject(row);
+		if (record === undefined) continue;
+		const ident = jsonString(record.ident) ?? "finding";
+		const desc = jsonString(record.desc) ?? ident;
+		const locations = jsonArray(record.locations) ?? [];
+		const location = locations
+			.map((entry) => jsonObject(entry))
+			.find((entry) => entry !== undefined);
+		if (location === undefined) continue;
+		let file = "";
+		let line = 1;
+		let column = 1;
+		const concrete = jsonObject(location.concrete);
+		const concreteLocation = jsonObject(concrete?.location);
+		const start = jsonObject(concreteLocation?.start_point);
+		if (start !== undefined) {
+			const rowIndex = jsonNumber(start.row);
+			const columnIndex = jsonNumber(start.column);
+			if (rowIndex !== undefined) line = rowIndex + 1;
+			if (columnIndex !== undefined) column = columnIndex + 1;
+		}
+		const symbolic = jsonObject(location.symbolic);
+		const key = jsonObject(symbolic?.key);
+		const local = jsonObject(key?.Local);
+		const verbatim = jsonString(local?.verbatim_path);
+		if (verbatim !== undefined) file = verbatim.replace(/^\.\//u, "");
+		if (file === "") continue;
+		findings.push({ tool, file, line, column, message: desc });
+	}
+	return findings;
+}
+
+function zizmorSarifFindings(
+	tool: LintTool,
+	document: { readonly [key: string]: JsonValue },
+): readonly LintFinding[] {
+	const runs = jsonArray(document.runs) ?? [];
+	const run = runs
+		.map((entry) => jsonObject(entry))
+		.find((entry) => entry !== undefined);
+	if (run === undefined) return [];
+	const results = jsonArray(run.results) ?? [];
+	const findings: LintFinding[] = [];
+	for (const resultValue of results) {
+		const result = jsonObject(resultValue);
+		if (result === undefined) continue;
+		const messageRecord = jsonObject(result.message);
+		const message = jsonString(messageRecord?.text) ?? "finding";
+		const locations = jsonArray(result.locations) ?? [];
+		const location = locations
+			.map((entry) => jsonObject(entry))
+			.find((entry) => entry !== undefined);
+		if (location === undefined) continue;
+		const physical = jsonObject(location.physicalLocation);
+		const artifact = jsonObject(physical?.artifactLocation);
+		const region = jsonObject(physical?.region);
+		const uri = jsonString(artifact?.uri);
+		const file = uri === undefined ? "" : uri.replace(/^\.\//u, "");
+		if (file === "") continue;
+		findings.push({
+			tool,
+			file,
+			line: jsonNumber(region?.startLine) ?? 1,
+			column: jsonNumber(region?.startColumn) ?? 1,
+			message,
+		});
+	}
+	return findings;
+}
+
+function zizmorLintFindings(
+	tool: LintTool,
+	output: string,
+): readonly LintFinding[] {
+	const trimmed = output.trim();
+	if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+		return gccStyleLintFindings(tool, output);
+	}
+	const parsed = parseLintToolJson(trimmed);
+	if (parsed === undefined) return gccStyleLintFindings(tool, output);
+	const array = jsonArray(parsed);
+	if (array !== undefined) return zizmorJsonFindings(tool, array);
+	const document = jsonObject(parsed);
+	if (document !== undefined && jsonArray(document.runs) !== undefined) {
+		return zizmorSarifFindings(tool, document);
+	}
+	return gccStyleLintFindings(tool, output);
+}
+
+export function lintFindings(
+	tool: LintTool,
+	output: string,
+): readonly LintFinding[] {
+	if (tool === "oxfmt") return oxfmtLintFindings(tool, output);
+	if (tool === "zizmor") return zizmorLintFindings(tool, output);
+	return gccStyleLintFindings(tool, output);
+}
+
 function lastLine(output: string): string {
 	const lines = output
 		.split(/\r?\n/u)
@@ -132,6 +402,7 @@ export function lintToolResult(
 	tool: LintTool,
 	run: LintRunResult,
 	timeoutMs: number,
+	paths: readonly string[] = [],
 ): LintToolResult {
 	if (run.timedOut)
 		return {
@@ -147,8 +418,15 @@ export function lintToolResult(
 			summary: "is not installed in the sandbox image",
 			findings: [],
 		};
-	const findings = lintFindings(tool, run.output);
-	if (run.exitCode === 0 && findings.length === 0)
+	const allFindings = lintFindings(tool, run.output);
+	const findings =
+		paths.length === 0
+			? allFindings
+			: allFindings.filter((finding) => matchesLintPaths(finding.file, paths));
+	if (
+		(run.exitCode === 0 && findings.length === 0) ||
+		(paths.length > 0 && allFindings.length > 0 && findings.length === 0)
+	)
 		return { tool, passed: true, summary: "passed", findings };
 	if (findings.length > 0)
 		return {

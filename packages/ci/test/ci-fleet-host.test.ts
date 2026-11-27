@@ -20,8 +20,8 @@ import {
 	PositiveConcurrency,
 	PositiveMinutes,
 	RunnerBackend,
+	RunnerLabel,
 	RunnerPoolId,
-	RunsOnLabel,
 	SlotId,
 	StationId,
 } from "../src/domain/index.js";
@@ -46,7 +46,7 @@ const LOCAL_POOL = {
 	poolId: RunnerPoolId.make("local-devbox"),
 	tier: "local" as const,
 	role: "primary" as const,
-	runsOn: RunsOnLabel.make("hobo-local-host"),
+	runnerLabel: RunnerLabel.make("hobo-local-host"),
 	concurrency: PositiveConcurrency.make(2),
 	costPerMinuteMicros: NonNegativeMicros.make(0),
 	payer: PayerId.make("local"),
@@ -249,6 +249,31 @@ describe("@hobo/ci/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 						),
 					).toBe(true);
 				});
+
+				await conn.acquireLease({
+					slotId: SlotId.make("slot-rivet-premature-expire"),
+					jobId: JobDispatchId.make("job-rivet-premature-expire"),
+					poolId: LOCAL_POOL.poolId,
+					tier: "local",
+					reservedMicros: NonNegativeMicros.make(1_000),
+					ttlMs: 60_000,
+				});
+				const premature = await conn.expireLease(
+					SlotId.make("slot-rivet-premature-expire"),
+				);
+				expect(premature.expired).toBe(false);
+
+				await expect(
+					conn.acquireLease({
+						slotId: SlotId.make("slot-rivet-bad-micros"),
+						jobId: JobDispatchId.make("job-rivet-bad-micros"),
+						poolId: LOCAL_POOL.poolId,
+						tier: "local",
+						// @ts-expect-error exercises Rivet RPC decode when reservedMicros is negative
+						reservedMicros: -1,
+						ttlMs: 1_000,
+					}),
+				).rejects.toThrow();
 
 				await conn.acquireLease({
 					slotId: SlotId.make("slot-rivet-expiring"),
