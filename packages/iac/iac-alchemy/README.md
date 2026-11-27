@@ -109,7 +109,7 @@ A Node.js HTTP host can bind those two AWS stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
 from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
 Bindle, its application name, exactly the declared stores, and a synchronous
-verifier for each captured store grant. The runtime rejects forged stores,
+verifier that authenticates each exact captured store grant. The runtime rejects forged stores,
 extra permissions and unverified bindings, and retires scoped handles when the
 request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
 headers; a stalled handler keeps one of 32 capacity slots until it settles.
