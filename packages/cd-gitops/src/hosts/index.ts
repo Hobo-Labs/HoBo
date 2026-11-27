@@ -15,6 +15,9 @@ export {
 	type FileChange,
 	GIT_CREDENTIAL_SCOPE,
 	type GitHostClient,
+	type PullRequestInfo,
+	type PullRequestMergeMethod,
+	type PullRequestState,
 	type RemoteFile,
 } from "./types.js";
 

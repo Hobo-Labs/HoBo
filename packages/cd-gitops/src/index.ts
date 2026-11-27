@@ -1,6 +1,3 @@
-// @hobo/cd-gitops — a PublisherPort that delivers a Set through GitOps
-// (ADR-0182 D14). Vendor vocabulary (Argo CD, Flux, Git hosts) lives
-// here, outside the neutral @hobo/cd core (I11).
 export * from "./_generated/gitops_pb.js";
 export {
 	PUBLISHER_SCHEMA,
@@ -12,13 +9,28 @@ export {
 	ENGINE_CREDENTIAL_SCOPE,
 	type EngineVerdict,
 	fluxVerdict,
+	type ObserveArgoSelectorOptions,
+	observeArgoApplicationsBySelector,
 	observeEngine,
+	type TriggerArgoSyncOptions,
+	triggerArgoSync,
 } from "./engines/index.js";
 export {
 	GITOPS_FAILURES,
 	GitopsError,
 	type GitopsFailureCode,
 } from "./errors.js";
+export {
+	createArgoCdPullFlowAdapter,
+	createArgoCdPullFlowLayer,
+	createFluxPullFlowAdapter,
+	createFluxPullFlowLayer,
+	createGitopsPullFlowAdapter,
+	type GitopsEngineTarget,
+	type GitopsPullFlowAdapterOptions,
+	type GitopsPullFlowPlan,
+	type GitopsPullFlowRenderContext,
+} from "./flow-adapter.js";
 export {
 	createBitbucketClient,
 	createGiteaClient,
@@ -28,6 +40,9 @@ export {
 	type FileChange,
 	GIT_CREDENTIAL_SCOPE,
 	type GitHostClient,
+	type PullRequestInfo,
+	type PullRequestMergeMethod,
+	type PullRequestState,
 	type RemoteFile,
 } from "./hosts/index.js";
 export {
@@ -49,3 +64,13 @@ export {
 	sha256Digest,
 	stableDocument,
 } from "./render.js";
+export {
+	applyJsonPathUpdate,
+	applyKustomizeImageUpdate,
+	applyManifestUpdateStep,
+	applyYamlScalarUpdate,
+	type JsonPathUpdateStep,
+	type KustomizeImageUpdateStep,
+	type ManifestUpdateStep,
+	type YamlScalarUpdateStep,
+} from "./updaters.js";
