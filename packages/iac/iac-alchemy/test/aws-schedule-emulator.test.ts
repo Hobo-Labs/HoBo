@@ -112,7 +112,7 @@ describe("AWS static schedules in the official emulator", () => {
 						tick: b.schedule().dependsOn(queue).with(cadence("* * * * *")),
 					};
 				});
-				const body = '{"kind":"repair"}';
+				const body = '{"kind":"repair 🔧"}';
 				// SAFETY: the test registers resources without deploying them in this step.
 				const mapped = await Effect.runPromise(
 					mapBindleToAlchemy(
