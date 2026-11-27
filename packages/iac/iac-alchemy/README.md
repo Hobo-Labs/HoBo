@@ -94,6 +94,9 @@ SHA-256 content-digest metadata. Failed writes and deletes have unknown
 outcomes; the host must fence ownership changes and reconcile them. It does not
 bind an application or WASI guest, implement blob events or version management,
 or authenticate the digest against a separate authority.
+The bounded `AwsS3Objects` model uses one key and a collision-free abstract
+digest. It includes out-of-band objects with foreign metadata, oversized bodies
+and corrupted digests; it does not prove the hash implementation or provider.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
