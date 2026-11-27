@@ -635,6 +635,9 @@ importers:
 
   packages/auth-adapter-contract:
     dependencies:
+      '@hobo/capability-profiles':
+        specifier: workspace:*
+        version: link:../capability-profiles
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
@@ -2847,6 +2850,9 @@ importers:
         specifier: workspace:*
         version: link:../../identity
     devDependencies:
+      '@hobo/capability-profiles':
+        specifier: workspace:*
+        version: link:../../capability-profiles
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
