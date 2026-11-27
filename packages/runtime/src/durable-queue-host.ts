@@ -13,6 +13,39 @@ import {
 	parseQueueSettlement,
 } from "./durable-queue-boundary.js";
 
+const NativePromise = Promise;
+const nativeThen = Promise.prototype.then;
+const nativeApply = Reflect.apply;
+const nativeSetHas = Set.prototype.has;
+const nativeSetAdd = Set.prototype.add;
+const nativeSetDelete = Set.prototype.delete;
+const nativeCreate = Object.create;
+const nativeDefine = Object.defineProperty;
+const nativeFreeze = Object.freeze;
+const nativeBigInt = BigInt;
+const nativeIsArray = Array.isArray;
+const nativeIsSafeInteger = Number.isSafeInteger;
+const nativeSchedule = setTimeout;
+const nativeCancel = clearTimeout;
+const monotonicNow = performance.now.bind(performance);
+
+function variant<Tag extends string, Value>(
+	tag: Tag,
+	value: Value,
+): { tag: Tag; val: Value } {
+	// SAFETY: the two own data fields are defined before the value is returned.
+	const result = nativeCreate(null) as { tag: Tag; val: Value };
+	nativeDefine(result, "tag", { value: tag, enumerable: true });
+	nativeDefine(result, "val", { value, enumerable: true });
+	return nativeFreeze(result);
+}
+function unavailable(): { tag: "unavailable" } {
+	// SAFETY: the own discriminant is defined before the value is returned.
+	const result = nativeCreate(null) as { tag: "unavailable" };
+	nativeDefine(result, "tag", { value: "unavailable", enumerable: true });
+	return nativeFreeze(result);
+}
+
 export type DurableQueueWitHost = Pick<
 	typeof Wit,
 	"limits" | "enqueue" | "dequeue" | "complete" | "release" | "extendLease"
@@ -44,10 +77,10 @@ export function createDurableQueueWitHost(
 ): DurableQueueWitHost {
 	const limits = parseDurableQueueLimits(options.limits);
 	if (
-		!Number.isSafeInteger(options.maxInFlight) ||
+		!nativeIsSafeInteger(options.maxInFlight) ||
 		options.maxInFlight < 1 ||
 		options.maxInFlight > 1000 ||
-		!Number.isSafeInteger(options.timeoutMs) ||
+		!nativeIsSafeInteger(options.timeoutMs) ||
 		options.timeoutMs < 1 ||
 		options.timeoutMs > 300_000 ||
 		typeof options.now !== "function" ||
@@ -70,45 +103,63 @@ export function createDurableQueueWitHost(
 	const operationResult = (
 		status: "unknown" | "expired",
 		operation: DurableQueueOperation,
-	) => ({
-		tag: status,
-		val: { id: operation.id, expiresAtMs: BigInt(operation.expiresAtMs) },
-	});
+	) =>
+		variant(status, {
+			id: operation.id,
+			expiresAtMs: nativeBigInt(operation.expiresAtMs),
+		});
 	const validNow = () => {
 		const current = now();
-		if (!Number.isSafeInteger(current) || current < 0)
+		if (!nativeIsSafeInteger(current) || current < 0)
 			throw new TypeError("durable_queue.invalid_clock");
 		return current;
 	};
-	const run = async <T>(
+	const run = <T>(
 		operation: DurableQueueOperation | undefined,
 		work: (alive: () => boolean) => Promise<T>,
 	): Promise<T> => {
 		if (
 			active >= maxInFlight ||
-			(operation !== undefined && pending.has(operation.id))
+			(operation !== undefined &&
+				nativeApply(nativeSetHas, pending, [operation.id]))
 		)
-			throw new Error("durable_queue.host_capacity");
+			return new NativePromise((_resolve, reject) =>
+				reject(new Error("durable_queue.host_capacity")),
+			);
 		active++;
-		if (operation !== undefined) pending.add(operation.id);
+		if (operation !== undefined)
+			nativeApply(nativeSetAdd, pending, [operation.id]);
 		let expired = false;
-		const deadline = performance.now() + timeoutMs;
-		const alive = () => !expired && performance.now() < deadline;
-		const task = Promise.resolve()
-			.then(() => work(alive))
-			.finally(() => {
-				active--;
-				if (operation !== undefined) pending.delete(operation.id);
-			});
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const timeout = new Promise<never>((_, reject) => {
-			timer = setTimeout(() => {
+		const deadline = monotonicNow() + timeoutMs;
+		const alive = () => !expired && monotonicNow() < deadline;
+		return new NativePromise<T>((resolve, reject) => {
+			const timer = nativeSchedule(() => {
 				expired = true;
 				reject(new Error("durable_queue.host_timeout"));
 			}, timeoutMs);
-		});
-		return Promise.race([task, timeout]).finally(() => {
-			if (timer !== undefined) clearTimeout(timer);
+			const finish = () => {
+				active--;
+				if (operation !== undefined)
+					nativeApply(nativeSetDelete, pending, [operation.id]);
+				nativeCancel(timer);
+			};
+			try {
+				const task = work(alive);
+				nativeApply(nativeThen, task, [
+					(value: T) => {
+						finish();
+						resolve(value);
+					},
+					(error: unknown) => {
+						finish();
+						reject(error);
+					},
+				]);
+			} catch (error) {
+				expired = true;
+				finish();
+				reject(error);
+			}
 		});
 	};
 	function invoke(
@@ -147,170 +198,190 @@ export function createDurableQueueWitHost(
 			if (op.expiresAtMs - current > limits.operationWindowMs)
 				return operationResult("unknown", op);
 			return await run(op, async (alive) => {
-				const dispatch = Object.freeze({
-					method,
-					phase: "dispatch" as const,
-					operation: op,
-				});
-				if (!alive() || (await authorize(dispatch)) !== true || !alive())
-					return operationResult("unknown", op);
-				const before = validNow();
-				if (before >= op.expiresAtMs) return operationResult("expired", op);
-				let reply: unknown;
-				let expected: Parameters<typeof parseQueueProviderOutcome>[3];
-				if (method === "enqueue" && "message" in input) {
-					if (
-						input.message.availableAtMs !== undefined &&
-						input.message.availableAtMs > before &&
-						input.message.availableAtMs - before > limits.delayMs
-					)
+				try {
+					const dispatch = nativeFreeze({
+						method,
+						phase: "dispatch" as const,
+						operation: op,
+					});
+					if (!alive() || (await authorize(dispatch)) !== true || !alive())
 						return operationResult("unknown", op);
-					expected = {
-						kind: "enqueue",
-						idempotencyKey: input.message.idempotencyKey,
-					};
-					reply = await methods.enqueue(input);
-				} else if (method === "dequeue" && "maxMessages" in input) {
-					expected = { kind: "dequeue", maxMessages: input.maxMessages };
-					reply = await methods.dequeue(input);
-				} else if (
-					method === "extendLease" &&
-					"visibilityTimeoutMs" in input &&
-					"messageId" in input
-				) {
-					expected = {
-						kind: "extension",
-						messageId: input.messageId,
-						leaseId: input.leaseId,
-					};
-					reply = await methods.extendLease(input);
-				} else if (
-					(method === "complete" || method === "release") &&
-					"messageId" in input
-				) {
-					expected = {
-						kind: "settlement",
-						messageId: input.messageId,
-						leaseId: input.leaseId,
-					};
-					reply = await methods[method](input);
-				} else throw new TypeError("durable_queue.invalid_method");
-				if (!alive()) return operationResult("unknown", op);
-				const disclose = Object.freeze({
-					method,
-					phase: "disclose" as const,
-					operation: op,
-				});
-				if ((await authorize(disclose)) !== true || !alive())
-					return operationResult("unknown", op);
-				const result = parseQueueProviderOutcome(reply, op, limits, expected);
-				if (!alive()) return operationResult("unknown", op);
-				if (result.status === "unknown" || result.status === "expired")
-					return operationResult(result.status, op);
-				if (result.status === "rejected")
-					return { tag: "rejected", val: result.code };
-				if (expected.kind === "dequeue") {
-					if (!Array.isArray(result.value))
-						throw new TypeError("durable_queue.invalid_response");
-					return {
-						tag: "committed",
-						val: result.value.map((value) => ({
-							...value,
-							leaseExpiresAtMs: BigInt(value.leaseExpiresAtMs),
-						})),
-					};
-				}
-				if (expected.kind === "extension") {
-					if (!("leaseExpiresAtMs" in result.value))
-						throw new TypeError("durable_queue.invalid_response");
-					return {
-						tag: "committed",
-						val: {
+					const before = validNow();
+					if (before >= op.expiresAtMs) return operationResult("expired", op);
+					let reply: unknown;
+					let expected: Parameters<typeof parseQueueProviderOutcome>[3];
+					if (method === "enqueue" && "message" in input) {
+						if (
+							input.message.availableAtMs !== undefined &&
+							input.message.availableAtMs > before &&
+							input.message.availableAtMs - before > limits.delayMs
+						)
+							return operationResult("unknown", op);
+						expected = {
+							kind: "enqueue",
+							idempotencyKey: input.message.idempotencyKey,
+						};
+						reply = await methods.enqueue(input);
+					} else if (method === "dequeue" && "maxMessages" in input) {
+						expected = { kind: "dequeue", maxMessages: input.maxMessages };
+						reply = await methods.dequeue(input);
+					} else if (
+						method === "extendLease" &&
+						"visibilityTimeoutMs" in input &&
+						"messageId" in input
+					) {
+						expected = {
+							kind: "extension",
+							messageId: input.messageId,
+							leaseId: input.leaseId,
+						};
+						reply = await methods.extendLease(input);
+					} else if (
+						(method === "complete" || method === "release") &&
+						"messageId" in input
+					) {
+						expected = {
+							kind: "settlement",
+							messageId: input.messageId,
+							leaseId: input.leaseId,
+						};
+						reply = await methods[method](input);
+					} else throw new TypeError("durable_queue.invalid_method");
+					if (!alive()) return operationResult("unknown", op);
+					const disclose = nativeFreeze({
+						method,
+						phase: "disclose" as const,
+						operation: op,
+					});
+					if ((await authorize(disclose)) !== true || !alive())
+						return operationResult("unknown", op);
+					const result = parseQueueProviderOutcome(reply, op, limits, expected);
+					if (!alive()) return operationResult("unknown", op);
+					if (result.status === "unknown" || result.status === "expired")
+						return operationResult(result.status, op);
+					if (result.status === "rejected")
+						return variant("rejected", result.code);
+					if (expected.kind === "dequeue") {
+						if (!nativeIsArray(result.value))
+							throw new TypeError("durable_queue.invalid_response");
+						const deliveries: Wit.LeasedMessage[] = [];
+						for (let index = 0; index < result.value.length; index++) {
+							const value = result.value[index];
+							if (value === undefined)
+								throw new TypeError("durable_queue.invalid_response");
+							deliveries[index] = {
+								...value,
+								leaseExpiresAtMs: nativeBigInt(value.leaseExpiresAtMs),
+							};
+						}
+						return variant("committed", deliveries);
+					}
+					if (expected.kind === "extension") {
+						if (!("leaseExpiresAtMs" in result.value))
+							throw new TypeError("durable_queue.invalid_response");
+						return variant("committed", {
 							...result.value,
-							leaseExpiresAtMs: BigInt(result.value.leaseExpiresAtMs),
-						},
-					};
-				}
-				if (expected.kind === "enqueue") {
-					if (!("idempotencyKey" in result.value))
-						throw new TypeError("durable_queue.invalid_response");
-					return {
-						tag: "committed",
-						val: {
+							leaseExpiresAtMs: nativeBigInt(result.value.leaseExpiresAtMs),
+						});
+					}
+					if (expected.kind === "enqueue") {
+						if (!("idempotencyKey" in result.value))
+							throw new TypeError("durable_queue.invalid_response");
+						return variant("committed", {
 							messageId: result.value.messageId,
 							idempotencyKey: result.value.idempotencyKey,
-						},
-					};
-				}
-				if (!("messageId" in result.value) || !("leaseId" in result.value))
-					throw new TypeError("durable_queue.invalid_response");
-				return {
-					tag: "committed",
-					val: {
+						});
+					}
+					if (!("messageId" in result.value) || !("leaseId" in result.value))
+						throw new TypeError("durable_queue.invalid_response");
+					return variant("committed", {
 						messageId: result.value.messageId,
 						leaseId: result.value.leaseId,
-					},
-				};
+					});
+				} catch {
+					return operationResult("unknown", op);
+				}
 			});
 		} catch {
 			return operationResult("unknown", op);
 		}
 	}
+	const fromInput = <T>(start: () => Promise<T>): Promise<T> => {
+		try {
+			return start();
+		} catch (error) {
+			return new NativePromise((_resolve, reject) => reject(error));
+		}
+	};
 	const host: DurableQueueWitHost = {
 		async limits() {
 			try {
 				return await run(undefined, async (alive) => {
-					if (
-						!alive() ||
-						(await authorize(
-							Object.freeze({ method: "limits", phase: "dispatch" }),
-						)) !== true ||
-						!alive()
-					)
-						return { tag: "unavailable" };
-					const value = {
-						...limits,
-						delayMs: BigInt(limits.delayMs),
-						leaseMs: BigInt(limits.leaseMs),
-						operationWindowMs: BigInt(limits.operationWindowMs),
-					};
-					if (
-						(await authorize(
-							Object.freeze({ method: "limits", phase: "disclose" }),
-						)) !== true ||
-						!alive()
-					)
-						return { tag: "unavailable" };
-					return { tag: "available", val: value };
+					try {
+						if (
+							!alive() ||
+							(await authorize(
+								nativeFreeze({ method: "limits", phase: "dispatch" }),
+							)) !== true ||
+							!alive()
+						)
+							return unavailable();
+						const value = {
+							...limits,
+							delayMs: nativeBigInt(limits.delayMs),
+							leaseMs: nativeBigInt(limits.leaseMs),
+							operationWindowMs: nativeBigInt(limits.operationWindowMs),
+						};
+						if (
+							(await authorize(
+								nativeFreeze({ method: "limits", phase: "disclose" }),
+							)) !== true ||
+							!alive()
+						)
+							return unavailable();
+						return variant("available", value);
+					} catch {
+						return unavailable();
+					}
 				});
 			} catch {
-				return { tag: "unavailable" };
+				return unavailable();
 			}
 		},
-		async enqueue(input) {
-			return invoke("enqueue", parseQueueEnqueue(input, limits));
+		enqueue(input) {
+			return fromInput(() =>
+				invoke("enqueue", parseQueueEnqueue(input, limits)),
+			);
 		},
-		async dequeue(input) {
-			return invoke("dequeue", parseQueueDequeue(input, limits));
+		dequeue(input) {
+			return fromInput(() =>
+				invoke("dequeue", parseQueueDequeue(input, limits)),
+			);
 		},
-		async complete(input) {
-			return invoke("complete", parseQueueSettlement(input, limits, false));
+		complete(input) {
+			return fromInput(() =>
+				invoke("complete", parseQueueSettlement(input, limits, false)),
+			);
 		},
-		async release(input) {
-			return invoke("release", parseQueueSettlement(input, limits, false));
+		release(input) {
+			return fromInput(() =>
+				invoke("release", parseQueueSettlement(input, limits, false)),
+			);
 		},
-		async extendLease(input) {
-			return invoke("extendLease", parseQueueSettlement(input, limits, true));
+		extendLease(input) {
+			return fromInput(() =>
+				invoke("extendLease", parseQueueSettlement(input, limits, true)),
+			);
 		},
 	};
-	return Object.freeze(host);
+	return nativeFreeze(host);
 }
 
 export function createDurableQueueWitImports(
 	port: DurableQueue,
 	options: DurableQueueHostOptions,
 ): Readonly<{ [DURABLE_QUEUE_WIT_INTERFACE]: DurableQueueWitHost }> {
-	return Object.freeze({
+	return nativeFreeze({
 		[DURABLE_QUEUE_WIT_INTERFACE]: createDurableQueueWitHost(port, options),
 	});
 }
