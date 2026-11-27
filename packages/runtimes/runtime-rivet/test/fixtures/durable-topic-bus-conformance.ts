@@ -9,11 +9,15 @@ import { createRivetDurableTopicBusActor } from "../../src/durable-topic-actor.j
 import { createRivetDurableTopicMetadataGrant } from "../../src/durable-topic-client.js";
 import type { RivetMessagingConformanceHost } from "./durable-topic-conformance.js";
 
-function sqlite(path = ":memory:") {
+function sqlite(path: string, onReceiptRead: () => void) {
 	const sql = new DatabaseSync(path);
 	let tail = Promise.resolve();
-	const execute = async (query: string, ...args: SQLInputValue[]) =>
-		sql.prepare(query).all(...args);
+	const execute = async (query: string, ...args: SQLInputValue[]) => {
+		const result = sql.prepare(query).all(...args);
+		if (query.startsWith("SELECT CASE WHEN length(CAST(fingerprint AS BLOB))"))
+			onReceiptRead();
+		return result;
+	};
 	const transaction = async <T>(
 		run: (tx: RawAccess) => Promise<T>,
 	): Promise<T> => {
@@ -82,6 +86,14 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 	const actorName = "hoboTopic";
 	const semanticDigest = `sha256:${"b".repeat(64)}`;
 	let clock = options.clock ?? 1_000;
+	let receiptFault: "revocation" | "capacity" | "unavailable" | undefined;
+	let denyReceiptDisclosure = false;
+	const onReceiptRead = () => {
+		const fault = receiptFault;
+		receiptFault = undefined;
+		if (fault === "revocation") denyReceiptDisclosure = true;
+		else if (fault !== undefined) throw new Error(`receipt lookup ${fault}`);
+	};
 	let closed = false;
 	let barrier:
 		| { reached: () => void; wait: Promise<void>; release: () => void }
@@ -101,11 +113,16 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 				throw new Error("invalid test actor key");
 			return { tenant: actorKey[0], instance: "orders" };
 		},
-		authorize: (claim) =>
-			matches(
+		authorize: (claim) => {
+			if (denyReceiptDisclosure) {
+				denyReceiptDisclosure = false;
+				return false;
+			}
+			return matches(
 				claim.headers.get("x-hobo-proof"),
 				signFixtureClaim(claim, "request"),
-			),
+			);
+		},
 		authorizeInstanceScope: (claim) =>
 			matches(
 				claim.headers.get("x-hobo-instance-proof"),
@@ -143,7 +160,11 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 		loseNextMutationResponse: unavailable,
 		loseNextMutationTransport: unavailable,
 		rejectNextDeadLetterWrite: unavailable,
-		blockNextReceiptLookup: unavailable,
+		async blockNextReceiptLookup(reason) {
+			if (receiptFault !== undefined || denyReceiptDisclosure)
+				return unavailable();
+			receiptFault = reason;
+		},
 		switchAuthority: unavailable,
 		holdConcurrentMutations: unavailable,
 		holdNextMutation: async (point) => {
@@ -175,6 +196,7 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 						options.directory === undefined
 							? ":memory:"
 							: join(options.directory, `${tenant}.sqlite`),
+						onReceiptRead,
 					);
 					try {
 						await migrateDurableTopicJournal(created.db);

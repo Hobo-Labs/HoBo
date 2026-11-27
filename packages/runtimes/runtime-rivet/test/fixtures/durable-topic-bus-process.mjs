@@ -17,6 +17,9 @@ process.on("message", async (message) => {
 		if (message.kind === "advance") {
 			await host.controls.advanceMs(message.delta);
 			result = null;
+		} else if (message.kind === "block-receipt") {
+			await host.controls.blockNextReceiptLookup(message.reason);
+			result = null;
 		} else if (message.kind === "fetch") {
 			if (message.tenant !== "tenant-a" && message.tenant !== "tenant-b")
 				throw new Error("invalid worker tenant");

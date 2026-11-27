@@ -23,6 +23,7 @@ const semanticDigest = `sha256:${"b".repeat(64)}`;
 type WorkerReply = null | { status: number; body: string };
 type WorkerRequest =
 	| { kind: "advance"; delta: number }
+	| { kind: "block-receipt"; reason: "revocation" | "capacity" | "unavailable" }
 	| {
 			kind: "fetch";
 			tenant: "tenant-a" | "tenant-b";
@@ -286,7 +287,10 @@ export async function createProcessBusConformanceHost(
 			drop = mode;
 		},
 		rejectNextDeadLetterWrite: unavailable,
-		blockNextReceiptLookup: unavailable,
+		async blockNextReceiptLookup(reason) {
+			if ((await worker.call({ kind: "block-receipt", reason })) !== null)
+				throw new Error("invalid receipt fault response");
+		},
 		switchAuthority: unavailable,
 		async holdConcurrentMutations() {
 			if (concurrentBarrier !== undefined || barrier !== undefined)
