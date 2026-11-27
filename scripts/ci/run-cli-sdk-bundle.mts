@@ -25,6 +25,7 @@ const workspacePackages = [
 	"data",
 	"events",
 	"fleet",
+	"identity",
 	"manifest-capability",
 	"manifest-declaration",
 	"manifest-plan",

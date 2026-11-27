@@ -217,9 +217,11 @@ the protobuf, CUE, or PACT checks.
 The CLI declaration helper copies the workspace dependency closure into an isolated
 TypeScript project. It preserves public SDK alias imports, rejects undeclared external
 imports and type references, compares exported names, and typechecks the result. Its
-generator is pinned to 9.5.1 for Node 22 compatibility. The staging runner records
-declaration source and license hashes along with the final declaration hash, and the
-synchronous staging wrapper propagates any failure before packaging.
+generator is pinned to 9.5.1 for Node 22 compatibility. `run-cli-sdk-bundle.mts` lists
+`@hobo/identity` with the other vendored declaration packages because `@hobo/cd` exports
+types that reference it. The staging runner records declaration source and license hashes
+along with the final declaration hash, and the synchronous staging wrapper propagates
+any failure before packaging.
 
 SDK staging runs `verify-cli-sdk-artifacts.mts` before returning a manifest.
 The verifier checks the exact SDK allowlist, source and license provenance,
