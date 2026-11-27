@@ -1119,8 +1119,9 @@ const mappers = awsStaticScheduleMappers(awsBindleMappers(), {
 Pass `app` and `mappers` to `mapBindleToAlchemy` with the normal requirement,
 source and financial checks. The inventory includes both the schedule and its
 queue; bounded-budget routing requires supplied pricing that covers both.
-Authorized unpriced routing bypasses budget evaluation as described above. The
-role is an existing external resource, so the trusted host must authenticate its
+Authorized unpriced routing bypasses budget evaluation as described above. An
+incomplete supplied model does not fall back to unpriced routing. The role is
+an existing external resource, so the trusted host must authenticate its
 account, trust policy and permission to send to the exact queue. AWS may deliver
 more than once or after the scheduled minute. The mapping does not implement the
 dynamic HoBo scheduler port, queue consumption, or application bindings. The
