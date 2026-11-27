@@ -135,14 +135,14 @@ resolve_deps_headroom_sample_path() {
 ensure_deps_build_headroom() {
   local docker_root sample_path iavail avail
   docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-  sample_path="$(resolve_deps_headroom_sample_path "$docker_root" "$base")" || exit 1
-  read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
+  sample_path="$(resolve_deps_headroom_sample_path "$docker_root" "$headroom_sample_image")" || exit 1
+  read -r iavail avail < <(sample_docker_headroom "$sample_path" "$headroom_sample_image")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     return 0
   fi
   echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} need ${inode_headroom} bytes=${avail} need ${byte_headroom}); pruning BuildKit cache"
   docker builder prune -f --keep-storage "$cap"
-  read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
+  read -r iavail avail < <(sample_docker_headroom "$sample_path" "$headroom_sample_image")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     echo "deps rebuild headroom recovered after builder prune (inodes=${iavail} bytes=${avail})"
     return 0
@@ -152,7 +152,7 @@ ensure_deps_build_headroom() {
     echo "deps rebuild evicting unused hobo-ci-deps images (keep=${keep_tag})"
     node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
       "$root/scripts/ci-runner-image-gc.mts" "$keep_tag" || true
-    read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
+    read -r iavail avail < <(sample_docker_headroom "$sample_path" "$headroom_sample_image")
     if (( iavail >= inode_headroom && avail >= byte_headroom )); then
       echo "deps rebuild headroom recovered after deps image gc (inodes=${iavail} bytes=${avail})"
       return 0
@@ -168,12 +168,34 @@ trap cleanup EXIT
 
 toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"
 base="hobo-ci-worker:${toolchain}"
+headroom_sample_image="$base"
 if ! docker image inspect "$base" >/dev/null 2>&1; then
   export GITHUB_TOKEN="${GITHUB_TOKEN:-${GHCR_TOKEN:-}}"
-  echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
-  node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+  repository="${GITHUB_REPOSITORY:-}"
+  if [ -n "$repository" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+    actor="${GITHUB_ACTOR:-github-actions}"
+    printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$actor" --password-stdin >/dev/null
+    remote_toolchain="ghcr.io/${repository,,}/hobo-ci-worker:${toolchain}"
+    if docker manifest inspect "$remote_toolchain" >/dev/null 2>&1; then
+      echo "Using remote toolchain ${remote_toolchain} for build (manifest present; skipping full pull)"
+      base="$remote_toolchain"
+      if docker image inspect hobo-ci-worker:local >/dev/null 2>&1; then
+        headroom_sample_image="hobo-ci-worker:local"
+      fi
+    else
+      echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
+      node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      base="hobo-ci-worker:${toolchain}"
+      headroom_sample_image="$base"
+    fi
+  else
+    echo "Toolchain ${base} not in this Docker context; resolving via ensure-ci-worker-image"
+    node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+    base="hobo-ci-worker:${toolchain}"
+    headroom_sample_image="$base"
+  fi
 fi
-if ! docker image inspect "$base" >/dev/null 2>&1; then
+if [[ "$base" != ghcr.io/* ]] && ! docker image inspect "$base" >/dev/null 2>&1; then
   computed_toolchain="$toolchain"
   toolchain=""
   if worker_tags="$(docker image inspect hobo-ci-worker:local --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null)"; then
@@ -189,8 +211,9 @@ if ! docker image inspect "$base" >/dev/null 2>&1; then
     exit 1
   fi
   echo "Computed toolchain image hobo-ci-worker:${computed_toolchain} is missing; using ${toolchain} from hobo-ci-worker:local"
+  base="hobo-ci-worker:${toolchain}"
+  headroom_sample_image="$base"
 fi
-base="hobo-ci-worker:${toolchain}"
 echo "Using toolchain image $base"
 key="$(node --no-warnings scripts/ci/deps-key.mts --toolchain "${toolchain}" --stage "$context")"
 candidate="hobo-ci-deps:${key}"
@@ -265,7 +288,7 @@ echo "Building $candidate (fetch network restricted to lockfile-verified downloa
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate" || true
 before_iavail=0
 before_avail=0
-read -r before_iavail before_avail < <(sample_docker_headroom "$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" "$base" || echo "0 0")
+read -r before_iavail before_avail < <(sample_docker_headroom "$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$headroom_sample_image")" "$headroom_sample_image" || echo "0 0")
 ensure_deps_build_headroom
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \

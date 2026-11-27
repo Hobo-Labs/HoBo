@@ -213,7 +213,7 @@ export function pullWorkerFromGhcr(
 	return false;
 }
 
-function workerManifestStatus(
+export function workerManifestStatus(
 	remote: string,
 	token: string,
 	budgetSec = 45,
@@ -259,6 +259,36 @@ type WorkerPublicationProbe =
 	| "pull-failed"
 	| "login-failed";
 
+function workerManifestBackoffSec(attempt: number): number {
+	return Math.min(15, 5 * 2 ** Math.max(0, attempt - 1));
+}
+
+export function probeWorkerPublicationManifest(
+	remote: string,
+	token: string,
+	options?: Readonly<{
+		budgetSec?: number;
+		now?: () => number;
+	}>,
+): "present" | "missing" | "unknown" {
+	const budgetSec = options?.budgetSec ?? WORKER_PUBLISH_PROBE_BUDGET_SEC;
+	const now = options?.now ?? Date.now;
+	const deadline = now() + budgetSec * 1000;
+	let attempt = 0;
+	let status: "present" | "missing" | "unknown" = "unknown";
+	while (now() < deadline) {
+		attempt += 1;
+		const remainingSec = Math.max(0, Math.floor((deadline - now()) / 1000));
+		if (remainingSec <= 0) break;
+		status = workerManifestStatus(remote, token, Math.min(45, remainingSec));
+		if (status === "present" || status === "missing") return status;
+		if (remainingSec <= 1 || attempt >= 6) break;
+		const delay = Math.min(workerManifestBackoffSec(attempt), remainingSec - 1);
+		if (delay > 0) spawnSync("sleep", [String(delay)], { stdio: "ignore" });
+	}
+	return status;
+}
+
 function probeWorkerPublication(
 	repo: string,
 	version: string,
@@ -267,28 +297,24 @@ function probeWorkerPublication(
 ): WorkerPublicationProbe {
 	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
 	const loginBudget = options ? options.deadline - options.now() : undefined;
-	if (loginBudget !== undefined && loginBudget <= 0) return "pull-failed";
+	if (loginBudget !== undefined && loginBudget <= 0)
+		return "manifest-unavailable";
 	if (!dockerLoginGhcr(actor, token, loginBudget)) return "login-failed";
 	const remote = remoteWorkerTag(repo, version);
 	const remainingSec = () =>
 		options
 			? Math.max(0, Math.floor((options.deadline - options.now()) / 1000))
 			: WORKER_PUBLISH_PROBE_BUDGET_SEC;
-	const manifestBudget = Math.min(45, remainingSec());
-	if (manifestBudget <= 0) return "pull-failed";
-	const manifestStatus = workerManifestStatus(remote, token, manifestBudget);
-	const pullBudget = remainingSec();
-	if (pullBudget <= 0) return "pull-failed";
-	return pullWorkerFromGhcr(remote, {
-		attempts: 1,
-		budgetSec: pullBudget,
-	})
-		? "pullable"
-		: manifestStatus === "present"
-			? "pull-failed"
-			: manifestStatus === "missing"
-				? "missing"
-				: "manifest-unavailable";
+	const manifestStatus = probeWorkerPublicationManifest(
+		remote,
+		token,
+		options?.now
+			? { budgetSec: remainingSec(), now: options.now }
+			: { budgetSec: remainingSec() },
+	);
+	if (manifestStatus === "present") return "pullable";
+	if (manifestStatus === "missing") return "missing";
+	return "manifest-unavailable";
 }
 
 export function ghcrWorkerPullable(
@@ -413,24 +439,32 @@ export function resolveWorkerDigestRefWhenPullable(
 			throw new Error("GHCR login failed while resolving the worker digest");
 		}
 		if (probe === "pullable") {
+			const remote = remoteWorkerTag(repo, version);
 			try {
-				const imageRef = resolveWorkerDigestRefFromPulledImage(repo, version);
-				if (
-					pullWorkerFromGhcr(imageRef, {
-						attempts: 1,
-						budgetSec: Math.min(
-							WORKER_PUBLISH_PROBE_BUDGET_SEC,
-							Math.max(0, Math.floor((deadline - now()) / 1000)),
-						),
-						now,
-						random,
-					})
-				) {
-					return imageRef;
+				if (dockerImagePresent(remote)) {
+					return resolveWorkerDigestRefFromPulledImage(repo, version);
 				}
-				lastError = `GHCR pull failed for digest-pinned ref ${imageRef}`;
+				return resolveWorkerDigestRef(repo, version);
 			} catch (error) {
 				lastError = error instanceof Error ? error.message : String(error);
+			}
+			const pullBudget = Math.max(0, Math.floor((deadline - now()) / 1000));
+			if (
+				pullBudget > 0 &&
+				pullWorkerFromGhcr(remote, {
+					attempts: 1,
+					budgetSec: pullBudget,
+					now,
+					random,
+				})
+			) {
+				try {
+					return resolveWorkerDigestRefFromPulledImage(repo, version);
+				} catch (error) {
+					lastError = error instanceof Error ? error.message : String(error);
+				}
+			} else if (lastError === "worker image not yet pullable") {
+				lastError = `GHCR digest unavailable for ${remote}`;
 			}
 		} else {
 			lastError = `${remoteWorkerTag(repo, version)} not pullable yet`;
