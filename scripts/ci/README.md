@@ -106,6 +106,9 @@ resolution contracts are exercised in
 [`scripts/test/ensure-ci-worker-image.test.ts`](../test/ensure-ci-worker-image.test.ts).
 Release `--resolve-digest` pins the worker only when `docker image inspect` lists
 exactly one matching `RepoDigests` entry for `ghcr.io/<repo>/hobo-ci-worker@sha256:<64 lowercase hex>`.
+The publisher gives a confirmed manifest up to nine minutes to pull. It rebuilds
+only when both the manifest inspection and pull explicitly report a missing image;
+timeouts and network errors stop the publisher without overwriting the tag.
 
 
 ## SDK release artifacts

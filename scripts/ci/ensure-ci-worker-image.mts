@@ -297,6 +297,7 @@ export function ghcrWorkerManifestReachable(
 }
 
 const WORKER_PUBLISH_PROBE_BUDGET_SEC = 120;
+const PUBLISHED_WORKER_PULL_BUDGET_SEC = DEFAULT_WORKER_PULL_BUDGET_SEC;
 const WORKER_DIGEST_CONFIRM_MIN_SEC = 1;
 
 type WorkerPublicationProbe =
@@ -306,6 +307,25 @@ type WorkerPublicationProbe =
 	| "pull-failed"
 	| "login-failed"
 	| "budget-exhausted";
+
+function probeWorkerPull(
+	remote: string,
+	budgetSec: number,
+): "pullable" | "missing" | "unknown" {
+	const result = spawnSync(
+		"timeout",
+		[String(budgetSec), "docker", "pull", remote],
+		{ cwd: root, encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] },
+	);
+	if (result.status === 0) return "pullable";
+	return classifyWorkerManifestInspect(
+		result.status,
+		result.stderr ?? "",
+		remote,
+	) === "missing"
+		? "missing"
+		: "unknown";
+}
 
 function probeWorkerPublication(
 	repo: string,
@@ -325,19 +345,17 @@ function probeWorkerPublication(
 	const manifestBudget = Math.min(45, remainingSec());
 	if (manifestBudget <= 0) return "budget-exhausted";
 	const manifestStatus = workerManifestStatus(remote, token, manifestBudget);
-	const pullBudget = remainingSec();
-	if (pullBudget <= 0) return "budget-exhausted";
-	return pullWorkerFromGhcr(remote, {
-		attempts: 1,
-		budgetSec: pullBudget,
-		now,
-	})
-		? "pullable"
+	const pullBudget = options
+		? remainingSec()
 		: manifestStatus === "present"
-			? "pull-failed"
-			: manifestStatus === "missing"
-				? "missing"
-				: "manifest-unavailable";
+			? PUBLISHED_WORKER_PULL_BUDGET_SEC
+			: remainingSec();
+	if (pullBudget <= 0) return "budget-exhausted";
+	const pullStatus = probeWorkerPull(remote, pullBudget);
+	if (pullStatus === "pullable") return "pullable";
+	if (manifestStatus === "missing" && pullStatus === "missing")
+		return "missing";
+	return manifestStatus === "unknown" ? "manifest-unavailable" : "pull-failed";
 }
 
 export function ghcrWorkerPullable(
