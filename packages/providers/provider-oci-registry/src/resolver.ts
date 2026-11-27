@@ -135,6 +135,7 @@ const DESIRED_KEYS = new Set([
 const MAX_TAGS = 64;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_DEPTH = 2;
+const MAX_UPLOAD_RESYNCS = 3;
 const BLOB_UPLOADS_SEGMENT = "uploads";
 const GHCR_BLOB_UPLOAD_SEGMENT = "upload";
 
@@ -663,7 +664,9 @@ export function createOciRegistryResolvers(
 				`blob ${blob.digest} needs a chunked upload, which a UTF-8 text transport cannot split safely`,
 				"run with transportBodyEncoding 'latin1', or raise chunkBytes",
 			);
-		for (let start = 0; start < bytes.byteLength; start += chunkBytes) {
+		let start = 0;
+		let resyncs = 0;
+		while (start < bytes.byteLength) {
 			const chunk = bytes.subarray(
 				start,
 				Math.min(start + chunkBytes, bytes.byteLength),
@@ -679,8 +682,31 @@ export function createOciRegistryResolvers(
 				},
 				body: Buffer.from(chunk).toString("latin1"),
 			});
+			if (patched.status === 416 && resyncs < MAX_UPLOAD_RESYNCS) {
+				resyncs++;
+				const status = await copy.target.send({
+					method: "GET",
+					path: location,
+					scopes,
+				});
+				if (status.status !== 204)
+					unexpected(status, "GET", "read blob upload status");
+				const range = /^0-(\d+)$/u.exec(header(status, "range") ?? "");
+				const end = Number(range?.[1]);
+				if (
+					!range ||
+					!Number.isSafeInteger(end) ||
+					end >= bytes.byteLength ||
+					end >= start + chunk.byteLength
+				)
+					unparseable("blob upload status has an invalid Range");
+				location = repositoryUploadLocation(copy, status);
+				start = end + 1;
+				continue;
+			}
 			if (patched.status !== 202) unexpected(patched, "PATCH", "upload chunk");
 			location = repositoryUploadLocation(copy, patched);
+			start += chunk.byteLength;
 		}
 		const closed = await copy.target.send({
 			method: "PUT",
