@@ -137,6 +137,31 @@ describe("agent secret policy hook", () => {
 			toolArgs: '{"command":"ls"}',
 		});
 		assert.deepEqual([allowed.status, allowed.stdout], [0, ""]);
+		const gemini = run("gemini", {
+			hook_event_name: "BeforeTool",
+			cwd: root,
+			tool_name: "run_shell_command",
+			tool_input: { command },
+		});
+		assert.equal(gemini.status, 2);
+		assert.match(gemini.stderr, /owner store session/u);
+		assert.equal(gemini.stdout, "");
+		const geminiEdit = run("gemini", {
+			hook_event_name: "BeforeTool",
+			tool_name: "write_file",
+			tool_input: { file_path: "/repo/.env", content: "A=1" },
+		});
+		assert.equal(geminiEdit.status, 2);
+		assert.match(geminiEdit.stderr, /secret or credential file/u);
+		const geminiAllowed = run("gemini", {
+			hook_event_name: "BeforeTool",
+			tool_name: "run_shell_command",
+			tool_input: { command: "git status" },
+		});
+		assert.deepEqual(
+			[geminiAllowed.status, geminiAllowed.stdout, geminiAllowed.stderr],
+			[0, "", ""],
+		);
 		assert.deepEqual(respond("claude", undefined), {
 			stdout: "",
 			stderr: "",
@@ -155,6 +180,7 @@ describe("agent secret policy hook", () => {
 				".cursor/hooks.json",
 				["preToolUse", "beforeShellExecution", "beforeMCPExecution"],
 			],
+			[".gemini/settings.json", ["BeforeTool"]],
 			[".github/hooks/secret-policy.json", ["preToolUse"]],
 		] as const) {
 			const config = schema.parse(
@@ -177,6 +203,24 @@ describe("agent secret policy hook", () => {
 			settings.permissions.deny.includes(
 				"mcp__claude-code-remote__request_credential",
 			),
+		);
+		const gemini = schema.parse(
+			JSON.parse(readFileSync(join(root, ".gemini/settings.json"), "utf8")),
+		);
+		const beforeTool = z
+			.array(
+				z
+					.object({
+						matcher: z.string(),
+						hooks: z.array(z.object({ command: z.string() }).loose()),
+					})
+					.loose(),
+			)
+			.parse(gemini.hooks.BeforeTool);
+		assert.equal(beforeTool[0]?.matcher, "*");
+		assert.equal(
+			beforeTool[0]?.hooks[0]?.command,
+			'node --experimental-strip-types "$(git rev-parse --show-toplevel)/scripts/agent-secret-policy.mts" --format=gemini',
 		);
 	});
 });

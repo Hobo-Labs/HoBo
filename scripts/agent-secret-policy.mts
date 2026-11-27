@@ -11,7 +11,7 @@ import {
 	storingCommandIn,
 } from "./check-secret-storage.mts";
 
-export type HookFormat = "claude" | "codex" | "cursor" | "copilot";
+export type HookFormat = "claude" | "codex" | "cursor" | "copilot" | "gemini";
 
 const CREDENTIAL_STORING_TOOLS =
 	/(?:^|__)(?:request_credential|create_project_env|edit_project_env|create_edge_function_secret)$|1password/iu;
@@ -132,7 +132,7 @@ export function respond(
 
 function main(args: readonly string[]): number {
 	const format = z
-		.enum(["claude", "codex", "cursor", "copilot"])
+		.enum(["claude", "codex", "cursor", "copilot", "gemini"])
 		.catch("claude")
 		.parse(
 			args

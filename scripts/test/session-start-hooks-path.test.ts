@@ -82,6 +82,18 @@ const AGENTS = [
 			configured(".cursor/hooks.json", ["hooks", "sessionStart", 0, "command"]),
 	},
 	{
+		agent: "Gemini",
+		command: () =>
+			configured(".gemini/settings.json", [
+				"hooks",
+				"SessionStart",
+				0,
+				"hooks",
+				0,
+				"command",
+			]),
+	},
+	{
 		agent: "Copilot",
 		command: () =>
 			configured(".github/hooks/git-hooks-path.json", [

@@ -106,7 +106,7 @@ describe("source policy", () => {
 		);
 	});
 
-	it("accepts type assertion safety annotations while rejecting deferred markers", () => {
+	it("rejects explanatory type assertion annotations and deferred markers", () => {
 		const text = [
 			"// SAFETY: the value was checked at the boundary",
 			"const value = input as string;",
@@ -119,7 +119,7 @@ describe("source policy", () => {
 			commentViolations("x.ts", text, new Set([1, 3, 5])).map(
 				(item) => item.line,
 			),
-			[3, 5],
+			[1, 3, 5],
 		);
 	});
 

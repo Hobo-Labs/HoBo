@@ -10,8 +10,8 @@ over conflicting repository workflow guidance.
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
   dynamic imports.
-- Complete unfinished work when it is found. Do not hide it by deleting its
-  marker or by moving it into a backlog.
+- Complete unfinished work when practical. Track remaining work in the HoBo
+  Linear team and remove deferred-work markers from the repository.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
@@ -26,7 +26,7 @@ over conflicting repository workflow guidance.
   and report any contradiction before building. The `hobo-setup` skill covers
   owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
-  Implement their outstanding work, then remove them. Keep user and operator
+  Track outstanding work in Linear, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
@@ -62,7 +62,7 @@ over conflicting repository workflow guidance.
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
-and Copilot. Standalone documentation comments follow the same rule. Run
+Gemini, and Copilot. Standalone documentation comments follow the same rule. Run
 `pnpm run source:guard -- --worktree` when checking manually, including ignored
 agent artifacts in nested projects;
 the pre-commit hook checks staged changes. The same edit hooks run
@@ -491,7 +491,7 @@ Use broader build-impacting checks only when intentionally validating a branch/r
 
 Whenever a change touches code, automation, package metadata, CI, hooks, or agent tooling, update the matching documentation in the same change. Check whether `README.md`, `docs/agent-tooling.md`, and the relevant proof/contract README still describe the current state. If no user-facing docs change is needed, add or update the closest maintenance note so reviewers can see that docs were considered.
 
-Local and CI gates enforce this with `pnpm run docs:freshness`: code changes under `src/`, `scripts/`, `test/`, package metadata, workflows, or agent config must be accompanied by a docs change. The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
+Local and CI gates enforce this with `pnpm run docs:freshness`: code changes under `src/`, `scripts/`, `test/`, package metadata, workflows, or agent config must be accompanied by a docs change. The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor, Gemini and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
 
 ## Plans are not committed
 
