@@ -1292,3 +1292,9 @@ valid. KMS calls are not retried automatically; an unknown outcome may have
 incurred a provider charge. The runtime does not itself admit each operation
 against a HoBo budget, bind the key into an application, or implement signing
 and verification.
+
+Select the symmetric runtime for declared crypto resources with
+`withAwsKmsCryptography(bindle, { key: true })` and map them with
+`awsKmsCryptographyMappers()`. The selected resource is an Alchemy `AWS.KMS.Key`;
+the support report lists encrypt and decrypt while rejecting sign and verify.
+Without this explicit choice, the base mapping remains infrastructure only.

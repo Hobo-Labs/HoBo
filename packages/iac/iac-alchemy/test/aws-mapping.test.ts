@@ -18,6 +18,10 @@ import {
 } from "../../../runtime/src/atomic-queue-log.js";
 import { awsBindleMappers, describeAwsPrimitiveSupport } from "../src/aws.js";
 import {
+	awsKmsCryptographyMappers,
+	withAwsKmsCryptography,
+} from "../src/aws-cryptography-mapper.js";
+import {
 	awsDynamoKv,
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
@@ -47,6 +51,64 @@ const requirements = {
 };
 
 describe("AWS Alchemy infrastructure mappings", () => {
+	it("requires an explicit bounded KMS choice to map symmetric operations", async () => {
+		const definition = bindle("shop", (b) => ({
+			key: b.crypto().allow("encrypt", "decrypt"),
+		}));
+		const selected = withAwsKmsCryptography(definition, { key: true });
+		const mappers = awsKmsCryptographyMappers();
+		expect(() => mapBindleToAlchemy(definition, mappers, requirements)).toThrow(
+			"PRIMITIVE_UNSUPPORTED",
+		);
+		// SAFETY: resource declaration registers the Alchemy constructor without running an AWS provider.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.key?.Type).toBe(Key.Type);
+		expect(mapped.primary.key?.Props).toEqual({
+			keyUsage: "ENCRYPT_DECRYPT",
+			keySpec: "SYMMETRIC_DEFAULT",
+		});
+		const support = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappers).find(
+			(entry) => entry.kind === "crypto",
+		);
+		expect(support).toMatchObject({
+			status: "partial",
+			supportedOperations: ["encrypt", "decrypt"],
+			unsupportedOperations: ["sign", "verify"],
+		});
+		for (const operation of ["sign", "verify"] as const) {
+			const unsupported = bindle("shop", (b) => ({
+				key: b.crypto().allow(operation),
+			}));
+			expect(() =>
+				mapBindleToAlchemy(
+					withAwsKmsCryptography(unsupported, { key: true }),
+					mappers,
+					requirements,
+				),
+			).toThrow("PRIMITIVE_UNSUPPORTED");
+		}
+		const dependent = bindle("shop", (b) => {
+			const objects = b.bucket();
+			return { objects, key: b.crypto().allow("encrypt").dependsOn(objects) };
+		});
+		expect(() =>
+			mapBindleToAlchemy(
+				withAwsKmsCryptography(dependent, { key: true }),
+				mappers,
+				requirements,
+			),
+		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+	});
 	it("requires an explicit bounded SNS choice to map notification sends", async () => {
 		const definition = bindle("shop", (b) => ({
 			alerts: b.notify().allow("send"),
