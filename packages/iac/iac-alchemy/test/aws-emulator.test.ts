@@ -266,6 +266,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 		const objectStore = createAwsS3Store({
 			grant: {
 				bucketName: first.bucketName,
+				accountId: "000000000000",
 				region: "us-east-1",
 				resourceEpoch: `sha256:${"a".repeat(64)}`,
 				grantEpoch: `sha256:${"b".repeat(64)}`,
@@ -341,6 +342,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			const store = createAwsS3Store({
 				grant: {
 					bucketName: first.bucketName,
+					accountId: "000000000000",
 					region: "us-east-1",
 					resourceEpoch: `sha256:${"a".repeat(64)}`,
 					grantEpoch: `sha256:${"b".repeat(64)}`,
@@ -470,6 +472,8 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			const store = createAwsDynamoKvStore({
 				grant: {
 					tableName: result.tableName,
+					accountId: "000000000000",
+					partition: "aws",
 					region: "us-east-1",
 					resourceEpoch: `sha256:${"a".repeat(64)}`,
 					grantEpoch: `sha256:${"b".repeat(64)}`,
