@@ -497,7 +497,11 @@ sealed run. A journal with multiple
 terminal facts is rejected before returning an outcome. Before execution or replay,
 a journal must start with exactly one `run.Started`, have contiguous
 safe-integer sequences beginning at one, have no record after a terminal
-outcome and contain no unknown reserved `run.*` records. The command tree is
+outcome and contain no unknown reserved `run.*` records. That reserved set
+includes `run.HookResumed` and `run.SleepDeadlineSet`. A `run.Started` fact
+may also carry `commandTreeVersion: 3`; readers ignore that field and refuse
+any other version. When `run.SleepScheduled` records no deadline, the matching
+`run.SleepDeadlineSet` fact supplies it. The command tree is
 validated and missing completion evidence is refused. A damaged history may need reconciliation;
 `journal()` remains available to inspect it when the stream identity matches.
 

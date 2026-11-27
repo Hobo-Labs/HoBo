@@ -106,9 +106,18 @@ export function parseRunStartedFact(data: JsonValue): ParsedRunStarted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Started");
 	assertOnlyFactKeys(
 		data,
-		new Set(["args", "seed", "workflowName"]),
+		new Set(["args", "seed", "workflowName", "commandTreeVersion"]),
 		"invalid run.Started",
 	);
+	// Version 3 is the command tree this reader implements. Older writers
+	// stored it on run.Started; current writers omit it. Any other version
+	// is a different contract and stays refused.
+	if (
+		Object.hasOwn(data, "commandTreeVersion") &&
+		data.commandTreeVersion !== 3
+	) {
+		throw new TypeError("invalid run.Started");
+	}
 	const { args, seed, workflowName } = data;
 	if (
 		!Object.hasOwn(data, "args") ||
@@ -181,8 +190,8 @@ export type ParsedRunSleepScheduled = {
 	delayMs: number;
 	index: number;
 	parentStepIndex: number | null;
-	scheduledAtMs: number;
-	deadlineMs: number;
+	scheduledAtMs?: number;
+	deadlineMs?: number;
 	label?: string;
 };
 
@@ -223,22 +232,42 @@ export function parseRunSleepScheduledFact(
 	}
 	if (!Object.hasOwn(data, "index") || !isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.SleepScheduled");
-	const { scheduledAtMs, deadlineMs } = data;
-	if (
-		!isTimestampMs(scheduledAtMs) ||
-		!isTimestampMs(deadlineMs) ||
-		deadlineMs !== scheduledAtMs + delayMs
-	)
+	// A deadline may be omitted when a later run.SleepDeadlineSet supplies it.
+	// One timestamp without the other is still a corrupt record.
+	const hasScheduledAt = Object.hasOwn(data, "scheduledAtMs");
+	const hasDeadline = Object.hasOwn(data, "deadlineMs");
+	if (hasScheduledAt !== hasDeadline) {
 		throw new TypeError(
 			"invalid run.SleepScheduled: invalid recorded workflow sleep deadline",
 		);
+	}
+	let recordedDeadline:
+		| { scheduledAtMs: number; deadlineMs: number }
+		| undefined;
+	if (hasScheduledAt) {
+		const scheduledAtMs = data.scheduledAtMs;
+		const deadlineMs = data.deadlineMs;
+		if (
+			!isTimestampMs(scheduledAtMs) ||
+			!isTimestampMs(deadlineMs) ||
+			!Number.isSafeInteger(scheduledAtMs + delayMs) ||
+			deadlineMs !== scheduledAtMs + delayMs
+		) {
+			throw new TypeError(
+				"invalid run.SleepScheduled: invalid recorded workflow sleep deadline",
+			);
+		}
+		recordedDeadline = { scheduledAtMs, deadlineMs };
+	}
 	const parsed: ParsedRunSleepScheduled = {
 		delayMs,
 		index: data.index,
 		parentStepIndex: parseParentStepIndex(data, "invalid run.SleepScheduled"),
-		scheduledAtMs,
-		deadlineMs,
 	};
+	if (recordedDeadline) {
+		parsed.scheduledAtMs = recordedDeadline.scheduledAtMs;
+		parsed.deadlineMs = recordedDeadline.deadlineMs;
+	}
 	if (Object.hasOwn(data, "label")) {
 		if (data.label === undefined || !isJsonString(data.label))
 			throw new TypeError("invalid run.SleepScheduled");
@@ -251,6 +280,48 @@ export type ParsedRunSleepCompleted = {
 	index: number;
 	completedAtMs: number;
 };
+
+export type ParsedRunSleepDeadlineSet = {
+	index: number;
+	scheduledAtMs: number;
+	deadlineMs: number;
+};
+
+export function parseRunSleepDeadlineSetFact(
+	data: JsonValue,
+): ParsedRunSleepDeadlineSet {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.SleepDeadlineSet");
+	assertOnlyFactKeys(
+		data,
+		new Set(["index", "scheduledAtMs", "deadlineMs"]),
+		"invalid run.SleepDeadlineSet",
+	);
+	if (!isBoundedJournalIndex(data.index))
+		throw new TypeError("invalid run.SleepDeadlineSet");
+	if (!isTimestampMs(data.scheduledAtMs) || !isTimestampMs(data.deadlineMs)) {
+		throw new TypeError(
+			"invalid run.SleepDeadlineSet: invalid recorded workflow sleep deadline",
+		);
+	}
+	return {
+		index: data.index,
+		scheduledAtMs: data.scheduledAtMs,
+		deadlineMs: data.deadlineMs,
+	};
+}
+
+export function parseRunHookResumedFact(data: JsonValue): JsonValue {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.HookResumed");
+	assertOnlyFactKeys(data, new Set(["payload"]), "invalid run.HookResumed");
+	if (
+		!Object.hasOwn(data, "payload") ||
+		data.payload === undefined ||
+		!isStoredJsonValue(data.payload)
+	) {
+		throw new TypeError("invalid run.HookResumed");
+	}
+	return data.payload;
+}
 
 export function parseRunSleepCompletedFact(
 	data: JsonValue,

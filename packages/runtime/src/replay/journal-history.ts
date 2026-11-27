@@ -9,7 +9,9 @@ const RUNTIME_EVENT_TYPES = new Set([
 	"run.StepCompleted",
 	"run.StepFailed",
 	"run.SleepScheduled",
+	"run.SleepDeadlineSet",
 	"run.SleepCompleted",
+	"run.HookResumed",
 ]);
 
 export function validateJournalHistory(

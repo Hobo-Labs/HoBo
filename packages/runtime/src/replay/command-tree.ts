@@ -6,7 +6,9 @@ import {
 	type JsonValue,
 } from "../json.js";
 import {
+	parseRunHookResumedFact,
 	parseRunSleepCompletedFact,
+	parseRunSleepDeadlineSetFact,
 	parseRunSleepScheduledFact,
 	parseRunStepCompletedFact,
 	parseRunStepFailedFact,
@@ -63,6 +65,22 @@ export interface ReplayCommandTree {
 
 const snapshot = snapshotJournalData;
 
+type SleepDeadline =
+	| { kind: "inline"; deadlineMs: number }
+	| { kind: "pending" }
+	| { kind: "rebased"; deadlineMs: number };
+
+function inlineDeadline(source: SleepDeadline | undefined): number | undefined {
+	return source?.kind === "inline" ? source.deadlineMs : undefined;
+}
+
+function resolvedDeadline(
+	source: SleepDeadline | undefined,
+): number | undefined {
+	if (!source || source.kind === "pending") return undefined;
+	return source.deadlineMs;
+}
+
 export function readReplayCommandTree(
 	events: readonly EventEnvelope[],
 	runId: string,
@@ -70,6 +88,7 @@ export function readReplayCommandTree(
 	const roots: ReplayCommand[] = [];
 	const steps = new Map<number, ReplayStepCommand>();
 	const sleeps = new Map<number, ReplaySleepCommand>();
+	const sleepDeadlines = new Map<number, SleepDeadline>();
 	let emitCount = 0;
 	let afterTerminal = false;
 	let lastSeq = 0;
@@ -185,7 +204,7 @@ export function readReplayCommandTree(
 					previous.delayMs !== fact.delayMs ||
 					previous.label !== fact.label ||
 					previous.parent !== fact.parentStepIndex ||
-					previous.deadlineMs !== fact.deadlineMs
+					inlineDeadline(sleepDeadlines.get(fact.index)) !== fact.deadlineMs
 				)
 					throw new Error(
 						`invalid run.SleepScheduled for ${runId}: sleep schedule diverged`,
@@ -200,11 +219,37 @@ export function readReplayCommandTree(
 				delayMs: fact.delayMs,
 				label: fact.label,
 				parent: parentFor(fact.parentStepIndex),
-				deadlineMs: fact.deadlineMs,
+				deadlineMs: fact.deadlineMs ?? 0,
 				completed: false,
 			};
+			sleepDeadlines.set(
+				fact.index,
+				fact.deadlineMs === undefined
+					? { kind: "pending" }
+					: { kind: "inline", deadlineMs: fact.deadlineMs },
+			);
 			sleeps.set(fact.index, command);
 			append(command);
+			continue;
+		}
+		if (event.type === "run.SleepDeadlineSet") {
+			const fact = parseRunSleepDeadlineSetFact(snapshot(event.data));
+			const sleep = sleeps.get(fact.index);
+			const source = sleepDeadlines.get(fact.index);
+			if (!sleep || !source)
+				throw new Error(`invalid workflow sleep deadline record for ${runId}`);
+			if (source.kind !== "pending")
+				throw new Error(`duplicate workflow sleep deadline for ${runId}`);
+			const sum = fact.scheduledAtMs + sleep.delayMs;
+			if (!Number.isSafeInteger(sum) || fact.deadlineMs !== sum)
+				throw new Error(
+					`invalid recorded workflow sleep deadline for ${runId}`,
+				);
+			sleep.deadlineMs = fact.deadlineMs;
+			sleepDeadlines.set(fact.index, {
+				kind: "rebased",
+				deadlineMs: fact.deadlineMs,
+			});
 			continue;
 		}
 		if (event.type === "run.SleepCompleted") {
@@ -216,9 +261,19 @@ export function readReplayCommandTree(
 				throw new Error(
 					`invalid workflow sleep completion evidence for ${runId}`,
 				);
-			if (fact.completedAtMs < sleep.deadlineMs)
+			const deadline = resolvedDeadline(sleepDeadlines.get(fact.index));
+			if (deadline === undefined)
+				throw new Error(
+					`invalid run.SleepScheduled for ${runId}: invalid recorded workflow sleep deadline`,
+				);
+			if (fact.completedAtMs < deadline)
 				throw new Error(`invalid workflow sleep completion time for ${runId}`);
+			sleep.deadlineMs = deadline;
 			sleep.completed = true;
+			continue;
+		}
+		if (event.type === "run.HookResumed") {
+			parseRunHookResumedFact(snapshot(event.data));
 			continue;
 		}
 		if (event.type === "run.StepScheduled") {
@@ -285,6 +340,14 @@ export function readReplayCommandTree(
 			outcome.kind === "failed"
 				? { kind: "failed", message: outcome.fact.message }
 				: { kind: "completed", result: outcome.fact.result };
+	}
+	for (const sleep of sleeps.values()) {
+		const deadline = resolvedDeadline(sleepDeadlines.get(sleep.index));
+		if (deadline === undefined)
+			throw new Error(
+				`invalid run.SleepScheduled for ${runId}: invalid recorded workflow sleep deadline`,
+			);
+		sleep.deadlineMs = deadline;
 	}
 	return { roots, steps, sleeps, emits: emitCount };
 }
