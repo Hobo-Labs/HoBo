@@ -18,3 +18,6 @@ on the same ref instead of canceling them.
 
 The AWS budget emulator tests exercise priced and unpriced admission when a
 provider operation has an uncertain outcome.
+
+The release integration gate is skipped when a draft's shards are intentionally
+skipped. Ready pull requests and merge groups still require successful shards.
