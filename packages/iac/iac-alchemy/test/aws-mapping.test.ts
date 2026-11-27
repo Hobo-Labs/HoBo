@@ -8,7 +8,16 @@ import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { CATALOG_ROWS } from "../../../bindles/src/types.js";
 import { awsBindleMappers, describeAwsPrimitiveSupport } from "../src/aws.js";
-import { mapBindleToAlchemy } from "../src/bindle.js";
+import {
+	awsDynamoKv,
+	awsDynamoKvBindleMappers,
+	withAwsDynamoKv,
+} from "../src/aws-kv-mapper.js";
+import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
+import {
+	describeAlchemyPrimitiveSupport,
+	mapBindleToAlchemy,
+} from "../src/bindle.js";
 
 const requirements = {
 	assessRequirements: () => ({ status: "supported" as const }),
@@ -68,5 +77,92 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(() =>
 			mapBindleToAlchemy(definition, awsBindleMappers(), requirements),
 		).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+	});
+});
+
+describe("explicit DynamoDB KV runtime choice", () => {
+	it("keeps the Bindle neutral and maps permitted operations to a real table", async () => {
+		const original = bindle("shop", (b) => ({
+			sessions: b.kv().allow("get", "set", "delete"),
+		}));
+		const selected = withAwsDynamoKv(original, { sessions: true });
+		expect(original.resources.sessions?.annotations).toEqual([]);
+		expect(selected.resources.sessions?.annotations).toEqual([awsDynamoKv()]);
+		const mappers = awsDynamoKvBindleMappers();
+		const report = describeAlchemyPrimitiveSupport(
+			[{ factory: "kv", allowVerbs: ["get", "set", "delete"] }],
+			mappers,
+		);
+		expect(report[0]).toMatchObject({
+			status: "partial",
+			supportedOperations: ["get", "set", "delete"],
+		});
+		// SAFETY: mapping registers resource constructors only; no provider is invoked.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.sessions?.Type).toBe(Table.Type);
+		expect(() => mapBindleToAlchemy(original, mappers, requirements)).toThrow(
+			"DynamoDB KV requires",
+		);
+		expect(() => withAwsDynamoKv(original, { missing: true })).toThrow(
+			"unknown resource",
+		);
+	});
+});
+
+describe("composable AWS target choices", () => {
+	it("maps bounded S3 and DynamoDB operations while preserving the neutral Bindle", async () => {
+		const original = bindle("shop", (b) => ({
+			objects: b.bucket().allow("read", "write", "delete"),
+			sessions: b.kv().allow("get", "set", "delete"),
+		}));
+		const selected = withAwsS3(withAwsDynamoKv(original, { sessions: true }), {
+			objects: true,
+		});
+		expect(original.resources.objects?.annotations).toEqual([]);
+		expect(original.resources.sessions?.annotations).toEqual([]);
+		const mappers = awsS3BindleMappers(awsDynamoKvBindleMappers());
+		const report = describeAlchemyPrimitiveSupport(
+			[
+				{ factory: "bucket", allowVerbs: ["read", "write", "delete"] },
+				{ factory: "kv", allowVerbs: ["get", "set", "delete"] },
+			],
+			mappers,
+		);
+		expect(
+			report.map((row) => [row.kind, row.status, row.unsupportedOperations]),
+		).toEqual([
+			["bucket", "partial", []],
+			["kv", "partial", []],
+		]);
+		// SAFETY: this constructs Alchemy resources without running a provider.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.objects?.Type).toBe(Bucket.Type);
+		expect(mapped.primary.sessions?.Type).toBe(Table.Type);
+		expect(() => withAwsS3(original, { sessions: true })).toThrow(
+			"unannotated bucket",
+		);
+		expect(() => withAwsS3(original, { missing: true })).toThrow(
+			"unknown resource",
+		);
 	});
 });
