@@ -1064,7 +1064,7 @@ jobs:
       HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
       HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.image_id == 'hobo-cli' && 30 || 20 }}
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -1819,7 +1819,7 @@ jobs:
       needs.release-hobo-cli.result == 'success'
     needs: [route, release-pages-gate, release-hobo-cli]
     runs-on: ${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     # One publish at a time. Two runs for different commits used to be free to
     # push gh-pages in either order.
     concurrency:
