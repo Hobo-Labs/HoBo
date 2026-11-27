@@ -90,7 +90,7 @@ function lintFile(file: string, text: string): number | null {
 const pullRequestOn =
 	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review, labeled]\n";
 const routeJob =
-	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks' || contains(github.event.pull_request.labels.*.name, 'ci:run-draft-checks')) }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
 function lintRunner(
 	file: string,
@@ -474,7 +474,7 @@ describe("Actions runner policy", () => {
 	const skipFor = (id: string) =>
 		`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
-		`  route:\n    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks') }}\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
+		`  route:\n    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks' || contains(github.event.pull_request.labels.*.name, 'ci:run-draft-checks')) }}\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
 	const verifierFiles =
 		"            scripts/ci/attestation.mts\n            scripts/ci/verify-attestation.mts\n";
 	const skippable = (id: string, condition: string, needs = "route") =>

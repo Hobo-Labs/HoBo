@@ -688,18 +688,18 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 ] as const;
 
 export const CANONICAL_ENTRY_JOB_DRAFT_IF =
-	"github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')";
+	"github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks' || contains(github.event.pull_request.labels.*.name, 'ci:run-draft-checks'))";
 
 export const REQUIRED_JOB_DRAFT_IF_MESSAGE = `job-level if must be ${CANONICAL_ENTRY_JOB_DRAFT_IF}`;
 
 const ALLOWLISTED_ENTRY_JOB_DRAFT_IF = new Map<string, string>([
 	[
 		"examples-e2e.yml:hello-bindle-fixture-quarantine",
-		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
+		"github.event_name == 'pull_request' && (github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks' || contains(github.event.pull_request.labels.*.name, 'ci:run-draft-checks'))) && contains(github.event.pull_request.labels.*.name, 'hobo/e2e-quarantine')",
 	],
 	[
 		"examples-e2e.yml:hello-bindle-fixture",
-		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks')) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
+		"(github.event_name != 'pull_request' || github.event.pull_request.draft == false || (github.event.action == 'labeled' && github.event.label.name == 'ci:run-draft-checks' || contains(github.event.pull_request.labels.*.name, 'ci:run-draft-checks'))) && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'hobo/e2e'))",
 	],
 ]);
 
