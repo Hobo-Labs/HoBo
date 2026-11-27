@@ -16,6 +16,7 @@ import {
 	asText,
 	type JsonValue,
 } from "../ci/attestation.mts";
+import { evaluateExpression } from "../ci/attested-jobs.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
@@ -425,6 +426,32 @@ describe("release integration pull-request and merge-queue lane", () => {
 					`${id}: ${result}`,
 				);
 			}
+		}
+	});
+
+	it("runs the PR integration gate whenever its shards are expected", () => {
+		const condition = job(pr, "release-integration-gate").if.replace(
+			/^always\(\) && /u,
+			"",
+		);
+		for (const [event, draft, action, label, expected] of [
+			["pull_request", true, "opened", "", false],
+			["pull_request", true, "synchronize", "", false],
+			["pull_request", true, "labeled", "other", false],
+			["pull_request", true, "labeled", "ci:run-draft-checks", true],
+			["pull_request", false, "ready_for_review", "", true],
+			["merge_group", false, "checks_requested", "", true],
+		] as const) {
+			const values = new Map<string, string | boolean>([
+				["github.event_name", event],
+				["github.event.pull_request.draft", draft],
+				["github.event.action", action],
+				["github.event.label.name", label],
+			]);
+			assert.equal(
+				evaluateExpression(condition, (path) => values.get(path) ?? null),
+				expected,
+			);
 		}
 	});
 
