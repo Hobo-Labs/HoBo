@@ -51,6 +51,13 @@ import {
 } from "../../../pricing/test/fixtures.js";
 import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { awsBindleMappers } from "../src/aws.js";
+import { awsHttpBindings } from "../src/aws-http-runtime.js";
+import { defineAwsHttpSource } from "../src/aws-http-source.js";
+import { createAwsNotificationPublisher } from "../src/aws-notification.js";
+import {
+	awsSnsNotificationMappers,
+	withAwsSnsNotification,
+} from "../src/aws-notification-mapper.js";
 import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
 	awsDynamoDurableQueueMappers,
@@ -112,6 +119,7 @@ function fixture(
 	const mutationTargets: string[] = [];
 	const mutationRequests: string[] = [];
 	const createdTables: string[] = [];
+	const createdTopics: string[] = [];
 	let liabilityRequests = 0;
 	const exposuresAtEffects: { reservedMicros: number; unbounded: number }[] =
 		[];
@@ -163,6 +171,15 @@ function fixture(
 					) {
 						mutationTargets.push(target ?? "");
 						mutationRequests.push(`${req.method} ${new URL(req.url).pathname}`);
+						if (target === "CreateTopic") {
+							if (req.body._tag !== "Uint8Array")
+								throw Error("expected topic request body");
+							const name = new URLSearchParams(
+								new TextDecoder().decode(req.body.body),
+							).get("Name");
+							if (!name) throw Error("topic name missing");
+							createdTopics.push(name);
+						}
 						if (
 							req.headers["x-amz-target"] === "DynamoDB_20120810.CreateTable"
 						) {
@@ -225,8 +242,11 @@ function fixture(
 				)
 			: resource === "notify"
 				? mapBindleToAlchemy(
-						bindle("shop", (b) => ({ objects: b.notify() })),
-						awsBindleMappers(),
+						withAwsSnsNotification(
+							bindle("shop", (b) => ({ objects: b.notify().allow("send") })),
+							{ objects: true },
+						),
+						awsSnsNotificationMappers(),
 						{ assessRequirements: () => ({ status: "supported" }) },
 					)
 				: resource === "auth"
@@ -453,6 +473,7 @@ function fixture(
 		mutationTargets: () => mutationTargets,
 		mutationRequests: () => mutationRequests,
 		createdTables: () => createdTables,
+		createdTopics: () => createdTopics,
 		awsLayers,
 		exposuresAtEffects: () => exposuresAtEffects,
 		liabilityRequests: () => liabilityRequests,
@@ -750,6 +771,52 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
 						),
 				).toBe(true);
+				const [topicName] = f.createdTopics();
+				if (!topicName || f.createdTopics().length !== 1)
+					throw Error("admitted topic missing");
+				const publisher = createAwsNotificationPublisher({
+					grant: {
+						topicName,
+						accountId: "000000000000",
+						partition: "aws",
+						region: "us-east-1",
+						resourceEpoch: DIGEST,
+						grantEpoch: DIGEST,
+					},
+					verify: () => true,
+					layer: f.awsLayers,
+				});
+				const appDefinition = bindle("shop", (b) => {
+					const objects = b.notify().allow("send");
+					return {
+						objects,
+						web: b
+							.web(
+								(context) => async () =>
+									Response.json(
+										await awsHttpBindings(context).notify("objects").send({
+											attemptId: "abcdefghijklmnop",
+											body: "priced notification",
+										}),
+									),
+							)
+							.with(sessionReplay({ enabled: false }))
+							.dependsOn(objects),
+					};
+				});
+				const app = defineAwsHttpSource({
+					bindle: withAwsSnsNotification(appDefinition, { objects: true }),
+					applicationName: "web",
+					environment: { HOBO_RESOURCE_0: topicName },
+					resolveStores: () => ({ objects: publisher }),
+					verifyBinding: (claim) =>
+						claim.kind === "notify" && claim.grant.topicName === topicName,
+				});
+				expect(
+					await (await app.fetch(new Request("https://app.test"))).json(),
+				).toMatchObject({ status: "accepted" });
+				expect(f.mutationTargets()).toContain("Publish");
+				expect(f.authority.read(NOW).reservedMicros).toBe(1_500_000);
 			} finally {
 				f.authority.close();
 				f.routeAuthority.close();

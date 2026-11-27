@@ -1114,7 +1114,9 @@ attempt; `unknown` can mean SNS accepted the message, and retry can duplicate
 it. Automatic AWS retries are disabled. SNS acceptance does not guarantee
 subscriber delivery; subscribers and their permissions are host-managed.
 The official AWS Emulator also checks priced, denied-unpriced and authorized
-unpriced admission before creating the notification topic.
+unpriced admission before creating the selected notification topic, and sends
+from an HTTP application through that admitted topic. Provisioning admission
+does not perform a new budget check for each subsequent send.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
 protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
