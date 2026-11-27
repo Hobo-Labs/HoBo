@@ -1,19 +1,23 @@
 package packs
 
-#PackId: =~"^pack\\.better-auth/v1$"
-#AdapterId: "better-auth"
-#PortId: =~"^hobo:[a-z0-9-]+(/[a-z0-9-]+)*$"
+import "strings"
+
+#PackId:               =~"^pack\\.better-auth/v1$"
+#AdapterId:            "better-auth"
+#PortId:               =~"^hobo:[a-z0-9-]+(/[a-z0-9-]+)*$"
 #ClaimsMappingVersion: =~"^better-auth-claims/v[1-9][0-9]*$"
-#SigningSecretRef: =~"^(aws-sm|azure-kv|gcp-sm|hobo-secret|hobo-token|infisical|op|vault)://[^@\\s]+/[^@\\s]+$"
-#BindleName: =~"^[a-z][a-z0-9_-]{0,63}$"
-#BasePath: =~"^(/[a-z0-9][a-z0-9._~-]*)+$"
-#DataProfileId: =~"^data\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*/v[1-9][0-9]*$"
+#SigningSecretRef:     strings.MaxRunes(2048) & (
+	=~"^(aws-sm|azure-kv|gcp-sm|hobo-token)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$" |
+	=~"^(vault|op|infisical|hobo-secret)://[A-Za-z0-9._~-]+/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*(#[A-Za-z0-9._-]+)?$") & !~"://\\.\\.?/" & !~"/\\.\\.?(/|#|$)"
+#BindleName:       =~"^[a-z][a-z0-9_-]{0,63}$"
+#BasePath:         =~"^(/[a-z0-9][a-z0-9._~-]*)+$"
+#DataProfileId:    =~"^data\\.(relational|postgres|mysql|sqlite)/v1$"
 #SocialProviderId: =~"^[a-z][a-z0-9-]*$"
 
 #BetterAuthBundlePortRefsRecord: {
-	relational_bindle: #BindleName
-	http_bindle:         #BindleName
-	signing_secret_ref:  #SigningSecretRef
+	relational_bindle:  #BindleName
+	http_bindle:        #BindleName
+	signing_secret_ref: #SigningSecretRef
 }
 
 #BetterAuthParsedConfigRecord: {
@@ -36,11 +40,13 @@ package packs
 		#PortId & "hobo:http",
 		#PortId & "hobo:secrets",
 	]
-	adapter_id:     #AdapterId
-	base_path:      #BasePath
-	route_pattern:  string & != ""
-	ports:          #BetterAuthBundlePortRefsRecord
-	parsed_config:  #BetterAuthParsedConfigRecord
+	adapter_id:    #AdapterId
+	base_path:     #BasePath & parsed_config.base_path
+	route_pattern: "\(base_path)/*"
+	ports: #BetterAuthBundlePortRefsRecord & {
+		signing_secret_ref: parsed_config.secret_ref
+	}
+	parsed_config: #BetterAuthParsedConfigRecord
 }
 
 #BetterAuthRelationalMigrationRecord: {

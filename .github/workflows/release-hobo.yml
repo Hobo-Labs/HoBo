@@ -1081,6 +1081,7 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
         run: |
