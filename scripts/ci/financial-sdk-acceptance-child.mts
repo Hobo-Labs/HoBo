@@ -53,6 +53,10 @@ try {
 	assert.equal(missing.quote.ok, false);
 	if (missing.quote.ok) throw new Error("missing pricing was quoted");
 	assert.equal(missing.quote.code, "PRICING_MODEL_UNAVAILABLE");
+	assert.deepEqual(missing.admissionPath, {
+		kind: "unavailable",
+		code: "PRICING_MODEL_UNAVAILABLE",
+	});
 	assert.deepEqual(missing.budget, {
 		evaluation: "not-evaluated",
 		reservation: "not-created",
@@ -109,6 +113,15 @@ try {
 	const assessment = financial.assess(plan);
 	assert.equal(assessment.quote.ok, true);
 	assert.equal(assessment.admissionPath.kind, "bounded-budget");
+	const coverage = assessment.providerCoverage.providers[0];
+	assert.equal(coverage?.providerId, "sandbox");
+	assert.equal(coverage?.status, "quoted");
+	if (coverage?.status !== "quoted") throw new Error("provider was not quoted");
+	assert.deepEqual(coverage.model, {
+		source: "developer-supplied",
+		modelId: "terms",
+		revision: "1",
+	});
 	assert.deepEqual(assessment.budget, {
 		evaluation: "not-evaluated",
 		reservation: "not-created",
