@@ -165,7 +165,7 @@ export function executeRunnerJobDiskPrune(
 		);
 	} catch (error) {
 		io.warn(errorText(error));
-		return 1;
+		return 0;
 	}
 	const workspacePath = jobDiskSamplePath(env.GITHUB_WORKSPACE, cwd);
 	const dockerRootPath = dockerDataRoot(io);
