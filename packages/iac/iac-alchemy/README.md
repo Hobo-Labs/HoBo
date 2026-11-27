@@ -22,7 +22,8 @@ reports the default infrastructure-only mappings. A partial report does not
 establish that application bindings or provider authorization are configured.
 `describeCloudflarePrimitiveSupport(catalog, mappers)` likewise reports the
 selected Cloudflare mapper operations and limitations, including the opt-in
-bounded Worker KV and R2 adapters. Its default describes the base mappers.
+bounded Worker KV and R2 adapters. Unsupported operations remain explicit in
+the selected report. Its default describes the base mappers.
 The `@hobo/iac-alchemy/rivet` entry point binds HoBo HTTP applications, including
 HTTP-served UI kits, to Alchemy Rivet DurableObjects. UI `render` and `drive`
 operations remain unsupported and cannot be granted. `@hobo/iac-alchemy/rivet/runtime` provides the
