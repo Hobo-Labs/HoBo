@@ -60,6 +60,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/conformance/test/durable-messaging-conformance.test.ts",
 			"packages/wit/wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
 			"packages/iac/iac-alchemy/model/AwsViteMapping.tla",
+			"packages/iac/iac-alchemy/test/run-official-aws-emulator.mts",
 			"packages/iac/iac-alchemy/model/AwsViteMapping.cfg",
 			"packages/iac/iac-alchemy/model/check-aws-vite.mts",
 			"packages/iac/iac-alchemy/model/IacGrant.tla",
@@ -170,6 +171,31 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 	assert.ok(
 		prerequisitesIndex >= 0 && prerequisitesIndex < integrationIndex,
 		"Alchemy integration prerequisites must build before the test",
+	);
+	const simulatorJob = asObject(jobs?.["aws-emulator"]);
+	assert.equal(asText(simulatorJob?.needs), "route");
+	assert.equal(
+		asText(simulatorJob?.["runs-on"]),
+		asText(asObject(jobs?.["pricing-gate"])?.["runs-on"]),
+	);
+	const simulatorSteps = asList(simulatorJob?.steps);
+	const checkout = simulatorSteps?.find((step) =>
+		asText(asObject(step)?.uses)?.startsWith("actions/checkout@"),
+	);
+	assert.equal(asObject(asObject(checkout)?.with)?.clean, false);
+	const simulatorBuild =
+		simulatorSteps?.findIndex((step) =>
+			asText(asObject(step)?.run)?.includes("turbo run build"),
+		) ?? -1;
+	const simulatorTest =
+		simulatorSteps?.findIndex((step) =>
+			asText(asObject(step)?.run)?.includes(
+				"pnpm --filter @hobo/iac-alchemy run test:aws-emulator",
+			),
+		) ?? -1;
+	assert.ok(
+		simulatorBuild >= 0 && simulatorTest > simulatorBuild,
+		"official AWS emulator tests must run after their dependencies build",
 	);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
 	const modelCheck = modelSteps

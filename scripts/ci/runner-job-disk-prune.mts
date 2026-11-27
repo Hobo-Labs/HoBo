@@ -9,9 +9,16 @@ import {
 	parseDfAvailBytes,
 } from "../lib/runner-job-disk-prune.mts";
 
-function sampleAvailBytes(samplePath: string): number {
+export const DF_SAMPLE_TIMEOUT_MS = 15_000;
+export const DOCKER_COMMAND_TIMEOUT_MS = 120_000;
+
+export function sampleAvailBytes(
+	samplePath: string,
+	timeoutMs = DF_SAMPLE_TIMEOUT_MS,
+): number {
 	const result = spawnSync("df", ["-B1", "--output=avail", "--", samplePath], {
 		encoding: "utf8",
+		timeout: timeoutMs,
 	});
 	if (result.error) throw new Error(result.error.message);
 	if (result.status !== 0) {
@@ -34,10 +41,14 @@ function dockerReachable(
 	}
 }
 
-function runDocker(args: readonly string[]): DockerCommandResult {
+export function runDocker(
+	args: readonly string[],
+	timeoutMs = DOCKER_COMMAND_TIMEOUT_MS,
+): DockerCommandResult {
 	const capture = args[0] === "info";
 	const result = spawnSync("docker", [...args], {
 		encoding: "utf8",
+		timeout: timeoutMs,
 		stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
 	});
 	const status = result.status;

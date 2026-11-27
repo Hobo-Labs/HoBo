@@ -1,7 +1,15 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	defaultNbgvRunner,
 	fixedTrainAlphaReleaseRef,
 	fixedTrainAlphaSemver,
 	nbgvGetVersionArgv,
@@ -51,17 +59,64 @@ describe("fixedTrainAlphaSemver", () => {
 });
 
 describe("nbgv get-version argv", () => {
-	it("activates the pinned pnpm tool so ignored root config still runs nbgv", () => {
-		const toml = readFileSync(join(root, "mise.toml"), "utf8");
-		const version = toml.match(/^pnpm\s*=\s*"([^"]+)"/m)?.[1];
-		expect(version).toBeTruthy();
+	it.skipIf(process.platform === "win32")(
+		"runs nbgv when mise removes the host Node directory from PATH",
+		() => {
+			const fixture = mkdtempSync(join(tmpdir(), "hobo-nbgv-mise-"));
+			const bin = join(fixture, "bin");
+			const packageDir = join(
+				fixture,
+				"node_modules",
+				"nerdbank-gitversioning",
+			);
+			const previousPath = process.env.PATH;
+			const previousFixture = process.env.HOBO_NBGV_TEST_BIN;
+			try {
+				mkdirSync(bin, { recursive: true });
+				mkdirSync(packageDir, { recursive: true });
+				writeFileSync(
+					join(fixture, "mise.toml"),
+					'[tools]\npnpm = "10.33.4"\n',
+				);
+				writeFileSync(
+					join(bin, "mise"),
+					'#!/bin/sh\nif [ "$1" = which ]; then echo /fake/dotnet; exit 0; fi\n[ "$1" = exec ] || exit 1\nshift\n[ "$1" = -- ] || shift\n[ "$1" = -- ] || exit 1\nshift\nPATH="$HOBO_NBGV_TEST_BIN"\nexport PATH\nexec "$@"\n',
+					{ mode: 0o755 },
+				);
+				writeFileSync(join(bin, "pnpm"), '#!/bin/sh\nexec node "$@"\n', {
+					mode: 0o755,
+				});
+				writeFileSync(
+					join(packageDir, "main.js"),
+					'if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["get-version", "HEAD", "--variable", "VersionHeight"])) process.exit(2); process.stdout.write("42");\n',
+				);
+				process.env.PATH = [bin, previousPath ?? ""].join(delimiter);
+				process.env.HOBO_NBGV_TEST_BIN = bin;
+				expect(defaultNbgvRunner(fixture)("VersionHeight", "HEAD")).toBe("42");
+			} finally {
+				if (previousPath === undefined) delete process.env.PATH;
+				else process.env.PATH = previousPath;
+				if (previousFixture === undefined)
+					delete process.env.HOBO_NBGV_TEST_BIN;
+				else process.env.HOBO_NBGV_TEST_BIN = previousFixture;
+				rmSync(fixture, { recursive: true, force: true });
+			}
+		},
+	);
+
+	it("uses the installed nbgv CLI with the running Node executable", () => {
+		const manifest = JSON.parse(
+			readFileSync(
+				join(root, "node_modules", "nerdbank-gitversioning", "package.json"),
+				"utf8",
+			),
+		);
+		expect(manifest.bin.nbgv).toBe("main.js");
 		expect(nbgvGetVersionArgv(root, "VersionHeight", "HEAD")).toEqual([
 			"exec",
-			`pnpm@${version}`,
 			"--",
-			"pnpm",
-			"exec",
-			"nbgv",
+			process.execPath,
+			join(root, "node_modules", "nerdbank-gitversioning", "main.js"),
 			"get-version",
 			"HEAD",
 			"--variable",

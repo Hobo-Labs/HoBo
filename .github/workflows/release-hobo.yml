@@ -605,7 +605,7 @@ jobs:
       !cancelled() && needs.route.result == 'success' &&
       (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       HOBO_RELEASE_CHECKOUT_REF: ${{ github.sha }}
       HOBO_RELEASE_TURBO_BASE: ""
@@ -631,11 +631,67 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
+      # Published GHCR layer or a warm store when nothing is mounted. A miss
+      # continues into the filtered Pages install (the cold-runner path).
       - uses: $/.github/actions/ci-deps-recovery
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           verify-sibling-links: "true"
+      - name: Link Pages deps layer
+        id: pages-deps-layer
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            echo "match=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Prepare cache decompression
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v zstd >/dev/null 2>&1 && command -v unzstd >/dev/null 2>&1; then
+            exit 0
+          fi
+          case "$(uname -m)" in
+            x86_64) zstd_arch=amd64; zstd_sha=3f6f833ae2fd533a0c9238310aef1148f51a64aa5d5f1278451ddc793d4d6d15 ;;
+            aarch64|arm64) zstd_arch=arm64; zstd_sha=97a58383b0ad55cc8183e59cbb112f2eb55c3dc1e90de816fa5cfb983d5c2ff0 ;;
+            *) echo "No pinned zstd package for this runner; using the available cache"; exit 0 ;;
+          esac
+          cache_dir="$(mktemp -d "${RUNNER_TEMP}/hobo-pages-cache.XXXXXXXXXX")"
+          archive="${cache_dir}/zstd.deb"
+          if curl -fsSL --retry 1 --connect-timeout 5 --max-time 30 \
+              "https://deb.debian.org/debian/pool/main/libz/libzstd/zstd_1.5.4+dfsg2-5_${zstd_arch}.deb" -o "$archive" \
+            && printf '%s  %s\n' "$zstd_sha" "$archive" | sha256sum -c - \
+            && dpkg-deb -x "$archive" "${cache_dir}/extracted" \
+            && "${cache_dir}/extracted/usr/bin/zstd" --quiet --version >/dev/null; then
+            echo "${cache_dir}/extracted/usr/bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning::zstd cache restore unavailable; using the available cache"
+          fi
+      - name: Restore pnpm store when available
+        if: steps.pages-deps-layer.outputs.match != 'true'
+        uses: $/.github/actions/pnpm-store
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          cold-self-hosted-cache: "true"
+      - name: Install Pages dependencies
+        if: steps.pages-deps-layer.outputs.match != 'true'
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --config.confirmModulesPurge=false \
+            --filter 'hobo-site...' --filter hobo-design \
+            --filter 'ts-autocode-training...' --filter '@hobo/example-try-site...' \
+            --filter '@hobo/runtime-wasm...'
+      - name: Restore the main build cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          main-build: "true"
       - name: Componentize browser WIT runtime (Pages release path)
         run: node --no-warnings scripts/ci/build-release-browser-wit-on-runner.mts
 
@@ -1031,6 +1087,16 @@ jobs:
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 10
         # Without a token the GHCR pull is never tried, and a runner that does not
