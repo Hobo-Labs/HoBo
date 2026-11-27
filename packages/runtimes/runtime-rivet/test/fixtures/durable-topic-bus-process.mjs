@@ -18,6 +18,9 @@ process.on("message", async (message) => {
 		if (message.kind === "advance") {
 			await host.controls.advanceMs(message.delta);
 			result = null;
+		} else if (message.kind === "fail-before-commit") {
+			await host.controls.loseNextMutationResponse("before-commit");
+			result = null;
 		} else if (message.kind === "arm-commit-barrier") {
 			if (commitBarrier) throw new Error("commit barrier already armed");
 			commitBarrier = await host.controls.holdNextMutation("before-commit");

@@ -103,15 +103,21 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 	let barrier:
 		| { reached: () => void; wait: Promise<void>; release: () => void }
 		| undefined;
+	let failBeforeCommit = false;
 	let commitBarrier:
 		| { reached: () => void; wait: Promise<void>; release: () => void }
 		| undefined;
 	const beforeCommit = async () => {
 		const held = commitBarrier;
-		if (held === undefined) return;
-		commitBarrier = undefined;
-		held.reached();
-		await held.wait;
+		if (held !== undefined) {
+			commitBarrier = undefined;
+			held.reached();
+			await held.wait;
+		}
+		if (failBeforeCommit) {
+			failBeforeCommit = false;
+			throw new Error("injected failure before commit");
+		}
 	};
 	const outstanding: Array<() => void> = [];
 	const stores = new Map<string, Promise<ReturnType<typeof sqlite>>>();
@@ -172,7 +178,10 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 		advanceMs: async (delta) => {
 			clock += delta;
 		},
-		loseNextMutationResponse: unavailable,
+		async loseNextMutationResponse(point) {
+			if (point !== "before-commit" || failBeforeCommit) return unavailable();
+			failBeforeCommit = true;
+		},
 		loseNextMutationTransport: unavailable,
 		rejectNextDeadLetterWrite: unavailable,
 		async blockNextReceiptLookup(reason) {

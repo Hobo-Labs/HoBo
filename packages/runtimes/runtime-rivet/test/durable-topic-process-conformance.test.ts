@@ -11,6 +11,7 @@ it("runs generic bus cases across real SQLite actor process termination", {
 	const supported = new Set([
 		"group-isolation",
 		"restart",
+		"ack-before-commit-uncertainty",
 		"ack-after-commit-uncertainty",
 		"lease-expiry",
 		"lease-receipt-replay",
@@ -250,4 +251,43 @@ it("fences disclosure when closing with a transaction held before commit", {
 	await barrier.reached;
 	await host.controls.close();
 	expect(await pending).toEqual({ status: "unknown", operation });
+});
+
+it("rolls back state and receipt when the worker fails before commit", {
+	timeout: 30_000,
+}, async () => {
+	const host = await createProcessBusConformanceHost();
+	try {
+		const first = createRivetDurableTopicClient(await host.open("tenant-a"));
+		const operation = durableMessagingOperation(10_000, "0000000000000015");
+		await host.controls.loseNextMutationResponse("before-commit");
+		expect(
+			await first.ensureTopic({ operation, topic: "rolled-back" }),
+		).toEqual({
+			status: "unknown",
+			operation,
+		});
+		await host.controls.restart();
+		const reopened = createRivetDurableTopicClient(await host.open("tenant-a"));
+		expect(await reopened.events({ afterSequence: 0, limit: 2 })).toMatchObject(
+			{
+				status: "ok",
+				events: [],
+			},
+		);
+		expect(
+			await reopened.ensureTopic({ operation, topic: "rolled-back" }),
+		).toEqual({
+			status: "committed",
+			value: { topic: "rolled-back" },
+		});
+		expect(await reopened.events({ afterSequence: 0, limit: 2 })).toMatchObject(
+			{
+				status: "ok",
+				events: [{ sequence: 1, kind: "topic-created", topic: "rolled-back" }],
+			},
+		);
+	} finally {
+		await host.controls.close();
+	}
 });

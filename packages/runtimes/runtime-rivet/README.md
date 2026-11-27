@@ -281,3 +281,6 @@ receipt authority, including through the separate-process harness.
 The process harness can also hold a SQLite transaction after applying its
 state and receipt writes and before commit, for expiry and pending-conflict
 scenarios. Host teardown drains that work and fences result disclosure.
+
+A separate fault can abort the next transaction before commit; the caller sees
+an unknown outcome and must reconcile the operation after reopening the store.
