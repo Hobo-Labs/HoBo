@@ -9,7 +9,7 @@ const model=fileURLToPath(new URL('../models/PricingMeterBinding.tla',import.met
 const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-pricing-legacy-'));
 try {
   copyFileSync(model,path.join(scratch,'PricingMeterBinding.tla'));
-  writeFileSync(path.join(scratch,'Legacy.cfg'),'SPECIFICATION Spec\nINVARIANT AllBindingSafe\n');
+  writeFileSync(path.join(scratch,'Legacy.cfg'),'CONSTANTS CheckProduct = TRUE\n          CheckMeterKnown = TRUE\n          CheckMeterUnique = TRUE\n          CheckChargeUnique = TRUE\nSPECIFICATION Spec\nINVARIANT AllBindingSafe\n');
   const result=spawnSync('java',['-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-workers','1','-config','Legacy.cfg','PricingMeterBinding.tla'],{cwd:scratch,encoding:'utf8'});
   if (result.error) throw result.error;
   const output=`${result.stdout}\n${result.stderr}`;

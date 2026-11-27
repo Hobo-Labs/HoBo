@@ -14,12 +14,12 @@ Init == /\ version \in {"old", "v5"}
         /\ (kind # "credit" => ~derived)
         /\ phase = "received" /\ debit = 0 /\ balance = initialBalance
         /\ basisLeft = initialBasis /\ allocated = 0 /\ unit = "none"
+Unsafe == \/ CheckBalance /\ initialBalance < 0
+          \/ CheckCapacity /\ initialBalance > capacity
+          \/ CheckCharge /\ charge < 0
+          \/ CheckDerived /\ derived /\ requestedBasis > 0
 Validate == /\ phase = "received"
-            /\ phase' = IF version = "v5" /\ \/ (CheckBalance /\ initialBalance < 0)
-                                            \/ (CheckCapacity /\ initialBalance > capacity)
-                                            \/ (CheckCharge /\ charge < 0)
-                                            \/ (CheckDerived /\ derived /\ requestedBasis > 0)
-                         THEN "rejected" ELSE "ready"
+            /\ phase' = IF version = "v5" /\ Unsafe THEN "rejected" ELSE "ready"
             /\ UNCHANGED <<version,kind,initialBalance,capacity,charge,initialBasis,requestedBasis,derived,debit,balance,basisLeft,allocated,unit>>
 Consume == /\ phase = "ready"
            /\ LET amount == Min(initialBalance,charge)
