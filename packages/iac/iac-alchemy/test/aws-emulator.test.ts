@@ -40,7 +40,10 @@ import {
 } from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
-import { createAwsSecretStore } from "../src/aws-secret.js";
+import {
+	type AwsSecretStore,
+	createAwsSecretStore,
+} from "../src/aws-secret.js";
 import {
 	awsVersionedSecretBindleMappers,
 	withAwsVersionedSecret,
@@ -421,6 +424,34 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					verify: () => authorized,
 					layer,
 				});
+				let retained: AwsSecretStore | undefined;
+				const application = bindle("shop", (b) => {
+					const credentials = b.secret().allow("put", "access");
+					return {
+						credentials,
+						web: b
+							.web((context?: BindleRuntimeContext) => async () => {
+								retained = awsHttpBindings(context).secret("credentials");
+								const current = await retained.access();
+								return Response.json({
+									version: current.versionId,
+									bytes: [...current.value],
+								});
+							})
+							.with(sessionReplay({ enabled: false }))
+							.dependsOn(credentials),
+					};
+				});
+				const selectedApplication = withAwsVersionedSecret(application, {
+					credentials: true,
+				});
+				const source = defineAwsHttpSource({
+					bindle: selectedApplication,
+					applicationName: "web",
+					environment: { HOBO_RESOURCE_0: output.secretArn },
+					resolveStores: () => ({ credentials: store }),
+					verifyBinding: () => authorized,
+				});
 				const first = randomUUID();
 				const second = randomUUID();
 				expect(await store.put(new Uint8Array([1, 2]), first)).toBe(first);
@@ -436,7 +467,20 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				expect(new Set(await store.listVersions())).toEqual(
 					new Set([first, second]),
 				);
+				const response = await source.fetch(new Request("https://app.test/"));
+				expect(response.status).toBe(200);
+				expect(await response.json()).toEqual({
+					version: second,
+					bytes: [3, 4],
+				});
+				if (!retained) throw new Error("secret binding missing");
+				await expect(retained.access()).rejects.toMatchObject({
+					code: "AWS_SECRET_DENIED",
+				});
 				authorized = false;
+				expect(
+					(await source.fetch(new Request("https://app.test/"))).status,
+				).toBe(503);
 				await expect(store.access()).rejects.toMatchObject({
 					code: "AWS_SECRET_DENIED",
 				});

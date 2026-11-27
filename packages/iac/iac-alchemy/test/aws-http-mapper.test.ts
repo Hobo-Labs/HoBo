@@ -18,6 +18,10 @@ import {
 } from "../src/aws-kv-mapper.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import {
+	awsVersionedSecretBindleMappers,
+	withAwsVersionedSecret,
+} from "../src/aws-secret-mapper.js";
+import {
 	type AlchemyBindleMapping,
 	mapBindleToAlchemy,
 } from "../src/bindle.js";
@@ -168,6 +172,70 @@ describe("AWS Alchemy HTTP application mapping", () => {
 		f.revoke();
 		const binding = alchemySourceFor(web);
 		expect(binding?.verify(binding.claim)).toBe(false);
+	});
+	it("binds the actual Alchemy secret ARN into a WebFunction", async () => {
+		const neutral = bindle("shop", (b) => {
+			const credentials = b.secret().allow("access");
+			return {
+				credentials,
+				web: b
+					.web(() => () => new Response("ok"))
+					.with(sessionReplay({ enabled: false }))
+					.dependsOn(credentials),
+			};
+		});
+		const selected = withAwsVersionedSecret(neutral, { credentials: true });
+		const source = defineAwsHttpSource({
+			bindle: selected,
+			applicationName: "web",
+			environment: {},
+			resolveStores: () => ({}),
+			verifyBinding: () => true,
+		});
+		const main = fileURLToPath(import.meta.url);
+		const mappers = awsHttpBindleMappers(
+			{
+				source,
+				main,
+				authType: "IamAuth",
+				maxEnvironments: 2,
+				rateLimit: 100,
+				sourceFence: {
+					sourceDigest: `sha256:${"a".repeat(64)}`,
+					environmentDigest: `sha256:${"b".repeat(64)}`,
+					proofRef: "host:test",
+					verify: () => true,
+				},
+				verifySource: () => true,
+			},
+			awsVersionedSecretBindleMappers(),
+		);
+		// SAFETY: the fixture supplies the Alchemy services needed to construct the mapped resources.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, {
+				assessRequirements: () => ({ status: "supported" as const }),
+			}).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+				Effect.provideService(Stage, "test"),
+				Effect.provideService(AlchemyContext, {
+					dotAlchemy: "/tmp",
+					dev: false,
+					adopt: false,
+				}),
+			) as Effect.Effect<AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.credentials?.Type).toBe("AWS.SecretsManager.Secret");
+		const web = mapped.primary.web;
+		if (!web) throw new Error("missing web function");
+		expect(
+			Object.keys(Output.resolveUpstream(web.Props.env.HOBO_RESOURCE_0)),
+		).toEqual(["credentials"]);
 	});
 	it("rechecks the source binding as well as the artifact fence after mapping", async () => {
 		const f = fixture();

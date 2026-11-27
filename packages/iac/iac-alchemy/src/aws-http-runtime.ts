@@ -19,6 +19,12 @@ import {
 	type AwsS3Store,
 	inspectAwsS3Store,
 } from "./aws-s3.js";
+import {
+	AwsSecretError,
+	type AwsSecretGrant,
+	type AwsSecretStore,
+	inspectAwsSecretStore,
+} from "./aws-secret.js";
 import type { BindleForAlchemy } from "./bindle.js";
 import { observeOrdinaryPromise } from "./node-promise-boundary.js";
 import { acceptSynchronousTrue } from "./synchronous-result.js";
@@ -118,6 +124,7 @@ export interface AwsBindleContext extends AwsContextRef {
 export interface AwsHttpBindings {
 	kv(name: string): AwsKvStore;
 	bucket(name: string): AwsS3Store;
+	secret(name: string): AwsSecretStore;
 }
 export type AwsHttpEntrypoint = (
 	context?: AwsBindleContext,
@@ -126,6 +133,7 @@ export type AwsHttpBindingClaim = Readonly<
 	{ bindleName: string; applicationName: string; resourceName: string } & (
 		| { kind: "kv"; grant: AwsKvGrant }
 		| { kind: "bucket"; grant: AwsS3Grant }
+		| { kind: "secret"; grant: AwsSecretGrant }
 	)
 >;
 export interface AwsBindleApplication {
@@ -366,7 +374,9 @@ function samePermissions(
 export function createAwsBindleApplication<Requirements>(options: {
 	readonly bindle: BindleForAlchemy<AwsHttpEntrypoint, Requirements>;
 	readonly applicationName: string;
-	readonly stores: Readonly<Record<string, AwsKvStore | AwsS3Store>>;
+	readonly stores: Readonly<
+		Record<string, AwsKvStore | AwsS3Store | AwsSecretStore>
+	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
 }): AwsBindleApplication {
 	if (
@@ -399,7 +409,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 	const entries: {
 		name: string;
 		claim: AwsHttpBindingClaim;
-		store: AwsKvStore | AwsS3Store;
+		store: AwsKvStore | AwsS3Store | AwsSecretStore;
 	}[] = [];
 	for (const binding of graph.bindings) {
 		const { name } = binding;
@@ -408,6 +418,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 			throw new Error("AWS application dependency is invalid");
 		const kv = inspectAwsDynamoKvStore(field.value);
 		const bucket = inspectAwsS3Store(field.value);
+		const secret = inspectAwsSecretStore(field.value);
 		const claim =
 			kv && binding.kind === "kv" && samePermissions(binding.allow, kv.allow)
 				? Object.freeze({
@@ -427,13 +438,25 @@ export function createAwsBindleApplication<Requirements>(options: {
 							kind: "bucket" as const,
 							grant: bucket,
 						})
-					: undefined;
+					: secret &&
+							binding.kind === "secret" &&
+							samePermissions(binding.allow, secret.allow)
+						? Object.freeze({
+								bindleName: graph.bindleName,
+								applicationName,
+								resourceName: name,
+								kind: "secret" as const,
+								grant: secret,
+							})
+						: undefined;
 		if (!claim)
 			throw new Error("AWS store does not match its declared dependency");
 		const identity =
 			claim.kind === "kv"
 				? `kv|${claim.grant.partition}|${claim.grant.accountId}|${claim.grant.region}|${claim.grant.tableName}`
-				: `bucket|${claim.grant.bucketName}`;
+				: claim.kind === "bucket"
+					? `bucket|${claim.grant.bucketName}`
+					: `secret|${claim.grant.secretArn}`;
 		if (physicalIdentities.has(identity))
 			throw new Error("AWS store identities must be unique");
 		physicalIdentities.add(identity);
@@ -469,7 +492,10 @@ export function createAwsBindleApplication<Requirements>(options: {
 			const live = (claim: AwsHttpBindingClaim) => active && verified(claim);
 			const scoped = new Map<
 				string,
-				{ kind: "kv" | "bucket"; store: AwsKvStore | AwsS3Store }
+				{
+					kind: "kv" | "bucket" | "secret";
+					store: AwsKvStore | AwsS3Store | AwsSecretStore;
+				}
 			>();
 			for (let index = 0; index < entries.length; index++) {
 				const entry = entries[index];
@@ -524,7 +550,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 							}),
 						},
 					]);
-				} else {
+				} else if (claim.kind === "bucket") {
 					// SAFETY: the store's S3 brand and matching claim were checked at construction.
 					const store = entry.store as AwsS3Store;
 					const before = () => {
@@ -567,6 +593,58 @@ export function createAwsBindleApplication<Requirements>(options: {
 							}),
 						},
 					]);
+				} else {
+					// SAFETY: the store's secret brand and matching claim were checked at construction.
+					const store = entry.store as AwsSecretStore;
+					const before = () => {
+						if (!live(claim))
+							throw new AwsSecretError(
+								"AWS_SECRET_DENIED",
+								"request grant is unavailable",
+							);
+					};
+					const after = (versionId?: string) => {
+						if (!live(claim))
+							throw new AwsSecretError(
+								versionId === undefined
+									? "AWS_SECRET_READ_UNAVAILABLE"
+									: "AWS_SECRET_MUTATION_OUTCOME_UNKNOWN",
+								"request grant changed",
+								versionId,
+							);
+					};
+					apply(mapSet, scoped, [
+						entry.name,
+						{
+							kind: "secret",
+							store: Object.freeze({
+								async put(value: Uint8Array, versionId: string) {
+									before();
+									const result = await store.put(value, versionId);
+									after(versionId);
+									return result;
+								},
+								async access() {
+									before();
+									const result = await store.access();
+									after();
+									return result;
+								},
+								async accessVersion(versionId: string) {
+									before();
+									const result = await store.accessVersion(versionId);
+									after();
+									return result;
+								},
+								async listVersions() {
+									before();
+									const result = await store.listVersions();
+									after();
+									return result;
+								},
+							}),
+						},
+					]);
 				}
 			}
 			const context: AwsBindleContext = Object.freeze({
@@ -578,7 +656,10 @@ export function createAwsBindleApplication<Requirements>(options: {
 				kv(name: string) {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
-						| { kind: "kv" | "bucket"; store: AwsKvStore | AwsS3Store }
+						| {
+								kind: "kv" | "bucket" | "secret";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore;
+						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "kv")
 						throw new Error("KV binding is unavailable");
@@ -588,12 +669,28 @@ export function createAwsBindleApplication<Requirements>(options: {
 				bucket(name: string) {
 					// SAFETY: scoped is the private map populated with checked entries.
 					const item:
-						| { kind: "kv" | "bucket"; store: AwsKvStore | AwsS3Store }
+						| {
+								kind: "kv" | "bucket" | "secret";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore;
+						  }
 						| undefined = apply(mapGet, scoped, [name]);
 					if (!active || item?.kind !== "bucket")
 						throw new Error("bucket binding is unavailable");
 					// SAFETY: the scoped entry's kind was checked above.
 					return item.store as AwsS3Store;
+				},
+				secret(name: string) {
+					// SAFETY: scoped is the private map populated with checked entries.
+					const item:
+						| {
+								kind: "kv" | "bucket" | "secret";
+								store: AwsKvStore | AwsS3Store | AwsSecretStore;
+						  }
+						| undefined = apply(mapGet, scoped, [name]);
+					if (!active || item?.kind !== "secret")
+						throw new Error("secret binding is unavailable");
+					// SAFETY: the scoped entry's kind was checked above.
+					return item.store as AwsSecretStore;
 				},
 			});
 			apply(weakSet, contextBindings, [context, resources]);
