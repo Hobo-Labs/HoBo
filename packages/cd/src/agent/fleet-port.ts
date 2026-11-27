@@ -1,10 +1,17 @@
 import { createPrivateKey, type KeyObject, sign } from "node:crypto";
+import { fromBinary } from "@bufbuild/protobuf";
 import type { JsonObject, TenantId } from "@hobo/core";
 import {
 	type EnrollmentAuthority,
+	type FleetFailure,
 	type FleetId,
 	KeyAlgorithm,
+	type MemberId,
+	MemberRecordSchema,
+	MemberState,
+	type Outcome,
 	type PublicJwk,
+	type SignedEnvelope,
 	parseKeyId,
 	type Signer,
 	type VerifiedToken,
@@ -14,6 +21,74 @@ import { memberIdFromJwk } from "@hobo/fleet/keys";
 import type { DeliveryFleet } from "../ports.js";
 
 const MEMBERS = "/v1/fleet/members";
+
+function memberActiveRefusal(
+	record: Readonly<{ memberId: string; state: MemberState }>,
+): Outcome<true> | undefined {
+	switch (record.state) {
+		case MemberState.ACTIVE:
+			return undefined;
+		case MemberState.PENDING:
+			return {
+				ok: false,
+				error: {
+					code: "approval-pending",
+					message: `${record.memberId} is pending`,
+				},
+			};
+		case MemberState.SUSPENDED:
+			return {
+				ok: false,
+				error: {
+					code: "member-suspended",
+					message: `${record.memberId} is suspended`,
+				},
+			};
+		case MemberState.LOCKED:
+			return {
+				ok: false,
+				error: {
+					code: "member-locked",
+					message: `${record.memberId} is locked`,
+				},
+			};
+		case MemberState.REVOKED:
+			return {
+				ok: false,
+				error: {
+					code: "member-revoked",
+					message: `${record.memberId} is revoked`,
+				},
+			};
+		default:
+			return {
+				ok: false,
+				error: {
+					code: "forbidden",
+					message: `${record.memberId} is not active`,
+				},
+			};
+	}
+}
+
+async function assertMemberActiveFromEnvelope(
+	read: Outcome<SignedEnvelope>,
+	memberId: MemberId,
+): Promise<Outcome<true>> {
+	if (!read.ok) return read;
+	let record;
+	try {
+		record = fromBinary(MemberRecordSchema, read.value.payload);
+	} catch {
+		const error: FleetFailure = {
+			code: "member-unknown",
+			message: `no member ${memberId}`,
+		};
+		return { ok: false, error };
+	}
+	const refusal = memberActiveRefusal(record);
+	return refusal ?? { ok: true, value: true };
+}
 
 export function remoteDeliveryFleet(
 	options: Readonly<{
@@ -52,6 +127,11 @@ export function remoteDeliveryFleet(
 			});
 		},
 		authenticate: options.authenticate,
+		assertMemberActive: async (memberId) =>
+			assertMemberActiveFromEnvelope(
+				await station.getMember({ memberId }),
+				memberId,
+			),
 	});
 }
 
@@ -91,6 +171,10 @@ export function inProcessDeliveryFleet(
 			};
 		},
 		authenticate: (request) => authority.authenticate(request),
+		assertMemberActive: async (memberId) => {
+			const read = await authority.getMember({ memberId }, station);
+			return assertMemberActiveFromEnvelope(read, memberId);
+		},
 	});
 }
 

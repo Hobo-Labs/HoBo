@@ -788,6 +788,9 @@ export type DeliveryFleet = Readonly<{
 	station: Pick<FleetClient, "issueToken" | "approveKey" | "accept" | "revoke">;
 	forward(dpopProof: string): Pick<FleetClient, "enroll" | "credentials">;
 	authenticate: EnrollmentAuthority["authenticate"];
+	assertMemberActive(
+		memberId: MemberId,
+	): Promise<import("@hobo/fleet").Outcome<true>>;
 }>;
 
 export interface AgentEnrollment {

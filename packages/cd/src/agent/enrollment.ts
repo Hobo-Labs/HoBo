@@ -143,6 +143,11 @@ const FLEET_CODES: ReadonlyMap<string, AgentFailureCode> = new Map([
 	["proof-invalid", "dpop-invalid"],
 	["proof-replayed", "dpop-replayed"],
 	["member-revoked", "reconciler-revoked"],
+	["member-suspended", "fleet-refused"],
+	["member-locked", "fleet-refused"],
+	["approval-pending", "fleet-refused"],
+	["forbidden", "fleet-refused"],
+	["member-unknown", "svid-invalid"],
 ]);
 
 function fleetRefusal(
@@ -992,6 +997,8 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				"dpop-key-mismatch",
 				"the DPoP proof does not match the SVID",
 			);
+		const active = await fleet.assertMemberActive(memberId);
+		if (!active.ok) return fleetRefusal("fleet-refused", active.error, memberId);
 		return { ok: true, value: memberId };
 	}
 

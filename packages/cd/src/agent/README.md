@@ -51,7 +51,8 @@ with `token-on-command-line`.
 `DeliveryFleet` (`../ports.ts`): `station` (issueToken, approveKey, accept,
 revoke as the Station's principal), `forward(dpopProof)` (enroll and
 credentials with the agent's own proof, never re-signed; the proof's `htu` is
-the authority URL at `origin`) and `authenticate`. `remoteDeliveryFleet` builds
+the authority URL at `origin`), `authenticate`, and `assertMemberActive` (issuer
+SVID verify checks fleet membership state after DPoP proof-only auth). `remoteDeliveryFleet` builds
 it over `@hobo/fleet/client` `createFleetClient`; `inProcessDeliveryFleet` over
 an authority composed in the same process (tests use `createTestAuthority`).
 Without a fleet every identity step refuses with `fleet-unavailable`.
