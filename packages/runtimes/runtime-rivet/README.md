@@ -277,3 +277,7 @@ It does not claim to inject faults inside the SQLite transaction.
 The SQLite test harness can deny disclosure after a receipt read or suppress
 the read result to exercise recovery and privacy for revoked or unavailable
 receipt authority, including through the separate-process harness.
+
+The process harness can also hold a SQLite transaction after applying its
+state and receipt writes and before commit, for expiry and pending-conflict
+scenarios. Host teardown drains that work and fences result disclosure.

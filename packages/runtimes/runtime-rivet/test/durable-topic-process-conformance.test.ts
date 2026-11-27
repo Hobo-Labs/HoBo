@@ -22,6 +22,8 @@ it("runs generic bus cases across real SQLite actor process termination", {
 		"receipt-capacity",
 		"receipt-unavailable",
 		"revoked-receipt-privacy",
+		"expiry-boundary",
+		"pending-conflict",
 		"operation-replay",
 		"concurrent-operations",
 		"concurrent-claims",
@@ -205,4 +207,47 @@ it("fences both requests held at the paired dispatch barrier during teardown", {
 	} finally {
 		await host.controls.close();
 	}
+});
+
+it("drains a held commit on restart and reconciles the old request", {
+	timeout: 30_000,
+}, async () => {
+	const host = await createProcessBusConformanceHost();
+	try {
+		const old = createRivetDurableTopicClient(await host.open("tenant-a"));
+		const operation = durableMessagingOperation(10_000, "0000000000000013");
+		const barrier = await host.controls.holdNextMutation("before-commit");
+		const pending = old.ensureTopic({ operation, topic: "restart-held" });
+		await barrier.reached;
+		await host.controls.restart();
+		expect(await pending).toEqual({ status: "unknown", operation });
+		const reopened = createRivetDurableTopicClient(await host.open("tenant-a"));
+		expect(
+			await reopened.ensureTopic({ operation, topic: "restart-held" }),
+		).toEqual({
+			status: "committed",
+			value: { topic: "restart-held" },
+		});
+		expect(await reopened.events({ afterSequence: 0, limit: 2 })).toMatchObject(
+			{
+				status: "ok",
+				events: [{ sequence: 1, kind: "topic-created", topic: "restart-held" }],
+			},
+		);
+	} finally {
+		await host.controls.close();
+	}
+});
+
+it("fences disclosure when closing with a transaction held before commit", {
+	timeout: 30_000,
+}, async () => {
+	const host = await createProcessBusConformanceHost();
+	const client = createRivetDurableTopicClient(await host.open("tenant-a"));
+	const operation = durableMessagingOperation(10_000, "0000000000000014");
+	const barrier = await host.controls.holdNextMutation("before-commit");
+	const pending = client.ensureTopic({ operation, topic: "close-held" });
+	await barrier.reached;
+	await host.controls.close();
+	expect(await pending).toEqual({ status: "unknown", operation });
 });

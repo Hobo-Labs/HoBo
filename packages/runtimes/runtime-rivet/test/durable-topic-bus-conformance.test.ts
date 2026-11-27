@@ -11,7 +11,9 @@ it("runs supported generic cases against the real bus actor and SQLite", {
 	const supported = new Set([
 		"group-isolation",
 		"lease-receipt-replay",
+		"expiry-boundary",
 		"revoked-receipt-privacy",
+		"pending-conflict",
 		"detached-requests",
 		"fingerprint-fields",
 		"tenant-isolation",
@@ -44,14 +46,16 @@ it("runs supported generic cases against the real bus actor and SQLite", {
 	).toEqual([
 		"group-isolation",
 		"lease-receipt-replay",
+		"expiry-boundary",
 		"revoked-receipt-privacy",
+		"pending-conflict",
 		"detached-requests",
 		"fingerprint-fields",
 		"tenant-isolation",
 		"bounds",
 	]);
 	expect(results.filter((result) => result.status === "unknown")).toHaveLength(
-		DURABLE_MESSAGING_CONFORMANCE_CASES.length - 7,
+		DURABLE_MESSAGING_CONFORMANCE_CASES.length - 9,
 	);
 });
 
