@@ -450,8 +450,8 @@ describe("release-hobo pages jobs", () => {
 		const tag = job("release-tag");
 		expect(tag).toContain("!cancelled() &&");
 		expect(tag).not.toContain("always()");
-		expect(tag).toMatch(
-			/needs: \[[^\]]*release-pages-gate, release-pages\b[^\]]*\]/,
+		expect(tag).toContain(
+			"needs: [route, release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-pages-stable, release-hobo-cli]",
 		);
 		// A failed gate skips the publish; that skip must not read as "nothing to do".
 		expect(tag).toContain(
@@ -461,6 +461,25 @@ describe("release-hobo pages jobs", () => {
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)`,
 		);
+		expect(tag).toContain(
+			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages-stable.result)`,
+		);
+	});
+
+	it("promotes pages-stable from the Freight home the candidate job recorded", () => {
+		const pages = job("release-pages");
+		expect(pages).toContain("promoted: ${{ steps.promote.outputs.promoted }}");
+		expect(pages).toContain('echo "promoted=true" >> "$GITHUB_OUTPUT"');
+		expect(pages).toContain("name: hobo-release-freight-pages");
+		expect(pages).toContain("if: steps.promote.outputs.promoted == 'true'");
+		const stable = job("release-pages-stable");
+		expect(stable).toContain("needs.release-pages.outputs.promoted == 'true'");
+		expect(stable).toContain("name: hobo-release-freight-pages");
+		expect(stable).toContain("deploy-site.mts --stable-only");
+		expect(stable).not.toContain("--candidate-only");
+		expect(stable).not.toContain("check-release-pages-stale.mts");
+		expect(stable).toContain("Link deps layer or install");
+		expect(stable).not.toContain("ci-deps-recovery");
 	});
 
 	it("records the commit it built, not the branch tip the event fired on", () => {
@@ -469,7 +488,7 @@ describe("release-hobo pages jobs", () => {
 		// commit checked out and built here.
 		const pages = job("release-pages");
 		const step = pages.slice(
-			pages.indexOf("Record, promote and publish the Pages site"),
+			pages.indexOf("Record and promote the Pages candidate"),
 		);
 		expect(step).toContain(
 			"HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}",

@@ -46,10 +46,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
   four attempts and exponential backoff plus jitter instead of 120-second
   per-attempt kills; their ensure steps have a 10-minute bound. The
-  `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
-  job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
-  legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
-  removes its own `<image>:candidate` when it finishes.
+  `release-oci-build-tag` stays at `max-parallel: 6` for sdk, codegen, ci-serve,
+  and site. `hobo-cli` and `hobo-mcp` are later jobs: they load the verified OCI
+  layout artifacts instead of rebuilding `hobo-sdk:candidate` (and
+  `hobo-cli:candidate`) on that daemon. Each image job still removes its own
+  `<image>:candidate` when it finishes.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests

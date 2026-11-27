@@ -1610,4 +1610,43 @@ describe("materialize CLI and main build cache job", () => {
 		assert.match(step, /token: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 		assert.equal(step.includes("env.GITHUB_TOKEN"), false);
 	});
+
+	it("recovers release OCI image builds from the published deps layer", () => {
+		const release = readFileSync(
+			join(
+				import.meta.dirname,
+				"..",
+				"..",
+				".github/workflows/release-hobo.yml",
+			),
+			"utf8",
+		);
+		const job = (id: string, next: string) => {
+			const start = release.indexOf(`\n  ${id}:\n`);
+			const end = release.indexOf(`\n  ${next}:\n`, start);
+			assert.ok(start > 0 && end > start, id);
+			return release.slice(start, end);
+		};
+		for (const [id, next] of [
+			["release-oci-build-tag", "release-oci-build-cli"],
+			["release-oci-build-cli", "release-oci-build-mcp"],
+			["release-oci-build-mcp", "release-images"],
+		] as const) {
+			const block = job(id, next);
+			const fetchAt = block.indexOf("pnpm run pins:fetch ts-autocode");
+			const recoveryAt = block.indexOf(
+				"uses: $/.github/actions/ci-deps-recovery",
+			);
+			assert.ok(fetchAt > 0 && recoveryAt > fetchAt, id);
+			const step = block.slice(
+				recoveryAt,
+				block.indexOf("\n      - ", recoveryAt + 1),
+			);
+			assert.match(step, /token: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+			assert.equal(step.includes("continue-on-error"), false, id);
+			assert.equal(step.includes("env.GITHUB_TOKEN"), false, id);
+			assert.equal(block.includes("Link deps layer or install"), false, id);
+			assert.match(block, /packages: read/);
+		}
+	});
 });

@@ -732,7 +732,11 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			if (runsOn === releasePagesRunsOn) {
 				assert.equal(file, "release-hobo.yml", `${file}:${lines[start]}`);
-				assert.equal(lines[start], "  release-pages:");
+				assert.match(
+					lines[start] ?? "",
+					/^ {2}release-pages(-stable)?:$/,
+					`${file}:${lines[start]}`,
+				);
 				assert.match(block, /^ {4}needs: \[route,/m);
 				continue;
 			}

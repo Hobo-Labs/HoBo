@@ -59,8 +59,9 @@ Blocked release verdicts and `::error::` lines use
 detectors, fail closed) before aggregation or logging.
 `announceVerdict` keeps resolver codes (`releaseFreightVerdictCodesForAnnounce`)
 and structured GitHub Pages refusal detail on `::error::` lines instead of
-`blocked (none)`. The `Record, promote and publish` step of `release-hobo.yml`
-passes `GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
+`blocked (none)`. The `Record and promote the Pages candidate` step of `release-hobo.yml`,
+and the stable job's `Promote the Pages stable channel` step, pass
+`GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
 token with `contents: write`, not `secrets.GITHUB_TOKEN`. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
