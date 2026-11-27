@@ -841,6 +841,62 @@ try {
 	process.stdout.write(
 		"AwsKvRuntime: revocation after transport witness found\n",
 	);
+	const s3Source = readFileSync(
+		join(sharedDirectory, "AwsS3Objects.tla"),
+		"utf8",
+	);
+	const s3Result = check(
+		"AwsS3Objects",
+		sharedDirectory,
+		join(scratch, "aws-s3"),
+	);
+	if (
+		s3Result.status !== 0 ||
+		!s3Result.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`AwsS3Objects model checking failed:\n${s3Result.stdout}\n${s3Result.stderr}`,
+		);
+	process.stdout.write(s3Result.stdout);
+	const s3Cases = [
+		[
+			"skip-size-check",
+			"Size(body) <= MaxBytes /\\ metadata = Digest(body)",
+			"metadata = Digest(body)",
+			"SuccessfulReadsAreBounded",
+		],
+		[
+			"skip-digest-check",
+			"Size(body) <= MaxBytes /\\ metadata = Digest(body)",
+			"Size(body) <= MaxBytes",
+			"SuccessfulReadsMatchDigest",
+		],
+		["empty-object-witness", undefined, undefined, "NeverReadEmpty"],
+		["corrupt-object-witness", undefined, undefined, "NeverReadCorruption"],
+	] as const;
+	for (const [label, before, after, invariant] of s3Cases) {
+		if (before !== undefined && s3Source.split(before).length !== 2)
+			throw new Error(`AwsS3Objects ${label} mutation target changed`);
+		const isolated = join(scratch, `aws-s3-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "AwsS3Objects.tla"),
+			before === undefined ? s3Source : s3Source.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "AwsS3Objects.cfg"),
+			`SPECIFICATION Spec\nCONSTANT MaxBytes = 1\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check("AwsS3Objects", isolated, join(isolated, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`AwsS3Objects ${label} did not reach ${invariant}`);
+		process.stdout.write(
+			`AwsS3Objects ${label}: ${invariant} counterexample found\n`,
+		);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }
