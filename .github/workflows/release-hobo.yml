@@ -635,9 +635,8 @@ jobs:
       # continues into the filtered Pages install (the cold-runner path).
       - uses: $/.github/actions/ci-deps-recovery
         continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           verify-sibling-links: "true"
       - name: Link Pages deps layer
         id: pages-deps-layer

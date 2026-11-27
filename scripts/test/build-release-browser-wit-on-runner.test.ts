@@ -75,7 +75,15 @@ describe("release browser-wit runner smoke", () => {
 		])
 			expect(block).toContain(required);
 		expect(block).not.toContain("XDG_CACHE_HOME");
-		expect(block).toContain("ci-deps-recovery");
+		const recoveryUse = block.indexOf(
+			"uses: $/.github/actions/ci-deps-recovery",
+		);
+		expect(recoveryUse).toBeGreaterThan(0);
+		expect(recoveryUse).toBeLessThan(layer);
+		const recoveryStep = block.slice(recoveryUse, layer);
+		expect(recoveryStep).toContain("continue-on-error: true");
+		expect(recoveryStep).toContain("token: ${{ secrets.GITHUB_TOKEN }}");
+		expect(recoveryStep).not.toContain("env.GITHUB_TOKEN");
 		expect(block).toMatch(/packages: read/);
 		const recovery = readFileSync(
 			join(
@@ -87,6 +95,8 @@ describe("release browser-wit runner smoke", () => {
 			"utf8",
 		);
 		expect(recovery).toMatch(/materialize-ghcr-deps-layer\.mts/);
+		expect(recovery).toMatch(/GITHUB_TOKEN: \$\{\{ inputs\.token \}\}/);
+		expect(recovery).not.toMatch(/\$\{\{ env\.GITHUB_TOKEN \}\}/);
 	});
 
 	it("release PR gate requires browser-wit smoke on hobo runner", () => {

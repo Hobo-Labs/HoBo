@@ -158,9 +158,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   restores the newest one before the job's own caches; PR impact validation, the workspace shards,
   PR affected package lanes and both scripts-test jobs set it. A merge-queue-reused push still runs
   this job. The release workflow's `release-pages-browser-wit-smoke` job uses the same
-  `ci-deps-recovery` composite (GHCR materialize, warm store, or fail closed) so an ARC pod without a
-  mounted layer does not spend the 20-minute ceiling on a cold registry install before the Pages
-  componentize step. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
+  `ci-deps-recovery` composite, with the job token passed as the `token` input so the GHCR
+  pull is authenticated. A miss does not fail that job: the step is `continue-on-error` and
+  the filtered Pages install still runs under the 45-minute limit. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at
   one per CPU, capped at 1024 MB per build after a 768 MB reserve (`HOBO_TURBO_BUILD_CONCURRENCY`
   overrides it), then the unchanged test calls at the memory-derived `HOBO_TURBO_CONCURRENCY`
   ([finding 162](../ci/findings/0162-merge-queue-shards-rebuilt-every-package-one-at-a-time.md)).

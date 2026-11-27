@@ -1491,5 +1491,41 @@ describe("materialize CLI and main build cache job", () => {
 		);
 		assert.match(docs, /hobo-ci-deps-layer-unavailable/);
 		assert.match(docs, /hobo-ci-deps:<checkout-key>/);
+		assert.match(docs, /continue-on-error/);
+		assert.match(docs, /token` input/);
+	});
+
+	it("passes the packages token into ci-deps-recovery instead of the env context", () => {
+		const action = readFileSync(
+			join(
+				import.meta.dirname,
+				"..",
+				"..",
+				".github/actions/ci-deps-recovery/action.yml",
+			),
+			"utf8",
+		);
+		assert.match(action, /GITHUB_TOKEN: \$\{\{ inputs\.token \}\}/);
+		assert.equal(action.includes("${{ env.GITHUB_TOKEN }}"), false);
+		const release = readFileSync(
+			join(
+				import.meta.dirname,
+				"..",
+				"..",
+				".github/workflows/release-hobo.yml",
+			),
+			"utf8",
+		);
+		const start = release.indexOf("\n  release-pages-browser-wit-smoke:\n");
+		const end = release.indexOf("\n  release-realize:\n", start);
+		assert.ok(start > 0 && end > start);
+		const job = release.slice(start, end);
+		const recovery = job.indexOf("uses: $/.github/actions/ci-deps-recovery");
+		const install = job.indexOf("Install Pages dependencies");
+		assert.ok(recovery > 0 && install > recovery);
+		const step = job.slice(recovery, install);
+		assert.match(step, /continue-on-error: true/);
+		assert.match(step, /token: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+		assert.equal(step.includes("env.GITHUB_TOKEN"), false);
 	});
 });

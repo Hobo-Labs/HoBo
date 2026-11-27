@@ -3,6 +3,11 @@ description: >-
   Link a mounted deps layer, else materialize the published GHCR hobo-ci-deps
   image, else install from a warm pnpm store. Fail closed when none are available.
 inputs:
+  token:
+    description: >-
+      Token with packages:read. Composite steps cannot read the caller's
+      token from the env context, so the workflow passes it here.
+    required: true
   verify-sibling-links:
     description: Run ensure-ts-autocode-links after a successful layer link
     required: false
@@ -25,7 +30,7 @@ runs:
       if: steps.deps-layer.outputs.match != 'true'
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ inputs.token }}
       run: |
         set +e
         timeout 480 node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts
