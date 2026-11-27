@@ -87,26 +87,6 @@ export function fixedTrainAlphaReleaseRef(
 
 export type NbgvRunner = (variable: string, commitIsh?: string) => string;
 
-function pinnedPnpmTool(repoRoot: string): string {
-	const toml = readFileSync(join(repoRoot, "mise.toml"), "utf8");
-	let inTools = false;
-	for (const line of toml.split("\n")) {
-		const trimmed = line.trim();
-		if (trimmed === "[tools]") {
-			inTools = true;
-			continue;
-		}
-		if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-			inTools = false;
-			continue;
-		}
-		if (!inTools || trimmed.startsWith("#")) continue;
-		const match = trimmed.match(/^pnpm\s*=\s*"([^"]+)"/);
-		if (match?.[1]) return `pnpm@${match[1]}`;
-	}
-	throw new Error("root mise.toml does not pin pnpm");
-}
-
 export function nbgvGetVersionArgv(
 	repoRoot: string,
 	variable: string,
@@ -114,11 +94,9 @@ export function nbgvGetVersionArgv(
 ): readonly string[] {
 	return [
 		"exec",
-		pinnedPnpmTool(repoRoot),
 		"--",
-		"pnpm",
-		"exec",
-		"nbgv",
+		process.execPath,
+		join(repoRoot, "node_modules", "nerdbank-gitversioning", "main.js"),
 		"get-version",
 		commitIsh,
 		"--variable",
