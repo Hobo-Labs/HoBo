@@ -219,9 +219,10 @@ captured topic bindings, so later changes to caller-owned graph data cannot
 change one independently of the other. The shared runtime uses its captured
 array mapping intrinsic while compiling the graph.
 
-The bounded `BindleTopicMapping` model assumes authoritative verifier claims,
-sequential provisioning and stable retry identities. It does not prove the
-TypeScript implementation or the external provider.
+The bounded `BindleTopicMapping` model checks a web or UI app and one UI
+operation alongside the captured topic graph. It assumes authoritative verifier
+claims, sequential provisioning and stable retry identities. It does not prove
+the TypeScript implementation or the external provider.
 
 The local Rivet engine test builds the selected pool source with Alchemy,
 starts the mapped application and durable topic actor, and exercises retries and
@@ -232,3 +233,6 @@ The topic actor source fence includes the shared runtime topic journal.
 
 The local Rivet engine test uses a fixed test-only token instead of reading
 user credentials.
+
+The Rivet HTTP application binding also accepts UI kits as HTTP entrypoints; UI
+`render` and `drive` operations remain unsupported.

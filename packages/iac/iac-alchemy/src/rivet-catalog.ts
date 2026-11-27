@@ -42,7 +42,7 @@ const RIVET_GAPS: Readonly<Record<string, string>> = Object.freeze({
 		"HoBo cryptographic key lifecycle and operations are not bound to Rivet.",
 	notify: "HoBo notification delivery is not bound to Rivet.",
 	guardrail: "HoBo guardrail evaluation is not bound to Rivet.",
-	ui: "HoBo UI rendering and driving are not bound to Rivet.",
+	ui: "No attested Rivet UI HTTP source was supplied; UI rendering and driving are not bound.",
 	experiment: "HoBo experiment assignment and analysis are not bound to Rivet.",
 	rollout: "HoBo rollout progression and rollback are not bound to Rivet.",
 });

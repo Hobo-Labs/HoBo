@@ -15,9 +15,12 @@ import {
 import { createRivetMultiPoolPrimitiveMappers } from "../src/rivet-multi.js";
 import { createRivetHttpActor } from "../src/rivet-runtime.js";
 
-const kinds = ["api", "web", "service"] as const;
+const kinds = ["api", "web", "service", "ui"] as const;
 const catalog = [
-	...kinds.map((factory) => ({ factory, allowVerbs: [] })),
+	...kinds.map((factory) => ({
+		factory,
+		allowVerbs: factory === "ui" ? ["render", "drive"] : [],
+	})),
 	{ factory: "queue", allowVerbs: ["enqueue", "dequeue"] },
 	{ factory: "topic", allowVerbs: ["publish", "subscribe"] },
 ];
@@ -147,6 +150,43 @@ describe("Rivet source-aware primitive capabilities", () => {
 		}
 	});
 
+	it("reports UI render and drive as unsupported and rejects either grant", () => {
+		const { source, entrypoint } = application("ui", 0);
+		const mappers = createRivetPrimitiveMappers(source);
+		const row = describeRivetPrimitiveSupport(CATALOG, mappers).find(
+			(item) => item.kind === "ui",
+		);
+		expect(row).toMatchObject({
+			status: "partial",
+			resourceTypes: ["Rivet.DurableObject"],
+			supportedOperations: [],
+			unsupportedOperations: ["render", "drive"],
+		});
+		for (const operation of ["render", "drive"]) {
+			const declaration = {
+				name: "ui",
+				kind: "ui",
+				stableId: "ui:ui",
+				declaredAllow: [operation],
+				dependsOn: [],
+				annotations: [],
+			};
+			expect(() =>
+				mapBindleToAlchemy(
+					{
+						name: "app",
+						resources: { ui: declaration },
+						edges: [],
+						requirements: {},
+						entrypoint: () => entrypoint,
+					},
+					mappers,
+					{ assessRequirements: () => ({ status: "supported" }) },
+				),
+			).toThrow(`does not support operation ${operation}`);
+		}
+	});
+
 	it("refuses a declaration of an HTTP kind not attested by its source", () => {
 		const { source, entrypoint } = application("web", 0);
 		const declaration = {
@@ -173,7 +213,7 @@ describe("Rivet source-aware primitive capabilities", () => {
 	});
 
 	it("reports exactly the source kinds in every nonempty multi-pool combination", () => {
-		for (let mask = 1; mask < 8; mask++) {
+		for (let mask = 1; mask < 1 << kinds.length; mask++) {
 			const entries = kinds.flatMap((kind, index) =>
 				mask & (1 << index) ? [application(kind, index)] : [],
 			);

@@ -377,7 +377,7 @@ type HttpMapper<Requirements> = AlchemyPrimitiveMapper<
 	) => void;
 };
 export type RivetHttpQueueMappers<Requirements> = Readonly<
-	Record<"api" | "web" | "service", HttpMapper<Requirements>>
+	Record<"api" | "web" | "service" | "ui", HttpMapper<Requirements>>
 >;
 
 export function createRivetHttpQueueMappers<Requirements>(
@@ -489,6 +489,7 @@ export function createRivetHttpQueueMappers<Requirements>(
 		api: describe(mappers.api),
 		web: describe(mappers.web),
 		service: describe(mappers.service),
+		ui: describe(mappers.ui),
 	});
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type */

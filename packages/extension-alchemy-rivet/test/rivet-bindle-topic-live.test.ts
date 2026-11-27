@@ -6,9 +6,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it("runs the Alchemy-selected topic entrypoint in a Rivet HTTP application and durable topic", {
+it.each([
+	"web",
+	"ui",
+] as const)("runs the Alchemy-selected topic entrypoint in a Rivet %s application and durable topic", {
 	timeout: 100_000,
-}, async () => {
+}, async (kind) => {
 	const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-bindle-"));
 	const loader = createRequire(import.meta.url).resolve("tsx");
 	const fixture = fileURLToPath(
@@ -22,7 +25,11 @@ it("runs the Alchemy-selected topic entrypoint in a Rivet HTTP application and d
 		}>((resolve, reject) => {
 			const child = spawn(process.execPath, ["--import", loader, fixture], {
 				cwd: directory,
-				env: { PATH: process.env.PATH, NODE_ENV: "test" },
+				env: {
+					PATH: process.env.PATH,
+					NODE_ENV: "test",
+					HOBO_TEST_APP_KIND: kind,
+				},
 				detached: process.platform !== "win32",
 			});
 			let output = "";

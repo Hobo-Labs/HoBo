@@ -191,7 +191,7 @@ try {
 		source: {
 			main,
 			resourceName: "web",
-			kind: "web",
+			kind: process.env.HOBO_TEST_APP_KIND,
 			actorName: "web",
 			sourceDigest,
 			sourceFence: {
@@ -331,6 +331,7 @@ try {
 		RIVET_ENDPOINT: publicUrl,
 		RIVET_POOL: "default",
 		HOBO_TEST_TOPIC_EXPIRY: process.env.HOBO_TEST_TOPIC_EXPIRY,
+		HOBO_TEST_APP_KIND: process.env.HOBO_TEST_APP_KIND,
 	};
 	await bundle(poolMain, "node.mjs");
 	runner = spawn(process.execPath, [join(bundleDirectory, "node.mjs")], {

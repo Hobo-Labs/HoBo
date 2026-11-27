@@ -62,6 +62,18 @@ function check(name: string, source: string, cfg: string, invariant?: string) {
 try {
 	check("BindleTopicMapping", model, config);
 	check(
+		"MissingUiValidation",
+		replaceOnce(model, '/\\ (appKind # "ui" \\/ uiOp = "none")', "/\\ TRUE"),
+		config,
+		"UiOperationsNotMapped",
+	);
+	check(
+		"WitnessUiStart",
+		model,
+		`${config}\nINVARIANT NeverUiStarted\n`,
+		"NeverUiStarted",
+	);
+	check(
 		"MissingGraphValidation",
 		replaceOnce(
 			model,

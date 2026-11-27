@@ -306,6 +306,9 @@ it("gates an HTTP application's scoped topic binding on real journal provisionin
 			verifyPool: () => true,
 		};
 		const mappers = createRivetBindleTopicBusMappers(mapperOptions);
+		expect(mappers.web.resourceTypes).toEqual(["Rivet.DurableObject"]);
+		for (const kind of ["api", "service", "ui"] as const)
+			expect(mappers[kind].resourceTypes).toEqual([]);
 		Reflect.set(mapperOptions.source, "kind", "service");
 		const providers = Layer.effect(
 			Providers,

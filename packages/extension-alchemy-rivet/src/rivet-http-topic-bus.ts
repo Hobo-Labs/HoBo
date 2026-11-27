@@ -713,7 +713,7 @@ type HttpMapper<Requirements> = AlchemyPrimitiveMapper<
 	) => void;
 };
 export type RivetHttpTopicBusMappers<Requirements> = Readonly<
-	Record<"api" | "web" | "service", HttpMapper<Requirements>>
+	Record<"api" | "web" | "service" | "ui", HttpMapper<Requirements>>
 >;
 
 export function createRivetHttpTopicBusMappers<Requirements>(
@@ -824,6 +824,7 @@ export function createRivetHttpTopicBusMappers<Requirements>(
 		api: describe(mappers.api),
 		web: describe(mappers.web),
 		service: describe(mappers.service),
+		ui: describe(mappers.ui),
 	});
 }
 
@@ -831,7 +832,7 @@ export function createRivetBindleTopicBusMappers<Requirements>(
 	input: RivetHttpTopicBusMapperOptions,
 ): Readonly<
 	Record<
-		"api" | "web" | "service" | "topic",
+		"api" | "web" | "service" | "ui" | "topic",
 		AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
 	>
 > {
@@ -922,12 +923,12 @@ export function createRivetBindleTopicBusMappers<Requirements>(
 		dependencyDeclarations: Object.freeze({}),
 	});
 	const appMapper = (
-		kind: "api" | "web" | "service",
+		kind: "api" | "web" | "service" | "ui",
 	): AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers> =>
 		Object.freeze<
 			AlchemyPrimitiveMapper<RivetHttpEntrypoint, Requirements, Providers>
 		>({
-			resourceTypes: Object.freeze(["Rivet.DurableObject"]),
+			resourceTypes: base[kind].resourceTypes,
 			operations: base[kind].operations,
 			annotations: base[kind].annotations,
 			bindsEntrypoint: true,
@@ -1009,6 +1010,7 @@ export function createRivetBindleTopicBusMappers<Requirements>(
 		api: appMapper("api"),
 		web: appMapper("web"),
 		service: appMapper("service"),
+		ui: appMapper("ui"),
 		topic,
 	});
 }
