@@ -61,6 +61,7 @@ const EXTRA_INPUTS = new Map<string, readonly string[]>([
 		[
 			"release/npm-scope-map.json",
 			"scripts/ci/npm-publish-scope.mts",
+			"scripts/ci/rewrite-sdk-specifiers.mts",
 			"scripts/ci/sdk-package-list.mts",
 			"scripts/ci/verify-cli-sdk-artifacts.mts",
 			"scripts/ci/cli-sdk-acceptance-child.mts",

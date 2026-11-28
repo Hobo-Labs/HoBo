@@ -25,6 +25,53 @@ import {
 } from "../ci/stage-sdk-artifacts.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("rewrites package imports before the pack worker runs", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-sdk-pack-scope-"));
+		try {
+			const bin = join(dir, "bin");
+			const pkg = join(dir, "pkg");
+			const out = join(dir, "out");
+			mkdirSync(bin);
+			mkdirSync(join(pkg, "dist"), { recursive: true });
+			mkdirSync(join(out, ".staging"), { recursive: true });
+			writeFileSync(
+				join(pkg, "package.json"),
+				'{"name":"fixture","version":"1.0.0"}',
+			);
+			writeFileSync(join(pkg, "dist", "index.js"), 'import "@hobo/core";');
+			writeFileSync(
+				join(bin, "npm"),
+				'#!/bin/sh\ngrep -q "@hobo-labs/core" dist/index.js || exit 8\nprintf content > "$3/fixture.tgz"\nprintf \'[{"filename":"fixture.tgz"}]\'\n',
+			);
+			chmodSync(join(bin, "npm"), 0o755);
+			const staged = [
+				{
+					workspaceName: "@hobo/core",
+					pkgDir: pkg,
+					staged: { name: "fixture", version: "1.0.0" },
+				},
+			];
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(import.meta.dirname, "../ci/stage-sdk-artifacts.mts"),
+					"--pack-all",
+					out,
+					JSON.stringify(staged),
+				],
+				{
+					env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+					encoding: "utf8",
+				},
+			);
+			expect(result.status, result.stderr).toBe(0);
+			expect(existsSync(join(out, "fixture.tgz"))).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 	it("runs package lifecycle scripts serially", () => {
 		expect(sdkPackageWorkerLimit([{ scripts: { build: "build" } }, {}])).toBe(
 			4,
@@ -79,6 +126,7 @@ describe("stage-sdk-artifacts", () => {
 			const out = join(dir, "out");
 			mkdirSync(bin);
 			mkdirSync(pkg);
+			mkdirSync(join(pkg, "dist"));
 			mkdirSync(join(out, ".staging"), { recursive: true });
 			writeFileSync(
 				join(pkg, "package.json"),
@@ -126,6 +174,7 @@ describe("stage-sdk-artifacts", () => {
 			const out = join(dir, "out");
 			mkdirSync(bin);
 			mkdirSync(pkg);
+			mkdirSync(join(pkg, "dist"));
 			mkdirSync(join(out, ".staging"), { recursive: true });
 			writeFileSync(
 				join(pkg, "package.json"),
@@ -270,16 +319,16 @@ describe("stage-sdk-artifacts", () => {
 		expect(
 			stagedSqlite.dependencies?.["@hobo/backend-routing"],
 		).toBeUndefined();
-		expect(stagedSqlite.dependencies?.["@hobo/core"]).toBe(
-			"npm:@hobo-labs/core@0.0.0-proof.1",
+		expect(stagedSqlite.dependencies?.["@hobo-labs/core"]).toBe(
+			"0.0.0-proof.1",
 		);
+		expect(stagedSqlite.dependencies?.["@hobo/core"]).toBeUndefined();
 		const cli = JSON.parse(
 			readFileSync(join("packages/cli/package.json"), "utf8"),
 		);
 		const stagedCli = prepareSdkPackageManifest(cli, map, "0.0.0-proof.1");
-		expect(stagedCli.dependencies?.["@hobo/core"]).toBe(
-			"npm:@hobo-labs/core@0.0.0-proof.1",
-		);
+		expect(stagedCli.dependencies?.["@hobo-labs/core"]).toBe("0.0.0-proof.1");
+		expect(stagedCli.dependencies?.["@hobo/core"]).toBeUndefined();
 		expect(stagedCli.dependencies?.["@hobo/cd"]).toBeUndefined();
 		expect(() =>
 			prepareSdkPackageManifest(

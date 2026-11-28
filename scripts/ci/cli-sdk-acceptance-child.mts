@@ -44,7 +44,7 @@ type CoreApi = {
 	BudgetPolicyError: new (...args: string[]) => Error;
 };
 
-const core: CoreApi = await import(["@hobo", "core"].join("/"));
+const core: CoreApi = await import(["@hobo-labs", "core"].join("/"));
 const cli: CliApi = await import(["@hobo-labs", "cli"].join("/"));
 const argv: ArgvApi = await import(["@hobo-labs", "cli", "argv"].join("/"));
 

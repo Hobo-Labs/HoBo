@@ -148,15 +148,15 @@ when a package declares a pack or prepare lifecycle script. The manifest keeps
 the SDK allowlist order, and the clean-install acceptance verifier still runs
 before the artifacts are accepted.
 
-Published package manifests retain workspace import names as npm aliases for
-their public package names. OCI app staging installs matching workspace-name
-links so the same packed modules resolve in the deployed app.
+Published SDK package manifests use public package names, and staged SDK imports
+are rewritten to match. OCI app staging provides workspace-name links for app
+packages that still use workspace names.
 Its Turbo builds honor the runner's `HOBO_TURBO_CONCURRENCY` memory limit.
 The staging test checks the configured-store fallback with no package manager on `PATH`.
 
 
 The SQLite SDK includes backend-routing and Fleet implementation code and their
-license notices in its tarball. Shared journal errors come from `@hobo/core`,
+license notices in its tarball. Shared journal errors come from `@hobo-labs/core`,
 so a separately installed backend-routing package and the SQLite bundle use the
 same constructor when they resolve the same core version.
 
@@ -239,7 +239,7 @@ synchronous staging wrapper propagates any failure before packaging.
 SDK staging runs `verify-cli-sdk-artifacts.mts` before returning a manifest.
 The verifier checks the exact SDK allowlist, source and license provenance,
 every shipped CLI output, and a clean consumer installed from a loopback-only
-registry. Failure removes the manifest so a previous or incomplete run cannot
+registry. The consumer imports core by its published package name. Failure removes the manifest so a previous or incomplete run cannot
 be published. The offline acceptance disables third-party lifecycle scripts
 while repacking test dependencies; it does not replace verification of a
 normal lifecycle-enabled npm installation.
@@ -248,6 +248,15 @@ The OCI image input key includes SDK bundling helpers for the SDK image. The CLI
 image key also depends on the SDK image key because CLI staging installs its npm
 artifacts; the MCP image depends on the CLI image. This prevents an unchanged image
 key from hiding a changed SDK artifact while leaving unrelated image keys independent.
+
+SDK artifact staging rewrites mapped `@hobo/*` module specifiers in staged
+JavaScript, declarations and `runtimeModule` defaults to their public npm
+names, and adjusts source-map columns. Ambiguous `require` bindings and
+unsupported source-map references fail staging. Unmapped workspace dependencies
+still require independent publication or bundling.
+Staged manifests declare the public dependencies used by rewritten imports without
+installing duplicate workspace aliases, preserving shared module identity. The CLI bundle verifies
+its recorded output hashes before rewriting and records the new hashes afterward.
 
 ## Composite action lint
 

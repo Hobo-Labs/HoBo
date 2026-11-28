@@ -282,6 +282,12 @@ describe("affected release OCI images", () => {
 		).toBe(true);
 		expect(isReleaseOciLayerNoise("scripts/ci/deps-layer.mts")).toBe(true);
 		expect(
+			isReleaseOciLayerNoise("scripts/ci/rewrite-sdk-specifiers.mts"),
+		).toBe(false);
+		expect(isReleaseOciLayerNoise("scripts/ci/npm-publish-scope.mts")).toBe(
+			false,
+		);
+		expect(
 			isReleaseOciLayerNoise("scripts/ci/build-release-oci-image.mts"),
 		).toBe(false);
 	});
@@ -298,6 +304,33 @@ describe("affected release OCI images", () => {
 		expect(affected({ "site/src/index.astro": "<p>x</p>\n" })).toEqual([
 			"hobo-site",
 		]);
+	});
+
+	it("invalidates the SDK image when a packaging transform changes", () => {
+		const manifest = {
+			...MANIFEST,
+			images: [...MANIFEST.images, image("hobo-sdk")],
+		};
+		const base = {
+			...BASE,
+			"release/oci-images.json": json(manifest),
+			"scripts/ci/rewrite-sdk-specifiers.mts": "old rewrite\n",
+			"scripts/ci/npm-publish-scope.mts": "old scope\n",
+		};
+		expect(
+			affected(
+				{ "scripts/ci/rewrite-sdk-specifiers.mts": "new rewrite\n" },
+				undefined,
+				base,
+			),
+		).toEqual(["hobo-sdk", "hobo-cli", "hobo-mcp"]);
+		expect(
+			affected(
+				{ "scripts/ci/npm-publish-scope.mts": "new scope\n" },
+				undefined,
+				base,
+			),
+		).toEqual(["hobo-sdk", "hobo-cli", "hobo-mcp"]);
 	});
 
 	it("ignores package files that are not Turbo build inputs", () => {
