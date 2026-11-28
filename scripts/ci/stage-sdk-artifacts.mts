@@ -3,7 +3,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
 	cpSync,
-	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
@@ -27,6 +26,7 @@ import {
 	prepareSqliteSdkManifest,
 } from "./bundle-sqlite-sdk.mts";
 import { applyScopeToManifest, loadNpmScopeMap } from "./npm-publish-scope.mts";
+import type { SdkArtifactManifest } from "./sdk-artifact-manifest.mts";
 import { SDK_PACKAGES } from "./sdk-package-list.mts";
 import {
 	prepareRuntimeGroundingManifest,
@@ -35,6 +35,8 @@ import {
 
 const root = join(import.meta.dirname, "..", "..");
 
+export type { SdkArtifactManifest } from "./sdk-artifact-manifest.mts";
+export { orderedSdkTarballPaths } from "./sdk-artifact-manifest.mts";
 export { SDK_PACKAGES };
 
 /** Turbo argv for the SDK allowlist build (honors `HOBO_TURBO_CONCURRENCY`). */
@@ -66,38 +68,11 @@ export function buildReleaseSdkPackages(
 	}
 }
 
-export type SdkArtifactManifest = {
-	version: string;
-	packages: { workspace: string; public: string; file: string }[];
-};
-
 type WorkspaceManifest = {
 	name: string;
 	dependencies?: Record<string, string>;
 	scripts?: Record<string, string>;
 };
-
-/** Install order for SDK tarballs (MANIFEST.json pack order, not lexical). */
-export function orderedSdkTarballPaths(artifactsDir: string): string[] {
-	const manifestPath = join(artifactsDir, "MANIFEST.json");
-	if (!existsSync(manifestPath)) {
-		throw new Error(
-			`missing ${manifestPath}; extract SDK artifacts before overlay install`,
-		);
-	}
-	const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
-	// SAFETY: stageSdkArtifactsDir writes MANIFEST.json from SdkArtifactManifest.
-	const manifest = parsed as SdkArtifactManifest;
-	const paths = manifest.packages.map((entry) =>
-		join(artifactsDir, entry.file),
-	);
-	for (const path of paths) {
-		if (!existsSync(path)) {
-			throw new Error(`SDK tarball missing from artifacts dir: ${path}`);
-		}
-	}
-	return paths;
-}
 
 const SDK_PACKAGE_DIRS = {
 	"@hobo/runtime-local": "packages/runtimes/runtime-local",

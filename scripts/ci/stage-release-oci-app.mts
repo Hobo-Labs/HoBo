@@ -25,9 +25,9 @@ import {
 import { turboConcurrencyArg } from "../lib/turbo-concurrency.ts";
 import {
 	orderedSdkTarballPaths,
-	SDK_PACKAGES,
 	type SdkArtifactManifest,
-} from "./stage-sdk-artifacts.mts";
+} from "./sdk-artifact-manifest.mts";
+import { SDK_PACKAGES } from "./sdk-package-list.mts";
 
 const defaultRoot = join(import.meta.dirname, "..", "..");
 

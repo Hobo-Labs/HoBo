@@ -179,6 +179,8 @@ describe("as the release workflow runs it", () => {
 		const filters = parseReleaseHoboPullRequestPathFilters(workflow);
 		for (const path of [
 			"scripts/ci/sdk-package-list.mts",
+			"scripts/ci/sdk-artifact-manifest.mts",
+			"scripts/test/build-release-oci-image-bootstrap.test.ts",
 			"scripts/ci/verify-cli-sdk-artifacts.mts",
 			"scripts/ci/cli-sdk-acceptance-child.mts",
 			"scripts/ci/bundle-cli-sdk.mts",
