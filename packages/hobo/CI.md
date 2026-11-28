@@ -754,7 +754,19 @@ of HoBo's GitHub App (`github-app://<owner>/<name>`, minted through the owner
 store session from the App `hobo ci app create` made); without that session or
 App it refuses with `HOBO_CI_SECRET_STORE_GITHUB_APP_REQUIRED`:
 
+Run through the HoBo MCP server (its `ci` tool), `connect` needs no ids: it
+asks you to sign in to Infisical through the owner form, finds `hobo-ci`,
+`hobo-ci-deploy`, `hobo-ci-relay`, `hobo-ci-writer` and `hobo-ci-deploy-reader`
+in your organization by name, creates the deploy project and its read-only
+reader (Viewer, with the reader's GitHub OIDC trust) when they are missing,
+and takes the Vercel team from the team that holds the `hobo-ci` project, read
+with HoBo's Vercel connection (`hobo cd up`). It never creates the relay or
+writer identity: a missing one refuses with
+`HOBO_CI_SECRET_STORE_LAYOUT_MISSING`, naming it. Ids given as options win, as
+before:
+
 ```sh
+hobo ci secret-store connect --cwd packages/ci-vercel --repo <owner/name>
 hobo ci secret-store connect --cwd packages/ci-vercel \
   --repo <owner/name> --project-id <hobo-ci> --deploy-project-id <hobo-ci-deploy> \
   --relay-identity-id <hobo-ci-relay> \

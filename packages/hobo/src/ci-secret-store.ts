@@ -304,7 +304,16 @@ export interface CiSecretStoreInput {
 	readonly allowLoopback?: boolean;
 	readonly bindingStore?: SecretStoreBindingStore;
 	readonly credentials?: CredentialResolver;
+	/**
+	 * The owner's own Infisical sign-in, asked for through the owner channel
+	 * only when connect has ids to find by name. Held for this run only.
+	 */
+	readonly ownerInfisicalSession?: () => Promise<OwnerInfisicalSession>;
 }
+
+export type OwnerInfisicalSession =
+	| { readonly ok: true; readonly session: string }
+	| { readonly ok: false; readonly code: string; readonly message: string };
 
 async function gatherEvidence(input: CiSecretStoreInput) {
 	const send = input.fetch ?? fetch;

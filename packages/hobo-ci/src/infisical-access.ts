@@ -159,9 +159,29 @@ function organizationOf(jwt: string): string | undefined {
 	}
 }
 
-export async function provisionInfisicalAccess(
-	options: InfisicalAccessOptions,
-): Promise<InfisicalAccess> {
+export type InfisicalSessionOptions = Pick<
+	InfisicalAccessOptions,
+	| "family"
+	| "run"
+	| "which"
+	| "toolsDir"
+	| "emit"
+	| "interactive"
+	| "apiOrigin"
+	| "exists"
+	| "owner"
+>;
+
+/**
+ * The owner's own Infisical user session: an existing CLI session on this
+ * machine, the CLI's browser sign-in when the owner is here, or the copied
+ * session they hand over through the owner channel. Only the run that asked
+ * holds it; nothing keeps it.
+ */
+export async function infisicalOwnerSession(
+	options: InfisicalSessionOptions,
+	retry?: { readonly why: string | undefined },
+): Promise<SessionOrRefusal> {
 	const fam = options.family.toUpperCase();
 	const api = options.apiOrigin ?? "https://app.infisical.com";
 	const refused = (
@@ -241,9 +261,12 @@ export async function provisionInfisicalAccess(
 		);
 	};
 
+	if (retry !== undefined) return remoteSession(retry.why);
 	let fromCli = cliHere !== undefined ? await cliSession(cliHere) : undefined;
 	let obtained: SessionOrRefusal | undefined =
-		fromCli === undefined ? undefined : { kind: "session", jwt: fromCli };
+		fromCli === undefined
+			? undefined
+			: { kind: "session", jwt: fromCli, fromCli: true };
 	if (obtained === undefined && options.interactive) {
 		// 2. The owner is at this machine: the CLI's own browser sign-in.
 		let cli: string;
@@ -269,10 +292,31 @@ export async function provisionInfisicalAccess(
 			return refused("SIGN_IN", "Signing in to Infisical did not complete.", [
 				"Run again and finish signing in in the browser window Infisical opens.",
 			]);
-		obtained = { kind: "session", jwt: fromCli };
+		obtained = { kind: "session", jwt: fromCli, fromCli: true };
 	} else if (obtained === undefined) obtained = await remoteSession(undefined);
+	return obtained;
+}
+
+export async function provisionInfisicalAccess(
+	options: InfisicalAccessOptions,
+): Promise<InfisicalAccess> {
+	const fam = options.family.toUpperCase();
+	const api = options.apiOrigin ?? "https://app.infisical.com";
+	const refused = (
+		code: string,
+		message: string,
+		remediation: readonly string[],
+	): InfisicalAccess => ({
+		kind: "refused",
+		code: `HOBO_${fam}_INFISICAL_${code}`,
+		message,
+		remediation,
+	});
+
+	const obtained = await infisicalOwnerSession(options);
 	if (obtained.kind !== "session") return obtained;
 	let session = obtained.jwt;
+	let fromCli = obtained.fromCli === true ? session : undefined;
 
 	// 3. The identity, its auth, its membership: through the API, each
 	// created only if missing, so a run after a partial failure finishes
@@ -573,11 +617,11 @@ export async function provisionInfisicalAccess(
 				// over is used now; otherwise the refusal shows its link again.
 				const expired = session !== fromCli;
 				fromCli = undefined;
-				const next = await remoteSession(
-					expired
+				const next = await infisicalOwnerSession(options, {
+					why: expired
 						? "Your Infisical session has expired; sign in once more."
 						: undefined,
-				);
+				});
 				if (next.kind !== "session") return next;
 				session = next.jwt;
 				continue;
@@ -609,8 +653,12 @@ export async function provisionInfisicalAccess(
 	}
 }
 
-type SessionOrRefusal =
-	| { readonly kind: "session"; readonly jwt: string }
+export type SessionOrRefusal =
+	| {
+			readonly kind: "session";
+			readonly jwt: string;
+			readonly fromCli?: boolean;
+	  }
 	| InfisicalAccess;
 
 const API_ATTEMPTS = 4;

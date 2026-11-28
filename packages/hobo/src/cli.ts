@@ -15,6 +15,8 @@ import {
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
 import { type DeviceClock, prepareVercelConnection } from "@hobo/hobo-cd";
 import {
+	hoboToolsDir,
+	infisicalOwnerSession,
 	machineRunner,
 	type OwnerChannel,
 	prepareGithubConnection,
@@ -298,8 +300,33 @@ export function createComposedHoboCli(
 		candidates: installableProvidersFor,
 		interactive: false,
 	});
+	const ownerChannel = options.ownerChannel;
 	const ci = createCiCommand({
 		runtime,
+		...(ownerChannel !== undefined
+			? {
+					ownerInfisicalSession: async () => {
+						const outcome = await infisicalOwnerSession({
+							family: "ci",
+							run: machineRunner(),
+							which: (bin) => whichOnPath(bin),
+							toolsDir: hoboToolsDir(),
+							emit: () => undefined,
+							interactive: false,
+							owner: ownerChannel,
+						});
+						return outcome.kind === "session"
+							? { ok: true, session: outcome.jwt }
+							: outcome.kind === "refused"
+								? { ok: false, code: outcome.code, message: outcome.message }
+								: {
+										ok: false,
+										code: "HOBO_CI_INFISICAL_SIGN_IN",
+										message: "Infisical's sign-in did not complete.",
+									};
+					},
+				}
+			: undefined),
 		...(options.ownerSession !== undefined
 			? {
 					ownerCredentials: options.ownerSession.credentials,

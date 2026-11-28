@@ -156,9 +156,12 @@ owner handles no secret value on the default path:
   `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
   Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). That residual applies only to the writer: Member is not an acceptable role for `hobo-ci-deploy-reader`.) Then:
 
-  The owner runs `hobo ci secret-store connect --cwd packages/ci-vercel --repo
-  Hobo-Labs/HoBo` in their own terminal, with their secret store connected
-  through HoBo, passing the dashboard ids as its options (`--project-id`,
+  Through the HoBo MCP server, `hobo ci secret-store connect --cwd
+  packages/ci-vercel --repo Hobo-Labs/HoBo` finds these by name with the
+  owner's Infisical sign-in (asked for in the owner form), creating only the
+  deploy project and its reader when missing. Otherwise the owner runs it in
+  their own terminal, with their secret store connected through HoBo, passing
+  the dashboard ids as its options (`--project-id`,
   `--deploy-project-id`, `--relay-identity-id`, `--deploy-identity-id`,
   `--deploy-credential-identity-id`, `--team`). An agent never asks for these
   ids, never puts them in a command it runs, and never repeats them. `connect`

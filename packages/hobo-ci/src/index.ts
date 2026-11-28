@@ -99,8 +99,11 @@ export {
 	INFISICAL_CLI_SESSION_CAPTURE,
 	type InfisicalAccess,
 	type InfisicalAccessOptions,
+	type InfisicalSessionOptions,
+	infisicalOwnerSession,
 	OWNER_SIGN_IN_LINE_PREFIX,
 	provisionInfisicalAccess,
+	type SessionOrRefusal,
 	type WorkloadOidc,
 } from "./infisical-access.js";
 export {
