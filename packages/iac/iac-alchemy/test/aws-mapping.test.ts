@@ -16,6 +16,11 @@ import {
 } from "../src/aws-kv-mapper.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
 import {
+	awsVersionedSecret,
+	awsVersionedSecretBindleMappers,
+	withAwsVersionedSecret,
+} from "../src/aws-secret-mapper.js";
+import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "../src/bindle.js";
@@ -170,6 +175,45 @@ describe("composable AWS target choices", () => {
 		);
 		expect(() => withAwsS3(original, { missing: true })).toThrow(
 			"unknown resource",
+		);
+	});
+});
+
+describe("explicit versioned AWS secret choice", () => {
+	it("keeps the neutral declaration and maps bounded operations to the actual Alchemy secret", async () => {
+		const original = bindle("shop", (b) => ({
+			credentials: b.secret().allow("put", "access"),
+		}));
+		const selected = withAwsVersionedSecret(original, { credentials: true });
+		expect(original.resources.credentials?.annotations).toEqual([]);
+		expect(selected.resources.credentials?.annotations).toEqual([
+			awsVersionedSecret(),
+		]);
+		const mappers = awsVersionedSecretBindleMappers(
+			awsS3BindleMappers(awsDynamoKvBindleMappers()),
+		);
+		const report = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappers).find(
+			(row) => row.kind === "secret",
+		);
+		expect(report).toMatchObject({
+			status: "partial",
+			supportedOperations: ["put", "access"],
+		});
+		// SAFETY: this registers Alchemy resource declarations without running a provider.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(selected, mappers, requirements).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.credentials?.Type).toBe(Secret.Type);
+		expect(() => mapBindleToAlchemy(original, mappers, requirements)).toThrow(
+			"Secrets Manager requires",
 		);
 	});
 });
