@@ -257,3 +257,8 @@ and does not prove the implementation or enforce caller behavior.
 The bounded `QueueSnapshotTime` model checks that lease expiry during a paged
 scan does not admit messages outside the original observation time. It abstracts
 provider clocks and does not prove the implementation.
+
+The bounded `model/NotificationSubmission.tla` explores authorization at dispatch
+and disclosure, rejection before dispatch, and unknown outcomes before or after
+provider commit. The model abstracts a single submission and a trusted transport;
+it does not prove an implementation or guarantee message delivery.
