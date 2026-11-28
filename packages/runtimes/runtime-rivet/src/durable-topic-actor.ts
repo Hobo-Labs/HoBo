@@ -7,6 +7,13 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 import {
+	DURABLE_TOPIC_REDUCER_CAPABILITIES as RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+	DURABLE_TOPIC_REDUCER_LIMITS as RIVET_DURABLE_TOPIC_BUS_LIMITS,
+	readDurableTopicAudit as readRivetTopicBusAudit,
+	reduceDurableTopic as reduceRivetTopicBus,
+	reduceDurableTopicWithDeclaredTopics as reduceRivetTopicBusWithDeclaredTopics,
+} from "@hobo/runtime/durable-topic-reducer";
+import {
 	type AnyActorDefinition,
 	actor,
 	isStaticActorDefinition,
@@ -17,13 +24,6 @@ import {
 	RIVET_DURABLE_JOURNAL_BOUNDS,
 	runDurableReceiptJournal,
 } from "./durable-receipt-journal.js";
-import {
-	RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
-	RIVET_DURABLE_TOPIC_BUS_LIMITS,
-	readRivetTopicBusAudit,
-	reduceRivetTopicBus,
-	reduceRivetTopicBusWithDeclaredTopics,
-} from "./durable-topic-bus.js";
 import {
 	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
 	RIVET_DURABLE_TOPIC_LOG_LIMITS,

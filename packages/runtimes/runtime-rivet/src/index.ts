@@ -1,4 +1,8 @@
 export {
+	DURABLE_TOPIC_REDUCER_CAPABILITIES as RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+	DURABLE_TOPIC_REDUCER_LIMITS as RIVET_DURABLE_TOPIC_BUS_LIMITS,
+} from "@hobo/runtime/durable-topic-reducer";
+export {
 	assertNoWaitTrue,
 	createRivetActorHost,
 	type RivetActorHost,
@@ -34,10 +38,6 @@ export {
 	type RivetDurableTopicContext,
 	type RivetDurableTopicOptions,
 } from "./durable-topic-actor.js";
-export {
-	RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
-	RIVET_DURABLE_TOPIC_BUS_LIMITS,
-} from "./durable-topic-bus.js";
 export {
 	createRivetDurableTopicClient,
 	createRivetDurableTopicMetadataGrant,

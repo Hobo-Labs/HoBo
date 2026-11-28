@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-known-value-widening -- SAFETY: model transitions construct varied raw method envelopes at the reducer boundary. */
 import { describe, expect, it } from "vitest";
-import { reduceRivetTopicBus } from "../src/durable-topic-bus.js";
+import { reduceDurableTopic } from "../src/durable-topic-reducer.js";
 
 type Lease = { sequence: number; token: string };
 type Pending = {
@@ -55,7 +55,7 @@ function update(
 	fields: Record<string, unknown>,
 	now: number,
 ) {
-	return reduceRivetTopicBus(state, method, { operation: {}, ...fields }, now);
+	return reduceDurableTopic(state, method, { operation: {}, ...fields }, now);
 }
 function expectedTopicReceipt(model: Model) {
 	return {

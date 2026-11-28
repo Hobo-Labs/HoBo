@@ -19,6 +19,7 @@
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
+		"@hobo/runtime": "workspace:*",
 		"@rivetkit/rivetkit-wasm": "3.0.0",
 		"rivetkit": "3.0.0"
 	},

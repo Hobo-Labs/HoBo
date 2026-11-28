@@ -7,9 +7,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DurableMessagingConformanceHarness } from "@hobo/conformance";
 import {
-	RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
-	RIVET_DURABLE_TOPIC_BUS_LIMITS,
-} from "../../src/durable-topic-bus.js";
+	DURABLE_TOPIC_REDUCER_CAPABILITIES as RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+	DURABLE_TOPIC_REDUCER_LIMITS as RIVET_DURABLE_TOPIC_BUS_LIMITS,
+} from "@hobo/runtime/durable-topic-reducer";
 import { createRivetDurableTopicMetadataGrant } from "../../src/durable-topic-client.js";
 import { signFixtureClaim } from "./durable-topic-bus-conformance.js";
 import type { RivetMessagingConformanceHost } from "./durable-topic-conformance.js";

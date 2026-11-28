@@ -20,6 +20,10 @@
 			"types": "./dist/durable-messaging-host.d.ts",
 			"default": "./dist/durable-messaging-host.js"
 		},
+		"./durable-topic-reducer": {
+			"types": "./dist/durable-topic-reducer.d.ts",
+			"default": "./dist/durable-topic-reducer.js"
+		},
 		"./durable-queue-host": {
 			"types": "./dist/durable-queue-host.d.ts",
 			"default": "./dist/durable-queue-host.js"

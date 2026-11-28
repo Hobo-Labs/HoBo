@@ -260,3 +260,6 @@ engine crash, production ingress, distributed ownership or independently
 verified fault placement.
 
 Synchronous actor and journal authorities must return synchronously. Ordinary native promise rejections are observed and refused. Exotic or proxied promises are refused without reading their thenables or constructors; the caller remains responsible for handling any rejection from an exotic promise.
+
+The Rivet topic actor uses the provider-neutral bounded reducer from
+`@hobo/runtime/durable-topic-reducer` with its actor-local transactional journal.
