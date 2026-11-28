@@ -1134,7 +1134,9 @@ dynamic HoBo scheduler port, queue consumption, or application bindings. The
 official emulator test checks resource reconciliation and message delivery; it
 does not establish production timing or IAM behavior.
 The bounded `AwsStaticSchedule` model covers invalid targets and configuration,
-complete budget coverage and explicit unpriced admission. It treats the host's
+complete budget coverage, missing versus supplied models, and explicit unpriced
+admission. A supplied model with incomplete coverage cannot take the unpriced
+path even when policy permits unpriced execution. It treats the host's
 role authentication and the financial engine's admission decision as trusted
 inputs; it does not prove provider delivery or the implementation itself.
 
