@@ -20,7 +20,7 @@ if (createHash("sha256").update(readFileSync(jar)).digest("hex") !== expected)
 	throw new Error("TLA+ tool digest does not match the pinned release");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const model = join(root, "packages/runtimes/runtime-rivet/model");
+const model = join(root, "packages/runtime/model");
 const source = readFileSync(join(model, "DurableTopic.tla"), "utf8");
 const config = readFileSync(join(model, "DurableTopic.cfg"), "utf8");
 const scratch = mkdtempSync(join(tmpdir(), "hobo-topic-model-"));

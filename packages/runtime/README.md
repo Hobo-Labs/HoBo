@@ -701,3 +701,7 @@ atomically commit state and receipts, and the host must enforce ownership,
 authorization, clock and semantic identity. An unknown outcome requires
 reconciliation using the same operation identity before its original expiry.
 An `expired` result does not establish whether an earlier attempt committed.
+
+The bounded topic and declared-topic models live alongside the provider-neutral
+runtime. They assume transactional persistence, a truthful clock, ownership and
+authorization; they do not prove the implementation or those host guarantees.
