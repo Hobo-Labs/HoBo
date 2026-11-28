@@ -153,6 +153,10 @@
 		"./aws/cryptography": {
 			"types": "./dist/aws-cryptography.d.ts",
 			"default": "./dist/aws-cryptography.js"
+		},
+		"./aws/cryptography-mapper": {
+			"types": "./dist/aws-cryptography-mapper.d.ts",
+			"default": "./dist/aws-cryptography-mapper.js"
 		}
 	},
 	"dependencies": {

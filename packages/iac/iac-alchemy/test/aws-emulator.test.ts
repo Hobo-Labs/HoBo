@@ -38,6 +38,10 @@ import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-ho
 import { awsBindleMappers } from "../src/aws.js";
 import { createAwsKmsCryptography } from "../src/aws-cryptography.js";
 import {
+	awsKmsCryptographyMappers,
+	withAwsKmsCryptography,
+} from "../src/aws-cryptography-mapper.js";
+import {
 	awsHttpBindings,
 	createAwsBindleApplication,
 } from "../src/aws-http-runtime.js";
@@ -173,12 +177,18 @@ async function mappedDurableQueue() {
 }
 
 async function mappedCrypto() {
-	const definition = bindle("shop", (b) => ({ key: b.crypto() }));
+	const definition = bindle("shop", (b) => ({
+		key: b.crypto().allow("encrypt", "decrypt"),
+	}));
 	// SAFETY: the fixture supplies the Alchemy stack context for resource construction.
 	const mapped = await Effect.runPromise(
-		mapBindleToAlchemy(definition, awsBindleMappers(), {
-			assessRequirements: () => ({ status: "supported" }),
-		}).pipe(
+		mapBindleToAlchemy(
+			withAwsKmsCryptography(definition, { key: true }),
+			awsKmsCryptographyMappers(),
+			{
+				assessRequirements: () => ({ status: "supported" }),
+			},
+		).pipe(
 			Effect.provideService(StackContext, {
 				name: "shop",
 				stage: "test",
