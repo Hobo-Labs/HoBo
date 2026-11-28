@@ -700,13 +700,32 @@ function openBody(response: Response) {
 	return body.getReader();
 }
 
+class RegistryUnreachable extends Error {
+	constructor(cause: unknown) {
+		super(cause instanceof Error ? cause.message : "registry unreachable", {
+			cause,
+		});
+		this.name = "RegistryUnreachable";
+	}
+}
+
+async function reportingUnreachable<T>(
+	operation: () => Promise<T>,
+): Promise<T> {
+	try {
+		return await operation();
+	} catch (error) {
+		throw new RegistryUnreachable(error);
+	}
+}
+
 async function readBody(response: Response, limit: number): Promise<Buffer> {
 	const reader = openBody(response);
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	try {
 		for (;;) {
-			const next = await reader.read();
+			const next = await reportingUnreachable(() => reader.read());
 			if (next.done) break;
 			total += next.value.length;
 			if (total > limit) {
@@ -860,15 +879,18 @@ async function materializeFromRegistry(input: {
 	fetchImpl: typeof fetch;
 	deadline: number;
 	maxBytes: number;
+	onPayloadReset: () => void;
 }): Promise<void> {
 	const signal = AbortSignal.timeout(Math.max(1, input.deadline - Date.now()));
+	const fetchImpl: typeof fetch = (url, init) =>
+		reportingUnreachable(() => input.fetchImpl(url, init));
 	const { repositoryPath, tag } = splitImage(input.ref);
 	const bearer = await registryToken({
 		base: input.registryBase,
 		repositoryPath,
 		actor: input.actor,
 		token: input.token,
-		fetchImpl: input.fetchImpl,
+		fetchImpl,
 		signal,
 	});
 	const manifestUrl = `${input.registryBase.replace(/\/$/u, "")}/v2/${repositoryPath}/manifests/${tag}`;
@@ -876,7 +898,7 @@ async function materializeFromRegistry(input: {
 		url: manifestUrl,
 		bearer,
 		accept: MANIFEST_ACCEPT,
-		fetchImpl: input.fetchImpl,
+		fetchImpl,
 		signal,
 	});
 	if (first.status === 404) throw new RegistryManifestMiss(input.ref);
@@ -893,7 +915,7 @@ async function materializeFromRegistry(input: {
 			url: `${input.registryBase.replace(/\/$/u, "")}/v2/${repositoryPath}/manifests/${selected.digest}`,
 			bearer,
 			accept: selected.mediaType,
-			fetchImpl: input.fetchImpl,
+			fetchImpl,
 			signal,
 			digest: selected.digest,
 		};
@@ -917,6 +939,7 @@ async function materializeFromRegistry(input: {
 		throw new Error(`unsupported deps manifest ${parsed.mediaType}`);
 	}
 	const layers = readDescriptors(manifest, "layers");
+	input.onPayloadReset();
 	rmSync(input.payloadDir, { recursive: true, force: true });
 	mkdirSync(input.payloadDir, { recursive: true });
 	const scratch = join(
@@ -936,7 +959,7 @@ async function materializeFromRegistry(input: {
 				file,
 				digest: layer.digest,
 				maxBytes: input.maxBytes,
-				fetchImpl: input.fetchImpl,
+				fetchImpl,
 				signal,
 			});
 			await extractLayerFile(file, layer.mediaType, input.payloadDir);
@@ -995,6 +1018,8 @@ export async function materializePublishedDepsLayer(
 		}
 		return undefined;
 	};
+	let dockerMiss: { ok: false; kind: "miss"; detail: string } | undefined;
+	let payloadReset = false;
 	try {
 		if (input.docker) {
 			let useDocker = true;
@@ -1011,7 +1036,8 @@ export async function materializePublishedDepsLayer(
 			}
 			if (useDocker) {
 				const dockerResult = fromDocker();
-				if (dockerResult) return dockerResult;
+				if (dockerResult?.ok) return dockerResult;
+				dockerMiss = dockerResult;
 			}
 		}
 		await materializeFromRegistry({
@@ -1023,20 +1049,22 @@ export async function materializePublishedDepsLayer(
 			fetchImpl: input.fetchImpl ?? fetch,
 			deadline,
 			maxBytes,
+			onPayloadReset: () => {
+				payloadReset = true;
+			},
 		});
 		assertPayloadKey(input.payloadDir, input.key);
 		return { ok: true, source: "ghcr" };
 	} catch (error) {
-		if (error instanceof RegistryManifestMiss) {
-			return {
-				ok: false,
-				kind: "miss",
-				detail: redact(error.message, token),
-			};
-		}
-		rmSync(input.payloadDir, { recursive: true, force: true });
 		const detail =
 			error instanceof Error ? error.message : "deps layer materialize failed";
+		if (error instanceof RegistryManifestMiss) {
+			return { ok: false, kind: "miss", detail: redact(detail, token) };
+		}
+		if (dockerMiss && !payloadReset && error instanceof RegistryUnreachable) {
+			return dockerMiss;
+		}
+		rmSync(input.payloadDir, { recursive: true, force: true });
 		return {
 			ok: false,
 			kind: "failed",
