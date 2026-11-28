@@ -59,6 +59,7 @@ import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
 	CI_SECRET_STORE_OPTIONS,
+	type OwnerInfisicalSession,
 	ownerSecretStoreBindingStore,
 	runCiSecretStore,
 	SECRET_STORE_ONLY_OPTIONS,
@@ -536,6 +537,7 @@ export function createCiCommand(
 		ownerCredentials?: (cwd: string) => CredentialResolver;
 		fleetAgentVault?: (cwd: string) => AgentVaultRouter | undefined;
 		ownerEntries?: (cwd: string) => OwnerStoreEntries;
+		ownerInfisicalSession?: () => Promise<OwnerInfisicalSession>;
 		hostingerHttp?: HttpTransport;
 		commands?: readonly CiCommand[];
 		kubernetesHttp?: (tls: KubernetesTlsMaterial) => HttpTransport;
@@ -731,6 +733,9 @@ export function createCiCommand(
 						? { credentials: ownerCredentials }
 						: undefined),
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
+					...(deps.ownerInfisicalSession !== undefined
+						? { ownerInfisicalSession: deps.ownerInfisicalSession }
+						: undefined),
 					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
 					...(deps.runtime !== undefined
 						? { runtime: deps.runtime }

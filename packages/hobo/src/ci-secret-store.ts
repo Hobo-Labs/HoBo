@@ -304,7 +304,12 @@ export interface CiSecretStoreInput {
 	readonly allowLoopback?: boolean;
 	readonly bindingStore?: SecretStoreBindingStore;
 	readonly credentials?: CredentialResolver;
+	readonly ownerInfisicalSession?: () => Promise<OwnerInfisicalSession>;
 }
+
+export type OwnerInfisicalSession =
+	| { readonly ok: true; readonly session: string }
+	| { readonly ok: false; readonly code: string; readonly message: string };
 
 async function gatherEvidence(input: CiSecretStoreInput) {
 	const send = input.fetch ?? fetch;

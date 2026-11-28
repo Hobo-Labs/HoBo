@@ -26,6 +26,7 @@ import {
 	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
 	RELAY_DEPLOY_TOKEN_ENTRY,
 	RELAY_GITHUB_OIDC_AUDIENCE,
+	readRelayDeployToken,
 } from "./ci-relay-deploy-credential.js";
 import {
 	type CiSecretStoreInput,
@@ -39,6 +40,13 @@ import {
 	relayRepository,
 	resolveDeploySubject,
 } from "./ci-secret-store-github.js";
+import {
+	ensureDeployReader,
+	findRelayLayout,
+	findRelayVercelTeam,
+	RELAY_LAYOUT_NAMES,
+	RelayLayoutRefusal,
+} from "./ci-secret-store-resolve.js";
 import { isJsonString } from "./json.js";
 
 // public-contract: the relay's folder environment (the layout `provision` creates).
@@ -89,6 +97,86 @@ function refusedConnect(code: string, message: string): CommandResult {
 	return { ok: false, status: "refused", code, message, data: data("connect") };
 }
 
+interface LookedUp {
+	readonly ids: Readonly<Partial<Record<ConnectIdOption, string>>>;
+	readonly deployProjectId?: string;
+	readonly deployCredentialIdentityId?: string;
+	readonly session?: string;
+}
+
+type Lookup =
+	| (LookedUp & { readonly kind: "found" })
+	| {
+			readonly kind: "refused";
+			readonly code: string;
+			readonly message: string;
+	  };
+
+async function lookUpLayout(
+	input: CiSecretStoreInput,
+	known: (key: ConnectIdOption) => string | undefined,
+	knownDeploy: boolean,
+): Promise<Lookup> {
+	const missingIds = CONNECT_ID_OPTIONS.filter(
+		(key) => key !== "team" && known(key) === undefined,
+	);
+	const missingTeam = known("team") === undefined;
+	if (missingIds.length === 0 && knownDeploy && !missingTeam)
+		return { kind: "found", ids: {} };
+	let team: string | undefined;
+	if (missingTeam && input.credentials !== undefined) {
+		const token = await readRelayDeployToken({
+			ownerCredentials: input.credentials,
+		});
+		if (token.ok)
+			team = await findRelayVercelTeam({
+				token: token.token,
+				...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+			}).catch(() => undefined);
+	}
+	if (
+		(missingIds.length === 0 && knownDeploy) ||
+		input.ownerInfisicalSession === undefined
+	)
+		return { kind: "found", ids: team !== undefined ? { team } : {} };
+	const signedIn = await input.ownerInfisicalSession();
+	if (!signedIn.ok)
+		return { kind: "refused", code: signedIn.code, message: signedIn.message };
+	try {
+		const found = await findRelayLayout({
+			siteUrl: text(input, "site-url") ?? "https://app.infisical.com",
+			session: signedIn.session,
+			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		});
+		return {
+			kind: "found",
+			session: signedIn.session,
+			ids: {
+				...(found.projectId !== undefined
+					? { "project-id": found.projectId }
+					: undefined),
+				...(found.relayIdentityId !== undefined
+					? { "relay-identity-id": found.relayIdentityId }
+					: undefined),
+				...(found.deployIdentityId !== undefined
+					? { "deploy-identity-id": found.deployIdentityId }
+					: undefined),
+				...(team !== undefined ? { team } : undefined),
+			},
+			...(found.deployProjectId !== undefined
+				? { deployProjectId: found.deployProjectId }
+				: undefined),
+			...(found.deployCredentialIdentityId !== undefined
+				? { deployCredentialIdentityId: found.deployCredentialIdentityId }
+				: undefined),
+		};
+	} catch (error) {
+		if (error instanceof RelayLayoutRefusal)
+			return { kind: "refused", code: error.code, message: error.message };
+		throw error;
+	}
+}
+
 export async function runCiSecretStoreConnect(
 	input: CiSecretStoreInput,
 ): Promise<CommandResult> {
@@ -117,20 +205,34 @@ export async function runCiSecretStoreConnect(
 					`${error.message} Pass --yes to replace it.`,
 				);
 		}
-	const given = (key: ConnectIdOption) =>
+	const known = (key: ConnectIdOption) =>
 		text(input, key) || existing?.[CONNECT_IDS[key]] || undefined;
-	const deployProjectId =
-		text(input, "deploy-project-id") ?? existing?.deployProjectId ?? "";
+	const knownDeployProject =
+		text(input, "deploy-project-id") ?? existing?.deployProjectId;
+	const knownReader =
+		text(input, "deploy-credential-identity-id") ??
+		existing?.deployCredentialIdentityId;
+	const lookup = await lookUpLayout(
+		input,
+		known,
+		knownDeployProject !== undefined && knownReader !== undefined,
+	);
+	if (lookup.kind === "refused")
+		return refusedConnect(lookup.code, lookup.message);
+	const given = (key: ConnectIdOption) => known(key) ?? lookup.ids[key];
+	let deployProjectId = knownDeployProject ?? lookup.deployProjectId ?? "";
 	const relayIdentityId = given("relay-identity-id") ?? "";
 	const deployIdentityId = given("deploy-identity-id") ?? "";
-	const deployCredentialIdentityId =
-		text(input, "deploy-credential-identity-id") ??
-		existing?.deployCredentialIdentityId ??
-		"";
+	let deployCredentialIdentityId =
+		knownReader ?? lookup.deployCredentialIdentityId ?? "";
+	const makeReader =
+		lookup.session !== undefined &&
+		(deployProjectId === "" || deployCredentialIdentityId === "");
 	const hasDeployCredential =
-		deployProjectId !== "" || deployCredentialIdentityId !== "";
+		makeReader || deployProjectId !== "" || deployCredentialIdentityId !== "";
 	const missing = [
-		...((deployProjectId === "") !== (deployCredentialIdentityId === "")
+		...(!makeReader &&
+		(deployProjectId === "") !== (deployCredentialIdentityId === "")
 			? ([
 					...(deployProjectId === "" ? (["deploy-project-id"] as const) : []),
 					...(deployCredentialIdentityId === ""
@@ -148,6 +250,26 @@ export async function runCiSecretStoreConnect(
 		return refusedConnect(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
 			"hobo-ci-deploy-reader must be a different identity from both hobo-ci-writer and hobo-ci-relay; the writer's identity would read the deploy token with the writer's privileges, and the relay's would reach it from the relay's sign-in.",
+		);
+	if (missing.length > 0 && lookup.session !== undefined)
+		return refusedConnect(
+			"HOBO_CI_SECRET_STORE_LAYOUT_MISSING",
+			`Your Infisical organization has no ${missing
+				.map(
+					(key) =>
+						({
+							"project-id": RELAY_LAYOUT_NAMES.project,
+							"relay-identity-id": RELAY_LAYOUT_NAMES.relayIdentity,
+							"deploy-identity-id": RELAY_LAYOUT_NAMES.writerIdentity,
+							team: `Vercel team holding the ${RELAY_LAYOUT_NAMES.project} project (run hobo cd up first)`,
+							"deploy-project-id": RELAY_LAYOUT_NAMES.deployProject,
+							"deploy-credential-identity-id":
+								RELAY_LAYOUT_NAMES.readerIdentity,
+						})[key],
+				)
+				.join(
+					", ",
+				)}: HoBo found the rest by name. Create what is missing under exactly that name and run again.`,
 		);
 	if (missing.length > 0)
 		return {
@@ -178,6 +300,22 @@ export async function runCiSecretStoreConnect(
 		});
 		trust = githubDeployTrust(subject);
 		readerTrust = githubDeployReaderTrust(subject);
+		if (makeReader && lookup.session !== undefined) {
+			const made = await ensureDeployReader({
+				siteUrl: text(input, "site-url") ?? "https://app.infisical.com",
+				session: lookup.session,
+				found: {
+					...(deployProjectId !== "" ? { deployProjectId } : undefined),
+					...(deployCredentialIdentityId !== ""
+						? { deployCredentialIdentityId }
+						: undefined),
+				},
+				readerTrust,
+				...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+			});
+			deployProjectId = made.deployProjectId;
+			deployCredentialIdentityId = made.deployCredentialIdentityId;
+		}
 		binding = parseSecretStoreBinding(
 			create(SecretStoreBindingSchema, {
 				// A repair keeps what the store is; a first connect is an attach.
@@ -207,6 +345,13 @@ export async function runCiSecretStoreConnect(
 	} catch (error) {
 		if (error instanceof SecretStoreBindingRefusal)
 			return refusedConnect(error.code, error.message);
+		if (error instanceof RelayLayoutRefusal)
+			return refusedConnect(error.code, error.message);
+		if (error instanceof InfisicalError)
+			return refusedConnect(
+				"HOBO_CI_SECRET_STORE_API",
+				`Infisical refused setting up ${RELAY_LAYOUT_NAMES.readerIdentity} in ${RELAY_LAYOUT_NAMES.deployProject}: ${error.message}`,
+			);
 		if (error instanceof SecretStoreError)
 			return refusedConnect(
 				error.code === "SECRET_STORE_OIDC_SUBJECT_UNRESOLVED"
@@ -252,13 +397,14 @@ export async function runCiSecretStoreConnect(
 		},
 	] as const;
 	const ownerToken = input.env.INFISICAL_TOKEN ?? "";
-	if (ownerToken !== "") {
+	const repairToken = ownerToken || lookup.session || "";
+	if (repairToken !== "") {
 		const updated: string[] = [];
 		for (const update of trustUpdates)
 			try {
 				await updateDeployIdentityTrust({
 					siteUrl: binding.endpoint,
-					ownerAccessToken: ownerToken,
+					ownerAccessToken: repairToken,
 					deployIdentityId: update.identityId,
 					trust: update.trust,
 					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
@@ -276,7 +422,7 @@ export async function runCiSecretStoreConnect(
 				);
 			}
 	}
-	const applied = ownerToken !== "" ? "updated" : "set-in-dashboard";
+	const applied = repairToken !== "" ? "updated" : "set-in-dashboard";
 	const deployTrust: DeployTrustReport = {
 		identity: "hobo-ci-writer",
 		issuer: trust.issuer,
