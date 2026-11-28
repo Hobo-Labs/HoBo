@@ -164,6 +164,7 @@ unindexed new finding files as notices.
 - [Finding 155: merge queue vitest file shards and release integration lane](./findings/0155-merge-queue-vitest-file-shards-and-release-integration-lane.md)
 - [Finding 156: merge queue tree reuse](./findings/0156-merge-queue-tree-reuse.md)
 - [Finding 157: release publish critical path](./findings/0157-release-publish-critical-path.md)
+- [Finding 158: private 1Password owner channels built, not proven](./findings/0158-private-1password-owner-channels-built-not-proven.md)
 - [Finding 159: preflight downloaded tools the job never ran](./findings/0159-preflight-downloaded-tools-the-job-never-ran.md)
 - [Finding 160: ARC pods installed from a cold store every job](./findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)
 - [Finding 161: every job rebuilt a pull request's runner image](./findings/0161-every-job-rebuilt-a-pull-requests-runner-image.md)

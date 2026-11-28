@@ -70,9 +70,11 @@ describe("doctor agent-tooling (AX)", () => {
 		const claude = schema.parse(
 			JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8")),
 		);
+		const claudeLaunch =
+			'root=$(git rev-parse --show-toplevel) || exit 1; cd "$root" || exit 1; exec node --import tsx packages/hobo/src/bin/hobo-mcp.ts';
 		expect(claude.mcpServers.hobo).toEqual({
-			command: "node",
-			args: ["--import", "tsx", "packages/hobo/src/bin/hobo-mcp.ts"],
+			command: "bash",
+			args: ["-c", claudeLaunch],
 		});
 		const codex = readFileSync(path.join(root, ".codex/config.toml"), "utf8");
 		const hobo =

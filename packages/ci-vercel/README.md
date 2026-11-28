@@ -494,6 +494,51 @@ Vercel CLI, fake probe answers, a temporary CD journal, fake GitHub and
 Infisical endpoints). No live deployment of the relay was made from this
 repository by this change.**
 
+`hobo ci deploy --managed` delivers the relay from a pinned commit without a
+connected Git repository or a `VERCEL_TOKEN` in the environment:
+
+```sh
+hobo ci deploy --managed \
+  --cwd packages/ci-vercel \
+  --ref main --sha <full-commit-id> \
+  --deadline <ISO-8601-time>
+```
+
+It reads the selected commit from the local Git object database, uploads the
+relay's pinned pnpm workspace inputs, and records the source as Freight in the
+CD journal. Dirty and untracked files are excluded. `--dry-run` shows the
+selected project and source without reading a credential or contacting Vercel.
+A live run reads the Vercel connection through HoBo's owner-selected secret
+store and keeps the credential in the run's trusted vault. The agent hand-off
+keeps store selection in the temporary owner session; existing owner settings
+stay outside the repository. A headless runner needs an authorized session or
+workload identity and access to that owner-selected configuration; OIDC
+permission alone does not supply the store selection.
+
+The managed pipeline first builds a preview and checks the provider's
+deployment record for the pinned commit and READY state. Protected preview URLs
+remain protected, so this check does not exercise the preview's runtime. CD
+then builds a production deployment with automatic domain assignment disabled.
+It records the currently serving deployment before promotion, checks that the
+new deployment is READY, promotes it, and requires three successful public
+health observations: `/healthz` must report the pinned commit and `/readyz`
+must return 200. If verification fails while the candidate still owns the
+production alias, CD attempts to restore the previous production deployment.
+It reports a rollback failure separately and does not knowingly replace a
+concurrent release.
+
+In GitHub Actions, CD records a non-secret rollback checkpoint as a GitHub
+deployment before promotion, so a later runner can detect and recover an
+unfinished release. Local runs keep checkpoints beside the CD journal under
+`$HOBO_HOME/cd/releases`. A provider failure can still interrupt rollback, so
+an unconfirmed rollback needs operator inspection. If a promotion response is
+lost and the previous deployment is still serving, CD keeps the unfinished
+checkpoint: a delayed alias change may still be in flight. Local runs can
+detect unfinished checkpoints in the same HoBo home, but the checkpoint is not
+a lock; operators must serialize local and workflow releases. The command's
+tests use fake provider responses; a live deployment must be reported
+separately after it is observed.
+
 ### Continuity
 
 Every stateful relay resource declares its policy with the `continuity` trait
@@ -628,7 +673,7 @@ means promoting an earlier deployment.
 
 **Probes.** `/healthz` answers 200 always, before the relay is composed, with
 `{ok: true, commit}`: the commit Vercel built the deployment from
-(`VERCEL_GIT_COMMIT_SHA`), or null off a Git deployment.
+(`VERCEL_GIT_COMMIT_SHA` for a Git deployment, falling back to `HOBO_CI_SOURCE_SHA` for a managed source deployment), or null when neither contains a full commit. Vercel's Git SHA takes precedence whenever both are present.
 `/readyz` answers 200 or 503 with `{ready, configService, configStale, cache,
 executionHost, workers}`: the config service loads, the cache answers a read
 (one command), an execution host (the Sandbox controller) is configured, and

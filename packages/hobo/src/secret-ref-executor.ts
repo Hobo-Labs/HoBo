@@ -168,8 +168,8 @@ export function withSecretRefExecution(
 		id: `${inner.id}+secret-refs`,
 		async preview(program) {
 			if (!owned(program)) return inner.preview(program);
-			const outputs = await reference(program);
-			return { summary: `reference ${outputs.reference}`, changes: 0 };
+			await reference(program);
+			return { summary: "secret store reference ready", changes: 0 };
 		},
 		async apply(program) {
 			return owned(program) ? reference(program) : inner.apply(program);

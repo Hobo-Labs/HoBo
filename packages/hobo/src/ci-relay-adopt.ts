@@ -1,21 +1,6 @@
 // `hobo ci deploy --adopt` — the token-free relay mode: HoBo delivering its
 // own hosted CI relay as a publisher that observes, never deploys.
 //
-// The relay deploys through Vercel's Git integration: a push to `main` builds
-// and promotes it on Vercel, with no deploy token anywhere in CI (ADR-0179
-// amendment "Secretless first"). This verb adopts what that integration
-// created. Given the commit, it finds Vercel's production deployment of the
-// relay's project through GitHub's Deployments API, read with the job's own
-// GitHub token (the credentialRef `env://GITHUB_TOKEN`, resolved by the CD
-// CredentialResolver for each request and never recorded), and records it as
-// relay Freight: the commit, the deployment's id, URL and state when adopted.
-// It then promotes that Freight through `@hobo/cd`, preview then production,
-// in the shared CD journal `hobo deploy` reads. The conductor's realizer is
-// observe-only (`@hobo/provider-vercel`'s Git-integration adoption): it
-// converges only when the deployment is READY and is the deployment of the
-// Freight's commit, and it never creates, promotes, aliases or cancels a
-// deployment.
-//
 // Verification fails closed and never needs past Vercel Deployment
 // Protection (`ci-relay-verify.ts`): the per-deployment URL, which answers 401
 // under protection, is never probed. Production probes the relay's production

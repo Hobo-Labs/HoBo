@@ -89,6 +89,7 @@ describe("SPEC remote reach: 1Password from a remote box", () => {
 			emit: () => undefined,
 			interactive: false,
 			exists: () => false,
+			validateServiceAccount: async () => true,
 		});
 		expect(access.kind).toBe("refused");
 		if (access.kind !== "refused") return;

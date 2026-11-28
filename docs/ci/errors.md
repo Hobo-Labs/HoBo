@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-141 codes.
+162 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -58,7 +58,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_CONNECTION_UNCONFIRMED`](#hobo_ci_connection_unconfirmed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECT_CEREMONY`](#hobo_ci_connect_ceremony) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_DEPLOYED`](#hobo_ci_deployed) | `packages/hobo/src/ci-relay-deploy.ts` |
-| [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy-credential.ts` |
+| [`HOBO_CI_DEPLOY_AUTH_REQUIRED`](#hobo_ci_deploy_auth_required) | `packages/hobo/src/ci-relay-deploy-credential.ts`, `packages/hobo/src/ci-relay-managed.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_CONFLICT`](#hobo_ci_deploy_binding_conflict) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_UNAVAILABLE`](#hobo_ci_deploy_binding_unavailable) | `packages/hobo/src/ci-relay-yard.ts` |
@@ -88,6 +88,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_SOURCE_UNPINNED`](#hobo_ci_deploy_source_unpinned) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_STAGED_NOT_READY`](#hobo_ci_deploy_staged_not_ready) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_STAGE_FAILED`](#hobo_ci_deploy_stage_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_TEAM_MISMATCH`](#hobo_ci_deploy_team_mismatch) | `packages/hobo/src/ci-relay-managed.ts` |
 | [`HOBO_CI_DEPLOY_VERCEL_REFUSED`](#hobo_ci_deploy_vercel_refused) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_VERIFICATION_FAILED`](#hobo_ci_deploy_verification_failed) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`](#hobo_ci_deploy_verify_origin_unset) | `packages/hobo/src/ci-relay-deploy.ts` |
@@ -123,6 +124,25 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_MACHINE_SIGN_IN`](#hobo_ci_machine_sign_in) | `packages/hobo/src/ci-machine-connect.ts` |
 | [`HOBO_CI_MACHINE_UNSUPPORTED`](#hobo_ci_machine_unsupported) | `packages/hobo/src/ci-machine-connect.ts` |
 | [`HOBO_CI_MACHINE_USAGE`](#hobo_ci_machine_usage) | `packages/hobo/src/ci-machine-connect.ts`, `packages/hobo/src/ci-machine.ts` |
+| [`HOBO_CI_MANAGED_BUDGET`](#hobo_ci_managed_budget) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_CONCURRENT_RELEASE`](#hobo_ci_managed_concurrent_release) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_CONFIG_INVALID`](#hobo_ci_managed_config_invalid) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_DEPLOYED`](#hobo_ci_managed_deployed) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_DEPLOY_FAILED`](#hobo_ci_managed_deploy_failed) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_FAILED`](#hobo_ci_managed_failed) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_JOURNAL_REQUIRED`](#hobo_ci_managed_journal_required) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_JOURNAL_UNAVAILABLE`](#hobo_ci_managed_journal_unavailable) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_PIN_MISMATCH`](#hobo_ci_managed_pin_mismatch) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_PLACEMENT_INVALID`](#hobo_ci_managed_placement_invalid) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_PLANNED`](#hobo_ci_managed_planned) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_PREVIEW`](#hobo_ci_managed_preview) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_PROJECT_UNAVAILABLE`](#hobo_ci_managed_project_unavailable) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_RECOVERY_FAILED`](#hobo_ci_managed_recovery_failed) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_RELEASE_UNCONFIRMED`](#hobo_ci_managed_release_unconfirmed) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_SETTINGS_MISSING`](#hobo_ci_managed_settings_missing) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_SOURCE_INVALID`](#hobo_ci_managed_source_invalid) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_SOURCE_UNAVAILABLE`](#hobo_ci_managed_source_unavailable) | `packages/hobo/src/ci-relay-managed.ts` |
+| [`HOBO_CI_MANAGED_TARGET_INVALID`](#hobo_ci_managed_target_invalid) | `packages/hobo/src/ci-relay-managed.ts` |
 | [`HOBO_CI_MCP_AUTH_REQUIRED`](#hobo_ci_mcp_auth_required) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_MCP_BUSY`](#hobo_ci_mcp_busy) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_MCP_FAILED`](#hobo_ci_mcp_failed) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
@@ -135,6 +155,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_OWNER_CHOICE_CHANGED`](#hobo_ci_owner_choice_changed) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
@@ -593,7 +614,7 @@ What to do: follow the message.
 
 ### HOBO_CI_DEPLOY_AUTH_REQUIRED
 
-Returned from `packages/hobo/src/ci-relay-deploy-credential.ts`.
+Returned from `packages/hobo/src/ci-relay-deploy-credential.ts`, `packages/hobo/src/ci-relay-managed.ts`.
 
 Messages:
 
@@ -603,6 +624,10 @@ The owner's store session holds no Vercel deploy token at {RELAY_DEPLOY_TOKEN_RE
 
 ```text
 {RELAY_DEPLOY_TOKEN_REF} in the owner's store is not a single-line Vercel token. Run hobo cd up again to reconnect HoBo's Vercel account.
+```
+
+```text
+HoBo CD needs access to the Vercel connection in the owner's selected store session.
 ```
 
 What to do: follow the message.
@@ -1060,6 +1085,18 @@ vercel {…} failed (exit {result.code}) trying to {what}:
 
 ```text
 vercel deploy reported success, but project {input.project} lists no production build with {VERCEL_PREBUILT_META.freight}={input.freightId}.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_TEAM_MISMATCH
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The selected Vercel connection does not belong to the relay's team.
 ```
 
 What to do: follow the message.
@@ -1542,6 +1579,238 @@ Message:
 
 What to do: follow the message.
 
+### HOBO_CI_MANAGED_BUDGET
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Managed delivery needs at least three minutes before its deadline.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_CONCURRENT_RELEASE
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Production changed while an earlier release was unfinished; inspect it before retrying.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_CONFIG_INVALID
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The pinned relay needs a Vercel Yard, delivery records, Bindle and secret-store binding.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_DEPLOYED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+HoBo CD delivered {repository}@{sha} to {productionOrigin}; production health verified.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_DEPLOY_FAILED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Vercel could not create the {target} source deployment.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_FAILED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Managed delivery could not complete; inspect the CD journal and deployment status.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_JOURNAL_REQUIRED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+GitHub Actions delivery needs its scoped deployment token and matching repository and commit for durable recovery.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_JOURNAL_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The durable release checkpoint could not be read safely.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_PIN_MISMATCH
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The CD Freight does not match the pinned source.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_PLACEMENT_INVALID
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The relay Yard must identify the same Vercel project, team, repository and workspace for both Camps.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_PLANNED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Would deliver {repository}@{sha} to {project} through HoBo CD using {source.files.length} committed files{…}. No credential was read and nothing was deployed.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_PREVIEW
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+HoBo CD delivered {repository}@{sha} to a Vercel preview; its deployment record is READY.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_PROJECT_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The selected Vercel project could not be verified for this team.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_RECOVERY_FAILED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Messages:
+
+```text
+The interrupted release could not be verified: {recovered.code}; rollback {…}.
+```
+
+```text
+The interrupted release could not be checked safely.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_RELEASE_UNCONFIRMED
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+CD did not confirm the production release and public health checks.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_SETTINGS_MISSING
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+A production binding asks for store coordinates, which never become Vercel variables.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_SOURCE_INVALID
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Managed delivery needs a full commit SHA and a valid ref.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_SOURCE_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+The pinned relay commit and its workspace inputs could not be read.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MANAGED_TARGET_INVALID
+
+Returned from `packages/hobo/src/ci-relay-managed.ts`.
+
+Message:
+
+```text
+Managed delivery target must be preview or production.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_MCP_AUTH_REQUIRED
 
 Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
@@ -1711,6 +1980,20 @@ The GitHub request timed out. A rerun may already have been accepted; inspect th
 ```
 
 What to do: follow the message.
+
+### HOBO_CI_OWNER_CHOICE_CHANGED
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+The owner changed the selected store while this operation was running.
+```
+
+What to do:
+
+- Run hobo ci up again for the selected store.
 
 ### HOBO_CI_RELAY_ERROR
 
@@ -2086,7 +2369,7 @@ hobo ci up deploys the current branch, and this checkout is not on one.
 
 What to do:
 
-- Check out the branch to deploy (pushed to GitHub), or use hobo ci deploy --ref \<ref>.
+- Check out a local branch, or use hobo ci deploy --managed --ref \<ref> --sha \<full-commit>.
 
 ### HOBO_CI_UP_PLATFORM_DRIFT
 

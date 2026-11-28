@@ -54,6 +54,30 @@ import {
 
 const DEVICE = parseBitwardenDeviceId("8d0f3c2e-1b4a-4c5d-9e6f-7a8b9c0d1e2f");
 
+function privateOwner(approvals: { url: string; message: string }[]) {
+	const held = new Map([
+		["BW_CLIENTID", API_KEY.clientId],
+		["BW_CLIENTSECRET", API_KEY.clientSecret],
+	]);
+	const captured: string[] = [];
+	return {
+		captured,
+		openUrl: async () => undefined,
+		holds: (name: string) => held.has(name),
+		captureSecret: async ({ name }: { name: string }) => {
+			const value = held.get(name);
+			held.delete(name);
+			if (value !== undefined) captured.push(name);
+			return value;
+		},
+		canConfirm: () => true,
+		confirm: async (request: { url: string; message: string }) => {
+			approvals.push(request);
+			return true;
+		},
+	};
+}
+
 async function provision(
 	options: FakeBitwardenOptions = {},
 	extra: { organizationId?: string } = {},
@@ -223,6 +247,470 @@ describe("EVAL Bitwarden provisioning: one approval, no copied token", () => {
 });
 
 describe("EVAL Bitwarden sign-in: from the environment's API key to the run's vault", () => {
+	it("does not ask for credentials when the cloud sign-in service is unavailable", async () => {
+		let prompts = 0;
+		const keyed = createTrustedVault();
+		keyed.put("BW_CLIENTID", API_KEY.clientId);
+		keyed.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault: keyed,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: async () => new Response(null, { status: 503 }),
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				requestCaptures: async () => {
+					prompts += 1;
+				},
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+		});
+		expect(refusal?.code).toBe("HOBO_CD_BITWARDEN_API");
+		expect(prompts).toBe(0);
+	});
+
+	it("does not mistake an invalid OAuth request for a missing API key", async () => {
+		let prompts = 0;
+		const keyed = createTrustedVault();
+		keyed.put("BW_CLIENTID", API_KEY.clientId);
+		keyed.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault: keyed,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: async () =>
+				Response.json({ error: "invalid_request" }, { status: 400 }),
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				requestCaptures: async () => {
+					prompts += 1;
+				},
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+		});
+		expect(refusal?.code).toBe("HOBO_CD_BITWARDEN_API");
+		expect(prompts).toBe(0);
+	});
+
+	it.each([
+		"stored",
+		"captured",
+	])("reports a provider outage after using a %s API key", async (source) => {
+		const vault = createTrustedVault();
+		if (source === "stored") {
+			vault.put("BW_CLIENTID", API_KEY.clientId);
+			vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		}
+		let calls = 0;
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault,
+			env:
+				source === "captured"
+					? { BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN }
+					: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: async () => {
+				calls += 1;
+				return new Response(null, { status: 503 });
+			},
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async ({ name }) =>
+					name === "BW_CLIENTID" ? API_KEY.clientId : API_KEY.clientSecret,
+				holds: () => true,
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+		});
+		expect(refusal?.code).toBe("HOBO_CD_BITWARDEN_API");
+		expect(calls).toBe(1);
+	});
+
+	it("does not poll or emit credential instructions during a proxy outage", async () => {
+		const lines: string[] = [];
+		let calls = 0;
+		const result = await provisionBitwardenAccessToken({
+			family: "cd",
+			endpoints: bitwardenEndpoints("us"),
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
+			deviceId: DEVICE,
+			fetch: async () => {
+				calls += 1;
+				return new Response(null, { status: 503 });
+			},
+			emit: (line) => lines.push(line),
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_BITWARDEN_API",
+		});
+		expect(calls).toBe(1);
+		expect(lines).toEqual([]);
+	});
+
+	it("stops reading a sign-in error if the provider never finishes its body", async () => {
+		const lines: string[] = [];
+		const result = await provisionBitwardenAccessToken({
+			family: "cd",
+			endpoints: bitwardenEndpoints("us"),
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
+			deviceId: DEVICE,
+			fetch: async () =>
+				new Response(
+					new ReadableStream({
+						start(controller) {
+							controller.enqueue(
+								new TextEncoder().encode('{"error":"invalid_request"}'),
+							);
+						},
+						cancel: () => new Promise<void>(() => undefined),
+					}),
+					{ status: 400 },
+				),
+			emit: (line) => lines.push(line),
+			authErrorReadTimeoutMs: 10,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_BITWARDEN_API",
+		});
+		expect(lines).toEqual([]);
+	});
+
+	it("does not wait for a stalled 401 body cancellation before refusing the key", async () => {
+		const unauthorized = () =>
+			new Response(
+				new ReadableStream({
+					cancel: () => new Promise<void>(() => undefined),
+				}),
+				{ status: 401 },
+			);
+		let calls = 0;
+		const poll = await provisionBitwardenAccessToken({
+			family: "cd",
+			endpoints: bitwardenEndpoints("us"),
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
+			deviceId: DEVICE,
+			fetch: async () =>
+				++calls === 1 ? unauthorized() : new Response(null, { status: 503 }),
+			emit: () => undefined,
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(poll).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED",
+		});
+		expect(calls).toBe(1);
+	}, 3000);
+
+	it("serializes provider mutations against owner selection and marks uncertain failures", async () => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		let pending = false;
+		let guarded = 0;
+		let uncertain = false;
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault,
+			env: {},
+			locator: {
+				read: async () => ({}),
+				write: async () => undefined,
+				runStoreWrite: async (action) => {
+					pending = true;
+					try {
+						return await action();
+					} finally {
+						pending = false;
+					}
+				},
+				markUncertainWrite: () => {
+					uncertain = true;
+				},
+			},
+			fetch: async (input, init) => {
+				if ((init?.method ?? "GET") !== "GET") {
+					expect(pending).toBe(true);
+					guarded += 1;
+				}
+				return server.fetch(input, init);
+			},
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal).toBeUndefined();
+		expect(guarded).toBeGreaterThan(1);
+		expect(uncertain).toBe(false);
+		await expect(
+			ensureBitwardenSignIn({
+				family: "cd",
+				vault,
+				env: {},
+				locator: {
+					read: async () => ({}),
+					write: async () => undefined,
+					markUncertainWrite: () => {
+						uncertain = true;
+					},
+				},
+				fetch: async () => {
+					throw new Error("connection lost");
+				},
+				emit: () => undefined,
+				silent: true,
+				handOff: true,
+				owner: {
+					openUrl: async () => undefined,
+					captureSecret: async () => undefined,
+					holds: () => false,
+					canConfirm: () => true,
+					confirm: async () => true,
+				},
+			}),
+		).resolves.toMatchObject({ code: "HOBO_CD_STORE_OPERATION_UNCERTAIN" });
+		expect(uncertain).toBe(true);
+	});
+
+	it.each([
+		"server-error",
+		"unreadable-body",
+	])("marks a possibly applied mutation with %s as uncertain", async (failure) => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		let uncertain = false;
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault,
+			env: {},
+			locator: {
+				read: async () => ({}),
+				write: async () => undefined,
+				runStoreWrite: async (action) => action(),
+				markUncertainWrite: () => {
+					uncertain = true;
+				},
+			},
+			fetch: async (input, init) => {
+				const response = await server.fetch(input, init);
+				if (
+					init?.method !== "POST" ||
+					!new URL(String(input)).pathname.endsWith("/projects")
+				)
+					return response;
+				return failure === "server-error"
+					? new Response(null, { status: 500 })
+					: new Response(
+							new ReadableStream({
+								start(controller) {
+									controller.error(new Error("unreadable"));
+								},
+							}),
+						);
+			},
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal?.code).toBe("HOBO_CD_STORE_OPERATION_UNCERTAIN");
+		expect(server.projects).toHaveLength(1);
+		expect(uncertain).toBe(true);
+		expect(server.tokens).toHaveLength(0);
+	});
+
+	it("lets the owner choose among organizations in the private session", async () => {
+		const server = fakeBitwarden({ organizations: 2 });
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const optionsSeen: string[] = [];
+		const lines: string[] = [];
+		const refusal = await ensureBitwardenSignIn({
+			family: "ci",
+			vault,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: server.fetch,
+			emit: (line) => lines.push(line),
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				canConfirm: () => true,
+				confirm: async () => true,
+				choose: async ({ choices }) => {
+					optionsSeen.push(...choices.map((choice) => choice.value));
+					return ORG_ID;
+				},
+			},
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal).toBeUndefined();
+		expect(optionsSeen).toEqual([ORG_ID, OTHER_ORG_ID]);
+		expect(lines.join("\n")).not.toContain(OTHER_ORG_ID);
+		expect(vault.has("BWS_ACCESS_TOKEN")).toBe(true);
+	});
+
+	it("stops before provisioning when the owner changes stores during approval", async () => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		let current = true;
+		const controller = new AbortController();
+		await expect(
+			ensureBitwardenSignIn({
+				family: "cd",
+				vault,
+				env: {},
+				locator: {
+					read: async () => ({}),
+					write: async () => undefined,
+					selectionSignal: controller.signal,
+					assertCurrent: () => {
+						if (!current) throw new Error("Owner selection changed.");
+					},
+				},
+				fetch: server.fetch,
+				emit: () => undefined,
+				silent: true,
+				handOff: true,
+				owner: {
+					openUrl: async () => undefined,
+					captureSecret: async () => undefined,
+					holds: () => false,
+					canConfirm: () => true,
+					confirm: async () => {
+						current = false;
+						controller.abort();
+						return true;
+					},
+				},
+				sleep: async () => undefined,
+				timeoutMs: 60_000,
+			}),
+		).rejects.toThrow(/selection changed/u);
+		expect(server.tokens).toHaveLength(0);
+		expect(server.projects).toHaveLength(0);
+	});
+
+	it("shows the approval privately during a silent owner handoff", async () => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const prompts: Array<{ url: string; message: string }> = [];
+		const lines: string[] = [];
+		const refusal = await ensureBitwardenSignIn({
+			family: "ci",
+			vault,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: server.fetch,
+			emit: (line) => lines.push(line),
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				canConfirm: () => true,
+				confirm: async (prompt) => {
+					prompts.push(prompt);
+					return true;
+				},
+			},
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal).toBeUndefined();
+		expect(vault.reveal("BWS_ACCESS_TOKEN")).toMatch(/^0\./u);
+		const request = server.requests[0];
+		if (!request) throw new Error("No sign-in request.");
+		const phrase = fingerprintPhrase(
+			OWNER_EMAIL,
+			Buffer.from(request.publicKey, "base64"),
+		);
+		expect(prompts).toHaveLength(1);
+		expect(prompts[0]?.message).toContain(phrase);
+		expect(lines.join("\n")).not.toContain(phrase);
+	});
+
+	it("does not provision access when the private approval is declined", async () => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: server.fetch,
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				canConfirm: () => true,
+				confirm: async () => false,
+			},
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal?.code).toBe("HOBO_CD_BITWARDEN_APPROVAL_REQUIRED");
+		expect(vault.has("BWS_ACCESS_TOKEN")).toBe(false);
+		expect(server.tokens).toHaveLength(0);
+	});
+
 	it("moves the new token into the vault and the ids into the locator", async () => {
 		const server = fakeBitwarden();
 		const vault = createTrustedVault();
@@ -311,6 +799,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 	it("asks for one approval, then opens the store with the token it created", async () => {
 		const server = fakeBitwarden();
 		const shown: string[] = [];
+		const approvals: { url: string; message: string }[] = [];
 		const saved = new Map<string, string>();
 		const opened = new Map<string, string>();
 		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
@@ -328,6 +817,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 			run: run as CommandRunInput,
 		} as PrepareInput;
 		await prepareGithubConnection(input, {
+			ownerChannel: privateOwner(approvals),
 			env: {
 				HOBO_SECRET_STORE: "bitwarden",
 				BW_CLIENTID: API_KEY.clientId,
@@ -376,11 +866,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 			BWS_ORGANIZATION_ID: ORG_ID,
 			BWS_PROJECT_ID: "44444444-4444-4444-8444-444444444444",
 		});
-		expect(
-			shown.filter((l) =>
-				l.startsWith(`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} `),
-			),
-		).toHaveLength(1);
+		expect(approvals).toHaveLength(1);
 		const all = shown.join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain("MintedClientSecret0123");
@@ -393,6 +879,54 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 		"us",
 		parseHttpsOrigin("BITWARDEN_SERVER_URL", VAULTWARDEN_ORIGIN),
 	);
+
+	it("opens the vault with the owner-captured credentials held in the session", async () => {
+		const server = fakeBitwarden({ vaultwarden: true });
+		const vault = createTrustedVault();
+		const saved = new Map<string, string>();
+		const refusal = await ensureBitwardenSignIn({
+			family: "cd",
+			vault,
+			env: { BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN },
+			locator: {
+				read: async () => Object.fromEntries(saved),
+				write: async (values) => {
+					saved.clear();
+					for (const [name, value] of Object.entries(values))
+						saved.set(name, value);
+				},
+			},
+			fetch: server.fetch,
+			emit: () => undefined,
+			silent: true,
+			handOff: true,
+			owner: {
+				openUrl: async () => undefined,
+				holds: () => true,
+				captureSecret: async ({ name }) =>
+					name === "BW_CLIENTID" ? API_KEY.clientId : API_KEY.clientSecret,
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal).toBeUndefined();
+		const opening = await openSecretStore(
+			"bitwarden",
+			Object.fromEntries(saved),
+			vault,
+			{
+				fetch: server.fetch,
+			},
+		);
+		if (!opening.ok) throw new Error(opening.message);
+		await opening.store.port.put("SYNTHETIC_SETTING", "fixture");
+		expect(await opening.store.port.access("SYNTHETIC_SETTING")).toMatchObject({
+			status: "ok",
+			material: "fixture",
+		});
+	});
 
 	it("signs in to the overridden server only and keeps secrets in a collection", async () => {
 		const server = fakeBitwarden({ vaultwarden: true });
@@ -476,6 +1010,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 	it("hobo ci up --hand-off with BITWARDEN_SERVER_URL ends with the vault store open", async () => {
 		const server = fakeBitwarden({ vaultwarden: true });
 		const shown: string[] = [];
+		const approvals: { url: string; message: string }[] = [];
 		const saved = new Map<string, string>();
 		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 			emitProgress: (line) => shown.push(line),
@@ -492,6 +1027,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 			run: run as CommandRunInput,
 		} as PrepareInput;
 		await prepareGithubConnection(input, {
+			ownerChannel: privateOwner(approvals),
 			env: {
 				HOBO_SECRET_STORE: "bitwarden",
 				BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN,
@@ -526,7 +1062,8 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 		).toBeGreaterThan(1);
 		expect(server.strayHosts).toEqual([]);
 		const all = shown.join("\n");
-		expect(all).toContain("server=vault.example.com");
+		expect(approvals[0]?.url).toBe(VAULTWARDEN_ORIGIN);
+		expect(all).not.toContain("vault.example.com");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(server.orgKey.toString("base64"));
 		expect(JSON.stringify(Object.fromEntries(saved))).not.toContain(
@@ -555,7 +1092,15 @@ function handedOff(see: (line: string) => void): PrepareInput {
 describe("EVAL remote box, no keys anywhere: the ceremony collects the API key", () => {
 	it("asks once through HoBo's capture, keeps the key off every line, and opens the store", async () => {
 		const server = fakeBitwarden();
-		const owner = heldOwnerChannel();
+		const approvals: { url: string; message: string }[] = [];
+		const owner = {
+			...heldOwnerChannel(),
+			canConfirm: () => true,
+			confirm: async (request: { url: string; message: string }) => {
+				approvals.push(request);
+				return true;
+			},
+		};
 		const shown: string[] = [];
 		const opened = new Map<string, string>();
 		const run = () =>
@@ -603,9 +1148,10 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 		await run();
 		expect(opened.get("token")).toMatch(/^0\.66666666-/u);
 		expect(owner.holds("BW_CLIENTSECRET")).toBe(false);
+		expect(approvals).toHaveLength(1);
 		expect(
 			shown.filter((l) => l.startsWith(OWNER_BITWARDEN_APPROVE_LINE_PREFIX)),
-		).toHaveLength(1);
+		).toHaveLength(0);
 		const all = [...asked, ...shown].join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(OWNER_EMAIL);

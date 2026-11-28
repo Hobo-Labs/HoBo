@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file secret_capture.proto.
  */
 export const file_secret_capture: GenFile = /*@__PURE__*/
-  fileDesc("ChRzZWNyZXRfY2FwdHVyZS5wcm90bxIaaG9iby5tY3Auc2VjcmV0X2NhcHR1cmUudjEimQEKEVNlY3JldENhcHR1cmVTcGVjEgwKBG5hbWUYASABKAkSDgoGdGFyZ2V0GAIgASgJEg0KBWxhYmVsGAMgASgJEg8KB3B1cnBvc2UYBCABKAkSEQoJbWluX2J5dGVzGAUgASgNEhEKCW1heF9ieXRlcxgGIAEoDRIPCgdjaGFyc2V0GAcgASgJEg8KB3BhdHRlcm4YCCABKAkiQgoQU2VjcmV0Q2FwdHVyZUtleRILCgNrdHkYASABKAkSCwoDY3J2GAIgASgJEgkKAXgYAyABKAkSCQoBeRgEIAEoCSKmAgoTU2VjcmV0Q2FwdHVyZVRpY2tldBIRCgl0aWNrZXRfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZ0YXJnZXQYAyABKAkSDwoHY2hhbm5lbBgEIAEoCRINCgVzdGF0ZRgFIAEoCRIRCglvcGVuZWRfYXQYBiABKAkSEgoKZXhwaXJlc19hdBgHIAEoCRILCgNyZWYYCCABKAkSCwoDdXJsGAkgASgJEjkKA2tleRgKIAEoCzIsLmhvYm8ubWNwLnNlY3JldF9jYXB0dXJlLnYxLlNlY3JldENhcHR1cmVLZXkSDQoFbGFiZWwYCyABKAkSDwoHcHVycG9zZRgMIAEoCRIPCgdjaGFyc2V0GA0gASgJEhEKCW1heF9ieXRlcxgOIAEoDSKDAQoTU2VjcmV0Q2FwdHVyZVNlYWxlZBIRCgl0aWNrZXRfaWQYASABKAkSOQoDZXBrGAIgASgLMiwuaG9iby5tY3Auc2VjcmV0X2NhcHR1cmUudjEuU2VjcmV0Q2FwdHVyZUtleRIKCgJpdhgDIAEoCRISCgpjaXBoZXJ0ZXh0GAQgASgJImQKFFNlY3JldENhcHR1cmVSZWNlaXB0EhEKCXRpY2tldF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBnN0b3JlZBgDIAEoCBILCgNyZWYYBCABKAkSDgoGc3RhdHVzGAUgASgJIlYKFFNlY3JldENhcHR1cmVSZWZ1c2FsEgwKBGNvZGUYASABKAkSDwoHbWVzc2FnZRgCIAEoCRIRCgluZXh0X3N0ZXAYAyABKAkSDAoEbmFtZRgEIAEoCSKyAQoSU2VjcmV0Q2FwdHVyZUV2ZW50EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEgwKBHR5cGUYAiABKAkSCwoDc2VxGAMgASgEEgwKBHRpbWUYBCABKAkSEQoJdGlja2V0X2lkGAUgASgJEgwKBG5hbWUYBiABKAkSDgoGdGFyZ2V0GAcgASgJEg8KB2NoYW5uZWwYCCABKAkSCwoDcmVmGAkgASgJEgwKBGNvZGUYCiABKAliBnByb3RvMw");
+  fileDesc("ChRzZWNyZXRfY2FwdHVyZS5wcm90bxIaaG9iby5tY3Auc2VjcmV0X2NhcHR1cmUudjEimQEKEVNlY3JldENhcHR1cmVTcGVjEgwKBG5hbWUYASABKAkSDgoGdGFyZ2V0GAIgASgJEg0KBWxhYmVsGAMgASgJEg8KB3B1cnBvc2UYBCABKAkSEQoJbWluX2J5dGVzGAUgASgNEhEKCW1heF9ieXRlcxgGIAEoDRIPCgdjaGFyc2V0GAcgASgJEg8KB3BhdHRlcm4YCCABKAkiQgoQU2VjcmV0Q2FwdHVyZUtleRILCgNrdHkYASABKAkSCwoDY3J2GAIgASgJEgkKAXgYAyABKAkSCQoBeRgEIAEoCSKqAgoTU2VjcmV0Q2FwdHVyZVRpY2tldBIRCgl0aWNrZXRfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZ0YXJnZXQYAyABKAkSDwoHY2hhbm5lbBgEIAEoCRINCgVzdGF0ZRgFIAEoCRIRCglvcGVuZWRfYXQYBiABKAkSEgoKZXhwaXJlc19hdBgHIAEoCRIPCgNyZWYYCCABKAlCAhgBEgsKA3VybBgJIAEoCRI5CgNrZXkYCiABKAsyLC5ob2JvLm1jcC5zZWNyZXRfY2FwdHVyZS52MS5TZWNyZXRDYXB0dXJlS2V5Eg0KBWxhYmVsGAsgASgJEg8KB3B1cnBvc2UYDCABKAkSDwoHY2hhcnNldBgNIAEoCRIRCgltYXhfYnl0ZXMYDiABKA0igwEKE1NlY3JldENhcHR1cmVTZWFsZWQSEQoJdGlja2V0X2lkGAEgASgJEjkKA2VwaxgCIAEoCzIsLmhvYm8ubWNwLnNlY3JldF9jYXB0dXJlLnYxLlNlY3JldENhcHR1cmVLZXkSCgoCaXYYAyABKAkSEgoKY2lwaGVydGV4dBgEIAEoCSJoChRTZWNyZXRDYXB0dXJlUmVjZWlwdBIRCgl0aWNrZXRfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZzdG9yZWQYAyABKAgSDwoDcmVmGAQgASgJQgIYARIOCgZzdGF0dXMYBSABKAkiVgoUU2VjcmV0Q2FwdHVyZVJlZnVzYWwSDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJEhEKCW5leHRfc3RlcBgDIAEoCRIMCgRuYW1lGAQgASgJIrYBChJTZWNyZXRDYXB0dXJlRXZlbnQSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSDAoEdHlwZRgCIAEoCRILCgNzZXEYAyABKAQSDAoEdGltZRgEIAEoCRIRCgl0aWNrZXRfaWQYBSABKAkSDAoEbmFtZRgGIAEoCRIOCgZ0YXJnZXQYByABKAkSDwoHY2hhbm5lbBgIIAEoCRIPCgNyZWYYCSABKAlCAhgBEgwKBGNvZGUYCiABKAliBnByb3RvMw");
 
 /**
  * What one capturable secret is, as the composition declares it.
@@ -157,10 +157,8 @@ export type SecretCaptureTicket = Message<"hobo.mcp.secret_capture.v1.SecretCapt
   expiresAt: string;
 
   /**
-   * The store's reference to the entry once stored (infisical://...), or the
-   * writer session's reference once authorized.
-   *
-   * @generated from field: string ref = 8;
+   * @generated from field: string ref = 8 [deprecated = true];
+   * @deprecated
    */
   ref: string;
 
@@ -246,9 +244,6 @@ export const SecretCaptureSealedSchema: GenMessage<SecretCaptureSealed> = /*@__P
   messageDesc(file_secret_capture, 3);
 
 /**
- * The only answer a submission gets: a name, whether it was stored, and a
- * reference.
- *
  * @generated from message hobo.mcp.secret_capture.v1.SecretCaptureReceipt
  */
 export type SecretCaptureReceipt = Message<"hobo.mcp.secret_capture.v1.SecretCaptureReceipt"> & {
@@ -268,7 +263,8 @@ export type SecretCaptureReceipt = Message<"hobo.mcp.secret_capture.v1.SecretCap
   stored: boolean;
 
   /**
-   * @generated from field: string ref = 4;
+   * @generated from field: string ref = 4 [deprecated = true];
+   * @deprecated
    */
   ref: string;
 
@@ -322,8 +318,6 @@ export const SecretCaptureRefusalSchema: GenMessage<SecretCaptureRefusal> = /*@_
   messageDesc(file_secret_capture, 5);
 
 /**
- * The audited fact of each step, references only.
- *
  * @generated from message hobo.mcp.secret_capture.v1.SecretCaptureEvent
  */
 export type SecretCaptureEvent = Message<"hobo.mcp.secret_capture.v1.SecretCaptureEvent"> & {
@@ -368,7 +362,8 @@ export type SecretCaptureEvent = Message<"hobo.mcp.secret_capture.v1.SecretCaptu
   channel: string;
 
   /**
-   * @generated from field: string ref = 9;
+   * @generated from field: string ref = 9 [deprecated = true];
+   * @deprecated
    */
   ref: string;
 

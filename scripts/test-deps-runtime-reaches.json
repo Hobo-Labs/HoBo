@@ -83,6 +83,21 @@
 			"from": "packages/hobo/test/ci-relay-prebuilt.test.ts",
 			"needs": ["@hobo/ci-vercel#build"],
 			"why": "copies packages/ci-vercel into a fixture rooted under ../../ci-vercel at run time"
+		},
+		{
+			"from": "packages/hobo/src/ci-relay-source.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "reads the pinned relay workspace closure rooted at packages/ci-vercel at run time"
+		},
+		{
+			"from": "packages/hobo/test/ci-relay-source.test.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "exercises relay source collection against packages/ci-vercel at run time"
+		},
+		{
+			"from": "packages/hobo/test/evals/owner-ceremony-smoke.eval.test.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "names packages/ci-vercel as the owner ceremony project at run time"
 		}
 	]
 }

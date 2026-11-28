@@ -15,6 +15,7 @@ export const ISOLATED_TEST_FILES = [
 	"test/ci-relay-delivery.test.ts",
 	"test/ci-relay-deploy.test.ts",
 	"test/ci-relay-prebuilt.test.ts",
+	"test/ci-relay-source.test.ts",
 	"test/ci-up-relay.test.ts",
 	"test/cloudflare-deploy.test.ts",
 	"test/doctor-command.test.ts",

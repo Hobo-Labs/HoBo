@@ -1,11 +1,19 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import { fileSettingsStore } from "@hobo/connect-ui";
+import { createTrustedVault } from "@hobo/core";
 import type { DeviceClock } from "@hobo/hobo-cd";
 import {
 	agentVaultProxyLauncher,
 	applyEgressToProcess,
 	ensureInfisicalAgentVaultCli,
 	hoboToolsDir,
-	isRemoteBox,
 	machineRunner,
+	OwnerSelectionChangedError,
+	StoreOperationUncertainError,
+	scopeRunVault,
+	secretStoreLocatorPath,
 	whichOnPath,
 } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
@@ -77,36 +85,135 @@ export function composeHoboMcp(options: {
 	// The session exists once the transport starts; prompts go through it.
 	let session: McpStdioSession | undefined;
 	let capture: ReturnType<typeof createOwnerCaptureApp> | undefined;
-	/**
-	 * The host's forms, when it said at initialize that it shows them and a
-	 * capture would really be one: an MCP Apps host gets HoBo's App, and an
-	 * owner at this machine the local page, neither of which the run's own
-	 * call can show, so the run refuses and the agent's capture shows them.
-	 */
 	const forms = () =>
-		session?.support.formElicitation === true &&
-		session.support.apps !== true &&
-		options.remote
+		session?.support.formElicitation === true && options.remote
 			? session
 			: undefined;
+	const canonical = (cwd: string) => {
+		const absolute = path.resolve(cwd);
+		try {
+			return realpathSync(absolute);
+		} catch {
+			return absolute;
+		}
+	};
+	const scope = (family: "ci" | "cd", cwd: string) =>
+		`${family}\u0000${canonical(cwd)}`;
+	const sessionSettings = new Map<string, Readonly<Record<string, string>>>();
+	const sessionChoices = new Set<string>();
+	const generations = new Map<string, number>();
+	const selectionControllers = new Map<string, AbortController>();
+	const pendingWrites = new Map<string, number>();
+	const writeQueues = new Map<string, Promise<void>>();
+	const writeScope = new AsyncLocalStorage<ReadonlySet<string>>();
+	const uncertainWrites = new Set<string>();
+	const familyVaults = new Map<string, ReturnType<typeof createTrustedVault>>();
+	let closed = false;
+	const storeSettingsFor = (family: "ci" | "cd", cwd: string) => {
+		const key = scope(family, cwd);
+		const generation = generations.get(key) ?? 0;
+		let controller = selectionControllers.get(key);
+		if (!controller) {
+			controller = new AbortController();
+			selectionControllers.set(key, controller);
+		}
+		const assertCurrent = () => {
+			if (closed || (generations.get(key) ?? 0) !== generation)
+				throw new OwnerSelectionChangedError();
+			if (uncertainWrites.has(key)) throw new StoreOperationUncertainError();
+		};
+		return {
+			assertCurrent,
+			selectionSignal: controller.signal,
+			hasPendingWrites: () => (pendingWrites.get(key) ?? 0) > 0,
+			markUncertainWrite: () => uncertainWrites.add(key),
+			runStoreWrite: async <T>(write: () => Promise<T>): Promise<T> => {
+				assertCurrent();
+				if (writeScope.getStore()?.has(key)) return write();
+				const previous = writeQueues.get(key) ?? Promise.resolve();
+				let release: () => void = () => undefined;
+				const held = new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				const queued = previous.then(() => held);
+				writeQueues.set(key, queued);
+				pendingWrites.set(key, (pendingWrites.get(key) ?? 0) + 1);
+				try {
+					await previous;
+					assertCurrent();
+					return await writeScope.run(
+						new Set([...(writeScope.getStore() ?? []), key]),
+						write,
+					);
+				} finally {
+					release();
+					if (writeQueues.get(key) === queued) writeQueues.delete(key);
+					const remaining = (pendingWrites.get(key) ?? 1) - 1;
+					if (remaining > 0) pendingWrites.set(key, remaining);
+					else pendingWrites.delete(key);
+				}
+			},
+			hasSessionChoice: () => sessionChoices.has(key),
+			markSessionChosen: () => {
+				sessionChoices.add(key);
+			},
+			onOwnerChoice: () => {
+				assertCurrent();
+				if ((pendingWrites.get(key) ?? 0) > 0)
+					throw new Error("The selected store is saving a change.");
+				familyVaults.get(key)?.clear();
+				familyVaults.delete(key);
+				controller.abort();
+				selectionControllers.delete(key);
+				owner.cancelScope(family, cwd);
+				sessionChoices.add(key);
+				generations.set(key, generation + 1);
+			},
+			read: async () => {
+				if (closed) return {};
+				assertCurrent();
+				const values =
+					sessionSettings.get(key) ??
+					(await fileSettingsStore(
+						secretStoreLocatorPath(canonical(cwd)),
+					).read());
+				assertCurrent();
+				return values;
+			},
+			write: async (values: Readonly<Record<string, string>>) => {
+				assertCurrent();
+				sessionSettings.set(key, { ...values });
+			},
+		};
+	};
 	const owner = createMcpOwnerChannel({
+		storeSettingsFor,
+		scopeKey: scope,
+		requireScope: true,
+		vaultFor: (family, cwd) => {
+			if (closed) throw new Error("The owner session is closed.");
+			const key = scope(family, cwd);
+			let vault = familyVaults.get(key);
+			if (!vault) {
+				vault = scopeRunVault(createTrustedVault());
+				familyVaults.set(key, vault);
+			}
+			return vault;
+		},
 		// Every step that needs the owner is a form in their host, asked in
 		// the call that needs it: nothing is relayed through the agent.
 		form: (params) =>
 			forms()?.request?.("elicitation/create", params) ?? undefined,
+		canConfirm: () => forms()?.request !== undefined,
 		ask: async (name) => {
 			const host = forms();
 			if (host === undefined || capture === undefined) return false;
 			const outcome = await capture.callTool(
 				"capture_secret",
 				{ name },
-				host.support,
+				{ ...host.support, apps: false },
 			);
 			return outcome.kind === "result" && outcome.result.isError !== true;
-		},
-		// Prompts go through the session; the run keeps going meanwhile.
-		prompt: async (params) => {
-			await session?.request?.("elicitation/create", params);
 		},
 		notify: (method, params) => {
 			options.output.write(
@@ -114,23 +221,32 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
+	const scopedOwner = (family: "ci" | "cd", cwd: string) => ({
+		...(owner.forScope?.(family, cwd) ?? owner),
+		...(owner.vaultFor ? { vault: owner.vaultFor(family, cwd) } : undefined),
+		...(owner.storeSettingsFor
+			? { storeSettings: owner.storeSettingsFor(family, cwd) }
+			: undefined),
+	});
 	const sessions = createOwnerStoreSessions({
 		signIn:
 			options.ownerSignIn ??
-			ownerChannelSignIn({
-				owner,
+			((input) =>
+				ownerChannelSignIn({
+					owner: scopedOwner("cd", input.cwd),
+					deps: {
+						runCommand: machineRunner(),
+						which: (bin) => whichOnPath(bin),
+					},
+				})(input)),
+		relayFolder: (input) =>
+			ownerChannelRelayFolder({
+				owner: scopedOwner("ci", input.cwd),
 				deps: {
 					runCommand: machineRunner(),
 					which: (bin) => whichOnPath(bin),
 				},
-			}),
-		relayFolder: ownerChannelRelayFolder({
-			owner,
-			deps: {
-				runCommand: machineRunner(),
-				which: (bin) => whichOnPath(bin),
-			},
-		}),
+			})(input),
 		...(owner.vault !== undefined ? { kept: owner.vault } : undefined),
 		agentVault: options.agentVault ?? {
 			launch: agentVaultProxyLauncher(),
@@ -193,6 +309,7 @@ export function composeHoboMcp(options: {
 		createStoreChoiceApp({
 			sessions,
 			pages,
+			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
 			deposit: (name, value) => owner.deposit(name, value),
 			relayLogin: createRelayLoginTool({
 				relay,
@@ -213,6 +330,20 @@ export function composeHoboMcp(options: {
 		relay,
 		/** Stop whatever still waits on the owner and close open captures. */
 		async close() {
+			closed = true;
+			sessionSettings.clear();
+			sessionChoices.clear();
+			generations.clear();
+			for (const controller of selectionControllers.values())
+				controller.abort();
+			selectionControllers.clear();
+			pendingWrites.clear();
+			writeQueues.clear();
+			uncertainWrites.clear();
+			for (const vault of familyVaults.values()) vault.clear();
+			familyVaults.clear();
+			owner.vault?.clear();
+			owner.close();
 			owner.jobs.close();
 			relay.close();
 			await sessions.close();
@@ -240,7 +371,7 @@ export async function serveHoboMcp(
 	const composed = composeHoboMcp({
 		output: io.output,
 		projectDir: secretCaptureProjectDir(process.cwd(), process.env),
-		remote: isRemoteBox(),
+		remote: true,
 	});
 	try {
 		await serveMcpStdio({

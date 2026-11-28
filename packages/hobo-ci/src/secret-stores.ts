@@ -38,6 +38,14 @@ import {
 	OAUTH_SIGN_IN,
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
+import {
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
+	type OnePasswordServiceAccountVerdict,
+	parseOnePasswordServiceAccountToken,
+	type ValidateOnePasswordServiceAccount,
+	validateOnePasswordServiceAccount,
+} from "./onepassword-access.js";
 import { createOnePasswordConnectClient } from "./onepassword-connect.js";
 import {
 	type HttpsOrigin,
@@ -78,7 +86,15 @@ export interface OpenedSecretStore {
 	readonly id: SecretStoreId;
 	readonly port: SecretsPort;
 	readonly reference: (name: string) => string;
+	readonly withWriteLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 	readonly agentVault?: OwnerAgentVault;
+}
+
+export function withStoreWriteLock<T>(
+	store: OpenedSecretStore,
+	operation: () => Promise<T>,
+): Promise<T> {
+	return store.withWriteLock ? store.withWriteLock(operation) : operation();
 }
 
 export type OwnerAgentVault = Readonly<{
@@ -104,7 +120,16 @@ export interface SecretStoreDeps {
 	readonly onePasswordClient?: (
 		coordinates: Env,
 		signIn: SecretHolder,
+		authMode: "service-account" | "desktop-app",
 	) => Promise<OnePasswordSdkClient>;
+	readonly loadOnePasswordSdk?: () => Promise<typeof import("@1password/sdk")>;
+	readonly observeOnePasswordAuth?: (auth: {
+		readonly vaultId: string;
+		readonly authMode: "service-account" | "desktop-app";
+		readonly accountName?: string;
+	}) => void;
+	readonly validateOnePasswordServiceAccount?: ValidateOnePasswordServiceAccount;
+	readonly now?: () => number;
 	/** Tests inject a client; otherwise `@bitwarden/sdk-napi` is loaded on demand. */
 	readonly bitwardenClient?: (
 		coordinates: Env,
@@ -246,14 +271,37 @@ export function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
 	};
 }
 
+type OnePasswordStoreCredential = {
+	readonly authMode: "service-account" | "desktop-app";
+	readonly accountName: string | undefined;
+};
+
+export function onePasswordStoreAuth(input: {
+	readonly accountName: string | undefined;
+	readonly connectHost: boolean;
+	readonly attestedServiceAccount: boolean;
+}): OnePasswordStoreCredential {
+	if (
+		input.attestedServiceAccount ||
+		input.connectHost ||
+		input.accountName === undefined ||
+		input.accountName === ""
+	)
+		return { authMode: "service-account", accountName: undefined };
+	return { authMode: "desktop-app", accountName: input.accountName };
+}
+
 async function onePasswordSdkClient(
 	coordinates: Env,
 	signIn: SecretHolder,
+	authMode: "service-account" | "desktop-app",
+	loadSdk?: () => Promise<Sdk>,
 ): Promise<OnePasswordSdkClient> {
-	const sdk = await import("@1password/sdk");
-	const auth = coordinates.OP_ACCOUNT
-		? new sdk.DesktopAuth(coordinates.OP_ACCOUNT)
-		: signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
+	const sdk = await (loadSdk ?? (() => import("@1password/sdk")))();
+	const auth =
+		authMode === "desktop-app"
+			? new sdk.DesktopAuth(coordinates.OP_ACCOUNT ?? "")
+			: signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
 	if (auth === undefined || auth === "")
 		throw new Error("no 1Password sign-in in the environment");
 	const client = await sdk.createClient({
@@ -471,6 +519,63 @@ export async function openSecretStore(
 					],
 				};
 			try {
+				const serviceAccountToken = signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
+				let attestedServiceAccount = false;
+				if (!connectHost && serviceAccountToken !== undefined) {
+					const token =
+						parseOnePasswordServiceAccountToken(serviceAccountToken);
+					const expiresAtText =
+						coordinates[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT];
+					const expiresAt =
+						expiresAtText === undefined
+							? Number.NaN
+							: Date.parse(expiresAtText);
+					const now = (deps.now ?? Date.now)();
+					const leaseValid =
+						token !== undefined &&
+						Number.isFinite(expiresAt) &&
+						expiresAt > now &&
+						expiresAt <= now + ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS;
+					if (token === undefined || !leaseValid)
+						return {
+							ok: false,
+							message:
+								"The retained 1Password service account was refused before the SDK client opened.",
+							remediation: [
+								"Run again: the private owner form connects a fresh, vault-scoped service account and writes a new reuse lease.",
+							],
+						};
+					const verdict = await (
+						deps.validateOnePasswordServiceAccount ??
+						validateOnePasswordServiceAccount
+					)(token, vaultId).catch(
+						(): OnePasswordServiceAccountVerdict => "unverifiable",
+					);
+					if (verdict !== true)
+						return verdict === "unverifiable"
+							? {
+									ok: false,
+									message:
+										"1Password could not be reached to re-attest the retained service account.",
+									remediation: [
+										"Check that this run reaches 1Password through its required egress proxy and CA bundle, then run again.",
+									],
+								}
+							: {
+									ok: false,
+									message:
+										"The retained 1Password service account was refused before the SDK client opened.",
+									remediation: [
+										"Run again: the private owner form connects a fresh, vault-scoped service account and writes a new reuse lease.",
+									],
+								};
+					attestedServiceAccount = true;
+				}
+				const auth = onePasswordStoreAuth({
+					accountName: env.OP_ACCOUNT,
+					connectHost: connectHost !== undefined,
+					attestedServiceAccount,
+				});
 				const client =
 					connectHost && connectToken
 						? createOnePasswordConnectClient({
@@ -480,18 +585,23 @@ export async function openSecretStore(
 									? { fetch: deps.fetch }
 									: undefined),
 							})
-						: await (deps.onePasswordClient ?? onePasswordSdkClient)(
-								coordinates,
-								signIn,
-							);
-				const binding = onePasswordBinding({
+						: deps.onePasswordClient !== undefined
+							? await deps.onePasswordClient(coordinates, signIn, auth.authMode)
+							: await onePasswordSdkClient(
+									coordinates,
+									signIn,
+									auth.authMode,
+									deps.loadOnePasswordSdk,
+								);
+				const bindingInit = {
 					vaultId,
-					authMode:
-						env.OP_ACCOUNT && !connectHost ? "desktop-app" : "service-account",
-					...(env.OP_ACCOUNT && !connectHost
-						? { accountName: env.OP_ACCOUNT }
+					authMode: auth.authMode,
+					...(auth.accountName !== undefined
+						? { accountName: auth.accountName }
 						: undefined),
-				});
+				};
+				deps.observeOnePasswordAuth?.(bindingInit);
+				const binding = onePasswordBinding(bindingInit);
 				return {
 					ok: true,
 					store: {

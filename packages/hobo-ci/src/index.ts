@@ -124,12 +124,18 @@ export {
 export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
+	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
 	ONE_PASSWORD_SIGN_IN_CAPTURES,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
+	type OnePasswordServiceAccountVerdict,
 	onePasswordCli,
 	type Platform,
 	provisionOnePasswordAccess,
+	type ValidateOnePasswordServiceAccount,
+	validateOnePasswordServiceAccount,
 } from "./onepassword-access.js";
 export {
 	type OwnerAction,
@@ -145,7 +151,10 @@ export {
 	type OwnerJobOutcome,
 	type OwnerJobState,
 	type OwnerJobs,
+	OwnerSelectionChangedError,
+	type OwnerSettingsStore,
 	ownerCaptureLine,
+	StoreOperationUncertainError,
 } from "./owner-channel.js";
 export {
 	type OwnerSignInOutcome,
@@ -161,12 +170,14 @@ export {
 	hasSecretStoreLocator,
 	INFISICAL_TOKEN_AUTH_DOCS,
 	InvalidSecretStoreError,
+	isOwnerStoreSetting,
 	ONE_PASSWORD_CONNECT_GUIDE,
 	OWNER_STORE_CHOICE_LINE_PREFIX,
 	type OwnerStore,
 	type OwnerStoreDeps,
 	ownerLocator,
 	ownerStore,
+	ownerStoreSessionEnvironment,
 	SECRET_STORE_LOCATOR_FILE,
 	STORE_CHOICE,
 	secretStoreLocatorPath,
@@ -190,6 +201,7 @@ export {
 } from "./parsed-values.js";
 export {
 	canReachOwner,
+	loadDeployCredentials,
 	OWNER_PAGE_LINE_PREFIX,
 	openInBrowser,
 	type PrepareGithubDeps,
@@ -245,7 +257,13 @@ export {
 	type SecretStoreDeps,
 	type SecretStoreId,
 	type SecretStoreOpening,
+	withStoreWriteLock,
 } from "./secret-stores.js";
+export type {
+	SetupEffectResult,
+	SetupReservation,
+	SetupReservationAuthority,
+} from "./setup-reservation.js";
 export {
 	type CommandEnv,
 	type CommandResult,
@@ -260,4 +278,9 @@ export {
 	whichOnPath,
 } from "./store-cli.js";
 
-export { storeFailureReason } from "./store-failure.js";
+export {
+	type StoreRefusal,
+	storeFailureReason,
+	storeWriteUncertain,
+	uncertainStoreOperationRefusal,
+} from "./store-failure.js";

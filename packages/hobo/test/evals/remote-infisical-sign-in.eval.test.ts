@@ -206,7 +206,6 @@ describe("EVAL remote dev box: Infisical sign-in through the HoBo MCP App, end t
 		).structuredContent;
 		expect(stored).toMatchObject({
 			status: "stored",
-			ref: `handoff://${INFISICAL_CLI_SESSION}`,
 		});
 
 		// 3. The next run takes it and provisions through the API.

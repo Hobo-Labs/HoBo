@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { devNull } from "node:os";
+import { withoutSecretEnv } from "@hobo/hobo-ci";
 
 export interface PinnedGitFile {
 	readonly path: string;
@@ -18,6 +19,18 @@ const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 25_000;
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
+export function pinnedGitEnvironment(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...withoutSecretEnv(process.env) };
+	for (const name of Object.keys(env)) {
+		if (name.startsWith("GIT_") && name !== "GIT_CEILING_DIRECTORIES")
+			delete env[name];
+	}
+	env.GIT_NO_REPLACE_OBJECTS = "1";
+	env.GIT_NO_LAZY_FETCH = "1";
+	env.GIT_ALLOW_PROTOCOL = "";
+	env.GIT_TERMINAL_PROMPT = "0";
+	return env;
+}
 function safePath(path: string): boolean {
 	return (
 		path !== "" &&
@@ -62,6 +75,43 @@ function git(
 	if (result.status !== 0 || result.error !== undefined)
 		throw new Error("Could not read the pinned Git source within its limits.");
 	return result.stdout;
+}
+
+export function readPinnedGitLinks(input: {
+	readonly cwd: string;
+	readonly sha: string;
+}): ReadonlyMap<string, string> {
+	const { cwd, sha } = input;
+	if (!COMMIT.test(sha))
+		throw new TypeError("Pinned Git links need a full commit.");
+	const root = git(cwd, ["rev-parse", "--show-toplevel"], 16_384)
+		.toString("utf8")
+		.replace(/\r?\n$/u, "");
+	const resolved = git(root, ["rev-parse", "--verify", `${sha}^{commit}`], 1024)
+		.toString("utf8")
+		.trim();
+	if (resolved !== sha)
+		throw new Error("The pinned Git commit does not resolve exactly.");
+	const listing = git(root, ["ls-tree", "-r", "-z", sha], 16 * 1024 * 1024);
+	const links = new Map<string, string>();
+	for (let offset = 0; offset < listing.length; ) {
+		const end = listing.indexOf(0, offset);
+		if (end < 0) throw new Error("Malformed Git tree listing.");
+		const entry = listing.subarray(offset, end);
+		const tab = entry.indexOf(9);
+		if (tab < 0) throw new Error("Malformed Git tree entry.");
+		const metadata = /^160000 commit ([0-9a-f]{40})$/u.exec(
+			entry.subarray(0, tab).toString("ascii"),
+		);
+		if (metadata !== null) {
+			const path = decoder.decode(entry.subarray(tab + 1));
+			if (!safePath(path))
+				throw new Error("Pinned Git source contains an unsafe path.");
+			links.set(path, metadata[1] ?? "");
+		}
+		offset = end + 1;
+	}
+	return links;
 }
 
 export function readPinnedGitSource(input: {

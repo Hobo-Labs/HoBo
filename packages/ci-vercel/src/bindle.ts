@@ -96,6 +96,11 @@ export const relayConfigService = Object.freeze({
  * are its binding's, not settings here.
  */
 export const relayConfig = config({
+	HOBO_CI_SOURCE_SHA: env
+		.string()
+		.docs(
+			"The pinned source commit supplied by HoBo CD for a managed deployment.",
+		),
 	HOBO_CI_PUBLIC_URL: env
 		.string()
 		.docs("The stable HTTPS origin GitHub calls."),

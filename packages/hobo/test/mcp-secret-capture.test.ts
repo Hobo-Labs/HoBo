@@ -277,9 +277,9 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 			ticketId: writer.ticketId,
 			name: WRITER_SECRET_NAME,
 			stored: false,
-			ref: `hobo-writer-session://${WRITER_CLIENT}`,
 			status: "authorized",
 		});
+		expect(JSON.stringify(authorized)).not.toContain("hobo-writer-session://");
 
 		const valkey = `rediss://default:${randomBytes(24).toString("hex")}@valkey.example.com:6380`;
 		const turso = `turso-${randomBytes(16).toString("hex")}`;
@@ -323,7 +323,8 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 		const transcript = h.transcript.join("\n");
 		for (const secret of [valkey, turso, WRITER_SECRET, ACCESS_TOKEN])
 			expect(transcript).not.toContain(secret);
-		expect(transcript).toContain("owner-store://hobo-ci-relay/VALKEY_URL");
+		expect(transcript).not.toContain("owner-store://");
+		expect(transcript).not.toContain("hobo-writer-session://");
 		await h.capture.close();
 	});
 

@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { egressFrom } from "./egress.js";
 import {
@@ -13,6 +15,7 @@ import {
 	OWNER_BODY_LIMIT,
 	OWNER_DEFAULT_RESPONSE_LIMIT,
 	OWNER_MESSAGE_LIMIT,
+	OWNER_RUN_FD,
 	ownerRequest,
 	ownerResponse,
 } from "./isolated-owner-wire.js";
@@ -37,21 +40,33 @@ export type PrivateOwnerChildLauncher = (input: {
 	readonly executable: string;
 	readonly childPath: string;
 	readonly env: Readonly<Record<string, string>>;
+	readonly run: string;
 }) => PrivateOwnerChild;
 
 export interface IsolatedOwnerFetchOptions {
 	readonly maxResponseBytes?: number;
 	readonly allowInsecureLoopback?: boolean;
+	readonly allowedOrigins?: readonly string[];
 }
 
 const OWNER_PHASE_TIMEOUT_MS = 120_000;
 
-const launchOwnerChild: PrivateOwnerChildLauncher = (input) =>
-	spawn(input.executable, [input.childPath], {
+const launchOwnerChild: PrivateOwnerChildLauncher = (input) => {
+	const child = spawn(input.executable, [input.childPath], {
 		env: input.env,
-		stdio: ["pipe", "pipe", "ignore"],
+		stdio: ["pipe", "pipe", "ignore", "pipe"],
 		windowsHide: true,
 	});
+	const { stdin, stdout } = child;
+	const run = child.stdio[OWNER_RUN_FD];
+	if (!stdin || !stdout || !(run instanceof Writable)) {
+		child.kill("SIGKILL");
+		throw new PrivateOwnerRequestError();
+	}
+	run.on("error", () => child.kill("SIGKILL"));
+	run.end(input.run);
+	return Object.assign(child, { stdin, stdout });
+};
 
 class IsolatedOwnerResponse extends Response {
 	readonly #responseUrl: string;
@@ -163,6 +178,16 @@ async function requestBody(
 	}
 }
 
+function assertAllowedOrigin(
+	request: Request,
+	options: IsolatedOwnerFetchOptions | undefined,
+): void {
+	const allowed = options?.allowedOrigins;
+	if (!allowed) return;
+	const origin = new URL(request.url).origin;
+	if (!allowed.includes(origin)) throw new PrivateOwnerRequestError();
+}
+
 export function isolatedOwnerFetch(
 	env: Readonly<Record<string, string | undefined>>,
 	options?: IsolatedOwnerFetchOptions,
@@ -189,6 +214,7 @@ export function createIsolatedOwnerFetch(
 		try {
 			request = new Request(input, init);
 			cancellation = request.signal;
+			assertAllowedOrigin(request, options);
 			assertPrivateOwnerProxy(egress.proxy);
 			isolatedOwnerOrigin(
 				request.url,
@@ -206,7 +232,12 @@ export function createIsolatedOwnerFetch(
 		}
 		if (request.signal.aborted)
 			throw new DOMException("The request was cancelled.", "AbortError");
+		const run = {
+			id: randomUUID(),
+			secret: randomBytes(32).toString("base64url"),
+		};
 		const packet = ownerRequest.safeParse({
+			run,
 			url: request.url,
 			method: request.method,
 			headers: [...request.headers.entries()],
@@ -246,6 +277,7 @@ export function createIsolatedOwnerFetch(
 					executable: process.execPath,
 					childPath,
 					env: childEnv,
+					run: JSON.stringify(run),
 				});
 			let child: ReturnType<typeof launch>;
 			try {
@@ -314,7 +346,12 @@ export function createIsolatedOwnerFetch(
 					const parsed = ownerResponse.parse(
 						JSON.parse(Buffer.concat(chunks).toString("utf8")),
 					);
-					if (!parsed.ok) {
+					if (
+						!parsed.ok ||
+						parsed.runId !== run.id ||
+						(options?.allowedOrigins &&
+							!options.allowedOrigins.includes(new URL(parsed.url).origin))
+					) {
 						finish();
 						return;
 					}

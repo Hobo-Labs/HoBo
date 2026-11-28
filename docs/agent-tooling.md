@@ -355,8 +355,10 @@ a claude.ai Artifact with the `db` capability so it renders in the session.
 The owner's answer, including the store's sign-in, is encrypted in their
 browser to a one-use key only the HoBo server holds; the agent reads the sealed
 text from the artifact's database and passes it unchanged to
-`submit_owner_page`, and never sees the values. The choice is written to the
-owner's locator outside the repository
+`submit_owner_page`, and never sees the values. The picker's answer is
+accepted only with its 10-minute ticket and the page's only with its own
+30-minute ticket, each while the selection revision is unchanged. The choice
+is written to the owner's locator outside the repository
 (`~/.config/hobo/projects/<project>-<hash>/secret-store.json`), and HoBo then
 signs in through the owner channel (the sign-in link inside a host form, the
 Infisical session, 1Password or Bitwarden hand-offs) and keeps the store's

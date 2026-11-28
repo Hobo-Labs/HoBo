@@ -5,7 +5,11 @@ import {
 	DEFAULT_INFISICAL_ENVIRONMENT,
 	provisionInfisicalAccess,
 } from "./infisical-access.js";
-import { provisionOnePasswordAccess } from "./onepassword-access.js";
+import {
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	provisionOnePasswordAccess,
+	validateOnePasswordServiceAccount,
+} from "./onepassword-access.js";
 import { KEPT_STORE_SIGN_INS } from "./owner-channel.js";
 import {
 	type OwnerStore,
@@ -123,7 +127,8 @@ export async function signInOwnerStore(
 	}
 	if (
 		owner.id === "1password" &&
-		deps.runCommand !== undefined &&
+		(deps.runCommand !== undefined ||
+			(input.handOff && deps.ownerChannel !== undefined)) &&
 		owner.opened === undefined &&
 		!vault.has("OP_SERVICE_ACCOUNT_TOKEN") &&
 		!plainEnv.OP_ACCOUNT &&
@@ -131,8 +136,6 @@ export async function signInOwnerStore(
 	) {
 		const saved = await locator.read();
 		const vaultId = plainEnv.OP_VAULT_ID ?? saved.OP_VAULT_ID;
-		const signInAddress =
-			plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS;
 		if (
 			vaultId !== undefined &&
 			vaultId !== "" &&
@@ -144,18 +147,27 @@ export async function signInOwnerStore(
 			)({
 				family,
 				vaultId,
-				run: deps.runCommand,
+				...(deps.runCommand !== undefined
+					? { run: deps.runCommand }
+					: undefined),
 				which: deps.which ?? (async () => undefined),
 				toolsDir: hoboToolsDir(),
 				emit: input.emit,
 				interactive: !input.handOff,
+				validateServiceAccount:
+					deps.validateOnePasswordServiceAccount ??
+					validateOnePasswordServiceAccount,
+				...(deps.now !== undefined ? { now: deps.now } : undefined),
 				...(deps.ownerChannel !== undefined
 					? { owner: deps.ownerChannel }
 					: undefined),
-				...(signInAddress ? { signInAddress } : undefined),
 			});
 			if (access.kind === "refused") return refusedWith(access);
 			vault.put("OP_SERVICE_ACCOUNT_TOKEN", access.token);
+			await locator.write({
+				...(await locator.read()),
+				[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT]: access.expiresAt,
+			});
 			owner = await input.open();
 		}
 	}

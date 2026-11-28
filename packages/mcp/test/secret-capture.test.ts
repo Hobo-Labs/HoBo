@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	CAPTURE_SECRET_TOOL,
 	CapturedSecret,
@@ -12,6 +12,7 @@ import {
 	type SecretCaptureApp,
 	type SecretCaptureOutcome,
 	SUBMIT_SECRET_VALUE_TOOL,
+	secretCaptureSpec,
 	URL_ELICITATION_REQUIRED,
 } from "../src/index.js";
 import type { JsonValue } from "../src/json.js";
@@ -35,6 +36,153 @@ const FORM_ONLY = { apps: false, formElicitation: true, urlElicitation: false };
 const apps: SecretCaptureApp[] = [];
 const watches: ReturnType<typeof leakWatch>[] = [];
 
+describe("late owner forms", () => {
+	it.each([
+		"end",
+		"replace",
+		"expire",
+	] as const)("rejects an accepted answer after %s", async (mode) => {
+		const store = memoryConnector();
+		const clock = { at: Date.parse("2026-11-12T10:00:00Z") };
+		const answers: ((value: JsonValue) => void)[] = [];
+		const starts: (() => void)[] = [];
+		const waitForForm = () =>
+			new Promise<void>((resolve) => starts.push(resolve));
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			now: () => clock.at,
+			ttlMs: 1000,
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answers.push(resolve);
+					starts.shift()?.();
+				}),
+		});
+		apps.push(app);
+		const started = waitForForm();
+		const old = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "HOBO_CI_WEBHOOK_SECRET" },
+			FORM_ONLY,
+		);
+		await started;
+		if (mode === "end")
+			await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		if (mode === "expire") clock.at += 1001;
+		let replacement: Promise<SecretCaptureOutcome> | undefined;
+		if (mode === "replace") {
+			const nextStarted = waitForForm();
+			replacement = app.callTool(
+				CAPTURE_SECRET_TOOL,
+				{ name: "HOBO_CI_WEBHOOK_SECRET", replace: true },
+				FORM_ONLY,
+			);
+			await nextStarted;
+		}
+		answers[0]?.({ action: "accept", content: { value: "x".repeat(40) } });
+		expect(result(await old).isError).toBe(true);
+		expect(
+			(await store.runtime.access("HOBO_CI_WEBHOOK_SECRET")).status,
+		).not.toBe("ok");
+		if (replacement) {
+			answers[1]?.({ action: "decline" });
+			await replacement;
+		}
+	});
+
+	it("does not authorize a writer when an ended form answers late", async () => {
+		const store = memoryConnector({ writable: false });
+		const authorize = vi.spyOn(store.connector, "authorizeWriter");
+		let answer: ((value: JsonValue) => void) | undefined;
+		let started: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answer = resolve;
+					started?.();
+				}),
+		});
+		apps.push(app);
+		const form = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "INFISICAL_WRITER_CLIENT_SECRET", writerClientId: "fixture" },
+			FORM_ONLY,
+		);
+		await waiting;
+		await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		answer?.({ action: "accept", content: { value: WRITER_SECRET } });
+		expect(result(await form).isError).toBe(true);
+		expect(authorize).not.toHaveBeenCalled();
+	});
+
+	it("closes a capture even when handoff cancellation throws", async () => {
+		const store = memoryConnector();
+		let answer: ((value: JsonValue) => void) | undefined;
+		let started: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const app = createSecretCaptureApp({
+			specs: [
+				secretCaptureSpec({
+					name: "HANDOFF_VALUE",
+					target: "handoff",
+					label: "Handoff value",
+					purpose: "Test cancellation cleanup.",
+					minBytes: 1,
+					maxBytes: 64,
+					charset: "printable-line",
+				}),
+			],
+			connector: store.connector,
+			remote: true,
+			handoffFor: () => ({
+				held: () => true,
+				receive: async () => undefined,
+				link: () => undefined,
+				cancel: () => {
+					throw new Error("handoff cancellation failed");
+				},
+			}),
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answer = resolve;
+					started?.();
+				}),
+		});
+		apps.push(app);
+		const opened = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "HANDOFF_VALUE" },
+			FORM_ONLY,
+		);
+		await waiting;
+		const capture = app
+			.events()
+			.find((event) => event.type === "secret.CaptureOpened");
+		if (!capture || !("ticketId" in capture))
+			throw new Error("Capture did not open.");
+		const end = await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		expect(result(end).structuredContent).toMatchObject({ closedCaptures: 1 });
+		const status = await app.callTool(
+			SECRET_CAPTURE_STATUS_TOOL,
+			{ ticketId: capture.ticketId },
+			FORM_ONLY,
+		);
+		expect(result(status).structuredContent).toMatchObject({ state: "closed" });
+		answer?.({ action: "accept", content: { value: "late" } });
+		expect(result(await opened).isError).toBe(true);
+	});
+});
+
 afterEach(async () => {
 	while (apps.length > 0) await apps.pop()?.close();
 	while (watches.length > 0) watches.pop()?.restore();
@@ -43,6 +191,7 @@ afterEach(async () => {
 function setup(
 	options: Parameters<typeof memoryConnector>[0] & {
 		clock?: { at: number };
+		onEnd?: () => void;
 	} = {},
 ) {
 	const store = memoryConnector(options);
@@ -52,6 +201,7 @@ function setup(
 		specs: SPECS,
 		connector: store.connector,
 		now: () => clock.at,
+		onEnd: options.onEnd,
 		notify: (method, params) => notifications.push({ method, params }),
 	});
 	apps.push(app);
@@ -70,7 +220,6 @@ type TicketView = {
 	name: string;
 	state: string;
 	channel: string;
-	ref?: string;
 	url?: string;
 	key: { kty: "EC"; crv: "P-256"; x: string; y: string };
 };
@@ -186,7 +335,7 @@ describe("the tool and resource surface", () => {
 });
 
 describe("the MCP App channel", () => {
-	it("captures, seals in the form, stores, and answers only name, stored and ref", async () => {
+	it("captures, seals in the form, stores, and answers name and status without store coordinates", async () => {
 		const { app, store, watch } = setup();
 		const value = synthetic("SYNTHETIC-webhook", 24);
 		const opened = watch.outcome(
@@ -218,9 +367,12 @@ describe("the MCP App channel", () => {
 			ticketId: ticket.ticketId,
 			name: "HOBO_CI_WEBHOOK_SECRET",
 			stored: true,
-			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 			status: "stored",
 		});
+		expect(result(submitted).content[0]?.text).toBe(
+			"HOBO_CI_WEBHOOK_SECRET stored.",
+		);
+		expect(JSON.stringify(submitted)).not.toContain("secref://");
 		// It reached the store, and only the store.
 		const read = await store.runtime.access("HOBO_CI_WEBHOOK_SECRET");
 		expect(read.status === "ok" && read.material).toBe(value);
@@ -234,13 +386,16 @@ describe("the MCP App channel", () => {
 		);
 		expect(result(status).structuredContent).toMatchObject({
 			state: "stored",
-			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 		});
+		expect(result(status).structuredContent).not.toHaveProperty("ref");
+		expect(result(status).content[0]?.text).not.toContain("secref://");
 		watch.record(app.events());
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureOpened",
 			"secret.CaptureStored",
 		]);
+		for (const event of app.events()) expect(event).not.toHaveProperty("ref");
+		expect(JSON.stringify(app.events())).not.toContain("secref://");
 		expect(watch.assertNever(value)).toBeGreaterThan(0);
 	});
 
@@ -512,6 +667,55 @@ describe("refusals before anything is opened", () => {
 	});
 });
 
+describe("form elicitation", () => {
+	it("returns a receipt and events with name and status, never a store coordinate", async () => {
+		const store = memoryConnector();
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			elicit: async () => ({
+				action: "accept",
+				content: { value: "x".repeat(40) },
+			}),
+		});
+		apps.push(app);
+		const captured = await app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "HOBO_CI_WEBHOOK_SECRET" },
+			FORM_ONLY,
+		);
+		const answer = result(captured);
+		expect(answer.isError).toBe(false);
+		expect(answer.structuredContent).toMatchObject({
+			name: "HOBO_CI_WEBHOOK_SECRET",
+			stored: true,
+			status: "stored",
+		});
+		expect(answer.structuredContent).not.toHaveProperty("ref");
+		expect(answer.content[0]?.text).toBe("HOBO_CI_WEBHOOK_SECRET stored.");
+		expect(JSON.stringify(answer)).not.toContain("secref://");
+		const ticketId = ticketOf(captured).ticketId;
+		const status = result(
+			await app.callTool(SECRET_CAPTURE_STATUS_TOOL, { ticketId }, FORM_ONLY),
+		);
+		expect(status.structuredContent).toMatchObject({ state: "stored" });
+		expect(status.structuredContent).not.toHaveProperty("ref");
+		const stored = app
+			.events()
+			.find((event) => event.type === "secret.CaptureStored");
+		expect(stored).toMatchObject({
+			name: "HOBO_CI_WEBHOOK_SECRET",
+			target: "runtime",
+		});
+		expect(stored).not.toHaveProperty("ref");
+		expect(JSON.stringify(app.events())).not.toContain("secref://");
+		expect((await store.runtime.access("HOBO_CI_WEBHOOK_SECRET")).status).toBe(
+			"ok",
+		);
+	});
+});
+
 describe("the writer session", () => {
 	it("authorizes writes with a one-use credential that is never stored, and ends it", async () => {
 		const { app, store, watch } = setup({ writable: false });
@@ -539,9 +743,15 @@ describe("the writer session", () => {
 			ticketId: writer.ticketId,
 			name: "INFISICAL_WRITER_CLIENT_SECRET",
 			stored: false,
-			ref: "hobo-writer-session://writer-client",
 			status: "authorized",
 		});
+		expect(result(authorized).content[0]?.text).toBe(
+			"INFISICAL_WRITER_CLIENT_SECRET authorized writes.",
+		);
+		expect(JSON.stringify(authorized)).not.toContain("hobo-writer-session://");
+		expect(
+			app.events().find((event) => event.type === "secret.CaptureAuthorized"),
+		).not.toHaveProperty("ref");
 		const token = synthetic("SYNTHETIC-vercel", 16);
 		const ticket = ticketOf(
 			await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
@@ -568,6 +778,19 @@ describe("the writer session", () => {
 		expect(store.ended).toEqual(["ended"]);
 		watch.record(app.events());
 		watch.assertNever(WRITER_SECRET, token);
+	});
+
+	it("ends the writer session even when the end callback throws", async () => {
+		const { app, store } = setup({
+			onEnd: () => {
+				throw new Error("host cleanup failed");
+			},
+		});
+		const end = await app.callTool(END_SECRET_CAPTURE_TOOL, {}, APPS);
+		expect(result(end).structuredContent).toMatchObject({
+			writerSession: "ended",
+		});
+		expect(store.ended).toEqual(["ended"]);
 	});
 
 	it("reports a refused writer credential without its value", async () => {
@@ -665,11 +888,13 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		});
 		watch.record(posted.body);
 		expect(posted.status).toBe(200);
-		expect(JSON.parse(posted.body)).toMatchObject({
+		expect(JSON.parse(posted.body)).toEqual({
+			ticketId: ticket.ticketId,
 			name: "HOBO_CI_WEBHOOK_SECRET",
 			stored: true,
 			status: "stored",
 		});
+		expect(posted.body).not.toContain("secref://");
 		const read = await store.runtime.access("HOBO_CI_WEBHOOK_SECRET");
 		expect(read.status === "ok" && read.material).toBe(value);
 		expect(notifications).toEqual([
@@ -689,6 +914,8 @@ describe("the fallback: URL-mode elicitation to a loopback page", () => {
 		expect(result(retried).structuredContent).toMatchObject({
 			state: "stored",
 		});
+		expect(result(retried).structuredContent).not.toHaveProperty("ref");
+		expect(JSON.stringify(retried)).not.toContain("secref://");
 		// The page is closed now.
 		expect(
 			(
@@ -864,5 +1091,36 @@ describe("CapturedSecret redaction", () => {
 				watch.restore();
 			}
 		}
+	});
+
+	it("does not authorize a writer when an ended form answers late", async () => {
+		const store = memoryConnector({ writable: false });
+		const authorize = vi.spyOn(store.connector, "authorizeWriter");
+		let answer: ((value: JsonValue) => void) | undefined;
+		let started: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answer = resolve;
+					started?.();
+				}),
+		});
+		apps.push(app);
+		const form = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "INFISICAL_WRITER_CLIENT_SECRET", writerClientId: "fixture" },
+			FORM_ONLY,
+		);
+		await waiting;
+		await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		answer?.({ action: "accept", content: { value: WRITER_SECRET } });
+		expect(result(await form).isError).toBe(true);
+		expect(authorize).not.toHaveBeenCalled();
 	});
 });

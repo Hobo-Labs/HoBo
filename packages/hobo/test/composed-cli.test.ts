@@ -159,6 +159,30 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 		});
 	});
 
+	it("scopes CI deployment credentials to the CI owner channel", async () => {
+		await withProject(async (cwd) => {
+			const runtime = createDefaultYardRuntime();
+			openStores.push(runtime.store);
+			const scopes: { family: "ci" | "cd"; cwd: string }[] = [];
+			const owner = {
+				openUrl: async () => undefined,
+				captureSecret: async () => undefined,
+				holds: () => false,
+				forScope(family: "ci" | "cd", scopeCwd: string) {
+					scopes.push({ family, cwd: scopeCwd });
+					return owner;
+				},
+			};
+			const cli = createComposedHoboCli({
+				yardRuntime: runtime,
+				ownerChannel: owner,
+			});
+			const result = await cli.run(["ci", "deploy", "unexpected"], { cwd });
+			expect(result.exitCode).toBe(2);
+			expect(scopes).toEqual([{ family: "ci", cwd }]);
+		});
+	});
+
 	it("the bare @hobo/cli binary still stubs the deploy verbs (the gap this app closes)", async () => {
 		await withProject(async (cwd) => {
 			const bare = createHoboCli();
