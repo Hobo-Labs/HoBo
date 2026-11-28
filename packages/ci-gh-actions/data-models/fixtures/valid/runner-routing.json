@@ -36,7 +36,7 @@
     {
       "labels": ["hobo-agent37"],
       "runnerNamePrefix": "hobo-a37-",
-      "maxRunners": 4
+      "maxRunners": 8
     }
   ],
   "retiredVariables": [
