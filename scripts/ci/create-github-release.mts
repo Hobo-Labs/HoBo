@@ -517,7 +517,7 @@ export function githubApiProbeTransport(
 	inner: ReleaseHttpTransport,
 ): ReleaseHttpTransport {
 	return withLatin1MarkerWhenPresent(inner, async (request) => {
-		if (!request.url.startsWith("https://api.github.com/"))
+		if (request.method !== "GET" || !PAGES_BUILD_LATEST.test(request.url))
 			return inner(request);
 		const authorized = {
 			...request,
@@ -530,8 +530,6 @@ export function githubApiProbeTransport(
 		};
 		if (token)
 			Object.assign(authorized.headers, { authorization: `Bearer ${token}` });
-		if (request.method !== "GET" || !PAGES_BUILD_LATEST.test(request.url))
-			return inner(authorized);
 		const notBuiltForHead = { status: 404, headers: {}, body: "" };
 		if (!token) return notBuiltForHead;
 		const bounded = {
@@ -601,7 +599,7 @@ export async function openReleaseCd(options: {
 		core.createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
 	const credentials =
 		options.seams?.credentials ?? releaseWorkflowCredentials(options.env);
-	const verificationHttp = githubApiProbeTransport(
+	const probeHttp = githubApiProbeTransport(
 		await releaseGithubToken(
 			credentials,
 			core.githubAppInstallationRef(
@@ -617,7 +615,7 @@ export async function openReleaseCd(options: {
 		home: options.home,
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
 		http: baseHttp,
-		verificationHttp,
+		probeHttp,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
 		credentials,
 	});

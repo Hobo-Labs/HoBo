@@ -160,6 +160,7 @@ export type CdRuntimeOptions = Readonly<{
 	topology?: readonly TopologyReader[];
 	http?: HttpTransport;
 	verificationHttp?: HttpTransport;
+	probeHttp?: HttpTransport;
 	credentials?: CredentialResolver;
 	registry?: PlannerRegistry;
 	realizers?: CdHostInputs["realizers"];
@@ -518,6 +519,7 @@ export async function openCdRuntime(
 		},
 		http,
 		verificationHttp: options.verificationHttp ?? http,
+		...(options.probeHttp ? { probeHttp: options.probeHttp } : undefined),
 		credentials,
 		artifactStore:
 			config.artifacts.backend === "memory"
