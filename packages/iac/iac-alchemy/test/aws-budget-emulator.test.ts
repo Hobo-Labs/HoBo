@@ -11,6 +11,7 @@ import { create } from "@bufbuild/protobuf";
 import { NodeHttpClient } from "@effect/platform-node";
 import { awsPlugin, getAwsStore } from "@emulators/aws";
 import { createServer } from "@emulators/core";
+import { createAtomicDurableQueue } from "@hobo/runtime/atomic-durable-queue";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
@@ -44,7 +45,9 @@ import {
 	usage,
 	workload,
 } from "../../../pricing/test/fixtures.js";
+import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { awsBindleMappers } from "../src/aws.js";
+import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
 	awsDynamoDurableQueueMappers,
 	withAwsDynamoDurableQueue,
@@ -103,6 +106,7 @@ function fixture(
 	};
 	let effects = 0;
 	const mutationTargets: string[] = [];
+	const createdTables: string[] = [];
 	let liabilityRequests = 0;
 	const exposuresAtEffects: { reservedMicros: number; unbounded: number }[] =
 		[];
@@ -138,6 +142,17 @@ function fixture(
 						req.headers["x-amz-target"] !== "DynamoDB_20120810.DescribeTable"
 					) {
 						mutationTargets.push(req.headers["x-amz-target"] ?? "");
+						if (
+							req.headers["x-amz-target"] === "DynamoDB_20120810.CreateTable"
+						) {
+							if (req.body._tag !== "Uint8Array")
+								throw Error("expected table request body");
+							const body: { TableName?: string } = JSON.parse(
+								new TextDecoder().decode(req.body.body),
+							);
+							if (!body.TableName) throw Error("table name missing");
+							createdTables.push(body.TableName);
+						}
 						recordEffect();
 					}
 				}),
@@ -383,6 +398,8 @@ function fixture(
 			createSqliteBudgetAdmissionAuthority(authorityOptions),
 		effects: () => effects,
 		mutationTargets: () => mutationTargets,
+		createdTables: () => createdTables,
+		awsLayers,
 		exposuresAtEffects: () => exposuresAtEffects,
 		liabilityRequests: () => liabilityRequests,
 		server,
@@ -479,6 +496,64 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
 						),
 				).toBe(true);
+				const [tableName] = f.createdTables();
+				if (!tableName || f.createdTables().length !== 1)
+					throw Error("expected the admitted queue table");
+				const limits = {
+					nameBytes: 32,
+					payloadBytes: 64,
+					attributeCount: 2,
+					attributeBytes: 32,
+					batchSize: 2,
+					delayMs: 1000,
+					leaseMs: 100,
+					operationWindowMs: 10000,
+					deliveryAttempts: 2,
+					retainedMessages: 4,
+					retainedReceipts: 20,
+				};
+				const store = createAwsQueueAtomicStore({
+					grant: {
+						tableName,
+						accountId: "000000000000",
+						partition: "aws",
+						region: "us-east-1",
+						resourceEpoch: `sha256:${"a".repeat(64)}`,
+						grantEpoch: `sha256:${"b".repeat(64)}`,
+						allow: ["get", "set", "delete"],
+					},
+					verify: () => true,
+					layer: f.awsLayers,
+				});
+				const now = () => 1000;
+				const queue = createAtomicDurableQueue({ store, limits, now });
+				const host = createDurableQueueWitHost(queue, {
+					limits,
+					now,
+					authorize: () => true,
+					maxInFlight: 2,
+					timeoutMs: 5000,
+				});
+				expect(
+					await host.enqueue({
+						operation: { id: "v1.10000.abcdefghijklmn01", expiresAtMs: 10000n },
+						message: {
+							idempotencyKey: "job",
+							body: new Uint8Array([1, 2]),
+							attributes: [],
+						},
+					}),
+				).toMatchObject({ tag: "committed", val: { messageId: "m1" } });
+				expect(
+					await host.dequeue({
+						operation: { id: "v1.10000.abcdefghijklmn02", expiresAtMs: 10000n },
+						maxMessages: 1,
+						visibilityTimeoutMs: 10n,
+					}),
+				).toMatchObject({
+					tag: "committed",
+					val: [{ messageId: "m1", body: new Uint8Array([1, 2]) }],
+				});
 			} finally {
 				f.authority.close();
 				f.routeAuthority.close();

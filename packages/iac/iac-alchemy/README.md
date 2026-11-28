@@ -1236,7 +1236,9 @@ Official AWS Emulator tests exercise queue deployment through financial
 admission: a supplied model reserves budget before table creation, missing
 pricing blocks creation unless an unpriced policy explicitly authorizes it, and
 an authorized unpriced deployment records unbounded exposure. This admission
-applies to deployment, not individual queue calls.
+applies to deployment, not individual queue calls. The priced scenario also
+enqueues and receives a message through the admitted table and HoBo's
+asynchronous queue host.
 
 Owner inspection supports snapshot-bound pagination for advancing past blocked
 exhausted messages. A changed queue returns `changed` and requires a restart.
