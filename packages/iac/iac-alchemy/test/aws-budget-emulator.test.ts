@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Api, ApiProvider } from "@alchemy.run/aws/ApiGatewayV2";
 import { UserPool, UserPoolProvider } from "@alchemy.run/aws/Cognito";
 import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
@@ -24,6 +25,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
+import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import {
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
@@ -99,7 +101,7 @@ function fixture(
 	withPricing: boolean,
 	allowUnpriced = false,
 	official = false,
-	resource: "bucket" | "queue" | "auth" | "notify" = "bucket",
+	resource: "bucket" | "queue" | "auth" | "notify" | "websocket" = "bucket",
 ) {
 	const server = createServer(awsPlugin, { baseUrl: "http://localhost:4566" });
 	const credentials = {
@@ -108,6 +110,7 @@ function fixture(
 	};
 	let effects = 0;
 	const mutationTargets: string[] = [];
+	const mutationRequests: string[] = [];
 	const createdTables: string[] = [];
 	let liabilityRequests = 0;
 	const exposuresAtEffects: { reservedMicros: number; unbounded: number }[] =
@@ -159,6 +162,7 @@ function fixture(
 						].includes(target ?? "")
 					) {
 						mutationTargets.push(target ?? "");
+						mutationRequests.push(`${req.method} ${new URL(req.url).pathname}`);
 						if (
 							req.headers["x-amz-target"] === "DynamoDB_20120810.CreateTable"
 						) {
@@ -211,45 +215,54 @@ function fixture(
 		fetchLayers,
 	);
 	const definition =
-		resource === "notify"
+		resource === "websocket"
 			? mapBindleToAlchemy(
-					bindle("shop", (b) => ({ objects: b.notify() })),
+					bindle("shop", (b) => ({
+						objects: b.websocket().with(sessionReplay({ enabled: false })),
+					})),
 					awsBindleMappers(),
 					{ assessRequirements: () => ({ status: "supported" }) },
 				)
-			: resource === "auth"
+			: resource === "notify"
 				? mapBindleToAlchemy(
-						bindle("shop", (b) => ({ objects: b.auth() })),
+						bindle("shop", (b) => ({ objects: b.notify() })),
 						awsBindleMappers(),
 						{ assessRequirements: () => ({ status: "supported" }) },
 					)
-				: resource === "queue"
+				: resource === "auth"
 					? mapBindleToAlchemy(
-							withAwsDynamoDurableQueue(
-								bindle("shop", (b) => ({
-									objects: b.queue().allow("enqueue", "dequeue"),
-								})),
-								{ objects: true },
-							),
-							awsDynamoDurableQueueMappers(),
-							{ assessRequirements: () => ({ status: "supported" }) },
-						)
-					: mapBindleToAlchemy(
-							bindle("shop", (b) => ({ objects: b.bucket() })),
+							bindle("shop", (b) => ({ objects: b.auth() })),
 							awsBindleMappers(),
 							{ assessRequirements: () => ({ status: "supported" }) },
-						);
+						)
+					: resource === "queue"
+						? mapBindleToAlchemy(
+								withAwsDynamoDurableQueue(
+									bindle("shop", (b) => ({
+										objects: b.queue().allow("enqueue", "dequeue"),
+									})),
+									{ objects: true },
+								),
+								awsDynamoDurableQueueMappers(),
+								{ assessRequirements: () => ({ status: "supported" }) },
+							)
+						: mapBindleToAlchemy(
+								bindle("shop", (b) => ({ objects: b.bucket() })),
+								awsBindleMappers(),
+								{ assessRequirements: () => ({ status: "supported" }) },
+							);
 	const stack = Stack(
 		"Demo",
 		{
 			providers: Layer.effect(
 				Providers,
-				Provider.collection([Bucket, Table, UserPool, Topic]),
+				Provider.collection([Bucket, Table, UserPool, Topic, Api]),
 			).pipe(
 				Layer.provideMerge(BucketProvider()),
 				Layer.provideMerge(TableProvider()),
 				Layer.provideMerge(UserPoolProvider()),
 				Layer.provideMerge(TopicProvider()),
+				Layer.provideMerge(ApiProvider()),
 				Layer.provideMerge(awsLayers),
 			),
 			state: inMemoryState(),
@@ -393,13 +406,15 @@ function fixture(
 				{
 					resourceId: "objects",
 					resourceType:
-						resource === "notify"
-							? Topic.Type
-							: resource === "queue"
-								? Table.Type
-								: resource === "auth"
-									? UserPool.Type
-									: Bucket.Type,
+						resource === "websocket"
+							? Api.Type
+							: resource === "notify"
+								? Topic.Type
+								: resource === "queue"
+									? Table.Type
+									: resource === "auth"
+										? UserPool.Type
+										: Bucket.Type,
 					providerId: "sandbox",
 					providerAccountRef: "account-a",
 					productId: "sandbox",
@@ -436,6 +451,7 @@ function fixture(
 			createSqliteBudgetAdmissionAuthority(authorityOptions),
 		effects: () => effects,
 		mutationTargets: () => mutationTargets,
+		mutationRequests: () => mutationRequests,
 		createdTables: () => createdTables,
 		awsLayers,
 		exposuresAtEffects: () => exposuresAtEffects,
@@ -778,6 +794,90 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 					budget: { evaluation: "bypassed", reservation: "held" },
 				});
 				expect(f.mutationTargets()).toContain("CreateTopic");
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) => entry.reservedMicros === 0 && entry.unbounded === 1,
+						),
+				).toBe(true);
+				expect(f.liabilityRequests()).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"reserves pricing before creating a mapped WebSocket API",
+		async () => {
+			const f = fixture(true, false, true, "websocket");
+			try {
+				const selected = await pricedSelection(f);
+				expect(f.effects()).toBe(0);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+					selected,
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "allowed", reservation: "held" },
+				});
+				expect(f.mutationRequests()).toContain("POST /v2/apis");
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) =>
+								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
+						),
+				).toBe(true);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"blocks an unpriced WebSocket API without explicit authorization",
+		async () => {
+			const f = fixture(false, false, true, "websocket");
+			try {
+				const assessment = await f.provider.assessPricing(program);
+				expect(assessment).toMatchObject({
+					pricing: { state: { case: "unavailable" } },
+					budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				});
+				await expect(f.provider.apply(program)).rejects.toMatchObject({
+					code: "PRICING_MODEL_UNAVAILABLE",
+				});
+				expect(f.effects()).toBe(0);
+				expect(f.authority.read(NOW).unboundedExposureCount).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"records unbounded exposure before an authorized unpriced WebSocket API",
+		async () => {
+			const f = fixture(false, true, true, "websocket");
+			try {
+				await f.provider.assessPricing(program);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "bypassed", reservation: "held" },
+				});
+				expect(f.mutationRequests()).toContain("POST /v2/apis");
 				expect(
 					f
 						.exposuresAtEffects()
