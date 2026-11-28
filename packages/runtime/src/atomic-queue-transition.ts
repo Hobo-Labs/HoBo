@@ -30,33 +30,35 @@ type QueueValue =
 	| readonly DurableQueueDelivery[]
 	| { readonly messageId: string; readonly leaseId: string }
 	| DurableQueueDelivery;
-type QueueResult = Extract<
+export type QueueResult = Extract<
 	DurableQueueOutcome<QueueValue>,
 	{ status: "committed" | "rejected" }
 >;
-interface Message {
+export interface AtomicQueueMessage {
 	readonly messageId: string;
 	readonly signature: string;
 	readonly idempotencyKey: string;
 	readonly body: Uint8Array;
 	readonly attributes: DurableQueueDelivery["attributes"];
 	readonly availableAtMs: number;
+	readonly requestedAvailableAtMs: number | null;
 	readonly deliveryAttempt: number;
 	readonly leaseId: string | null;
 	readonly leaseExpiresAtMs: number;
 	readonly completed: boolean;
 }
-interface Receipt {
+export interface AtomicQueueReceipt {
 	readonly id: string;
 	readonly expiresAtMs: number;
 	readonly fingerprint: string;
+	readonly request: AtomicQueueRequest;
 	readonly result: QueueResult;
 }
 export interface AtomicQueueState {
 	readonly nextMessage: number;
 	readonly nextLease: number;
-	readonly messages: readonly Message[];
-	readonly receipts: readonly Receipt[];
+	readonly messages: readonly AtomicQueueMessage[];
+	readonly receipts: readonly AtomicQueueReceipt[];
 }
 export interface AtomicQueueTransition {
 	readonly state: AtomicQueueState;
@@ -71,7 +73,7 @@ const nativeArray = Array.isArray;
 const nativeNumber = Number.isSafeInteger;
 const nativeString = String;
 const maxSafe = Number.MAX_SAFE_INTEGER;
-const maxSequence = 1_000_000_000_000_000;
+export const ATOMIC_QUEUE_MAX_SEQUENCE = 1_000_000_000_000_000;
 const NativeBytes = Uint8Array;
 export function emptyAtomicQueueState(): AtomicQueueState {
 	return { nextMessage: 1, nextLease: 1, messages: [], receipts: [] };
@@ -91,7 +93,7 @@ function copyAttributes(
 	}
 	return copy;
 }
-function messageSignature(
+export function messageSignature(
 	input: Parameters<DurableQueue["enqueue"]>[0]["message"],
 ): string {
 	const encoded = nativeApply(
@@ -111,7 +113,7 @@ function messageSignature(
 		(input.availableAtMs === undefined ? "-" : `+${input.availableAtMs}`)
 	);
 }
-function fingerprint(request: AtomicQueueRequest): string {
+export function fingerprint(request: AtomicQueueRequest): string {
 	const input = request.input;
 	if (request.kind === "enqueue" && "message" in input)
 		return `e${field(input.message.idempotencyKey)}${messageSignature(input.message)}`;
@@ -137,7 +139,7 @@ function copyDelivery(input: DurableQueueDelivery): DurableQueueDelivery {
 		attributes: copyAttributes(input.attributes),
 	};
 }
-function delivery(message: Message): DurableQueueDelivery {
+function delivery(message: AtomicQueueMessage): DurableQueueDelivery {
 	if (message.leaseId === null)
 		throw new TypeError("atomic_queue.invalid_lease");
 	return {
@@ -150,6 +152,35 @@ function delivery(message: Message): DurableQueueDelivery {
 		deliveryAttempt: message.deliveryAttempt,
 	};
 }
+function copyRequest(request: AtomicQueueRequest): AtomicQueueRequest {
+	if (request.kind === "enqueue")
+		return {
+			kind: "enqueue",
+			input: {
+				operation: { ...request.input.operation },
+				message: {
+					...request.input.message,
+					body: new NativeBytes(request.input.message.body),
+					attributes: copyAttributes(request.input.message.attributes),
+				},
+			},
+		};
+	if (request.kind === "dequeue")
+		return {
+			kind: "dequeue",
+			input: { ...request.input, operation: { ...request.input.operation } },
+		};
+	if (request.kind === "extendLease")
+		return {
+			kind: "extendLease",
+			input: { ...request.input, operation: { ...request.input.operation } },
+		};
+	return {
+		kind: request.kind,
+		input: { ...request.input, operation: { ...request.input.operation } },
+	};
+}
+
 function cloneResult(result: QueueResult): QueueResult {
 	if (result.status === "rejected")
 		return { status: "rejected", code: result.code };
@@ -188,7 +219,7 @@ export function transitionAtomicQueue(
 			changed: false,
 		};
 	const signature = fingerprint(request);
-	let prior: Receipt | undefined;
+	let prior: AtomicQueueReceipt | undefined;
 	for (let index = 0; index < state.receipts.length; index++) {
 		const receipt = state.receipts[index];
 		if (receipt?.id === op.id) {
@@ -205,7 +236,7 @@ export function transitionAtomicQueue(
 			};
 		return { state, outcome: cloneResult(prior.result), changed: false };
 	}
-	const retained: Receipt[] = [];
+	const retained: AtomicQueueReceipt[] = [];
 	for (let index = 0; index < state.receipts.length; index++) {
 		const receipt = state.receipts[index];
 		if (receipt !== undefined && receipt.expiresAtMs > now)
@@ -214,7 +245,7 @@ export function transitionAtomicQueue(
 	if (retained.length >= limits.retainedReceipts) return unknown(state, op);
 	let nextMessage = state.nextMessage;
 	let nextLease = state.nextLease;
-	const messages: Message[] = [];
+	const messages: AtomicQueueMessage[] = [];
 	for (let index = 0; index < state.messages.length; index++) {
 		const message = state.messages[index];
 		if (message === undefined)
@@ -231,7 +262,7 @@ export function transitionAtomicQueue(
 	else if (request.kind === "enqueue") {
 		const input = request.input.message;
 		const sig = messageSignature(input);
-		let existing: Message | undefined;
+		let existing: AtomicQueueMessage | undefined;
 		for (let index = 0; index < messages.length; index++) {
 			const candidate = messages[index];
 			if (candidate?.idempotencyKey === input.idempotencyKey) {
@@ -258,17 +289,18 @@ export function transitionAtomicQueue(
 			result = rejected("invalid-argument");
 		else if (
 			messages.length >= limits.retainedMessages ||
-			nextMessage >= maxSequence
+			nextMessage >= ATOMIC_QUEUE_MAX_SEQUENCE
 		)
 			result = rejected("capacity-exceeded");
 		else {
-			const message: Message = {
+			const message: AtomicQueueMessage = {
 				messageId: `m${nextMessage++}`,
 				signature: sig,
 				idempotencyKey: input.idempotencyKey,
 				body: new NativeBytes(input.body),
 				attributes: copyAttributes(input.attributes),
 				availableAtMs: input.availableAtMs ?? now,
+				requestedAvailableAtMs: input.availableAtMs ?? null,
 				deliveryAttempt: 0,
 				leaseId: null,
 				leaseExpiresAtMs: 0,
@@ -307,7 +339,7 @@ export function transitionAtomicQueue(
 					blocked = "delivery-exhausted";
 					continue;
 				}
-				if (nextLease >= maxSequence) {
+				if (nextLease >= ATOMIC_QUEUE_MAX_SEQUENCE) {
 					blocked = "capacity-exceeded";
 					break;
 				}
@@ -373,6 +405,7 @@ export function transitionAtomicQueue(
 		id: op.id,
 		expiresAtMs: op.expiresAtMs,
 		fingerprint: signature,
+		request: copyRequest(request),
 		result,
 	};
 	return {

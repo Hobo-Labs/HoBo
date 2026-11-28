@@ -49,7 +49,7 @@ const limitNames = [
 	"retainedMessages",
 	"retainedReceipts",
 ] as const;
-function encodedLimits(limits: DurableQueueLimits): unknown[] {
+export function encodedLimits(limits: DurableQueueLimits): unknown[] {
 	const result: unknown[] = [];
 	for (let index = 0; index < limitNames.length; index++) {
 		const key = limitNames[index];
@@ -63,7 +63,7 @@ function encodedLimits(limits: DurableQueueLimits): unknown[] {
 function invalid(): never {
 	throw new TypeError("atomic_queue.invalid_log");
 }
-function tuple(value: unknown, min: number, max = min): unknown[] {
+export function tuple(value: unknown, min: number, max = min): unknown[] {
 	if (!isArray(value) || value.length < min || value.length > max)
 		return invalid();
 	return value;
@@ -77,21 +77,21 @@ function text(value: unknown, max: number): string {
 	if (typeof value !== "string" || value.length > max) return invalid();
 	return value;
 }
-function vector(values: unknown[]): unknown[] {
+export function vector(values: unknown[]): unknown[] {
 	setPrototype(values, null);
 	return values;
 }
-function base64(value: Uint8Array): string {
+export function base64(value: Uint8Array): string {
 	return apply(toString, apply(from, Buffer, [value]), ["base64"]);
 }
-function bytes(value: unknown, max: number): Uint8Array {
+export function bytes(value: unknown, max: number): Uint8Array {
 	const encoded = text(value, Math.ceil(max / 3) * 4);
 	const decoded = apply(from, Buffer, [encoded, "base64"]);
 	if (decoded.length > max || apply(toString, decoded, ["base64"]) !== encoded)
 		return invalid();
 	return new Uint8Array(decoded);
 }
-function encodeEvent(event: AtomicQueueEvent): unknown[] {
+export function encodeEvent(event: AtomicQueueEvent): unknown[] {
 	const request = event.request;
 	const input = request.input;
 	const op = input.operation;
@@ -150,7 +150,7 @@ function encodeEvent(event: AtomicQueueEvent): unknown[] {
 		]);
 	return invalid();
 }
-function decodeEvent(
+export function decodeEvent(
 	value: unknown,
 	limits: DurableQueueLimits,
 ): AtomicQueueEvent {
@@ -247,16 +247,16 @@ export function encodeAtomicQueueLog(
 		if (event === undefined) return invalid();
 		encoded[index] = encodeEvent(event);
 	}
+	return serializeVector(vector([1, encodedLimits(limits), vector(encoded)]));
+}
+export function serializeVector(value: unknown[]): Uint8Array {
 	const data: Uint8Array = apply(encodeText, new NativeTextEncoder(), [
-		stringifyJson(vector([1, encodedLimits(limits), vector(encoded)])),
+		stringifyJson(value),
 	]);
 	if (data.length > ATOMIC_QUEUE_MAX_BYTES) return invalid();
 	return data;
 }
-export function decodeAtomicQueueLog(
-	data: Uint8Array,
-	limits: DurableQueueLimits,
-): AtomicQueueEvent[] {
+export function parseVector(data: Uint8Array): unknown[] {
 	if (
 		types.isProxy(data) ||
 		!types.isUint8Array(data) ||
@@ -281,7 +281,14 @@ export function decodeAtomicQueueLog(
 		new NativeTextDecoder("utf-8", { fatal: true }),
 		[snapshot],
 	);
-	const root = tuple(parseJson(decoded), 3);
+	return tuple(parseJson(decoded), 0, ATOMIC_QUEUE_MAX_BYTES);
+}
+
+export function decodeAtomicQueueLog(
+	data: Uint8Array,
+	limits: DurableQueueLimits,
+): AtomicQueueEvent[] {
+	const root = tuple(parseVector(data), 3);
 	if (root[0] !== 1) return invalid();
 	const storedLimits = tuple(root[1], limitNames.length);
 	for (let index = 0; index < limitNames.length; index++) {
