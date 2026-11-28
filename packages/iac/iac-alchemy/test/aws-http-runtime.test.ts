@@ -21,6 +21,7 @@ import { withAwsDynamoKv } from "../src/aws-kv-mapper.js";
 import { createAwsS3Store } from "../src/aws-s3.js";
 import { withAwsS3 } from "../src/aws-s3-mapper.js";
 
+const sessionsArn = "arn:aws:dynamodb:us-east-1:000000000000:table/sessions";
 const body = new Uint8Array([4, 5]);
 const hash = `sha256:${createHash("sha256").update(body).digest("hex")}`;
 function fixture(
@@ -166,6 +167,24 @@ describe("AWS application graph capture", () => {
 });
 
 describe("AWS HTTP source", () => {
+	it.each([
+		"arn:aws:dynamodb:us-east-1:111111111111:table/sessions",
+		"arn:aws:dynamodb:us-west-2:000000000000:table/sessions",
+		"arn:aws-us-gov:dynamodb:us-east-1:000000000000:table/sessions",
+	])("rejects a same-named table in a different account, region or partition", async (arn) => {
+		const f = fixture(() => () => new Response("ok"));
+		const source = defineAwsHttpSource({
+			bindle: f.options.bindle,
+			applicationName: "web",
+			environment: { HOBO_RESOURCE_0: "assets-bucket", HOBO_RESOURCE_1: arn },
+			resolveStores: () => f.options.stores,
+			verifyBinding: () => true,
+		});
+		expect((await source.fetch(new Request("https://app.test/"))).status).toBe(
+			503,
+		);
+		expect(f.calls()).toBe(0);
+	});
 	it("resolves provisioned names once and fails closed on mismatches and revocation", async () => {
 		let authorized = true;
 		const f = fixture((context) => async () => {
@@ -176,7 +195,7 @@ describe("AWS HTTP source", () => {
 		});
 		const environment = {
 			HOBO_RESOURCE_0: "assets-bucket",
-			HOBO_RESOURCE_1: "sessions",
+			HOBO_RESOURCE_1: sessionsArn,
 		};
 		let resolutions = 0;
 		const source = defineAwsHttpSource({
@@ -187,7 +206,7 @@ describe("AWS HTTP source", () => {
 				resolutions++;
 				expect(bindings.map(({ physicalName }) => physicalName)).toEqual([
 					"assets-bucket",
-					"sessions",
+					sessionsArn,
 				]);
 				return f.options.stores;
 			},
@@ -199,7 +218,7 @@ describe("AWS HTTP source", () => {
 		expect(resolutions).toBe(1);
 		environment.HOBO_RESOURCE_1 = "different-table";
 		expect((await source.fetch(request())).status).toBe(503);
-		environment.HOBO_RESOURCE_1 = "sessions";
+		environment.HOBO_RESOURCE_1 = sessionsArn;
 		authorized = false;
 		expect((await source.fetch(request())).status).toBe(503);
 	});
@@ -211,7 +230,7 @@ describe("AWS HTTP source", () => {
 		});
 		const environment = {
 			HOBO_RESOURCE_0: "assets-bucket",
-			HOBO_RESOURCE_1: "sessions",
+			HOBO_RESOURCE_1: sessionsArn,
 		};
 		const source = defineAwsHttpSource({
 			bindle: f.options.bindle,
@@ -250,7 +269,7 @@ describe("AWS HTTP source", () => {
 		});
 		const environment = {
 			HOBO_RESOURCE_0: "assets-bucket",
-			HOBO_RESOURCE_1: "sessions",
+			HOBO_RESOURCE_1: sessionsArn,
 		};
 		const source = defineAwsHttpSource({
 			bindle: f.options.bindle,
@@ -278,7 +297,7 @@ describe("AWS HTTP source", () => {
 			applicationName: "web",
 			environment: {
 				HOBO_RESOURCE_0: "assets-bucket",
-				HOBO_RESOURCE_1: "sessions",
+				HOBO_RESOURCE_1: sessionsArn,
 			},
 			resolveStores: () => f.options.stores,
 			verifyBinding: () => true,
@@ -310,7 +329,7 @@ describe("AWS HTTP source", () => {
 		const options = {
 			bindle: f.options.bindle,
 			applicationName: "web",
-			environment: { HOBO_RESOURCE_0: "wrong", HOBO_RESOURCE_1: "sessions" },
+			environment: { HOBO_RESOURCE_0: "wrong", HOBO_RESOURCE_1: sessionsArn },
 			resolveStores: () => f.options.stores,
 			verifyBinding: () => true,
 		};

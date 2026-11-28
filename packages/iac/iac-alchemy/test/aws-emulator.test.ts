@@ -1499,7 +1499,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				};
 			});
 			const selected = withAwsDynamoDurableQueue(appDefinition, { jobs: true });
-			const environmentValues = { HOBO_RESOURCE_0: table.tableName };
+			const environmentValues = { HOBO_RESOURCE_0: String(table.tableArn) };
 			const source = defineAwsHttpSource({
 				bindle: selected,
 				applicationName: "web",
@@ -1535,7 +1535,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			expect((await source.fetch(new Request("https://app.test"))).status).toBe(
 				503,
 			);
-			environmentValues.HOBO_RESOURCE_0 = table.tableName;
+			environmentValues.HOBO_RESOURCE_0 = table.tableArn;
 			authorized = false;
 			expect((await source.fetch(new Request("https://app.test"))).status).toBe(
 				503,
@@ -1817,7 +1817,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				applicationName: "web",
 				environment: {
 					HOBO_RESOURCE_0: bucket.bucketName,
-					HOBO_RESOURCE_1: table.tableName,
+					HOBO_RESOURCE_1: table.tableArn,
 				},
 				resolveStores: () => ({ sessions: kv, objects: objectStore }),
 				verifyBinding: () => authorized,
