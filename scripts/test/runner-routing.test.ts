@@ -294,7 +294,7 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 	});
@@ -358,7 +358,7 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);

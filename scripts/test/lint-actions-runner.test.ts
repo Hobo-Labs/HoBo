@@ -453,16 +453,17 @@ describe("Actions runner policy", () => {
 				"hobo-ci.yml",
 				`name: fixture\non:\n  merge_group:\njobs:\n${jobs}  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`,
 			);
-		assert.equal(hoboCi(`${trunkRoute}${trunkGate("pr-gate")}`), 0);
 		assert.notEqual(
+			hoboCi(trunkRoute),
+			0,
+			"a merge-group route job on hobo-trunk cannot fall back to GitHub-hosted runners",
+		);
+		assert.notEqual(hoboCi(`${routeJob}${trunkGate("pr-gate")}`), 0);
+		assert.equal(
 			hoboCi(
-				routeJob.replace(
-					"runs-on: ubuntu-24.04",
-					`runs-on: ${mergeGroupTrunk}`,
-				),
+				`${routeJob}  pr-gate:\n    if: \${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n`,
 			),
 			0,
-			"a route job on the trunk fleet must keep its default-path checkout",
 		);
 		assert.notEqual(hoboCi(`${trunkRoute}${trunkGate("gate")}`), 0);
 		assert.notEqual(lintJobs(trunkRoute), 0);
@@ -474,7 +475,7 @@ describe("Actions runner policy", () => {
 			0,
 		);
 		const mergeGroupScripts =
-			"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
+			"${{ github.event_name == 'merge_group' && needs.route.outputs.tier != 'github' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
 		const scriptsJob = (id: string, needs: string) =>
 			`  ${id}:\n${needs}    runs-on: ${mergeGroupScripts}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          clean: false\n`;
 		assert.equal(

@@ -258,11 +258,8 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-const MERGE_GROUP_TRUNK_RUNS_ON =
-	"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
-
 const MERGE_GROUP_SCRIPTS_RUNS_ON =
-	"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
+	"${{ github.event_name == 'merge_group' && needs.route.outputs.tier != 'github' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
 
 const ROUTED_RUNS_ON =
 	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
@@ -407,13 +404,8 @@ function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
 	runsOn: string | undefined,
-	file = "",
 ): boolean {
-	const gateRunsOn =
-		runsOn === HOSTED_RUNS_ON ||
-		(runsOn === MERGE_GROUP_TRUNK_RUNS_ON &&
-			file === "hobo-ci.yml" &&
-			/^ {2}(route|pr-gate):$/.test(jobLine));
+	const gateRunsOn = runsOn === HOSTED_RUNS_ON;
 	if (/^ {2}route:$/.test(jobLine)) {
 		return (
 			gateRunsOn &&
@@ -1177,7 +1169,7 @@ function lintWorkflowYaml(
 			jobLine,
 			runsOn,
 		);
-		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn, file);
+		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const mergeGroupScripts =
 			file === "hobo-ci.yml" &&
 			jobLine === "  scripts-tests:" &&
@@ -1229,7 +1221,6 @@ function lintWorkflowYaml(
 		if (
 			runsOn === "hobo" ||
 			runsOn === TRUNK_RUNS_ON ||
-			runsOn === MERGE_GROUP_TRUNK_RUNS_ON ||
 			mergeGroupScripts ||
 			runsOn === ROUTED_RUNS_ON ||
 			runsOn === SHARD_RUNS_ON ||

@@ -132,7 +132,7 @@ describe("agent37 pool capacity, pure", () => {
 		assert.deepEqual(committedPool, {
 			labels: ["hobo-agent37"],
 			runnerNamePrefix: "hobo-a37-",
-			maxRunners: 4,
+			maxRunners: 8,
 		});
 		const project = JSON.parse(committedText);
 		const provider = project.environments.ci.policy.providers.find(
@@ -143,7 +143,7 @@ describe("agent37 pool capacity, pure", () => {
 		assert.deepEqual(agent37Capacity(committedPool, { activeRunners: 2 }), {
 			runsOn: "hobo-agent37",
 			runnerNamePrefix: "hobo-a37-",
-			freeRunners: 2,
+			freeRunners: 6,
 		});
 	});
 });
@@ -307,13 +307,13 @@ describe("the PR batch spill to agent37", () => {
 		assert.equal(decision.slip?.kind, "unasked");
 		assert.match(
 			decision.reason,
-			/no verified fleet capacity and Broker claim; the agent37 external pool hobo-agent37 reports 3 free runner\(s\)/u,
+			/no verified fleet capacity and Broker claim; the agent37 external pool hobo-agent37 reports 7 free runner\(s\)/u,
 		);
 		assert.deepEqual(observed, [
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 	});
@@ -394,7 +394,7 @@ describe("the PR batch spill to agent37", () => {
 			async () => {
 				throw new Error("pool observation unavailable");
 			},
-			async () => JSON.parse('{"activeRunners": 4}'),
+			async () => JSON.parse('{"activeRunners": 8}'),
 			async () => JSON.parse('{"activeRunners": -1}'),
 			async () => JSON.parse("{}"),
 		];
