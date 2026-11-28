@@ -99,6 +99,7 @@ try {
 			"test/aws-scoped-queue.test.ts",
 			"test/aws-queue-atomic-store.test.ts",
 			"test/aws-notification.test.ts",
+			"test/aws-notification-binding.test.ts",
 			"test/aws-kv.test.ts",
 			"test/aws-s3.test.ts",
 			"test/aws-secret.test.ts",
