@@ -391,7 +391,6 @@ export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
 	prebuilt?: CdPrebuiltDeps;
 }>;
 
-/** The commit `hobo cd up` builds, and its branch when it is on one. */
 export type CdCheckoutHead = Readonly<{ sha: string; ref?: string }>;
 
 async function cdCheckoutHead(
