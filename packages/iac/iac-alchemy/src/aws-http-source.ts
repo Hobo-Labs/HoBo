@@ -1,10 +1,12 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: the source joins host-supplied authorities to bounded application data. */
 import { types } from "node:util";
+import type { CryptographyPort } from "@hobo/core/cryptography";
 import type { NotificationPort } from "@hobo/core/notification";
 import {
 	type DurableQueue,
 	inspectAtomicDurableQueue,
 } from "@hobo/runtime/atomic-durable-queue";
+import { inspectAwsKmsCryptography } from "./aws-cryptography.js";
 import { type AwsHttpGraph, captureAwsHttpGraph } from "./aws-http-graph.js";
 import {
 	type AwsBindleApplication,
@@ -22,7 +24,7 @@ import { observeUnexpectedSynchronousResult } from "./synchronous-result.js";
 
 export interface AwsHttpResolvedDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket" | "secret" | "queue" | "notify";
+	readonly kind: "kv" | "bucket" | "secret" | "queue" | "notify" | "crypto";
 	readonly physicalName: string;
 	readonly allow: readonly string[];
 }
@@ -68,7 +70,12 @@ export function defineAwsHttpSource<Requirements>(options: {
 	) => Readonly<
 		Record<
 			string,
-			AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue | NotificationPort
+			| AwsKvStore
+			| AwsS3Store
+			| AwsSecretStore
+			| DurableQueue
+			| NotificationPort
+			| CryptographyPort
 		>
 	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
@@ -171,7 +178,9 @@ export function defineAwsHttpSource<Requirements>(options: {
 										? inspectAwsS3Store(field.value)
 										: binding.kind === "notify"
 											? inspectAwsNotificationPublisher(field.value)
-											: inspectAwsSecretStore(field.value);
+											: binding.kind === "crypto"
+												? inspectAwsKmsCryptography(field.value)
+												: inspectAwsSecretStore(field.value);
 						if (
 							!grant ||
 							(binding.kind === "kv" || binding.kind === "queue"
@@ -183,8 +192,11 @@ export function defineAwsHttpSource<Requirements>(options: {
 									: binding.kind === "notify"
 										? !("topicName" in grant) ||
 											grant.topicName !== binding.physicalName
-										: !("secretArn" in grant) ||
-											grant.secretArn !== binding.physicalName)
+										: binding.kind === "crypto"
+											? !("keyId" in grant) ||
+												grant.keyId !== binding.physicalName
+											: !("secretArn" in grant) ||
+												grant.secretArn !== binding.physicalName)
 						)
 							return unavailable();
 					}

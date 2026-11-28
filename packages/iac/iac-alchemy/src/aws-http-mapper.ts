@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 import { types } from "node:util";
 import type { Providers } from "@alchemy.run/aws";
 import type { Table } from "@alchemy.run/aws/DynamoDB";
+import type { Key } from "@alchemy.run/aws/KMS";
 import { WebFunction } from "@alchemy.run/aws/Lambda";
 import type { Bucket } from "@alchemy.run/aws/S3";
 import type { Secret } from "@alchemy.run/aws/SecretsManager";
@@ -200,7 +201,7 @@ export function awsHttpBindleMappers<Requirements>(
 		annotations: ["hobo:session-replay"],
 		bindsEntrypoint: true,
 		limitations: [
-			"Node.js HTTP with selected bounded DynamoDB, S3, Secrets Manager, queue and SNS notification bindings; the host authenticates source, stores, IAM and pricing.",
+			"Node.js HTTP with selected bounded DynamoDB, S3, Secrets Manager, queue, SNS notification and KMS cryptography bindings; the host authenticates source, stores, IAM and pricing.",
 		],
 		validate,
 		build: (input) =>
@@ -217,6 +218,7 @@ export function awsHttpBindleMappers<Requirements>(
 					| Bucket["bucketName"]
 					| Secret["secretArn"]
 					| Topic["topicName"]
+					| Key["keyId"]
 				> = {};
 				for (const binding of graph.bindings) {
 					const dependency: ResourceLike | undefined =
@@ -228,7 +230,9 @@ export function awsHttpBindleMappers<Requirements>(
 								? "AWS.S3.Bucket"
 								: binding.kind === "notify"
 									? "AWS.SNS.Topic"
-									: "AWS.SecretsManager.Secret";
+									: binding.kind === "crypto"
+										? "AWS.KMS.Key"
+										: "AWS.SecretsManager.Secret";
 					if (
 						!dependency ||
 						dependency.FQN !== binding.name ||
@@ -246,7 +250,9 @@ export function awsHttpBindleMappers<Requirements>(
 								? (dependency as Bucket).bucketName
 								: binding.kind === "notify"
 									? (dependency as Topic).topicName
-									: (dependency as Secret).secretArn;
+									: binding.kind === "crypto"
+										? (dependency as Key).keyId
+										: (dependency as Secret).secretArn;
 				}
 				const primary = yield* WebFunction(graph.applicationName, {
 					main: canonical,
