@@ -34,12 +34,14 @@ export const bus = createRivetDurableTopicBusActor({
 	authorizeInstanceScope: ({ actorKey }) => actorKey[0] === "tenant-a",
 	verifyIngress: () => true,
 });
+const applicationKind = process.env.HOBO_TEST_APP_KIND;
+if (applicationKind !== "web" && applicationKind !== "ui")
+	throw new Error("test application kind must be web or ui");
 const shop = bindle("shop", (b) => {
 	const orders = b.topic().allow("publish");
 	return {
 		orders,
-		web: b
-			.web()
+		web: b[applicationKind]()
 			.with(sessionReplay({ enabled: false }))
 			.dependsOn(orders),
 	};

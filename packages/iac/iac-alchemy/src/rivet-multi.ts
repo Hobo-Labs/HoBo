@@ -357,6 +357,7 @@ export function createRivetMultiPoolPrimitiveMappers<
 		api: mapperFor("api"),
 		web: mapperFor("web"),
 		service: mapperFor("service"),
+		ui: mapperFor("ui"),
 	});
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */

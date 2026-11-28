@@ -43,7 +43,7 @@ export interface RivetRegistry {
 export interface RivetHttpSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly main: string;
 	readonly resourceName: string;
-	readonly kind: "api" | "web" | "service";
+	readonly kind: "api" | "web" | "service" | "ui";
 	readonly actorName: string;
 
 	readonly sourceDigest: string;
@@ -131,7 +131,7 @@ export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 		/[\p{Cc}]/u.test(source.main) ||
 		!name(source.resourceName) ||
 		!name(source.actorName) ||
-		!["api", "web", "service"].includes(source.kind) ||
+		!["api", "web", "service", "ui"].includes(source.kind) ||
 		!/^sha256:[a-f0-9]{64}$/u.test(source.sourceDigest)
 	)
 		throw new AlchemyIacError(
@@ -368,5 +368,6 @@ export function createRivetPrimitiveMappers<
 		api: source.kind === "api" ? mapper : unavailable,
 		web: source.kind === "web" ? mapper : unavailable,
 		service: source.kind === "service" ? mapper : unavailable,
+		ui: source.kind === "ui" ? mapper : unavailable,
 	});
 }
