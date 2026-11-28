@@ -24,6 +24,7 @@ type WorkerReply = null | { status: number; body: string };
 type WorkerRequest =
 	| { kind: "advance"; delta: number }
 	| { kind: "arm-commit-barrier" }
+	| { kind: "fail-before-commit" }
 	| { kind: "release-commit-barrier" }
 	| { kind: "block-receipt"; reason: "revocation" | "capacity" | "unavailable" }
 	| {
@@ -297,7 +298,11 @@ export async function createProcessBusConformanceHost(
 			clock += delta;
 		},
 		async loseNextMutationResponse(point) {
-			if (point !== "after-commit") return unavailable();
+			if (point === "before-commit") {
+				if ((await worker.call({ kind: "fail-before-commit" })) !== null)
+					throw new Error("invalid commit fault response");
+				return;
+			}
 			drop = "throw";
 		},
 		async loseNextMutationTransport(mode) {
