@@ -32,8 +32,8 @@ const vitest = join(
 	dirname(require.resolve("vitest/package.json")),
 	"vitest.mjs",
 );
-const command = (file: string, args: string[]) =>
-	execFileSync(file, args, { encoding: "utf8", timeout: 120_000 }).trim();
+const command = (file: string, args: string[], timeout = 120_000) =>
+	execFileSync(file, args, { encoding: "utf8", timeout }).trim();
 let attempted = false;
 let imageAttempted = false;
 try {
@@ -65,7 +65,7 @@ try {
 		throw new Error("AWS emulator executable is missing");
 	const context = prepareAwsEmulatorImage(scratch, executable, image);
 	imageAttempted = true;
-	command("docker", ["build", "--tag", name, context]);
+	command("docker", ["build", "--tag", name, context], 600_000);
 	attempted = true;
 	command("docker", awsEmulatorRunArgs(name));
 	const endpoint = command("docker", ["port", name, "9297/tcp"]);
