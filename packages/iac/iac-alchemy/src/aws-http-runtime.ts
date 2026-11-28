@@ -282,7 +282,6 @@ async function bufferResponse(
 			)
 				throw new Error("response too large");
 			total += length;
-			// Index assignment keeps the copy when application code replaces push.
 			chunks[chunks.length] = new Uint8Array(
 				new Uint8Array(buffer, offset, length),
 			);
