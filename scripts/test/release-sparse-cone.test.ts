@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { releaseOciInputSparseCones } from "../ci/release-oci-affected.mts";
+import { depsContextPaths } from "../lib/deps-key.mts";
 import {
 	assertConeCoversPaths,
 	coneCoversPath,
@@ -168,11 +169,18 @@ describe("release sparse cone requirements", () => {
 		}
 	});
 
-	it("hobo release pages cone covers pins fetch", () => {
+	it("hobo release pages cone covers pins fetch and deps checkout-key paths", () => {
+		const cones = hoboReleasePagesSparseCones();
+		expect(cones).toContain("src");
 		assertConeCoversPaths(
 			"hobo-release-pages",
-			hoboReleasePagesSparseCones(),
-			requiredPathsForHoboReleasePages(),
+			cones,
+			requiredPathsForHoboReleasePages(root),
+		);
+		assertConeCoversPaths(
+			"hobo-release-pages-deps",
+			cones,
+			depsContextPaths(root),
 		);
 	});
 
@@ -247,15 +255,19 @@ describe("release-hobo publish jobs install order", () => {
 		expect(installIdx).toBeGreaterThan(fetchIdx);
 	});
 
-	it("release-oci-build-tag fetches the ts-autocode pin before install", () => {
+	it("release-oci-build-tag fetches the ts-autocode pin before ci-deps-recovery", () => {
 		const block = parseReleaseJobBlock(hoboWorkflow, "release-oci-build-tag");
 		const fetchIdx = block.indexOf("pnpm run pins:fetch ts-autocode");
-		const installIdx = block.indexOf(ROOT_PNPM_INSTALL);
+		const recoveryIdx = block.indexOf(
+			"uses: $/.github/actions/ci-deps-recovery",
+		);
 		expect(fetchIdx).toBeGreaterThan(0);
-		expect(installIdx).toBeGreaterThan(fetchIdx);
+		expect(recoveryIdx).toBeGreaterThan(fetchIdx);
 		expect(
 			block.indexOf("scripts/ci/build-release-oci-image.mts"),
-		).toBeGreaterThan(installIdx);
+		).toBeGreaterThan(recoveryIdx);
+		expect(block).not.toContain("Link deps layer or install");
+		expect(block).not.toContain(ROOT_PNPM_INSTALL);
 	});
 
 	it("materialize-release-version avoids npm deps (gate-trust or tag-ref parse)", () => {
@@ -479,7 +491,7 @@ describe("release workflow sparse-checkout sync", () => {
 		assertConeCoversPaths(
 			"release-pages",
 			cones,
-			requiredPathsForHoboReleasePages(),
+			requiredPathsForHoboReleasePages(root),
 		);
 	});
 
