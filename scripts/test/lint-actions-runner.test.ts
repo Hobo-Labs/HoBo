@@ -227,6 +227,20 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	it("allows the Agent37 merge-queue label only on the release Pages browser-wit job", () => {
+		const pages =
+			"${{ github.event_name == 'merge_group' && 'agent37' || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+		assert.equal(
+			lintRunner("release-hobo.yml", "release-pages-browser-wit-smoke", pages),
+			0,
+		);
+		assert.notEqual(lintRunner("release-hobo.yml", "release-pages", pages), 0);
+		assert.notEqual(
+			lintRunner("hobo-ci.yml", "release-pages-browser-wit-smoke", pages),
+			0,
+		);
+	});
+
 	it("rejects the same runner on another job or workflow and other hosted images", () => {
 		assert.notEqual(lintRunner("release-hobo.yml", "other", "ubuntu-24.04"), 0);
 		assert.notEqual(

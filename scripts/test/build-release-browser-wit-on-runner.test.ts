@@ -36,7 +36,9 @@ describe("release browser-wit runner smoke", () => {
 			workflow.indexOf("\n  release-pages-browser-wit-smoke:\n"),
 			workflow.indexOf("\n  # The offline proof of the release realizer path"),
 		);
-		expect(block).toMatch(/runs-on: \$\{\{ contains\(fromJSON/);
+		expect(block).toContain(
+			"runs-on: ${{ github.event_name == 'merge_group' && 'agent37' || (contains(fromJSON",
+		);
 		expect(block).toContain("'hobo'");
 		expect(block.slice(0, block.indexOf("    env:"))).toContain(
 			"timeout-minutes: 45",

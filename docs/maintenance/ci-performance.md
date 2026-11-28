@@ -191,7 +191,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   registry install. Turbo-cache input   `main-build: "true"`
   restores the newest one before the job's own caches; PR impact validation, the workspace shards,
   PR affected package lanes and both scripts-test jobs set it. A merge-queue-reused push still runs
-  this job. The release workflow's `release-pages-browser-wit-smoke` job uses the same
+  this job. The release workflow's `release-pages-browser-wit-smoke` job runs on the `agent37` label in
+  the merge queue, as the scripts tests do: on a cold `hobo-trunk` pod it held the runner about 20 minutes
+  against about 2 on an Agent37 box, and the merge queue's route jobs waited behind it. It uses the same
   `ci-deps-recovery` composite, with the job token passed as the `token` input so the GHCR
   pull is authenticated. A miss does not fail that job: the step is `continue-on-error` and
   the filtered Pages install still runs under the 45-minute limit. `dependent-tests.mts --run` first runs the plan's `build` tasks in their own turbo call at

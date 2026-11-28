@@ -230,6 +230,9 @@ const MERGE_GROUP_TRUNK_RUNS_ON =
 const MERGE_GROUP_SCRIPTS_RUNS_ON =
 	"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
 
+const MERGE_GROUP_PAGES_RUNS_ON =
+	"${{ github.event_name == 'merge_group' && 'agent37' || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
 const ROUTED_RUNS_ON =
 	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
@@ -1148,6 +1151,10 @@ function lintWorkflowYaml(
 			file === "hobo-ci.yml" &&
 			jobLine === "  scripts-tests:" &&
 			runsOn === MERGE_GROUP_SCRIPTS_RUNS_ON;
+		const mergeGroupPages =
+			file === "release-hobo.yml" &&
+			jobLine === "  release-pages-browser-wit-smoke:" &&
+			runsOn === MERGE_GROUP_PAGES_RUNS_ON;
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -1159,6 +1166,7 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			!mergeGroupScripts &&
+			!mergeGroupPages &&
 			runsOn !== RELEASE_PAGES_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
