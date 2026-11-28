@@ -273,3 +273,7 @@ provider-neutral runtime.
 The separate-process topic harness exercises paired concurrent publishes,
 consumer claims, lease expiry and compaction races at a pre-dispatch barrier.
 It does not claim to inject faults inside the SQLite transaction.
+
+The SQLite test harness can deny disclosure after a receipt read or suppress
+the read result to exercise recovery and privacy for revoked or unavailable
+receipt authority, including through the separate-process harness.
