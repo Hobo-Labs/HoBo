@@ -242,7 +242,8 @@ every shipped CLI output, and a clean consumer installed from a loopback-only
 registry. The consumer imports core by its published package name and checks
 missing-pricing denial, a supplied model with a held SQLite budget reservation,
 and denial when another reservation exceeds the budget using the staged broker
-and pricing packages. Failure removes the
+and pricing packages. It also checks the reported admission path and provider
+model coverage. Failure removes the
 manifest so a previous or incomplete run cannot
 be published. The offline acceptance disables third-party lifecycle scripts
 while repacking test dependencies; it does not replace verification of a
