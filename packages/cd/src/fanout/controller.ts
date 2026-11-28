@@ -458,11 +458,18 @@ export function createFanoutController(
 		slot: Slot,
 		ctx: CdContext,
 	): Promise<void> {
+		const mode = view.trigger.meta?.promotionRequestMode;
+		const legacyAutomaticKey = `pipeline:${view.pipeline}:${view.node}:${view.freightId}`;
+		const automatic =
+			mode === "automatic" ||
+			(mode === undefined &&
+				view.trigger.meta?.idempotencyKey === legacyAutomaticKey);
 		const result = await d.promotions.promote(
 			{
 				freightId: asFreight(view.freightId),
 				targets: [asCamp(slot.campId)],
 				idempotencyKey: campKey(view.fanoutId, slot.campId),
+				requestMode: automatic ? "automatic" : "manual",
 				pipeline: view.pipeline,
 				node: view.node,
 				// SAFETY: fan-out ids are minted by fanoutIdFor.
@@ -701,6 +708,7 @@ export function createFanoutController(
 						freightId: asFreight(view.freightId),
 						targets: [asCamp(campId)],
 						idempotencyKey: `${campKey(view.fanoutId, campId)}:depart`,
+						requestMode: "automatic",
 						pipeline: view.pipeline,
 						node: view.node,
 						intent: "depart",
@@ -940,6 +948,21 @@ export function createFanoutController(
 			),
 		);
 
+	const modeConflict = (view: FanoutView, input: FanoutStartInput) => {
+		const mode = view.trigger.meta?.promotionRequestMode;
+		return mode !== undefined && mode !== (input.requestMode ?? "manual");
+	};
+
+	const refuseModeConflict = (fanoutId: string) =>
+		refuse(
+			reason(
+				FANOUT_REASON.invalid,
+				`fan-out ${fanoutId} already uses a different request mode`,
+				"Use a new idempotency key for a different request mode.",
+				fanoutId,
+			),
+		);
+
 	const controller: FanoutController = {
 		async start(input: FanoutStartInput, ctx) {
 			const atMs = ctx.now();
@@ -984,8 +1007,10 @@ export function createFanoutController(
 				input.idempotencyKey,
 			);
 			const existing = await load(fanoutId);
-			if (existing !== undefined)
+			if (existing !== undefined) {
+				if (modeConflict(existing, input)) return refuseModeConflict(fanoutId);
 				return { ok: true, value: statusOf(existing) };
+			}
 			if (!(await d.freight.isUsable(input.freightId)))
 				return refuse(
 					reason(
@@ -1038,7 +1063,10 @@ export function createFanoutController(
 						{
 							type: CD_EVENTS.FanoutStarted,
 							data: started,
-							meta: { idempotencyKey: input.idempotencyKey },
+							meta: {
+								idempotencyKey: input.idempotencyKey,
+								promotionRequestMode: input.requestMode ?? "manual",
+							},
 						},
 					],
 					{
@@ -1050,7 +1078,10 @@ export function createFanoutController(
 			} catch (error) {
 				if (!isConflict(error)) throw error;
 				const raced = await load(fanoutId);
-				if (raced !== undefined) return { ok: true, value: statusOf(raced) };
+				if (raced !== undefined) {
+					if (modeConflict(raced, input)) return refuseModeConflict(fanoutId);
+					return { ok: true, value: statusOf(raced) };
+				}
 				throw error;
 			}
 			// Newer Freight supersedes active fan-outs on the node at their next group boundary.

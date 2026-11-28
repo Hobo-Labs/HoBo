@@ -379,6 +379,20 @@ export interface DeltaLedger {
 }
 
 // ── Pipelines and windows ──────────────────────────────────────────────────
+export type AutoPromotionHold = Readonly<{
+	pipeline: string;
+	node: string;
+	freightId: string;
+	heldAtMs: number;
+}>;
+
+export type PromoteByOriginRequest = Readonly<{
+	pipeline: string;
+	node: string;
+	origin: string;
+	idempotencyKey: string;
+}>;
+
 export interface PipelineController {
 	apply(
 		pipeline: PipelineRecord,
@@ -390,6 +404,11 @@ export interface PipelineController {
 	available(
 		input: Readonly<{ pipeline: string; node: string }>,
 	): Promise<readonly FreightAvailabilityRecord[]>;
+	autoPromotionHolds(): Promise<readonly AutoPromotionHold[]>;
+	promoteByOrigin(
+		input: PromoteByOriginRequest,
+		ctx: CdContext,
+	): Promise<Outcome<Readonly<{ freightId: string }>>>;
 	/** Evaluate availability and auto-promotion; request promotions. Safe to repeat. */
 	tick(ctx: CdContext): Promise<void>;
 }
@@ -497,6 +516,7 @@ export type PromoteRequest = Readonly<{
 	freightId: FreightId;
 	targets: readonly CampId[];
 	idempotencyKey: string;
+	requestMode?: "automatic" | "manual";
 	pipeline?: string;
 	node?: string;
 	sourceCampId?: CampId;
@@ -1091,6 +1111,7 @@ export interface FanoutController {
 			fanout: FanoutRecord;
 			departure: DepartureAction;
 			idempotencyKey: string;
+			requestMode?: "automatic" | "manual";
 		}>,
 		ctx: CdContext,
 	): Promise<Outcome<FanoutStatusRecord>>;

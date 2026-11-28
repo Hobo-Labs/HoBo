@@ -183,9 +183,12 @@ export class MemoryEventStore implements DurableEventStore {
 		type: string,
 		data: JsonValue,
 		actor: PrincipalRef = OPERATOR,
+		meta?: JsonObject,
 	): Promise<void> {
 		const stream = this.streams.get(streamId) ?? [];
-		await this.append(streamId, [{ type, data }], {
+		const event: EventInput = { type, data };
+		if (meta) event.meta = meta;
+		await this.append(streamId, [event], {
 			expectedSeq: stream.length,
 			actor,
 			tenant: TENANT,

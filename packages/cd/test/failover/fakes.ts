@@ -75,6 +75,12 @@ export class FakePipelines implements PipelineController {
 	async list() {
 		return [...this.pipelines.values()];
 	}
+	async autoPromotionHolds() {
+		return [];
+	}
+	async promoteByOrigin() {
+		return { ok: false, reasons: [] };
+	}
 	async available(): Promise<readonly FreightAvailabilityRecord[]> {
 		return [];
 	}
