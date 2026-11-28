@@ -139,7 +139,7 @@ function lintProbeWorkflow(errors: string[], text: string): void {
     types: [requested]
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review, labeled]`;
+    types: [opened, synchronize, reopened, ready_for_review]`;
 		if (!text.includes(expected))
 			errors.push(
 				`${probeFile}: probe triggers must cover ready PRs and non-PR CI runs`,
@@ -742,8 +742,12 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 	"synchronize",
 	"reopened",
 	"ready_for_review",
-	"labeled",
 ] as const;
+
+export const ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES = new Map<
+	string,
+	readonly string[]
+>([["examples-e2e.yml", ["labeled"]]]);
 
 export const CANONICAL_ENTRY_JOB_DRAFT_IF =
 	"github.event_name != 'pull_request' || github.event.pull_request.draft == false";
@@ -904,6 +908,24 @@ function lintPullRequestDraftPolicy(
 		if (!effective.includes(required)) {
 			errors.push(
 				`${file}: pull_request.types must include ${required} (have: ${effective.join(", ")})`,
+			);
+		}
+	}
+	if (types.length > 0) {
+		const canonical = [...REQUIRED_PULL_REQUEST_TYPES];
+		const allowed = new Set<string>([
+			...canonical,
+			...(ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES.get(file) ?? []),
+		]);
+		const extra = effective.filter((type) => !allowed.has(type));
+		const missing = canonical.filter((type) => !effective.includes(type));
+		if (extra.length > 0 || missing.length > 0) {
+			const allowedLabel = [
+				...canonical,
+				...(ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES.get(file) ?? []),
+			].join(", ");
+			errors.push(
+				`${file}: pull_request.types must match ${allowedLabel} (have: ${effective.join(", ")})`,
 			);
 		}
 	}

@@ -255,7 +255,7 @@ test("only the reviewed manual HoBo acceptance recipe is enabled", async () => {
 	assert.match(result.stdout, /1 enabled workflow/);
 });
 const pullRequestTrigger = `  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
 `;
 const routeWithDraftGate = `  route:
     if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}

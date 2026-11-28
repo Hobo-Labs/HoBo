@@ -19,7 +19,7 @@ name: Actions lock
 # locked pin that stopped verifying upstream, which no file change in the PR shows.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   push:
     branches: [main]
