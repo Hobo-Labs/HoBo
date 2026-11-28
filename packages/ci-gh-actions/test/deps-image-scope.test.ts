@@ -136,9 +136,9 @@ describe("CI deps image push scope", () => {
 		);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.if).toContain(
-			"contains(fromJSON('[\"success\",\"failure\"]'), github.event.workflow_run.conclusion)",
+			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);
-		expect(job.if).not.toContain("cancelled\"");
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.steps[0].with.ref).toContain(
 			"github.event.workflow_run.head_sha",
 		);
@@ -178,9 +178,9 @@ describe("CI deps image push scope", () => {
 		// push, and release jobs on ARC pull the worker from GHCR.
 		const job = publisher.jobs["runner-image"];
 		expect(job.if).toContain(
-			"contains(fromJSON('[\"success\",\"failure\"]'), github.event.workflow_run.conclusion)",
+			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);
-		expect(job.if).not.toContain("cancelled\"");
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.concurrency["cancel-in-progress"]).toBe(false);
 		expect(job["runs-on"]).toBe(publisher.jobs.publish["runs-on"]);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
