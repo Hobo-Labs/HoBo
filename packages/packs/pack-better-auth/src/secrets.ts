@@ -23,6 +23,12 @@ const MIN_SIGNING_SECRET_LENGTH = 32;
 const CANONICAL_UTC_INSTANT =
 	/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/u;
 
+function isCanonicalUtcInstant(value: string): boolean {
+	if (!CANONICAL_UTC_INSTANT.test(value)) return false;
+	const parsed = new Date(value);
+	return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
+}
+
 function wireRecordContainsMaterial(
 	wire: BetterAuthSigningSecretWire,
 	material: string,
@@ -92,7 +98,7 @@ export async function wireBetterAuthSigningSecret(
 			"bind a SecretsPort whose id is a non-empty identifier",
 		);
 	}
-	if (options.now !== undefined && !CANONICAL_UTC_INSTANT.test(options.now)) {
+	if (options.now !== undefined && !isCanonicalUtcInstant(options.now)) {
 		refuse(
 			"BETTER_AUTH_BUNDLE_PORT_INVALID",
 			"signing secret wire timestamp is not a canonical UTC instant",
