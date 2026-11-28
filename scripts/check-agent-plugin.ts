@@ -1602,12 +1602,26 @@ function resolvedPrBranchTip(sources: PrBranchTipSources): string | undefined {
 	);
 }
 
+function squashedMergeGroupCheckout(
+	eventName: string | undefined,
+	sources: PrBranchTipSources,
+): boolean {
+	return (
+		eventName === "merge_group" &&
+		sources.headSecondParent === undefined &&
+		sources.githubSecondParent === undefined &&
+		sources.eventPayload === undefined &&
+		(sources.explicitRaw === undefined || sources.explicitRaw.length === 0)
+	);
+}
+
 export function githubHeadShaMismatchIssues(
 	repoRoot: string,
 ): readonly AgentPluginIssue[] {
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
 	if (eventName !== "pull_request" && eventName !== "merge_group") return [];
 	const sources = prBranchTipSources(repoRoot);
+	if (squashedMergeGroupCheckout(eventName, sources)) return [];
 	const issue = (message: string): AgentPluginIssue[] => [
 		{ file: "plugin.json", message },
 	];

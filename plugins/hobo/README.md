@@ -13,9 +13,12 @@ entry per schema file; not the gitignored `plugins/hobo/fixtures/` deploy output
 (`version.json` + Nerdbank.GitVersioning): `0.0.0-alpha.<height>`. The gate
 measures the height at the commit being reviewed — the PR branch tip
 (`HEAD^2` of the `pull_request` / `merge_group` checkout; `GITHUB_HEAD_SHA`
-counts only when it matches that tip). If `HEAD^2` cannot be resolved on a PR or
-merge-group event, the gate refuses version measurement instead of trusting
-`GITHUB_HEAD_SHA` alone — never at the synthetic merge ref, whose
+counts only when it matches that tip). A merge-group checkout that the queue
+squashed into a single-parent commit has no branch tip and no `GITHUB_HEAD_SHA`;
+the gate measures that commit itself, because it is the commit that lands. If
+`HEAD^2` cannot be resolved on a PR event, or a merge-group event supplies a tip
+source that cannot be verified, the gate refuses version measurement instead of
+trusting `GITHUB_HEAD_SHA` alone — never at the synthetic merge ref, whose
 base-branch commits would
 inflate the height past the value the branch pinned. Locally, a staged
 `plugin.json` raises the expected height by one to account for the commit that

@@ -11,7 +11,8 @@ from `version.json` (`versionHeightOffset` included) and nbgv: a height that is
 stale, ahead, or otherwise differs fails on every event path. On pull-request
 CI the gate verifies the branch tip from `HEAD^2`, `GITHUB_SHA^2`, the GitHub
 event payload, and `GITHUB_HEAD_SHA`; disagreeing or unverifiable sources fail
-closed. Shallow checkouts fail closed because nbgv height needs full history.
+closed. A squashed single-parent merge-group commit is measured at `HEAD`, the
+commit that lands. Shallow checkouts fail closed because nbgv height needs full history.
 During a staged commit the gate validates the staged `plugin.json` blob and
 expects the next height. Version computation failures fail closed;
 `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` is an explicit local-only skip. The

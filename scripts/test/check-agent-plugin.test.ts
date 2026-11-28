@@ -1979,11 +1979,26 @@ describe("release-train version pin commit selection", () => {
 		git(root, "commit", "-q", "-m", "only commit");
 		stubCiEnvironment("merge_group");
 		expect(versionPinCommitIsh(root)).toBe("HEAD");
+		expect(githubHeadShaMismatchIssues(root)).toEqual([]);
+		stubCiEnvironment("pull_request");
 		expect(githubHeadShaMismatchIssues(root)).toEqual([
 			expect.objectContaining({
 				message:
 					"cannot resolve the PR branch tip from HEAD^2, GITHUB_SHA^2, the event payload, or GITHUB_HEAD_SHA; refuse version measurement",
 			}),
+		]);
+	});
+
+	it("measures a squashed merge-group commit at HEAD, the commit that lands", async () => {
+		const { repoRoot: root } = await scratchMergeRepo();
+		git(root, "checkout", "-q", "pr");
+		stubCiEnvironment("merge_group");
+		const recorder = recordingNbgv("5");
+		expect(releaseTrainSemverForPluginCheck(root, recorder.nbgv)).toBe(
+			"0.0.0-alpha.8",
+		);
+		expect(recorder.calls).toEqual([
+			{ variable: "VersionHeight", commitIsh: "HEAD" },
 		]);
 	});
 
