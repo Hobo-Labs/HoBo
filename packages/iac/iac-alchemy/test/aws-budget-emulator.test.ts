@@ -327,6 +327,13 @@ function fixture(
 		},
 		definition.pipe(
 			Effect.map((mapped) => {
+				if (resource === "notify") {
+					const topic = mapped.primary.objects;
+					if (!topic || topic.Type !== Topic.Type)
+						throw new Error("mapped SNS topic missing");
+					// SAFETY: the mapped resource type was checked above.
+					return { topicArn: (topic as Topic).topicArn };
+				}
 				if (resource !== "crypto") return {};
 				const key = mapped.primary.objects;
 				if (!key || key.Type !== Key.Type)
@@ -969,6 +976,11 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 				const [topicName] = f.createdTopics();
 				if (!topicName || f.createdTopics().length !== 1)
 					throw Error("admitted topic missing");
+				const topicArn = result.outputs.topicArn;
+				if (!topicArn) throw Error("admitted topic ARN missing");
+				expect(topicArn).toBe(
+					`arn:aws:sns:us-east-1:000000000000:${topicName}`,
+				);
 				const publisher = createAwsNotificationPublisher({
 					grant: {
 						topicName,
@@ -1002,7 +1014,7 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 				const app = defineAwsHttpSource({
 					bindle: withAwsSnsNotification(appDefinition, { objects: true }),
 					applicationName: "web",
-					environment: { HOBO_RESOURCE_0: topicName },
+					environment: { HOBO_RESOURCE_0: topicArn },
 					resolveStores: () => ({ objects: publisher }),
 					verifyBinding: (claim) =>
 						claim.kind === "notify" && claim.grant.topicName === topicName,
