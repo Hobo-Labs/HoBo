@@ -828,7 +828,7 @@ An existing copy of the same package may be supplied with
 The pricing workflow uses HoBo's routed CI runner for the simulator job, with
 the same hosted fallback as the other pricing checks and a 40-minute job limit.
 The bounded-model job has a 60-minute overall limit; individual model-checking
-processes retain their own limits.
+processes retain their own limits, and the CI timeout guard enforces this cap.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 

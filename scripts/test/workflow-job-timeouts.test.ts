@@ -55,6 +55,13 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 			why: "Alchemy AWS simulator: a self-hosted runner without a shared pnpm store spends most of a 20-minute cap downloading the workspace, then the job is cancelled during the simulator build before test:aws-emulator runs. Warm runners still finish in a few minutes; 40 covers one cold install plus that build and the emulator lane",
 		},
 	],
+	[
+		"pricing-ci.yml:pricing-models",
+		{
+			minutes: 60,
+			why: "The bounded IaC model suite runs many individually bounded model and mutation checks; two runs exhausted 20 minutes while still progressing on busy runners",
+		},
+	],
 ]);
 
 function jobBlocks(text: string): { id: string; block: string }[] {
@@ -196,6 +203,16 @@ describe("GitHub Actions job timeouts", () => {
 				),
 			/exceeds its documented 45/,
 		);
+	});
+
+	it("bounds the pricing model suite and preserves the default limit", () => {
+		const workflow = readFileSync(join(workflowDir, "pricing-ci.yml"), "utf8");
+		const job = jobBlocks(workflow).find(({ id }) => id === "pricing-models");
+		assert.ok(job, "missing pricing model job");
+		assert.equal(jobTimeoutLine(job.block), "60");
+		assert.doesNotThrow(() => assertJobTimeout("pricing-ci.yml", job.id, "60"));
+		assert.throws(() => assertJobTimeout("pricing-ci.yml", job.id, "61"));
+		assert.throws(() => assertJobTimeout("pricing-ci.yml", "pricing", "21"));
 	});
 
 	for (const file of files) {
