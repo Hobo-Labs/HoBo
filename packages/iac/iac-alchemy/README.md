@@ -896,12 +896,9 @@ broker wire (synthetic signing material only; no live Worker/D1 deploy).
 On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator`
 runs the mapped AWS resources and budget-routing scenarios against both the
 Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
-and verifies a pinned official package, starts an isolated loopback-only
-container, and removes it afterward. It bind-mounts the unpacked binary when
-the Docker daemon can see that path. A job container's `/tmp` is often a
-private tmpfs, and an Actions runner's daemon may be in another mount
-namespace, so the runner probes host-visible work directories and, when none
-of those paths are visible, copies the binary into a private image instead.
+and verifies a pinned official package, copies its binary into a temporary
+private image, and starts an isolated loopback-only container. The runner
+removes the container and image afterward.
 An existing copy of the same package may be supplied with
 `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The pricing workflow uses HoBo's routed CI runner for the simulator job, with
