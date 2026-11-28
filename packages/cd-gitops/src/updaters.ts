@@ -35,6 +35,12 @@ interface MutableJsonDocument {
 	[key: string]: JsonValue;
 }
 
+const FORBIDDEN_KEY_SEGMENTS = new Set([
+	"__proto__",
+	"constructor",
+	"prototype",
+]);
+
 function validateKeyPath(keyPath: readonly string[], kind: string): void {
 	if (keyPath.length === 0) {
 		throw new GitopsError(
@@ -43,7 +49,11 @@ function validateKeyPath(keyPath: readonly string[], kind: string): void {
 		);
 	}
 	for (const segment of keyPath) {
-		if (segment.trim() === "" || /[\r\n]/u.test(segment)) {
+		if (
+			segment.trim() === "" ||
+			/[\r\n]/u.test(segment) ||
+			FORBIDDEN_KEY_SEGMENTS.has(segment)
+		) {
 			throw new GitopsError(
 				"gitops-config-invalid",
 				`${kind} update contains an invalid keyPath segment`,
@@ -55,7 +65,7 @@ function validateKeyPath(keyPath: readonly string[], kind: string): void {
 function cloneJsonObject(obj: JsonObject): MutableJsonDocument {
 	const out: MutableJsonDocument = {};
 	for (const [key, val] of Object.entries(obj)) {
-		if (val !== undefined) out[key] = val;
+		if (val !== undefined && !FORBIDDEN_KEY_SEGMENTS.has(key)) out[key] = val;
 	}
 	return out;
 }
@@ -91,7 +101,9 @@ export function applyJsonPathUpdate(
 	for (let i = 0; i < keyPath.length - 1; i += 1) {
 		const segment = keyPath[i];
 		if (segment === undefined) continue;
-		const existing = cursor[segment];
+		const existing = Object.hasOwn(cursor, segment)
+			? cursor[segment]
+			: undefined;
 		if (existing === undefined) {
 			const created: MutableJsonDocument = {};
 			cursor[segment] = created;

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import * as DomainRivet from "@alchemy.run/domain/Rivet";
 import type { PoolHost } from "@alchemy.run/rivet/Host";
 import type { JsonValue } from "@hobo/core";
@@ -271,6 +272,16 @@ export function createAuthSessionCoordinatorRegistry(
 				);
 				const existing = existingRows[0];
 				if (existing !== undefined) {
+					if (
+						existing.workspace_id !== input.workspaceId ||
+						existing.principal_id !== input.principalId ||
+						existing.handle_digest !== input.handleDigest ||
+						existing.signing_key_fingerprint !== input.signingKeyFingerprint
+					) {
+						throw new Error(
+							`session ${input.sessionId} already registered with conflicting identity`,
+						);
+					}
 					return toSessionRecord(existing);
 				}
 
@@ -334,7 +345,7 @@ export function createAuthSessionCoordinatorRegistry(
 					return {
 						resumed: false,
 						reason: `session-${record.status}`,
-						session: record,
+						session: null,
 					};
 				}
 				const nowMs = Date.now();
@@ -355,14 +366,19 @@ export function createAuthSessionCoordinatorRegistry(
 					return {
 						resumed: false,
 						reason: "session-expired",
-						session: expired,
+						session: null,
 					};
 				}
-				if (record.signingKeyFingerprint !== input.signingKeyFingerprint) {
+				const expectedFp = Buffer.from(record.signingKeyFingerprint, "utf8");
+				const providedFp = Buffer.from(input.signingKeyFingerprint, "utf8");
+				if (
+					expectedFp.length !== providedFp.length ||
+					!timingSafeEqual(expectedFp, providedFp)
+				) {
 					return {
 						resumed: false,
 						reason: "signing-key-fingerprint-mismatch",
-						session: record,
+						session: null,
 					};
 				}
 				const knownBox = record.observedBoxes.includes(input.boxId);
@@ -370,7 +386,7 @@ export function createAuthSessionCoordinatorRegistry(
 					return {
 						resumed: false,
 						reason: "cross-box-disallowed",
-						session: record,
+						session: null,
 					};
 				}
 				const nextBoxes = knownBox

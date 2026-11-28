@@ -68,9 +68,9 @@ export function argoVerdict(app: JsonObject, revision: string): EngineVerdict {
 	const applied = str(get(app, "status", "sync", "revision"));
 	const health = str(get(app, "status", "health", "status"));
 	const phase = str(get(app, "status", "operationState", "phase"));
-	const opRevision = str(
-		get(app, "status", "operationState", "syncResult", "revision"),
-	);
+	const opRevision =
+		str(get(app, "status", "operationState", "syncResult", "revision")) ||
+		str(get(app, "status", "operationState", "operation", "sync", "revision"));
 	const outOfSyncResources = extractArgoOutOfSyncResources(app);
 	const resourceDiff =
 		outOfSyncResources !== undefined
@@ -435,7 +435,9 @@ export async function observeArgoApplicationsBySelector(
 	} catch (error) {
 		if (
 			error instanceof GitopsError &&
-			error.code === "gitops-credential-missing"
+			(error.code === "gitops-credential-missing" ||
+				error.code === "gitops-host-auth-failed" ||
+				error.code === "gitops-config-invalid")
 		)
 			throw error;
 		return unobservableVerdict(

@@ -321,7 +321,7 @@ The model does not prove provider revocation or credential-vault behavior.
 - Saga & Policies: `BootstrapAuthWorkspace` verifies `owner://` signing-key locators and Better Auth migrations, failing closed with vault-cache invalidation compensation on failure; `StartBootstrapPolicy` and `SessionRevocationPolicy` react to issuer configuration, signing-key rotation, and session revocation.
 - Security boundaries: `CurrentAuthActor` (`Domain.RequestContext`), `AuthSessionMiddleware` (`RpcMiddleware.Service`), `WorkspaceOnboardingView`, and `ActiveSessionView` enforce owner isolation without storing raw secrets in domain state or events.
 
-`@hobo/identity/host` runs the exact same model on `Domain.InMemory` (`createAuthOnboardingInMemoryLayer`), `@hobo/storage-sqlite` (`createAuthOnboardingSqliteLayer`), or `@alchemy.run/domain/Rivet` (`createAuthOnboardingRivetLayer`), plus a RivetKit SQLite cross-box session coordinator actor (`createAuthSessionCoordinatorRegistry`) and HMAC-signed request-context middleware (`createSignedAuthSessionMiddlewareLayer`).
+`@hobo/identity/host` runs the exact same model on `Domain.InMemory` (`createAuthOnboardingInMemoryLayer`), `@hobo/storage-sqlite` (`createAuthOnboardingSqliteLayer`), or `@alchemy.run/domain/Rivet` (`createAuthOnboardingRivetLayer`), plus a RivetKit SQLite cross-box session coordinator actor (`createAuthSessionCoordinatorRegistry`, comparing signing-key fingerprints in constant time and returning `session: null` on rejected resumes) and TTL-bounded, domain-separated HMAC request-context middleware (`createSignedAuthSessionMiddlewareLayer`, refusing `System` actor elevation over HTTP).
 
 ## Verification
 

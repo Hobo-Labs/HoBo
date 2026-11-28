@@ -365,13 +365,15 @@ export const ExecuteCdDeliveryFlowLive = ExecuteCdDeliveryFlow.toLayer(
 					? yield* DurableDeferred.await(ConvergenceObservedSignal)
 					: initialConvergence.success.observation;
 
-			if (finalConvergence._tag !== "Converged") {
-				yield* rollbackAndNotifyStage(
-					targetRevision,
-					NonEmptyReason.make(
-						`pull-convergence-degraded:${finalConvergence.summary}`,
-					),
-				);
+			if (
+				finalConvergence._tag !== "Converged" ||
+				finalConvergence.appliedRevision !== targetRevision
+			) {
+				const reason =
+					finalConvergence._tag !== "Converged"
+						? `pull-convergence-degraded:${finalConvergence.summary}`
+						: `pull-convergence-revision-mismatch:expected=${targetRevision},applied=${finalConvergence.appliedRevision}`;
+				yield* rollbackAndNotifyStage(targetRevision, NonEmptyReason.make(reason));
 				return;
 			}
 

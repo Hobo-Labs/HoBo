@@ -31,16 +31,34 @@ export type BetterAuthIssuerPortService = Layer.Success<
 	ReturnType<typeof BetterAuthIssuerPort.toLayer>
 >;
 
-const AuthActorJsonCodec = Schema.fromJsonString(AuthActor);
-const encodeAuthActorJson = Schema.encodeUnknownSync(AuthActorJsonCodec);
-const decodeAuthActorJsonOption =
-	Schema.decodeUnknownOption(AuthActorJsonCodec);
+const ACTOR_PROOF_DOMAIN = "hobo-auth-actor-proof:v1:";
+const DEFAULT_ACTOR_PROOF_TTL_MS = 15 * 60 * 1000;
+const MIN_SIGNING_KEY_LENGTH = 16;
 
-function computeProofMac(
-	payloadB64: string,
+const SignedAuthActorEnvelope = Schema.Struct({
+	actor: AuthActor,
+	exp: Schema.Int,
+});
+const SignedAuthActorEnvelopeJsonCodec = Schema.fromJsonString(
+	SignedAuthActorEnvelope,
+);
+const encodeSignedAuthActorEnvelope = Schema.encodeUnknownSync(
+	SignedAuthActorEnvelopeJsonCodec,
+);
+const decodeSignedAuthActorEnvelopeOption = Schema.decodeUnknownOption(
+	SignedAuthActorEnvelopeJsonCodec,
+);
+
+function requireValidSigningKey(
 	signingKey: Redacted.Redacted<string>,
-): string {
-	return createHmac("sha256", Redacted.value(signingKey))
+): string | null {
+	const raw = Redacted.value(signingKey);
+	return raw.length >= MIN_SIGNING_KEY_LENGTH ? raw : null;
+}
+
+function computeProofMac(payloadB64: string, keyValue: string): string {
+	return createHmac("sha256", keyValue)
+		.update(ACTOR_PROOF_DOMAIN)
 		.update(payloadB64)
 		.digest("base64url");
 }
@@ -48,30 +66,51 @@ function computeProofMac(
 export function signAuthActorProof(
 	actorValue: AuthActor,
 	signingKey: Redacted.Redacted<string>,
+	options?: Readonly<{ nowMs?: number; ttlMs?: number }>,
 ): string {
-	const encoded = Buffer.from(encodeAuthActorJson(actorValue), "utf8").toString(
-		"base64url",
-	);
-	const mac = computeProofMac(encoded, signingKey);
+	if (actorValue._tag === "System") {
+		throw new Error("System actor cannot be signed as an HTTP proof");
+	}
+	const keyValue = requireValidSigningKey(signingKey);
+	if (keyValue === null) {
+		throw new Error(
+			`signing key must be at least ${MIN_SIGNING_KEY_LENGTH} characters`,
+		);
+	}
+	const nowMs = options?.nowMs ?? Date.now();
+	const ttlMs = Math.max(1_000, options?.ttlMs ?? DEFAULT_ACTOR_PROOF_TTL_MS);
+	const encoded = Buffer.from(
+		encodeSignedAuthActorEnvelope({ actor: actorValue, exp: nowMs + ttlMs }),
+		"utf8",
+	).toString("base64url");
+	const mac = computeProofMac(encoded, keyValue);
 	return `${encoded}.${mac}`;
 }
 
 export function verifyAuthActorProof(
 	rawHeader: string,
 	signingKey: Redacted.Redacted<string>,
+	options?: Readonly<{ nowMs?: number }>,
 ): Option.Option<AuthActor> {
+	const keyValue = requireValidSigningKey(signingKey);
+	if (keyValue === null) return Option.none();
 	const parts = rawHeader.split(".");
 	if (parts.length !== 2) return Option.none();
 	const [payloadB64, providedMac] = parts;
 	if (!payloadB64 || !providedMac) return Option.none();
-	const expectedMac = computeProofMac(payloadB64, signingKey);
+	const expectedMac = computeProofMac(payloadB64, keyValue);
 	const left = Buffer.from(providedMac, "utf8");
 	const right = Buffer.from(expectedMac, "utf8");
 	if (left.length !== right.length || !timingSafeEqual(left, right)) {
 		return Option.none();
 	}
 	const decodedJson = Buffer.from(payloadB64, "base64url").toString("utf8");
-	return decodeAuthActorJsonOption(decodedJson);
+	const envelope = decodeSignedAuthActorEnvelopeOption(decodedJson);
+	if (Option.isNone(envelope)) return Option.none();
+	const nowMs = options?.nowMs ?? Date.now();
+	if (envelope.value.exp <= nowMs) return Option.none();
+	if (envelope.value.actor._tag === "System") return Option.none();
+	return Option.some(envelope.value.actor);
 }
 
 export function createSignedAuthSessionMiddlewareLayer(

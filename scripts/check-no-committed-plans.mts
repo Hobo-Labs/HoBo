@@ -53,13 +53,17 @@ function git(args: readonly string[]): string {
 export type CommittedPlan = Readonly<{ file: string; reason: string }>;
 
 export function committedPlans(staged: boolean): CommittedPlan[] {
-	const files = git(
-		staged
-			? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]
-			: ["ls-files", "-z"],
-	)
-		.split("\0")
-		.filter(Boolean);
+	const files = Array.from(
+		new Set(
+			git(
+				staged
+					? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]
+					: ["ls-files", "-z"],
+			)
+				.split("\0")
+				.filter(Boolean),
+		),
+	);
 	const deleted = staged
 		? new Set<string>()
 		: new Set(git(["ls-files", "--deleted", "-z"]).split("\0").filter(Boolean));
@@ -68,7 +72,7 @@ export function committedPlans(staged: boolean): CommittedPlan[] {
 		.flatMap((file) => {
 			const reason = planReason(file, () =>
 				staged || !existsSync(file)
-					? git(["show", `:${file}`])
+					? git(["show", `:./${file}`])
 					: readFileSync(file, "utf8"),
 			);
 			return reason === undefined ? [] : [{ file, reason }];

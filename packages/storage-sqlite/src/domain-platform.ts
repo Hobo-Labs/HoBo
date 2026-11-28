@@ -476,12 +476,6 @@ export function createSqliteDomainPlatform(
 						Effect.ensuring(
 							Effect.sync(() => {
 								drainingDeliveries = false;
-								while (pendingDeliveries.length > 0) {
-									const leftover = pendingDeliveries.shift();
-									if (leftover?.outboxId !== undefined) {
-										inFlightOutboxIds.delete(leftover.outboxId);
-									}
-								}
 							}),
 						),
 					);
@@ -577,12 +571,12 @@ export function createSqliteDomainPlatform(
 							) =>
 								Effect.gen(function* () {
 									if (!outboxBootDrained) {
-										outboxBootDrained = true;
 										yield* outbox.drainPending(
 											modelName,
 											(delivery) => kit.deliver(delivery),
 											inFlightOutboxIds,
 										);
+										outboxBootDrained = true;
 									}
 									let ownedOutboxIds: ReadonlyArray<number> = [];
 									let handedOff = false;
