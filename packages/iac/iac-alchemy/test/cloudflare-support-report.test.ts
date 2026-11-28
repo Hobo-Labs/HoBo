@@ -54,3 +54,18 @@ it("writes Cloudflare support rows as dense own data", () => {
 	expect(calls).toBe(0);
 	expect(Object.getOwnPropertyDescriptor(report, "0")?.value.kind).toBe("web");
 });
+
+it("reports HTTP UI support without claiming render or drive", () => {
+	const [row] = describeCloudflarePrimitiveSupport([
+		{ factory: "ui", allowVerbs: ["render", "drive"] },
+	]);
+	expect(row).toMatchObject({
+		status: "partial",
+		resourceTypes: ["Cloudflare.Worker"],
+		supportedOperations: [],
+		unsupportedOperations: ["render", "drive"],
+	});
+	expect(row?.reason).toContain(
+		"render and drive operations are not implemented",
+	);
+});

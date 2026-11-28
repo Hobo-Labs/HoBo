@@ -1343,3 +1343,9 @@ applications cannot grant `render` or `drive`. It considers two resource names
 with arbitrary kinds, a web or UI app, and one requested UI operation; it assumes
 snapshots and saved operations are faithful, and
 does not prove the TypeScript implementation or host fencing.
+
+Cloudflare Workers can serve HTTP UI kits with selected HTTP dependencies. UI
+`render` and `drive` operations remain unsupported and cannot be granted. The
+bounded `HttpUiMapping` model checks source attestation, disabled replay and one
+requested UI operation for AWS, Rivet and Cloudflare. It assumes the mapper's
+admission predicates and does not prove the implementations or providers.

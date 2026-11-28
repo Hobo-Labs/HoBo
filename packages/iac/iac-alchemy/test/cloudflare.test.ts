@@ -32,6 +32,7 @@ import {
 } from "../src/cloudflare.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { application } from "./fixtures/cloudflare-app.js";
+import { uiApplication } from "./fixtures/cloudflare-ui.js";
 import worker from "./fixtures/cloudflare-worker.js";
 import {
 	routeFixture,
@@ -60,6 +61,56 @@ const sourceFence = {
 };
 
 describe("real Alchemy Cloudflare mappings", () => {
+	it("maps an HTTP UI to a Worker and refuses UI-specific operations", async () => {
+		const path = fileURLToPath(
+			new URL("./fixtures/cloudflare-ui.ts", import.meta.url),
+		);
+		const mappers = cloudflareBindleMappers({
+			workerModules: { panel: path },
+			sourceFence,
+		});
+		const options = {
+			assessRequirements: () => ({ status: "supported" as const }),
+		};
+		const stub = Provider.succeed(Worker, {
+			reconcile: () => Effect.succeed({ id: "ui" }),
+			delete: () => Effect.void,
+		});
+		const providers = Layer.effect(
+			Providers,
+			Provider.collection([Worker]),
+		).pipe(Layer.provide(stub));
+		const mapping = await Effect.runPromise(
+			Effect.provide(
+				mapBindleToAlchemy(uiApplication, mappers, options),
+				providers,
+			).pipe(
+				Effect.provideService(StackContext, {
+					name: "Test",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+			),
+		);
+		expect(mapping.primary.panel?.Type).toBe("Cloudflare.Worker");
+		for (const operation of ["render", "drive"]) {
+			const app = {
+				...uiApplication,
+				resources: {
+					panel: {
+						...uiApplication.resources.panel,
+						declaredAllow: [operation],
+					},
+				},
+			};
+			expect(() => mapBindleToAlchemy(app, mappers, options)).toThrow(
+				`does not support operation ${operation}`,
+			);
+		}
+	});
+
 	it.each([
 		"app",
 		"dependency",

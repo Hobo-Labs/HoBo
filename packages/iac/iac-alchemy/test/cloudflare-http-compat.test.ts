@@ -8,6 +8,21 @@ import {
 	cloudflareRequestBodyUsed,
 	cloudflareResponseHeader,
 } from "../src/cloudflare-web-options.js";
+import { uiApplication } from "./fixtures/cloudflare-ui.js";
+
+it("refuses unsupported UI grants before serving HTTP", () => {
+	for (const operation of ["render", "drive"]) {
+		const app = {
+			...uiApplication,
+			resources: {
+				panel: { ...uiApplication.resources.panel, declaredAllow: [operation] },
+			},
+		};
+		expect(() => bindleCloudflareWorker(app, "panel")).toThrow(
+			"UI render and drive operations are unsupported",
+		);
+	}
+});
 
 function workerFor(entrypoint: CloudflareBindleEntrypoint) {
 	return bindleCloudflareWorker(
