@@ -484,6 +484,8 @@ describe("affected release OCI images", () => {
 			"scripts/ci/sdk-package-list.mts",
 			"scripts/ci/verify-cli-sdk-artifacts.mts",
 			"scripts/ci/cli-sdk-acceptance-child.mts",
+			"scripts/ci/financial-sdk-acceptance-child.mts",
+			"scripts/ci/fixtures/financial-sdk-scenario.json",
 			"scripts/ci/bundle-cli-sdk.mts",
 			"scripts/ci/bundle-cli-declarations.mts",
 			"scripts/ci/run-cli-sdk-bundle.mts",

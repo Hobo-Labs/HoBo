@@ -65,6 +65,8 @@ const EXTRA_INPUTS = new Map<string, readonly string[]>([
 			"scripts/ci/sdk-package-list.mts",
 			"scripts/ci/verify-cli-sdk-artifacts.mts",
 			"scripts/ci/cli-sdk-acceptance-child.mts",
+			"scripts/ci/financial-sdk-acceptance-child.mts",
+			"scripts/ci/fixtures/financial-sdk-scenario.json",
 			"scripts/ci/bundle-sqlite-sdk.mts",
 			"scripts/ci/vendor-runtime-grounding.mts",
 			"scripts/ci/bundle-cli-sdk.mts",
