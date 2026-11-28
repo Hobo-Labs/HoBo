@@ -23,6 +23,17 @@ const supportRegexExec = RegExp.prototype.exec;
 const SupportSet = Set;
 const supportSetHas = SupportSet.prototype.has;
 const supportSetAdd = SupportSet.prototype.add;
+const supportSetDelete = SupportSet.prototype.delete;
+const supportArrayPrototype = Array.prototype;
+const supportArrayPush = Array.prototype.push;
+const supportArraySome = Array.prototype.some;
+const supportKeys = Object.keys;
+const supportDescriptors = Object.getOwnPropertyDescriptors;
+const supportSymbols = Object.getOwnPropertySymbols;
+const supportFinite = Number.isFinite;
+const supportNumber = Number;
+const supportControlPattern = /[\p{Cc}]/u;
+const supportIndexPattern = /^(0|[1-9][0-9]*)$/u;
 const applyEntrypoint = Reflect.apply;
 const hasOwnDescriptor = Object.hasOwn;
 const isProxy = types.isProxy;
@@ -351,8 +362,8 @@ function validName(value: unknown): value is string {
 		typeof value === "string" &&
 		value.length > 0 &&
 		value.length <= 200 &&
-		value.trim() === value &&
-		!/[\p{Cc}]/u.test(value)
+		supportApply(supportTrim, value, []) === value &&
+		supportApply(supportRegexExec, supportControlPattern, [value]) === null
 	);
 }
 
@@ -368,14 +379,14 @@ function dataRecord(value: unknown): value is Record<string, unknown> {
 
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: bindle declarations are external data and are checked before they are copied. */
 export function snapshotData<T>(input: T): T {
-	const ancestors = new Set<object>();
+	const ancestors = new SupportSet<object>();
 	let remaining = 16_384;
 	let characters = 0;
 	function copy(value: unknown, depth: number): unknown {
 		if (--remaining < 0 || depth > 32) throw new Error("data exceeds limits");
 		if (value === null || typeof value === "boolean") return value;
 		if (typeof value === "number") {
-			if (!Number.isFinite(value)) throw new Error("invalid number");
+			if (!supportFinite(value)) throw new Error("invalid number");
 			return value;
 		}
 		if (typeof value === "string") {
@@ -384,31 +395,39 @@ export function snapshotData<T>(input: T): T {
 				throw new Error("data exceeds string limits");
 			return value;
 		}
-		if (typeof value !== "object" || isProxy(value) || ancestors.has(value))
-			throw new Error("data is not an acyclic data value");
-		const proto = Object.getPrototypeOf(value);
 		if (
-			(!Array.isArray(value) && proto !== Object.prototype && proto !== null) ||
-			(Array.isArray(value) && proto !== Array.prototype) ||
-			Object.getOwnPropertySymbols(value).length !== 0
+			typeof value !== "object" ||
+			isProxy(value) ||
+			supportApply(supportSetHas, ancestors, [value])
+		)
+			throw new Error("data is not an acyclic data value");
+		const proto = supportGetPrototype(value);
+		if (
+			(!supportIsArray(value) &&
+				proto !== supportObjectPrototype &&
+				proto !== null) ||
+			(supportIsArray(value) && proto !== supportArrayPrototype) ||
+			supportSymbols(value).length !== 0
 		)
 			throw new Error("data has unsupported properties");
-		ancestors.add(value);
+		supportApply(supportSetAdd, ancestors, [value]);
 		try {
-			const properties = Object.getOwnPropertyDescriptors(value);
-			if (Array.isArray(value)) {
+			const properties = supportDescriptors(value);
+			if (supportIsArray(value)) {
 				if (
 					value.length > 1024 ||
-					Object.keys(properties).some(
-						(key) =>
+					supportApply(supportArraySome, supportKeys(properties), [
+						(key: string) =>
 							key !== "length" &&
-							(!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length),
-					)
+							(supportApply(supportRegexExec, supportIndexPattern, [key]) ===
+								null ||
+								supportNumber(key) >= value.length),
+					])
 				)
 					throw new Error("array is not bounded data");
 				const result: unknown[] = [];
 				for (let index = 0; index < value.length; index++) {
-					const key = String(index);
+					const key = supportString(index);
 					const item = hasOwnDescriptor(properties, key)
 						? properties[key]
 						: undefined;
@@ -418,14 +437,16 @@ export function snapshotData<T>(input: T): T {
 						!item.enumerable
 					)
 						throw new Error("array contains a hole or accessor");
-					result.push(copy(item.value, depth + 1));
+					supportApply(supportArrayPush, result, [copy(item.value, depth + 1)]);
 				}
-				return Object.freeze(result);
+				return supportFreeze(result);
 			}
-			const keys = Object.keys(properties);
+			const keys = supportKeys(properties);
 			if (keys.length > 256) throw new Error("object exceeds limits");
-			const result: Record<string, unknown> = Object.create(proto);
-			for (const key of keys) {
+			const result: Record<string, unknown> = supportCreate(proto);
+			for (let index = 0; index < keys.length; index++) {
+				const key = keys[index];
+				if (key === undefined) throw new Error("invalid key");
 				const item = properties[key];
 				if (
 					!validName(key) ||
@@ -434,16 +455,16 @@ export function snapshotData<T>(input: T): T {
 					!item.enumerable
 				)
 					throw new Error("object contains an accessor or invalid key");
-				Object.defineProperty(result, key, {
+				supportDefine(result, key, {
 					value: copy(item.value, depth + 1),
 					enumerable: true,
 					configurable: true,
 					writable: true,
 				});
 			}
-			return Object.freeze(result);
+			return supportFreeze(result);
 		} finally {
-			ancestors.delete(value);
+			supportApply(supportSetDelete, ancestors, [value]);
 		}
 	}
 	try {
