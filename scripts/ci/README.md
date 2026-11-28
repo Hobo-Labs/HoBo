@@ -212,6 +212,9 @@ checks these guards and the packed asset inventory on Node 22. SDK staging invok
 the declaration and JavaScript helpers before packing. These helpers do not change
 the protobuf, CUE, or PACT checks.
 
+The OCI image entry point reads the SDK artifact manifest without loading the
+SDK bundler, so a clean runner can install its dependencies before bundling.
+
 The CLI declaration helper copies the workspace dependency closure into an isolated
 TypeScript project. It preserves public SDK alias imports, rejects undeclared external
 imports and type references, compares exported names, and typechecks the result. Its
