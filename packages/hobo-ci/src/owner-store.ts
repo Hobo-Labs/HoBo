@@ -43,6 +43,7 @@ import {
 	type SecretStoreOpening,
 } from "./secret-stores.js";
 import type { RunCommand } from "./store-cli.js";
+import { storeWriteUncertain } from "./store-failure.js";
 
 // The owner's secret store, as the first stage of every lifecycle ceremony.
 //
@@ -432,12 +433,19 @@ export async function ownerStore(
 		const mutate = <T>(operation: () => Promise<T>): Promise<T> =>
 			write(async () => {
 				check();
+				let written = false;
 				try {
 					const result = await operation();
+					written = true;
 					check();
 					return result;
 				} catch (error) {
-					locator.markUncertainWrite?.();
+					if (
+						written ||
+						!(error instanceof Error) ||
+						storeWriteUncertain(error)
+					)
+						locator.markUncertainWrite?.();
 					throw error;
 				}
 			});

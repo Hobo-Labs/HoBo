@@ -2,6 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import {
+	OwnerSelectionChangedError,
+	StoreOperationUncertainError,
+} from "@hobo/hobo-ci";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { composeHoboMcp } from "../src/mcp-serve.js";
@@ -81,6 +85,65 @@ describe("MCP serve store picker locator", () => {
 				INFISICAL_PROJECT_ID: "synthetic-recorded-project",
 			});
 			expect(locator.hasSessionChoice?.()).toBe(true);
+			await mcp.close();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("MCP serve owner session currency", () => {
+	function locatorFor(mcp: ReturnType<typeof composeHoboMcp>, dir: string) {
+		const locator = mcp.owner.storeSettingsFor?.("cd", dir);
+		if (locator === undefined)
+			throw new Error("The session locator is missing.");
+		return locator;
+	}
+
+	it("keeps an uncertain store write latched across a later owner choice, and reports it as itself", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-mcp-serve-uncertain-"));
+		try {
+			const mcp = composeHoboMcp({
+				output: new PassThrough(),
+				projectDir: dir,
+				remote: true,
+			});
+			const locator = locatorFor(mcp, dir);
+			expect(() => locator.assertCurrent?.()).not.toThrow();
+			locator.markUncertainWrite?.();
+			expect(() => locator.assertCurrent?.()).toThrow(
+				StoreOperationUncertainError,
+			);
+			expect(() => locator.onOwnerChoice?.()).toThrow(
+				StoreOperationUncertainError,
+			);
+			expect(() => locator.assertCurrent?.()).toThrow(
+				StoreOperationUncertainError,
+			);
+			await expect(locator.read()).rejects.toThrow(
+				StoreOperationUncertainError,
+			);
+			await mcp.close();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reports a changed owner selection as itself, not as an uncertain write", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-mcp-serve-reselected-"));
+		try {
+			const mcp = composeHoboMcp({
+				output: new PassThrough(),
+				projectDir: dir,
+				remote: true,
+			});
+			const before = locatorFor(mcp, dir);
+			await before.write({ HOBO_SECRET_STORE: "infisical" });
+			expect(() => before.onOwnerChoice?.()).not.toThrow();
+			expect(() => before.assertCurrent?.()).toThrow(
+				OwnerSelectionChangedError,
+			);
+			expect(() => locatorFor(mcp, dir).assertCurrent?.()).not.toThrow();
 			await mcp.close();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

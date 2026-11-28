@@ -24,12 +24,14 @@ import {
 	KEPT_STORE_SIGN_INS,
 	lazyEgressFetch,
 	type OpenedSecretStore,
+	OwnerSelectionChangedError,
 	type OwnerStoreDeps,
 	openInBrowser,
 	ownerLocator,
 	ownerStore,
 	ownerStoreSessionEnvironment,
 	runPage,
+	StoreOperationUncertainError,
 	scopeRunVault,
 	showOwnerPage,
 	signInOwnerStore,
@@ -39,6 +41,7 @@ import {
 	storeIdOf,
 	storeSignInGuidance,
 	takeHandOffSignIn,
+	uncertainStoreOperationRefusal,
 	withoutSecretEnv,
 	withoutStoreSignIn,
 	withStoreWriteLock,
@@ -272,17 +275,20 @@ export async function prepareVercelConnection(
 			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
 			vault,
 		});
-		try {
-			ownerLocator(deps).assertCurrent?.();
-		} catch {
-			return refused(
-				"HOBO_CD_OWNER_CHOICE_CHANGED",
-				"The owner changed the selected store while this operation was running.",
-				["Run hobo cd up again for the selected store."],
-			);
-		}
+		ownerLocator(deps).assertCurrent?.();
 		handedOff = outcome.kind === "ready" && outcome.credentials === vault;
 		return outcome;
+	} catch (error) {
+		if (error instanceof StoreOperationUncertainError) {
+			const uncertain = uncertainStoreOperationRefusal("cd");
+			return refused(uncertain.code, uncertain.message, uncertain.remediation);
+		}
+		if (!(error instanceof OwnerSelectionChangedError)) throw error;
+		return refused(
+			"HOBO_CD_OWNER_CHOICE_CHANGED",
+			"The owner changed the selected store while this operation was running.",
+			["Run hobo cd up again for the selected store."],
+		);
 	} finally {
 		// What signs this run in to the store stays for the next run, in the
 		// owner channel's memory only.

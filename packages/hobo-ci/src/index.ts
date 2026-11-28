@@ -151,8 +151,10 @@ export {
 	type OwnerJobOutcome,
 	type OwnerJobState,
 	type OwnerJobs,
+	OwnerSelectionChangedError,
 	type OwnerSettingsStore,
 	ownerCaptureLine,
+	StoreOperationUncertainError,
 } from "./owner-channel.js";
 export {
 	type OwnerSignInOutcome,
@@ -276,4 +278,9 @@ export {
 	whichOnPath,
 } from "./store-cli.js";
 
-export { storeFailureReason } from "./store-failure.js";
+export {
+	type StoreRefusal,
+	storeFailureReason,
+	storeWriteUncertain,
+	uncertainStoreOperationRefusal,
+} from "./store-failure.js";

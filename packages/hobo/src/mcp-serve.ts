@@ -10,6 +10,8 @@ import {
 	ensureInfisicalAgentVaultCli,
 	hoboToolsDir,
 	machineRunner,
+	OwnerSelectionChangedError,
+	StoreOperationUncertainError,
 	scopeRunVault,
 	secretStoreLocatorPath,
 	whichOnPath,
@@ -117,13 +119,8 @@ export function composeHoboMcp(options: {
 		}
 		const assertCurrent = () => {
 			if (closed || (generations.get(key) ?? 0) !== generation)
-				throw new Error(
-					"The owner session changed. Start this operation again.",
-				);
-			if (uncertainWrites.has(key))
-				throw new Error(
-					"A store operation has an uncertain outcome; reconcile it before retrying.",
-				);
+				throw new OwnerSelectionChangedError();
+			if (uncertainWrites.has(key)) throw new StoreOperationUncertainError();
 		};
 		return {
 			assertCurrent,

@@ -29,7 +29,9 @@ import { storeAnswers, takeHandOffSignIn } from "./hand-off-store.js";
 import {
 	captureAll,
 	KEPT_STORE_SIGN_INS,
+	OwnerSelectionChangedError,
 	ownerCaptureLine,
+	StoreOperationUncertainError,
 } from "./owner-channel.js";
 import { signInOwnerStore } from "./owner-sign-in.js";
 import {
@@ -44,6 +46,7 @@ import {
 	storeSignInGuidance,
 } from "./owner-store.js";
 import { APP_HANDOFF_PAGE, createAppRemotely } from "./remote-app.js";
+import { uncertainStoreOperationRefusal } from "./store-failure.js";
 
 /** Where the owner finds each CI setting a remote run asks for. */
 const CI_SETTING_GUIDES = new Map([
@@ -249,17 +252,21 @@ export async function prepareGithubConnection(
 			vault,
 			handoff,
 		});
-		try {
-			ownerLocator(deps).assertCurrent?.();
-		} catch {
-			handoff.clear();
-			return refused(
-				"HOBO_CI_OWNER_CHOICE_CHANGED",
-				"The owner changed the selected store while this operation was running.",
-				["Run hobo ci up again for the selected store."],
-			);
-		}
+		ownerLocator(deps).assertCurrent?.();
 		return outcome;
+	} catch (error) {
+		if (error instanceof StoreOperationUncertainError) {
+			const uncertain = uncertainStoreOperationRefusal("ci");
+			handoff.clear();
+			return refused(uncertain.code, uncertain.message, uncertain.remediation);
+		}
+		if (!(error instanceof OwnerSelectionChangedError)) throw error;
+		handoff.clear();
+		return refused(
+			"HOBO_CI_OWNER_CHOICE_CHANGED",
+			"The owner changed the selected store while this operation was running.",
+			["Run hobo ci up again for the selected store."],
+		);
 	} finally {
 		// What signs this run in to the store stays for the next run, in the
 		// owner channel's memory only.

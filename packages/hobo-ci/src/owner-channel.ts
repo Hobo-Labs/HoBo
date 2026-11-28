@@ -12,6 +12,22 @@ export interface OwnerSettingsStore extends SettingsStore {
 	readonly runStoreWrite?: <T>(write: () => Promise<T>) => Promise<T>;
 }
 
+export class OwnerSelectionChangedError extends Error {
+	constructor() {
+		super("The owner session changed. Start this operation again.");
+		this.name = "OwnerSelectionChangedError";
+	}
+}
+
+export class StoreOperationUncertainError extends Error {
+	constructor() {
+		super(
+			"A store operation has an uncertain outcome; reconcile it before retrying.",
+		);
+		this.name = "StoreOperationUncertainError";
+	}
+}
+
 /**
  * How a ceremony reaches the owner when they are not at the machine (a
  * remote dev box run by an agent): a link they open in their own browser,

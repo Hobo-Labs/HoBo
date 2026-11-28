@@ -18,6 +18,7 @@ import {
 	ownerCaptureLine,
 } from "./owner-channel.js";
 import { parseHttpsOrigin, SettingParseError } from "./parsed-values.js";
+import { uncertainStoreOperationRefusal } from "./store-failure.js";
 
 // public-contract: the capture names of a Bitwarden personal API key handed to a waiting run.
 export const BITWARDEN_API_KEY_CAPTURES = [
@@ -71,12 +72,6 @@ export async function ensureBitwardenSignIn(
 		uncertain = true;
 		options.locator.markUncertainWrite?.();
 	};
-	const uncertainRefusal = () => ({
-		code: `HOBO_${fam}_STORE_OPERATION_UNCERTAIN`,
-		message:
-			"A store operation may have completed and needs reconciliation before retrying.",
-		remediation: ["Reconcile the store operation before trying setup again."],
-	});
 	const saved = await options.locator.read();
 	const setting = (name: string) =>
 		options.env[name] || saved[name] || undefined;
@@ -268,7 +263,7 @@ export async function ensureBitwardenSignIn(
 				? { timeoutMs: options.timeoutMs }
 				: undefined),
 		});
-		if (uncertain) return uncertainRefusal();
+		if (uncertain) return uncertainStoreOperationRefusal(options.family);
 		options.locator.assertCurrent?.();
 		if (result.kind === "refused") return result;
 		const latest = await options.locator.read();
@@ -301,7 +296,7 @@ export async function ensureBitwardenSignIn(
 		options.emit("Bitwarden Secrets Manager is ready for this session.");
 		return undefined;
 	} catch (error) {
-		if (uncertain) return uncertainRefusal();
+		if (uncertain) return uncertainStoreOperationRefusal(options.family);
 		if (error instanceof BitwardenOwnerChannelError)
 			return {
 				code: `HOBO_${fam}_OWNER_CHANNEL_FAILED`,

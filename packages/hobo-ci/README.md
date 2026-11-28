@@ -62,6 +62,16 @@ Selecting the Infisical OAuth application sign-in keeps the store read-only
 even if another credential is available. Owner-selection currency is checked
 again after reading the locator. A selection change immediately after a store
 mutation marks that write uncertain instead of hiding its committed outcome.
+A failed write is marked uncertain only when the provider may have taken it
+(Infisical's `write-uncertain`, or an SDK failure that cannot be placed); an
+answer that proves the write was refused or never sent (a read-only OAuth
+sign-in, a refused name, a 4xx from Infisical) is not, so it does not block
+the next run. Through the HoBo MCP server an uncertain write holds that
+project's store writes and refuses `hobo ci up` and `hobo cd up` with
+`HOBO_<FAMILY>_STORE_OPERATION_UNCERTAIN` (reconcile it before trying again),
+on that run and on later ones; a later store choice does not clear it.
+`HOBO_<FAMILY>_OWNER_CHOICE_CHANGED` is reported only when the owner changed
+the selected store while the operation was running.
 A handed-off run on a remote box
 shows no page: when the store's only missing piece is its sign-in token (an
 Infisical access token or a 1Password Connect token), or Bitwarden needs your
