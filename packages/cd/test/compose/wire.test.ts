@@ -70,6 +70,40 @@ describe("wireContinuousDelivery", () => {
 		bindings.clear();
 	});
 
+	it("separates verification probe traffic from provider and health traffic", () => {
+		const providerHttp: CdComposeInput["http"] = async () => {
+			throw new Error("provider");
+		};
+		const probeHttp: CdComposeInput["http"] = async () => {
+			throw new Error("probe");
+		};
+		wireContinuousDelivery(
+			input(log, calls, { http: providerHttp, probeHttp }),
+		);
+		expect(argsOf(calls, "createHealthSources").http).toBe(providerHttp);
+		expect(argsOf(calls, "createVerificationEngine").http).toBe(probeHttp);
+	});
+
+	it("uses the host transport for probes when no separate transport is supplied", () => {
+		const providerHttp: CdComposeInput["http"] = async () => {
+			throw new Error("provider");
+		};
+		wireContinuousDelivery(input(log, calls, { http: providerHttp }));
+		expect(argsOf(calls, "createVerificationEngine").http).toBe(providerHttp);
+	});
+
+	it("keeps the verification transport for health sources when a probe transport is supplied", () => {
+		const verificationHttp: CdComposeInput["http"] = async () => {
+			throw new Error("verification");
+		};
+		const probeHttp: CdComposeInput["http"] = async () => {
+			throw new Error("probe");
+		};
+		wireContinuousDelivery(input(log, calls, { verificationHttp, probeHttp }));
+		expect(argsOf(calls, "createHealthSources").http).toBe(verificationHttp);
+		expect(argsOf(calls, "createVerificationEngine").http).toBe(probeHttp);
+	});
+
 	it("binds every module factory exactly once (service and agent transport are host-side)", () => {
 		wireContinuousDelivery(input(log, calls));
 		const hostSide = new Set<keyof CdFactories>([

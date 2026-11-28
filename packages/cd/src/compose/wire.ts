@@ -166,6 +166,7 @@ export type CdComposeInput = Readonly<{
 	adapters: CdComposeAdapters;
 	http: HttpTransport;
 	verificationHttp?: HttpTransport;
+	probeHttp?: HttpTransport;
 	credentials: CredentialResolver;
 	/** Webhook HMAC secrets for nudges; defaults to `credentials`. */
 	webhookSecrets?: CredentialResolver;
@@ -385,7 +386,7 @@ export function wireContinuousDelivery(
 			...base,
 			sources: healthSources,
 			suites,
-			http: input.verificationHttp ?? input.http,
+			http: input.probeHttp ?? input.verificationHttp ?? input.http,
 		}),
 	);
 

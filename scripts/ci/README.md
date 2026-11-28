@@ -54,6 +54,11 @@ locators authorize through the workflow job `GITHUB_TOKEN` only when
 resolver scope is `release-probe` or `cd-realize:<logicalCampId>` (for example
 `cd-realize:hobo-release/pages-candidate`, matching pipeline promotion ids;
 `releaseWorkflowGithubAppScopeAllowed`).
+Pages verification probes use a separate transport from the GitHub provider.
+The probe authenticates through the `release-probe` scope and reports healthy
+only for a built Pages revision matching the current `gh-pages` head. The
+provider receives GitHub's actual build status, so queued and failed builds
+are observed instead of being mistaken for missing builds and requested again.
 Blocked release verdicts and `::error::` lines use
 `releaseFreightLogFragment` from `@hobo/cd/reconcile` (`@hobo/provider-redaction`
 detectors, fail closed) before aggregation or logging.
