@@ -14,6 +14,17 @@ scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
 `PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
 Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
 
+## Agent37 merge-group runner demand
+
+Merge-group **Scripts tests** shards use the `agent37` label (four shards).
+The owner-box `agent37-runner-controller.sh` must count `agent37` and
+`hobo-agent37` queue depth when scaling, not only `hobo` / `hobo-trunk`.
+`scripts/ci/agent37-fleet-demand.mts` is the pure demand function (merge-group
+floor of four boxes, optional one reserved idle slot per box for council work
+on shared VMs). Merge the shell helpers from
+`contrib/orchestrator-only/agent37-runner-controller-demand.sh` into the live
+controller after each pull. Finding
+[172](../docs/ci/findings/0172-merge-group-scripts-tests-queued-on-agent37-before-the-fourth-box-existed.md).
 ## Routing
 
 `route-runner.mts` is the route job of the six routed workflows. It runs on a
