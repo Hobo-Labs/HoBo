@@ -1,7 +1,8 @@
 # @hobo/iac-alchemy
 
-This adapter is currently a private workspace package. The imports below work
-inside this repository; the package is not in the public SDK release allowlist.
+The SDK release stages this adapter as `@hobo-labs/iac-alchemy`. Examples below
+use the workspace name `@hobo/iac-alchemy`; external consumers use the
+corresponding `@hobo-labs/iac-alchemy` entrypoints after a release is published.
 
 This optional IaC adapter uses the external `alchemy` 2.0 beta.87 library. The
 host supplies an Alchemy stack, runtime layer, runtime directory, target scope
@@ -11,8 +12,10 @@ this adapter or the Alchemy library.
 Each configured stack supplies its own provider layers; `runtimeLayer` supplies
 the Alchemist services. A conditional choice between stacks with different
 provider requirements can use a union of those requirement types.
-Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
-`rivetkit` 3.0.0 peers; install both when using Rivet components.
+AWS mappings require the optional `@alchemy.run/aws` beta.87 peer; AWS runtime
+adapters also require `@distilled.cloud/aws` 1.0.0-rc.20. Rivet integrations
+require the optional `@alchemy.run/rivet` beta.87 and `rivetkit` 3.0.0 peers.
+Install the peers for the targets your application uses.
 The `@hobo/iac-alchemy/rivet` entry point binds HoBo HTTP applications to
 Alchemy Rivet DurableObjects. `@hobo/iac-alchemy/rivet/runtime` provides the
 actor runtime without importing the IaC provider, and `@hobo/iac-alchemy/rivet/multi`

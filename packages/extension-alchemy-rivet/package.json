@@ -2,12 +2,14 @@
 	"name": "@hobo/alchemy-rivet",
 	"version": "0.0.1",
 	"license": "MIT",
-	"private": true,
 	"type": "module",
 	"engines": {
 		"node": ">=22.19.0"
 	},
-	"files": ["dist"],
+	"files": ["LICENSE", "dist"],
+	"publishConfig": {
+		"access": "public"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",

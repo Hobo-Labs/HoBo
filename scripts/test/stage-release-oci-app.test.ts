@@ -542,6 +542,9 @@ describe("release OCI app staging", () => {
 			"@hobo/runtime-local",
 			"@hobo/storage-sqlite",
 			"@hobo/wit",
+			"@hobo/runtime-rivet",
+			"@hobo/iac-alchemy",
+			"@hobo/alchemy-rivet",
 			"@hobo/cli",
 		]);
 	});

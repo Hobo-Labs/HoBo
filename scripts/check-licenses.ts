@@ -27,6 +27,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { reviewedLicense } from "./lib/reviewed-license-exceptions.js";
 
 // SPDX identifiers permitted for third-party dependencies. Permissive only:
 // anything copyleft or unrecognised needs an explicit review decision rather
@@ -295,7 +296,11 @@ function checkInbound(): void {
 				checked += 1;
 
 				const id = `${manifest.name}@${manifest.version}`;
-				if (REVIEWED_EXCEPTIONS.has(manifest.name)) continue;
+				if (
+					REVIEWED_EXCEPTIONS.has(manifest.name) ||
+					reviewedLicense(manifest.name, manifest.version)
+				)
+					continue;
 
 				const ids = licenseIdsOf(manifest);
 				const bucket = production.has(manifest.name) ? offenders : devOffenders;
