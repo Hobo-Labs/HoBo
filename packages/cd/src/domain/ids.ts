@@ -33,6 +33,16 @@ export type FreightAlias = typeof FreightAlias.Type;
 export const StageId = Schema.NonEmptyString.pipe(Schema.brand("StageId"));
 export type StageId = typeof StageId.Type;
 
+export const OriginSlotId = Schema.NonEmptyString.check(
+	Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,62}$/u),
+).pipe(Schema.brand("OriginSlotId"));
+export type OriginSlotId = typeof OriginSlotId.Type;
+
+export const DEFAULT_ORIGIN_SLOT: OriginSlotId = OriginSlotId.make("default");
+
+export const PromotionTrigger = Schema.Literals(["manual", "auto"]);
+export type PromotionTrigger = typeof PromotionTrigger.Type;
+
 export const DeliveryRunId = Schema.NonEmptyString.pipe(
 	Schema.brand("DeliveryRunId"),
 );

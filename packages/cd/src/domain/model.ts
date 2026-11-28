@@ -22,6 +22,8 @@ import {
 import {
 	CdStage,
 	CdStageConfig,
+	effectiveOriginSlots,
+	OriginSlotStatus,
 	QueuedStagePromotion,
 	StagePromotionStarted,
 } from "./CdStage.aggregate.js";
@@ -37,6 +39,7 @@ import {
 	ApproverId,
 	BranchName,
 	CampTargetId,
+	DEFAULT_ORIGIN_SLOT,
 	DeliveryFlowKind,
 	DeliveryFlowTarget,
 	DeliveryRunId,
@@ -46,6 +49,7 @@ import {
 	FreightDigest,
 	NonEmptyReason,
 	NonNegativeCount,
+	type OriginSlotId,
 	PullRequestId,
 	PullRequestUrl,
 	RealizationRef,
@@ -473,6 +477,60 @@ export class CdFreightCatalogView extends Domain.View("CdFreightCatalogView", {
 	},
 }) {}
 
+function syncViewSlots(
+	config: CdStageConfig,
+	existing: readonly OriginSlotStatus[],
+): OriginSlotStatus[] {
+	const byId = new Map<OriginSlotId, OriginSlotStatus>();
+	for (const slot of existing) {
+		byId.set(slot.slotId, slot);
+	}
+	return effectiveOriginSlots(config).map((slotConfig) => {
+		const prev = byId.get(slotConfig.slotId);
+		if (prev === undefined) {
+			return {
+				slotId: slotConfig.slotId,
+				currentFreightDigest: null,
+				autoPromotionHeld: false,
+				heldFreightDigest: null,
+				lastVerifiedAtMs: null,
+			};
+		}
+		if (slotConfig.autoPromotion === "manual" && prev.autoPromotionHeld) {
+			return {
+				...prev,
+				autoPromotionHeld: false,
+				heldFreightDigest: null,
+			};
+		}
+		return prev;
+	});
+}
+
+function updateViewSlot(
+	slots: readonly OriginSlotStatus[],
+	originSlot: OriginSlotId,
+	update: (slot: OriginSlotStatus) => OriginSlotStatus,
+): OriginSlotStatus[] {
+	let matched = false;
+	const next = slots.map((slot) => {
+		if (slot.slotId !== originSlot) return slot;
+		matched = true;
+		return update(slot);
+	});
+	if (matched) return next;
+	return [
+		...next,
+		update({
+			slotId: originSlot,
+			currentFreightDigest: null,
+			autoPromotionHeld: false,
+			heldFreightDigest: null,
+			lastVerifiedAtMs: null,
+		}),
+	];
+}
+
 export const CdStageStatusState = Schema.Union([
 	Schema.TaggedStruct("Unconfigured", {}),
 	Schema.TaggedStruct("Idle", {
@@ -480,6 +538,7 @@ export const CdStageStatusState = Schema.Union([
 		currentFreightDigest: Schema.NullOr(FreightDigest),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
+		slots: Schema.Array(OriginSlotStatus),
 	}),
 	Schema.TaggedStruct("Promoting", {
 		config: CdStageConfig,
@@ -488,6 +547,7 @@ export const CdStageStatusState = Schema.Union([
 		currentFreightDigest: Schema.NullOr(FreightDigest),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
+		slots: Schema.Array(OriginSlotStatus),
 		pending: Schema.NullOr(QueuedStagePromotion),
 	}),
 	Schema.TaggedStruct("Verifying", {
@@ -497,6 +557,7 @@ export const CdStageStatusState = Schema.Union([
 		currentFreightDigest: Schema.NullOr(FreightDigest),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
+		slots: Schema.Array(OriginSlotStatus),
 		pending: Schema.NullOr(QueuedStagePromotion),
 	}),
 ]);
@@ -516,10 +577,12 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: null,
 						currentVerified: false,
 						lastVerifiedAtMs: null,
+						slots: syncViewSlots(event.config, []),
 					}
 				: {
 						...state,
 						config: event.config,
+						slots: syncViewSlots(event.config, state.slots),
 					},
 		StagePromotionStarted: (state, event) =>
 			state._tag === "Unconfigured"
@@ -532,6 +595,7 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: state.currentFreightDigest,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 						pending: null,
 					},
 		StagePromotionQueued: (state, event) =>
@@ -542,6 +606,9 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 							deliveryRunId: event.deliveryRunId,
 							freightDigest: event.freightDigest,
 							requestedAtMs: event.requestedAtMs,
+							originSlot: event.originSlot ?? DEFAULT_ORIGIN_SLOT,
+							trigger: event.trigger ?? "manual",
+							isLatestCandidate: event.isLatestCandidate ?? true,
 						},
 					}
 				: state,
@@ -556,6 +623,7 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: state.currentFreightDigest,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 						pending: state.pending,
 					}
 				: state,
@@ -567,8 +635,39 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: event.freightDigest,
 						currentVerified: true,
 						lastVerifiedAtMs: event.qualifiedAtMs,
+						slots: updateViewSlot(
+							state.slots,
+							event.originSlot ?? DEFAULT_ORIGIN_SLOT,
+							(slot) => ({
+								...slot,
+								currentFreightDigest: event.freightDigest,
+								lastVerifiedAtMs: event.qualifiedAtMs,
+							}),
+						),
 					}
 				: state,
+		StageAutoPromotionHoldSet: (state, event) =>
+			state._tag === "Unconfigured"
+				? state
+				: {
+						...state,
+						slots: updateViewSlot(state.slots, event.originSlot, (slot) => ({
+							...slot,
+							autoPromotionHeld: true,
+							heldFreightDigest: event.freightDigest,
+						})),
+					},
+		StageAutoPromotionHoldCleared: (state, event) =>
+			state._tag === "Unconfigured"
+				? state
+				: {
+						...state,
+						slots: updateViewSlot(state.slots, event.originSlot, (slot) => ({
+							...slot,
+							autoPromotionHeld: false,
+							heldFreightDigest: null,
+						})),
+					},
 		StagePromotionFailed: (state) =>
 			state._tag === "Promoting" || state._tag === "Verifying"
 				? {
@@ -577,6 +676,7 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: state.currentFreightDigest,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 					}
 				: state,
 		StageReverificationStarted: (state, event) =>
@@ -589,6 +689,7 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: state.currentFreightDigest,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 						pending: null,
 					}
 				: state,
@@ -600,6 +701,7 @@ export class CdStageStatusView extends Domain.View("CdStageStatusView", {
 						currentFreightDigest: state.currentFreightDigest,
 						currentVerified: false,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 					}
 				: state,
 	},
