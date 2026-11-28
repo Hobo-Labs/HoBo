@@ -134,6 +134,21 @@ describe("AWS Bindle HTTP resource bindings", () => {
 		expect((await result).status).toBe(503);
 		expect(calls).toBe(0);
 	});
+	it("keeps buffered response bytes when array push is replaced", async () => {
+		const f = fixture(() => () => new Response(new Uint8Array([7, 8, 9])));
+		const push = Array.prototype.push;
+		let response: Response;
+		try {
+			Reflect.set(Array.prototype, "push", () => 0);
+			response = await f.app.fetch(new Request("https://app.test/"));
+		} finally {
+			Reflect.set(Array.prototype, "push", push);
+		}
+		expect(response.status).toBe(200);
+		expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([
+			7, 8, 9,
+		]);
+	});
 	it("binds the exact declared stores and retires request-scoped capabilities", async () => {
 		let retained: AwsKvStore | undefined;
 		const f = fixture((context) => async () => {

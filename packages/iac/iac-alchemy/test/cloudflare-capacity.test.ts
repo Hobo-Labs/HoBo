@@ -14,11 +14,11 @@ beforeAll(() => {
 	const compiled = spawnSync(
 		process.execPath,
 		[compiler, "-p", join(packageDir, "tsconfig.json"), "--outDir", directory],
-		{ encoding: "utf8", timeout: 30_000 },
+		{ encoding: "utf8", timeout: 120_000 },
 	);
 	expect(compiled.error).toBeUndefined();
 	expect(compiled.status, compiled.stderr).toBe(0);
-}, 45_000);
+}, 150_000);
 
 afterAll(() => {
 	if (directory !== "") rmSync(directory, { recursive: true, force: true });

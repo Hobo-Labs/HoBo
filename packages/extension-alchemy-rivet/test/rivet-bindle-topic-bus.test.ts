@@ -31,7 +31,59 @@ import {
 	createRivetBindleTopicBusApplication,
 	createRivetBindleTopicBusMappers,
 } from "../src/rivet-http-topic-bus.js";
+import { rivetTopicUnavailable } from "../src/rivet-topic-unavailable.js";
 import { testStateOwnership } from "./route-fixture.js";
+
+it("keeps topic failures unavailable when application code changes array prototypes", async () => {
+	const iterator = Array.prototype[Symbol.iterator];
+	const push = Array.prototype.push;
+	let response: Response;
+	try {
+		Reflect.set(Array.prototype, Symbol.iterator, function* () {});
+		Reflect.set(Array.prototype, "push", () => 0);
+		response = rivetTopicUnavailable("scope-unverified");
+	} finally {
+		Reflect.set(Array.prototype, Symbol.iterator, iterator);
+		Reflect.set(Array.prototype, "push", push);
+	}
+	expect(response.status).toBe(503);
+	let pushed: Response;
+	try {
+		Reflect.set(Array.prototype, "push", () => 0);
+		pushed = rivetTopicUnavailable("scope-unverified");
+	} finally {
+		Reflect.set(Array.prototype, "push", push);
+	}
+	expect(pushed.status).toBe(503);
+	expect(await pushed.json()).toEqual({
+		status: "topic-unavailable",
+		reason: "scope-unverified",
+	});
+	let sealed: Response;
+	try {
+		Reflect.set(Object.prototype, "writable", true);
+		Reflect.set(Object.prototype, "configurable", true);
+		sealed = rivetTopicUnavailable("scope-unverified");
+	} finally {
+		Reflect.deleteProperty(Object.prototype, "writable");
+		Reflect.deleteProperty(Object.prototype, "configurable");
+	}
+	expect(Object.getOwnPropertyDescriptor(sealed, "then")).toMatchObject({
+		writable: false,
+		configurable: false,
+		value: undefined,
+	});
+	expect(await sealed.json()).toEqual({
+		status: "topic-unavailable",
+		reason: "scope-unverified",
+	});
+	const ordinary = rivetTopicUnavailable("scope-unverified");
+	expect(ordinary.status).toBe(503);
+	expect(await ordinary.json()).toEqual({
+		status: "topic-unavailable",
+		reason: "scope-unverified",
+	});
+});
 
 it("gates an HTTP application's scoped topic binding on real journal provisioning", async () => {
 	const fixture = await createSqliteBusConformanceHost();

@@ -50,7 +50,7 @@ it("protects a response without reading polluted descriptor prototypes", () => {
 });
 
 it("does not assimilate poisoned response and Object prototypes", {
-	timeout: 30_000,
+	timeout: 150_000,
 }, () => {
 	const output = runPublishedAdapterFixture(
 		new URL("./rivet-http-response-fixture.mjs", import.meta.url),

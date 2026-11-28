@@ -84,6 +84,13 @@ const cancelStream = ReadableStream.prototype.cancel;
 const read = ReadableStreamDefaultReader.prototype.read;
 const cancel = ReadableStreamDefaultReader.prototype.cancel;
 const release = ReadableStreamDefaultReader.prototype.releaseLock;
+const bytesSet = Uint8Array.prototype.set;
+const nonThenable: PropertyDescriptor = Object.create(null);
+nonThenable.value = undefined;
+nonThenable.writable = false;
+nonThenable.enumerable = false;
+nonThenable.configurable = false;
+freeze(nonThenable);
 
 type Json =
 	| string
@@ -134,7 +141,7 @@ export function awsHttpBindings(context?: AwsContextRef): AwsHttpBindings {
 	return result;
 }
 function protect(response: Response): Response {
-	define(response, "then", { value: undefined });
+	define(response, "then", nonThenable);
 	return response;
 }
 const fallbackUnavailable = freeze(
@@ -275,7 +282,9 @@ async function bufferResponse(
 			)
 				throw new Error("response too large");
 			total += length;
-			chunks.push(new Uint8Array(new Uint8Array(buffer, offset, length)));
+			chunks[chunks.length] = new Uint8Array(
+				new Uint8Array(buffer, offset, length),
+			);
 		}
 		if (!complete) throw new Error("response has too many chunks");
 	} finally {
@@ -291,11 +300,18 @@ async function bufferResponse(
 	if (declaredLength !== null && declaredLength !== String(total))
 		throw new Error("invalid content length");
 	const bytes = new Uint8Array(total);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.byteLength;
+	let written = 0;
+	for (let index = 0; index < chunks.length; index++) {
+		const chunk = chunks[index];
+		if (chunk === undefined || !byteLength)
+			throw new Error("invalid response bytes");
+		const chunkLength: number = apply(byteLength, chunk, []);
+		if (chunkLength > total - written)
+			throw new Error("invalid response bytes");
+		apply(bytesSet, bytes, [chunk, written]);
+		written += chunkLength;
 	}
+	if (written !== total) throw new Error("invalid response bytes");
 	return protect(new NativeResponse(bytes, { status, statusText, headers }));
 }
 async function bufferResponseSafely(

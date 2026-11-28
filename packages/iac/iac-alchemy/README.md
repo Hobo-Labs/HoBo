@@ -120,7 +120,7 @@ request bodies, stream responses, or provide connectors or session replay. The
 bounded `AwsHttpBindings` model checks request retirement, grant revalidation
 and timed-out capacity. It assumes host verification and transport behavior;
 it does not prove AWS, HTTP parsing, byte limits or liveness.
-The model explores one application with two request slots.
+The model explores one application and two requests sharing one capacity slot.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
@@ -826,7 +826,9 @@ of those paths are visible, copies the binary into a private image instead.
 An existing copy of the same package may be supplied with
 `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The pricing workflow uses HoBo's routed CI runner for the simulator job, with
-the same hosted fallback as the other pricing checks and a 20-minute job limit.
+the same hosted fallback as the other pricing checks and a 40-minute job limit.
+The bounded-model job has a 60-minute overall limit; individual model-checking
+processes retain their own limits, and the CI timeout guard enforces this cap.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
