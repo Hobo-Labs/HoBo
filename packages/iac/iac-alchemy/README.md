@@ -1282,3 +1282,13 @@ asynchronous queue host.
 
 Owner inspection supports snapshot-bound pagination for advancing past blocked
 exhausted messages. A changed queue returns `changed` and requires a restart.
+
+The optional `@hobo/iac-alchemy/aws/cryptography` runtime implements bounded
+asynchronous encrypt and decrypt calls against a scoped symmetric KMS key. The
+host supplies an exact key, grant epochs, allowed operations and a synchronous
+verifier. Encrypt accepts at most 4,096 plaintext bytes and decrypt accepts at
+most 6,144 ciphertext bytes. Results are disclosed only while the grant remains
+valid. KMS calls are not retried automatically; an unknown outcome may have
+incurred a provider charge. The runtime does not itself admit each operation
+against a HoBo budget, bind the key into an application, or implement signing
+and verification.

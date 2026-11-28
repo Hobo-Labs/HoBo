@@ -36,6 +36,7 @@ import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import type { BindleRuntimeContext } from "../../../bindles/src/types.js";
 import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { awsBindleMappers } from "../src/aws.js";
+import { createAwsKmsCryptography } from "../src/aws-cryptography.js";
 import {
 	awsHttpBindings,
 	createAwsBindleApplication,
@@ -864,6 +865,36 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			);
 			expect(second.keyId).toBe(first.keyId);
 			const plaintext = new TextEncoder().encode("mapped key test");
+			const cryptography = createAwsKmsCryptography({
+				grant: {
+					keyId: first.keyId,
+					accountId: "123456789012",
+					partition: "aws",
+					region: "us-east-1",
+					resourceEpoch: `sha256:${"a".repeat(64)}`,
+					grantEpoch: `sha256:${"b".repeat(64)}`,
+					allow: ["encrypt", "decrypt"],
+				},
+				verify: () => true,
+				layer,
+			});
+			const encryptedByPort = await cryptography.encrypt({
+				attemptId: "encrypt_attempt_123",
+				data: plaintext,
+			});
+			expect(encryptedByPort.status).toBe("completed");
+			if (encryptedByPort.status !== "completed")
+				throw Error("encryption failed");
+			expect(
+				await cryptography.decrypt({
+					attemptId: "decrypt_attempt_123",
+					data: encryptedByPort.data,
+				}),
+			).toEqual({
+				status: "completed",
+				attemptId: "decrypt_attempt_123",
+				data: plaintext,
+			});
 			// SAFETY: the test layer supplies the emulator transport and credentials.
 			const encrypted = await Effect.runPromise(
 				KMS.encrypt({ KeyId: first.keyArn, Plaintext: plaintext }).pipe(
