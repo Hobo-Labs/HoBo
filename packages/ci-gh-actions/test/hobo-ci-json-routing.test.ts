@@ -80,14 +80,14 @@ describe("committed .hobo/ci.json routing", () => {
 			runsOn: "hobo-agent37",
 			capacity: {
 				case: "pool",
-				value: { maxBoxes: 4, template: "agent37-ubuntu@1" },
+				value: { maxBoxes: 8, template: "agent37-ubuntu@1" },
 			},
 		});
 		expect(document.runnerRouting?.externalPools).toEqual([
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 	});
