@@ -129,5 +129,11 @@ export function awsBindleMappers<Entrypoint, Requirements>() {
 				return { primary, resources: [primary], boundDependencies: [] };
 			}),
 	};
-	return Object.freeze({ kv, bucket, queue, topic, secret, auth });
+	const notify: Mapper = {
+		...topic,
+		limitations: [
+			"SNS topic infrastructure only; notification delivery, subscriptions, recipients and application bindings are not implemented.",
+		],
+	};
+	return Object.freeze({ kv, bucket, queue, topic, secret, auth, notify });
 }
