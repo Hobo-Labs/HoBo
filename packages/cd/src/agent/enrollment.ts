@@ -998,7 +998,8 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				"the DPoP proof does not match the SVID",
 			);
 		const active = await fleet.assertMemberActive(memberId);
-		if (!active.ok) return fleetRefusal("fleet-refused", active.error, memberId);
+		if (!active.ok)
+			return fleetRefusal("fleet-refused", active.error, memberId);
 		return { ok: true, value: memberId };
 	}
 

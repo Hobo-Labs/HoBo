@@ -1,4 +1,6 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-known-value-widening -- SAFETY: test fixtures brand ids they mint and read controlled JSON at the test boundary. */
+
+import { create } from "@bufbuild/protobuf";
 import { parseTenantId } from "@hobo/core";
 import {
 	ApprovalMode,
@@ -6,7 +8,6 @@ import {
 	MemberState,
 	parseMemberId,
 } from "@hobo/fleet";
-import { create } from "@bufbuild/protobuf";
 import {
 	createInMemoryKms,
 	JwtSvidIssuer,
@@ -686,42 +687,39 @@ describe("CD-signed agent SVIDs", () => {
 	it.each([
 		["suspend", "fleet-refused", MemberState.SUSPENDED] as const,
 		["revoke", "reconciler-revoked", MemberState.REVOKED] as const,
-	])(
-		"refuses CD-issued SVID feed verify when the fleet member is %s",
-		async (_action, expectedCode, expectedState) => {
-			const issuer = cdIssuer("cd-svid-active");
-			const s = await setup(railWith(), [], true, undefined, issuer);
-			const a = await accepted(s);
-			const memberId = parseMemberId(a.id);
-			const refreshed = await refreshAccepted(s, memberId, a.device);
-			if (!refreshed.ok) throw new Error(code(refreshed));
-			const svid = refreshed.value.svid;
-			const lifecycle = create(LifecycleRequestSchema, {
-				reason: "policy hold",
-				fleets: [YARD_FLEET],
-			});
-			const held =
-				_action === "suspend"
-					? await s.fixture.authority.suspend(
-							{ memberId, request: lifecycle },
-							s.fixture.station,
-						)
-					: await s.fixture.authority.revoke(
-							{ memberId, request: lifecycle },
-							s.fixture.station,
-						);
-			expect(held.ok).toBe(true);
-			expect(await memberState(s, a.id)).toBe(expectedState);
-			const request = await feedRequest(
-				a.device,
-				svid,
-				await a.device.proof("GET", FEED_URL, svid),
-			);
-			const verified = await s.enrollment.verify(request);
-			expect(verified.ok).toBe(false);
-			expect(code(verified)).toBe(expectedCode);
-		},
-	);
+	])("refuses CD-issued SVID feed verify when the fleet member is %s", async (_action, expectedCode, expectedState) => {
+		const issuer = cdIssuer("cd-svid-active");
+		const s = await setup(railWith(), [], true, undefined, issuer);
+		const a = await accepted(s);
+		const memberId = parseMemberId(a.id);
+		const refreshed = await refreshAccepted(s, memberId, a.device);
+		if (!refreshed.ok) throw new Error(code(refreshed));
+		const svid = refreshed.value.svid;
+		const lifecycle = create(LifecycleRequestSchema, {
+			reason: "policy hold",
+			fleets: [YARD_FLEET],
+		});
+		const held =
+			_action === "suspend"
+				? await s.fixture.authority.suspend(
+						{ memberId, request: lifecycle },
+						s.fixture.station,
+					)
+				: await s.fixture.authority.revoke(
+						{ memberId, request: lifecycle },
+						s.fixture.station,
+					);
+		expect(held.ok).toBe(true);
+		expect(await memberState(s, a.id)).toBe(expectedState);
+		const request = await feedRequest(
+			a.device,
+			svid,
+			await a.device.proof("GET", FEED_URL, svid),
+		);
+		const verified = await s.enrollment.verify(request);
+		expect(verified.ok).toBe(false);
+		expect(code(verified)).toBe(expectedCode);
+	});
 
 	it("refuses to issue an SVID when the fleet tenant is not a SPIFFE segment", async () => {
 		const s = await setup();

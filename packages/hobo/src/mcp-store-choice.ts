@@ -51,6 +51,7 @@ export const SUBMIT_STORE_CHOICE_TOOL = "submit_store_choice";
 export const SUBMIT_OWNER_PAGE_TOOL = "submit_owner_page";
 // public-contract: the MCP App resource of the store picker.
 export const STORE_CHOICE_RESOURCE_URI = "ui://hobo/store-choice";
+// public-contract: the JSON-RPC method that pushes the store picker's choice ticket to the owner widget.
 export const STORE_CHOICE_TICKET_NOTIFICATION =
 	"notifications/hobo/store-choice";
 const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
