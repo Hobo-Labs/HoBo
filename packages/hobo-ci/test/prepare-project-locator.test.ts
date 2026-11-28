@@ -24,10 +24,11 @@ function box() {
 	};
 }
 
-function prepareIn(projectDir: string): PrepareInput {
+function prepareIn(cwd: string): PrepareInput {
 	return {
 		action: "up",
-		projectDir,
+		projectDir: path.join(cwd, "..", "bundled-project"),
+		cwd,
 		whatIf: false,
 		yes: false,
 		handOff: true,
@@ -49,8 +50,8 @@ function codeOf(outcome: Awaited<ReturnType<typeof prepareGithubConnection>>) {
 	return outcome.kind === "refused" ? outcome.result.code : outcome.kind;
 }
 
-describe("hobo ci up reads the owner's store choice saved for the project it converges", () => {
-	it("finds the choice saved for the project directory, not the process's working directory", async () => {
+describe("hobo ci up reads the owner's store choice saved for the directory it was invoked from", () => {
+	it("finds the choice saved for the invoking directory, not the process's working directory or the resolved project", async () => {
 		const { env, project } = box();
 		await ownerLocator({ cwd: project, env }).write({
 			HOBO_SECRET_STORE: "1password",

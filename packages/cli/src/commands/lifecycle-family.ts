@@ -41,6 +41,11 @@ export type ProjectResolution =
 export interface PrepareInput {
 	readonly action: "up";
 	readonly projectDir: string;
+	/**
+	 * The directory the lifecycle was invoked from (`--cwd`, or the HoBo MCP
+	 * tool's `cwd`): the owner's store choice is saved for it.
+	 */
+	readonly cwd: string;
 	readonly whatIf: boolean;
 	readonly yes: boolean;
 	/**
@@ -289,6 +294,7 @@ export function createLifecycleFamilyCommand(
 					const outcome = await spec.prepare({
 						action: "up",
 						projectDir: project.projectDir,
+						cwd: input.flags.cwd,
 						whatIf: flags.whatIf,
 						yes: flags.yes,
 						handOff: flags.handOff,

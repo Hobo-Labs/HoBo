@@ -21,6 +21,7 @@ it("routes the CD store probe, signed in with the handed-over Connect token, thr
 		const input: PrepareInput = {
 			action: "up",
 			projectDir: "/box/project",
+			cwd: "/box/project",
 			whatIf: false,
 			yes: false,
 			handOff: true,
