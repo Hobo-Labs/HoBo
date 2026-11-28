@@ -8,6 +8,7 @@ import * as Endpoint from "@alchemy.run/aws/Endpoint";
 import { AWSEnvironment } from "@alchemy.run/aws/Environment";
 import { Providers } from "@alchemy.run/aws/Providers";
 import { Bucket, BucketProvider } from "@alchemy.run/aws/S3";
+import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
 import { create } from "@bufbuild/protobuf";
 import { NodeHttpClient } from "@effect/platform-node";
 import { awsPlugin, getAwsStore } from "@emulators/aws";
@@ -98,7 +99,7 @@ function fixture(
 	withPricing: boolean,
 	allowUnpriced = false,
 	official = false,
-	resource: "bucket" | "queue" | "auth" = "bucket",
+	resource: "bucket" | "queue" | "auth" | "notify" = "bucket",
 ) {
 	const server = createServer(awsPlugin, { baseUrl: "http://localhost:4566" });
 	const credentials = {
@@ -137,7 +138,13 @@ function fixture(
 			HttpClient.HttpClient,
 			HttpClient.tapRequest((req) =>
 				Effect.sync(() => {
-					const target = req.headers["x-amz-target"];
+					const action =
+						req.body._tag === "Uint8Array"
+							? new URLSearchParams(
+									new TextDecoder().decode(req.body.body),
+								).get("Action")
+							: null;
+					const target = req.headers["x-amz-target"] ?? action;
 					if (
 						req.method !== "GET" &&
 						req.method !== "HEAD" &&
@@ -146,9 +153,12 @@ function fixture(
 							"AWSCognitoIdentityProviderService.ListUserPools",
 							"AWSCognitoIdentityProviderService.DescribeUserPool",
 							"AWSCognitoIdentityProviderService.ListTagsForResource",
+							"ListTopics",
+							"GetTopicAttributes",
+							"ListTagsForResource",
 						].includes(target ?? "")
 					) {
-						mutationTargets.push(req.headers["x-amz-target"] ?? "");
+						mutationTargets.push(target ?? "");
 						if (
 							req.headers["x-amz-target"] === "DynamoDB_20120810.CreateTable"
 						) {
@@ -201,38 +211,45 @@ function fixture(
 		fetchLayers,
 	);
 	const definition =
-		resource === "auth"
+		resource === "notify"
 			? mapBindleToAlchemy(
-					bindle("shop", (b) => ({ objects: b.auth() })),
+					bindle("shop", (b) => ({ objects: b.notify() })),
 					awsBindleMappers(),
 					{ assessRequirements: () => ({ status: "supported" }) },
 				)
-			: resource === "queue"
+			: resource === "auth"
 				? mapBindleToAlchemy(
-						withAwsDynamoDurableQueue(
-							bindle("shop", (b) => ({
-								objects: b.queue().allow("enqueue", "dequeue"),
-							})),
-							{ objects: true },
-						),
-						awsDynamoDurableQueueMappers(),
-						{ assessRequirements: () => ({ status: "supported" }) },
-					)
-				: mapBindleToAlchemy(
-						bindle("shop", (b) => ({ objects: b.bucket() })),
+						bindle("shop", (b) => ({ objects: b.auth() })),
 						awsBindleMappers(),
 						{ assessRequirements: () => ({ status: "supported" }) },
-					);
+					)
+				: resource === "queue"
+					? mapBindleToAlchemy(
+							withAwsDynamoDurableQueue(
+								bindle("shop", (b) => ({
+									objects: b.queue().allow("enqueue", "dequeue"),
+								})),
+								{ objects: true },
+							),
+							awsDynamoDurableQueueMappers(),
+							{ assessRequirements: () => ({ status: "supported" }) },
+						)
+					: mapBindleToAlchemy(
+							bindle("shop", (b) => ({ objects: b.bucket() })),
+							awsBindleMappers(),
+							{ assessRequirements: () => ({ status: "supported" }) },
+						);
 	const stack = Stack(
 		"Demo",
 		{
 			providers: Layer.effect(
 				Providers,
-				Provider.collection([Bucket, Table, UserPool]),
+				Provider.collection([Bucket, Table, UserPool, Topic]),
 			).pipe(
 				Layer.provideMerge(BucketProvider()),
 				Layer.provideMerge(TableProvider()),
 				Layer.provideMerge(UserPoolProvider()),
+				Layer.provideMerge(TopicProvider()),
 				Layer.provideMerge(awsLayers),
 			),
 			state: inMemoryState(),
@@ -376,11 +393,13 @@ function fixture(
 				{
 					resourceId: "objects",
 					resourceType:
-						resource === "queue"
-							? Table.Type
-							: resource === "auth"
-								? UserPool.Type
-								: Bucket.Type,
+						resource === "notify"
+							? Topic.Type
+							: resource === "queue"
+								? Table.Type
+								: resource === "auth"
+									? UserPool.Type
+									: Bucket.Type,
 					providerId: "sandbox",
 					providerAccountRef: "account-a",
 					productId: "sandbox",
@@ -675,6 +694,90 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 				expect(f.mutationTargets()).toContain(
 					"AWSCognitoIdentityProviderService.CreateUserPool",
 				);
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) => entry.reservedMicros === 0 && entry.unbounded === 1,
+						),
+				).toBe(true);
+				expect(f.liabilityRequests()).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"reserves pricing before creating a mapped SNS notification topic",
+		async () => {
+			const f = fixture(true, false, true, "notify");
+			try {
+				const selected = await pricedSelection(f);
+				expect(f.effects()).toBe(0);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+					selected,
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "allowed", reservation: "held" },
+				});
+				expect(f.mutationTargets()).toContain("CreateTopic");
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) =>
+								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
+						),
+				).toBe(true);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"blocks an unpriced notification topic without explicit authorization",
+		async () => {
+			const f = fixture(false, false, true, "notify");
+			try {
+				const assessment = await f.provider.assessPricing(program);
+				expect(assessment).toMatchObject({
+					pricing: { state: { case: "unavailable" } },
+					budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				});
+				await expect(f.provider.apply(program)).rejects.toMatchObject({
+					code: "PRICING_MODEL_UNAVAILABLE",
+				});
+				expect(f.effects()).toBe(0);
+				expect(f.authority.read(NOW).unboundedExposureCount).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"records unbounded exposure before an authorized unpriced notification topic",
+		async () => {
+			const f = fixture(false, true, true, "notify");
+			try {
+				await f.provider.assessPricing(program);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "bypassed", reservation: "held" },
+				});
+				expect(f.mutationTargets()).toContain("CreateTopic");
 				expect(
 					f
 						.exposuresAtEffects()
