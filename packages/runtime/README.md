@@ -619,8 +619,10 @@ can eventually require operator reconciliation.
 transition function to an injected atomic store. The store must provide durable,
 linearizable reads and compare-and-swap over one exclusively owned, epoch-fenced
 record. The provider reconstructs state from a versioned log, checks its revision
-and declared limits, and returns unknown on an ambiguous write. All writers must
-use the same monotonic clock. The log allows at most 512 state-changing operations
+and declared limits, and returns unknown on an ambiguous write. Factory-backed
+inspection identifies the exact store and captured limits for host binding; it
+does not authenticate the storage service or prove its semantics. All writers
+must use the same monotonic clock. The log allows at most 512 state-changing operations
 between checkpoints and 256 KiB for the entire record, including its checkpoint.
 New operations return unknown when either bound is reached.
 

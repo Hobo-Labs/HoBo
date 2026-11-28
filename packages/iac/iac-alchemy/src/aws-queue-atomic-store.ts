@@ -1,7 +1,11 @@
 import { types } from "node:util";
 import * as DynamoDB from "@distilled.cloud/aws/dynamodb";
 import { createAwsRuntimeBoundary } from "./aws-runtime-boundary.js";
-import { createAwsDynamoKvStore, inspectAwsDynamoKvStore } from "./aws-kv.js";
+import {
+	createAwsDynamoKvStore,
+	inspectAwsDynamoKvStore,
+	type AwsKvGrant,
+} from "./aws-kv.js";
 import { acceptSynchronousTrue } from "./synchronous-result.js";
 
 const apply = Reflect.apply;
@@ -26,6 +30,27 @@ const byteSet = Uint8Array.prototype.set;
 const key = "queue-state";
 const maxBytes = 256 * 1024;
 
+export interface AwsQueueAtomicStore {
+	load(): Promise<AwsQueueAtomicRead>;
+	compareAndSwap(
+		revision: number,
+		bytes: Uint8Array,
+	): Promise<AwsQueueAtomicWrite>;
+}
+const storeIdentities = new WeakMap<object, AwsKvGrant>();
+const identityGet = WeakMap.prototype.get;
+const identitySet = WeakMap.prototype.set;
+const identityProxy = types.isProxy;
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: only the factory registers a validated grant. */
+export function inspectAwsQueueAtomicStore(
+	value: unknown,
+): AwsKvGrant | undefined {
+	if (typeof value !== "object" || value === null || identityProxy(value))
+		return undefined;
+	return apply(identityGet, storeIdentities, [value]);
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply */
+
 function outcome<T extends object>(value: T): T {
 	setPrototype(value, null);
 	return freeze(value);
@@ -46,13 +71,7 @@ export type AwsQueueAtomicWrite =
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: a scoped host grant and bounded queue state cross the AWS boundary. */
 export function createAwsQueueAtomicStore(
 	options: Parameters<typeof createAwsDynamoKvStore>[0],
-): {
-	readonly load: () => Promise<AwsQueueAtomicRead>;
-	readonly compareAndSwap: (
-		revision: number,
-		bytes: Uint8Array,
-	) => Promise<AwsQueueAtomicWrite>;
-} {
+): AwsQueueAtomicStore {
 	const validated = createAwsDynamoKvStore(options);
 	const grant = inspectAwsDynamoKvStore(validated);
 	if (grant === undefined) throw new TypeError("aws_queue.invalid_grant");
@@ -99,7 +118,7 @@ export function createAwsQueueAtomicStore(
 		apply(byteSet, result, [value]);
 		return result;
 	};
-	return freeze({
+	const store: AwsQueueAtomicStore = freeze({
 		async load(): Promise<AwsQueueAtomicRead> {
 			try {
 				const response = (
@@ -183,5 +202,7 @@ export function createAwsQueueAtomicStore(
 			}
 		},
 	});
+	apply(identitySet, storeIdentities, [store, grant]);
+	return store;
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply */

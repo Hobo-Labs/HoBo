@@ -1181,7 +1181,9 @@ underlying request may have committed before its response was lost. A caller
 must reconcile durable operation receipts before retrying; an `unknown` result
 is not proof of a conflict or of no effect. Each queue requires a dedicated,
 exclusively owned table and host-verified resource epoch; deleting or recreating
-that table without fencing can lose receipts or permit an ABA revision. This
+that table without fencing can lose receipts or permit an ABA revision. Factory
+inspection exposes the captured grant for host binding; it does not verify IAM or
+the table's actual incarnation. This
 storage layer does not yet implement queue messages, leases, the SQS mapping, or
 component bindings. The official AWS Emulator test resets its test record and
 checks conditional writes, reopening, and concurrent writers against an
