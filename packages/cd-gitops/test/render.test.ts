@@ -102,4 +102,34 @@ describe("renderPublication", () => {
 			),
 		).toThrow(/gitops-config-invalid/);
 	});
+
+	it("emits argocd.argoproj.io/sync-wave annotations when syncWave is provided for Argo CD", () => {
+		const out = renderPublication(
+			config("GITOPS_ENGINE_ARGO_CD"),
+			set,
+			resolved,
+			{ syncWave: -1 },
+		);
+		const app = JSON.parse(out.files[0]?.content ?? "{}");
+		const cm = JSON.parse(out.files[1]?.content ?? "{}");
+		expect(app.metadata.annotations["argocd.argoproj.io/sync-wave"]).toBe("-1");
+		expect(cm.metadata.annotations["argocd.argoproj.io/sync-wave"]).toBe("-1");
+
+		const fluxOut = renderPublication(
+			config("GITOPS_ENGINE_FLUX"),
+			set,
+			resolved,
+			{ syncWave: 2 },
+		);
+		const fluxDoc = JSON.parse(fluxOut.files[0]?.content ?? "{}");
+		expect(
+			fluxDoc.metadata.annotations["argocd.argoproj.io/sync-wave"],
+		).toBeUndefined();
+
+		expect(() =>
+			renderPublication(config("GITOPS_ENGINE_ARGO_CD"), set, resolved, {
+				syncWave: 1.5,
+			}),
+		).toThrow(/gitops-config-invalid/);
+	});
 });
