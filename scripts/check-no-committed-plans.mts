@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { GIT_OUTPUT_MAX_BUFFER } from "./lib/git-output.ts";
@@ -67,7 +67,9 @@ export function committedPlans(staged: boolean): CommittedPlan[] {
 		.filter((file) => !deleted.has(file))
 		.flatMap((file) => {
 			const reason = planReason(file, () =>
-				staged ? git(["show", `:${file}`]) : readFileSync(file, "utf8"),
+				staged || !existsSync(file)
+					? git(["show", `:${file}`])
+					: readFileSync(file, "utf8"),
 			);
 			return reason === undefined ? [] : [{ file, reason }];
 		});
