@@ -45,6 +45,7 @@ export type DurableQueueRejectionCode =
 	| "operation-conflict"
 	| "message-conflict"
 	| "lease-lost"
+	| "delivery-exhausted"
 	| "capacity-exceeded"
 	| "unavailable";
 

@@ -607,3 +607,12 @@ number of host instances. A synchronous blocked callback cannot be interrupted
 by the deadline. The bounded queue model describes a single-dispatch abstraction;
 it does not prove this host or the provider's replay and durability assumptions.
 The host does not itself implement or map a cloud queue.
+
+The internal atomic queue transition function records bounded operation receipts,
+message idempotency using canonical request fingerprints, lease generations,
+and explicit capacity, identifier exhaustion, and delivery
+exhaustion outcomes. Completed and exhausted messages remain retained; there is
+no compaction or dead-letter operation yet, so a finite queue eventually requires
+operator reconciliation. The transition requires validated inputs, a monotonic
+trusted clock, and an atomic durable state owner. It is not a queue provider until
+those pieces are connected and persisted.
