@@ -35,7 +35,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   matrix starts. `--resolve-digest` waits until the version tag is pullable from GHCR,
   pins the digest from that pulled image, and confirms the digest ref pulls, so release
   never races `ci-deps-publish.yml`'s
-  worker push on a green main run. A registry login failure during that wait is retried
+  worker push after a finished main run. A registry login failure during that wait is retried
   until the same deadline and, if it is still failing, reported as a GHCR login failure
   rather than a generic timeout. The digest confirmation pull still runs when the tag
   pull succeeds with less than a second of budget left. An unreadable manifest keeps the
