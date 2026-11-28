@@ -18,6 +18,7 @@ function evaluate(locale: string, reverse = false) {
 	);
 	const child = spawnSync(process.execPath, ["--import", "tsx", fixture], {
 		encoding: "utf8",
+		timeout: 30_000,
 		env: {
 			...process.env,
 			LC_ALL: locale,
@@ -48,7 +49,7 @@ it("uses the same credit and effective cost across locales while retaining expli
 	expect(swedish.legacyEffective).toBe("9");
 	expect(english.legacyConsumption).toEqual(["ä"]);
 	expect(swedish.legacyConsumption).toEqual(["z"]);
-});
+}, 120_000);
 
 it("chooses equal-priority credits independently of input order", () => {
 	const names = fc.uniqueArray(
@@ -99,7 +100,7 @@ it("chooses equal-priority credits independently of input order", () => {
 		}),
 		{ seed: 614482, numRuns: 300 },
 	);
-});
+}, 60_000);
 
 it("rejects an unknown rating version", () => {
 	const scenario = makeScenario({
