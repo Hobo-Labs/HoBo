@@ -809,6 +809,7 @@ export async function runCiRelayDeploy(
 		projectName: project,
 		target,
 		createMissingProject: createProject,
+		...(stagedProduction ? { stageProduction: true } : undefined),
 		configuration: Object.fromEntries(configuration),
 		gitArtifact: {
 			org,

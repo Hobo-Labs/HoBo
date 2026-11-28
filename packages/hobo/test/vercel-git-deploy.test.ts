@@ -187,11 +187,9 @@ describe("the Vercel git-deploy pact (pact-backed transport, no network)", () =>
 			"project",
 			"gitSource",
 			"target",
-			"autoAssignCustomDomains",
 		]);
 		expect(at(vercel.calls, 0).body).toMatchObject({
 			target: "production",
-			autoAssignCustomDomains: false,
 		});
 		expect(vercel.fidelityViolations()).toEqual([]);
 		expect(outputs).toMatchObject({
@@ -460,6 +458,54 @@ describe("createVercelClient.createDeployment from a git reference (scripted tra
 });
 
 describe("createVercelDeployProvider with a git artifact (scripted transport, no network)", () => {
+	it("assigns the project's domains on production unless staging opts out", async () => {
+		const source = `{"type":"github","org":"example","repo":"hobo","ref":"main","sha":"${SHA}"}`;
+		const assigned = `{"name":"hobo-ci","project":"hobo-ci","gitSource":${source},"target":"production"}`;
+		const staged = `{"name":"hobo-ci","project":"hobo-ci","gitSource":${source},"target":"production","autoAssignCustomDomains":false}`;
+		for (const stageProduction of [undefined, false] as const) {
+			const { fetch, sent } = scripted({ [POST_DEPLOY]: [DEPLOYED] });
+			await gitProvider(fetch, {
+				gitArtifact: { ...GIT, sha: SHA },
+				target: "production",
+				...(stageProduction !== undefined ? { stageProduction } : undefined),
+			}).apply(programFor(`dep-assigned-${String(stageProduction)}`));
+			expect(first(sent).init.body).toBe(assigned);
+		}
+		const held = scripted({ [POST_DEPLOY]: [DEPLOYED] });
+		await gitProvider(held.fetch, {
+			gitArtifact: { ...GIT, sha: SHA },
+			target: "production",
+			stageProduction: true,
+		}).apply(programFor("dep-staged"));
+		expect(first(held.sent).init.body).toBe(staged);
+		const preview = scripted({ [POST_DEPLOY]: [DEPLOYED] });
+		await gitProvider(preview.fetch, { stageProduction: true }).apply(
+			programFor("dep-preview-staged"),
+		);
+		expect(first(preview.sent).init.body).toBe(
+			'{"name":"hobo-ci","project":"hobo-ci","gitSource":{"type":"github","org":"example","repo":"hobo","ref":"main"}}',
+		);
+		const planned = planVercelGitDeployment({
+			projectName: "hobo-ci",
+			gitArtifact: { ...GIT, sha: SHA },
+			target: "production",
+			stageProduction: true,
+		});
+		expect(planned.requests.at(-1)?.body).toEqual({
+			name: "hobo-ci",
+			project: "hobo-ci",
+			gitSource: {
+				type: "github",
+				org: "example",
+				repo: "hobo",
+				ref: "main",
+				sha: SHA,
+			},
+			target: "production",
+			autoAssignCustomDomains: false,
+		});
+	});
+
 	it("refuses a target that is neither preview nor production, at construction", () => {
 		const { fetch } = scripted({});
 		for (const target of ["staging", "Production", ""]) {
