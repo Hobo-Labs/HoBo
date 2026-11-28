@@ -199,7 +199,7 @@ export function awsHttpBindleMappers<Requirements>(
 		annotations: ["hobo:session-replay"],
 		bindsEntrypoint: true,
 		limitations: [
-			"Node.js HTTP with explicitly selected bounded DynamoDB, S3 and Secrets Manager bindings only; the host must authenticate the source, endpoint, stores, IAM and pricing inventory.",
+			"Node.js HTTP with selected bounded DynamoDB, S3, Secrets Manager and durable queue bindings; the host authenticates source, endpoint, stores, IAM and pricing inventory.",
 		],
 		validate,
 		build: (input) =>
@@ -218,7 +218,7 @@ export function awsHttpBindleMappers<Requirements>(
 					const dependency: ResourceLike | undefined =
 						input.dependencies[binding.name];
 					const expected =
-						binding.kind === "kv"
+						binding.kind === "kv" || binding.kind === "queue"
 							? "AWS.DynamoDB.Table"
 							: binding.kind === "bucket"
 								? "AWS.S3.Bucket"
@@ -234,7 +234,7 @@ export function awsHttpBindleMappers<Requirements>(
 						);
 					// SAFETY: the Alchemy mapper created this dependency with the checked resource type and FQN.
 					env[binding.environment] =
-						binding.kind === "kv"
+						binding.kind === "kv" || binding.kind === "queue"
 							? (dependency as Table).tableName
 							: binding.kind === "bucket"
 								? (dependency as Bucket).bucketName

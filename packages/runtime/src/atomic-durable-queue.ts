@@ -12,24 +12,57 @@ import {
 } from "./atomic-queue-checkpoint.js";
 import {
 	ATOMIC_QUEUE_MAX_EVENTS,
+	type AtomicQueueCheckpointRef,
+	type AtomicQueueEvent,
 	decodeAtomicQueueLog,
 	encodeAtomicQueueLog,
 	serializeVector,
-	type AtomicQueueEvent,
-	type AtomicQueueCheckpointRef,
 } from "./atomic-queue-log.js";
 import {
+	type AtomicQueueRequest,
+	type AtomicQueueState,
+	type AtomicQueueTransition,
 	emptyAtomicQueueState,
 	transitionAtomicQueue,
-	type AtomicQueueRequest,
-	type AtomicQueueTransition,
-	type AtomicQueueState,
 } from "./atomic-queue-transition.js";
 import {
 	parseQueueDequeue,
 	parseQueueEnqueue,
 	parseQueueSettlement,
 } from "./durable-queue-boundary.js";
+
+export type {
+	DurableQueue,
+	DurableQueueLimits,
+	DurableQueueOperation,
+	DurableQueueOutcome,
+} from "@hobo/core";
+export { parseDurableQueueOperation } from "@hobo/core";
+
+export function snapshotAtomicQueueEnqueue(
+	input: Parameters<DurableQueue["enqueue"]>[0],
+	limits: DurableQueueLimits,
+): Parameters<DurableQueue["enqueue"]>[0] {
+	return parseQueueEnqueue(input, limits, "port");
+}
+export function snapshotAtomicQueueDequeue(
+	input: Parameters<DurableQueue["dequeue"]>[0],
+	limits: DurableQueueLimits,
+): Parameters<DurableQueue["dequeue"]>[0] {
+	return parseQueueDequeue(input, limits, "port");
+}
+export function snapshotAtomicQueueSettlement(
+	input: Parameters<DurableQueue["complete"]>[0],
+	limits: DurableQueueLimits,
+): Parameters<DurableQueue["complete"]>[0] {
+	return parseQueueSettlement(input, limits, false, "port");
+}
+export function snapshotAtomicQueueExtension(
+	input: Parameters<DurableQueue["extendLease"]>[0],
+	limits: DurableQueueLimits,
+): Parameters<DurableQueue["extendLease"]>[0] {
+	return parseQueueSettlement(input, limits, true, "port");
+}
 
 export interface AtomicQueueStore {
 	load(): Promise<

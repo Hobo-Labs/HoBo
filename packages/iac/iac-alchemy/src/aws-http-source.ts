@@ -1,5 +1,9 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: the source joins host-supplied authorities to bounded application data. */
 import { types } from "node:util";
+import {
+	type DurableQueue,
+	inspectAtomicDurableQueue,
+} from "@hobo/runtime/atomic-durable-queue";
 import { type AwsHttpGraph, captureAwsHttpGraph } from "./aws-http-graph.js";
 import {
 	type AwsBindleApplication,
@@ -8,6 +12,7 @@ import {
 	createAwsBindleApplication,
 } from "./aws-http-runtime.js";
 import { type AwsKvStore, inspectAwsDynamoKvStore } from "./aws-kv.js";
+import { inspectAwsQueueAtomicStore } from "./aws-queue-atomic-store.js";
 import { type AwsS3Store, inspectAwsS3Store } from "./aws-s3.js";
 import { type AwsSecretStore, inspectAwsSecretStore } from "./aws-secret.js";
 import type { BindleForAlchemy } from "./bindle.js";
@@ -15,7 +20,7 @@ import { observeUnexpectedSynchronousResult } from "./synchronous-result.js";
 
 export interface AwsHttpResolvedDependency {
 	readonly name: string;
-	readonly kind: "kv" | "bucket" | "secret";
+	readonly kind: "kv" | "bucket" | "secret" | "queue";
 	readonly physicalName: string;
 	readonly allow: readonly string[];
 }
@@ -58,7 +63,9 @@ export function defineAwsHttpSource<Requirements>(options: {
 	readonly environment: Readonly<Record<string, string | undefined>>;
 	readonly resolveStores: (
 		bindings: readonly AwsHttpResolvedDependency[],
-	) => Readonly<Record<string, AwsKvStore | AwsS3Store | AwsSecretStore>>;
+	) => Readonly<
+		Record<string, AwsKvStore | AwsS3Store | AwsSecretStore | DurableQueue>
+	>;
 	readonly verifyBinding: (claim: AwsHttpBindingClaim) => boolean;
 }): AwsHttpSource {
 	if (
@@ -144,15 +151,23 @@ export function defineAwsHttpSource<Requirements>(options: {
 						const field = descriptor(stores, binding.name);
 						if (!field || !own(field, "value") || !field.enumerable)
 							return unavailable();
+						const queue =
+							binding.kind === "queue"
+								? inspectAtomicDurableQueue(field.value)
+								: undefined;
 						const grant =
-							binding.kind === "kv"
-								? inspectAwsDynamoKvStore(field.value)
-								: binding.kind === "bucket"
-									? inspectAwsS3Store(field.value)
-									: inspectAwsSecretStore(field.value);
+							binding.kind === "queue"
+								? queue
+									? inspectAwsQueueAtomicStore(queue.store)
+									: undefined
+								: binding.kind === "kv"
+									? inspectAwsDynamoKvStore(field.value)
+									: binding.kind === "bucket"
+										? inspectAwsS3Store(field.value)
+										: inspectAwsSecretStore(field.value);
 						if (
 							!grant ||
-							(binding.kind === "kv"
+							(binding.kind === "kv" || binding.kind === "queue"
 								? !("tableName" in grant) ||
 									grant.tableName !== binding.physicalName
 								: binding.kind === "bucket"

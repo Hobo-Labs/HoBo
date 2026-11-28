@@ -2590,6 +2590,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
     devDependencies:
       '@alchemy.run/aws':
         specifier: 2.0.0-beta.87

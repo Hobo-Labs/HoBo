@@ -637,3 +637,8 @@ destroys receipts and idempotency history. The checkpoint codec checks structure
 limits, identities, lease references and delivery content, but cannot prove the
 history of an externally forged record. The log version must change when replay
 semantics change.
+
+The queue runtime exports request snapshot helpers so hosts can copy and validate
+a complete operation before invoking authorization callbacks. Factory inspection
+identifies the exact store and captured limits; the host must still authenticate
+that store and its authority.
