@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
 import {
+	type CallToolRequest,
 	Client,
 	type JSONRPCMessage,
 	parseJSONRPCMessage,
@@ -24,10 +25,7 @@ import {
 	localOperatorAuth,
 	serveMcpStdio,
 } from "../../src/mcp-stdio.js";
-import {
-	createStoreChoiceApp,
-	STORE_CHOICE_TICKET_NOTIFICATION,
-} from "../../src/mcp-store-choice.js";
+import { createStoreChoiceApp } from "../../src/mcp-store-choice.js";
 
 function required<T>(value: T | null | undefined): T {
 	if (value == null) throw new Error("Missing test fixture");
@@ -124,17 +122,8 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			},
 		);
 		await client.connect(serverTransport);
-		const calls: unknown[] = [];
+		const calls: CallToolRequest["params"][] = [];
 		const messages: unknown[] = [];
-		const tickets: string[] = [];
-		client.fallbackNotificationHandler = async (notification) => {
-			if (notification.method !== STORE_CHOICE_TICKET_NOTIFICATION) return;
-			const params: unknown = notification.params;
-			if (!isJsonObject(params)) return;
-			const meta = params._meta;
-			if (!isJsonObject(meta) || !isJsonString(meta.hoboChoiceTicket)) return;
-			tickets.push(meta.hoboChoiceTicket);
-		};
 		try {
 			const tools = (await client.listTools()).tools;
 			const picker = tools.find((tool) => tool.name === "choose_secret_store");
@@ -149,17 +138,24 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 				arguments: { cwd: project },
 			});
 			expect(shown.structuredContent).toEqual({ status: "shown" });
-			expect(JSON.stringify(shown)).not.toContain("hoboChoiceTicket");
-			await vi.waitFor(() => expect(tickets).toHaveLength(1));
-			const choiceTicket = tickets[0];
-			if (choiceTicket === undefined)
-				throw new Error("The host did not receive the picker ticket.");
-			expect(JSON.stringify(shown)).not.toContain(choiceTicket);
+			const meta = shown._meta;
+			if (!isJsonObject(meta) || !isJsonString(meta.hoboChoiceTicket))
+				throw new Error("The tool result did not carry the picker ticket.");
+			const choiceTicket = meta.hoboChoiceTicket;
+			expect(JSON.stringify(shown.content)).not.toContain(choiceTicket);
+			expect(JSON.stringify(shown.structuredContent)).not.toContain(
+				choiceTicket,
+			);
+			expect(JSON.stringify(shown.content)).not.toContain("hoboChoiceTicket");
+			expect(JSON.stringify(shown.structuredContent)).not.toContain(
+				"hoboChoiceTicket",
+			);
 			const contents = (await client.readResource({ uri: required(uri) }))
 				.contents;
 			const resource = required(contents[0]);
 			if (!("text" in resource))
 				throw new Error("Expected a text app resource");
+			expect(resource.text).not.toContain(choiceTicket);
 			const dom = new JSDOM(resource.text, {
 				runScripts: "outside-only",
 				url: "https://example.invalid",
@@ -175,7 +171,7 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			});
 			bridge.oninitialized = resolveInitialized;
 			bridge.oncalltool = async (params) => {
-				calls.push(params.name);
+				calls.push(params);
 				return await client.callTool(params);
 			};
 			bridge.onmessage = async (params) => {
@@ -205,10 +201,12 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			view.eval(required(script?.textContent));
 			await initialized;
 			await bridge.sendToolInput({ arguments: { cwd: project } });
-			const meta = isJsonObject(shown._meta) ? { ...shown._meta } : {};
-			meta.hoboChoiceTicket = choiceTicket;
-			const forwarded = { ...shown, _meta: meta };
-			await bridge.sendToolResult(forwarded);
+			const button = required(
+				view.document.querySelector<HTMLButtonElement>("button"),
+			);
+			expect(button.disabled).toBe(true);
+			await bridge.sendToolResult(shown);
+			expect(button.disabled).toBe(false);
 			const radio = required(
 				view.document.querySelector<HTMLInputElement>(
 					'input[value="infisical"]',
@@ -235,7 +233,13 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 				new view.Event("submit", { bubbles: true, cancelable: true }),
 			);
 			await completed;
-			expect(calls).toEqual(["submit_store_choice"]);
+			expect(calls.map((call) => call.name)).toEqual(["submit_store_choice"]);
+			expect(calls[0]?.arguments).toMatchObject({
+				choiceTicket,
+				cwd: project,
+				store: "infisical",
+				INFISICAL_PROJECT_ID: privateValue,
+			});
 			expect(saved.INFISICAL_PROJECT_ID).toBe(privateValue);
 			expect(established).toBe(true);
 			await vi.waitFor(() => expect(messages).toHaveLength(1), {

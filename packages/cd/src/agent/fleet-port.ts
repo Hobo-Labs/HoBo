@@ -6,13 +6,14 @@ import {
 	type FleetFailure,
 	type FleetId,
 	KeyAlgorithm,
+	MEMBER_RECORD_CONTEXT,
 	type MemberId,
 	MemberRecordSchema,
 	MemberState,
 	type Outcome,
 	type PublicJwk,
-	type SignedEnvelope,
 	parseKeyId,
+	type SignedEnvelope,
 	type Signer,
 	type VerifiedToken,
 } from "@hobo/fleet";
@@ -71,23 +72,30 @@ function memberActiveRefusal(
 	}
 }
 
+function unknownMember(memberId: MemberId): Outcome<true> {
+	const error: FleetFailure = {
+		code: "member-unknown",
+		message: `no member ${memberId}`,
+	};
+	return { ok: false, error };
+}
+
 async function assertMemberActiveFromEnvelope(
 	read: Outcome<SignedEnvelope>,
 	memberId: MemberId,
 ): Promise<Outcome<true>> {
 	if (!read.ok) return read;
-	let record;
+	const envelope = read.value;
+	if (envelope.context !== MEMBER_RECORD_CONTEXT)
+		return unknownMember(memberId);
 	try {
-		record = fromBinary(MemberRecordSchema, read.value.payload);
+		const record = fromBinary(MemberRecordSchema, envelope.payload);
+		if (record.memberId !== memberId) return unknownMember(memberId);
+		const refusal = memberActiveRefusal(record);
+		return refusal ?? { ok: true, value: true };
 	} catch {
-		const error: FleetFailure = {
-			code: "member-unknown",
-			message: `no member ${memberId}`,
-		};
-		return { ok: false, error };
+		return unknownMember(memberId);
 	}
-	const refusal = memberActiveRefusal(record);
-	return refusal ?? { ok: true, value: true };
 }
 
 export function remoteDeliveryFleet(

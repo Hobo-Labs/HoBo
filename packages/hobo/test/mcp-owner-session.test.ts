@@ -1382,15 +1382,27 @@ describe("MCP owner store session", () => {
 				support,
 				undefined,
 			);
-			expect(JSON.stringify(older)).not.toContain("hoboChoiceTicket");
-			expect(JSON.stringify(newer)).not.toContain("hoboChoiceTicket");
-			expect(tickets).toHaveLength(2);
-			const oldTicket = tickets[0];
-			const newTicket = tickets[1];
-			if (oldTicket === undefined || newTicket === undefined)
-				throw new Error("The host did not receive both picker tickets.");
-			expect(JSON.stringify({ older, newer })).not.toContain(oldTicket);
-			expect(JSON.stringify({ older, newer })).not.toContain(newTicket);
+			const ticketOf = (outcome: { readonly _meta?: JsonObject }): string => {
+				const meta = outcome._meta;
+				if (!isJsonObject(meta) || !isJsonString(meta.hoboChoiceTicket))
+					throw new Error("The tool result did not carry the picker ticket.");
+				return meta.hoboChoiceTicket;
+			};
+			const visible = (outcome: {
+				readonly content: unknown;
+				readonly structuredContent?: unknown;
+			}) =>
+				JSON.stringify({
+					content: outcome.content,
+					structuredContent: outcome.structuredContent,
+				});
+			const oldTicket = ticketOf(older);
+			const newTicket = ticketOf(newer);
+			expect(tickets).toEqual([oldTicket, newTicket]);
+			expect(visible(older)).not.toContain("hoboChoiceTicket");
+			expect(visible(newer)).not.toContain("hoboChoiceTicket");
+			expect(visible(older)).not.toContain(oldTicket);
+			expect(visible(newer)).not.toContain(newTicket);
 			const selected = await app.callTool(
 				"submit_store_choice",
 				{

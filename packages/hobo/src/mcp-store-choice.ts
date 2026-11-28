@@ -925,20 +925,17 @@ export function createStoreChoiceApp(
 					tickets.delete(tickets.keys().next().value ?? "");
 				const id = randomUUID();
 				tickets.set(id, ticket);
-				support.notify?.(STORE_CHOICE_TICKET_NOTIFICATION, {
-					_meta: {
-						"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
-						hoboChoiceTicket: id,
-					},
-				});
+				const meta = {
+					"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+					hoboChoiceTicket: id,
+				};
+				support.notify?.(STORE_CHOICE_TICKET_NOTIFICATION, { _meta: meta });
 				return {
 					...result(
 						"HoBo's store picker is shown to the owner. Their answer goes to HoBo only; it connects the store when they submit it.",
 						{ status: "shown" },
 					),
-					_meta: {
-						"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
-					},
+					_meta: meta,
 				};
 			}
 			if (options.pages === undefined) return UNAVAILABLE;

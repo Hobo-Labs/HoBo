@@ -20,7 +20,6 @@ import {
 	CHOOSE_SECRET_STORE_TOOL,
 	createStoreChoiceApp,
 	STORE_CHOICE_RESOURCE_URI,
-	STORE_CHOICE_TICKET_NOTIFICATION,
 	SUBMIT_STORE_CHOICE_TOOL,
 } from "../../src/mcp-store-choice.js";
 import type {
@@ -512,26 +511,19 @@ describe("EVAL choose_secret_store: a private owner ceremony", () => {
 				(await client.answer(client.choose())).result,
 			);
 			expect(shown.structuredContent).toEqual({ status: "shown" });
+			const choiceTicket = z.string().parse(shown._meta?.hoboChoiceTicket);
 			expect(shown._meta).toMatchObject({
 				"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+				hoboChoiceTicket: choiceTicket,
 			});
-			expect(JSON.stringify(shown)).not.toContain("hoboChoiceTicket");
-			const note = z
-				.object({
-					_meta: z.object({
-						hoboChoiceTicket: z.string(),
-						"ui/resourceUri": z.literal(STORE_CHOICE_RESOURCE_URI),
-					}),
-				})
-				.parse(
-					(
-						await client.next(
-							(m) => m.method === STORE_CHOICE_TICKET_NOTIFICATION,
-						)
-					).params,
-				);
-			const choiceTicket = note._meta.hoboChoiceTicket;
-			expect(JSON.stringify(shown)).not.toContain(choiceTicket);
+			expect(JSON.stringify(shown.content)).not.toContain(choiceTicket);
+			expect(JSON.stringify(shown.structuredContent)).not.toContain(
+				choiceTicket,
+			);
+			expect(JSON.stringify(shown.content)).not.toContain("hoboChoiceTicket");
+			expect(JSON.stringify(shown.structuredContent)).not.toContain(
+				"hoboChoiceTicket",
+			);
 			const page = z
 				.object({ contents: z.array(z.object({ text: z.string() })) })
 				.parse(
@@ -857,10 +849,14 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 				arguments: { family: "cd" },
 			}),
 		);
+		const choiceTicket = z.string().parse(shown._meta?.hoboChoiceTicket);
 		expect(shown._meta).toMatchObject({
 			"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+			hoboChoiceTicket: choiceTicket,
 		});
-		expect(JSON.stringify(shown)).not.toContain("hoboChoiceTicket");
+		expect(JSON.stringify(shown.content)).not.toContain(choiceTicket);
+		expect(JSON.stringify(shown.structuredContent)).not.toContain(choiceTicket);
+		expect(html).not.toContain(choiceTicket);
 		const guessed = relayToolResult(
 			await client.rpc("tools/call", {
 				name: SUBMIT_STORE_CHOICE_TOOL,
@@ -873,23 +869,12 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		);
 		expect(guessed.isError).toBe(true);
 		expect(client.saved.size).toBe(0);
-		const note = z
-			.object({ _meta: z.object({ hoboChoiceTicket: z.string() }) })
-			.parse(
-				(
-					await client.next(
-						(m) => m.method === STORE_CHOICE_TICKET_NOTIFICATION,
-					)
-				).params,
-			);
-		expect(JSON.stringify(shown)).not.toContain(note._meta.hoboChoiceTicket);
-		expect(html).not.toContain(note._meta.hoboChoiceTicket);
 		await client.rpc("tools/call", {
 			name: SUBMIT_STORE_CHOICE_TOOL,
 			arguments: {
 				family: "cd",
 				store: "bitwarden",
-				choiceTicket: note._meta.hoboChoiceTicket,
+				choiceTicket,
 			},
 		});
 		expect(Object.fromEntries(client.saved)).toEqual({
