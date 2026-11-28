@@ -109,14 +109,21 @@ export type AtomicQueueExhaustedSnapshot =
 				readonly deliveryAttempts: number;
 			}[];
 			readonly more: boolean;
-			readonly nextCursor: string | null;
+			readonly nextPage: {
+				readonly afterMessageId: string;
+				readonly revision: number;
+				readonly observedAtMs: number;
+			} | null;
 	  }
+	| { readonly status: "changed" }
 	| { readonly status: "unknown" };
 export interface AtomicDurableQueue extends DurableQueue {
 	compact(): Promise<AtomicQueueCompactionOutcome>;
 	reclaimCompleted(): Promise<AtomicQueueReclamationOutcome>;
 	inspectExhausted(options?: {
-		readonly afterMessageId?: string;
+		readonly afterMessageId: string;
+		readonly revision: number;
+		readonly observedAtMs: number;
 	}): Promise<AtomicQueueExhaustedSnapshot>;
 	confirmExhaustedExport(input: {
 		readonly operation: DurableQueueOperation;
@@ -455,42 +462,71 @@ export function createAtomicDurableQueue(
 		async inspectExhausted(options) {
 			try {
 				let afterSequence = 0;
+				let expectedRevision: number | undefined;
+				let snapshotTime: number | undefined;
 				if (options !== undefined) {
 					if (
 						options === null ||
 						typeof options !== "object" ||
 						identityProxy(options) ||
-						Array.isArray(options)
+						Array.isArray(options) ||
+						identityOwnKeys(options).length !== 3
 					)
 						return outcome({ status: "unknown" as const });
-					const fields = identityOwnKeys(options);
-					if (fields.length > 1) return outcome({ status: "unknown" as const });
-					if (fields.length === 1) {
-						if (fields[0] !== "afterMessageId")
-							return outcome({ status: "unknown" as const });
-						const field = identityDescriptor(options, "afterMessageId");
-						if (
-							!field ||
-							!field.enumerable ||
-							!identityHasOwn(field, "value") ||
-							typeof field.value !== "string" ||
-							field.value.length > limits.nameBytes ||
-							identityApply(inspectionRegexExec, inspectionId, [
-								field.value,
-							]) === null
-						)
-							return outcome({ status: "unknown" as const });
-						afterSequence = inspectionNumber(
-							identityApply(inspectionSlice, field.value, [1]),
-						);
-						if (!isSafe(afterSequence))
-							return outcome({ status: "unknown" as const });
-					}
+					const cursor = identityDescriptor(options, "afterMessageId");
+					const revision = identityDescriptor(options, "revision");
+					const observed = identityDescriptor(options, "observedAtMs");
+					if (
+						!cursor ||
+						!cursor.enumerable ||
+						!identityHasOwn(cursor, "value") ||
+						typeof cursor.value !== "string" ||
+						cursor.value.length > limits.nameBytes ||
+						identityApply(inspectionRegexExec, inspectionId, [cursor.value]) ===
+							null ||
+						!revision ||
+						!revision.enumerable ||
+						!identityHasOwn(revision, "value") ||
+						typeof revision.value !== "number" ||
+						!isSafe(revision.value) ||
+						revision.value < 0 ||
+						!observed ||
+						!observed.enumerable ||
+						!identityHasOwn(observed, "value") ||
+						typeof observed.value !== "number" ||
+						!isSafe(observed.value) ||
+						observed.value < 0
+					)
+						return outcome({ status: "unknown" as const });
+					afterSequence = inspectionNumber(
+						identityApply(inspectionSlice, cursor.value, [1]),
+					);
+					if (!isSafe(afterSequence))
+						return outcome({ status: "unknown" as const });
+					expectedRevision = revision.value;
+					snapshotTime = observed.value;
 				}
 				const loaded = await readState();
 				if (!loaded) return outcome({ status: "unknown" as const });
-				const observedAtMs = now();
-				if (!isSafe(observedAtMs) || observedAtMs < loaded.last)
+				const current = now();
+				if (!isSafe(current) || current < loaded.last)
+					return outcome({ status: "unknown" as const });
+				if (
+					expectedRevision !== undefined &&
+					expectedRevision !== loaded.revision
+				) {
+					const verified = await load();
+					if (
+						loaded.revision === 0
+							? verified.status !== "missing"
+							: verified.status !== "available" ||
+								verified.revision !== loaded.revision
+					)
+						return outcome({ status: "unknown" as const });
+					return outcome({ status: "changed" as const });
+				}
+				const observedAtMs = snapshotTime ?? current;
+				if (observedAtMs < loaded.last || observedAtMs > current)
 					return outcome({ status: "unknown" as const });
 				const messages: {
 					messageId: string;
@@ -549,15 +585,21 @@ export function createAtomicDurableQueue(
 							verified.revision !== loaded.revision
 				)
 					return outcome({ status: "unknown" as const });
+				const lastMessage = messages[messages.length - 1];
 				return outcome({
 					status: "available" as const,
 					revision: loaded.revision,
 					observedAtMs,
 					messages,
 					more,
-					nextCursor: more
-						? (messages[messages.length - 1]?.messageId ?? null)
-						: null,
+					nextPage:
+						more && lastMessage
+							? freeze({
+									afterMessageId: lastMessage.messageId,
+									revision: loaded.revision,
+									observedAtMs,
+								})
+							: null,
 				});
 			} catch {
 				return outcome({ status: "unknown" as const });
