@@ -2,7 +2,7 @@ name: Fleet enrollment
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "packages/ci/**"
       - "packages/ci-gh-actions/**"

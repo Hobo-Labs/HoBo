@@ -16,14 +16,14 @@
 			"why": "builds a real component using the WIT package's tools and sources, then loads core's built messaging limits by a computed file URL"
 		},
 		{
+			"from": "packages/extension-alchemy-rivet/test/rivet-bindle-topic-live.mjs",
+			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
+			"why": "runs a spawned bindle topic live fixture that loads the adapter and runtime through computed module paths"
+		},
+		{
 			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.mjs",
 			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
 			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
-		},
-		{
-			"from": "packages/extension-alchemy-rivet/test/rivet-bindle-topic-live.mjs",
-			"needs": ["@hobo/runtime-rivet#build"],
-			"why": "loads the runtime's built actor and receipt journal by computed file URLs for the spawned topic fixture"
 		},
 		{
 			"from": "packages/control-yard/test/evidence-launch.test.ts",

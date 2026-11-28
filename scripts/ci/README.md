@@ -14,6 +14,23 @@ scripts, then unpacked into `${RUNNER_TEMP}/hobo-pw-browsers` with
 `PLAYWRIGHT_BROWSERS_PATH` pointing at that directory (never `/opt/pw-browsers`).
 Self-hosted `hobo` runners keep the image-baked browsers under `/opt/pw-browsers`.
 
+## Draft pull request CI (Nov 2026)
+
+Pull request workflows listen only on `opened`, `synchronize`, `reopened`, and
+`ready_for_review` (`examples-e2e.yml` also listens on `labeled` so adding
+`hobo/e2e` or `hobo/e2e-quarantine` to a ready pull request can start those
+lanes; entry job conditions still skip drafts). The first routing job on each `pull_request`-triggered
+workflow carries `github.event_name != 'pull_request' || github.event.pull_request.draft == false`, so a draft schedules no runner jobs. Required aggregate gates
+(for example `pr-gate` in `hobo-ci.yml`) run only when the pull request is not a
+draft; their scripts fail closed if prerequisites were skipped without an
+attestation or merge-group PR Fabric reuse. A ready pull request whose gates are
+all green may enter the merge queue; any required failure sends the pull request
+back to draft for in-place fixes, then it is marked ready for review again to
+re-run CI. `decidePrFabricReuse` treats a green workflow conclusion without an
+executed route job or `pr-fabric-tested` artifact as non-reuseable evidence.
+Contract tests: `scripts/test/draft-pull-request-workflows.test.ts`,
+`scripts/test/pr-fabric-reuse.test.ts`, `scripts/test/merge-group-gate.test.ts`.
+
 ## Routing
 
 `route-runner.mts` is the route job of the six routed workflows. It runs on a
@@ -59,8 +76,9 @@ Blocked release verdicts and `::error::` lines use
 detectors, fail closed) before aggregation or logging.
 `announceVerdict` keeps resolver codes (`releaseFreightVerdictCodesForAnnounce`)
 and structured GitHub Pages refusal detail on `::error::` lines instead of
-`blocked (none)`. The `Record, promote and publish` step of `release-hobo.yml`
-passes `GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
+`blocked (none)`. The `Record and promote the Pages candidate` step of `release-hobo.yml`,
+and the stable job's `Promote the Pages stable channel` step, pass
+`GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
 token with `contents: write`, not `secrets.GITHUB_TOKEN`. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
@@ -73,9 +91,15 @@ When `scripts/ci/attested-jobs.json` changes, bump `SHADOW_PLAN_BLOB` in
 Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
+While holding the Pages publish slot, the stable job verifies that `gh-pages`
+still names its exact candidate source before promotion. A superseded or
+unverifiable source fails the job so it cannot report a stale promotion as passed.
+If dependency-layer materialization times out without a complete decision, the
+recovery action checks the pnpm store again and installs only when it is warm.
 
 Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
-(`examples` covers `examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
+(including `src` for the gh-pages deps checkout-key path and `examples` for
+`examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
 nested file paths through `sparse-checkout add`, not cone `set`. The release-pages job also
 passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 `sparse-checkout add` plus `git checkout HEAD --` for `examples/browser-runtime/wit`
@@ -224,3 +248,12 @@ The OCI image input key includes SDK bundling helpers for the SDK image. The CLI
 image key also depends on the SDK image key because CLI staging installs its npm
 artifacts; the MCP image depends on the CLI image. This prevents an unchanged image
 key from hiding a changed SDK artifact while leaving unrelated image keys independent.
+
+## Composite action lint
+
+`pnpm run actions:lint` walks `.github/actions/**/action.yml` and rejects
+composite steps that set workflow-only fields such as `timeout-minutes` (use a
+shell `timeout` instead) or `continue-on-error: ${{ ... }}`. Job timeout and
+retry policy belong on the workflow job, not inside the composite. The composite
+field walk parses `yaml` AST nodes in `scripts/lint-actions.ts` via
+`lintCompositeStepFields` before matching unsupported step keys.

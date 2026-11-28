@@ -18,6 +18,7 @@ import {
 } from "../ci/attestation.mts";
 import { evaluateExpression } from "../ci/attested-jobs.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import { anyPathMatchesReleaseHoboFilters } from "../lib/release-hobo-path-filters.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
@@ -205,7 +206,6 @@ describe("release integration pull-request and merge-queue lane", () => {
 			"synchronize",
 			"reopened",
 			"ready_for_review",
-			"labeled",
 		]);
 		assert.equal(pullRequest?.paths, undefined);
 		assert.equal(pullRequest?.branches, undefined);
@@ -307,6 +307,25 @@ describe("release integration pull-request and merge-queue lane", () => {
 			);
 			for (const path of required)
 				assert.ok(paths.includes(path), `${event}: ${path}`);
+		}
+	});
+
+	it("runs the release workflow for OCI registry provider changes", () => {
+		for (const event of ["pull_request", "merge_group"]) {
+			const paths = (
+				asList(asObject(trigger(train, event))?.paths) ?? []
+			).flatMap((value) => {
+				const path = asText(value);
+				return path === undefined ? [] : [path];
+			});
+			for (const path of [
+				"packages/providers/provider-oci-registry/src/resolver.ts",
+				"packages/providers/provider-oci-registry/test/resolver.test.ts",
+			])
+				assert.ok(
+					anyPathMatchesReleaseHoboFilters([path], paths),
+					`${event}: ${path}`,
+				);
 		}
 	});
 

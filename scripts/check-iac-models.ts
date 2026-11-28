@@ -897,6 +897,81 @@ try {
 			`AwsS3Objects ${label}: ${invariant} counterexample found\n`,
 		);
 	}
+	const awsHttpSource = readFileSync(
+		join(sharedDirectory, "AwsHttpBindings.tla"),
+		"utf8",
+	);
+	const awsHttpResult = check(
+		"AwsHttpBindings",
+		sharedDirectory,
+		join(scratch, "aws-http"),
+	);
+	if (
+		awsHttpResult.status !== 0 ||
+		!awsHttpResult.stdout.includes("No error has been found")
+	)
+		throw new Error(
+			`AwsHttpBindings model checking failed:\n${awsHttpResult.stdout}\n${awsHttpResult.stderr}`,
+		);
+	process.stdout.write(awsHttpResult.stdout);
+	const awsHttpCases = [
+		[
+			"begin-without-grant",
+			'/\\ state[r] = "running" /\\ grant /\\ operation[r] = "none"',
+			'/\\ operation[r] = "none"',
+			"OperationStartedAuthorized",
+		],
+		[
+			"release-on-timeout",
+			"/\\ UNCHANGED <<slots, grant, operation, opResult, opVerified, opAdmitted, responseVerified>>",
+			"/\\ slots' = slots \\ {r} /\\ UNCHANGED <<grant, operation, opResult, opVerified, opAdmitted, responseVerified>>",
+			"OutstandingRetainsSlot",
+		],
+		[
+			"skip-operation-revalidation",
+			'IF state[r] = "running" /\\ grant THEN "success" ELSE "unknown"',
+			'"success"',
+			"OperationSuccessVerified",
+		],
+		[
+			"skip-response-revalidation",
+			'IF grant THEN "success" ELSE "unavailable"',
+			'"success"',
+			"ResponseSuccessVerified",
+		],
+		[
+			"in-flight-after-timeout",
+			undefined,
+			undefined,
+			"NeverPendingAfterTimeout",
+		],
+		["successful-response", undefined, undefined, "NeverSuccessfulResponse"],
+	] as const;
+	for (const [label, before, after, invariant] of awsHttpCases) {
+		if (before !== undefined && awsHttpSource.split(before).length !== 2)
+			throw new Error(`AwsHttpBindings ${label} mutation target changed`);
+		const isolated = join(scratch, `aws-http-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "AwsHttpBindings.tla"),
+			before === undefined
+				? awsHttpSource
+				: awsHttpSource.replace(before, after),
+		);
+		writeFileSync(
+			join(isolated, "AwsHttpBindings.cfg"),
+			`SPECIFICATION Spec\nCONSTANTS Requests = {r1, r2}\n          Limit = 1\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = check("AwsHttpBindings", isolated, join(isolated, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`AwsHttpBindings ${label} did not reach ${invariant}`);
+		process.stdout.write(
+			`AwsHttpBindings ${label}: ${invariant} counterexample found\n`,
+		);
+	}
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

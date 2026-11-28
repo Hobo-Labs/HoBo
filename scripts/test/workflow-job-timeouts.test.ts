@@ -14,6 +14,20 @@ const SCHEDULE_JOB_TIMEOUT = /^hobo-ci\.yml:main-gate$/;
 type LongJob = Readonly<{ minutes: number; why: string }>;
 const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 	[
+		"release-hobo.yml:release-oci-build-cli",
+		{
+			minutes: 30,
+			why: "The cold CLI image includes a prerequisite build, live verification and artifact handoff; it exhausted 20 minutes just after its contract passed, while other image legs retain the standard limit",
+		},
+	],
+	[
+		"release-hobo.yml:release-pages",
+		{
+			minutes: 30,
+			why: "Pages setup precedes a separately bounded 19-minute promotion step, so the whole job needs setup and cleanup time outside that budget",
+		},
+	],
+	[
 		"release-hobo.yml:release-pages-browser-wit-smoke",
 		{
 			minutes: 45,
@@ -39,6 +53,13 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 		{
 			minutes: 40,
 			why: "HoBo Fleet: Postgres store conformance via Testcontainers and the start-fence suite share one job; the 40-minute limit leaves time for those database tests after a slow dependency install",
+		},
+	],
+	[
+		"pricing-ci.yml:aws-emulator",
+		{
+			minutes: 40,
+			why: "Alchemy AWS simulator: a self-hosted runner without a shared pnpm store spends most of a 20-minute cap downloading the workspace, then the job is cancelled during the simulator build before test:aws-emulator runs. Warm runners still finish in a few minutes; 40 covers one cold install plus that build and the emulator lane",
 		},
 	],
 ]);
@@ -124,6 +145,46 @@ describe("GitHub Actions job timeouts", () => {
 		/\.ya?ml$/i.test(name),
 	);
 	assert.ok(files.length > 0, "expected workflow files");
+
+	it("leaves bounded headroom for cold release image verification", () => {
+		const release = readFileSync(join(workflowDir, "release-hobo.yml"), "utf8");
+		const jobs = jobBlocks(release);
+		const job = jobs.find(({ id }) => id === "release-oci-build-cli");
+		assert.ok(job, "missing dedicated CLI image build job");
+		const timeout = jobTimeoutLine(job.block);
+		assert.equal(timeout, "30", "the cold CLI job needs extra time");
+		for (const id of ["release-oci-build-tag", "release-oci-build-mcp"]) {
+			const other = jobs.find((entry) => entry.id === id);
+			assert.ok(other, `missing ${id}`);
+			assert.equal(jobTimeoutLine(other.block), "20", `${id} keeps 20 minutes`);
+		}
+		assert.doesNotThrow(() =>
+			assertJobTimeout("release-hobo.yml", job.id, timeout),
+		);
+		assert.doesNotThrow(() =>
+			assertJobTimeout("release-hobo.yml", job.id, "30"),
+		);
+		assert.throws(() => assertJobTimeout("release-hobo.yml", job.id, "31"));
+		assert.throws(() =>
+			assertJobTimeout("release-hobo.yml", "release-oci-build-tag", "30"),
+		);
+	});
+
+	it("leaves setup time outside the bounded Pages promotion step", () => {
+		const release = readFileSync(join(workflowDir, "release-hobo.yml"), "utf8");
+		const job = jobBlocks(release).find(({ id }) => id === "release-pages");
+		assert.ok(job, "missing Pages publication job");
+		const step = job.block.match(/\n {8}timeout-minutes: (\d+)\n/u);
+		assert.ok(step, "missing Pages promotion step timeout");
+		assert.ok(
+			Number(jobTimeoutLine(job.block)) >= Number(step[1]) + 5,
+			"Pages setup must not consume the promotion budget",
+		);
+		assert.doesNotThrow(() =>
+			assertJobTimeout("release-hobo.yml", job.id, "30"),
+		);
+		assert.throws(() => assertJobTimeout("release-hobo.yml", job.id, "31"));
+	});
 
 	it("keeps the Pages release proof bounded to its documented budget", () => {
 		assert.doesNotThrow(() =>

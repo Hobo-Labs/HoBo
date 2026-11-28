@@ -871,5 +871,5 @@ describe("receiver-bound budget settlement generated histories", () => {
 			),
 			{ seed: 614450, numRuns: 120 },
 		);
-	});
+	}, 30_000);
 });

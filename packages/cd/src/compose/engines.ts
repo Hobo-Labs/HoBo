@@ -1,8 +1,14 @@
-import type { Outcome, PublisherPort, Refusal } from "../ports.js";
+import type {
+	ClusterSyncPort,
+	Outcome,
+	PublisherPort,
+	Refusal,
+} from "../ports.js";
 import { composeReason } from "./errors.js";
 
 export const CD_ENGINE_KIND = Object.freeze({
 	GITOPS_PUBLISHER: "gitops-publisher",
+	CLUSTER_SYNC: "cluster-sync",
 } as const);
 
 export type CdEngineKind = (typeof CD_ENGINE_KIND)[keyof typeof CD_ENGINE_KIND];
@@ -11,22 +17,30 @@ export const LEGACY_PUBLISHER_TARGET: ReadonlyMap<string, string> = new Map([
 	["argo", "argo-cd"],
 ]);
 
-export type CdEngineRegistration = Readonly<{
-	name: string;
-	kind: CdEngineKind;
-	publisher: PublisherPort;
-}>;
+export type CdEngineRegistration =
+	| Readonly<{
+			name: string;
+			kind: typeof CD_ENGINE_KIND.GITOPS_PUBLISHER;
+			publisher: PublisherPort;
+	  }>
+	| Readonly<{
+			name: string;
+			kind: typeof CD_ENGINE_KIND.CLUSTER_SYNC;
+			clusterSync: ClusterSyncPort;
+	  }>;
 
 export type CdEngineRecord = Readonly<{
 	name: string;
 	kind: CdEngineKind;
-	publisher: PublisherPort;
 	target: string;
+	publisher?: PublisherPort;
+	clusterSync?: ClusterSyncPort;
 }>;
 
 export interface CdEngineRegistry {
 	get(name: string): Outcome<CdEngineRecord>;
 	publisher(name: string): Outcome<PublisherPort>;
+	clusterSync(name: string): Outcome<ClusterSyncPort>;
 	names(): readonly string[];
 	kind(name: string): CdEngineKind | undefined;
 }
@@ -48,6 +62,49 @@ function engineUnknown(name: string, resolved: string): Refusal {
 	};
 }
 
+function engineNotPublisher(name: string): Refusal {
+	return {
+		ok: false,
+		reasons: [
+			composeReason(
+				"compose-engine-not-publisher",
+				`engine ${name} is not a GitOps publisher`,
+				name,
+			),
+		],
+	};
+}
+
+function engineNotClusterSync(name: string): Refusal {
+	return {
+		ok: false,
+		reasons: [
+			composeReason(
+				"compose-engine-not-cluster-sync",
+				`engine ${name} is not a cluster sync client`,
+				name,
+			),
+		],
+	};
+}
+
+function recordOf(entry: CdEngineRegistration, name: string): CdEngineRecord {
+	if (entry.kind === CD_ENGINE_KIND.GITOPS_PUBLISHER) {
+		return Object.freeze({
+			name,
+			kind: entry.kind,
+			target: entry.publisher.target,
+			publisher: entry.publisher,
+		});
+	}
+	return Object.freeze({
+		name,
+		kind: entry.kind,
+		target: entry.clusterSync.target,
+		clusterSync: entry.clusterSync,
+	});
+}
+
 export function createCdEngineRegistry(
 	registrations: readonly CdEngineRegistration[],
 ): CdEngineRegistry {
@@ -57,14 +114,7 @@ export function createCdEngineRegistry(
 		if (byName.has(name)) {
 			throw new Error(`duplicate CD engine registration: ${name}`);
 		}
-		const target = entry.publisher.target;
-		const record: CdEngineRecord = Object.freeze({
-			name,
-			kind: entry.kind,
-			publisher: entry.publisher,
-			target,
-		});
-		byName.set(name, record);
+		byName.set(name, recordOf(entry, name));
 	}
 	return Object.freeze({
 		get(name: string): Outcome<CdEngineRecord> {
@@ -76,7 +126,17 @@ export function createCdEngineRegistry(
 		publisher(name: string): Outcome<PublisherPort> {
 			const resolved = resolveTargetName(name);
 			const record = byName.get(resolved);
-			if (record) return { ok: true as const, value: record.publisher };
+			if (record?.publisher)
+				return { ok: true as const, value: record.publisher };
+			if (record) return engineNotPublisher(resolved);
+			return engineUnknown(name, resolved);
+		},
+		clusterSync(name: string): Outcome<ClusterSyncPort> {
+			const resolved = resolveTargetName(name);
+			const record = byName.get(resolved);
+			if (record?.clusterSync)
+				return { ok: true as const, value: record.clusterSync };
+			if (record) return engineNotClusterSync(resolved);
 			return engineUnknown(name, resolved);
 		},
 		names() {
@@ -96,6 +156,17 @@ export function gitopsPublisherRegistration(
 		name,
 		kind: CD_ENGINE_KIND.GITOPS_PUBLISHER,
 		publisher: port,
+	});
+}
+
+export function clusterSyncRegistration(
+	name: string,
+	port: ClusterSyncPort,
+): CdEngineRegistration {
+	return Object.freeze({
+		name,
+		kind: CD_ENGINE_KIND.CLUSTER_SYNC,
+		clusterSync: port,
 	});
 }
 
