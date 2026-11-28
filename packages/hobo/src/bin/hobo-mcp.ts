@@ -5,6 +5,7 @@ import { PassThrough, Writable } from "node:stream";
 import { z } from "zod";
 
 import { initializeResult, OPENSESAME_CREDENTIALS } from "../mcp-handshake.js";
+import { prepareSourceWorkspace } from "../mcp-source-workspace.js";
 
 // The `hobo-mcp` entry point. A host starts it and waits a fixed time (30
 // seconds in Claude Code) for the answer to `initialize`; on a machine that
@@ -51,6 +52,7 @@ async function main(): Promise<number> {
 	if (process.env.HOBO_CREDENTIALS === OPENSESAME_CREDENTIALS)
 		return (await import("../mcp-serve.js")).runHoboMcp();
 	const toServer = new PassThrough();
+	const hostGone = new AbortController();
 	let answered: string | undefined;
 	const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 	lines.on("line", (line) => {
@@ -68,7 +70,10 @@ async function main(): Promise<number> {
 		}
 		toServer.write(`${line}\n`);
 	});
-	lines.on("close", () => toServer.end());
+	lines.on("close", () => {
+		hostGone.abort();
+		toServer.end();
+	});
 	// The full server's output, less its answer to the `initialize` already
 	// answered above.
 	let pending = "";
@@ -94,6 +99,7 @@ async function main(): Promise<number> {
 		},
 	});
 	try {
+		await prepareSourceWorkspace(import.meta.url, hostGone.signal);
 		const { serveHoboMcpOn } = await import("../mcp-serve.js");
 		return await serveHoboMcpOn({ input: toServer, output: fromServer });
 	} catch (error) {

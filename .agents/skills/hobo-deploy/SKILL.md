@@ -63,9 +63,10 @@ reports completion.
 You are usually in a box the owner cannot reach (a remote managed session).
 If the project HoBo MCP server is missing, check the project MCP registration
 and its startup prerequisites before reporting it unavailable. In a fresh
-checkout, install the workspace dependencies and run
-`pnpm exec turbo run build --filter=@hobo/hobo...`; then use the host's
-supported MCP discovery or reload mechanism. A successful build or a listed
+checkout, install the workspace dependencies; the source server builds the
+workspace packages it imports before it lists its tools (a cold build takes
+about two minutes, inside the `MCP_TIMEOUT` the project settings give Claude
+Code). Then use the host's supported MCP discovery or reload mechanism. A successful build or a listed
 server does not establish that a private owner form is available or safe.
 Never give the owner a `127.0.0.1`/`localhost` link, a port to forward, or a
 tunnel to set up: they cannot complete those. A handed-off run serves
