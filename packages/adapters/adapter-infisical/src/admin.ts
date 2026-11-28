@@ -410,7 +410,7 @@ export function createInfisicalAdmin(options: {
 			const answer = await call(
 				operation,
 				"GET",
-				`/api/v1/projects/${encodeURIComponent(projectId)}/identities?search=${encodeURIComponent(name)}&limit=100`,
+				`/api/v1/projects/${encodeURIComponent(projectId)}/memberships/identities?limit=100`,
 			);
 			const body = okBody(operation, answer);
 			const parsed = parse(operation, () =>

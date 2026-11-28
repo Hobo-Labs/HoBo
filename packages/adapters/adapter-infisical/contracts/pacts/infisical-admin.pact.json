@@ -491,11 +491,11 @@
 			}
 		},
 		{
-			"description": "The project's identities named hobo-cd are listed, to adopt one instead of making another",
+			"description": "The project's member identities are listed, to adopt one named hobo-cd instead of making another",
 			"providerState": "project proj-1 has identity cd-identity named hobo-cd",
 			"request": {
 				"method": "GET",
-				"path": "/api/v1/projects/proj-1/identities?search=hobo-cd&limit=100",
+				"path": "/api/v1/projects/proj-1/memberships/identities?limit=100",
 				"headers": {
 					"authorization": "Bearer fixture-instance-admin-token"
 				}
