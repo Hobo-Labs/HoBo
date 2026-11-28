@@ -68,5 +68,6 @@ export {
 	type CdWorkloadDeps,
 	cdStoreCoordinatesText,
 	ensureCdWorkloadIdentity,
+	VercelSignInRejectedError,
 	vercelProjectTrust,
 } from "./workload-identity.js";

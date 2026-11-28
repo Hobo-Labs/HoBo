@@ -74,6 +74,13 @@ const TeamPage = z
 	})
 	.loose();
 
+export class VercelSignInRejectedError extends Error {
+	override readonly name = "VercelSignInRejectedError";
+	constructor(readonly status: number) {
+		super(`Vercel no longer accepts the stored sign-in (HTTP ${status}).`);
+	}
+}
+
 export async function vercelTeamSlug(
 	token: string,
 	teamId: string,
@@ -97,6 +104,8 @@ export async function vercelTeamSlug(
 		const url = new URL("https://api.vercel.com/v2/teams");
 		if (cursor !== undefined) url.searchParams.set("until", String(cursor));
 		const listed = await get(url);
+		if (listed.status === 401 || listed.status === 403)
+			throw new VercelSignInRejectedError(listed.status);
 		const parsed = TeamPage.safeParse(
 			listed.ok ? await listed.json().catch(() => null) : null,
 		);

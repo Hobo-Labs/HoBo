@@ -25,7 +25,10 @@ connection:
    empty value) means a personal account; missing, unreadable or changed scope
    is refused until reconciled. Earlier personal installations omitted the
    marker: verify their scope before adding it. Later runs do not verify the
-   connection online. `--what-if` opens nothing either.
+   connection up front, but when Vercel refuses the stored sign-in itself
+   (HTTP 401 or 403 while naming its team), a `--hand-off` run connects Vercel
+   again with the device grant in the same call; other runs refuse with
+   `HOBO_CD_VERCEL_SIGN_IN_REJECTED`. `--what-if` opens nothing either.
    Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
    (Infisical OIDC by default, 1Password, or Bitwarden Secrets Manager),
