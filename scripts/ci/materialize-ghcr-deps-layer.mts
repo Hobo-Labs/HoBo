@@ -890,7 +890,7 @@ async function materializeFromRegistry(input: {
 			manifests: readDescriptors(parsed, "manifests"),
 		});
 		const childRequest = {
-			url: `${input.registryBase.replace(/\/$/u, "")}/v2/${repositoryPath}/blobs/${selected.digest}`,
+			url: `${input.registryBase.replace(/\/$/u, "")}/v2/${repositoryPath}/manifests/${selected.digest}`,
 			bearer,
 			accept: selected.mediaType,
 			fetchImpl: input.fetchImpl,
