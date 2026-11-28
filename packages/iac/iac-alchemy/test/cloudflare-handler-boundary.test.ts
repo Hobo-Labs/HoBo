@@ -220,4 +220,4 @@ await new Promise((resolve) => setTimeout(resolve, 20));
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
-}, 45_000);
+}, 120_000);

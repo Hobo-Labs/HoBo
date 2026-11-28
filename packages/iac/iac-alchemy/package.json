@@ -138,6 +138,10 @@
 		"./vercel": {
 			"types": "./dist/vercel/index.d.ts",
 			"default": "./dist/vercel/index.js"
+		},
+		"./better-auth": {
+			"types": "./dist/better-auth/index.d.ts",
+			"default": "./dist/better-auth/index.js"
 		}
 	},
 	"dependencies": {
@@ -145,8 +149,10 @@
 	},
 	"peerDependencies": {
 		"@alchemy.run/aws": "2.0.0-beta.87",
+		"@alchemy.run/better-auth": "2.0.0-beta.87",
 		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/doppler": "2.0.0-beta.87",
 		"@alchemy.run/drizzle": "2.0.0-beta.87",
 		"@alchemy.run/effect-cluster": "2.0.0-beta.87",
 		"@alchemy.run/git": "2.0.0-beta.87",
@@ -159,8 +165,10 @@
 		"@alchemy.run/sql": "2.0.0-beta.87",
 		"@alchemy.run/turso": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
+		"better-auth": "^1.7.5",
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
+		"kysely": "^0.29.4",
 		"rivetkit": "3.0.0",
 		"ws": "^8.21.0",
 		"@distilled.cloud/aws": "1.0.0-rc.20"
@@ -169,10 +177,16 @@
 		"@alchemy.run/aws": {
 			"optional": true
 		},
+		"@alchemy.run/better-auth": {
+			"optional": true
+		},
 		"@alchemy.run/boat": {
 			"optional": true
 		},
 		"@alchemy.run/cloudflare": {
+			"optional": true
+		},
+		"@alchemy.run/doppler": {
 			"optional": true
 		},
 		"@alchemy.run/drizzle": {
@@ -208,6 +222,12 @@
 		"@alchemy.run/turso": {
 			"optional": true
 		},
+		"better-auth": {
+			"optional": true
+		},
+		"kysely": {
+			"optional": true
+		},
 		"rivetkit": {
 			"optional": true
 		},
@@ -219,8 +239,10 @@
 		"@hobo/identity": "workspace:*",
 		"@hobo/pack-better-auth": "workspace:*",
 		"@alchemy.run/aws": "2.0.0-beta.87",
+		"@alchemy.run/better-auth": "2.0.0-beta.87",
 		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/doppler": "2.0.0-beta.87",
 		"@alchemy.run/drizzle": "2.0.0-beta.87",
 		"@alchemy.run/effect-cluster": "2.0.0-beta.87",
 		"@alchemy.run/git": "2.0.0-beta.87",
@@ -235,8 +257,10 @@
 		"@emulators/aws": "0.13.1",
 		"@emulators/core": "0.13.1",
 		"alchemy": "2.0.0-beta.87",
+		"better-auth": "1.7.28",
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
+		"kysely": "0.29.9",
 		"rivetkit": "3.0.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",

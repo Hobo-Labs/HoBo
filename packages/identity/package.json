@@ -11,21 +11,51 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./domain": {
+			"types": "./dist/domain/index.d.ts",
+			"default": "./dist/domain/index.js"
+		},
+		"./host": {
+			"types": "./dist/host/index.d.ts",
+			"default": "./dist/host/index.js"
+		},
+		"./host/sqlite": {
+			"types": "./dist/host/sqlite.d.ts",
+			"default": "./dist/host/sqlite.js"
 		}
 	},
 	"publishConfig": {
 		"access": "public"
 	},
 	"dependencies": {
+		"@alchemy.run/domain": "2.0.0-beta.87",
 		"@hobo/core": "workspace:*",
-		"@hobo/fleet": "workspace:*"
+		"@hobo/fleet": "workspace:*",
+		"@hobo/storage-sqlite": "workspace:*",
+		"effect": "4.1.4"
+	},
+	"peerDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"rivetkit": "3.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@alchemy.run/rivet": {
+			"optional": true
+		},
+		"rivetkit": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
-		"fast-check": "^4.3.0"
+		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"@effect/platform-node": "4.1.4",
+		"fast-check": "^4.3.0",
+		"rivetkit": "3.0.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p test/tsconfig.types.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p test/tsconfig.types.json && tsc --noEmit -p tsconfig.domain-tests.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts && tsc -p test/tsconfig.types.json",
 		"test": "vitest run",
