@@ -136,16 +136,21 @@ Availability is computed per Freight, newest first.
 - Keys already in the journal (`env.PromoteRequested`) are not requested
   again, even after a restart.
 - An in-flight manual promotion of non-candidate Freight holds auto-promotion
-  on that node until all requested Camps have promoted it, or its fan-out has
-  completed. Automatic requests do not create manual holds. `promoteByOrigin`
-  returns a refusal when a promotion or fan-out could not be requested.
+  on that node until every requested Camp has promoted that Freight, or the
+  promotion fails, is rejected, is superseded, or is rolled back. A manual
+  fan-out hold lasts until that fan-out completes, halts, rolls back, or is
+  superseded. Automatic requests do not create manual holds. Failed promotions
+  do not set holds. `promoteByOrigin` returns a refusal when a promotion or
+  fan-out could not be requested.
 
 ### State
 
 All state comes from one catch-up projection over these events:
 `pipeline.Applied`, `pipeline.FreightAvailable`, `source.Defined`,
-`env.PromoteRequested`, `env.Promoted`, `fanout.Started`, and
-`fanout.Completed`. The projection is rebuilt from the journal on start, so
+`env.PromoteRequested`, `env.Promoted`, `env.PromoteRejected`,
+`env.PromoteSuperseded`, `env.PromoteRolledBack`, `fanout.Started`,
+`fanout.Halted`, `fanout.Completed`, and `fanout.RolledBack`. The projection
+is rebuilt from the journal on start, so
 replay equals live (I8). New promotion and fan-out requests persist their
 manual or automatic mode in event metadata; older requests use the documented
 pipeline-generated idempotency keys to identify automatic work. Promotion
