@@ -33,6 +33,9 @@ The separate `AtomicQueueCas` model explores two callers, one operation ID,
 two payloads and two attempts, including competing writes, lost responses,
 replay and expiry. It assumes linearizable atomic storage and does not model
 serialization, leases, host restarts or implementation correctness.
+`QueueCompaction` separately checks two callers and two operation identities
+through receipt expiry, atomic compaction and stale writes. It assumes atomic
+revision checks and does not model snapshot serialization or prove a compactor.
 
 `Messaging.ack` and `Messaging.nack` are asynchronous and must be awaited. Live
 adapters report a transport failure or deadline as `MESSAGING_SETTLEMENT_UNKNOWN`:
