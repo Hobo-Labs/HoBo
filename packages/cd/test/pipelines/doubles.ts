@@ -24,6 +24,7 @@ import {
 	PromotionState,
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
+import { fanoutIdFor } from "../../src/fanout/controller.js";
 import type {
 	CampId,
 	CampTopology,
@@ -38,7 +39,7 @@ import type {
 	PromotionService,
 	TopologyReader,
 } from "../../src/ports.js";
-import { camp, fid, type MemoryEventStore } from "./fakes.js";
+import { camp, fid, type MemoryEventStore, TENANT } from "./fakes.js";
 
 const notUsed = (): never => {
 	throw new Error("not used by the pipeline controller");
@@ -162,7 +163,21 @@ export class FakePromotions implements PromotionService {
 	async promote(request: PromoteRequest): Promise<Outcome<PromotionRecord>> {
 		this.onPromote?.(request);
 		const existing = this.records.get(request.idempotencyKey);
-		if (existing) return { ok: true, value: existing };
+		if (existing) {
+			const prior = this.requests.find(
+				(item) => item.idempotencyKey === request.idempotencyKey,
+			);
+			if (
+				!prior ||
+				prior.freightId !== request.freightId ||
+				prior.pipeline !== request.pipeline ||
+				prior.node !== request.node ||
+				(prior.requestMode ?? "manual") !== (request.requestMode ?? "manual") ||
+				JSON.stringify(prior.targets) !== JSON.stringify(request.targets)
+			)
+				return { ok: false, reasons: [] };
+			return { ok: true, value: existing };
+		}
 		this.requests.push(request);
 		if (this.refuseNext) {
 			this.refuseNext = false;
@@ -182,6 +197,8 @@ export class FakePromotions implements PromotionService {
 			CD_STREAMS.promotion(record.promotionId),
 			CD_EVENTS.EnvPromoteRequested,
 			toJson(PromotionRecordSchema, record),
+			undefined,
+			{ promotionRequestMode: request.requestMode ?? "manual" },
 		);
 		return { ok: true, value: record };
 	}
@@ -292,7 +309,12 @@ export class FakeFanout implements FanoutController {
 	): Promise<Outcome<FanoutStatusRecord>> {
 		this.started.push(input);
 		const status = create(FanoutStatusRecordSchema, {
-			fanoutId: `fanout-${this.started.length}`,
+			fanoutId: fanoutIdFor(
+				TENANT,
+				input.pipeline,
+				input.node,
+				input.idempotencyKey,
+			),
 			pipeline: input.pipeline,
 			node: input.node,
 			freightId: input.freightId,

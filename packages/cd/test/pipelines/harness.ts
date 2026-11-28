@@ -126,7 +126,13 @@ export function harness(options: HarnessOptions = {}) {
 			pipelineName: string,
 			nodeName: string,
 		) {
-			const id = `p-${store.all.length}`;
+			const prior = [...promotions.records.values()].findLast(
+				(record) =>
+					record.freightId === freightId &&
+					record.pipeline === pipelineName &&
+					record.node === nodeName,
+			);
+			const id = prior?.promotionId ?? `p-${store.all.length}`;
 			await store.seed(
 				CD_STREAMS.promotion(id),
 				CD_EVENTS.EnvPromoted,

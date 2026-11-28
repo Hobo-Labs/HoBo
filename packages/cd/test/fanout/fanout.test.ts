@@ -351,6 +351,28 @@ describe("fan-out: bounded concurrency under chaos (I20)", () => {
 });
 
 describe("fan-out: control and lifecycle", () => {
+	it("replays request mode and rejects changing it for an existing key", async () => {
+		const h = harness();
+		const decision = decisionOf(2, 2);
+		addCamps(h, decision);
+		const input = startInput(decision, fanoutOf(), {
+			requestMode: "automatic",
+		});
+		const first = await h.controller.start(input, h.ctx);
+		expect(first.ok).toBe(true);
+		const restarted = h.make("replica-b");
+		expect((await restarted.start(input, h.ctx)).ok).toBe(true);
+		expect(
+			(await restarted.start({ ...input, requestMode: "manual" }, h.ctx)).ok,
+		).toBe(false);
+		expect(h.promotions.calls.length).toBeGreaterThan(0);
+		expect(
+			h.promotions.calls.every(
+				(call) => call.request.requestMode === "automatic",
+			),
+		).toBe(true);
+	});
+
 	it("start is idempotent: the same key yields one fan-out and one promotion per Camp", async () => {
 		const h = harness();
 		const decision = decisionOf(4, 4);
