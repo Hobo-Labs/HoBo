@@ -61,12 +61,12 @@ it("keeps topic failures unavailable when application code changes array prototy
 	});
 	let sealed: Response;
 	try {
-		Object.prototype.writable = true;
-		Object.prototype.configurable = true;
+		Reflect.set(Object.prototype, "writable", true);
+		Reflect.set(Object.prototype, "configurable", true);
 		sealed = rivetTopicUnavailable("scope-unverified");
 	} finally {
-		delete Object.prototype.writable;
-		delete Object.prototype.configurable;
+		Reflect.deleteProperty(Object.prototype, "writable");
+		Reflect.deleteProperty(Object.prototype, "configurable");
 	}
 	expect(Object.getOwnPropertyDescriptor(sealed, "then")).toMatchObject({
 		writable: false,
