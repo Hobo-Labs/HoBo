@@ -488,60 +488,67 @@ function buildLiveDomainPorts(input: {
 			revokeSessionHandle: ({ handleDigest }) =>
 				Effect.tryPromise({
 					try: async () => {
-						try {
-							const cookieHeader = await input.getCookieHeader();
-							if (!cookieHeader) {
-								return { revoked: true };
-							}
-							const { authLayer } = createRealBetterAuthLayer({
-								authDbPath: input.authDbPath,
-								...(input.secondaryDbPath !== undefined
-									? { secondaryDbPath: input.secondaryDbPath }
-									: undefined),
-								configLayer: input.configLayer,
-							});
-							await Effect.runPromise(
-								Effect.gen(function* () {
-									const service = yield* HoboBetterAuth;
-									const nativeAuth = yield* service.instance.auth;
-									yield* Effect.tryPromise({
-										try: () =>
-											nativeAuth.handler(
-												new Request(
-													`${input.issuerOrigin}${input.basePath}/sign-out`,
-													{
-														method: "POST",
-														headers: {
-															cookie: cookieHeader,
-															origin: input.issuerOrigin,
-														},
-													},
-												),
-											),
-										catch: (cause) =>
-											new IssuerSessionInvalid({
-												handleDigest,
-												reason: NonEmptyReason.make(
-													cause instanceof Error
-														? cause.message
-														: String(cause),
-												),
-											}),
-									});
-								}).pipe(Effect.scoped, Effect.provide(authLayer)),
+						const cookieHeader = await input.getCookieHeader();
+						if (!cookieHeader) {
+							throw new Error(
+								"cannot revoke Better Auth session without session cookie custody",
 							);
-							return { revoked: true };
-						} finally {
-							input.onSessionRevoked?.();
 						}
+						const { authLayer } = createRealBetterAuthLayer({
+							authDbPath: input.authDbPath,
+							...(input.secondaryDbPath !== undefined
+								? { secondaryDbPath: input.secondaryDbPath }
+								: undefined),
+							configLayer: input.configLayer,
+						});
+						await Effect.runPromise(
+							Effect.gen(function* () {
+								const service = yield* HoboBetterAuth;
+								const nativeAuth = yield* service.instance.auth;
+								const response = yield* Effect.tryPromise({
+									try: () =>
+										nativeAuth.handler(
+											new Request(
+												`${input.issuerOrigin}${input.basePath}/sign-out`,
+												{
+													method: "POST",
+													headers: {
+														cookie: cookieHeader,
+														origin: input.issuerOrigin,
+													},
+												},
+											),
+										),
+									catch: (cause) =>
+										new IssuerSessionInvalid({
+											handleDigest,
+											reason: NonEmptyReason.make(
+												cause instanceof Error ? cause.message : String(cause),
+											),
+										}),
+								});
+								if (!response.ok) {
+									return yield* new IssuerSessionInvalid({
+										handleDigest,
+										reason: NonEmptyReason.make(
+											`Better Auth sign-out returned HTTP ${response.status}`,
+										),
+									});
+								}
+							}).pipe(Effect.scoped, Effect.provide(authLayer)),
+						);
+						input.onSessionRevoked?.();
+						return { revoked: true };
 					},
 					catch: (error) =>
-						new IssuerSessionInvalid({
-							handleDigest,
-							reason: NonEmptyReason.make(
-								error instanceof Error ? error.message : String(error),
-							),
-						}),
+						error instanceof IssuerSessionInvalid
+							? error
+							: new IssuerSessionInvalid({
+									handleDigest,
+									reason: NonEmptyReason.make(
+										error instanceof Error ? error.message : String(error),
+									),
+								}),
 				}),
 		}),
 	);
@@ -1056,6 +1063,30 @@ export async function resumeHoboAlchemySession(
 						new HoboAlchemyAuthError(
 							"HOBO_AUTH_WORKSPACE_NOT_READY",
 							`Auth workspace ${workspaceId} is not ready (phase=${wsView?._tag ?? "Uninitialized"}).`,
+						),
+					);
+				}
+				const currentSession = yield* client.ActiveSessionView.get(sessionId);
+				if (currentSession === null || currentSession._tag !== "Active") {
+					return yield* Effect.fail(
+						new HoboAlchemyAuthError(
+							"HOBO_AUTH_SESSION_INACTIVE",
+							`Auth session ${sessionId} is not active.`,
+						),
+					);
+				}
+				const presentedDigest = hashSessionCookie(cookieHeader);
+				if (
+					currentSession.handleDigest !== presentedDigest ||
+					currentSession.principalId !== ownerPrincipalId
+				) {
+					return yield* Effect.fail(
+						new HoboAlchemyAuthError(
+							"HOBO_AUTH_SESSION_HANDLE_MISMATCH",
+							"Presented Better Auth session cookie does not match the recorded owner session.",
+							[
+								"Provide the owner session cookie for this workspace or rerun `hobo login --setup`.",
+							],
 						),
 					);
 				}

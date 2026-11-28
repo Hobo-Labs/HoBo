@@ -323,6 +323,7 @@ async function runAlchemyAuthLoginLane(
 				? { sessionCustody: deps.alchemyAuth.sessionCustody }
 				: undefined),
 			...(reason !== undefined ? { reason } : undefined),
+			...(stage !== undefined ? { stage } : undefined),
 			...(sessionId !== undefined ? { sessionId } : undefined),
 			...(workspaceId !== undefined ? { workspaceId } : undefined),
 			...(ownerPrincipalId !== undefined ? { ownerPrincipalId } : undefined),
