@@ -714,6 +714,17 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				);
 				continue;
 			}
+			if (
+				file === "release-hobo.yml" &&
+				lines[start] === "  release-pages-browser-wit-smoke:"
+			) {
+				assert.equal(
+					runsOn,
+					"${{ github.event_name == 'merge_group' && 'agent37' || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}",
+					`${file}:${lines[start]}`,
+				);
+				continue;
+			}
 			// The main gate's shards and finish job follow the plan job's second
 			// ask, then the run's route, so they need both.
 			if (runsOn === shardRunsOn) {
