@@ -255,7 +255,8 @@ branch-protection rule is changed.
   errors. The real upstream extension has also been exercised against a mocked
   GitHub API; neither fixture establishes a live status on GitHub. Its two
   cleanup-failure cases make the temporary Git view unremovable through its
-  mode, which root ignores, so they are skipped when the suite runs as root.
+  mode, or, for root (which ignores modes), through an immutable file
+  (`chattr +i`), so they run for every user.
 
 **Built, not yet proven in production:** a real local `ci-guard` run passed,
 but GitHub returned HTTP 403 when the upstream extension attempted to create a
