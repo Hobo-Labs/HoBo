@@ -146,27 +146,61 @@ export interface CloudflarePrimitiveSupport extends AlchemyPrimitiveSupport {
 	readonly reason: string;
 }
 
-export function describeCloudflarePrimitiveSupport(
+export function describeCloudflarePrimitiveSupport<Requirements>(
 	catalog: readonly {
 		readonly factory: string;
 		readonly allowVerbs: readonly string[];
 	}[],
+	mappers?: Readonly<
+		Record<
+			string,
+			AlchemyPrimitiveMapper<
+				CloudflareBindleEntrypoint,
+				Requirements,
+				Providers
+			>
+		>
+	>,
 ): CloudflarePrimitiveSupport[] {
 	const support = describeAlchemyPrimitiveSupport(
 		catalog,
-		cloudflareBindleMappers({ workerModules: {} }),
+		mappers ?? cloudflareBindleMappers<Requirements>({ workerModules: {} }),
 	);
 	const report: CloudflarePrimitiveSupport[] = [];
 	for (let index = 0; index < support.length; index++) {
 		const row = support[index];
 		if (row === undefined)
 			throw new AlchemyIacError("BINDLE_INVALID", "support row is unavailable");
-		const result = {
-			...row,
-			reason: reportHasOwn(CLOUD_FLARE_LIMITATIONS, row.kind)
-				? (CLOUD_FLARE_LIMITATIONS[row.kind] ?? "No mapping is implemented.")
-				: "No mapping is implemented for this primitive.",
-		};
+		let reason = reportHasOwn(CLOUD_FLARE_LIMITATIONS, row.kind)
+			? (CLOUD_FLARE_LIMITATIONS[row.kind] ?? "No mapping is implemented.")
+			: "No mapping is implemented for this primitive.";
+		if (mappers !== undefined && row.status !== "unsupported") {
+			reason = "";
+			for (let index = 0; index < row.unsupportedOperations.length; index++) {
+				const operation = row.unsupportedOperations[index];
+				if (operation === undefined)
+					throw new AlchemyIacError(
+						"BINDLE_INVALID",
+						"operation is unavailable",
+					);
+				if (reason.length > 0) reason += ", ";
+				reason += operation;
+			}
+			if (reason.length > 0) reason = `Unsupported operations: ${reason}.`;
+			for (let index = 0; index < row.limitations.length; index++) {
+				const limitation = row.limitations[index];
+				if (limitation === undefined)
+					throw new AlchemyIacError(
+						"BINDLE_INVALID",
+						"limitation is unavailable",
+					);
+				if (reason.length > 0) reason += " ";
+				reason += limitation;
+			}
+			if (reason.length === 0)
+				reason = "The supplied mapper declares all catalog operations.";
+		}
+		const result = { ...row, reason };
 		const field: PropertyDescriptor = reportCreate(null);
 		field.value = result;
 		field.enumerable = true;

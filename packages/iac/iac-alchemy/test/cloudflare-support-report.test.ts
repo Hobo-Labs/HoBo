@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { describeCloudflarePrimitiveSupport } from "../src/cloudflare.js";
+import { cloudflareNativeR2BindleMappers } from "../src/cloudflare-native-r2.js";
 
 it("retains Cloudflare support rows and reasons when Array.map is replaced", () => {
 	const catalog = [
@@ -68,4 +69,44 @@ it("reports HTTP UI support without claiming render or drive", () => {
 	expect(row?.reason).toContain(
 		"render and drive operations are not implemented",
 	);
+});
+
+it("reports the selected bounded KV and R2 mappers and their limitations", () => {
+	const mappers = cloudflareNativeR2BindleMappers({
+		workerModules: {},
+		verifyBucket: () => true,
+		verifyGrant: () => true,
+		kv: { verifyNamespace: () => true, verifyGrant: () => true },
+	});
+	const report = describeCloudflarePrimitiveSupport(
+		[
+			{ factory: "kv", allowVerbs: ["get", "set", "delete"] },
+			{ factory: "bucket", allowVerbs: ["read", "write", "delete"] },
+			{ factory: "topic", allowVerbs: ["publish", "subscribe"] },
+			{ factory: "ui", allowVerbs: ["render", "drive"] },
+		],
+		mappers,
+	);
+	expect(report[0]).toMatchObject({
+		status: "partial",
+		resourceTypes: ["Cloudflare.KV.Namespace", "Cloudflare.Worker"],
+		supportedOperations: ["get", "set", "delete"],
+		unsupportedOperations: [],
+	});
+	expect(report[0]?.reason).toContain("eventual visibility");
+	expect(report[1]).toMatchObject({
+		status: "partial",
+		resourceTypes: ["Cloudflare.R2.Bucket", "Cloudflare.Worker"],
+		supportedOperations: ["read", "write", "delete"],
+		unsupportedOperations: [],
+	});
+	expect(report[1]?.reason).toContain("blob events");
+	expect(report[2]).toMatchObject({ status: "unsupported" });
+	expect(report[2]?.reason).toContain("multi-subscriber");
+	expect(report[3]).toMatchObject({
+		status: "partial",
+		supportedOperations: [],
+		unsupportedOperations: ["render", "drive"],
+	});
+	expect(report[3]?.reason).toContain("Unsupported operations: render, drive.");
 });
