@@ -136,11 +136,6 @@ function uniqueByName<T extends { readonly name: string }>(
 	return named[0];
 }
 
-/**
- * The relay's layout in the owner's Infisical organization, found by name
- * with the owner's own sign-in. Ids are returned to the caller, which writes
- * them to the owner's store; none is shown.
- */
 export async function findRelayLayout(input: {
 	readonly siteUrl: string;
 	readonly session: string;
@@ -195,11 +190,6 @@ export async function findRelayLayout(input: {
 	);
 }
 
-/**
- * The deploy project and its read-only reader, made with the owner's own
- * sign-in when the organization does not have them yet. The relay and writer
- * identities are never made here: their trust is the owner's to set.
- */
 export async function ensureDeployReader(input: {
 	readonly siteUrl: string;
 	readonly session: string;
@@ -257,10 +247,6 @@ export async function ensureDeployReader(input: {
 	return { deployProjectId, deployCredentialIdentityId, created: made };
 }
 
-/**
- * The Vercel team that holds the relay's project, read with HoBo's own Vercel
- * connection. Undefined when no team, or more than one, holds it.
- */
 export async function findRelayVercelTeam(input: {
 	readonly token: string;
 	readonly fetch?: typeof fetch;

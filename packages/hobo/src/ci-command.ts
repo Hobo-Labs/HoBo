@@ -537,7 +537,6 @@ export function createCiCommand(
 		ownerCredentials?: (cwd: string) => CredentialResolver;
 		fleetAgentVault?: (cwd: string) => AgentVaultRouter | undefined;
 		ownerEntries?: (cwd: string) => OwnerStoreEntries;
-		/** The owner's own Infisical sign-in, through the owner channel. */
 		ownerInfisicalSession?: () => Promise<OwnerInfisicalSession>;
 		hostingerHttp?: HttpTransport;
 		commands?: readonly CiCommand[];

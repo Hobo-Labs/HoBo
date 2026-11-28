@@ -304,10 +304,6 @@ export interface CiSecretStoreInput {
 	readonly allowLoopback?: boolean;
 	readonly bindingStore?: SecretStoreBindingStore;
 	readonly credentials?: CredentialResolver;
-	/**
-	 * The owner's own Infisical sign-in, asked for through the owner channel
-	 * only when connect has ids to find by name. Held for this run only.
-	 */
 	readonly ownerInfisicalSession?: () => Promise<OwnerInfisicalSession>;
 }
 

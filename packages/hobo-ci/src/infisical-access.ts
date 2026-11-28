@@ -172,12 +172,6 @@ export type InfisicalSessionOptions = Pick<
 	| "owner"
 >;
 
-/**
- * The owner's own Infisical user session: an existing CLI session on this
- * machine, the CLI's browser sign-in when the owner is here, or the copied
- * session they hand over through the owner channel. Only the run that asked
- * holds it; nothing keeps it.
- */
 export async function infisicalOwnerSession(
 	options: InfisicalSessionOptions,
 	retry?: { readonly why: string | undefined },
