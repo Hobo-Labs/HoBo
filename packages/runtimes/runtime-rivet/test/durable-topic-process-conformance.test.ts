@@ -25,6 +25,7 @@ it("runs generic bus cases across real SQLite actor process termination", {
 		"revoked-receipt-privacy",
 		"expiry-boundary",
 		"pending-conflict",
+		"failover",
 		"operation-replay",
 		"concurrent-operations",
 		"concurrent-claims",
@@ -287,6 +288,70 @@ it("rolls back state and receipt when the worker fails before commit", {
 				events: [{ sequence: 1, kind: "topic-created", topic: "rolled-back" }],
 			},
 		);
+	} finally {
+		await host.controls.close();
+	}
+});
+
+it("replaces unverified and verified owners with distinct processes on the same journal", {
+	timeout: 30_000,
+}, async () => {
+	const pids: number[] = [];
+	const host = await createProcessBusConformanceHost({
+		afterRestartReady: async (pid) => {
+			pids.push(pid);
+		},
+	});
+	try {
+		const original = createRivetDurableTopicClient(await host.open("tenant-a"));
+		const operation = durableMessagingOperation(10_000, "0000000000000016");
+		const request = { operation, topic: "failover" };
+		expect(await original.ensureTopic(request)).toEqual({
+			status: "committed",
+			value: { topic: "failover" },
+		});
+		await host.controls.switchAuthority("unverified");
+		const unverified = createRivetDurableTopicClient(
+			await host.open("tenant-a"),
+		);
+		expect(await unverified.ensureTopic(request)).toEqual({
+			status: "unknown",
+			operation,
+		});
+		await host.controls.switchAuthority("verified-shared");
+		const successor = createRivetDurableTopicClient(
+			await host.open("tenant-a"),
+		);
+		expect(await successor.ensureTopic(request)).toEqual({
+			status: "committed",
+			value: { topic: "failover" },
+		});
+		expect(
+			await successor.events({ afterSequence: 0, limit: 2 }),
+		).toMatchObject({
+			status: "ok",
+			events: [{ sequence: 1, kind: "topic-created", topic: "failover" }],
+		});
+		expect(pids).toHaveLength(2);
+		expect(pids[0]).not.toBe(pids[1]);
+	} finally {
+		await host.controls.close();
+	}
+});
+
+it("fails closed when the replacement owner cannot become ready", {
+	timeout: 30_000,
+}, async () => {
+	const host = await createProcessBusConformanceHost({
+		afterRestartReady: async () => {
+			throw new Error("injected owner failure");
+		},
+	});
+	try {
+		await expect(
+			host.controls.switchAuthority("verified-shared"),
+		).rejects.toThrow();
+		await expect(host.open("tenant-a")).rejects.toThrow();
 	} finally {
 		await host.controls.close();
 	}

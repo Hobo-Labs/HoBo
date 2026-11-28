@@ -284,3 +284,8 @@ scenarios. Host teardown drains that work and fences result disclosure.
 
 A separate fault can abort the next transaction before commit; the caller sees
 an unknown outcome and must reconcile the operation after reopening the store.
+
+The process harness can replace the owner using the same SQLite directory. An
+unverified replacement cannot dispatch; a verified replacement may reconcile
+receipts after the old process has terminated and its grants are retired. A
+failed replacement closes the test host instead of leaving a dispatchable owner.

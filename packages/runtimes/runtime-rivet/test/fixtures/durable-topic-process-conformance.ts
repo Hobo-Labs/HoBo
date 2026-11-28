@@ -225,6 +225,7 @@ export async function createProcessBusConformanceHost(
 		throw error;
 	}
 	let epoch = 0;
+	let verified = true;
 	let closed = false;
 	let changing = false;
 	let transition: Promise<void> | undefined;
@@ -249,27 +250,33 @@ export async function createProcessBusConformanceHost(
 	const unavailable = async (): Promise<never> => {
 		throw new Error("fixture control unavailable");
 	};
+	const replaceOwner = async (nextVerified: boolean) => {
+		if (closed || changing) throw new Error("fixture is not available");
+		changing = true;
+		epoch++;
+		for (const grant of grants.splice(0)) grant.revoke();
+		transition = (async () => {
+			if (commitRelease !== undefined) await commitRelease();
+			await Promise.allSettled(activeFetches);
+			await stopWorker(worker);
+			if (closed) throw new Error("fixture closed during restart");
+			worker = await startWorker(directory, clock, options.afterRestartReady);
+			if (closed) throw new Error("fixture closed during restart");
+			verified = nextVerified;
+		})();
+		try {
+			await transition;
+		} catch (error) {
+			verified = false;
+			closed = true;
+			throw error;
+		} finally {
+			transition = undefined;
+			changing = false;
+		}
+	};
 	const controls: Omit<DurableMessagingConformanceHarness, "connect"> = {
-		async restart() {
-			if (closed || changing) throw new Error("fixture is not available");
-			changing = true;
-			epoch++;
-			for (const grant of grants.splice(0)) grant.revoke();
-			transition = (async () => {
-				if (commitRelease !== undefined) await commitRelease();
-				await Promise.allSettled(activeFetches);
-				await stopWorker(worker);
-				if (closed) throw new Error("fixture closed during restart");
-				worker = await startWorker(directory, clock, options.afterRestartReady);
-				if (closed) throw new Error("fixture closed during restart");
-			})();
-			try {
-				await transition;
-			} finally {
-				transition = undefined;
-				changing = false;
-			}
-		},
+		restart: () => replaceOwner(verified),
 		async close() {
 			if (closing !== undefined) return closing;
 			closed = true;
@@ -313,7 +320,7 @@ export async function createProcessBusConformanceHost(
 			if ((await worker.call({ kind: "block-receipt", reason })) !== null)
 				throw new Error("invalid receipt fault response");
 		},
-		switchAuthority: unavailable,
+		switchAuthority: (mode) => replaceOwner(mode === "verified-shared"),
 		async holdConcurrentMutations() {
 			if (
 				concurrentBarrier !== undefined ||
@@ -460,12 +467,12 @@ export async function createProcessBusConformanceHost(
 				},
 				metadataGrant: grant,
 				verifyTransport: (claim) =>
-					!closed && boundEpoch === epoch && claim.fetch === fetch,
+					!closed && verified && boundEpoch === epoch && claim.fetch === fetch,
 				authorize: (claim) => ({
 					"x-hobo-proof": signFixtureClaim(claim, "request"),
 					"x-hobo-instance-proof": signFixtureClaim(claim, "instance"),
 				}),
-				revalidate: () => !closed && boundEpoch === epoch,
+				revalidate: () => !closed && verified && boundEpoch === epoch,
 				fetch,
 			};
 		},
