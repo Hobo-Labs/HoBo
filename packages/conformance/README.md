@@ -342,3 +342,6 @@ Dispatcher without provider-layer exceptions; see `../ci/ADR.md`.
 the other CI application SDKs at layer 3;
 its dependency on the portable CI runtime is covered by the workspace boundary
 registry and the complete-package classification test.
+
+The bounded audit-retention scenario also supports providers with fewer topic
+slots than retained audit events by publishing and compacting on one topic.

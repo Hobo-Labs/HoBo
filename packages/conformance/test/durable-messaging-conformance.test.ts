@@ -306,7 +306,7 @@ describe("durable messaging conformance runner", () => {
 		],
 		[
 			"audit-retention",
-			{ retainedEvents: 128, topics: 32 },
+			{ retainedEvents: 129, topics: 32 },
 			"audit retention harness limits are not configured for this case",
 		],
 		[
