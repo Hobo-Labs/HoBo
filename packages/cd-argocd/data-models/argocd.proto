@@ -1,0 +1,9 @@
+syntax = "proto3";
+package hobo.cd.argocd.v1;
+
+message ArgocdControlRecord {
+  string api_base_url = 1;
+  string application = 2;
+  string app_namespace = 3;
+  string token_ref = 4;
+}

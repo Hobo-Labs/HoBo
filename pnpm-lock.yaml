@@ -877,6 +877,21 @@ importers:
         specifier: ^4.3.0
         version: 4.9.0
 
+  packages/cd-argocd:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/cd-gitops':
+        specifier: workspace:*
+        version: link:../cd-gitops
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/cd-gitops:
     dependencies:
       '@bufbuild/protobuf':
