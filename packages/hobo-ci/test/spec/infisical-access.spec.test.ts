@@ -614,6 +614,98 @@ describe("SPEC R9: HoBo resolves its own project and environment", () => {
 		expect(api.calls.some((c) => c.method === "POST")).toBe(false);
 	});
 
+	const ambiguous = () =>
+		fakeInfisical([
+			{
+				...secretsProject("proj-a", "billing"),
+				id: "1f0c2a4e-1111-4a6b-9c3d-0e8f7a6b5c4d",
+			},
+			{
+				...secretsProject("proj-b", "payments"),
+				id: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+			},
+		]);
+	const choosing = (answer: string | null | undefined) => {
+		const asked: {
+			message: string;
+			title: string;
+			options: readonly string[];
+		}[] = [];
+		return {
+			asked,
+			owner: {
+				openUrl: async () => {},
+				captureSecret: async () => undefined,
+				holds: () => false,
+				choose: async (request: {
+					message: string;
+					title: string;
+					options: readonly string[];
+				}) => {
+					asked.push(request);
+					return answer;
+				},
+			},
+		};
+	};
+
+	it("asks the owner which project when several have none named hobo, by name only", async () => {
+		const owner = choosing("payments");
+		const result = await provisionInfisicalAccess({
+			...base(signedIn(), ambiguous()),
+			owner: owner.owner,
+			folder,
+		});
+		expect(result).toMatchObject({
+			kind: "ready",
+			projectId: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+		});
+		expect(owner.asked).toEqual([
+			expect.objectContaining({
+				title: "Infisical project",
+				options: ["billing", "payments"],
+			}),
+		]);
+		expect(JSON.stringify(owner.asked)).not.toMatch(/1f0c2a4e|2f0c2a4e|proj-/u);
+	});
+
+	it("refuses as before when the owner declines the choice or the host shows no form", async () => {
+		for (const answer of [null, undefined]) {
+			const result = await provisionInfisicalAccess({
+				...base(signedIn(), ambiguous()),
+				owner: choosing(answer).owner,
+				folder,
+			});
+			expect(result).toMatchObject({
+				kind: "refused",
+				code: "HOBO_CD_INFISICAL_PROJECT_AMBIGUOUS",
+			});
+		}
+	});
+
+	it("does not offer a choice between projects that share a name", async () => {
+		const owner = choosing("billing");
+		const result = await provisionInfisicalAccess({
+			...base(
+				signedIn(),
+				fakeInfisical([
+					{
+						...secretsProject("proj-a", "billing"),
+						id: "1f0c2a4e-1111-4a6b-9c3d-0e8f7a6b5c4d",
+					},
+					{
+						...secretsProject("proj-b", "billing"),
+						id: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+					},
+				]),
+			),
+			owner: owner.owner,
+			folder,
+		});
+		expect(result).toMatchObject({ kind: "refused" });
+		expect(owner.asked).toEqual([]);
+	});
+
 	it("never repeats an id Infisical quotes in a refusal", async () => {
 		const id = "3f0c2a4e-3333-4a6b-9c3d-0e8f7a6b5c4d";
 		const api = fakeInfisical([secretsProject(id, "secrets")]);
