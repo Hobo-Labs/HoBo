@@ -29,6 +29,10 @@ and stale-lease settlement, and reaches committed effects after unknown and
 expired outcomes. Provider commit, receipt durability, the clock and lease
 fencing are modeled as atomic trusted actions; the model is not a proof of an
 implementation or of eventual completion.
+The separate `AtomicQueueCas` model explores two callers, one operation ID,
+two payloads and two attempts, including competing writes, lost responses,
+replay and expiry. It assumes linearizable atomic storage and does not model
+serialization, leases, host restarts or implementation correctness.
 
 `Messaging.ack` and `Messaging.nack` are asynchronous and must be awaited. Live
 adapters report a transport failure or deadline as `MESSAGING_SETTLEMENT_UNKNOWN`:
