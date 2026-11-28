@@ -1,6 +1,7 @@
 {
   "env": {
-    "IMPECCABLE_NO_UPDATE_CHECK": "1"
+    "IMPECCABLE_NO_UPDATE_CHECK": "1",
+    "MCP_TIMEOUT": "600000"
   },
   "permissions": {
     "deny": [

@@ -13,7 +13,7 @@ export async function load(url, context, nextLoad) {
 		format: "module",
 		shortCircuit: true,
 		source: [
-			'await new Promise((resolve) => process.once("SIGUSR2", resolve));',
+			"await globalThis.hoboMcpServeReleased;",
 			`const real = await import(${JSON.stringify(real)});`,
 			"export const serveHoboMcpOn = real.serveHoboMcpOn;",
 			"export const runHoboMcp = real.runHoboMcp;",

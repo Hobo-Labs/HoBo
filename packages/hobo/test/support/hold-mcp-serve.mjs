@@ -3,3 +3,7 @@
 import { register } from "node:module";
 
 register("./hold-mcp-serve-hooks.mjs", import.meta.url);
+
+globalThis.hoboMcpServeReleased = new Promise((resolve) =>
+	process.once("SIGUSR2", resolve),
+);
