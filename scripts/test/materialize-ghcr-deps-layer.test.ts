@@ -159,12 +159,13 @@ async function startRegistry(input: {
 	const hits: string[] = [];
 	const authorizations: string[] = [];
 	const blobs = new Map<string, Buffer>();
+	const manifests = new Map<string, Buffer>();
 	let manifest: Buffer = Buffer.from("{}");
 	if (input.indexPlatforms) {
 		const entries = input.indexPlatforms.map((platform) => {
 			const document = manifestDocument(platform.layers);
 			const digest = sha256(document);
-			blobs.set(digest, document);
+			manifests.set(digest, document);
 			for (const layer of platform.layers) {
 				blobs.set(layer.digest ?? sha256(layer.body), layer.body);
 			}
@@ -228,6 +229,18 @@ async function startRegistry(input: {
 			}
 			const type = input.indexPlatforms ? OCI_INDEX : OCI_MANIFEST;
 			send(200, manifest, type);
+			return;
+		}
+		if (url.pathname.startsWith(`/v2/${repositoryPath}/manifests/`)) {
+			const digest = decodeURIComponent(
+				url.pathname.split("/manifests/")[1] ?? "",
+			);
+			const document = manifests.get(digest);
+			if (!document) {
+				send(404, Buffer.from("{}"));
+				return;
+			}
+			send(200, document, OCI_MANIFEST);
 			return;
 		}
 		if (url.pathname.startsWith(`/v2/${repositoryPath}/blobs/`)) {
@@ -701,6 +714,10 @@ try {
 			});
 			assert.equal(result.ok, true);
 			assert.equal(readFileSync(join(payload, "arch.txt"), "utf8"), "host\n");
+			assert.equal(
+				registry.hits.some((path) => path.includes("/manifests/sha256:")),
+				true,
+			);
 		} finally {
 			await registry?.close();
 			rmSync(root, { recursive: true, force: true });

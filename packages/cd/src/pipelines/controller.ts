@@ -10,6 +10,7 @@ import {
 	type FanoutRecord,
 	FanoutRecordSchema,
 	FanoutState,
+	type FanoutStatusRecord,
 	FanoutStrategy,
 	type FreightAvailabilityRecord,
 	FreightAvailabilityRecordSchema,
@@ -17,12 +18,13 @@ import {
 	type PipelineNodeRecord,
 	type PipelineRecord,
 	PipelineRecordSchema,
+	type PromotionRecord,
 	PromotionRecordSchema,
 	PromotionState,
 	RolloutStrategy,
 } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
-import { parseStarted, parseStatusFact } from "../fanout/facts.js";
+import { parseHalted, parseStarted, parseStatusFact } from "../fanout/facts.js";
 import type {
 	AutoPromotionHold,
 	CampId,
@@ -122,6 +124,13 @@ const TERMINAL = new Set<PromotionState>([
 	PromotionState.SUPERSEDED,
 ]);
 
+const FANOUT_SETTLED = new Set<FanoutState>([
+	FanoutState.HALTED,
+	FanoutState.COMPLETED,
+	FanoutState.ROLLED_BACK,
+	FanoutState.SUPERSEDED,
+]);
+
 const PIPELINE_STREAM = /^cd-pipeline-(.+)$/;
 const SOURCE_STREAM = /^cd-source-(.+)$/;
 
@@ -199,6 +208,61 @@ export function createPipelineController(
 	};
 	const manualPromoteByNode = new Map<string, ManualPromotion>();
 
+	function clearManualFanout(
+		status: FanoutStatusRecord | undefined,
+		state: FanoutState | undefined = status?.state,
+	): void {
+		if (
+			!status ||
+			state === undefined ||
+			!FANOUT_SETTLED.has(state) ||
+			status.fanoutId === "" ||
+			status.pipeline === "" ||
+			status.node === ""
+		)
+			return;
+		const nodeKey = `${status.pipeline}|${status.node}`;
+		if (manualPromoteByNode.get(nodeKey)?.fanoutId !== status.fanoutId) return;
+		manualPromoteByNode.delete(nodeKey);
+		holdByNode.delete(nodeKey);
+	}
+
+	function forgetManualPromotion(record: PromotionRecord): void {
+		if (
+			record.promotionId === "" ||
+			record.pipeline === "" ||
+			record.node === ""
+		)
+			return;
+		const nodeKey = `${record.pipeline}|${record.node}`;
+		const manual = manualPromoteByNode.get(nodeKey);
+		if (!manual || manual.fanoutId) return;
+		if (!manual.pending.delete(record.promotionId)) return;
+		if (manual.pending.size === 0) {
+			manualPromoteByNode.delete(nodeKey);
+			holdByNode.delete(nodeKey);
+		}
+	}
+
+	function releasePromotedCamps(
+		nodeKey: string,
+		freightId: string,
+		campIds: readonly string[],
+	): void {
+		const manual = manualPromoteByNode.get(nodeKey);
+		if (!manual || manual.fanoutId || manual.freightId !== freightId) return;
+		for (const remaining of manual.pending.values()) {
+			for (const campId of campIds) remaining.delete(campId);
+		}
+		for (const [promotionId, remaining] of manual.pending) {
+			if (remaining.size === 0) manual.pending.delete(promotionId);
+		}
+		if (manual.pending.size === 0) {
+			manualPromoteByNode.delete(nodeKey);
+			holdByNode.delete(nodeKey);
+		}
+	}
+
 	const metric = (
 		name: string,
 		atMs: number,
@@ -254,14 +318,17 @@ export function createPipelineController(
 				pending: new Map(),
 			});
 		},
+		[CD_EVENTS.FanoutHalted]: (event) => {
+			clearManualFanout(parseHalted(event.data)?.status, FanoutState.HALTED);
+		},
 		[CD_EVENTS.FanoutCompleted]: (event) => {
-			const status = parseStatusFact(event.data).status;
-			if (!status || status.state !== FanoutState.COMPLETED) return;
-			const nodeKey = `${status.pipeline}|${status.node}`;
-			if (manualPromoteByNode.get(nodeKey)?.fanoutId !== status.fanoutId)
-				return;
-			manualPromoteByNode.delete(nodeKey);
-			holdByNode.delete(nodeKey);
+			clearManualFanout(parseStatusFact(event.data).status);
+		},
+		[CD_EVENTS.FanoutRolledBack]: (event) => {
+			clearManualFanout(
+				parseStatusFact(event.data).status,
+				FanoutState.ROLLED_BACK,
+			);
 		},
 		[CD_EVENTS.EnvPromoteRequested]: (event) => {
 			const key = idempotencyKeyIn(jsonOf(event.data));
@@ -327,18 +394,23 @@ export function createPipelineController(
 				history.delete(record.freightId);
 				history.set(record.freightId, true);
 				promotedFreightByNode.set(nodeKey, history);
-				const manual = manualPromoteByNode.get(nodeKey);
-				if (!manual || manual.fanoutId || manual.freightId !== record.freightId)
-					return;
-				const remaining = manual.pending.get(record.promotionId);
-				if (!remaining) return;
-				for (const campId of record.targetCampIds) remaining.delete(campId);
-				if (remaining.size === 0) manual.pending.delete(record.promotionId);
-				if (manual.pending.size === 0) {
-					manualPromoteByNode.delete(nodeKey);
-					holdByNode.delete(nodeKey);
-				}
+				releasePromotedCamps(nodeKey, record.freightId, record.targetCampIds);
 			}
+		},
+		[CD_EVENTS.EnvPromoteRejected]: (event) => {
+			const record = decode(PromotionRecordSchema, event.data);
+			if (!record) return;
+			forgetManualPromotion(record);
+		},
+		[CD_EVENTS.EnvPromoteSuperseded]: (event) => {
+			const record = decode(PromotionRecordSchema, event.data);
+			if (!record) return;
+			forgetManualPromotion(record);
+		},
+		[CD_EVENTS.EnvPromoteRolledBack]: (event) => {
+			const record = decode(PromotionRecordSchema, event.data);
+			if (!record) return;
+			forgetManualPromotion(record);
 		},
 	});
 
