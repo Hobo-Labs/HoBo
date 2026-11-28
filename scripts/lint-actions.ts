@@ -61,6 +61,7 @@ const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
  */
 const healthFile = "ci-health.yml";
 const supersessionFile = "pr-supersession.yml";
+const queueReaperFile = "merge-queue-reaper.yml";
 /** A manually dispatched, read-only identity observation on a hosted runner. */
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
@@ -78,6 +79,7 @@ const allowedEnabled = new Set([
 	probeFile,
 	healthFile,
 	supersessionFile,
+	queueReaperFile,
 	hostingEvidenceFile,
 	vercelEvidenceFile,
 	...activeCiFiles,
@@ -405,6 +407,13 @@ function isAlwaysHostedJob(
 			runsOn === HOSTED_RUNS_ON &&
 			block.some((line) =>
 				/^\s*-?\s*run: node scripts\/ci\/pr-supersession\.mts$/.test(line),
+			)
+		);
+	if (/^ {2}reaper:$/.test(jobLine))
+		return (
+			runsOn === HOSTED_RUNS_ON &&
+			block.some((line) =>
+				/^\s*-?\s*run: node scripts\/ci\/merge-queue-reaper\.mts$/.test(line),
 			)
 		);
 	const stepsAt = block.findIndex((line) => line === "    steps:");
