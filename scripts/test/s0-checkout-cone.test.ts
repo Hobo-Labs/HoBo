@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -42,11 +43,43 @@ function mainGateSparsePaths(): string[] {
 		.map((line) => line.slice(8));
 }
 
+function actionRootFilePaths(): string[] {
+	const match = action.match(/root_files=\(\n((?:          .+\n)+?)        \)/);
+	if (!match?.[1]) throw new Error("hobo-checkout missing root_files list");
+	return match[1]
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => line.trim());
+}
+
+function gitTreeKind(path: string): string {
+	const result = spawnSync("git", ["cat-file", "-t", `HEAD:${path}`], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	return result.status === 0 ? result.stdout.trim() : "";
+}
+
 describe("Main full gate S0 sparse checkout", () => {
 	it("keeps the workflow env block identical to the canonical cone", () => {
 		expect(`${mainGateSparsePaths().join("\n")}\n`).toBe(
 			s0SparsePathsBlock(root),
 		);
+	});
+
+	it("requires every listed S0 file to exist in the git tree", () => {
+		const listed = [
+			...new Set([
+				...S0_FILE_PATHS,
+				...mainGateSparsePaths(),
+				...actionRootFilePaths(),
+			]),
+		];
+		const files = listed.filter((path) => gitTreeKind(path) !== "tree");
+		const missing = files.filter(
+			(path) => !existsSync(join(root, path)) || gitTreeKind(path) === "",
+		);
+		expect(missing).toEqual([]);
 	});
 
 	it("bootstraps local actions before using hobo-checkout", () => {

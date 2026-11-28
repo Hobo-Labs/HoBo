@@ -135,6 +135,8 @@ const DESIRED_KEYS = new Set([
 const MAX_TAGS = 64;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_DEPTH = 2;
+const MAX_UPLOAD_RESYNCS = 3;
+const MAX_MONOLITHIC_FALLBACK_BYTES = 64 * 1024 * 1024;
 const BLOB_UPLOADS_SEGMENT = "uploads";
 const GHCR_BLOB_UPLOAD_SEGMENT = "upload";
 
@@ -619,6 +621,46 @@ export function createOciRegistryResolvers(
 		return `${location}${location.includes("?") ? "&" : "?"}digest=${encodeURIComponent(digest)}`;
 	}
 
+	async function startBlobUpload(copy: Copy): Promise<string> {
+		const started = await copy.target.send({
+			method: "POST",
+			path: `/v2/${copy.repository}/blobs/uploads/`,
+			scopes: push(copy.repository),
+			headers: { "content-length": "0" },
+		});
+		if (started.status !== 202)
+			unexpected(started, "POST", "start blob upload");
+		return repositoryUploadLocation(copy, started);
+	}
+
+	async function monolithicBlobUpload(
+		copy: Copy,
+		blob: Descriptor,
+		bytes: Uint8Array,
+		session: string | undefined,
+	): Promise<void> {
+		const scopes = push(copy.repository);
+		let location = session;
+		if (location === undefined) location = await startBlobUpload(copy);
+		const body = encodeBody(bytes, encoding);
+		if (body === undefined)
+			rejected(
+				`blob ${blob.digest} is binary and the host transport carries UTF-8 text`,
+				"mount from the same registry, or run with transportBodyEncoding 'latin1' on a byte transport",
+			);
+		const done = await copy.target.send({
+			method: "PUT",
+			path: withDigest(location, blob.digest),
+			scopes,
+			headers: {
+				"content-type": "application/octet-stream",
+				"content-length": String(bytes.byteLength),
+			},
+			body,
+		});
+		if (done.status !== 201) unexpected(done, "PUT", "upload blob");
+	}
+
 	async function upload(
 		copy: Copy,
 		blob: Descriptor,
@@ -627,35 +669,9 @@ export function createOciRegistryResolvers(
 	): Promise<void> {
 		const scopes = push(copy.repository);
 		let location = session;
-		if (location === undefined) {
-			const started = await copy.target.send({
-				method: "POST",
-				path: `/v2/${copy.repository}/blobs/uploads/`,
-				scopes,
-				headers: { "content-length": "0" },
-			});
-			if (started.status !== 202)
-				unexpected(started, "POST", "start blob upload");
-			location = repositoryUploadLocation(copy, started);
-		}
+		if (location === undefined) location = await startBlobUpload(copy);
 		if (bytes.byteLength <= chunkBytes) {
-			const body = encodeBody(bytes, encoding);
-			if (body === undefined)
-				rejected(
-					`blob ${blob.digest} is binary and the host transport carries UTF-8 text`,
-					"mount from the same registry, or run with transportBodyEncoding 'latin1' on a byte transport",
-				);
-			const done = await copy.target.send({
-				method: "PUT",
-				path: withDigest(location, blob.digest),
-				scopes,
-				headers: {
-					"content-type": "application/octet-stream",
-					"content-length": String(bytes.byteLength),
-				},
-				body,
-			});
-			if (done.status !== 201) unexpected(done, "PUT", "upload blob");
+			await monolithicBlobUpload(copy, blob, bytes, location);
 			return;
 		}
 		if (encoding !== "latin1")
@@ -663,7 +679,10 @@ export function createOciRegistryResolvers(
 				`blob ${blob.digest} needs a chunked upload, which a UTF-8 text transport cannot split safely`,
 				"run with transportBodyEncoding 'latin1', or raise chunkBytes",
 			);
-		for (let start = 0; start < bytes.byteLength; start += chunkBytes) {
+		let start = 0;
+		let resyncs = 0;
+		let restarted = false;
+		while (start < bytes.byteLength) {
 			const chunk = bytes.subarray(
 				start,
 				Math.min(start + chunkBytes, bytes.byteLength),
@@ -679,8 +698,44 @@ export function createOciRegistryResolvers(
 				},
 				body: Buffer.from(chunk).toString("latin1"),
 			});
+			if (patched.status === 416 && resyncs < MAX_UPLOAD_RESYNCS) {
+				resyncs++;
+				const status = await copy.target.send({
+					method: "GET",
+					path: location,
+					scopes,
+				});
+				if (status.status !== 204)
+					unexpected(status, "GET", "read blob upload status");
+				const range = /^0-(\d+)$/u.exec(header(status, "range") ?? "");
+				const end = Number(range?.[1]);
+				if (
+					!range ||
+					!Number.isSafeInteger(end) ||
+					end >= bytes.byteLength ||
+					end >= start + chunk.byteLength
+				)
+					unparseable("blob upload status has an invalid Range");
+				location = repositoryUploadLocation(copy, status);
+				start = end + 1;
+				continue;
+			}
+			if (patched.status === 416 && !restarted) {
+				if (
+					bytes.byteLength <=
+					Math.min(2 * chunkBytes, MAX_MONOLITHIC_FALLBACK_BYTES)
+				) {
+					await monolithicBlobUpload(copy, blob, bytes, undefined);
+					return;
+				}
+				location = await startBlobUpload(copy);
+				start = 0;
+				restarted = true;
+				continue;
+			}
 			if (patched.status !== 202) unexpected(patched, "PATCH", "upload chunk");
 			location = repositoryUploadLocation(copy, patched);
+			start += chunk.byteLength;
 		}
 		const closed = await copy.target.send({
 			method: "PUT",

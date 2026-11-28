@@ -351,7 +351,7 @@ describe("the routing decision", () => {
 describe("the fleet label a run asks for", () => {
 	it("is the committed trunk label for trunk events, the fleet label otherwise", () => {
 		assert.equal(fleetLabelFor("pull_request"), "hobo");
-		assert.equal(fleetLabelFor("schedule"), "hobo");
+		assert.equal(fleetLabelFor("schedule"), "hobo-trunk");
 		assert.equal(fleetLabelFor("merge_group"), "hobo-trunk");
 		assert.equal(fleetLabelFor("push"), "hobo-trunk");
 		const labels = {
@@ -395,7 +395,7 @@ describe("the run's slip class", () => {
 				event,
 			);
 		}
-		assert.equal(routeClass("schedule", undefined), "fork");
+		assert.equal(routeClass("schedule", undefined), "trunk");
 		for (const event of ["pull_request", "pull_request_target"])
 			for (const payload of [undefined, {}, { pull_request: {} }])
 				assert.equal(routeClass(event, payload), "fork");

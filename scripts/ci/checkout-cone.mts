@@ -39,7 +39,6 @@ export const S0_DIRECTORY_CONES = [
 
 export const S0_ROOT_FILES = [
 	...RELEASE_ROOT_FILES,
-	".env.example",
 	".gitattributes",
 	".gitignore",
 	".betterleaks.toml",

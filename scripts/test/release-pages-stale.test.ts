@@ -5,6 +5,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,6 +24,7 @@ import {
 	type PagesComparison,
 	type PagesSource,
 	parseDeployedSha,
+	requirePagesDeployedHead,
 } from "../lib/release-pages-stale.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -59,6 +61,41 @@ describe("parseDeployedSha", () => {
 		expect(parseDeployedSha("Initial commit")).toBeUndefined();
 		expect(parseDeployedSha("deploy: by hand")).toBeUndefined();
 		expect(parseDeployedSha(`chore: mention ${deployed}`)).toBeUndefined();
+	});
+});
+
+describe("requirePagesDeployedHead", () => {
+	it("accepts the exact source recorded by the candidate", async () => {
+		await expect(
+			requirePagesDeployedHead({ head, source: source(`deploy: ${head}`) }),
+		).resolves.toBeUndefined();
+	});
+
+	it("rejects a superseded or unverifiable candidate", async () => {
+		for (const message of [
+			undefined,
+			"Initial commit",
+			`deploy: ${deployed}`,
+			`deploy: ${head.slice(0, 9)}`,
+		]) {
+			await expect(
+				requirePagesDeployedHead({ head, source: source(message) }),
+			).rejects.toThrow(/pages.*source/iu);
+		}
+	});
+
+	it("propagates a failure to read the deployed source", async () => {
+		await expect(
+			requirePagesDeployedHead({
+				head,
+				source: {
+					deployedMessage: async () => {
+						throw new Error("API unavailable");
+					},
+					compare: async () => undefined,
+				},
+			}),
+		).rejects.toThrow("API unavailable");
 	});
 });
 
@@ -320,6 +357,40 @@ describe("check-release-pages-stale CLI", () => {
 		expect(result.status).toBe(2);
 		expect(result.stderr).toContain("usage:");
 	});
+
+	it("fails a stable promotion when the published source changed or cannot be read", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-pages-stable-cli-"));
+		try {
+			const mock = join(dir, "mock-fetch.mjs");
+			writeFileSync(
+				mock,
+				`globalThis.fetch = async () => new Response(JSON.stringify({commit:{commit:{message:process.env.HOBO_TEST_PAGES_MESSAGE}}}), {status:Number(process.env.HOBO_TEST_PAGES_STATUS)});\n`,
+			);
+			for (const [message, status, expected] of [
+				[`deploy: ${head}`, "200", 0],
+				[`deploy: ${deployed}`, "200", 1],
+				["", "404", 1],
+			] as const) {
+				const result = spawnSync(
+					process.execPath,
+					["--import", mock, cli, "--head", head, "--require-deployed-head"],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+							GITHUB_TOKEN: "test",
+							HOBO_TEST_PAGES_MESSAGE: message,
+							HOBO_TEST_PAGES_STATUS: status,
+						},
+					},
+				);
+				expect(result.status, result.stderr).toBe(expected);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("release-hobo pages jobs", () => {
@@ -450,8 +521,8 @@ describe("release-hobo pages jobs", () => {
 		const tag = job("release-tag");
 		expect(tag).toContain("!cancelled() &&");
 		expect(tag).not.toContain("always()");
-		expect(tag).toMatch(
-			/needs: \[[^\]]*release-pages-gate, release-pages\b[^\]]*\]/,
+		expect(tag).toContain(
+			"needs: [route, release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-pages-stable, release-hobo-cli]",
 		);
 		// A failed gate skips the publish; that skip must not read as "nothing to do".
 		expect(tag).toContain(
@@ -461,6 +532,29 @@ describe("release-hobo pages jobs", () => {
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)`,
 		);
+		expect(tag).toContain(
+			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages-stable.result)`,
+		);
+	});
+
+	it("promotes pages-stable from the Freight home the candidate job recorded", () => {
+		const pages = job("release-pages");
+		expect(pages).toContain("promoted: ${{ steps.promote.outputs.promoted }}");
+		expect(pages).toContain('echo "promoted=true" >> "$GITHUB_OUTPUT"');
+		expect(pages).toContain("name: hobo-release-freight-pages");
+		expect(pages).toContain("if: steps.promote.outputs.promoted == 'true'");
+		const stable = job("release-pages-stable");
+		expect(stable).toContain("needs.release-pages.outputs.promoted == 'true'");
+		expect(stable).toContain("name: hobo-release-freight-pages");
+		expect(stable).toContain("deploy-site.mts --stable-only");
+		expect(stable).not.toContain("--candidate-only");
+		expect(stable).toContain("--require-deployed-head");
+		expect(stable.indexOf("--require-deployed-head")).toBeLessThan(
+			stable.indexOf("deploy-site.mts --stable-only"),
+		);
+		expect(stable).toContain("group: hobo-release-pages");
+		expect(stable).toContain("Link deps layer or install");
+		expect(stable).not.toContain("ci-deps-recovery");
 	});
 
 	it("records the commit it built, not the branch tip the event fired on", () => {
@@ -469,7 +563,7 @@ describe("release-hobo pages jobs", () => {
 		// commit checked out and built here.
 		const pages = job("release-pages");
 		const step = pages.slice(
-			pages.indexOf("Record, promote and publish the Pages site"),
+			pages.indexOf("Record and promote the Pages candidate"),
 		);
 		expect(step).toContain(
 			"HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}",
