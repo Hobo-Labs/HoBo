@@ -12,6 +12,7 @@ import {
 	CD_WORKLOAD_IDENTITY_ENTRY,
 	cdStoreCoordinatesText,
 	ensureCdWorkloadIdentity,
+	vercelTeamSlug,
 } from "../src/workload-identity.js";
 
 function fakeAdmin() {
@@ -212,5 +213,55 @@ describe("the CD workload identity", () => {
 			).detail,
 		).toMatch(/no team/u);
 		expect(calls).toEqual([]);
+	});
+});
+
+describe("the Vercel team's slug", () => {
+	type TeamsBody = Readonly<{
+		id?: string;
+		slug?: string;
+		teams?: ReadonlyArray<Readonly<{ id: string; slug: string }>>;
+		pagination?: Readonly<{ next: number | null }>;
+	}>;
+	const reply = (status: number, body: TeamsBody) =>
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { "content-type": "application/json" },
+		});
+
+	it("reads it from the team when the connection may read the team", async () => {
+		const http: typeof fetch = async () =>
+			reply(200, { id: "team_1", slug: "acme" });
+		expect(await vercelTeamSlug("t", "team_1", http)).toBe("acme");
+	});
+
+	it("finds it among the sign-in's teams when the team itself answers 403", async () => {
+		const seen: string[] = [];
+		const http: typeof fetch = async (url) => {
+			const target = String(url);
+			seen.push(target);
+			if (target.endsWith("/v2/teams/team_2")) return reply(403, {});
+			if (!target.includes("until="))
+				return reply(200, {
+					teams: [{ id: "team_1", slug: "other" }],
+					pagination: { next: 7 },
+				});
+			return reply(200, {
+				teams: [{ id: "team_2", slug: "acme" }],
+				pagination: { next: null },
+			});
+		};
+		expect(await vercelTeamSlug("t", "team_2", http)).toBe("acme");
+		expect(seen).toHaveLength(3);
+	});
+
+	it("says which answers it got when neither names the team", async () => {
+		const http: typeof fetch = async (url) =>
+			String(url).endsWith("/v2/teams")
+				? reply(200, { teams: [], pagination: { next: null } })
+				: reply(403, {});
+		await expect(vercelTeamSlug("t", "team_3", http)).rejects.toThrow(
+			/HTTP 403.*did not list it/u,
+		);
 	});
 });

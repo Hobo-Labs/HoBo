@@ -238,7 +238,7 @@ async function ready(
 			"HOBO_CD_WORKLOAD_IDENTITY_FAILED",
 			`The identity HoBo.CD on Vercel reads its journal with could not be made: ${error instanceof Error ? error.message : String(error)}`,
 			[
-				"Run hobo cd up again; if it persists, check that your Infisical sign-in may manage identities in the project.",
+				"Run hobo cd up again. If it persists, the message names the service that refused: the Vercel connection must reach the team and project, and the Infisical sign-in must manage identities in the project.",
 			],
 		);
 	}
