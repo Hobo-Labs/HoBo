@@ -48,8 +48,11 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(
 			/check the project MCP registration\s+and its startup prerequisites/u,
 		);
-		expect(HAND_OFF).toContain(
-			"pnpm exec turbo run build --filter=@hobo/hobo...",
+		expect(HAND_OFF).toMatch(
+			/install the workspace dependencies;\s+the source server builds the\s+workspace packages it imports before it lists its tools/u,
+		);
+		expect(HAND_OFF).toMatch(
+			/a cold build takes\s+about two minutes, inside the `MCP_TIMEOUT` the project settings give Claude\s+Code/u,
 		);
 		expect(HAND_OFF).toMatch(/supported MCP discovery or reload mechanism/u);
 		expect(HAND_OFF).toMatch(
