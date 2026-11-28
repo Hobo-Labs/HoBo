@@ -1,0 +1,137 @@
+import { create } from "@bufbuild/protobuf";
+import { describe, expect, it } from "vitest";
+import {
+	ReconcileObservationRecordSchema,
+	ReconcileStatus,
+} from "../../src/_generated/cd_pb.js";
+import {
+	CD_ENGINE_KIND,
+	clusterSyncRegistration,
+	createCdEngineRegistry,
+	gitopsPublisherRegistration,
+	LEGACY_PUBLISHER_TARGET,
+	registrationsFromPublisherPorts,
+} from "../../src/compose/engines.js";
+import type { ClusterSyncPort, PublisherPort } from "../../src/ports.js";
+
+function fakePublisher(target: string): PublisherPort {
+	return Object.freeze({
+		target,
+		async publish() {
+			return { ok: true, value: { revision: "abc" } };
+		},
+		async observe() {
+			return create(ReconcileObservationRecordSchema, {
+				status: ReconcileStatus.CONVERGING,
+				converged: false,
+				reasons: [],
+			});
+		},
+	});
+}
+
+describe("CdEngineRegistry", () => {
+	it("lists registered engines sorted by name", () => {
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("flux", fakePublisher("flux:a")),
+			gitopsPublisherRegistration("argo-cd", fakePublisher("argo-cd:b")),
+		]);
+		expect(registry.names()).toEqual(["argo-cd", "flux"]);
+	});
+
+	it("resolves publishers by name and legacy argo alias", () => {
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("argo-cd", fakePublisher("argo-cd:main")),
+		]);
+		const byName = registry.publisher("argo-cd");
+		expect(byName.ok).toBe(true);
+		if (!byName.ok) throw new Error("expected publisher");
+		expect(byName.value.target).toBe("argo-cd:main");
+
+		const legacy = registry.publisher("argo");
+		expect(legacy.ok).toBe(true);
+
+		const missing = registry.publisher("octopus");
+		expect(missing.ok).toBe(false);
+		if (missing.ok) throw new Error("expected refusal");
+		expect(missing.reasons[0]?.code).toBe("compose-engine-unknown");
+	});
+
+	it("normalizes legacy registrations to the canonical name", () => {
+		const publisher = fakePublisher("argo-cd:main");
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("argo", publisher),
+		]);
+		expect(registry.names()).toEqual(["argo-cd"]);
+		expect(registry.publisher("argo")).toEqual({ ok: true, value: publisher });
+		expect(registry.publisher("argo-cd")).toEqual({
+			ok: true,
+			value: publisher,
+		});
+	});
+
+	it("rejects duplicate canonical engine names", () => {
+		const first = fakePublisher("first");
+		const second = fakePublisher("second");
+		expect(() =>
+			createCdEngineRegistry([
+				gitopsPublisherRegistration("flux", first),
+				gitopsPublisherRegistration("flux", second),
+			]),
+		).toThrow("duplicate CD engine registration: flux");
+		expect(() =>
+			createCdEngineRegistry([
+				gitopsPublisherRegistration("argo", first),
+				gitopsPublisherRegistration("argo-cd", second),
+			]),
+		).toThrow("duplicate CD engine registration: argo-cd");
+	});
+
+	it("records engine kind", () => {
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("flux", fakePublisher("flux:x")),
+		]);
+		expect(registry.kind("flux")).toBe(CD_ENGINE_KIND.GITOPS_PUBLISHER);
+		expect(registry.kind("missing")).toBeUndefined();
+	});
+
+	it("builds registrations from publisher ports", () => {
+		const regs = registrationsFromPublisherPorts([
+			{ name: "argo-cd", port: fakePublisher("t1") },
+		]);
+		expect(regs[0]?.kind).toBe(CD_ENGINE_KIND.GITOPS_PUBLISHER);
+		expect(LEGACY_PUBLISHER_TARGET.get("argo")).toBe("argo-cd");
+	});
+
+	it("resolves cluster sync engines separately from publishers", () => {
+		const cluster: ClusterSyncPort = Object.freeze({
+			target: "cluster:ctrl",
+			async getWorkload() {
+				return { ok: true, value: {} };
+			},
+			async requestSync() {
+				return { ok: true, value: undefined };
+			},
+			async observeSync() {
+				return {
+					state: "converging",
+					healthy: false,
+					appliedRevision: "",
+				};
+			},
+		});
+		const registry = createCdEngineRegistry([
+			gitopsPublisherRegistration("argo-cd", fakePublisher("pub")),
+			clusterSyncRegistration("argo-cd-control", cluster),
+		]);
+		const pub = registry.publisher("argo-cd");
+		expect(pub.ok).toBe(true);
+		const ctl = registry.clusterSync("argo-cd-control");
+		expect(ctl.ok).toBe(true);
+		if (ctl.ok) expect(ctl.value.target).toBe("cluster:ctrl");
+		const wrong = registry.clusterSync("argo-cd");
+		expect(wrong.ok).toBe(false);
+		if (wrong.ok) throw new Error("expected refusal");
+		expect(wrong.reasons[0]?.code).toBe("compose-engine-not-cluster-sync");
+	});
+});

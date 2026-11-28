@@ -29,10 +29,12 @@ describe("dapr live client path", () => {
 		expect(bus.client).toBe(client);
 
 		await bus.publish(parseTopicName("events"), { hello: true });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const batch = await bus.consume("events" as never, "g1" as never);
 		expect(batch).toHaveLength(1);
 		expect(batch[0]?.body).toEqual({ hello: true });
 		await bus.ack(first(batch).messageId, first(batch).leaseId);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await bus.consume("events" as never, "g1" as never);
 		expect(again).toHaveLength(0);
 	});

@@ -8,6 +8,7 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -188,6 +189,84 @@ describe("CI deps image build contract", () => {
 		assert.ok(key > fallback);
 		includes(build, "^hobo-ci-worker:(v[0-9a-f]{12})$");
 		includes(build, "Using toolchain image");
+	});
+
+	it("uses the remote toolchain only when a local headroom helper exists", () => {
+		const start = build.indexOf(
+			'toolchain="$(node --no-warnings scripts/ci-runner-image-version.mts)"',
+		);
+		const end = build.indexOf('if [[ "$base" != ghcr.io/* ]]', start);
+		assert.ok(start >= 0 && end > start);
+		const bin = mkdtempSync(join(tmpdir(), "hobo-deps-remote-toolchain-"));
+		const calls = join(bin, "calls");
+		writeFileSync(join(bin, "timeout"), '#!/bin/sh\nshift\nexec "$@"\n', {
+			mode: 0o755,
+		});
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				'if [ "$1 $2 $3" = "image inspect hobo-ci-worker:local" ]; then [ "$LOCAL_HELPER" = yes ]; exit; fi',
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "node"),
+			[
+				"#!/bin/sh",
+				'case "$*" in',
+				"  *ci-runner-image-version.mts*) echo v123456789abc ;;",
+				`  *--published-digest*) echo ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"a".repeat(64)} ;;`,
+				`  *ensure-ci-worker-image.mts*) echo ensure >> "${calls}" ;;`,
+				"  *) exit 1 ;;",
+				"esac",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const run = (localHelper: string) =>
+			spawnSync(
+				"bash",
+				[
+					"-c",
+					[
+						"set -euo pipefail",
+						build.slice(start, end),
+						'printf "base=%s helper=%s\\n" "$base" "$headroom_sample_image"',
+					].join("\n"),
+				],
+				{
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_TOKEN: "token-for-test",
+						LOCAL_HELPER: localHelper,
+					},
+				},
+			);
+		try {
+			const missing = run("no");
+			assert.equal(missing.status, 0, missing.stderr);
+			assert.match(
+				missing.stdout,
+				/base=hobo-ci-worker:v123456789abc helper=hobo-ci-worker:v123456789abc/u,
+			);
+			assert.equal(readFileSync(calls, "utf8").trim(), "ensure");
+			writeFileSync(calls, "");
+			const present = run("yes");
+			assert.equal(present.status, 0, present.stderr);
+			assert.match(
+				present.stdout,
+				/base=ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker@sha256:[a-f0-9]{64} helper=hobo-ci-worker:local/u,
+			);
+			assert.equal(readFileSync(calls, "utf8"), "");
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
 
 	it("returns on a keyed or matching-local hit without building", () => {
@@ -790,14 +869,25 @@ describe("CI deps publisher contract", () => {
 		"packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 	);
 
-	it("runs only after a successful main fabric run or manually", () => {
+	it("runs after a finished main fabric run, green or failed, or manually", () => {
 		includes(workflow, 'workflows: ["HoBo CI Fabric"]');
 		includes(workflow, "types: [completed]");
 		includes(workflow, "branches: [main]");
 		includes(workflow, "workflow_dispatch:");
 		includes(workflow, "timeout-minutes: 20");
 		includes(workflow, "cancel-in-progress: true");
-		includes(workflow, "github.event.workflow_run.conclusion == 'success'");
+		includes(
+			workflow,
+			`contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)`,
+		);
+		assert.equal(
+			workflow.includes("github.event.workflow_run.conclusion == 'success'"),
+			false,
+		);
+		includes(
+			workflow,
+			"github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name",
+		);
 		includes(workflow, "github.event.workflow_run.head_sha");
 	});
 

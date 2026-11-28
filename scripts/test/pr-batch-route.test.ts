@@ -179,19 +179,29 @@ describe("PR batch routing", () => {
 		);
 	});
 
-	it("requires a Broker claim for an explicit merge-group fleet pin", async () => {
+	it("requires a Broker claim for an explicit merge-group release fleet pin", async () => {
 		const merge = { ...env, GITHUB_EVENT_NAME: "merge_group" };
+		const release = {
+			...merge,
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/gh-readonly-queue/main/pr-1",
+		};
 		const fetchUnexpected = async () => {
 			throw new Error("unexpected read");
 		};
 		await assert.rejects(
-			main([], merge, {
+			main([], release, {
 				routingConfig: routing("fleet"),
 				fetch: fetchUnexpected,
 			}),
 			/requires a verified capacity and Broker claim/u,
 		);
-		const decision = await main([], merge, {
+		const fabric = await main([], merge, {
+			routingConfig: routing("fleet"),
+			fetch: fetchUnexpected,
+		});
+		assert.deepEqual([fabric.tier, fabric.runner], ["fleet", "hobo-trunk"]);
+		const decision = await main([], release, {
 			routingConfig: routing("fleet"),
 			fetch: fetchUnexpected,
 			verifyPrBatchCapacity: async (scope) => {
@@ -646,7 +656,8 @@ describe("PR batch routing", () => {
 			"scripts-tests",
 		]) {
 			const body =
-				workflow.split(`  ${job}:`)[1]?.split(/\n  [A-Za-z0-9_-]+:/u)[0] ?? "";
+				workflow.split(`  ${job}:`)[1]?.split(/\n {2}[A-Za-z0-9_-]+:/u)[0] ??
+				"";
 			assert.match(body, /needs\.route\.result == 'success'/u, job);
 		}
 	});
@@ -658,7 +669,7 @@ describe("PR batch routing", () => {
 				"utf8",
 			);
 			const route =
-				source.split("\n  route:")[1]?.split(/\n  [A-Za-z0-9_-]+:/u)[0] ?? "";
+				source.split("\n  route:")[1]?.split(/\n {2}[A-Za-z0-9_-]+:/u)[0] ?? "";
 			assert.ok(
 				route.includes(`            .github/workflows/${name}\n`),
 				name,

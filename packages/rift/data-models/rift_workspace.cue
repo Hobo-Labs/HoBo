@@ -13,9 +13,9 @@ import (
 	tier: #CowTier
 	available: [...#CowTier] & list.MinItems(1)
 	reason: string & !=""
-	isolates_in_place_writes: bool
+	isolatesInPlaceWrites: bool
 	if tier == "hardlink" {
-		isolates_in_place_writes: false
+		isolatesInPlaceWrites: false
 	}
 }
 
@@ -24,7 +24,7 @@ import (
 	path:       string & !=""
 	tier:       #CowTier
 	source:     string & !=""
-	created_at: string & !=""
+	createdAt: string & !=""
 	if tier == "overlayfs" {
 		upper: string & !=""
 		work:  string & !=""
@@ -54,4 +54,5 @@ import (
 #Registry: {
 	root: string & !=""
 	workspaces: [...#WorkspaceRecord]
+	eventCount: uint & <=4294967295
 }

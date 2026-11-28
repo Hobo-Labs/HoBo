@@ -5,6 +5,11 @@ export {
 	parsePublisherConfig,
 } from "./config.js";
 export {
+	cdEngineRegistrations,
+	createCdEngineRegistryFromGitops,
+	mergePublisherRegistryIntoCdEngines,
+} from "./engine-registry.js";
+export {
 	argoVerdict,
 	ENGINE_CREDENTIAL_SCOPE,
 	type EngineVerdict,
@@ -27,6 +32,15 @@ export {
 	type GitHostClient,
 	type RemoteFile,
 } from "./hosts/index.js";
+export {
+	type Call,
+	hostFailure,
+	ok,
+	parseJson,
+	send,
+	token,
+} from "./http.js";
+export { isJsonObject, isJsonString } from "./json.js";
 export {
 	createGitopsPublisher,
 	createPublisherRegistry,

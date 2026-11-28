@@ -797,7 +797,7 @@ d.forEach(function(v,k){var t=String(v).trim();var el=f.elements[k];if(t&&(!el||
 request("tools/call",{name:"${SUBMIT_STORE_CHOICE_TOOL}",arguments:args}).then(function(r){
 var t=(r&&r.content&&r.content[0]&&r.content[0].text)||"";say.textContent=t;
 var status=(r&&r.structuredContent&&r.structuredContent.status)||"";
-if(r&&!r.isError)notify("ui/message",{role:"user",content:[{type:"text",text:"I chose "+label+" as the secret store ("+status+")."}]})},
+if(r&&!r.isError)request("ui/message",{role:"user",content:[{type:"text",text:"I chose "+label+" as the secret store ("+status+")."}]}).catch(function(){})},
 function(){say.textContent="Not recorded: the request did not complete. Try again."})});
 window.addEventListener("message",function(ev){if(ev.source!==window.parent)return;var m=ev.data;if(!m||m.jsonrpc!=="2.0")return;
 if(m.method===undefined&&m.id!==undefined){var w=pending[m.id];if(!w)return;delete pending[m.id];m.error?w.rej(m.error):w.res(m.result);return}

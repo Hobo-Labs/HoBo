@@ -10,8 +10,8 @@ import {
 } from "../lib/pnpm-lockfile.mts";
 import type { ReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import { OCI_IMAGES_MANIFEST } from "../lib/release-oci-contract.mts";
+import { SDK_PACKAGES } from "./sdk-package-list.mts";
 import { RELEASE_OCI_STAGE_SPECS } from "./stage-release-oci-app.mts";
-import { SDK_PACKAGES } from "./stage-sdk-artifacts.mts";
 
 const RELEASE_IMAGE_ORDER = [
 	"hobo-sdk",
@@ -28,6 +28,7 @@ const RELEASE_BUILD_INPUTS = [
 	"scripts/ci/stage-sdk-artifacts.mts",
 	"scripts/lib/release-oci-contract.mts",
 	"scripts/lib/ci-runner-contract.mts",
+	"scripts/lib/turbo-concurrency.ts",
 	"tsconfig.base.json",
 	"pnpm-workspace.yaml",
 	".npmrc",
@@ -39,7 +40,18 @@ const RELEASE_BUILD_INPUTS = [
 const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	[
 		"hobo-sdk",
-		["release/npm-scope-map.json", "scripts/ci/npm-publish-scope.mts"],
+		[
+			"release/npm-scope-map.json",
+			"scripts/ci/npm-publish-scope.mts",
+			"scripts/ci/sdk-package-list.mts",
+			"scripts/ci/verify-cli-sdk-artifacts.mts",
+			"scripts/ci/cli-sdk-acceptance-child.mts",
+			"scripts/ci/bundle-sqlite-sdk.mts",
+			"scripts/ci/vendor-runtime-grounding.mts",
+			"scripts/ci/bundle-cli-sdk.mts",
+			"scripts/ci/bundle-cli-declarations.mts",
+			"scripts/ci/run-cli-sdk-bundle.mts",
+		],
 	],
 	[
 		"hobo-site",
@@ -52,7 +64,12 @@ const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	],
 ]);
 
-const BUILT_FROM = new Map([["hobo-mcp", "hobo-cli"]]);
+const EXTRA_BUILD_INPUTS = new Set([...EXTRA_INPUTS.values()].flat());
+
+const BUILT_FROM = new Map([
+	["hobo-cli", "hobo-sdk"],
+	["hobo-mcp", "hobo-cli"],
+]);
 
 export type RepoTree = {
 	readonly files: ReadonlyMap<string, string>;
@@ -184,9 +201,18 @@ export function isReleaseOciLayerNoise(path: string): boolean {
 	if (path.startsWith("docs/")) return true;
 	if (path.startsWith("scripts/test/")) return true;
 	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
-	if (path.startsWith("scripts/ci/") && !layerScripts.includes(path))
+	const declaredExtra = EXTRA_BUILD_INPUTS.has(path);
+	if (
+		path.startsWith("scripts/ci/") &&
+		!layerScripts.includes(path) &&
+		!declaredExtra
+	)
 		return true;
-	if (path.startsWith("scripts/lib/") && !layerScripts.includes(path))
+	if (
+		path.startsWith("scripts/lib/") &&
+		!layerScripts.includes(path) &&
+		!declaredExtra
+	)
 		return true;
 	return false;
 }
@@ -399,7 +425,7 @@ export function affectedReleaseOciImages(
 			: ["new image"];
 		const from = after?.from;
 		if (from && imageKey(base, from) !== imageKey(head, from))
-			changed.push(`built FROM ${from}`);
+			changed.push(`depends on ${from}`);
 		affected.push({ id, changed });
 	}
 	return affected;

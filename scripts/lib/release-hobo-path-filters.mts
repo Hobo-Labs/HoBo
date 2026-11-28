@@ -38,6 +38,50 @@ export function loadReleaseHoboPullRequestPathFilters(
 	);
 }
 
+export function parseReleasePagesPathFilters(workflowYaml: string): string[] {
+	const filters: string[] = [];
+	for (const key of [
+		"RELEASE_PAGES_SPARSE_PATHS",
+		"RELEASE_PAGES_MATERIALIZE_PATHS",
+	]) {
+		const marker = `  ${key}: |`;
+		const start = workflowYaml.indexOf(`\n${marker}\n`);
+		if (start < 0) return ["**"];
+		const after = workflowYaml.slice(start + marker.length + 2);
+		const entries: string[] = [];
+		for (const line of after.split("\n")) {
+			if (!line.startsWith("    ")) break;
+			const entry = line.trim();
+			if (!entry) continue;
+			if (
+				!/^[A-Za-z0-9._/-]+$/u.test(entry) ||
+				entry.startsWith("/") ||
+				entry.split("/").includes("..")
+			)
+				return ["**"];
+			entries.push(`${entry}/**`);
+		}
+		if (entries.length === 0) return ["**"];
+		filters.push(...entries);
+	}
+	try {
+		return [
+			...parseReleaseHoboPullRequestPathFilters(workflowYaml),
+			...filters,
+		];
+	} catch {
+		return ["**"];
+	}
+}
+
+export function loadReleasePagesPathFilters(repoRoot: string): string[] {
+	const workflowYaml = readFileSync(
+		join(repoRoot, ".github/workflows/release-hobo.yml"),
+		"utf8",
+	);
+	return parseReleasePagesPathFilters(workflowYaml);
+}
+
 export function pathMatchesReleaseHoboFilter(
 	filePath: string,
 	filter: string,

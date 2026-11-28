@@ -11,4 +11,4 @@ export type {
 	TokenHandle as WitTokenHandle,
 	TokenRequest as WitTokenRequest,
 	ToolCall as WitToolCall,
-} from "../node_modules/@hobo/wit/src/generated/runtime-primitives/interfaces/hobo-runtime-types.js";
+} from "@hobo/wit/runtime-primitives";

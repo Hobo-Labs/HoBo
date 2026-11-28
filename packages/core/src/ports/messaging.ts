@@ -499,6 +499,7 @@ export function createInMemoryMessaging(
 		throw new MessagingCapabilityError(
 			"in-memory messaging cannot transfer messages to a dead-letter topic",
 		);
+	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = (options.tenantId ?? "local") as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const capabilities: MessagingCapabilities = deepFreeze({

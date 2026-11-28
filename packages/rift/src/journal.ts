@@ -1,4 +1,13 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	existsSync,
+	fstatSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { WorkspaceRecord } from "./workspace.js";
 
@@ -31,7 +40,16 @@ export function journalPath(riftDir: string): string {
 
 export function appendEvent(riftDir: string, event: WorkspaceEvent): void {
 	mkdirSync(riftDir, { recursive: true });
-	appendFileSync(journalPath(riftDir), `${JSON.stringify(event)}\n`, "utf8");
+	const fd = openSync(journalPath(riftDir), "a+");
+	try {
+		const size = fstatSync(fd).size;
+		const lastByte = Buffer.alloc(1);
+		if (size > 0) readSync(fd, lastByte, 0, 1, size - 1);
+		const separator = size > 0 && lastByte[0] !== 10 ? "\n" : "";
+		appendFileSync(fd, `${separator}${JSON.stringify(event)}\n`, "utf8");
+	} finally {
+		closeSync(fd);
+	}
 }
 
 export function readEvents(riftDir: string): readonly WorkspaceEvent[] {

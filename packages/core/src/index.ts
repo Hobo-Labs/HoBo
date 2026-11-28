@@ -55,6 +55,7 @@ export {
 	ExtensionRegistryError,
 	parseExtensionPointId,
 } from "./extension-registry.js";
+export { ImmutableJournalError } from "./immutable-journal-error.js";
 // The JSON view `diagnosticJson` returns and every parse boundary accepts: a
 // package exporting those cannot keep the name of their type to itself.
 export type { JsonObject, JsonValue } from "./json.js";

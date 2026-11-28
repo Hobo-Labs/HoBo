@@ -3,6 +3,8 @@
 These rules apply to every agent, plugin, skill, and harness and take precedence
 over conflicting repository workflow guidance.
 
+- Do not create GitHub blobs directly, including through the Git Data API or
+  blob-creation tools. Use local Git commits and `git push` for repository changes.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
@@ -14,6 +16,13 @@ over conflicting repository workflow guidance.
   task directly or record genuinely unfinished work in the HoBo Linear team,
   using an existing issue when possible, before removing its marker. Do not
   invent feature work or change behavior merely to remove a comment.
+- Do not run GitHub Actions validation on draft pull requests. The first routing
+  job on every `pull_request` workflow skips draft events, so no Fabric runners
+  start until the pull request is marked ready for review. Review and validate
+  work locally while it stays draft. When every required ready-state gate is
+  green, the pull request may enter the merge queue. Any gate failure sends it
+  back to draft for in-place fixes on the same branch; mark it ready again to
+  re-run CI—do not open a new pull request to fix that branch's failing gates.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
@@ -942,7 +951,7 @@ Run the smallest sufficient lane through `pnpm agent:check`; no-arg mode validat
 
 ## Main train release versioning (repo + CI)
 
-Do **not** pick `@hobo-labs/*` semver or push `v0.0.0-alpha.N` tags by hand for the main train. [`version.json`](version.json) + **[Nerdbank.GitVersioning](https://dotnet.github.io/Nerdbank.GitVersioning/)** (`nerdbank-gitversioning` via `pnpm exec nbgv` under **`release/mise.toml`** dotnet only — not root [`mise.toml`](mise.toml)) compute **`0.0.0-alpha.{height+offset}`** from git. After green **`HoBo CI Fabric`** on a release-relevant **`main`** push, [`.github/workflows/release-hobo.yml`](.github/workflows/release-hobo.yml) (`workflow_run`) publishes npm (**`alpha`** dist-tag only), GHCR, and Pages, then **`release-tag`** ( **`environment: production`** ) SSH-signs the tag and pushes it over **HTTPS** with **`GITHUB_TOKEN`**. Use [`scripts/ci/compute-release-version.mts`](scripts/ci/compute-release-version.mts) locally after `mise -C release install --locked`.
+Do **not** pick `@hobo-labs/*` semver or push `v0.0.0-alpha.N` tags by hand for the main train. [`version.json`](version.json) + **[Nerdbank.GitVersioning](https://dotnet.github.io/Nerdbank.GitVersioning/)** (`nerdbank-gitversioning` via `pnpm exec nbgv` under **`release/mise.toml`** dotnet only — not root [`mise.toml`](mise.toml)) compute **`0.0.0-alpha.{height+offset}`** from git. After green **`HoBo CI Fabric`** on a release-relevant **`main`** push, [`.github/workflows/release-hobo.yml`](.github/workflows/release-hobo.yml) (`workflow_run`) publishes npm (**`alpha`** dist-tag only), GHCR, and Pages, then **`release-tag`** ( **`environment: production`** ) SSH-signs the tag and pushes it over **HTTPS** with **`GITHUB_TOKEN`**. Use [`scripts/ci/compute-release-version.mts`](scripts/ci/compute-release-version.mts) locally after [`scripts/ci/ensure-nbgv-toolchain.mts`](scripts/ci/ensure-nbgv-toolchain.mts), which runs `mise -C release install --locked dotnet` and sets `MISE_IGNORED_CONFIG_PATHS` to the absolute path of the repo-root `mise.toml`, appending any value already set (the same append preflight uses for `/etc/mise/config.toml`).
 
 ## Cursor Cloud specific instructions
 

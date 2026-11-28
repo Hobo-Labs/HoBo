@@ -1671,14 +1671,6 @@ export function catalogCampBinding(
 								"npm-provenance-bundle-missing",
 								`Camp ${camp.campId} requires npm provenance, and Freight ${freight.freightId} carries no Sigstore bundle for ${artifact.name}. Remediation: record the package's Sigstore provenance bundle (${artifact.name}.sigstore) in the Freight; HoBo never publishes a provenance-required package without one`,
 							);
-						if (
-							auth === "oidc-trusted-publishing" &&
-							packageName.startsWith("@")
-						)
-							throw new CatalogRealizerError(
-								"npm-oidc-scoped-unsupported",
-								`Camp ${camp.campId} binds npm OIDC trusted publishing, which @hobo/provider-npm refuses for the scoped package ${packageName}. Remediation: bind token auth (${L.npmAuth}=token) for scoped packages`,
-							);
 						out.push(
 							request(`npm-${artifact.name}`, {
 								registry: base,

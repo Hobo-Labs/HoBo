@@ -76,6 +76,13 @@ export {
 	validateReasonStructuredDetail,
 } from "./release-freight-detail.js";
 export {
+	formatOciBlockedDetail,
+	ociStructuredScopePayload,
+	RELEASE_OCI_DETAIL_KINDS,
+	type ReleaseOciDetailKind,
+	validateOciReasonStructuredDetail,
+} from "./release-oci-detail.js";
+export {
 	applyRetained,
 	DRIFT_CLASSES,
 	type DriftClass,

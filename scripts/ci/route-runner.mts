@@ -916,6 +916,11 @@ export function hoboPoolSaturation(input: {
 			saturated: true,
 			summary: `the ${input.label} pool has no idle capacity (${parts.join("; ")})`,
 		};
+	if (input.runners !== undefined && input.runners.online === 0)
+		return {
+			saturated: false,
+			summary: `the ${input.label} pool has 0 online runners on a readable page (ephemeral JIT idle is normal; saturation not asserted)`,
+		};
 	if (parts.length > 0)
 		return {
 			saturated: false,
@@ -991,6 +996,7 @@ export async function applyHoboPoolSaturation(input: {
 	read: QueueReader;
 	repository: string;
 	label: string;
+	verifiedHostedFallback?: () => Promise<string | undefined>;
 }): Promise<RouteDecision> {
 	const observation = await observeHoboPoolSaturation({
 		read: input.read,
@@ -1007,6 +1013,18 @@ export async function applyHoboPoolSaturation(input: {
 		observation.overflowRunners,
 	);
 	if (overflowUnavailable !== undefined) {
+		const hosted = await input.verifiedHostedFallback?.();
+		if (hosted) {
+			console.log(
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${saturation.summary}; ${overflowUnavailable}; using verified public compute on ${hosted}`)}`,
+			);
+			return {
+				tier: "github",
+				runner: hosted,
+				reason: `${input.decision.reason}; ${saturation.summary}; ${overflowUnavailable}; public standard-runner compute was verified`,
+				refusedBy: "queue",
+			};
+		}
 		console.log(
 			`::warning title=hobo-ci-route-fallback::${escapeCommand(`${saturation.summary}; ${overflowUnavailable}; the run stays on ${input.decision.runner}`)}`,
 		);
@@ -1189,6 +1207,7 @@ export const TRUNK_EVENTS: ReadonlySet<string> = new Set([
 	"workflow_dispatch",
 	"merge_group",
 	"workflow_run",
+	"schedule",
 ]);
 
 /** The labels the code holds, for a `.hobo/ci.json` with no `runnerRouting`. */
@@ -1904,6 +1923,7 @@ export async function main(
 		});
 		if (
 			mergeGroupTrusted &&
+			workflowFile(env) !== "hobo-ci.yml" &&
 			pinned.tier === "fleet" &&
 			!(await hasVerifiedBatchCapacity(
 				env,
@@ -2205,18 +2225,24 @@ export async function main(
 		decision.runner === labels.fleet &&
 		runClassName !== "fork"
 	) {
+		const verifiedHostedFallback = async () =>
+			labels.github === "ubuntu-24.04" && (await isPublicCaller(env, io.fetch))
+				? labels.github
+				: undefined;
 		decision = await applyHoboPoolSaturation({
 			decision,
 			read,
 			repository,
 			label: labels.fleet,
+			verifiedHostedFallback,
 		});
-		if (decision.runner !== labels.fleet) {
+		if (decision.tier === "fleet" && decision.runner !== labels.fleet) {
 			const rechecked = await applyHoboPoolSaturation({
 				decision,
 				read,
 				repository,
 				label: decision.runner,
+				verifiedHostedFallback,
 			});
 			if (rechecked.runner !== decision.runner) decision = rechecked;
 		}

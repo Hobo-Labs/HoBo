@@ -35,6 +35,16 @@ export function npmDistTagFromSemver(semver: string): string {
 	return id;
 }
 
+const OCI_TAG = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u;
+
+function assertOciTag(tag: string): void {
+	if (!OCI_TAG.test(tag)) {
+		throw new Error(
+			"OCI tag must use valid characters and be at most 128 characters",
+		);
+	}
+}
+
 export function parseReleaseRef(ref: string): ParsedReleaseRef {
 	const trimmed = ref.trim();
 	if (!trimmed) {
@@ -44,11 +54,13 @@ export function parseReleaseRef(ref: string): ParsedReleaseRef {
 		if (!trimmed.startsWith(prefix)) continue;
 		const semver = trimmed.slice(prefix.length);
 		assertSemver(semver);
+		const ghcrTag = trimmed.replace("+", "_");
+		assertOciTag(ghcrTag);
 		return {
 			ref: trimmed,
 			semver,
 			npmDistTag: npmDistTagFromSemver(semver),
-			ghcrTag: trimmed,
+			ghcrTag,
 			train,
 		};
 	}
@@ -153,6 +165,10 @@ export function ghcrImageTags(
 	imageId: string,
 	parsed: ParsedReleaseRef,
 ): string[] {
+	assertOciTag(parsed.ghcrTag);
+	if (parsed.ghcrTag !== parseReleaseRef(parsed.ref).ghcrTag) {
+		throw new Error("OCI tag does not match release ref");
+	}
 	const owner =
 		repository.toLowerCase().split("/")[0] ?? repository.toLowerCase();
 	const versionTag = `ghcr.io/${owner}/hobo/${imageId}:${parsed.ghcrTag}`;

@@ -506,17 +506,30 @@ describe("npm realizer: OIDC trusted publishing", () => {
 		expect(error.message).not.toContain(ID_TOKEN);
 	});
 
-	it("refuses a scoped name before any request: npmjs routes the exchange only for the %2f-escaped name, which the transport guard refuses", async () => {
+	it("fails closed when the registry rejects an expired OIDC identity", async () => {
+		const expired = "eyJhbGciOiJub25lIn0.eyJleHAiOjF9.c2ln";
 		const world = registryWorld({ bearer: PUBLISH_TOKEN, idToken: ID_TOKEN });
 		const error = await refusal(
 			resolverFor(memoryStore(TARBALL), {
 				auth: "oidc-trusted-publishing",
-				resolveCredential: async () => ID_TOKEN,
+				resolveCredential: async () => expired,
 			}).reconcile(request(), world.transport),
 		);
-		expect(error.code).toBe("RESOLVER_PRODUCT_UNSUPPORTED");
-		expect(error.message).toContain("scoped");
-		expect(world.requests).toHaveLength(0);
+		expect(error.message).toContain("exchange returned HTTP 401");
+		expect(error.message).not.toContain(expired);
+		expect(world.requests).toHaveLength(1);
+		expect(world.mutations()).toBe(0);
+	});
+
+	it("exchanges the ID token for a scoped package using the encoded name", async () => {
+		const world = registryWorld({ bearer: PUBLISH_TOKEN, idToken: ID_TOKEN });
+		const result = await resolverFor(memoryStore(TARBALL), {
+			auth: "oidc-trusted-publishing",
+			resolveCredential: async () => ID_TOKEN,
+		}).reconcile(request(), world.transport);
+		expect(result.action).toBe("create");
+		expect(new URL(world.requests[0]?.url ?? "").pathname).toContain("%2f");
+		expect(JSON.stringify(result)).not.toContain(ID_TOKEN);
 	});
 
 	it("is unsupported on registries without an exchange", () => {

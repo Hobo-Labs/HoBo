@@ -85,20 +85,27 @@ export function fixedTrainAlphaReleaseRef(
 
 export type NbgvRunner = (variable: string, commitIsh?: string) => string;
 
+export function nbgvGetVersionArgv(
+	repoRoot: string,
+	variable: string,
+	commitIsh = "HEAD",
+): readonly string[] {
+	return [
+		"exec",
+		"--",
+		process.execPath,
+		join(repoRoot, "node_modules", "nerdbank-gitversioning", "main.js"),
+		"get-version",
+		commitIsh,
+		"--variable",
+		variable,
+	];
+}
+
 export function defaultNbgvRunner(repoRoot: string): NbgvRunner {
 	ensureNbgvToolchain(repoRoot);
 	return (variable, commitIsh = "HEAD") => {
-		const args = [
-			"exec",
-			"--",
-			"pnpm",
-			"exec",
-			"nbgv",
-			"get-version",
-			commitIsh,
-			"--variable",
-			variable,
-		];
+		const args = [...nbgvGetVersionArgv(repoRoot, variable, commitIsh)];
 		const result = spawnSync("mise", args, {
 			cwd: repoRoot,
 			encoding: "utf8",

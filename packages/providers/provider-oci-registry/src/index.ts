@@ -1,3 +1,4 @@
+
 export {
 	createLatin1FetchTransport,
 	declareLatin1Transport,
@@ -21,6 +22,11 @@ export {
 	type ResolverTelemetryOptions,
 	type UnresolvedHostingProduct,
 } from "./delivery-coverage.js";
+export {
+	OCI_REGISTRY_REFUSAL_REASONS,
+	OciRegistryRefusal,
+	type OciRegistryRefusalReason,
+} from "./errors.js";
 export {
 	OCI_REGISTRY_HOSTING_COVERAGE,
 	OCI_REGISTRY_RESOLVED_PRODUCT_IDS,

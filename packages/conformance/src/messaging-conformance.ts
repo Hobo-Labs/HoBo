@@ -37,6 +37,7 @@ export async function runMessagingConformance(
 		throw new TypeError("createMessaging must be a function");
 	}
 
+	// SAFETY: assertion to `{} as Record<MessagingAssertionName, "pass" | "fail">` is required at this boundary.
 	const assertions = {} as Record<
 		MessagingAssertionName,
 		"pass" | "fail" | "unsupported"
@@ -113,6 +114,7 @@ async function provesDeadLetterMaxAttempts(
 	const topic = parseTopicName("conf-dlq");
 	const deadLetterTopic = parseTopicName("conf-dead");
 	const subscription = {
+		// SAFETY: assertion to `"s" as never` is required at this boundary.
 		name: "s" as never,
 		topic,
 		consumerGroup: parseConsumerGroupId("dlq"),

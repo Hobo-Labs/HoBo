@@ -160,3 +160,9 @@ independently enforce any bounds assumed by the quote; otherwise the ordinary
 unknown-pricing policy applies. To use eventual KV in the same view, pass its
 `verifyNamespace` and `verifyGrant` authorities in the mapper's `kv` option and
 apply both explicit target views to the Bindle.
+
+The workerd integration test runs the Alchemy-bundled application with its
+mapped service binding and grant, reading an emulated R2 bucket through the real
+proxy. It pins the simulator to Alchemy's Node compatibility defaults. The test
+uses simulated Alchemy providers and does not establish production Cloudflare
+behavior.
