@@ -6,6 +6,7 @@ import { Table } from "@alchemy.run/aws/DynamoDB";
 import { WebFunction } from "@alchemy.run/aws/Lambda";
 import { Providers } from "@alchemy.run/aws/Providers";
 import { Bucket } from "@alchemy.run/aws/S3";
+import { Secret } from "@alchemy.run/aws/SecretsManager";
 import { create } from "@bufbuild/protobuf";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
@@ -39,6 +40,10 @@ import {
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
 import { awsS3BindleMappers, withAwsS3 } from "../src/aws-s3-mapper.js";
+import {
+	awsVersionedSecretBindleMappers,
+	withAwsVersionedSecret,
+} from "../src/aws-secret-mapper.js";
 import { mapBindleToAlchemy } from "../src/bindle.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { testStateOwnership } from "./route-fixture.js";
@@ -82,18 +87,23 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 		const neutral = bindle("shop", (b) => {
 			const objects = b.bucket().allow("read");
 			const sessions = b.kv().allow("get");
+			const credentials = b.secret().allow("access");
 			return {
+				credentials,
 				objects,
 				sessions,
 				web: b
 					.web(() => () => new Response("ok"))
 					.with(sessionReplay({ enabled: false }))
-					.dependsOn(objects, sessions),
+					.dependsOn(objects, sessions, credentials),
 			};
 		});
-		const selected = withAwsS3(withAwsDynamoKv(neutral, { sessions: true }), {
-			objects: true,
-		});
+		const selected = withAwsVersionedSecret(
+			withAwsS3(withAwsDynamoKv(neutral, { sessions: true }), {
+				objects: true,
+			}),
+			{ credentials: true },
+		);
 		const source = defineAwsHttpSource({
 			bindle: selected,
 			applicationName: "web",
@@ -120,7 +130,9 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 				sourceFence: fence,
 				verifySource: () => true,
 			},
-			awsS3BindleMappers(awsDynamoKvBindleMappers()),
+			awsVersionedSecretBindleMappers(
+				awsS3BindleMappers(awsDynamoKvBindleMappers()),
+			),
 		);
 		const scenario = makeScenario({
 			charges: [perUnitCharge("runtime", "minute", "0.25")],
@@ -128,12 +140,14 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 				workload("agreement-a", [usage("minute", "1", "minute")]),
 				workload("agreement-a", [usage("minute", "2", "minute")]),
 				workload("agreement-a", [usage("minute", "3", "minute")]),
+				workload("agreement-a", [usage("minute", "1", "minute")]),
 			],
 		});
 		const bindings = [
 			{ resourceId: "objects", candidateIndex: 0 },
 			{ resourceId: "sessions", candidateIndex: 1 },
 			{ resourceId: "web", candidateIndex: 2 },
+			{ resourceId: "credentials", candidateIndex: 3 },
 		];
 		const target = alchemyTarget({
 			targetId: "yard-a",
@@ -144,6 +158,13 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 			sourceDigest,
 			inventoryEvidenceRef: "inventory:1",
 			resources: [
+				{
+					resourceId: "credentials",
+					resourceType: Secret.Type,
+					providerId: "sandbox",
+					providerAccountRef: "account-a",
+					productId: "sandbox",
+				},
 				{
 					resourceId: "objects",
 					resourceType: Bucket.Type,
@@ -177,12 +198,13 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 		};
 		const providers = Layer.effect(
 			Providers,
-			Provider.collection([Bucket, Table, WebFunction]),
+			Provider.collection([Bucket, Table, Secret, WebFunction]),
 		).pipe(
 			Layer.provide(
 				Layer.mergeAll(
 					stub(Bucket),
 					stub(Table),
+					stub(Secret),
 					Provider.succeed(WebFunction, {
 						reconcile: () =>
 							Effect.die(new Error("unexpected web function effect")),
@@ -211,7 +233,7 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 								modelId: "terms",
 								revision: "1",
 								scenario,
-								bindings: mode === "partial" ? bindings.slice(0, 2) : bindings,
+								bindings: mode === "partial" ? bindings.slice(0, 3) : bindings,
 							},
 						});
 			const programEffect = mapBindleToAlchemy(selected, mappers, {
@@ -251,7 +273,7 @@ it("prices the entire mapped AWS application or explicitly rejects it as unavail
 		const unknown = await assessment("unknown");
 		expect(
 			unknown.inventory.resources.map((entry) => entry.resourceId).sort(),
-		).toEqual(["objects", "sessions", "web"]);
+		).toEqual(["credentials", "objects", "sessions", "web"]);
 		expect(rank(unknown)).toMatchObject({
 			ranking: [],
 			rejected: [{ code: "PRICING_MODEL_UNAVAILABLE" }],

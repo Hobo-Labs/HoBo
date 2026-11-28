@@ -97,6 +97,7 @@ try {
 			"test/aws-kv.test.ts",
 			"test/aws-s3.test.ts",
 			"test/aws-secret.test.ts",
+			"test/aws-http-secret.test.ts",
 			"test/aws-http-runtime.test.ts",
 			"test/aws-http-ingress.test.ts",
 			"test/aws-http-mapper.test.ts",

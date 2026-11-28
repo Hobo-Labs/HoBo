@@ -83,7 +83,8 @@ The bounded `AwsSecretOrdering` model checks sorting and tie rejection for three
 versions; it assumes the provider reports truthful timestamps.
 The provider's creation timestamps are its only ordering evidence, so equal
 timestamps cannot establish which version is newer.
-String-valued secrets and application or WASI bindings are not supported.
+String-valued secrets and WASI bindings are not supported. HTTP applications
+may use scoped secret bindings as described below.
 The `AwsSecretVersions` bounded model assumes persisted IDs, provider
 idempotency, trusted host verification, timeout delivery and transport
 completion; it does not prove AWS behavior.
@@ -101,9 +102,9 @@ revoked epoch, fence outstanding requests during ownership changes, and enforce
 matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
 bytes and values to 256 KiB. A failed or timed-out write or delete has an
 unknown outcome and requires reconciliation. Each store retains capacity for a
-timed-out request until the transport settles. This subset does not bind a
-HoBo application or WASI guest to the table, implement transactions, or prevent
-out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
+timed-out request until the transport settles. The HTTP binding is described
+below. WASI guests, transactions and prevention of out-of-band AWS access are
+not implemented. The bounded `AwsKvRuntime` model assumes the host's
 verifier and transport behave as specified; it does not prove those components.
 It models one bounded store and permits transport to remain in flight after a
 caller times out.
@@ -118,9 +119,9 @@ and grant, per-key authorization, IAM and the AWS credentials and HTTP Effect
 layer. Each operation sends S3's expected-owner condition. It
 supports objects up to 1 MiB, 1,024-byte keys, at most 1,024 body chunks and
 SHA-256 content-digest metadata. Failed writes and deletes have unknown
-outcomes; the host must fence ownership changes and reconcile them. It does not
-bind an application or WASI guest, implement blob events or version management,
-or authenticate the digest against a separate authority.
+outcomes; the host must fence ownership changes and reconcile them. The HTTP
+binding is described below. WASI guests, blob events, version management and
+digest authentication against a separate authority are not implemented.
 The runtime reports a successful write only after transport completion, even if
 application code replaces `Promise.race`.
 The bounded `AwsS3Objects` model uses one key and a collision-free abstract
@@ -133,14 +134,20 @@ the store; the host must still authenticate it and authorize each operation.
 The store captures its allowed operations at construction, so later changes to
 application array prototypes do not change the captured grant.
 
-A Node.js HTTP host can bind those two AWS stores to a Bindle application with
+A Node.js HTTP host can bind the selected DynamoDB, S3 and versioned secret
+stores to a Bindle application with
 `createAwsBindleApplication` and read them through `awsHttpBindings(context)`
-from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
-Bindle, its application name, exactly the declared stores, and a synchronous
-verifier that authenticates each exact captured store grant. The runtime rejects forged stores,
-extra permissions and unverified bindings, and retires scoped handles when the
-request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
-headers; a stalled handler keeps one of 32 capacity slots until it settles.
+from `@hobo/iac-alchemy/aws/http-runtime`. Use `secret(name)` for a versioned
+secret. The host supplies the selected Bindle, its application name, exactly
+the declared stores, and a synchronous verifier that authenticates each exact
+captured store grant. The runtime rejects forged stores, extra permissions and
+unverified bindings, and retires scoped handles when the request ends. The
+bounded `AwsHttpSecret` model checks the secret write outcome and retained
+version ID across request retirement and grant revocation; it assumes one
+request and write, a trusted host verifier, a captured token, provider
+idempotency and transport completion. The runtime buffers responses up to 1 MiB,
+1,024 chunks and 16 KiB of headers; a stalled handler keeps one of 32 capacity
+slots until it settles.
 The host captures one bounded, deterministic graph for runtime binding and
 source registration; accessors, duplicate dependencies and missing edges fail
 before application logic runs. The source resolver must synchronously create
@@ -154,7 +161,7 @@ import { defineAwsHttpSource } from "@hobo/iac-alchemy/aws/http-source";
 import { startAwsHttpServer } from "@hobo/iac-alchemy/aws/http-server";
 
 export const source = defineAwsHttpSource({
-  bindle: selectedBindle, // withAwsDynamoKv and withAwsS3 already applied
+  bindle: selectedBindle, // apply the appropriate AWS target choices first
   applicationName: "web",
   environment: process.env,
   resolveStores: (bindings) => host.resolveStores(bindings),
@@ -175,6 +182,7 @@ dependency closure throughout planning and deployment.
 import { awsDynamoKvBindleMappers } from "@hobo/iac-alchemy/aws/kv-mapper";
 import { awsS3BindleMappers } from "@hobo/iac-alchemy/aws/s3-mapper";
 import { awsHttpBindleMappers } from "@hobo/iac-alchemy/aws/http-mapper";
+import { awsVersionedSecretBindleMappers } from "@hobo/iac-alchemy/aws/secret-mapper";
 
 const mappers = awsHttpBindleMappers({
   source,
@@ -184,7 +192,7 @@ const mappers = awsHttpBindleMappers({
   rateLimit: 100,
   sourceFence: host.sourceFence,
   verifySource: (claim) => host.verifySource(claim),
-}, awsS3BindleMappers(awsDynamoKvBindleMappers()));
+}, awsVersionedSecretBindleMappers(awsS3BindleMappers(awsDynamoKvBindleMappers())));
 // Pass selectedBindle and mappers to mapBindleToAlchemy and the normal
 // financial planning and admission flow.
 ```
@@ -1070,9 +1078,9 @@ and clock correctness remain independently verified host responsibilities.
 ### AWS infrastructure and financial routing
 
 The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues
-and SNS topics for the corresponding HoBo declarations. This increment provides
-infrastructure only: runtime operations and application bindings are not yet
-supported, and unsupported operations are reported explicitly. Budget-based
+and SNS topics for the corresponding HoBo declarations. Explicitly selected
+KV, S3 and secret runtimes support the bounded operations and HTTP bindings
+described above; unsupported operations are reported explicitly. Budget-based
 routing requires a complete supplied pricing model. An explicitly authorized
 unpriced admission instead bypasses budget evaluation and holds unbounded
 exposure; uncertain partial applies retain exposure for reconciliation. The
@@ -1098,7 +1106,6 @@ must authenticate the table incarnation and each operation, enforce AWS permissi
 and fence in-flight work. Values are limited to 256 KiB to leave room for keys and
 attributes within DynamoDB's item limit. If completion observation cannot be
 established after an effect may have started, its capacity remains occupied.
-This slice does not yet map the runtime into applications.
 The shared transport boundary permits at most 32 concurrent operations per
 store and uses a ten-second deadline. A deadline does not stop the provider.
 
@@ -1106,5 +1113,4 @@ The optional Node.js S3 runtime supports bounded object reads, writes and
 deletes with per-key grants and a one MiB object limit. The host authenticates
 the bucket incarnation and IAM scope on each operation. Responses with invalid
 metadata or ranges consume at most one chunk so the stream scope closes;
-uncertain mutations require reconciliation. This runtime is not yet bound to
-applications.
+uncertain mutations require reconciliation.
