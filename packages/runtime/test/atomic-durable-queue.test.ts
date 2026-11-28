@@ -555,6 +555,150 @@ describe("atomic durable queue provider", () => {
 		expect(await observer.inspectExhausted()).toEqual({ status: "unknown" });
 	});
 
+	it("confirms a durable export once and preserves its receipt across reopening", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const bounds = { ...limits, deliveryAttempts: 1 };
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		clock = 10000;
+		const snapshot = await queue.inspectExhausted();
+		if (snapshot.status !== "available") throw Error("inspection unavailable");
+		const request = {
+			operation: durableQueueOperation(20000, "abcdefghijklmn03"),
+			messageId: "m1",
+			expectedRevision: snapshot.revision,
+			exportReceipt: "destination-receipt",
+		};
+		backing.loseNext();
+		expect(await queue.confirmExhaustedExport(request)).toMatchObject({
+			status: "unknown",
+			operation: request.operation,
+		});
+		const reopened = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		expect(await reopened.confirmExhaustedExport(request)).toMatchObject({
+			status: "committed",
+			value: { messageId: "m1" },
+		});
+		expect(
+			await reopened.confirmExhaustedExport({
+				...request,
+				exportReceipt: "other-receipt",
+			}),
+		).toEqual({ status: "rejected", code: "operation-conflict" });
+		expect(
+			await reopened.confirmExhaustedExport({
+				...request,
+				expectedRevision: request.expectedRevision + 1,
+			}),
+		).toEqual({ status: "rejected", code: "operation-conflict" });
+		expect(await reopened.inspectExhausted()).toMatchObject({
+			status: "available",
+			messages: [],
+		});
+		expect(await reopened.compact()).toMatchObject({ status: "compacted" });
+		const afterCheckpoint = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		expect(await afterCheckpoint.confirmExhaustedExport(request)).toMatchObject(
+			{ status: "committed" },
+		);
+		expect(await afterCheckpoint.reclaimCompleted()).toMatchObject({
+			status: "reclaimed",
+			reclaimedMessages: 0,
+		});
+		clock = 20000;
+		expect(await afterCheckpoint.reclaimCompleted()).toMatchObject({
+			status: "reclaimed",
+			reclaimedMessages: 1,
+		});
+	});
+	it("rejects a stored export confirmation with a forged historical revision", async () => {
+		const backing = memoryStore();
+		const bounds = { ...limits, deliveryAttempts: 1 };
+		const events = [
+			{ atMs: 1000, request: { kind: "enqueue" as const, input: message(1) } },
+			{
+				atMs: 1000,
+				request: {
+					kind: "dequeue" as const,
+					input: { operation: op(2), maxMessages: 1, visibilityTimeoutMs: 10 },
+				},
+			},
+			{
+				atMs: 10000,
+				request: {
+					kind: "confirmExport" as const,
+					input: {
+						operation: durableQueueOperation(20000, "abcdefghijklmn03"),
+						messageId: "m1",
+						expectedRevision: 4,
+						exportReceipt: "destination-receipt",
+					},
+				},
+			},
+		];
+		backing.seed(events.length, encodeAtomicQueueLog(events, bounds));
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => 10000,
+		});
+		expect(await queue.inspectExhausted()).toEqual({ status: "unknown" });
+	});
+
+	it("does not confirm an export using a stale inspection", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: { ...limits, deliveryAttempts: 1 },
+			now: () => clock,
+		});
+		await queue.enqueue(message(1));
+		await queue.dequeue({
+			operation: op(2),
+			maxMessages: 1,
+			visibilityTimeoutMs: 10,
+		});
+		clock = 10000;
+		const snapshot = await queue.inspectExhausted();
+		if (snapshot.status !== "available") throw Error("inspection unavailable");
+		await queue.enqueue({
+			...message(3, "other"),
+			operation: durableQueueOperation(20000, "abcdefghijklmn03"),
+		});
+		const request = {
+			operation: durableQueueOperation(20000, "abcdefghijklmn04"),
+			messageId: "m1",
+			expectedRevision: snapshot.revision,
+			exportReceipt: "destination-receipt",
+		};
+		expect(await queue.confirmExhaustedExport(request)).toMatchObject({
+			status: "unknown",
+			operation: request.operation,
+		});
+		expect(await queue.inspectExhausted()).toMatchObject({
+			status: "available",
+			messages: [{ messageId: "m1" }],
+		});
+	});
+
 	it("redrives an exhausted message once and safely replays a lost response", async () => {
 		const backing = memoryStore();
 		let clock = 1000;

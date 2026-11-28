@@ -4,6 +4,7 @@ import type { AtomicQueueRequest } from "./atomic-queue-transition.js";
 import {
 	parseQueueDequeue,
 	parseQueueEnqueue,
+	parseQueueExportConfirmation,
 	parseQueueRedrive,
 	parseQueueSettlement,
 } from "./durable-queue-boundary.js";
@@ -125,6 +126,20 @@ export function encodeEvent(event: AtomicQueueEvent): unknown[] {
 			input.message.availableAtMs ?? null,
 		]);
 	}
+	if (
+		request.kind === "confirmExport" &&
+		"messageId" in input &&
+		"exportReceipt" in input
+	)
+		return vector([
+			"q",
+			event.atMs,
+			op.id,
+			op.expiresAtMs,
+			input.messageId,
+			input.expectedRevision,
+			input.exportReceipt,
+		]);
 	if (request.kind === "redrive" && "messageId" in input)
 		return vector(["z", event.atMs, op.id, op.expiresAtMs, input.messageId]);
 	if (request.kind === "dequeue" && "maxMessages" in input)
@@ -173,6 +188,24 @@ export function decodeEvent(
 	const kind = event[0];
 	const atMs = number(event[1]);
 	const operation = { id: text(event[2], 100), expiresAtMs: number(event[3]) };
+	if (kind === "q") {
+		if (event.length !== 7) return invalid();
+		return {
+			atMs,
+			request: {
+				kind: "confirmExport",
+				input: parseQueueExportConfirmation(
+					{
+						operation,
+						messageId: event[4],
+						expectedRevision: event[5],
+						exportReceipt: event[6],
+					},
+					limits,
+				),
+			},
+		};
+	}
 	if (kind === "z") {
 		if (event.length !== 5) return invalid();
 		return {
