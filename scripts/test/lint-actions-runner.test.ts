@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -8,9 +9,13 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import {
+	COMPOSITE_STEP_UNSUPPORTED_KEYS,
+	lintCompositeStepFields,
+} from "../lint-actions.ts";
 import { testRunner } from "./support/test-runner.ts";
 
 const { describe, it } = await testRunner();
@@ -87,8 +92,10 @@ function lintFile(file: string, text: string): number | null {
 	}
 }
 
+const pullRequestOn =
+	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n";
 const routeJob =
-	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
 function lintRunner(
 	file: string,
@@ -134,7 +141,7 @@ describe("Actions runner policy", () => {
 			needs = "    needs: route\n",
 			condition = "    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}\n",
 		) =>
-			`name: fixture\non:\n  pull_request:\njobs:\n${routeJob}  ${name}:\n${needs}${condition}    runs-on: ${runner}\n    steps:\n      - name: Build\n        run: ${run}\n`;
+			`name: fixture\n${pullRequestOn}jobs:\n${routeJob}  ${name}:\n${needs}${condition}    runs-on: ${runner}\n    steps:\n      - name: Build\n        run: ${run}\n`;
 		assert.equal(
 			lintFile("hobo-ci.yml", job("ci-deps-image", depsRunner, deps)),
 			0,
@@ -176,6 +183,25 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
+	it("allows the pricing publisher on the npm-required hosted runner", () => {
+		assert.equal(
+			lintRunner(
+				"release-pricing.yml",
+				"pricing-release-publish",
+				"ubuntu-24.04",
+			),
+			0,
+		);
+		assert.notEqual(
+			lintRunner(
+				"release-pricing.yml",
+				"pricing-release-build",
+				"ubuntu-24.04",
+			),
+			0,
+		);
+	});
+
 	it("allows the one GitHub-hosted runner needed for npm trusted publishing", () => {
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
@@ -412,12 +438,61 @@ describe("Actions runner policy", () => {
 
 	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
+		const mergeGroupTrunk =
+			"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
+		const trunkRoute = routeJob
+			.replace("runs-on: ubuntu-24.04", `runs-on: ${mergeGroupTrunk}`)
+			.replace(
+				"persist-credentials: false\n",
+				"persist-credentials: false\n          clean: false\n",
+			);
+		const trunkGate = (id: string) =>
+			`  ${id}:\n    if: \${{ always() }}\n    runs-on: ${mergeGroupTrunk}\n    steps:\n      - run: echo ok\n`;
+		const hoboCi = (jobs: string) =>
+			lintFile(
+				"hobo-ci.yml",
+				`name: fixture\non:\n  merge_group:\njobs:\n${jobs}  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`,
+			);
+		assert.equal(hoboCi(`${trunkRoute}${trunkGate("pr-gate")}`), 0);
 		assert.notEqual(
-			lintJobs(
+			hoboCi(
 				routeJob.replace(
 					"runs-on: ubuntu-24.04",
-					"runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}",
+					`runs-on: ${mergeGroupTrunk}`,
 				),
+			),
+			0,
+			"a route job on the trunk fleet must keep its default-path checkout",
+		);
+		assert.notEqual(hoboCi(`${trunkRoute}${trunkGate("gate")}`), 0);
+		assert.notEqual(lintJobs(trunkRoute), 0);
+		assert.notEqual(lintJobs(trunkGate("pr-gate")), 0);
+		assert.notEqual(
+			hoboCi(
+				`  build:\n    runs-on: ${mergeGroupTrunk}\n    steps:\n      - run: echo ok\n`,
+			),
+			0,
+		);
+		const mergeGroupScripts =
+			"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
+		const scriptsJob = (id: string, needs: string) =>
+			`  ${id}:\n${needs}    runs-on: ${mergeGroupScripts}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          clean: false\n`;
+		assert.equal(
+			hoboCi(
+				`${routeJob}${scriptsJob("scripts-tests", "    needs: [route]\n")}`,
+			),
+			0,
+		);
+		assert.notEqual(hoboCi(`${routeJob}${scriptsJob("scripts-tests", "")}`), 0);
+		assert.notEqual(
+			hoboCi(
+				`${routeJob}${scriptsJob("workspace_tests", "    needs: [route]\n")}`,
+			),
+			0,
+		);
+		assert.notEqual(
+			lintJobs(
+				`${routeJob}${scriptsJob("scripts-tests", "    needs: [route]\n")}`,
 			),
 			0,
 		);
@@ -472,7 +547,7 @@ describe("Actions runner policy", () => {
 	const skipFor = (id: string) =>
 		`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
-		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
+		`  route:\n    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
 	const verifierFiles =
 		"            scripts/ci/attestation.mts\n            scripts/ci/verify-attestation.mts\n";
 	const skippable = (id: string, condition: string, needs = "route") =>
@@ -655,6 +730,35 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	it("rejects probes that can run for draft PR events or read an untrusted checkout", () => {
+		const guard =
+			"    if: (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'\n";
+		assert.notEqual(
+			lintFile("fleet-probe.yml", committedProbe.replace(guard, "")),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"fleet-probe.yml",
+				committedProbe.replace(
+					"github.event.workflow_run.event != 'pull_request'",
+					"true",
+				),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"fleet-probe.yml",
+				committedProbe.replace(
+					"          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}\n",
+					"",
+				),
+			),
+			0,
+		);
+	});
+
 	it("rejects a probe that asks for another runner, runs something, or holds permissions", () => {
 		assert.notEqual(
 			probe('    runs-on: ubuntu-24.04\n    steps:\n      - run: "true"\n'),
@@ -703,6 +807,221 @@ describe("Actions runner policy", () => {
 			lintRunner("pricing-ci.yml", "probe", "hobo-local-host"),
 			0,
 		);
+	});
+
+	it("rejects unsupported keys on composite action steps", () => {
+		assert.deepEqual(
+			[...COMPOSITE_STEP_UNSUPPORTED_KEYS],
+			[
+				"timeout-minutes",
+				"runs-on",
+				"needs",
+				"strategy",
+				"concurrency",
+				"services",
+				"container",
+				"permissions",
+				"outputs",
+			],
+		);
+		const composite = (steps: string) =>
+			`name: fixture\nruns:\n  using: composite\n  steps:\n${steps}`;
+		const step = (body: string) =>
+			composite(`    - shell: bash\n${body}      run: echo ok\n`);
+		const errorsFor = (text: string) => {
+			const errors: string[] = [];
+			lintCompositeStepFields(errors, "actions/fixture/action.yml", text);
+			return errors;
+		};
+		const allowed = errorsFor(
+			[
+				"name: fixture",
+				"outputs:",
+				"  result:",
+				"    description: step result",
+				"    value: ${{ steps.main.outputs.value }}",
+				"runs:",
+				"  using: composite",
+				"  steps:",
+				"    - id: main",
+				"      if: steps.deps.outputs.match != 'true'",
+				"      shell: bash",
+				"      working-directory: scripts",
+				"      continue-on-error: true",
+				"      env:",
+				"        FOO: bar",
+				"      run: echo ok",
+				"    - uses: ./local",
+				"      with:",
+				"        timeout-minutes: '1'",
+				"",
+			].join("\n"),
+		);
+		assert.deepEqual(allowed, []);
+		assert.deepEqual(
+			errorsFor(
+				"name: fixture\nruns:\n  using: node20\n  main: index.js\n  steps:\n    - timeout-minutes: 8\n      run: echo ok\n",
+			),
+			[],
+		);
+		for (const key of COMPOSITE_STEP_UNSUPPORTED_KEYS) {
+			const errors = errorsFor(step(`      ${key}: 1\n`));
+			assert.equal(errors.length, 1, key);
+			assert.match(
+				errors[0] ?? "",
+				new RegExp(
+					`^actions/fixture/action\\.yml:[0-9]+: composite step 1 must not set ${key}`,
+				),
+				key,
+			);
+			assert.notEqual(lintAction(step(`      ${key}: 1\n`)), 0, key);
+		}
+		const later = errorsFor(
+			composite(
+				"    - shell: bash\n      run: echo ok\n    - shell: bash\n      runs-on: hobo\n      run: echo no\n",
+			),
+		);
+		assert.equal(later.length, 1);
+		assert.match(later[0] ?? "", /composite step 2 must not set runs-on/);
+		assert.equal(
+			lintAction(
+				step("      env:\n        FOO: bar\n      continue-on-error: true\n"),
+			),
+			0,
+		);
+	});
+
+	it("exits 0 when deps materialize outputs are missing after a non-zero status", () => {
+		const action = readFileSync(
+			fileURLToPath(
+				new URL(
+					"../../.github/actions/ci-deps-recovery/action.yml",
+					import.meta.url,
+				),
+			),
+			"utf8",
+		);
+		assert.equal(action.includes("timeout-minutes:"), false);
+		const command =
+			"timeout 480 node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts";
+		const commandAt = action.indexOf(command);
+		const header = "      run: |\n";
+		const runAt = action.lastIndexOf(header, commandAt);
+		const nextStep = action.indexOf("\n    - name:", commandAt);
+		assert.ok(commandAt > 0 && runAt > 0 && nextStep > commandAt);
+		const script = `${action
+			.slice(runAt + header.length, nextStep)
+			.split("\n")
+			.map((line) => line.slice(8))
+			.join("\n")
+			.trim()}\n`;
+		const runWrapper = (input: {
+			readonly nodeStatus: number;
+			readonly nodeOutput?: string;
+			readonly timeoutStatus?: number;
+			readonly githubOutput?: string | null;
+			readonly warmStore?: boolean;
+		}) => {
+			const root = mkdtempSync(join(tmpdir(), "hobo-deps-wrap-"));
+			try {
+				const timeout = join(root, "timeout");
+				const node = join(root, "node");
+				writeFileSync(
+					timeout,
+					input.timeoutStatus === undefined
+						? '#!/bin/sh\nshift\nexec "$@"\n'
+						: `#!/bin/sh\nexit ${input.timeoutStatus}\n`,
+				);
+				writeFileSync(
+					node,
+					'#!/bin/sh\nif [ "${4:-}" = "--check-warm-store" ]; then printf \'%s\\n\' "${FAKE_WARM_STORE:-false}"; exit 0; fi\nif [ -n "${FAKE_NODE_OUTPUT:-}" ]; then printf \'%s\\n\' "$FAKE_NODE_OUTPUT" >> "$GITHUB_OUTPUT"; fi\nexit "${FAKE_NODE_STATUS:-0}"\n',
+				);
+				chmodSync(timeout, 0o755);
+				chmodSync(node, 0o755);
+				const outputPath = join(root, "github-output");
+				const env: NodeJS.ProcessEnv = {
+					...process.env,
+					PATH: `${root}${delimiter}${process.env.PATH ?? ""}`,
+					FAKE_NODE_STATUS: String(input.nodeStatus),
+					FAKE_NODE_OUTPUT: input.nodeOutput ?? "",
+					FAKE_WARM_STORE: String(input.warmStore === true),
+				};
+				delete env.GITHUB_OUTPUT;
+				if (input.githubOutput !== null && input.githubOutput !== undefined) {
+					writeFileSync(outputPath, input.githubOutput);
+					env.GITHUB_OUTPUT = outputPath;
+				}
+				const result = spawnSync("bash", ["-c", script], {
+					env,
+					encoding: "utf8",
+				});
+				return {
+					status: result.status,
+					stdout: result.stdout,
+					stderr: result.stderr,
+					output:
+						input.githubOutput === null || input.githubOutput === undefined
+							? ""
+							: readFileSync(outputPath, "utf8"),
+				};
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		};
+		const missing = runWrapper({ nodeStatus: 7, githubOutput: "" });
+		assert.equal(missing.status, 0, `${missing.stdout}${missing.stderr}`);
+		assert.match(missing.output, /^materialized=false\n/u);
+		assert.match(missing.output, /^source=failed$/mu);
+		assert.match(missing.output, /^install=false$/mu);
+		const timedOut = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "",
+		});
+		assert.equal(timedOut.status, 0, `${timedOut.stdout}${timedOut.stderr}`);
+		assert.match(
+			timedOut.stdout,
+			/::warning title=hobo-ci-deps-materialize-timeout::/,
+		);
+		assert.match(timedOut.output, /^install=false$/mu);
+		const timedOutWarm = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "",
+			warmStore: true,
+		});
+		assert.equal(timedOutWarm.status, 0);
+		assert.match(timedOutWarm.output, /^install=true$/mu);
+		const partialWarm = runWrapper({
+			nodeStatus: 0,
+			timeoutStatus: 124,
+			githubOutput: "materialized=true\n",
+			warmStore: true,
+		});
+		assert.equal(partialWarm.status, 0);
+		assert.match(
+			partialWarm.output,
+			/materialized=false\nsource=failed\ninstall=true\n$/u,
+		);
+		const unset = runWrapper({ nodeStatus: 1, githubOutput: null });
+		assert.equal(unset.status, 0, `${unset.stdout}${unset.stderr}`);
+		const decided = runWrapper({
+			nodeStatus: 9,
+			githubOutput: "materialized=true\nsource=local\ninstall=false\n",
+			nodeOutput: "",
+		});
+		assert.equal(decided.status, 9);
+		assert.equal(
+			decided.output,
+			"materialized=true\nsource=local\ninstall=false\n",
+		);
+		const succeeded = runWrapper({
+			nodeStatus: 0,
+			githubOutput: "",
+			nodeOutput: "materialized=true\ninstall=false",
+		});
+		assert.equal(succeeded.status, 0);
+		assert.equal(succeeded.output, "materialized=true\ninstall=false\n");
 	});
 
 	it("passes on this repository's own workflows", () => {

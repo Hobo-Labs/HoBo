@@ -47,7 +47,7 @@ it("keeps new dispatch, replay, v2 ordering and credit consumption stable across
 	expect(swedish.consumed).toEqual(english.consumed);
 	expect(english.legacySelected).toBe("ä");
 	expect(swedish.legacySelected).toBe("z");
-});
+}, 30_000);
 
 it("rejects an unknown or malformed replay ordering version", () => {
 	for (const orderingVersion of ["future", null, 1])

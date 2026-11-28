@@ -127,11 +127,23 @@ describe("checkoutFromBareMirror", () => {
 			sha,
 			mirrorGitDir: mirror,
 			originUrl: `https://github.com/${repository}`,
-			markerPath: "scripts/ci/ci-trace.mts",
+			markerPath: "scripts/ci/ci-trace.mts\nother/deep/outside-cone.txt\n",
 			retryDelaysMs: [0],
 		});
 		expect(result.ok).toBe(true);
 		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
+	});
+
+	it("rejects a mirror checkout when any required marker is missing", () => {
+		const result = checkoutFromBareMirror({
+			workDir: join(temp, "work-checkout-missing-marker"),
+			sha,
+			mirrorGitDir: mirror,
+			originUrl: `https://github.com/${repository}`,
+			markerPath: "scripts/ci/ci-trace.mts\nmissing-sidecar.yaml",
+			retryDelaysMs: [0],
+		});
+		expect(result.ok).toBe(false);
 	});
 });
 
@@ -263,6 +275,67 @@ describe("prepare-full-worktree CLI", () => {
 		expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
 		expect(result.stdout).toContain("hobo_ci_sparse_disable=ok");
 		expect(sparseCheckoutEnabled(work)).toBe(false);
+	});
+
+	it("detaches a branch sparse cone before the full checkout rewrites it", () => {
+		const work = join(temp, "work-branch-sparse-detach");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		git(work, ["sparse-checkout", "init", "--cone"]);
+		git(work, ["sparse-checkout", "set", "scripts/ci"]);
+		git(work, ["checkout", "-B", "main", sha]);
+		expect(
+			git(work, [
+				"rev-parse",
+				"--symbolic-full-name",
+				"--verify",
+				"--quiet",
+				"HEAD",
+			]),
+		).toBe("refs/heads/main");
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
+		const prepared = spawnSync(
+			"node",
+			[
+				"--experimental-strip-types",
+				"--no-warnings",
+				repoCheckoutCli,
+				"--prepare-full-worktree",
+				"--workdir",
+				work,
+			],
+			{ encoding: "utf8" },
+		);
+		expect(prepared.status, `${prepared.stderr}\n${prepared.stdout}`).toBe(0);
+		expect(prepared.stdout).toContain(
+			"hobo_ci_sparse_disable=ok was_active=true",
+		);
+		expect(`${prepared.stdout}\n${prepared.stderr}`).not.toMatch(/^D\t/m);
+		const symbolic = git(work, [
+			"rev-parse",
+			"--symbolic-full-name",
+			"--verify",
+			"--quiet",
+			"HEAD",
+		]);
+		expect(symbolic.startsWith("refs/heads/")).toBe(false);
+		expect(sparseCheckoutEnabled(work)).toBe(false);
+		const disabled = spawnSync("git", ["sparse-checkout", "disable"], {
+			cwd: work,
+			encoding: "utf8",
+		});
+		expect(disabled.status, disabled.stderr).toBe(0);
+		expect(`${disabled.stdout}\n${disabled.stderr}`).not.toMatch(/^D\t/m);
+		expect(existsSync(join(work, "other/deep/outside-cone.txt"))).toBe(false);
+		const restored = spawnSync(
+			"git",
+			["checkout", "--progress", "--force", sha],
+			{ cwd: work, encoding: "utf8" },
+		);
+		expect(restored.status, `${restored.stderr}\n${restored.stdout}`).toBe(0);
+		expect(`${restored.stdout}\n${restored.stderr}`).not.toMatch(/^D\t/m);
+		expect(
+			readFileSync(join(work, "other/deep/outside-cone.txt"), "utf8"),
+		).toBe("outside\n");
 	});
 
 	it("exits 1 outside a git worktree", () => {

@@ -42,10 +42,27 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/runtimes/runtime-rivet/model/DurableTopic.cfg",
 			"packages/runtimes/runtime-rivet/model/DeclaredTopics.tla",
 			"packages/runtimes/runtime-rivet/model/DeclaredTopics.cfg",
+			"packages/runtime/model/TopicProvisioning.tla",
+			"packages/runtime/model/TopicProvisioning.cfg",
+			"packages/runtime/model/check-topic-provisioning.mts",
+			"packages/extension-alchemy-rivet/model/BindleTopicMapping.tla",
+			"packages/extension-alchemy-rivet/model/BindleTopicMapping.cfg",
+			"packages/extension-alchemy-rivet/model/check-bindle-topic-mapping.mts",
+			"packages/runtime/model/TopicPolicy.tla",
+			"packages/runtime/model/TopicPolicy.cfg",
+			"packages/runtime/model/BindleTopicGrants.tla",
+			"packages/runtime/model/BindleTopicGrants.cfg",
+			"packages/runtime/model/BindleTopicClient.tla",
+			"packages/runtime/model/BindleTopicClient.cfg",
+			"packages/runtime/model/check-topic-policy.mts",
 			"scripts/check-durable-topic-model.ts",
 			"packages/conformance/src/durable-messaging-conformance.ts",
 			"packages/conformance/test/durable-messaging-conformance.test.ts",
 			"packages/wit/wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+			"packages/iac/iac-alchemy/model/AwsViteMapping.tla",
+			"packages/iac/iac-alchemy/test/run-official-aws-emulator.mts",
+			"packages/iac/iac-alchemy/model/AwsViteMapping.cfg",
+			"packages/iac/iac-alchemy/model/check-aws-vite.mts",
 			"packages/iac/iac-alchemy/model/IacGrant.tla",
 			"packages/iac/iac-alchemy/model/SharedMapping.tla",
 			"packages/iac/iac-alchemy/model/SharedMapping.cfg",
@@ -155,6 +172,31 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		prerequisitesIndex >= 0 && prerequisitesIndex < integrationIndex,
 		"Alchemy integration prerequisites must build before the test",
 	);
+	const simulatorJob = asObject(jobs?.["aws-emulator"]);
+	assert.equal(asText(simulatorJob?.needs), "route");
+	assert.equal(
+		asText(simulatorJob?.["runs-on"]),
+		asText(asObject(jobs?.["pricing-gate"])?.["runs-on"]),
+	);
+	const simulatorSteps = asList(simulatorJob?.steps);
+	const checkout = simulatorSteps?.find((step) =>
+		asText(asObject(step)?.uses)?.startsWith("actions/checkout@"),
+	);
+	assert.equal(asObject(asObject(checkout)?.with)?.clean, false);
+	const simulatorBuild =
+		simulatorSteps?.findIndex((step) =>
+			asText(asObject(step)?.run)?.includes("turbo run build"),
+		) ?? -1;
+	const simulatorTest =
+		simulatorSteps?.findIndex((step) =>
+			asText(asObject(step)?.run)?.includes(
+				"pnpm --filter @hobo/iac-alchemy run test:aws-emulator",
+			),
+		) ?? -1;
+	assert.ok(
+		simulatorBuild >= 0 && simulatorTest > simulatorBuild,
+		"official AWS emulator tests must run after their dependencies build",
+	);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
 	const modelCheck = modelSteps
 		?.map(asObject)
@@ -169,8 +211,11 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		"scripts/test/bounded-tlc.test.ts",
 		"scripts/check-iac-models.ts",
 		"scripts/check-durable-topic-model.ts",
+		"packages/runtime/model/check-topic-provisioning.mts",
+		"packages/extension-alchemy-rivet/model/check-bindle-topic-mapping.mts",
 		"packages/core/model/check-messaging-settlement.mts",
 		"packages/core/model/check-messaging-exhaustion.mts",
+		"packages/iac/iac-alchemy/model/check-aws-vite.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-queue.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-http-kv.mts",

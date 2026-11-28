@@ -676,6 +676,34 @@ export interface PublisherPort {
 	): Promise<ReconcileObservationRecord>;
 }
 
+export type ClusterSyncObservation = Readonly<{
+	state: "converged" | "converging" | "blocked";
+	healthy: boolean;
+	appliedRevision: string;
+	reason?: Readonly<{ code: string; message: string }>;
+}>;
+
+export interface ClusterSyncPort {
+	readonly target: string;
+	getWorkload(
+		input: Readonly<{ name: string; namespace: string }>,
+		ctx: CdContext,
+	): Promise<Outcome<JsonObject>>;
+	requestSync(
+		input: Readonly<{
+			name: string;
+			namespace: string;
+			revision: string;
+			manual?: boolean;
+		}>,
+		ctx: CdContext,
+	): Promise<Outcome<void>>;
+	observeSync(
+		input: Readonly<{ name: string; namespace: string; revision: string }>,
+		ctx: CdContext,
+	): Promise<ClusterSyncObservation>;
+}
+
 // ── Verification ───────────────────────────────────────────────────────────
 export type HealthSamples = Readonly<{
 	values: readonly number[];
