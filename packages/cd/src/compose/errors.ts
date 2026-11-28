@@ -35,6 +35,10 @@ export const COMPOSE_FAILURES = Object.freeze({
 		"The Rail's `delivery` object does not parse as RailDeliveryRecord; the Rail is treated as binding no Camp sets. Republish the Rail with a valid delivery object.",
 	"compose-engine-unknown":
 		"No CD engine is registered under this target name. Register a gitops publisher (`argo-cd`, `flux`) or another engine package at compose time.",
+	"compose-engine-not-publisher":
+		"The named CD engine is not a GitOps publisher. Use `engines.clusterSync(name)` for cluster sync engines.",
+	"compose-engine-not-cluster-sync":
+		"The named CD engine is not a cluster sync client. Use `engines.publisher(name)` for GitOps publishers.",
 } as const);
 
 export type ComposeFailureCode = keyof typeof COMPOSE_FAILURES;

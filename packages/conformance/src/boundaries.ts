@@ -177,6 +177,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// enforces its edges.
 	"packages/cd",
 	"packages/cd-gitops",
+	"packages/cd-argocd",
 	"packages/cd-kube-fleet",
 	"packages/resolver-components",
 	// The secret store a deploy chooses and hands over by claim (ADR-0179
