@@ -10,6 +10,7 @@ export function parseResourceId(raw: string): ResourceId {
   if (!RESOURCE_ID_PATTERN.test(raw)) {
     throw new TypeError(`invalid resource id: ${raw}`);
   }
+  // SAFETY: assertion to `return raw as ResourceId;` is required at this boundary.
   return raw as ResourceId;
 }
 

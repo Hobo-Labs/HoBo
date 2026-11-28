@@ -37,6 +37,7 @@ export function evaluateCapabilityGrants({
 	}
 
 	const usage = inferCapabilityUsage({ sourceText, fileName });
+	// SAFETY: assertion required at this I/O or test boundary.
 	const nextManifest = structuredClone(manifest) as ManifestGrant;
 	const diagnostics: CapabilityDiagnostic[] = [...usage.diagnostics];
 	const usageByResource = new Map(
@@ -113,6 +114,7 @@ export function evaluateCapabilityGrants({
 			!diagnostics.some((diagnostic) => diagnostic.severity === "error"),
 		canDeployDimension: "capabilityGrants",
 		diagnostics: Object.freeze(diagnostics),
+		// SAFETY: assertion required at this I/O or test boundary.
 		manifest: deepFreeze(nextManifest) as JsonObject,
 		grants: Object.freeze(
 			grants.map((grant) =>

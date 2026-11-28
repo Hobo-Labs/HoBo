@@ -122,6 +122,7 @@ describe("createDispatcherRegistry", () => {
 	});
 
 	it("rejects a non-array provider list", () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => createDispatcherRegistry({} as never)).toThrow(TypeError);
 	});
 
@@ -153,6 +154,7 @@ describe("createDispatcherRegistry", () => {
 
 describe("decideDispatch refusals", () => {
 	it("rejects a non-object request", () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => decideDispatch(null as never)).toThrow(TypeError);
 	});
 

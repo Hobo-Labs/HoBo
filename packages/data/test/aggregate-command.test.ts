@@ -25,6 +25,7 @@ function counter(
 		initialState: { total: 0 },
 		evolve: (state, event) => {
 			if (event.type !== "counter.Added") return state;
+			// SAFETY: counter.Added is emitted below with this exact payload shape.
 			const data = event.data as { amount?: number };
 			return { total: state.total + (data.amount ?? 0) };
 		},
@@ -212,6 +213,7 @@ describe("the emit contract", () => {
 			initialState: { total: 0 },
 			evolve: (s) => s,
 			decide: (_state, _command, emit) => {
+				// SAFETY: the negative tests intentionally call the string-only emitter with a number.
 				(emit.emit as (t: string | number) => void)(type);
 			},
 		});
@@ -298,6 +300,7 @@ describe("the emit contract", () => {
 			name: "counter",
 			initialState: { total: 0 },
 			evolve: (state, event) => {
+				// SAFETY: counter.Added is emitted below with this exact payload shape.
 				const data = event.data as { amount?: number };
 				return { total: state.total + (data.amount ?? 0) };
 			},

@@ -36,6 +36,7 @@ export type Pact = {
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function loadPact(name: string): Pact {
+	// SAFETY: pact files are JSON documents of this shape.
 	return JSON.parse(
 		readFileSync(join(here, "../pacts", `${name}.pact.json`), "utf8"),
 	) as Pact;
@@ -69,6 +70,7 @@ export function pactTransport(
 			interaction.request.headers ?? {},
 		);
 		if (interaction.request.body !== undefined) {
+			// SAFETY: request bodies this consumer sends are JSON.
 			expect(
 				JSON.parse(request.body ?? "null") as JsonValue,
 				interaction.description,

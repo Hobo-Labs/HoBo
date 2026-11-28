@@ -70,8 +70,10 @@ function reverseKeyOrder(value: JsonValue): JsonValue {
 }
 
 function withReversedKeys<T>(value: T): T {
+	// SAFETY: metamorphic fixtures are JSON data.
 	const json = value as JsonValue;
 	const reversed = reverseKeyOrder(json);
+	// SAFETY: key-reversed JSON still matches the input domain type.
 	return reversed as T;
 }
 

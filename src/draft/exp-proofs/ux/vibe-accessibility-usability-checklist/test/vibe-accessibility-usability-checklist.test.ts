@@ -176,6 +176,7 @@ describe("vibe accessibility usability checklist", () => {
           quickstartFixtureRefs: [
             {
               ...VIBE_ACCESSIBILITY_USABILITY_CHECKLIST.quickstartFixtureRefs[0],
+              // SAFETY: `sourceIssue: "HOBO-999" as never,` is required at this I/O or test boundary.
               sourceIssue: "HOBO-999" as never,
             },
             ...VIBE_ACCESSIBILITY_USABILITY_CHECKLIST.quickstartFixtureRefs.slice(1),
@@ -191,6 +192,7 @@ describe("vibe accessibility usability checklist", () => {
           quickstartFixtureRefs: [
             {
               ...VIBE_ACCESSIBILITY_USABILITY_CHECKLIST.quickstartFixtureRefs[0],
+              // SAFETY: `proofMode: "fake-mode" as never,` is required at this I/O or test boundary.
               proofMode: "fake-mode" as never,
             },
             ...VIBE_ACCESSIBILITY_USABILITY_CHECKLIST.quickstartFixtureRefs.slice(1),
@@ -243,6 +245,7 @@ describe("vibe accessibility usability checklist", () => {
   });
 
   it("keeps Pact and CUE boundary artifacts aligned with the parsed checklist shape", () => {
+    // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
     const pact = JSON.parse(
       readFileSync(
         new URL(
@@ -258,6 +261,7 @@ describe("vibe accessibility usability checklist", () => {
     };
 
     const parsed = parseVibeAccessibilityChecklist(
+      // SAFETY: `pact.interactions[0].response.body as typeof VIBE_ACCESSIBILITY_USABILITY_CHECKL` is required at this I/O or test boundary.
       pact.interactions[0].response.body as typeof VIBE_ACCESSIBILITY_USABILITY_CHECKLIST,
     );
     assert.deepEqual(

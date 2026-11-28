@@ -62,10 +62,12 @@ function invalid(message: string, field: string): never {
 }
 
 function isFidelity(value: string): value is MappingFidelity {
+	// SAFETY: membership test against the closed tuple of fidelity classes.
 	return (MAPPING_FIDELITIES as readonly string[]).includes(value);
 }
 
 function isCanonicalType(value: string): value is CanonicalType {
+	// SAFETY: membership test against the closed tuple of canonical type names.
 	return (CANONICAL_TYPES as readonly string[]).includes(value);
 }
 

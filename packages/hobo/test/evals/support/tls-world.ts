@@ -135,6 +135,7 @@ export async function startTlsWorld(
 		inner.emit("connection", secure);
 	});
 	await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+	// SAFETY: a server listening on a TCP port reports an AddressInfo.
 	const { port } = proxy.address() as AddressInfo;
 	return {
 		proxyUrl: `http://127.0.0.1:${port}`,

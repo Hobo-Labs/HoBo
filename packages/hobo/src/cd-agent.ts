@@ -116,6 +116,7 @@ async function runnerHostRealizer(
 			containers:
 				input.runnerHost?.containers ??
 				runnerHost.createCliDockerDriver({
+					// SAFETY: the process env, passed to the engine CLI unchanged.
 					env: input.env as NodeJS.ProcessEnv,
 					...(config.dockerBinary
 						? { binary: config.dockerBinary }

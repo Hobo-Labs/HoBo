@@ -17,6 +17,7 @@ const corpus = readdirSync(corpusDir)
 	.sort()
 	.map((name) => ({
 		name,
+		// SAFETY: assertion required at this I/O or test boundary.
 		entry: JSON.parse(readFileSync(join(corpusDir, name), "utf8")) as {
 			input: JsonObject;
 			expected: JsonObject;

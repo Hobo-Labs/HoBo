@@ -103,6 +103,7 @@ export async function runRebalance(
 	for (const snapshot of snapshots) {
 		events.push({
 			family: "meter.UsageRecorded",
+			// SAFETY: protobuf JSON view is a JsonObject event payload.
 			payload: toJson(UsageSnapshotSchema, snapshot) as JsonObject,
 		});
 	}
@@ -139,6 +140,7 @@ export async function runRebalance(
 	for (const decision of decisions) {
 		events.push({
 			family: "dispatch.Decided",
+			// SAFETY: protobuf JSON view is a JsonObject event payload.
 			payload: toJson(DispatchDecisionSchema, decision) as JsonObject,
 		});
 	}

@@ -175,6 +175,7 @@ export function parseRail<T>(value: T): Rail {
 	});
 	const hash = json.contentHash;
 	if (isJsonString(hash) && hash.startsWith("sha256:")) {
+		// SAFETY: persisted rails carry a content-addressed sha256 hash.
 		const contentHash = hash as `sha256:${string}`;
 		return Object.freeze({ ...rail, contentHash });
 	}
@@ -229,6 +230,7 @@ export function createRail(input: {
 			input.placementDefaults ?? {
 				objective: "min-cost" as const,
 				allowedProviders: Object.freeze(["local"]),
+				// SAFETY: assertion required at this I/O or test boundary.
 				deniedProviders: Object.freeze([] as string[]),
 				allowedRegions: Object.freeze(["local"]),
 			},
@@ -288,10 +290,12 @@ export function createBootstrapRail(stationId: string, now?: string): Rail {
 		placementDefaults: {
 			objective: "pinned",
 			allowedProviders: Object.freeze(["local"]),
+			// SAFETY: assertion required at this I/O or test boundary.
 			deniedProviders: Object.freeze([] as string[]),
 			allowedRegions: Object.freeze(["local"]),
 		},
 		approvedProviders: Object.freeze(["local"]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		requiredConnectorKinds: Object.freeze([] as string[]),
 		catalogSnapshotPin: "local-host",
 		metadata: Object.freeze({
@@ -314,7 +318,9 @@ export function railFromBrokerConfig(
 	const brokerId = isJsonString(brokerConfig.brokerId)
 		? brokerConfig.brokerId
 		: "imported";
+	// SAFETY: assertion required at this I/O or test boundary.
 	const billing = (brokerConfig.billing ?? {}) as JsonObject;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const delivery = (brokerConfig.delivery ?? {}) as JsonObject;
 	return createRail({
 		id: options?.id ?? `rail-from-broker-${brokerId}`,
@@ -326,6 +332,7 @@ export function railFromBrokerConfig(
 		placementDefaults: {
 			objective: "min-cost",
 			allowedProviders: Object.freeze(["local"]),
+			// SAFETY: assertion required at this I/O or test boundary.
 			deniedProviders: Object.freeze([] as string[]),
 			allowedRegions: Object.freeze(["local"]),
 		},

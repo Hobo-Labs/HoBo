@@ -89,6 +89,7 @@ export const T0 = Date.UTC(2026, 10, 12, 12, 0, 0);
 export const SECOND = 1_000;
 export const MINUTE = 60 * SECOND;
 export function freightIdOf(id: string): FreightId {
+	// SAFETY: test fixture Freight ids are literal sha256 ids.
 	return id as FreightId;
 }
 
@@ -97,6 +98,7 @@ export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
 export function camp(id: string): CampId {
+	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
@@ -161,9 +163,12 @@ export class MemoryEventStore implements DurableEventStore {
 				};
 				this.leases.set(key, lease);
 				return {
+					// SAFETY: test double mints ids from the claim options.
 					subscriptionId: o.subscriptionId as SubscriptionId,
+					// SAFETY: test double mints ids from the claim options.
 					partitionId: o.partitionId as PartitionId,
 					holderId: o.holderId,
+					// SAFETY: test double; monotonic counter.
 					fenceToken: lease.fence as FenceToken,
 					expiresAt: new Date(lease.expiresAt).toISOString(),
 				};
@@ -227,9 +232,11 @@ export class MemoryEventStore implements DurableEventStore {
 				ts: new Date(T0).toISOString(),
 				actor: opts.actor,
 				tenant: opts.tenant,
+				// SAFETY: appended bodies are JSON by construction (protobuf JSON).
 				data: structuredClone(input.data) as EventEnvelope["data"],
 			};
 			if (input.meta) envelope.meta = structuredClone(input.meta);
+			// SAFETY: test double; positions minted from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);

@@ -58,6 +58,7 @@ export function createOpaPolicyEngine(
 						body: JSON.stringify({ input: toOpaInput(request) }),
 					});
 					if (res.ok) {
+						// SAFETY: assertion required at this I/O or test boundary.
 						const body = (await res.json()) as {
 							result?:
 								| boolean
@@ -134,6 +135,7 @@ function fromOpaResult(
 			: denyDecision(OPA_POLICY_ENGINE_ID, request, ["opa:deny"]);
 	}
 	if (result && isJsonObject(result)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const obj = result as {
 			allow?: boolean;
 			reasons?: string[];
@@ -179,6 +181,7 @@ function evalViaOpaCli(
 	);
 	if (result.status !== 0) return null;
 	try {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const parsed = JSON.parse(result.stdout) as {
 			result?: readonly { expressions?: readonly { value?: unknown }[] }[];
 		};

@@ -37,6 +37,7 @@ interface SpyAdapter extends PulumiAutomationAdapter {
 }
 
 function spyOnRealAdapter(): SpyAdapter {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const real = createPulumiAutomationAdapter() as PulumiAutomationAdapter;
 	const previewed: unknown[] = [];
 	const applied: unknown[] = [];
@@ -73,6 +74,7 @@ interface Envelope {
 }
 
 function envelope(stdout: string): Envelope {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return JSON.parse(stdout) as Envelope;
 }
 
@@ -102,6 +104,7 @@ describe("composed hobo up/down drives the REAL @hobo/iac-pulumi adapter", () =>
 		await withProject(async (cwd) => {
 			const adapter = spyOnRealAdapter();
 			const runtime = createDefaultYardRuntime({ iacAdapter: adapter });
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -118,10 +121,13 @@ describe("composed hobo up/down drives the REAL @hobo/iac-pulumi adapter", () =>
 			expect(adapter.previewed.length).toBeGreaterThanOrEqual(3);
 			for (const program of adapter.applied) {
 				expect(() => validateIacProgram(program)).not.toThrow();
+				// SAFETY: assertion required at this I/O or test boundary.
 				expect((program as { apiVersion: string }).apiVersion).toBe(
 					"hobo.iac-program/v1",
 				);
+				// SAFETY: assertion required at this I/O or test boundary.
 				expect((program as { kind: string }).kind).toBe("iac-program");
+				// SAFETY: assertion required at this I/O or test boundary.
 				expect((program as { provider: string }).provider).toBe("pulumi");
 			}
 

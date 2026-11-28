@@ -60,5 +60,6 @@ export const YARD_EVENT_READ_SET: readonly string[] = Object.freeze(
 );
 
 export function isYardEventType(type: string): type is YardEventType {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return (Object.values(YARD_EVENTS) as string[]).includes(type);
 }

@@ -98,6 +98,7 @@ export function parseEventEnvelope(input: JsonValue): EventEnvelope {
     }
   }
   if (source.meta !== undefined) {
+    // SAFETY: `envelope.meta = expectObject(source.meta, "meta", EnvelopeParseError) as JsonObj` is required at this I/O or test boundary.
     envelope.meta = expectObject(source.meta, "meta", EnvelopeParseError) as JsonObject;
     envelope.meta = cloneJson(envelope.meta);
   }

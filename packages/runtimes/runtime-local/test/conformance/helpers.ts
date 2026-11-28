@@ -95,8 +95,10 @@ function createBrokenFenceActorHost() {
 					});
 				},
 				read() {
+					// SAFETY: assertion to `structuredClone(initialState) as { value: number }` is required at this boundary.
 					let state = structuredClone(initialState) as { value: number };
 					for (const event of stream.events) {
+						// SAFETY: assertion to `fold(state, structuredClone(event)) as { value: number; }` is required at this boundary.
 						state = fold(state, structuredClone(event)) as {
 							value: number;
 						};

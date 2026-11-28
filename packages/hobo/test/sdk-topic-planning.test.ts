@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 describe("SDK topic planning", () => {
 	const provider = createKafkaProvider({ tenantId: "tenant", env: {} });
 	const docs = provider.capabilityManifest();
+	// SAFETY: this fixture reads the capability manifest produced by this provider.
 	const caps = JSON.parse(
 		docs["/.well-known/capability-manifest/capabilities.json"],
 	) as {

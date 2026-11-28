@@ -74,6 +74,7 @@ function isFiniteNumber(value: JsonValue | undefined): value is number {
 }
 
 function eventData(event: EventEnvelope): JsonObject | undefined {
+	// SAFETY: EventEnvelope data is JSON at the event-store boundary.
 	return isRecordValue(event.data as JsonValue)
 		? (event.data as JsonObject)
 		: undefined;

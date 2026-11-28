@@ -32,6 +32,7 @@ async function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
+			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
 			const { port } = server.address() as AddressInfo;
 			server.close(() => resolve(port));
 		});

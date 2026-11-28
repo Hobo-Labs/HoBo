@@ -9,6 +9,7 @@ type BridgeGlobal = typeof globalThis & {
 };
 
 function bridgeGlobal(): BridgeGlobal {
+	// SAFETY: we only read/write HOBO_EXAMPLES_BRIDGE_URL on globalThis.
 	return globalThis as BridgeGlobal;
 }
 

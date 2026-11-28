@@ -126,9 +126,11 @@ export function definitionsFor(
 ): ResourceDefinition[] {
 	const manifest = provider.capabilityManifest();
 	const capsArray =
+		// SAFETY: `(manifest.capabilities as { capabilities?: Array<JsonObject> })` is required at this I/O or test boundary.
 		(manifest.capabilities as { capabilities?: Array<JsonObject> })
 			.capabilities ?? [];
 	const costFacts =
+		// SAFETY: `(manifest.cost as { facts?: Array<JsonObject> }).facts ?? [];` is required at this I/O or test boundary.
 		(manifest.cost as { facts?: Array<JsonObject> }).facts ?? [];
 
 	return provider.capabilities.map((capability) => {
@@ -157,9 +159,12 @@ export function definitionsFor(
 			specificity: 10,
 			priority: 0,
 			cost: {
+				// SAFETY: `sku: (costFact?.sku as string) ?? estimate.sku,` is required at this I/O or test boundary.
 				sku: (costFact?.sku as string) ?? estimate.sku,
+				// SAFETY: `unit: (costFact?.unit as string) ?? estimate.unit,` is required at this I/O or test boundary.
 				unit: (costFact?.unit as string) ?? estimate.unit,
 				marginalPrice:
+					// SAFETY: `(costFact?.marginalPrice as string) ?? estimate.marginalPrice,` is required at this I/O or test boundary.
 					(costFact?.marginalPrice as string) ?? estimate.marginalPrice,
 				pricingStatus: parsePricingStatus(
 					costFact?.pricingStatus ??
@@ -292,6 +297,7 @@ export function foldRegistryStream(
 			const providerId = defs[0]?.providerId;
 			if (providerId !== undefined) installed.set(providerId, defs);
 		} else if (event.type === CLOUD_EVENTS.ProviderApproved) {
+			// SAFETY: `const providerId = (event.data as { providerId?: unknown } | undefined)` is required at this I/O or test boundary.
 			const providerId = (event.data as { providerId?: unknown } | undefined)
 				?.providerId;
 			if (isJsonString(providerId) && providerId.length > 0)
@@ -359,9 +365,11 @@ export interface RegistryCatalogRow {
 export const registryCatalogProjection: Projection<RegistryCatalogRow> =
 	defineProjection<RegistryCatalogRow>({
 		name: "registry-catalog",
+		// SAFETY: `key: (event) => (event.data as { providerId: string }).providerId,` is required at this I/O or test boundary.
 		key: (event) => (event.data as { providerId: string }).providerId,
 		on: {
 			[CLOUD_EVENTS.ProviderRegistered]: (_row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					providerId: string;
 					definitions: Array<{ port: string }>;

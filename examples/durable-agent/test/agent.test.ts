@@ -40,6 +40,7 @@ describe("durable-agent", () => {
 		const toolStep = journal.find(
 			(event) =>
 				event.type === "run.StepCompleted" &&
+				// SAFETY: assertion to `event.data as { name?: string }` is required at this boundary.
 				(event.data as { name?: string }).name === "tool:writeOrder",
 		);
 		expect(toolStep).toBeDefined();
@@ -62,6 +63,7 @@ describe("durable-agent", () => {
 				},
 			],
 			async run(ctx, input) {
+				// SAFETY: assertion to `(await ctx.tool("writeOrder", input)) as string` is required at this boundary.
 				const written = (await ctx.tool("writeOrder", input)) as string;
 				if (!crashed) {
 					crashed = true;
@@ -120,12 +122,14 @@ describe("durable-agent", () => {
 		}
 
 		expect(denial).toBeInstanceOf(CapabilityDeniedError);
+		// SAFETY: assertion to `nial as CapabilityDeniedError).` is required at this boundary.
 		expect((denial as CapabilityDeniedError).capability).toBe(
 			`token:${TOKEN_PROVIDER}`,
 		);
 	});
 
 	it("mints exactly the broker token the pact contract pins", async () => {
+		// SAFETY: assertion to `ON.parse( await readFile( new URL( "../contracts/pacts/agent-to-token-broker.pact.json", import.meta.url, ), "utf8", ), ` is required at this boundary.
 		const pact = JSON.parse(
 			await readFile(
 				new URL(

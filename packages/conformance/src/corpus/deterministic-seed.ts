@@ -43,6 +43,7 @@ function encodeTime(ms: number): string {
 	const chars: string[] = [];
 	for (let position = 0; position < 10; position += 1) {
 		const mod = value % 32;
+		// SAFETY: assertion to `OCKFORD[mod] as string);` is required at this boundary.
 		chars.push(CROCKFORD[mod] as string);
 		value = (value - mod) / 32;
 	}
@@ -57,6 +58,7 @@ function deriveRandomness(seed: string, index: number): string {
 			digest.slice(position * 2, position * 2 + 2),
 			16,
 		);
+		// SAFETY: assertion to `OCKFORD[byte % 32] as string; ` is required at this boundary.
 		out += CROCKFORD[byte % 32] as string;
 	}
 	return out;

@@ -26,6 +26,7 @@ describe("server", () => {
 	it("GET /state returns the office snapshot", async () => {
 		const res = await fetch(`${base}/state`);
 		expect(res.status).toBe(200);
+		// SAFETY: `const body = (await res.json()) as { characters: JsonObject };` is required at this I/O or test boundary.
 		const body = (await res.json()) as { characters: JsonObject };
 		expect(body.characters).toBeDefined();
 	});
@@ -64,6 +65,7 @@ describe("server", () => {
 		});
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ accepted: 1 });
+		// SAFETY: `const state = (await (await fetch(`${base}/state`)).json()) as {` is required at this I/O or test boundary.
 		const state = (await (await fetch(`${base}/state`)).json()) as {
 			characters: Record<string, { state: string }>;
 		};
@@ -88,6 +90,7 @@ describe("character activity endpoint", () => {
 		const id = "station-smoke/smoke-svc";
 		const res = await fetch(`${base}/character/${encodeURIComponent(id)}/activity`);
 		expect(res.status).toBe(200);
+		// SAFETY: `const body = (await res.json()) as {` is required at this I/O or test boundary.
 		const body = (await res.json()) as {
 			character: { id: string; name: string };
 			activity: { spans: { name: string; status: string }[]; logs: JsonValue[] };
@@ -132,11 +135,13 @@ describe("logs and metrics intake", () => {
 		});
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ accepted: 2 });
+		// SAFETY: `const state = (await (await fetch(`${base}/state`)).json()) as {` is required at this I/O or test boundary.
 		const state = (await (await fetch(`${base}/state`)).json()) as {
 			characters: Record<string, { bubble?: string; state: string }>;
 		};
 		expect(state.characters["station-smoke/smoke-svc"]?.bubble).toBe("boom");
 		expect(state.characters["station-smoke/smoke-svc"]?.state).toBe("stuck");
+		// SAFETY: `const activity = (await (` is required at this I/O or test boundary.
 		const activity = (await (
 			await fetch(`${base}/character/${encodeURIComponent("station-smoke/smoke-svc")}/activity`)
 		).json()) as { activity: { logs: { severity: string }[] } };
@@ -165,10 +170,12 @@ describe("logs and metrics intake", () => {
 		});
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ accepted: 2 });
+		// SAFETY: `const state = (await (await fetch(`${base}/state`)).json()) as {` is required at this I/O or test boundary.
 		const state = (await (await fetch(`${base}/state`)).json()) as {
 			characters: Record<string, { health: number }>;
 		};
 		expect(state.characters["station-smoke/smoke-svc"]?.health).toBe(0.3);
+		// SAFETY: `const activity = (await (` is required at this I/O or test boundary.
 		const activity = (await (
 			await fetch(`${base}/character/${encodeURIComponent("station-smoke/smoke-svc")}/activity`)
 		).json()) as { activity: { metrics: { metric: string; value: number }[] } };
@@ -232,12 +239,15 @@ describe("cross-request trace pairing over HTTP", () => {
 			});
 		const parentRes = await post(span("api-gateway", "camp-gateway", "parent-x", 3));
 		expect(parentRes.status).toBe(200);
+		// SAFETY: `let state = (await (await fetch(`${simBase}/state`)).json()) as { packets: unkno` is required at this I/O or test boundary.
 		let state = (await (await fetch(`${simBase}/state`)).json()) as { packets: unknown };
 		expect(Object.keys(state.packets)).toHaveLength(0);
 		const childRes = await post(span("orders-api", "camp-orders", "child-x", 2, "parent-x"));
 		expect(childRes.status).toBe(200);
+		// SAFETY: `const accepted = (await childRes.json()) as { accepted: number };` is required at this I/O or test boundary.
 		const accepted = (await childRes.json()) as { accepted: number };
-		expect(accepted.accepted).toBe(2);
+		expect(accepted.accepted).toBe(2); // span-started + packet-started
+		// SAFETY: `state = (await (await fetch(`${simBase}/state`)).json()) as {` is required at this I/O or test boundary.
 		state = (await (await fetch(`${simBase}/state`)).json()) as {
 			packets: Record<string, { traceId: string; junctionId: string; toCampId: string }>;
 		};

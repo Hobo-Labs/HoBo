@@ -54,6 +54,7 @@ async function downloadReleaseArchive() {
   try {
     response = await fetch(downloadUrl);
   } catch (cause) {
+    // SAFETY: `const code = (cause as { cause?: { code?: string } })?.cause?.code;` is required at this I/O or test boundary.
     const code = (cause as { cause?: { code?: string } })?.cause?.code;
     const tls =
       code === "SELF_SIGNED_CERT_IN_CHAIN" ||

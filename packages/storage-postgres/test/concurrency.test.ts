@@ -22,6 +22,7 @@ describeLive("multi-writer ordering", () => {
 		const readerLoop = (async () => {
 			let after = 0n;
 			while (writing || after < BigInt(writers.length * perWriter)) {
+				// SAFETY: test-local position bookkeeping; after only holds positions the store returned.
 				const page = await collect(
 					reader.readAll({ after: after as EventPosition, limit: 7 }),
 				);

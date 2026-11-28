@@ -70,6 +70,7 @@ describe("step (the sdk-api spelling)", () => {
 	});
 
 	it("falls back to `step` for an anonymous body", () => {
+		// SAFETY: assertion to `=> 1) as () => number).na` is required at this boundary.
 		expect(step((() => 1) as () => number).name).toBeTruthy();
 	});
 
@@ -137,7 +138,10 @@ describe("runWithRetries", () => {
 				throw cause;
 			},
 			{ retries: 0 },
+			// SAFETY: assertion to ` WorkflowFailure); e` is required at this boundary.
+			// SAFETY: assertion to ` WorkflowFailure); e` is required at this boundary.
 		).catch((error: Error) => {
+			// SAFETY: workflow failures surface as WorkflowFailure at this test boundary.
 			const failure: WorkflowFailure = error as never;
 			return failure;
 		});

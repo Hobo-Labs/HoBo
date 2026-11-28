@@ -43,6 +43,7 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 
 export function parsePackSignature(input: PackSignature): PackSignature {
 	if (
+		// SAFETY: `!(PACK_SIGNATURE_ALGORITHMS as readonly string[]).includes(input.algorithm)` is required at this I/O or test boundary.
 		!(PACK_SIGNATURE_ALGORITHMS as readonly string[]).includes(input.algorithm)
 	) {
 		throw new PackError(

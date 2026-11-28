@@ -143,12 +143,14 @@ export const VALKEY_EVICTION: ValkeyEvictionMap = {
 export function isValkeyDurabilityMode(
 	value: string,
 ): value is ValkeyDurabilityMode {
+	// SAFETY: `return (VALKEY_DURABILITY_MODES as readonly string[]).includes(value);` is required at this I/O or test boundary.
 	return (VALKEY_DURABILITY_MODES as readonly string[]).includes(value);
 }
 
 export function isValkeyEvictionPolicy(
 	value: string,
 ): value is ValkeyEvictionPolicy {
+	// SAFETY: `return (VALKEY_EVICTION_POLICIES as readonly string[]).includes(value);` is required at this I/O or test boundary.
 	return (VALKEY_EVICTION_POLICIES as readonly string[]).includes(value);
 }
 

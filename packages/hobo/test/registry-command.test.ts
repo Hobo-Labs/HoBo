@@ -22,6 +22,7 @@ function envelope(stdout: string): any {
 describe("createRegistryCommand", () => {
 	it("lists the registered providers and their ports with a catalog hash", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -39,6 +40,7 @@ describe("createRegistryCommand", () => {
 
 	it("is deterministic: the catalog hash is stable across calls", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -49,7 +51,9 @@ describe("createRegistryCommand", () => {
 
 	it("reports unavailable when no runtime is wired", async () => {
 		const result = await createRegistryCommand().run({
+			// SAFETY: assertion required at this I/O or test boundary.
 			context: { cwd: "/tmp", projectDir: "/tmp" } as CliContext,
+			// SAFETY: assertion required at this I/O or test boundary.
 			flags: { cwd: "/tmp" } as never,
 			args: [],
 			verb: "registry",

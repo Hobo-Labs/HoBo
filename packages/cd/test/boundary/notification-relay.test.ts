@@ -132,6 +132,7 @@ describe("CDEvents relay (journal → projection → sinks)", () => {
 			source: "/hobo/cd/acme",
 			sinks: [sink],
 			now: () => NOW,
+			// SAFETY: EventPosition is a branded bigint.
 			deliveredThrough: 7n as never,
 		});
 		await relay.pump();

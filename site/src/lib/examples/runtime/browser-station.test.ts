@@ -49,6 +49,7 @@ const counterRuntime = {
 function manifest(
 	overrides: { readonly [key: string]: JsonValue | undefined } = {},
 ) {
+	// SAFETY: test fixture is a JSON manifest with field overrides at this boundary.
 	return parseBrowserRuntimeManifest({
 		schemaVersion: "hobo.browser-wit-runtime/v1",
 		entryModule: "station.js",
@@ -71,6 +72,7 @@ describe("browser WIT Environment Station", () => {
 		const source = buildBrowserStationGuestSource([
 			{ id: "hello-counter", runtime: counterRuntime },
 		]);
+		// SAFETY: data-URL guest module exports invoke() from the generated source.
 		const guest = (await import(
 			`data:text/javascript,${encodeURIComponent(source)}`
 		)) as GuestModule;
@@ -105,6 +107,7 @@ describe("browser WIT Environment Station", () => {
 				handlersSource: hello.handlersSource,
 			},
 		]);
+		// SAFETY: data-URL guest module exports invoke() from the generated source.
 		const guest = (await import(
 			`data:text/javascript,${encodeURIComponent(source)}`
 		)) as GuestModule;
@@ -142,6 +145,7 @@ describe("browser WIT Environment Station", () => {
 				handlersSource: todos.handlersSource,
 			},
 		]);
+		// SAFETY: data-URL guest module exports invoke() from the generated source.
 		const guest = (await import(
 			`data:text/javascript,${encodeURIComponent(source)}`
 		)) as GuestModule;
@@ -202,6 +206,7 @@ describe("browser WIT Environment Station", () => {
 				},
 			},
 		]);
+		// SAFETY: data-URL guest module exports invoke() from the generated source.
 		const guest = (await import(
 			`data:text/javascript,${encodeURIComponent(source)}`
 		)) as GuestModule;
@@ -377,6 +382,7 @@ describe("browser WIT Environment Station", () => {
 
 describe("browserWitRuntimeAvailable", () => {
 	it("is false when the Pages host 404s the manifest", async () => {
+		// SAFETY: fetch double returns a 404 Response for the missing manifest.
 		const fetchImpl = (async () => new Response("missing", { status: 404 })) as typeof fetch;
 		await expect(
 			browserWitRuntimeAvailable("https://example.test/HoBo/examples/runtime", fetchImpl),
@@ -384,6 +390,7 @@ describe("browserWitRuntimeAvailable", () => {
 	});
 
 	it("is true when the manifest is published", async () => {
+		// SAFETY: fetch double returns a published manifest Response.
 		const fetchImpl = (async () => new Response("{}", { status: 200 })) as typeof fetch;
 		await expect(
 			browserWitRuntimeAvailable("/HoBo/examples/runtime", fetchImpl),

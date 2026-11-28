@@ -113,6 +113,7 @@ const WALK_SKIP = new Set([
 
 function readJson<T>(path: string): T | undefined {
 	try {
+		// SAFETY: the callers read only the fields their type names, each optional.
 		return JSON.parse(readFileSync(path, "utf8")) as T;
 	} catch {
 		return undefined;

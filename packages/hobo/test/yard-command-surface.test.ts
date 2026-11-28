@@ -63,6 +63,7 @@ async function run(
 	} = {},
 ) {
 	const hoboHome = options.hoboHome ?? home();
+	// SAFETY: this helper supplies the command's complete test-runner context.
 	return createYardCommand().run({
 		context: { cwd: hoboHome, env: options.env ?? toolchainEnv(hoboHome) },
 		flags: { home: hoboHome, ...options.flags },
@@ -128,6 +129,7 @@ describe("init flag validation", () => {
 
 	it("names the recovery paths when init fails", async () => {
 		const first = await run(["init"], { flags: { force: true } });
+		// SAFETY: successful init reports its optional install root.
 		const firstHome = first.data as { hoboHome?: string } | undefined;
 		const second = await run(["init"], {
 			hoboHome: firstHome?.hoboHome ?? home(),
@@ -159,6 +161,7 @@ describe("status", () => {
 		await run(["init"], { hoboHome: dir, flags: { force: true } });
 		const result = await run(["status"], { hoboHome: dir });
 		expect(result.ok).toBe(true);
+		// SAFETY: successful status returns the parsed Yard config.
 		expect((result.data as { config: unknown }).config).toBeDefined();
 	});
 
@@ -180,11 +183,13 @@ describe("doctor", () => {
 
 	it("carries the wasm engine probe even when the Yard is missing", async () => {
 		const result = await run(["doctor"]);
+		// SAFETY: doctor includes its WASM probe in the diagnostic payload.
 		expect((result.data as { wasm: unknown }).wasm).toBeDefined();
 	});
 
 	it("explains the five scopes it reports on", async () => {
 		const result = await run(["doctor"]);
+		// SAFETY: doctor reports string descriptions keyed by diagnostic scope.
 		const scopes = (result.data as { scopes: Record<string, string> }).scopes;
 		expect(Object.keys(scopes).sort()).toEqual([
 			"bindle",
@@ -198,6 +203,7 @@ describe("doctor", () => {
 
 	it("reports the component hosts the machine can actually run", async () => {
 		const result = await run(["doctor"]);
+		// SAFETY: doctor reports the optional component-host availability list.
 		expect(
 			(result.data as { componentHosts?: unknown }).componentHosts,
 		).toBeDefined();
@@ -241,6 +247,7 @@ describe("ensure", () => {
 
 	it("reports each host and whether it is ready", async () => {
 		const result = await ensure();
+		// SAFETY: ensure returns host results carrying their component-host kind.
 		const data = result.data as { hosts?: Array<{ kind: string }> };
 		expect(Array.isArray(data.hosts)).toBe(true);
 		expect(result.message).toContain("hobo yard ensure");
@@ -261,6 +268,7 @@ describe("ensure", () => {
 	it("names the install root it worked under", async () => {
 		const dir = home();
 		const result = await ensure(dir);
+		// SAFETY: ensure reports the install root it selected.
 		expect((result.data as { hoboHome: string }).hoboHome).toBe(dir);
 	});
 
@@ -296,6 +304,7 @@ describe("unknown subcommands", () => {
 describe("home resolution", () => {
 	it("honours an explicit --home over the environment", async () => {
 		const dir = home();
+		// SAFETY: this test supplies the command's complete runner context.
 		const result = await createYardCommand().run({
 			context: { cwd: dir, env: { HOBO_HOME: "/somewhere/else" } },
 			flags: { home: dir },
@@ -307,6 +316,7 @@ describe("home resolution", () => {
 
 	it("falls back to the environment when no flag is given", async () => {
 		const dir = home();
+		// SAFETY: this test supplies the command's complete runner context.
 		const result = await createYardCommand().run({
 			context: { cwd: dir, env: { HOBO_HOME: dir } },
 			flags: {},

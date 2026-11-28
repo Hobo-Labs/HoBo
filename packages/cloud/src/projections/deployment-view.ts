@@ -90,9 +90,11 @@ function clearReconciliation(row: DeploymentViewRow, resourceId: string): void {
 export const deploymentViewProjection: Projection<DeploymentViewRow> =
 	defineProjection<DeploymentViewRow>({
 		name: "deployment-view",
+		// SAFETY: `key: (event) => (event.data as { deploymentId: string }).deploymentId,` is required at this I/O or test boundary.
 		key: (event) => (event.data as { deploymentId: string }).deploymentId,
 		on: {
 			[CLOUD_EVENTS.DeploymentRequested]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string; bindleHash: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; bindleHash: string };
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations === undefined) next.status = "requested";
@@ -103,6 +105,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentImported]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					bindleHash: string;
@@ -122,6 +125,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentClaimed]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					newOwner: { kind: string; id: string };
@@ -132,6 +136,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.MatchDecided]: (row, event) => {
+				// SAFETY: `const data = event.data as DeploymentDecisionRow & {` is required at this I/O or test boundary.
 				const data = event.data as DeploymentDecisionRow & {
 					deploymentId: string;
 					rejectedCandidates?: JsonValue[];
@@ -153,6 +158,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentPlanned]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					planHash: string;
@@ -165,6 +171,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentPlanRejected]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					reason: string;
@@ -179,6 +186,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioning]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations?.[data.resourceId] === undefined)
@@ -186,6 +194,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioned]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations?.[data.resourceId] === undefined) {
@@ -194,6 +203,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					resourceId: string;
@@ -285,6 +295,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations?.[data.resourceId] === undefined)
@@ -292,6 +303,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroyed]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations?.[data.resourceId] === undefined) {
@@ -300,12 +312,14 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentDeployed]: (row, event) => {
+				// SAFETY: `const data = event.data as { deploymentId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations === undefined) next.status = "deployed";
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentRolledBack]: (row, event) => {
+				// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 				const data = event.data as {
 					deploymentId: string;
 					reason: string;

@@ -18,6 +18,7 @@ const HELLO_BINDLE_FIXTURE = fileURLToPath(
 
 describe("CLI componentize boundary pact", () => {
 	it("satisfies success and fail-closed interactions", async () => {
+		// SAFETY: `const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {` is required at this I/O or test boundary.
 		const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 			consumer: { name: string };
 			provider: { name: string };

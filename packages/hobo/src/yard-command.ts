@@ -29,6 +29,7 @@ export function createYardCommand(): CommandModule {
 		implemented: true,
 		run: async ({ args, flags, context, emitProgress }) => {
 			const subcommand = args[0] ?? "status";
+			// SAFETY: assertion required at this I/O or test boundary.
 			const env = (context as { env?: NodeJS.ProcessEnv }).env ?? process.env;
 			const hoboHome = isJsonString(flags.home)
 				? flags.home

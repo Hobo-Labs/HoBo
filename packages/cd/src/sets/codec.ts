@@ -106,6 +106,7 @@ export function checkSet(
 		fail(code, "resolved_set_bytes must be positive", subject);
 	if (Number.isNaN(Date.parse(set.createdAt)))
 		fail(code, "created_at must be an RFC 3339 timestamp", subject);
+	// SAFETY: every #SetRecord constraint was checked above.
 	return Object.freeze(set) as ParsedSet;
 }
 
@@ -154,6 +155,7 @@ export function checkDelta(
 			fail(code, `resource ${change.resource} changes twice`, subject);
 		seen.add(change.resource);
 	}
+	// SAFETY: every #DeltaRecord constraint was checked above.
 	return Object.freeze(delta) as ParsedDelta;
 }
 

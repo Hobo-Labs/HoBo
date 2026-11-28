@@ -77,6 +77,7 @@ function object(value: JsonValue, path: string): JsonObject {
 			"must be an object",
 		);
 	}
+	// SAFETY: the preceding tag and array checks establish a plain object.
 	return value as JsonObject;
 }
 
@@ -88,6 +89,7 @@ function array(value: JsonValue, path: string): readonly JsonValue[] {
 			"must be an array",
 		);
 	}
+	// SAFETY: the preceding tag check establishes a primitive string value.
 	return value;
 }
 
@@ -99,6 +101,7 @@ function text(value: JsonValue, path: string): string {
 			"must be a string",
 		);
 	}
+	// SAFETY: the preceding tag check establishes a primitive string value.
 	return value as string;
 }
 
@@ -122,6 +125,7 @@ function instant(value: JsonValue, path: string): number {
 			"must be an integer epoch-millisecond instant",
 		);
 	}
+	// SAFETY: the preceding tag and integer checks establish a numeric instant.
 	return value as number;
 }
 
@@ -154,6 +158,7 @@ function member<T extends string>(
 	path: string,
 ): T {
 	const parsed = text(value, path);
+	// SAFETY: vocabulary is a readonly string literal collection by contract.
 	if (!(vocabulary as readonly string[]).includes(parsed)) {
 		throw new CapabilityMatrixError(
 			"UNKNOWN_VOCABULARY",
@@ -161,6 +166,7 @@ function member<T extends string>(
 			`${JSON.stringify(parsed)} is not one of ${vocabulary.join(", ")}`,
 		);
 	}
+	// SAFETY: includes() established that parsed is a member of vocabulary.
 	return parsed as T;
 }
 

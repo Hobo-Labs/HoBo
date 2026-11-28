@@ -102,6 +102,9 @@ function sortKeys(value: JsonValue | DeploymentPlan): JsonValue {
 				.map((key) => [key, sortKeys(value[key])]),
 		);
 	}
+	// SAFETY: everything that is not an array or object here is a JSON scalar by
+	// the time a plan reaches serialization; the walk above has handled the two
+	// container cases.
 	return value as JsonValue;
 }
 

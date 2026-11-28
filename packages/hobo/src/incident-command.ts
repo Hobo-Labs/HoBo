@@ -37,6 +37,7 @@ export const INCIDENT_STATES = Object.freeze([
 function camps(flags: JsonObject): readonly CampId[] {
 	const v = flags.camp;
 	const raw = isJsonString(v) ? v : "";
+	// SAFETY: opaque Camp ids; the CD modules refuse unknown ones.
 	return raw
 		.split(",")
 		.map((s) => s.trim())

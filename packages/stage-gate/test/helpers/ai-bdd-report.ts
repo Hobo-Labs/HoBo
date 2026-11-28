@@ -26,6 +26,7 @@ export function fixtureBytes(name: string): Buffer {
 
 export function fixtureDoc(name: "passed" | "failed"): ReportDoc {
 	const text = fixtureBytes(`report.v1.${name}.json`).toString("utf8");
+	// SAFETY: the fixture is a committed RunReport JSON object (its digest is pinned in acceptance-fields.test.ts).
 	return JSON.parse(text) as ReportDoc;
 }
 

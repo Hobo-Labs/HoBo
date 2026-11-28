@@ -86,6 +86,7 @@ export function parseCampSet(set: CampSetRecord): Outcome<ParsedCampSet> {
 		campIds: [...set.campIds].sort(),
 		definedBy: set.definedBy,
 	});
+	// SAFETY: checked above; the brand records that.
 	return { ok: true, value: parsed as ParsedCampSet };
 }
 
@@ -154,6 +155,7 @@ export function parseTaint(taint: TaintRecord): Outcome<ParsedTaint> {
 				: taint.source,
 		reason: taint.reason,
 	});
+	// SAFETY: checked above; the brand records that.
 	return { ok: true, value: parsed as ParsedTaint };
 }
 
@@ -198,6 +200,7 @@ export function parseClaims(
 	if (reasons.length > 0) return { ok: false, reasons };
 	return {
 		ok: true,
+		// SAFETY: checked above; the brand records that.
 		value: claims.map(
 			(claim) => create(CampClaimRecordSchema, claim) as ParsedClaim,
 		),

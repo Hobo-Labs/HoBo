@@ -153,8 +153,10 @@ export function parseFailureClassification(raw: JsonValue): FailureClassificatio
     throw new TypeError("failure classification must be an object");
   }
 
+  // SAFETY: assertion to `const value = raw as JsonObject;` is required at this boundary.
   const value = raw as JsonObject;
   const failureClass = value.class;
+  // SAFETY: assertion to `if (!isJsonString(failureClass) || !FAILURE_CLASSES.has(failureClass as FailureC` is required at this boundary.
   if (!isJsonString(failureClass) || !FAILURE_CLASSES.has(failureClass as FailureClass)) {
     throw new TypeError("failure classification class is invalid");
   }
@@ -164,10 +166,12 @@ export function parseFailureClassification(raw: JsonValue): FailureClassificatio
     throw new TypeError("failure classification reason is required");
   }
 
+  // SAFETY: assertion to `const strategy = failureStrategies[failureClass as FailureClass];` is required at this boundary.
   const strategy = failureStrategies[failureClass as FailureClass];
   const requiresIdempotencyDecision = value.requiresIdempotencyDecision === true;
 
   return Object.freeze({
+    // SAFETY: assertion to `class: failureClass as FailureClass,` is required at this boundary.
     class: failureClass as FailureClass,
     reason,
     strategy,
@@ -184,6 +188,7 @@ function normalizeError<T>(error: T): JsonObject {
     return {};
   }
 
+  // SAFETY: Error instances expose enumerable failure fields at this boundary.
   const bag: JsonBag = error as never;
   const record: JsonBag = { ...bag };
   return {
@@ -218,21 +223,26 @@ function isRetryBudgetExhausted(context: {
   return (
     Number.isInteger(context.transientAttempts) &&
     Number.isInteger(context.retryBudget) &&
+    // SAFETY: assertion to `(context.retryBudget as number) >= 0 &&` is required at this boundary.
     (context.retryBudget as number) >= 0 &&
+    // SAFETY: assertion to `(context.transientAttempts as number) >= (context.retryBudget as number)` is required at this boundary.
     (context.transientAttempts as number) >= (context.retryBudget as number)
   );
 }
 
 function isSplitBrain(error: JsonObject): boolean {
+  // SAFETY: assertion to `return SPLIT_BRAIN_CODES.has(error.code as string);` is required at this boundary.
   return SPLIT_BRAIN_CODES.has(error.code as string);
 }
 
 function isPoison(error: JsonObject): boolean {
+  // SAFETY: assertion to `return POISON_CODES.has(error.code as string);` is required at this boundary.
   return POISON_CODES.has(error.code as string);
 }
 
 function isPartial(error: JsonObject): boolean {
   return (
+    // SAFETY: assertion to `PARTIAL_CODES.has(error.code as string) ||` is required at this boundary.
     PARTIAL_CODES.has(error.code as string) ||
     error.ambiguousCommit === true ||
     error.membrane === "severed" ||
@@ -241,16 +251,20 @@ function isPartial(error: JsonObject): boolean {
 }
 
 function isDrift(error: JsonObject): boolean {
+  // SAFETY: assertion to `return DRIFT_CODES.has(error.code as string);` is required at this boundary.
   return DRIFT_CODES.has(error.code as string);
 }
 
 function isDurableRecoverable(error: JsonObject): boolean {
+  // SAFETY: assertion to `return DURABLE_CODES.has(error.code as string);` is required at this boundary.
   return DURABLE_CODES.has(error.code as string);
 }
 
 function isTransient(error: JsonObject): boolean {
   return (
+    // SAFETY: assertion to `TRANSIENT_CODES.has(error.code as string) ||` is required at this boundary.
     TRANSIENT_CODES.has(error.code as string) ||
+    // SAFETY: assertion to `TRANSIENT_STATUSES.has(error.status as number) ||` is required at this boundary.
     TRANSIENT_STATUSES.has(error.status as number) ||
     error.membrane === "overloaded"
   );

@@ -215,6 +215,7 @@ export function loadStationCapabilityManifest(
 ): StationCapabilityManifest | null {
 	const path = stationCapabilitiesPath(hoboHome, stationId);
 	if (!existsSync(path)) return null;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = JSON.parse(
 		readFileSync(path, "utf8"),
 	) as StationCapabilityManifest;

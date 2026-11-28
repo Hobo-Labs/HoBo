@@ -63,13 +63,16 @@ const CURRENT: ReadonlySet<string> = new Set(Object.values(LEDGER_TYPES));
 const LEGACY_PREFIXES = ["cd.rollout.", "cdrollout."] as const;
 
 export function ledgerType(type: string): RolloutLedgerType | undefined {
-	if (CURRENT.has(type)) return type as RolloutLedgerType;
+	if (CURRENT.has(type))
+		// SAFETY: membership in CURRENT is membership in RolloutLedgerType.
+		return type as RolloutLedgerType;
 	for (const prefix of LEGACY_PREFIXES) {
 		if (!type.startsWith(prefix)) continue;
 		const fact = type.slice(prefix.length);
 		const renamed = RENAMED[fact];
 		if (renamed) return renamed;
 		const current = `rollout.${fact}`;
+		// SAFETY: membership in CURRENT is membership in RolloutLedgerType.
 		return CURRENT.has(current) ? (current as RolloutLedgerType) : undefined;
 	}
 	return undefined;
@@ -377,6 +380,7 @@ function decodeLowered(
 	return {
 		rolloutId,
 		plan,
+		// SAFETY: read back from a Lowered body this orchestrator wrote.
 		freightId: text(data.freightId) as FreightId,
 		windows: strings(data.windows),
 		obligations,
@@ -590,9 +594,11 @@ export function foldRollout(
 }
 
 export function asCamp(value: string): CampId {
+	// SAFETY: Camp ids in rollout records come from the promotion's target_camp_ids.
 	return value as CampId;
 }
 
 export function asVerification(value: string): VerificationId {
+	// SAFETY: the id was returned by VerificationEngine.start and recorded verbatim.
 	return value as VerificationId;
 }

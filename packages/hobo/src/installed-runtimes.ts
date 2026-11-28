@@ -35,6 +35,7 @@ export function loadInstalledRuntimes(
 		};
 	}
 	try {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const raw = JSON.parse(
 			readFileSync(path, "utf8"),
 		) as InstalledRuntimesState;
@@ -46,6 +47,7 @@ export function loadInstalledRuntimes(
 			};
 		}
 		const runtimes = raw.runtimes.filter((id): id is RuntimeInstallId =>
+			// SAFETY: assertion required at this I/O or test boundary.
 			(RUNTIME_INSTALL_IDS as readonly string[]).includes(id),
 		);
 		if (!runtimes.includes("runtime-local")) {
@@ -83,6 +85,7 @@ export function installRuntime(
 	const runtimes = [...new Set([...current.runtimes, id, "runtime-local"])];
 	const next: InstalledRuntimesState = {
 		schemaVersion: INSTALLED_RUNTIMES_SCHEMA,
+		// SAFETY: assertion required at this I/O or test boundary.
 		runtimes: Object.freeze(runtimes as RuntimeInstallId[]),
 		updatedAt: new Date().toISOString(),
 	};

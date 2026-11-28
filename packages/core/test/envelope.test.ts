@@ -36,6 +36,7 @@ describe("EventEnvelope", () => {
 			parseEventEnvelope(raw);
 		} catch (error) {
 			expect(error).toBeInstanceOf(EnvelopeParseError);
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as EnvelopeParseError).path).toBe("streamId");
 		}
 	});
@@ -49,6 +50,7 @@ describe("EventEnvelope", () => {
 		try {
 			parseEventEnvelope(raw);
 		} catch (error) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as EnvelopeParseError).path).toBe("actor.kind");
 		}
 	});
@@ -63,6 +65,7 @@ describe("EventEnvelope", () => {
 		try {
 			parseEventEnvelope(raw);
 		} catch (error) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as EnvelopeParseError).path).toBe("type");
 		}
 	});
@@ -85,6 +88,7 @@ describe("EventEnvelope", () => {
 		const envelope = parseEventEnvelope(raw);
 
 		expect(() => {
+			// SAFETY: assertion required at this I/O or test boundary.
 			(envelope as { seq: number }).seq = 99;
 		}).toThrow();
 	});

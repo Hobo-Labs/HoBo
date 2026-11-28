@@ -20,6 +20,7 @@ function envelope(stdout: string): any {
 describe("hobo add runner-depot (remote-build catalog entry)", () => {
 	it("installs the third execution host of the M3 trio", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 

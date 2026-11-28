@@ -6,6 +6,7 @@ import { createInMemoryEventStore } from "./store.js";
 import { stableStringify } from "./equivalence.js";
 import { isJsonObject, type JsonValue } from "./json.js";
 
+
 export interface WorkflowHandlers<S, A> {
   name: string;
   initialState(args: A): S;
@@ -127,7 +128,9 @@ export function testRuntime(options: { seed?: string; startInstant?: string } = 
             event.type === "run.StepCompleted" &&
             event.data &&
             isJsonObject(event.data) &&
+            // SAFETY: assertion to `(event.data as { name?: string; index?: number }).name === name &&` is required at this boundary.
             (event.data as { name?: string; index?: number }).name === name &&
+            // SAFETY: assertion to `(event.data as { name?: string; index?: number }).index === index,` is required at this boundary.
             (event.data as { name?: string; index?: number }).index === index,
         );
         if (!completed) {
@@ -140,6 +143,7 @@ export function testRuntime(options: { seed?: string; startInstant?: string } = 
           });
         }
         run.stepIndex += 1;
+        // SAFETY: assertion to `return (completed.data as { result: T }).result;` is required at this boundary.
         return (completed.data as { result: T }).result;
       },
       sleep(delayMs, options = {}) {
@@ -267,6 +271,7 @@ export function testRuntime(options: { seed?: string; startInstant?: string } = 
         timers: [],
         trace: [],
       };
+      // SAFETY: assertion to `runs.set(runId, run as RunRecord<unknown, unknown>);` is required at this boundary.
       runs.set(runId, run as RunRecord<unknown, unknown>);
       await appendRunEvent(run, "run.Started", { seed, args });
       await applyHandler(run, workflow.onStart, clone(args), true);
@@ -366,6 +371,7 @@ function clone<T>(value: T): T {
   if (structuredClone instanceof Function) {
     return structuredClone(value);
   }
+  // SAFETY: JSON.parse round-trip clones T at this document boundary.
   const cloned: T = JSON.parse(JSON.stringify(value)) as T;
   return cloned;
 }

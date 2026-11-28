@@ -149,6 +149,7 @@ describe("vibe workspace/project state proof", () => {
   });
 
   it("keeps Pact and CUE boundary artifacts aligned with the parsed model shape", () => {
+    // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
     const pact = JSON.parse(
       readFileSync(
         new URL("../architecture/pacts/vibe_workspace_project_states.pact.json", import.meta.url),

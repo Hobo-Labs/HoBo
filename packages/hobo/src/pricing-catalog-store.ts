@@ -67,6 +67,7 @@ function latestFacts(
 ): ReadonlyMap<string, CatalogRegisteredBody> {
 	const latest = new Map<string, CatalogRegisteredBody>();
 	for (const event of events) {
+		// SAFETY: the event store persists JSON; isRegistered refines the body.
 		const data = event.data as JsonValue;
 		if (event.type === CATALOG_REGISTERED && isRegistered(data)) {
 			latest.set(data.providerId, data);
@@ -104,6 +105,7 @@ export function readStoredCatalog(
 	}
 	let catalog: PricingCatalog;
 	try {
+		// SAFETY: JSON.parse yields JSON; fromJson refines it or throws.
 		catalog = fromJson(
 			PricingCatalogSchema,
 			JSON.parse(body.catalogJson) as JsonValue,

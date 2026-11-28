@@ -67,6 +67,7 @@ function mergeJsonObjects(
 ): CiProjectJsonObject {
 	const merged: z.infer<typeof JsonObjectSchema> = { ...base };
 	for (const key of Object.keys(override)) {
+		// SAFETY: override is a parsed JSON object; keys index JsonValue entries.
 		const value = override[key] as z.infer<typeof JsonValue>;
 		const inherited = merged[key];
 		const inheritedObject = JsonObjectSchema.safeParse(inherited);

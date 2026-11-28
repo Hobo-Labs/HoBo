@@ -34,6 +34,7 @@ export function lateBound<T extends object>(name: string): LateBound<T> {
 		},
 	);
 	return Object.freeze({
+		// SAFETY: the proxy forwards every member of T to the bound module.
 		ref: ref as T,
 		bind(next: T) {
 			if (target !== undefined) {

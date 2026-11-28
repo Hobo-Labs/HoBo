@@ -92,6 +92,7 @@ async function record(name: (typeof SCENARIOS)[number]): Promise<Recording> {
 }
 
 function rid(id: string): RolloutId {
+	// SAFETY: literal ids read back from the recording.
 	return id as RolloutId;
 }
 

@@ -39,7 +39,9 @@ export function deriveDeadline(
         ? "inherited"
         : "caller",
     startedAtMs: nowMs,
+    // SAFETY: assertion to `expiresAtMs: expiresAtMs as number,` is required at this boundary.
     expiresAtMs: expiresAtMs as number,
+    // SAFETY: assertion to `remainingAtDispatchMs: Math.max(0, (expiresAtMs as number) - nowMs),` is required at this boundary.
     remainingAtDispatchMs: Math.max(0, (expiresAtMs as number) - nowMs),
   });
 }
@@ -49,6 +51,7 @@ export function parseDeadline(raw: JsonValue): Deadline {
     throw new TypeError("deadline must be an object");
   }
 
+  // SAFETY: assertion to `const value = raw as JsonObject;` is required at this boundary.
   const value = raw as JsonObject;
   const source = value.source;
   if (source !== "caller" && source !== "inherited") {
@@ -63,18 +66,23 @@ export function parseDeadline(raw: JsonValue): Deadline {
     throw new TypeError("deadline timestamps must be finite numbers");
   }
 
+  // SAFETY: assertion to `if ((expiresAtMs as number) < (startedAtMs as number)) {` is required at this boundary.
   if ((expiresAtMs as number) < (startedAtMs as number)) {
     throw new TypeError("expires_at_ms must be >= started_at_ms");
   }
 
+  // SAFETY: assertion to `if (!Number.isFinite(remainingAtDispatchMs) || (remainingAtDispatchMs as number)` is required at this boundary.
   if (!Number.isFinite(remainingAtDispatchMs) || (remainingAtDispatchMs as number) < 0) {
     throw new TypeError("remaining_at_dispatch_ms must be >= 0");
   }
 
   return Object.freeze({
     source,
+    // SAFETY: assertion to `startedAtMs: startedAtMs as number,` is required at this boundary.
     startedAtMs: startedAtMs as number,
+    // SAFETY: assertion to `expiresAtMs: expiresAtMs as number,` is required at this boundary.
     expiresAtMs: expiresAtMs as number,
+    // SAFETY: assertion to `remainingAtDispatchMs: remainingAtDispatchMs as number,` is required at this boundary.
     remainingAtDispatchMs: remainingAtDispatchMs as number,
   });
 }

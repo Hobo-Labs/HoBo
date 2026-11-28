@@ -154,6 +154,7 @@ export function createDurableLifecycleGate(
 					(!isJsonString(value.fenceId) || !NAME.test(value.fenceId)))
 			)
 				fail();
+			// SAFETY: the validated phase is one of the durable lifecycle phases.
 			state.phase = value.phase as DurableLifecyclePhase;
 			if (isJsonString(value.fenceId)) state.fenceId = value.fenceId;
 			for (const entry of value.participants) {

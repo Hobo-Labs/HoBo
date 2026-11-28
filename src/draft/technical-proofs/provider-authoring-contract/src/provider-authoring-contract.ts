@@ -113,12 +113,14 @@ export function createOptionBuilder<
   const Port extends PortKind,
   Options extends object = JsonObject
 >(providerId: Id, port: Port, optionName: string): ProviderOptionBuilder<Id, Port, Options> {
+  // SAFETY: `return Object.assign(` is required at this I/O or test boundary.
   return Object.assign(
     ({ negotiation = "prefer", ...options } = {}) => ({
       providerId,
       port,
       optionName,
       negotiation,
+      // SAFETY: `options: options as Options` is required at this I/O or test boundary.
       options: options as Options
     }),
     {
@@ -137,6 +139,7 @@ export function defineProvider<
 >(spec: ProviderSpec<Id, Capabilities, Clients, Builders>): ProviderDefinition<Id, Capabilities, Clients, Builders> {
   const capabilities = spec.capabilities;
   const declaredPorts = new Set(capabilities.map((capability) => capability.port));
+  // SAFETY: `for (const [name, builder] of Object.entries(spec.with) as Array<[string, Builde` is required at this I/O or test boundary.
   for (const [name, builder] of Object.entries(spec.with) as Array<[string, Builders[keyof Builders]]>) {
     if (builder.providerId !== spec.id) {
       throw new Error(`option builder ${name} belongs to provider ${builder.providerId}, not ${spec.id}`);
@@ -154,6 +157,7 @@ export function defineProvider<
       if (!declaredPorts.has(port)) {
         throw new Error(`provider ${spec.id} does not declare port ${port}`);
       }
+      // SAFETY: `return spec.client(port, outputs) as Clients[P];` is required at this I/O or test boundary.
       return spec.client(port, outputs) as Clients[P];
     },
     capabilityManifest() {
@@ -165,6 +169,7 @@ export function defineProvider<
     }
   };
 
+  // SAFETY: `return Object.freeze(provider) as ProviderDefinition<Id, Capabilities, Clients, ` is required at this I/O or test boundary.
   return Object.freeze(provider) as ProviderDefinition<Id, Capabilities, Clients, Builders>;
 }
 
@@ -204,6 +209,7 @@ export function createFixtureAwsProvider(): ProviderDefinition<
         return {
           port,
           providerId: "aws",
+          // SAFETY: `connectionString: outputs.endpoint as string` is required at this I/O or test boundary.
           connectionString: outputs.endpoint as string
         };
       }
@@ -317,6 +323,7 @@ export function auditProviderCatalog(providers: readonly { readonly id: string; 
 
   for (const provider of providers) {
     for (const builder of Object.values(provider.with)) {
+      // SAFETY: `const optionName = (builder as { readonly optionName: string }).optionName;` is required at this I/O or test boundary.
       const optionName = (builder as { readonly optionName: string }).optionName;
       if (!providersByOption.has(optionName)) {
         providersByOption.set(optionName, []);
@@ -341,6 +348,7 @@ export function auditProviderCatalog(providers: readonly { readonly id: string; 
 
 export function validateProviderPackage(provider: JsonValue) {
   const errors: string[] = [];
+  // SAFETY: `const candidate = provider as Partial<AnyProviderDefinition> | null | undefined;` is required at this I/O or test boundary.
   const candidate = provider as Partial<AnyProviderDefinition> | null | undefined;
 
   if (!candidate?.id) {

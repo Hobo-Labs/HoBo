@@ -72,3 +72,5 @@ This package ships the architecture-guard evidence required by
 ## Cascade reconciliation (83d9b5c92)
 
 The SDK-codegen, topology-object, and usage-permission technical proof refreshes are absorbed without changing SDK authoring or bindle evidence.
+
+The `SAFETY:` type-assertion notes restored from main in `bind-reference-wiring-contract`, `bindles-api-freeze-contract`, `collection-coverage-gate-contract`, `connector-authoring-contract`, `container-fallback-wiring-parity-contract`, `data-paradigm-authoring-contract`, `hobo-bindles-resource-catalog`, `hobo-code-dsl-contract`, `hobo-manifest-contract`, `hobo-runtime-ts-primitives`, `idiom-layer-lowering-contract`, `ifc-handler-trigger-contract`, `local-dev-test-authoring-contract`, `paradigm-idiom-packages-contract`, `provider-options-pattern-contract`, `resource-collection-engine-contract`, `sdk-codegen-surface-contract`, `topology-objects-contract`, `usage-inferred-permissions-contract` are absorbed without changing this rollup's evidence.

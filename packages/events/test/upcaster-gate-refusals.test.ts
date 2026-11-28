@@ -363,6 +363,7 @@ describe("check 4: upcasters are pure", () => {
 						to: 2,
 						reason: "mutates",
 						upcast: (body) => {
+							// SAFETY: the test intentionally mutates the frozen EventBody contract.
 							(body as EventBody).summary = "clobbered";
 							return { ticketId: body.ticketId, title: body.summary };
 						},
@@ -445,6 +446,7 @@ describe("check 5: golden replay", () => {
 		const errors = errorsOf(
 			contract({
 				goldenCorpus: [
+					// SAFETY: the test injects an unsupported encoding to exercise rejection.
 					{ ...good, encoding: "cbor" as never },
 					createCorpusEntry(V2, "second", { ticketId: "T-2", title: "bang" }),
 				],
@@ -581,6 +583,7 @@ describe("the wire codec", () => {
 	it("round-trips a u32 across the varint boundary", () => {
 		const schema = eventSchema("t", 1, [u32Field("count", 1)]);
 		for (const count of [0, 1, 127, 128, 129, 16_383, 16_384, 2 ** 31]) {
+			// SAFETY: roundTrip is intentionally given a schema-shaped test double.
 			expect(roundTrip(schema as never, { count })).toEqual({ count });
 		}
 	});
@@ -603,6 +606,7 @@ describe("the wire codec", () => {
 	});
 
 	it("refuses to encode a body that does not validate", () => {
+		// SAFETY: the test intentionally passes an invalid body to exercise validation.
 		expect(() => encodeEventBody(V1, { ticketId: 1 } as never)).toThrow(
 			/must be a string/u,
 		);
@@ -674,6 +678,7 @@ describe("pinning a corpus entry", () => {
 
 	it("refuses to pin a body that does not validate", () => {
 		expect(() =>
+			// SAFETY: the test intentionally passes an invalid body to exercise validation.
 			createCorpusEntry(V1, "bad", { ticketId: "T" } as never),
 		).toThrow(/must be a string/u);
 	});

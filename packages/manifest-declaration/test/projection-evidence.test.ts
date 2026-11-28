@@ -96,8 +96,10 @@ describe("what a projection would still have to carry", () => {
 	});
 
 	it("is confirmed by the only intents in the repository with real edges", () => {
+		// SAFETY: this is the repository-owned hello-bindle manifest fixture.
 		const manifest = JSON.parse(
 			read("packages/cloud/test/fixtures/hello-bindle.manifest.json"),
+			// SAFETY: this fixture is the repository-owned manifest shape under test.
 		) as { resources: Record<string, { bind?: string[] }> };
 		expect(manifest.resources.service?.bind).toEqual(["sessions", "assets"]);
 		for (const bound of manifest.resources.service?.bind ?? []) {

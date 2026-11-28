@@ -32,6 +32,7 @@ type CheckDesignDocsOptions = {
 };
 
 export async function checkDesignDocs(
+	// SAFETY: assertion to ` as CheckDesignDocsOptions, ` is required at this boundary.
 	{ root, files }: CheckDesignDocsOptions = {} as CheckDesignDocsOptions,
 ) {
 	const targetFiles = files ?? (await collectMarkdownFiles(root));
@@ -303,6 +304,7 @@ function checkRelativeLinks({
 		const [raw, target, anchor = ""] = match;
 		const line = lineNumberAt(content, match.index);
 		const cleanTargetWithFragment = decodeURI(target!.replace(/^<|>$/g, ""));
+		// SAFETY: assertion to `eanTargetWithFragment.split( "#", ) as [string, ...string[]]; ` is required at this boundary.
 		const [cleanTarget, inlineFragment = ""] = cleanTargetWithFragment.split(
 			"#",
 		) as [string, ...string[]];

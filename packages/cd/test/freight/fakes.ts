@@ -52,10 +52,12 @@ export function digestOf(seed: string): `sha256:${string}` {
 }
 
 export function camp(id: string): CampId {
+	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
 export function fid(id: string): FreightId {
+	// SAFETY: test fixture ids are recorded or golden `sha256:` Freight ids.
 	return id as FreightId;
 }
 
@@ -124,6 +126,7 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
+			// SAFETY: test double; positions are minted here from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -251,6 +254,7 @@ export class MapArtifactVerifier implements ArtifactVerifier {
 }
 
 function reason(code: string, message: string, subject: string): ReasonRecord {
+	// SAFETY: test double; a plain object with the generated message's shape.
 	return {
 		$typeName: "hobo.cd.v1.ReasonRecord",
 		code,

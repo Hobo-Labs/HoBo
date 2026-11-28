@@ -135,6 +135,7 @@ describe("HOBO-560 plan/diff review prototype", () => {
   });
 
   it("aligns Pact and CUE architecture fixtures with the parsed prototype", () => {
+    // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
     const pact = JSON.parse(
       readFileSync(
         new URL("../architecture/pacts/vibe_plan_diff_review_prototype.pact.json", import.meta.url),

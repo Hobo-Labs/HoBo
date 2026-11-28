@@ -36,6 +36,7 @@ export interface BindleCollector {
 function asResourceDescriptor(
 	resource: BindleResourceInput,
 ): BindleResourceDescriptor {
+	// SAFETY: resources without toDescriptor are already descriptor records.
 	return resource as BindleResourceDescriptor;
 }
 
@@ -116,11 +117,13 @@ export function descriptorFromHandle(handle: {
 function normalizeResourceDescriptor(
 	resource: BindleResourceInput,
 ): BindleResourceDescriptor {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const layout = resource as BindleResourceView;
 	const descriptor =
 		layout.toDescriptor instanceof Function
 			? layout.toDescriptor()
-			: asResourceDescriptor(resource);
+			: // SAFETY: assertion required at this I/O or test boundary.
+				asResourceDescriptor(resource);
 	if (!isPlainObject(descriptor)) {
 		throw new TypeError("Bindle resources must be descriptor objects");
 	}
@@ -149,6 +152,7 @@ export function assertNoProviderSpecificFields(
 	value: BindleResourceInput,
 ): void {
 	if (!value || !isJsonObject(value)) return;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const layout = value as BindleResourceView;
 	const annotations = layout.annotations?.with;
 	const providerOptions = layout.options?.providerOptions;

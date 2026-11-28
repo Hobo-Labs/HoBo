@@ -181,6 +181,7 @@ describe("the in-process engine", () => {
 			id: "api",
 			imports: ["wasi:keyvalue/store@0.2.0"],
 			exports: { "wasi:http/handler@0.2.0": {} },
+			// SAFETY: the engine reads exactly the fields a descriptor names.
 		} as never);
 		expect(instance.id).toBe("api");
 		expect(instance.imports).toStrictEqual(["wasi:keyvalue/store@0.2.0"]);
@@ -192,6 +193,7 @@ describe("the in-process engine", () => {
 			imports: ["wasi:keyvalue/store@0.2.0"],
 			exports: {},
 		};
+		// SAFETY: the engine reads exactly the fields a descriptor names.
 		const instance = createInProcessWasmtimeEngine().instantiate(
 			descriptor as never,
 		);

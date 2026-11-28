@@ -937,6 +937,7 @@ describe("worker lease reconciliation", () => {
 			runner_name: lease.runnerName,
 			run_attempt: 1,
 		});
+		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
 		const reconciler = createWorkerLeaseReconciler({
 			store,
 			docker: {
@@ -992,6 +993,7 @@ describe("worker lease reconciliation", () => {
 			runner_name: lease.runnerName,
 			run_attempt: 1,
 		});
+		// SAFETY: getRun/getJob are mocked; the transport surface is never invoked.
 		const reconciler = createWorkerLeaseReconciler({
 			store,
 			docker: {

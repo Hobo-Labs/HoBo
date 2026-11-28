@@ -228,6 +228,7 @@ function resolvePluginPackage(specifier: string) {
 			for (;;) {
 				const candidate = path.join(dir, "package.json");
 				try {
+					// SAFETY: assertion required at this I/O or test boundary.
 					const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
 						name?: string;
 					};
@@ -277,6 +278,7 @@ export async function loadHoboPlugin(
 					`${manifest.packageName}: plugin entry did not evaluate to a module object`,
 				);
 			}
+			// SAFETY: dynamic import yields a module namespace of plugin exports.
 			return imported as PluginModuleNamespace;
 		});
 	let moduleExports: PluginModuleNamespace;

@@ -56,6 +56,7 @@ function clone<T>(value: T): T {
 
 function deepFreeze<T>(value: T): T {
 	if (value === undefined || value === null) return value;
+	// SAFETY: freeze walks own properties of object-like values; primitives return above.
 	const inspectable = value as Inspectable;
 	if (!isObjectLike(inspectable) || Object.isFrozen(inspectable)) return value;
 	Object.freeze(inspectable);

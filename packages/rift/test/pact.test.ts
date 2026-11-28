@@ -30,6 +30,7 @@ interface Interaction {
 	};
 }
 
+// SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
 const pact = JSON.parse(
 	readFileSync(
 		join(pkg, "contracts", "pacts", "rift-workspace-boundary.pact.json"),
@@ -75,6 +76,7 @@ describe(`${pact.consumer.name} → ${pact.provider.name}`, () => {
 			).toBe(interaction.response.exitCode);
 
 			if (interaction.response.jsonKeys) {
+				// SAFETY: `const parsed = JSON.parse(got.stdout) as JsonObject;` is required at this I/O or test boundary.
 				const parsed = JSON.parse(got.stdout) as JsonObject;
 				for (const key of interaction.response.jsonKeys) {
 					expect(parsed).toHaveProperty(key);

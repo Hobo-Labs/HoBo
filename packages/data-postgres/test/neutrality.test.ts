@@ -107,6 +107,7 @@ describe("provider neutrality", () => {
 			new URL("../package.json", import.meta.url),
 		);
 		type PackageManifest = { readonly dependencies?: Record<string, string> };
+		// SAFETY: package.json is the local repository manifest and has the declared shape.
 		const manifest = JSON.parse(
 			readFileSync(manifestPath, "utf8"),
 		) as PackageManifest;

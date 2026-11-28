@@ -422,11 +422,14 @@ function placeRequirement(
 				},
 			};
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		winner = rankByCost(pinned)[0] as BrokerCatalogDefinition;
 	} else {
+		// SAFETY: assertion required at this I/O or test boundary.
 		winner = rankByCost(eligible)[0] as BrokerCatalogDefinition;
 	}
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	const region = pickRegion(requirement, winner, policy) as string;
 	return {
 		placement: {
@@ -482,6 +485,7 @@ export function parseScaleDirective(
 			"invalid-scale-directive: expected an object",
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = input as JsonObject;
 	const resourceId = raw.resourceId ?? raw.resource_id;
 	if (!isJsonString(resourceId) || resourceId.length === 0) {
@@ -493,6 +497,7 @@ export function parseScaleDirective(
 	const direction = raw.direction;
 	if (
 		!isJsonString(direction) ||
+		// SAFETY: assertion required at this I/O or test boundary.
 		!SCALE_DIRECTIONS.includes(direction as ScaleDirection)
 	) {
 		throw new BrokerParseError(
@@ -521,6 +526,7 @@ export function parseScaleDirective(
 			"invalid-scale-directive: direction 'zero' requires replicas 0",
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return { resourceId, direction: direction as ScaleDirection, replicas };
 }
 
@@ -536,6 +542,7 @@ export function foldBrokerDecisions(
 ): BrokerDecisionRow[] {
 	const rows = new Map<string, BrokerDecisionRow>();
 	for (const event of events) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const data = (event.data ?? {}) as JsonObject;
 		const requestId = data.requestId;
 		if (!isJsonString(requestId) || requestId.length === 0) continue;
@@ -571,6 +578,7 @@ export function snapshotBrokerDecisions(rows: BrokerDecisionRow[]): string {
 }
 
 export function restoreBrokerDecisions(snapshot: string): BrokerDecisionRow[] {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const parsed = JSON.parse(snapshot) as {
 		schemaVersion?: string;
 		rows?: BrokerDecisionRow[];

@@ -59,6 +59,7 @@ if (protobufOutputs) {
 	);
 	let status = "";
 	try {
+		// SAFETY: assertion to `.parse(check.stdout) as { status?: string }).st` is required at this boundary.
 		status = (JSON.parse(check.stdout) as { status?: string }).status ?? "";
 	} catch {
 		status = "";

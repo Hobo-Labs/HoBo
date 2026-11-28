@@ -13,6 +13,7 @@ describe("renderSuccess", () => {
 	it("prints a refusal's code and each remediation line", () => {
 		const out = renderSuccess({
 			verb: "ci",
+			// SAFETY: the renderer reads only these output flags.
 			flags: { json: false, quiet: false } as Parameters<
 				typeof renderSuccess
 			>[0]["flags"],
@@ -33,6 +34,7 @@ describe("renderSuccess", () => {
 	it("prints a refusal's code even when it has no remediation", () => {
 		const out = renderSuccess({
 			verb: "ci",
+			// SAFETY: the renderer reads only these output flags.
 			flags: { json: false, quiet: false } as Parameters<
 				typeof renderSuccess
 			>[0]["flags"],

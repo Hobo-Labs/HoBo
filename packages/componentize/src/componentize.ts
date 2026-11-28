@@ -168,8 +168,10 @@ export async function runWasmtimeSmoke(
 
 function assertPinnedToolchain(toolchain: typeof PINNED_TOOLCHAIN) {
 	for (const [name, expected] of Object.entries(PINNED_TOOLCHAIN)) {
+		// SAFETY: `if (toolchain[name as keyof typeof PINNED_TOOLCHAIN] !== expected) {` is required at this I/O or test boundary.
 		if (toolchain[name as keyof typeof PINNED_TOOLCHAIN] !== expected) {
 			throw new Error(
+				// SAFETY: ``componentize.toolchain_skew: ${name} expected ${expected} got ${toolchain[name ` is required at this I/O or test boundary.
 				`componentize.toolchain_skew: ${name} expected ${expected} got ${toolchain[name as keyof typeof PINNED_TOOLCHAIN]}`,
 			);
 		}
@@ -296,6 +298,7 @@ function readContractMetadata(bytes: Uint8Array) {
 				.toString("utf8");
 			offset += nameLength.value;
 			if (name === CUSTOM_SECTION_NAME) {
+				// SAFETY: `return JSON.parse(` is required at this I/O or test boundary.
 				return JSON.parse(
 					buffer.subarray(offset, sectionEnd).toString("utf8"),
 				) as {

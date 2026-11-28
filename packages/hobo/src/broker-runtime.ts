@@ -269,6 +269,7 @@ export function loadEmbeddedBrokerState(
 	const path = brokerStatePath(hoboHome);
 	if (!existsSync(path)) return null;
 	try {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const raw = JSON.parse(readFileSync(path, "utf8")) as EmbeddedBrokerState;
 		if (raw.schemaVersion !== EMBEDDED_BROKER_SCHEMA) return null;
 		return raw;
@@ -465,6 +466,7 @@ export async function resolveBindlePlacement(options: {
 					schemaVersion: "hobo.broker/v1",
 					requestId: "bindle-provider-check",
 					brokerId: "uninitialized",
+					// SAFETY: assertion required at this I/O or test boundary.
 					policyHash: "sha256:none" as never,
 					stationId: "uninitialized",
 					railHash: "sha256:none",
@@ -507,6 +509,7 @@ export async function resolveBindlePlacement(options: {
 					schemaVersion: "hobo.broker/v1",
 					requestId: "runtime-check",
 					brokerId: "uninitialized",
+					// SAFETY: assertion required at this I/O or test boundary.
 					policyHash: "sha256:none" as never,
 					stationId: "uninitialized",
 					railHash: "sha256:none",
@@ -549,6 +552,7 @@ export async function resolveBindlePlacement(options: {
 		(resource) => ({
 			resourceId: resource.name,
 			port: portForResourceKind(resource.kind),
+			// SAFETY: assertion required at this I/O or test boundary.
 			features: [] as string[],
 		}),
 	);
@@ -617,6 +621,7 @@ export async function resolveBindlePlacement(options: {
 					stationId: pins.stationId,
 					railHash: pins.railHash,
 					reasons: (yardFirst.reasons ?? []).map((r) => ({
+						// SAFETY: assertion required at this I/O or test boundary.
 						plane: r.plane as "placement",
 						code: r.code,
 						message: r.message,

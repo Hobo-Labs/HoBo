@@ -13,6 +13,7 @@ import {
 import { BuildError, createBuildCli, runBuild, writeBuildFixtureProject } from "../src/index.ts";
 import { type JsonValue } from "../src/json.js";
 
+// SAFETY: `const GOLDEN = JSON.parse(` is required at this I/O or test boundary.
 const GOLDEN = JSON.parse(
 	readFileSync(new URL("../test/fixtures/hello-bindle.digest.json", import.meta.url), "utf8"),
 ) as { service: string; digest: string; sourceDateEpoch: string; witWorld: string };
@@ -76,6 +77,7 @@ try {
 		env: { ...process.env, SOURCE_DATE_EPOCH: GOLDEN.sourceDateEpoch },
 	});
 	assert.equal(cli.exitCode, 0);
+	// SAFETY: `const envelope = JSON.parse(cli.stdout) as {` is required at this I/O or test boundary.
 	const envelope = JSON.parse(cli.stdout) as {
 		ok: boolean;
 		command: string;

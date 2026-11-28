@@ -79,9 +79,13 @@ function install() {
 		clear(timer);
 		original.clearInterval(timer);
 	};
+	// SAFETY: same call signature as setTimeout; the cast restores the overloads and Node's `__promisify__` a wrapper lacks.
 	globalThis.setTimeout = timeout as typeof setTimeout;
+	// SAFETY: same call signature as setInterval; the cast restores its overloads.
 	globalThis.setInterval = interval as typeof setInterval;
+	// SAFETY: same call signature as clearTimeout; the cast restores its overloads.
 	globalThis.clearTimeout = clearTimer as typeof clearTimeout;
+	// SAFETY: same call signature as clearInterval; the cast restores its overloads.
 	globalThis.clearInterval = clearRepeat as typeof clearInterval;
 }
 

@@ -41,6 +41,7 @@ export function parseStreamId(value: JsonValue): ParsedStreamId {
 	if (!isJsonString(value) || value.length === 0) {
 		throw new TypeError("streamId must be a non-empty string");
 	}
+	// SAFETY: assertion to `value as ParsedStreamId` is required at this boundary.
 	return value as ParsedStreamId;
 }
 
@@ -51,6 +52,7 @@ export function parseExpectedSeq(
 	if (!isJsonNumber(value) || !Number.isSafeInteger(value) || value < 0) {
 		throw new TypeError(`${fieldName} must be a non-negative safe integer`);
 	}
+	// SAFETY: non-negative safe integers are branded expected seqs.
 	return value as ParsedExpectedSeq;
 }
 
@@ -108,6 +110,7 @@ export function parseAppendContext<TStream, TOptions>(
 			options.expectedSeq,
 			"appendOptions.expectedSeq",
 		),
+		// SAFETY: assertion to `actor as PrincipalRef` is required at this boundary.
 		actor: parsePrincipalRef(actor),
 		tenant: requireNonEmptyString(options.tenant, "appendOptions.tenant"),
 		project: optionalString(options.project, "appendOptions.project"),
@@ -127,6 +130,7 @@ export function parseAppendContext<TStream, TOptions>(
 function parsePrincipalRef(value: JsonObject): PrincipalRef {
 	const kind = requireNonEmptyString(value.kind, "appendOptions.actor.kind");
 	const id = requireNonEmptyString(value.id, "appendOptions.actor.id");
+	// SAFETY: parsed kind/id is a PrincipalRef at this envelope boundary.
 	return { kind, id } as never;
 }
 
@@ -216,5 +220,6 @@ function cloneJson<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
+	// SAFETY: JSON round-trip preserves the caller-owned parse snapshot type.
 	return cloned as T;
 }

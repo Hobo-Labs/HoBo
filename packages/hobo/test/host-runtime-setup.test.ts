@@ -164,6 +164,7 @@ describe("host runtime packages setup", () => {
 			["yard", "ensure", "--home", hoboHome, "--json"],
 			{ cwd: hoboHome },
 		);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(result.stdout) as {
 			ok: boolean;
 			code: string;

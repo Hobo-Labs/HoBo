@@ -19,6 +19,7 @@ interface WorkerModule {
 }
 
 async function loadWorker(): Promise<WorkerModule["default"]> {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const mod = (await import(WORKER_URL)) as WorkerModule;
 	return mod.default;
 }

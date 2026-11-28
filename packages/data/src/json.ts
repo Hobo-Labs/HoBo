@@ -101,6 +101,7 @@ export function parseNonEmptyString(value: Inspectable, field: string): string {
 export function parseOffendingSeq(
 	data: EventEnvelope["data"],
 ): number | undefined {
+	// SAFETY: EventEnvelope.data is JSON at the store boundary; tag checks are fail-closed.
 	const inspectable = data as Inspectable;
 	if (!isJsonObject(inspectable)) return undefined;
 	const offending = inspectable.offendingSeq;

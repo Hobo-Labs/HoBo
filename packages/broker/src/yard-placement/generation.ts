@@ -15,15 +15,21 @@ export const DEFAULT_YARD_GENERATION_POLICY: YardGenerationPolicy =
 	Object.freeze({
 		id: "yard-generation-default-deny",
 		effect: "deny",
+		// SAFETY: assertion required at this I/O or test boundary.
 		allowedRuntimeIds: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		deniedRuntimeIds: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		allowedProviderIds: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		deniedProviderIds: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		allowedConnectorIds: Object.freeze([] as string[]),
 		maxConcurrentGenerations: 0,
 		maxYardsPerTenant: 0,
 		requireApproval: true,
 		requireAttestation: true,
+		// SAFETY: assertion required at this I/O or test boundary.
 		lockedProperties: Object.freeze([] as string[]),
 	});
 
@@ -124,7 +130,9 @@ export function planYardGeneration(options: {
 		};
 	}
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(options.requestedLayout) as ContentHash;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const idempotencyKey = contentHashOf({
 		ownerTenantId: options.ownerTenantId,
 		layoutHash,
@@ -155,6 +163,7 @@ export function planYardGeneration(options: {
 	};
 	const plan: YardGenerationPlan = Object.freeze({
 		...planBody,
+		// SAFETY: assertion required at this I/O or test boundary.
 		planHash: contentHashOf(planBody) as ContentHash,
 	});
 

@@ -109,6 +109,8 @@ describe("snapshotting estate state", () => {
 	});
 
 	it("does not mistake a non-callable snapshot property for a capability", () => {
+		// SAFETY: deliberately outside the engine type, where `snapshot` is a
+		// method; the adapter probes it with `instanceof Function`, pinned here.
 		const engine = { ...engineStub(), snapshot: "not-callable" } as never;
 		const adapter = createTerraformAdapter({ engine });
 		expect(() => adapter.snapshotState()).not.toThrow();

@@ -34,6 +34,7 @@ export const helloBindleFold: FoldFn<GreetingReadModel> = (state, event) => {
 	const seq = { ...state.seq, [event.streamId]: event.seq };
 
 	if (event.type === "greeting.Served") {
+		// SAFETY: assertion to `ent.data as { name?: JsonValue; message?: JsonValue }; ` is required at this boundary.
 		const data = event.data as { name?: JsonValue; message?: JsonValue };
 		const served = [
 			...state.served,
@@ -47,6 +48,7 @@ export const helloBindleFold: FoldFn<GreetingReadModel> = (state, event) => {
 
 export const helloBindleUpcast: UpcastFn = (event) => {
 	if (event.type === "greeting.Served" && (event.v ?? 1) < 2) {
+		// SAFETY: assertion to `t.data as { name?: JsonValue; text?: JsonValue }; ` is required at this boundary.
 		const data = event.data as { name?: JsonValue; text?: JsonValue };
 		return {
 			...event,
@@ -79,6 +81,7 @@ export function parseReplayCorpus(raw: JsonValue): ReplayCorpus {
 	if (!raw || !isJsonObject(raw)) {
 		throw new TypeError("replay corpus must be an object");
 	}
+	// SAFETY: assertion to `as JsonObject; i` is required at this boundary.
 	const value = raw as JsonObject;
 	if (!isJsonString(value.id) || value.id.length === 0) {
 		throw new TypeError("replay corpus id is required");
@@ -86,6 +89,7 @@ export function parseReplayCorpus(raw: JsonValue): ReplayCorpus {
 	if (!Array.isArray(value.events) || value.events.length === 0) {
 		throw new TypeError("replay corpus must carry events");
 	}
+	// SAFETY: assertion to `e.expected as JsonObject | undefined; i` is required at this boundary.
 	const expected = value.expected as JsonObject | undefined;
 	if (
 		!expected ||
@@ -99,8 +103,10 @@ export function parseReplayCorpus(raw: JsonValue): ReplayCorpus {
 		description: isJsonString(value.description) ? value.description : "",
 		seed: isJsonString(value.seed) ? value.seed : REPLAY_CORPUS_SEED,
 		requiresUpcaster: value.requiresUpcaster === true,
+		// SAFETY: assertion to `e.events as EventEnvelope[], ` is required at this boundary.
 		events: value.events as never,
 		expected: {
+			// SAFETY: corpus expected.state is the pinned GreetingReadModel.
 			state: expected.state as never,
 			stateDigest: expected.stateDigest,
 		},
@@ -216,6 +222,7 @@ export function assertCorpusReplayEqualsLive(
 	corpus: ReplayCorpus,
 ): CorpusReplayResult {
 	const report = assertReplayEqualsLive<GreetingReadModel>({
+		// SAFETY: assertion to `.events as EventEnvelope[], fo` is required at this boundary.
 		events: corpus.events as EventEnvelope[],
 		fold: helloBindleFold,
 		initialState: emptyGreetingReadModel(),

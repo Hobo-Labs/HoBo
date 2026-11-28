@@ -53,6 +53,7 @@ describe("TS bindle loader (3-1)", () => {
 		const result = await cli.run(["collect", "--json"], { cwd: projectDir });
 
 		expect(result.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(result.stdout) as {
 			code: string;
 			data: { bindleId: string; resources: string[] };
@@ -83,6 +84,7 @@ describe("TS bindle loader (3-1)", () => {
 
 		const plan = await cli.run(["plan", "--json"], { cwd: projectDir });
 		expect(plan.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const planEnvelope = JSON.parse(plan.stdout) as {
 			code: string;
 			status: string;
@@ -91,6 +93,7 @@ describe("TS bindle loader (3-1)", () => {
 
 		const up = await cli.run(["up", "--json"], { cwd: projectDir });
 		expect(up.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const upEnvelope = JSON.parse(up.stdout) as { code: string };
 		expect(upEnvelope.code).not.toBe("HOBO_CLI_STUB");
 	});
@@ -118,6 +121,7 @@ export default {
 		});
 
 		expect(result.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(result.stdout) as {
 			code: string;
 			data: {
@@ -136,6 +140,7 @@ export default {
 		const collected = await cli.run(["collect", "--json"], {
 			cwd: projectDir,
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(collected.stdout) as {
 			data: { manifest: JsonObject };
 		};
@@ -147,6 +152,7 @@ export default {
 			cwd: projectDir,
 		});
 		expect(check.exitCode).toBe(0);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const checkEnvelope = JSON.parse(check.stdout) as { code: string };
 		expect(checkEnvelope.code).toBe("HOBO_OK");
 		expect(

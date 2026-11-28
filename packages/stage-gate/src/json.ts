@@ -40,6 +40,7 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
+		// SAFETY: JSON.parse returns a JSON value; every node is narrowed by the guards above before use.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;

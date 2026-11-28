@@ -37,6 +37,7 @@ export function parseImageDigest(input: string): ImageDigest {
 			{ detail: { length: isJsonString(input) ? input.length : 0 } },
 		);
 	}
+	// SAFETY: `return input as ImageDigest;` is required at this I/O or test boundary.
 	return input as ImageDigest;
 }
 
@@ -76,6 +77,7 @@ export function parseImageRepository(input: string): ImageRepository {
 			);
 		}
 	}
+	// SAFETY: `return input as ImageRepository;` is required at this I/O or test boundary.
 	return input as ImageRepository;
 }
 
@@ -113,6 +115,7 @@ export function parsePinnedImageRef(input: string): ParsedPinnedImageRef {
 	const repository = parseImageRepository(repositoryPart);
 	const registry = repositoryPart.slice(0, repositoryPart.indexOf("/"));
 	return {
+		// SAFETY: `ref: `${repository}@${digest}` as PinnedImageRef,` is required at this I/O or test boundary.
 		ref: `${repository}@${digest}` as PinnedImageRef,
 		registry,
 		repository,

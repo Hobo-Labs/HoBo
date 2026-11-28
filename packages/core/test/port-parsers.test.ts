@@ -106,7 +106,9 @@ describe("clock id and number parsers", () => {
 			parseTimerId("");
 			expect.unreachable("empty timer id must be refused");
 		} catch (error) {
+			// SAFETY: parseTimerId("") above establishes the caught error type.
 			expect((error as ClockParseError).code).toBe("HOBO_CORE_CLOCK_PARSE");
+			// SAFETY: parseTimerId("") above establishes the caught error type.
 			expect((error as ClockParseError).name).toBe("ClockParseError");
 		}
 	});
@@ -311,6 +313,7 @@ describe("queue id parsers", () => {
 				parse("");
 				expect.unreachable("empty must be refused");
 			} catch (error) {
+				// SAFETY: parse("") above establishes the caught error type.
 				expect((error as QueueParseError).code).toBe("HOBO_CORE_QUEUE_PARSE");
 			}
 		}
@@ -466,7 +469,9 @@ describe("streamer parsers", () => {
 	});
 
 	it("refuses a non-string run id", () => {
+		// SAFETY: this test deliberately bypasses the typed API to exercise its runtime boundary.
 		expect(() => parseRunId(7 as never)).toThrow(StreamerParseError);
+		// SAFETY: this test deliberately bypasses the typed API to exercise its runtime boundary.
 		expect(() => parseRunId(null as never)).toThrow(StreamerParseError);
 	});
 
@@ -503,6 +508,7 @@ describe("createStreamerFrame", () => {
 
 	it("defaults the stream when the record omits it", () => {
 		const frame = createStreamerFrame(
+			// SAFETY: the omitted stream field is the runtime input under test.
 			{ run_id: "run-1", seq: 1 } as never,
 			"c",
 		);
@@ -540,14 +546,17 @@ describe("createStreamerRunResult", () => {
 		try {
 			createStreamerRunResult({
 				run_id: "run-1",
+				// SAFETY: this test deliberately supplies an undeclared runtime status.
 				status: "complete" as never,
 				reason: "done",
 			});
 			expect.unreachable("an unknown status must be refused");
 		} catch (error) {
+			// SAFETY: createStreamerRunResult above establishes the caught error type.
 			expect((error as StreamerParseError).expected).toBe(
 				"completed | closed | failed",
 			);
+			// SAFETY: createStreamerRunResult above establishes the caught error type.
 			expect((error as StreamerParseError).path).toBe("status");
 		}
 	});
@@ -576,6 +585,7 @@ describe("createStreamerRunResult", () => {
 
 describe("streamer errors", () => {
 	it("backpressure names the run and the limit", () => {
+		// SAFETY: the constructor boundary is deliberately exercised with its wire value.
 		const error = new StreamerBackpressureError("run-1" as never, 1024);
 		expect(error.code).toBe("STREAMER_BACKPRESSURE");
 		expect(error.runId).toBe("run-1");
@@ -585,6 +595,7 @@ describe("streamer errors", () => {
 	});
 
 	it("closed names the run", () => {
+		// SAFETY: the constructor boundary is deliberately exercised with its wire value.
 		const error = new StreamerClosedError("run-1" as never);
 		expect(error.code).toBe("STREAMER_CLOSED");
 		expect(error.runId).toBe("run-1");
@@ -682,6 +693,7 @@ describe("tenantContextFromEnv", () => {
 });
 
 describe("createUsageEvent", () => {
+	// SAFETY: this literal is the valid parsed tenant id used by the fixture.
 	const TENANT = "acme" as TenantId;
 
 	it("defaults quantity, unit and timestamp", () => {
@@ -770,6 +782,7 @@ describe("createMeteringBus", () => {
 	}
 
 	const EVENT = createUsageEvent({
+		// SAFETY: this literal is the valid parsed tenant id used by the fixture.
 		tenantId: "acme" as TenantId,
 		eventType: "overlay.join",
 		resource: "node-1",
@@ -846,6 +859,7 @@ describe("createMeteringBus", () => {
 
 	it("returns a fresh array from listSinks", () => {
 		const bus = createMeteringBus([recordingSink("a").sink]);
+		// SAFETY: listSinks returns the package's typed sink collection.
 		const listed = bus.listSinks() as MeteringSink[];
 		listed.length = 0;
 		expect(bus.listSinks()).toHaveLength(1);
@@ -856,6 +870,7 @@ describe("policy decisions", () => {
 	const REQUEST: PolicyRequest = {
 		subject: {
 			identity: "svc:checkout",
+			// SAFETY: this literal is the valid parsed tenant id used by the fixture.
 			tenantId: "acme" as TenantId,
 			tags: ["role:junction"],
 		},
@@ -863,6 +878,7 @@ describe("policy decisions", () => {
 		resource: {
 			kind: "junction",
 			id: "j-1",
+			// SAFETY: this literal is the valid parsed tenant id used by the fixture.
 			tenantId: "acme" as TenantId,
 		},
 	};
@@ -890,6 +906,7 @@ describe("policy decisions", () => {
 				...REQUEST,
 				resource: {
 					...REQUEST.resource,
+					// SAFETY: this literal is the valid parsed tenant id used by the fixture.
 					tenantId: "other" as TenantId,
 				},
 			},

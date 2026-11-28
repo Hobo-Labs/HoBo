@@ -322,6 +322,7 @@ export function parseVerificationSpec(
 			),
 		};
 	}
+	// SAFETY: every constraint of the brand was checked above.
 	return { ok: true, value: spec as ParsedVerificationSpec };
 }
 

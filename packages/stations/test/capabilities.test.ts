@@ -56,6 +56,7 @@ describe("stationCapability()", () => {
 
 	it("parse-don't-validate: bad kind / slug / title throw at declaration time", () => {
 		expect(() =>
+			// SAFETY: assertion required at this I/O or test boundary.
 			stationCapability({ kind: "gpu" as never, slug: "x", title: "x" }),
 		).toThrow(/kind/);
 		expect(() =>

@@ -91,6 +91,7 @@ export async function provisionOpenpouchHttp(
 	const text = await response.text();
 	let parsed: JsonObject = {};
 	try {
+		// SAFETY: assertion required at this I/O boundary.
 		parsed = JSON.parse(text) as JsonObject;
 	} catch {
 	}

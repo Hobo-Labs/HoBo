@@ -190,6 +190,7 @@ export function parseProgressed<T>(value: T): ProgressedFact | undefined {
 	if (!OUTCOMES.has(outcome)) return undefined;
 	return {
 		campId: jsonString(value.campId),
+		// SAFETY: membership in OUTCOMES was checked above.
 		outcome: outcome as SlotOutcome,
 		promotionId: jsonString(value.promotionId),
 		catchUp: value.catchUp === true,

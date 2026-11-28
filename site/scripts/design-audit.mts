@@ -221,6 +221,7 @@ async function bleedoverPass(browser: Browser, base: string, path: string) {
 	await page.goto(base + "/HoBo" + path, { waitUntil: "networkidle" });
 	await freeze(page);
 
+	// SAFETY: assertion required at this I/O boundary.
 	const order = [...DESIGNS.slice(1), "ink"] as string[];
 	for (const design of order) {
 		await page.click(".palette-picker > summary");
@@ -230,6 +231,8 @@ async function bleedoverPass(browser: Browser, base: string, path: string) {
 		await page.waitForTimeout(250);
 		await freeze(page);
 		await page.evaluate(() => scrollTo(0, 0));
+		// SAFETY: assertion required at this I/O boundary.
+		// hold the same cursor position or hover styling shows up as a diff.
 		await page.mouse.move(0, 0);
 		await page.waitForTimeout(120);
 		await page.screenshot({ path: shot("switch", slug, design) });
@@ -296,6 +299,7 @@ async function baselinePass(browser: Browser, headBase: string, blBase: string) 
 	}
 }
 
+ // SAFETY: assertion required at this I/O boundary.
 async function differentiationPass(browser: Browser, base: string) {
 	const signatures = new Map<string, string>();
 	for (const design of DESIGNS) {

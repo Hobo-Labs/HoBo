@@ -44,6 +44,7 @@ export async function fetchMergeQueuePositions(
 ): Promise<MergeQueuePositions | undefined> {
 	const parts = repo.split("/", 2);
 	if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+	// SAFETY: length and truthiness checks guarantee two string segments.
 	const org = parts[0];
 	const name = parts[1];
 	const query = `query($owner:String!,$name:String!,$branch:String!){

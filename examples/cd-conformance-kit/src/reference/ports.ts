@@ -63,6 +63,7 @@ class RefTarget {
 	}
 }
 
+// SAFETY: the reference lease fence is a positive bigint, which is what the brand marks.
 const FENCE = 7n as FenceToken;
 
 export function refRealizerHarness(mutant?: RealizerMutant): RealizerHarness<RefSet, RefResolved, RefCtx> {
@@ -243,6 +244,7 @@ export function refTransportHarness(mutant?: TransportMutant): ReconcilerTranspo
 				claim: async (input: Readonly<{ reconcilerId: string; campId: string; holderId: string; ttlMs: number }>): Promise<CdOutcomeLike<RefLease>> => {
 					if (holder && holder.expiresAtMs > clock.now()) return refuse("camp-leased", `Camp ${input.campId} is leased by ${holder.holderId}`, "wait for the lease to expire or be released");
 					fence += 1n;
+					// SAFETY: the counter starts at 1 and only grows, which is what FenceToken marks.
 					holder = { reconcilerId: input.reconcilerId, campId: input.campId, holderId: input.holderId, fence: fence as FenceToken, expiresAtMs: clock.now() + input.ttlMs };
 					return ok(holder);
 				},
@@ -263,11 +265,13 @@ export function refTransportHarness(mutant?: TransportMutant): ReconcilerTranspo
 				},
 				report: async (lease: RefLease): Promise<CdOutcomeLike<EventPosition>> => {
 					if (!current(lease)) return stale();
+					// SAFETY: status positions share the decimal position space of the journal.
 					return ok(BigInt(changes.length + 1000) as EventPosition);
 				},
 				checkpoint: async (lease: RefLease, position: EventPosition): Promise<CdOutcomeLike<EventPosition>> => {
 					if (!current(lease)) return stale();
 					if (position > checkpoint) checkpoint = position;
+					// SAFETY: the committed checkpoint is always a position the feed delivered.
 					return ok(checkpoint as EventPosition);
 				},
 			};
@@ -275,6 +279,7 @@ export function refTransportHarness(mutant?: TransportMutant): ReconcilerTranspo
 				transport,
 				advance: (ms: number) => clock.advance(ms),
 				publish: async (n: number) => {
+					// SAFETY: positions are the 1-based index of the change in the Camp's spec stream.
 					changes.push({ position: BigInt(changes.length + 1) as EventPosition, set: { setId: `set-${n}`, campId: "camp-1", freightId: `sha256:${n}` } });
 				},
 				observation: (lease: RefLease): ReconcileObservationLike => ({ campId: lease.campId, setId: "set-1", fenceToken: String(lease.fence), status: CD_RECONCILE_STATUS.CONVERGED, resources: [], reasons: [] }),

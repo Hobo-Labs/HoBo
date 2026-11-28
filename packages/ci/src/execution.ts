@@ -127,6 +127,7 @@ export function parsePipeline(json: string): ParsedPipeline {
 	Object.freeze(pipeline.steps);
 	Object.freeze(pipeline.artifactPaths);
 	Object.freeze(pipeline.requiredCapabilities);
+	// SAFETY: protobuf parsing, dependent bounds and immutable nested fields establish this derived domain type.
 	return Object.freeze(pipeline) as ParsedPipeline;
 }
 export function parseRelativePath(path: string): string {

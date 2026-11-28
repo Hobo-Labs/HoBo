@@ -80,6 +80,7 @@ describe("golden fixture replay", () => {
 			id: "foundations-mutated",
 			async capture() {
 				const mutated = structuredClone(foundationsFixture);
+				// SAFETY: assertion to `mutated as { workspace: string }` is required at this boundary.
 				(mutated as { workspace: string }).workspace = "mutated workspace";
 
 				return {

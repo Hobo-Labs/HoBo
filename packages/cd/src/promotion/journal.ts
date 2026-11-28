@@ -33,6 +33,7 @@ export function isNumber<T>(value: T): value is T & number {
 }
 
 export function toJsonValue<T>(value: T): JsonValue {
+	// SAFETY: JSON.parse of JSON.stringify output is a JSON value by construction.
 	return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
 }
 

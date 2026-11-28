@@ -141,6 +141,7 @@ test("parser rejects missing scenario coverage and consumed source drift", () =>
         ...VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH,
         consumedWorkspaceProjectStates: {
           ...VIBE_CLICKABLE_FIRST_RUN_WALKTHROUGH.consumedWorkspaceProjectStates,
+          // SAFETY: `proofPath: "docs/design/proofs/other/README.md" as never,` is required at this I/O or test boundary.
           proofPath: "docs/design/proofs/other/README.md" as never,
         },
       }),

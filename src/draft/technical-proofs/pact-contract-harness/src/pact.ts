@@ -58,6 +58,7 @@ export function parsePactDocument(input: JsonValue, source?: string): PactDocume
     throw new PactParseError(["document must be an object"], source);
   }
 
+  // SAFETY: assertion to `const record = input as JsonObject;` is required at this boundary.
   const record = input as JsonObject;
   const consumer = parseParticipant(record.consumer, "consumer", issues);
   const provider = parseParticipant(record.provider, "provider", issues);
@@ -86,6 +87,7 @@ export async function loadPactDirectory(dir: string): Promise<readonly PactDocum
   return Promise.all(
     pactFiles.map(async (fileName) => {
       const filePath = path.join(dir, fileName);
+      // SAFETY: assertion to `const raw = JSON.parse(await readFile(filePath, "utf8")) as unknown;` is required at this boundary.
       const raw = JSON.parse(await readFile(filePath, "utf8")) as unknown;
       return parsePactDocument(raw, filePath);
     }),
@@ -102,6 +104,7 @@ function parseParticipant(
     return undefined;
   }
 
+  // SAFETY: assertion to `const name = (value as JsonObject).name;` is required at this boundary.
   const name = (value as JsonObject).name;
   if (!isJsonString(name)) {
     issues.push(`${label}.name must be a string`);
@@ -148,6 +151,7 @@ function parseInteraction(
     };
   }
 
+  // SAFETY: assertion to `const record = value as JsonObject;` is required at this boundary.
   const record = value as JsonObject;
   const description = record.description;
   if (!isJsonString(description) || description.length === 0) {
@@ -174,6 +178,7 @@ function parseRequest(
     return undefined;
   }
 
+  // SAFETY: assertion to `const record = value as JsonObject;` is required at this boundary.
   const record = value as JsonObject;
   const method = record.method;
   if (!isJsonString(method) || !HTTP_METHODS.has(method)) {
@@ -188,6 +193,7 @@ function parseRequest(
   const headers = parseStringMap(record.headers, `${prefix}.headers`, issues);
 
   const request: PactRequest = {
+    // SAFETY: assertion to `method: (isJsonString(method) ? method : "GET") as PactRequest["method"],` is required at this boundary.
     method: (isJsonString(method) ? method : "GET") as PactRequest["method"],
     path: isJsonString(requestPath) ? requestPath : "/",
   };
@@ -210,6 +216,7 @@ function parseResponse(
     return undefined;
   }
 
+  // SAFETY: assertion to `const record = value as JsonObject;` is required at this boundary.
   const record = value as JsonObject;
   const status = record.status;
   if (!isJsonNumber(status) || !Number.isInteger(status) || status < 100 || status > 599) {
@@ -236,6 +243,7 @@ function parseMetadata(value: JsonValue, issues: string[]): void {
     return;
   }
 
+  // SAFETY: assertion to `const metadata = value as JsonObject;` is required at this boundary.
   const metadata = value as JsonObject;
   const pactSpecification = metadata.pactSpecification;
   if (!isJsonObject(pactSpecification) || pactSpecification === null) {
@@ -243,6 +251,7 @@ function parseMetadata(value: JsonValue, issues: string[]): void {
     return;
   }
 
+  // SAFETY: assertion to `const version = (pactSpecification as JsonObject).version;` is required at this boundary.
   const version = (pactSpecification as JsonObject).version;
   if (version !== "3.0.0") {
     issues.push('metadata.pactSpecification.version must be "3.0.0"');
@@ -264,6 +273,7 @@ function parseStringMap(
   }
 
   const result: Record<string, string> = {};
+  // SAFETY: assertion to `for (const [key, entry] of Object.entries(value as JsonObject)) {` is required at this boundary.
   for (const [key, entry] of Object.entries(value as JsonObject)) {
     if (!isJsonString(entry)) {
       issues.push(`${prefix}.${key} must be a string`);

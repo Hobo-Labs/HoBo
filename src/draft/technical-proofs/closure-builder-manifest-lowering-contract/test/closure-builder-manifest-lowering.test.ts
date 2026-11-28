@@ -108,6 +108,7 @@ test("runtime workload factories stay inert during lowering", () => {
   };
   input.resources[1] = {
     ...input.resources[1],
+    // SAFETY: `workload: {` is required at this I/O or test boundary.
     workload: {
       kind: "inert-workload-factory",
       entrypoint: "myApi.run",

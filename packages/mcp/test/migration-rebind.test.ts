@@ -21,6 +21,7 @@ describe("MCP zero-config agent rebind on identity.Migrated", () => {
 		)[0];
 		plane.service.markMigrated(pref);
 		const actions = rebindAgentsOnMigrationEvents(
+			// SAFETY: IdentityMigrationControlPlane.events is the migration event stream.
 			plane.events as IdentityMigrationEvent[],
 		);
 		expect(actions).toHaveLength(1);

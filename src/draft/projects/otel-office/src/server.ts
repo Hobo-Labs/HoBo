@@ -87,6 +87,7 @@ function serveFile(res: ServerResponse, path: string): void {
 async function readBody(req: IncomingMessage): Promise<string> {
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) {
+		// SAFETY: `chunks.push(chunk as Buffer);` is required at this I/O or test boundary.
 		chunks.push(chunk as Buffer);
 	}
 	return Buffer.concat(chunks).toString("utf8");
@@ -243,6 +244,7 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			void (async () => {
 				try {
 					const raw = await readBody(req);
+					// SAFETY: `const payload = JSON.parse(raw) as OtlpTraceRequest;` is required at this I/O or test boundary.
 					const payload = JSON.parse(raw) as OtlpTraceRequest;
 					const events = mapTracePayload(payload, state, Date.now(), traceIndex);
 					dispatch(events);
@@ -257,6 +259,7 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			void (async () => {
 				try {
 					const raw = await readBody(req);
+					// SAFETY: `const payload = JSON.parse(raw) as OtlpLogsRequest;` is required at this I/O or test boundary.
 					const payload = JSON.parse(raw) as OtlpLogsRequest;
 					const events = mapLogsPayload(payload, state);
 					dispatch(events);
@@ -271,6 +274,7 @@ export function createOfficeServer(options: OfficeServerOptions = {}): OfficeSer
 			void (async () => {
 				try {
 					const raw = await readBody(req);
+					// SAFETY: `const payload = JSON.parse(raw) as OtlpMetricsRequest;` is required at this I/O or test boundary.
 					const payload = JSON.parse(raw) as OtlpMetricsRequest;
 					const events = mapMetricsPayload(payload, state);
 					dispatch(events);

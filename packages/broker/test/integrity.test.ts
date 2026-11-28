@@ -80,6 +80,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 			),
 		).toBe(true);
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const receipt = result.receipt as ResolutionReceipt;
 		const signature = result.signature;
 		if (signature === undefined) throw new Error("expected a signature");

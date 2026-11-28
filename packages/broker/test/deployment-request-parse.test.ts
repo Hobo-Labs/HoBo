@@ -7,6 +7,7 @@ import {
 
 const SCHEMA = "hobo.bindle-deployment-request/v1";
 
+// SAFETY: this fixture intentionally uses the parser's untyped boundary input.
 const resources = [
 	{ resourceId: "api", port: "api", features: ["http"] },
 ] as never;
@@ -31,6 +32,7 @@ const request = (overrides: RequestOverrides = {}) => ({
 	...overrides,
 });
 
+// SAFETY: this fixture intentionally uses the builder's untyped boundary input.
 const build = (
 	overrides: Partial<
 		Parameters<typeof buildDeploymentRequestFromParts>[0]
@@ -66,6 +68,7 @@ describe("the provider-selection refusal", () => {
 			try {
 				parseBindleDeploymentRequest(request({ provider: "aws" }));
 			} catch (err) {
+				// SAFETY: the parser throws the structured refusal error for this input.
 				return err as { code?: string };
 			}
 			return null;
@@ -306,6 +309,7 @@ describe("buildDeploymentRequestFromParts", () => {
 	});
 
 	it("puts the provider on the yard shape, not on the bindle", () => {
+		// SAFETY: the builder result is the deployment request assembled above.
 		const built = build({ providerId: "aws" }) as { yard: object };
 		expect(built).not.toHaveProperty("provider");
 		expect(built).not.toHaveProperty("providerId");
@@ -323,21 +327,27 @@ describe("buildDeploymentRequestFromParts", () => {
 	});
 
 	it("defaults the objective to minimum cost", () => {
+		// SAFETY: the builder result is the deployment request assembled above.
 		expect((build() as { objective?: string }).objective).toBe("min-cost");
 	});
 
 	it("honours a stated objective", () => {
 		expect(
+			// SAFETY: the builder result is the deployment request assembled above.
 			(build({ objective: "min-latency" }) as { objective?: string }).objective,
 		).toBe("min-latency");
 	});
 
 	it("defaults the owner tenant to local", () => {
-		expect((build() as { ownerTenantId?: string }).ownerTenantId).toBe("local");
+		expect(
+			// SAFETY: the builder result is the deployment request assembled above.
+			(build() as { ownerTenantId?: string }).ownerTenantId,
+		).toBe("local");
 	});
 
 	it("honours a stated owner tenant", () => {
 		expect(
+			// SAFETY: the builder result is the deployment request assembled above.
 			(
 				build({ ownerTenantId: "acme" }) as {
 					ownerTenantId?: string;

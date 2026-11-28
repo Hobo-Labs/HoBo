@@ -32,6 +32,7 @@ export function draftSwaghausManifest(input: AuthorInput): BindleManifest {
 		return { backend, auth, web };
 	});
 
+	// SAFETY: `return JSON.parse(` is required at this I/O or test boundary.
 	return JSON.parse(
 		JSON.stringify({
 			name: definition.name,

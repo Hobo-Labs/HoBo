@@ -59,6 +59,7 @@ export function readEvents(riftDir: string): readonly WorkspaceEvent[] {
 	for (const line of readFileSync(file, "utf8").split("\n")) {
 		if (line.trim().length === 0) continue;
 		try {
+			// SAFETY: `events.push(JSON.parse(line) as WorkspaceEvent);` is required at this I/O or test boundary.
 			events.push(JSON.parse(line) as WorkspaceEvent);
 		} catch {}
 	}

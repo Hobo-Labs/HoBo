@@ -21,6 +21,7 @@ function envelope(
 	overrides: Partial<EventEnvelope> = {},
 ): EventEnvelope {
 	nextSeq += 1;
+	// SAFETY: this test helper supplies every required envelope field and JSON data.
 	return {
 		id: `evt-${nextSeq}`,
 		type,
@@ -36,6 +37,7 @@ function envelope(
 }
 
 function dataOf(event: EventEnvelope): JsonObject {
+	// SAFETY: every envelope in this test is created with JSON object data.
 	return event.data as JsonObject;
 }
 
@@ -270,6 +272,7 @@ describe("upcasting on read", () => {
 
 	test("a single upcaster advances the event one version", () => {
 		const r = registry().register("item.Added", 1, (data) => ({
+			// SAFETY: the registry receives JSON event bodies at this boundary.
 			...(data as JsonObject),
 			amount: 10,
 		}));
@@ -281,14 +284,17 @@ describe("upcasting on read", () => {
 	test("a chain is applied end to end", () => {
 		const r = registry()
 			.register("item.Added", 1, (data) => ({
+				// SAFETY: the registry receives JSON event bodies at this boundary.
 				...(data as JsonObject),
 				step: "v2",
 			}))
 			.register("item.Added", 2, (data) => ({
+				// SAFETY: the registry receives JSON event bodies at this boundary.
 				...(data as JsonObject),
 				step: "v3",
 			}))
 			.register("item.Added", 3, (data) => ({
+				// SAFETY: the registry receives JSON event bodies at this boundary.
 				...(data as JsonObject),
 				step: "v4",
 			}));
@@ -300,10 +306,12 @@ describe("upcasting on read", () => {
 	test("a chain with a gap stops at the gap", () => {
 		const r = registry()
 			.register("item.Added", 1, (data) => ({
+				// SAFETY: the registry receives JSON event bodies at this boundary.
 				...(data as JsonObject),
 				at: 2,
 			}))
 			.register("item.Added", 3, (data) => ({
+				// SAFETY: the registry receives JSON event bodies at this boundary.
 				...(data as JsonObject),
 				at: 4,
 			}));
@@ -368,6 +376,7 @@ describe("upcasting on read", () => {
 
 	test("a non-function upcaster is refused", () => {
 		expect(() =>
+			// SAFETY: this negative test deliberately bypasses the typed API.
 			registry().register("item.Added", 1, "not-a-function" as never),
 		).toThrow(TypeError);
 	});
@@ -382,6 +391,7 @@ describe("upcasting on read", () => {
 
 	test("upcasters run inside a fold", () => {
 		const upcasters = registry().register("item.Added", 1, (data) => ({
+			// SAFETY: the registry receives JSON event bodies at this boundary.
 			amount: Number((data as JsonObject).legacyAmount ?? 0),
 		}));
 		const outcome = foldEvents([envelope("item.Added", { legacyAmount: 7 })], {

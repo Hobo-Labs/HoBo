@@ -82,6 +82,7 @@ export function orderedSdkTarballPaths(artifactsDir: string): string[] {
 		);
 	}
 	const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+	// SAFETY: stageSdkArtifactsDir writes MANIFEST.json from SdkArtifactManifest.
 	const manifest = parsed as SdkArtifactManifest;
 	const paths = manifest.packages.map((entry) =>
 		join(artifactsDir, entry.file),
@@ -107,6 +108,7 @@ function findPackageDir(name: string): string {
 		const pkgPath = join(root, "packages", rel, "package.json");
 		try {
 			const raw: unknown = JSON.parse(readFileSync(pkgPath, "utf8"));
+			// SAFETY: only `name` is read to locate the workspace directory.
 			const manifest = raw as { name?: string };
 			if (manifest.name === name) return join(root, "packages", rel);
 		} catch {}

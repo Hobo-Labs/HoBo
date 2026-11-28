@@ -75,6 +75,7 @@ function unrealized(
 export function cutoverPlanId(stagePlanId: string): RoutingPlanId {
 	const match = /:p(\d+)$/.exec(stagePlanId);
 	const percent = match ? Number(match[1]) : 100;
+	// SAFETY: the cutover's own plan id convention (planIdPrefix + ":p" + step).
 	return `${stagePlanId}:p${percent === 0 ? 100 : percent}` as RoutingPlanId;
 }
 

@@ -192,6 +192,9 @@ function fieldOf(
 		? { description }
 		: {
 				description,
+				// SAFETY: grounding types a field's example `unknown`, and the
+				// registry has always held it as given and lowered it at
+				// registration; converting it here would change both.
 				example: example as JsonValue,
 			};
 }

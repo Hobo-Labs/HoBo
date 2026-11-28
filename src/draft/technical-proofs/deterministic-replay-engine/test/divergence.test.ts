@@ -15,6 +15,7 @@ describe("ReplayDivergenceError", () => {
     try {
       assertReplayEqualsLive({
         events,
+        // SAFETY: assertion to `initialState: { seen: [] as string[] },` is required at this boundary.
         initialState: { seen: [] as string[] },
         fold: (state, currentEvent) => ({
           seen: [...state.seen, `${currentEvent.streamId}:${currentEvent.seq}`],

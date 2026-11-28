@@ -54,6 +54,7 @@ function asFetchHandler(
 	if (!(value instanceof Function)) {
 		return null;
 	}
+	// SAFETY: Bindle entrypoint returned a function at the serve boundary.
 	return value as FetchHandler;
 }
 
@@ -83,6 +84,7 @@ export function listServableEntrypointsWithReplay(
 			handler: resolved,
 			external: isExternalComponent(
 				record.kind,
+				// SAFETY: bindle annotations are JSON config objects at the serve boundary.
 				record.annotations as readonly {
 					readonly option: string;
 					readonly config: JsonObject;

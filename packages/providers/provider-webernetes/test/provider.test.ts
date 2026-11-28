@@ -54,6 +54,7 @@ describe("@hobo/provider-webernetes", () => {
 			server.listen(0, "127.0.0.1", resolve);
 		});
 		try {
+			// SAFETY: a successful numeric TCP listen returns AddressInfo, not a Unix socket path.
 			const address = server.address() as AddressInfo;
 			const url = `http://127.0.0.1:${address.port}/stations/${stationId}/`;
 			const station = await provisionTemporaryEnvironmentStation({

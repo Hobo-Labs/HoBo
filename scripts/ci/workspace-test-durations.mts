@@ -17,11 +17,14 @@ let cached: WorkspaceDurationTable | undefined;
 
 function isPositiveSeconds(value: Json | undefined): value is number {
 	if (tagOf.call(value) !== "[object Number]") return false;
+	// SAFETY: prior tag check pins a JSON number leaf.
 	const seconds = value as number;
 	return Number.isFinite(seconds) && seconds > 0;
 }
 
 function parseDurationTable(text: string): WorkspaceDurationTable {
+	// SAFETY: `JSON.parse` returns an untyped tree; `isObject` and `isPositiveSeconds`
+	// narrow it to the repo-owned duration table shape before use.
 	const parsed = JSON.parse(text) as Json;
 	if (!isObject(parsed)) {
 		throw new Error("workspace-test-durations: root must be an object");

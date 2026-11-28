@@ -18,6 +18,7 @@ describe("parseComponentHostManifest", () => {
 	});
 
 	it("accepts several certified hosts", () => {
+		// SAFETY: assertion to `rseComponentHostManifest( manifest({ certifiedHosts: [ { kind: "wasmtime", version: "26.0.0" }, { kind: "jco", version: ` is required at this boundary.
 		const parsed = parseComponentHostManifest(
 			manifest({
 				certifiedHosts: [
@@ -30,6 +31,7 @@ describe("parseComponentHostManifest", () => {
 	});
 
 	it("keeps fields it does not itself inspect", () => {
+		// SAFETY: assertion to `rseComponentHostManifest({ ...manifest(), extra: { note: "kept" }, }) as JsonObject; ` is required at this boundary.
 		const parsed = parseComponentHostManifest({
 			...manifest(),
 			extra: { note: "kept" },
@@ -158,6 +160,7 @@ describe("parseComponentHostManifest", () => {
 
 	it("is unaffected by a later mutation of the caller's manifest", () => {
 		const raw = manifest();
+		// SAFETY: assertion to `rseComponentHostManifest(raw) as { componentHost: { certifiedHosts: { kind: string }[] }; }; ` is required at this boundary.
 		const parsed = parseComponentHostManifest(raw) as {
 			componentHost: { certifiedHosts: { kind: string }[] };
 		};

@@ -83,6 +83,7 @@ export async function provisionZerodeployDrop(
 	const text = await response.text();
 	let parsed: JsonObject = {};
 	try {
+		// SAFETY: assertion required at this I/O boundary.
 		parsed = JSON.parse(text) as JsonObject;
 	} catch {
 	}
@@ -93,6 +94,7 @@ export async function provisionZerodeployDrop(
 			response.status,
 		);
 	}
+	// SAFETY: nested `data` object is a JSON bag from the Drop response.
 	const data =
 		parsed.data && Object.prototype.toString.call(parsed.data) === "[object Object]"
 			? (parsed.data as JsonObject)
@@ -106,6 +108,7 @@ export async function provisionZerodeployDrop(
 	}
 	const claimToken =
 		Object.prototype.toString.call(data.claim_token) === "[object String]" ? data.claim_token : "";
+	// SAFETY: assertion required at this I/O boundary.
 	const next = (parsed.next_steps ?? data.next_steps) as
 		| { claim?: { url?: string } }
 		| undefined;

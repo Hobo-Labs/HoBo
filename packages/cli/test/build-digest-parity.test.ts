@@ -13,6 +13,7 @@ import {
 	writeBuildFixtureProject,
 } from "../src/index.js";
 
+// SAFETY: `const GOLDEN_DIGEST = JSON.parse(` is required at this I/O or test boundary.
 const GOLDEN_DIGEST = JSON.parse(
 	readFileSync(
 		new URL("./fixtures/hello-bindle.digest.json", import.meta.url),

@@ -12,6 +12,7 @@ import { executeRoutingCutover } from "../src/traffic-routing/cutover.js";
 import { synthesizeRoutingPlan } from "../src/traffic-routing/synthesize.js";
 
 test("executes the supervisor/cutover library boundary Pact under provider faults", async () => {
+	// SAFETY: committed Pact fixture is parsed at this test I/O boundary.
 	const pact = JSON.parse(
 		readFileSync(
 			new URL("../contracts/pacts/hosting-cutover.pact.json", import.meta.url),

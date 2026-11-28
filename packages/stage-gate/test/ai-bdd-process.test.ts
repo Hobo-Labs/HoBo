@@ -122,6 +122,7 @@ describe("the check once ai-bdd has settled", () => {
 				check.on("exit", (status, signal) => done({ status, signal })),
 			);
 			expect(existsSync(activeFile)).toBe(true);
+			// SAFETY: report-active-resources.mts writes a JSON array of strings.
 			const active = JSON.parse(readFileSync(activeFile, "utf8")) as string[];
 			expect(active.filter((type) => type === "Timeout")).toEqual([]);
 			expect(ended).toEqual({ status: 0, signal: null });
@@ -277,6 +278,7 @@ describe("stopRunningAiBdd, as the check calls it on its own SIGINT or SIGTERM",
 			],
 			{ cwd: REPO_ROOT, timeout: 60_000 },
 		);
+		// SAFETY: stop-ai-bdd.mts prints one StopOutcome as JSON.
 		const outcome = JSON.parse(stdout) as StopOutcome;
 		expect(outcome.tail).toContain("got SIGINT");
 		expect(outcome.stopMs).toBeLessThan(5000);

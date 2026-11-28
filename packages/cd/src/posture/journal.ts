@@ -72,6 +72,7 @@ export function digestOf(value: JsonValue): Digest {
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 
 export function asDigest(value: string): Digest | undefined {
+	// SAFETY: matched against the Digest pattern.
 	return DIGEST.test(value) ? (value as Digest) : undefined;
 }
 

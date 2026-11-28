@@ -11,4 +11,5 @@ const mcpControlSurfaceDescriptor = createPortDescriptor({
 	stability: "preview",
 });
 export const MCP_CONTROL_SURFACE_PORT: ProviderPort =
+	// SAFETY: PortDescriptor with kind provider is this surface's ProviderPort.
 	mcpControlSurfaceDescriptor as ProviderPort;

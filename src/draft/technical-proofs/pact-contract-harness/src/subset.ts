@@ -25,7 +25,9 @@ export function isRecursiveSubset(expected: JsonValue, actual: JsonValue, path =
     if (!isJsonObject(actual)) {
       return false;
     }
+    // SAFETY: assertion to `const expectedRecord = expected as JsonObject;` is required at this boundary.
     const expectedRecord = expected as JsonObject;
+    // SAFETY: assertion to `const actualRecord = actual as JsonObject;` is required at this boundary.
     const actualRecord = actual as JsonObject;
     return Object.keys(expectedRecord).every((key) =>
       isRecursiveSubset(expectedRecord[key], actualRecord[key], `${path}.${key}`),
@@ -56,7 +58,9 @@ export function subsetMismatchPath(
     return path;
   }
 
+  // SAFETY: assertion to `const expectedRecord = expected as JsonObject;` is required at this boundary.
   const expectedRecord = expected as JsonObject;
+  // SAFETY: assertion to `const actualRecord = actual as JsonObject;` is required at this boundary.
   const actualRecord = actual as JsonObject;
 
   for (const key of Object.keys(expectedRecord)) {

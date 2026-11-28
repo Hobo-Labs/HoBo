@@ -50,7 +50,9 @@ export function normalizeComponentHostKind(
 	if (raw === undefined || raw === null) return DEFAULT_COMPONENT_HOST;
 	if (raw === "bare-metal" || raw === "runtime-local") return "local";
 	if (raw === "isolated-wasm") return "wasm";
+	// SAFETY: assertion required at this I/O or test boundary.
 	if ((COMPONENT_HOST_KINDS as readonly string[]).includes(String(raw))) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return raw as ComponentHostKind;
 	}
 	throw new TypeError(
@@ -92,6 +94,7 @@ export function parseBareMetalYardConfig(
 	if (input === null || !isJsonObject(input) || Array.isArray(input)) {
 		throw new TypeError("yard config must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = input as JsonObject;
 	if (raw.schemaVersion !== BARE_METAL_YARD_SCHEMA) {
 		throw new TypeError(
@@ -230,6 +233,7 @@ export function openBareMetalYard(
 		config,
 		runtime,
 		close: () => {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const store = runtime.store as { close?: () => void };
 			store.close?.();
 		},

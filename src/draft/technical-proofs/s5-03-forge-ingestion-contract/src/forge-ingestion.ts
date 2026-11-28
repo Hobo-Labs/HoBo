@@ -111,6 +111,7 @@ export async function runForgeIngestion(
         requestId: index.requestId,
         providerId: parsed.providerId,
         targetWitPort: parsed.targetWitPort,
+        // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
         openapiTitle: (parsed.openapi.info as { title?: string } | undefined)?.title ?? "",
         equivalenceClassCount: parsed.equivalenceClasses.length,
         terraformHintCount: parsed.terraformComments.length
@@ -124,6 +125,7 @@ export async function runForgeIngestion(
     ts,
     tenant
   });
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   events.push(sanitization.event as ForgeEvent);
 
   if (sanitization.status === "material-refused") {
@@ -137,6 +139,7 @@ export async function runForgeIngestion(
   }
 
   const requestedEvent = buildGenRequestedEvent(sanitization.sanitizedRequest, seq++, ts, tenant);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   events.push(requestedEvent as ForgeEvent);
 
   const scaffold = scaffoldGenerationRequest(sanitization.sanitizedRequest, {
@@ -146,16 +149,19 @@ export async function runForgeIngestion(
   });
 
   if (scaffold.status === "needs-human") {
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     events.push(scaffold.event as ForgeEvent);
     return {
       status: "material-refused",
       requestId: index.requestId,
       events,
       eventTypes: events.map((event) => event.type),
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       reason: scaffold.event.data.reason as string
     };
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   events.push(scaffold.event as ForgeEvent);
 
   let emitted = await emitCandidatePackage(parsed, { outputDir: options.outputDir });

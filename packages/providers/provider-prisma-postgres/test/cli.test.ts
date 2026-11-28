@@ -42,6 +42,7 @@ describe("buildCreateDbArgv", () => {
 
 	it("rejects a region the pinned CLI does not document", () => {
 		expect(() =>
+			// SAFETY: value was established by the surrounding parse or typed constructor.
 			buildCreateDbArgv({ region: "us-east-1; rm -rf /" as never }),
 		).toThrowError(/documented Prisma Postgres regions/u);
 	});
@@ -53,6 +54,7 @@ describe("buildCreateDbArgv", () => {
 				"a launcher token with shell metacharacters must be refused",
 			);
 		} catch (error) {
+			// SAFETY: value was established by the surrounding parse or typed constructor.
 			expect((error as PrismaProviderError).code).toBe(
 				"PROVIDER_CONTRACT_CHANGED",
 			);

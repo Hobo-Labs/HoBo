@@ -24,5 +24,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 }
 
 export function cloneAsJson<T>(value: T): JsonValue {
+	// SAFETY: JSON.parse of JSON.stringify output is a JSON value.
 	return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
 }

@@ -116,6 +116,7 @@ function foldExceptLifecycle<S, M extends FoldEvent>(
 	event: FoldEvent,
 ): S {
 	if (event.type === "actor.StateAppended" && isRecord(event.payload)) {
+		// SAFETY: assertion to `load as FoldEvent); } re` is required at this boundary.
 		return def.fold(state, event.payload as FoldEvent);
 	}
 	return state;

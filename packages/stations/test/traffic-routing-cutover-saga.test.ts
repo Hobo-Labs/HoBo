@@ -161,9 +161,11 @@ test("a stale incumbent plan refuses the cutover (live-zone precondition)", asyn
 	const result = await executeRoutingCutover(
 		cutoverOptions({
 			precondition: validPrecondition({
+				// SAFETY: assertion required at this I/O or test boundary.
 				incumbentPlanId: "plan:checkout:never-applied" as RoutingPlanId,
 				incumbentPlan: {
 					...INCUMBENT_PLAN,
+					// SAFETY: a deliberately valid but unobserved plan identity exercises refusal.
 					planId: "plan:checkout:never-applied" as RoutingPlanId,
 				},
 			}),
@@ -262,6 +264,7 @@ test("hysteresis: consecutive failures at the threshold roll back with the strea
 	assert.equal(result.refused, false);
 	assert.equal(result.reasons[0]?.code, "health-gate-failed");
 	assert.match(
+		// SAFETY: assertion required at this I/O or test boundary.
 		(result.reasons[0] as { message: string }).message,
 		/2 consecutive/,
 	);

@@ -56,6 +56,7 @@ type Pact = {
 	readonly interactions: readonly Interaction[];
 };
 
+// SAFETY: assertion to `.parse( readFileSync( join( dirname(fileURLToPath(import.meta.url)), "..", "contracts", "pacts", "recipe-compiler.pact.j` is required at this boundary.
 const PACT: Pact = JSON.parse(
 	readFileSync(
 		join(
@@ -92,6 +93,7 @@ function requestFor(recipe: SolutionRecipe, realtime: string | undefined) {
 		dependencies: base.dependencies,
 		requestedSemantics: {
 			...base.requestedSemantics,
+			// SAFETY: assertion to `time as RealtimeGrade, ` is required at this boundary.
 			realtime: realtime as RealtimeGrade,
 		},
 	});

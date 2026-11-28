@@ -111,6 +111,7 @@ export function parseBudgetPolicyDocumentJson(text: string): JsonValue {
 	if (text.length > 262_144) invalid("budget policy document is too large");
 	let value: JsonValue;
 	try {
+		// SAFETY: JSON.parse is the native JSON boundary; the scanner below rejects duplicate keys.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return invalid("budget policy document is not valid JSON");

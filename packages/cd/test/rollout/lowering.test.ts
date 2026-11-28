@@ -18,6 +18,7 @@ import {
 import { camp, T0, TENANT } from "./fakes.js";
 
 const rollout = (): RolloutId => {
+	// SAFETY: literal test id.
 	return "rollout-x" as RolloutId;
 };
 

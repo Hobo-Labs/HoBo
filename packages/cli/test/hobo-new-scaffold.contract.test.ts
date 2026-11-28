@@ -16,6 +16,7 @@ const pactPath = join(
 
 describe("hobo new scaffold pact", () => {
 	it("scaffolds offline projects matching the boundary contract", async () => {
+		// SAFETY: `const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {` is required at this I/O or test boundary.
 		const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 			interactions: Array<{
 				response: { body: { offline: boolean; createdFiles: string[] } };
@@ -28,6 +29,7 @@ describe("hobo new scaffold pact", () => {
 		try {
 			const result = await scaffoldHoboProject({
 				cwd,
+				// SAFETY: `name: "snapshop" as never,` is required at this I/O or test boundary.
 				name: "snapshop" as never,
 				template: "api",
 			});

@@ -22,6 +22,7 @@ function handler(
 	const fetch = factory();
 	if (!(fetch instanceof Function))
 		throw new Error("Missing HTTP fetch function");
+	// SAFETY: the adapter stores a platform fetch function as the actual Bindle API entrypoint.
 	return fetch as (request: Request) => Response | Promise<Response>;
 }
 

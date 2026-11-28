@@ -167,6 +167,7 @@ describe("promoted: stuck-rollout-convergence-contract", () => {
 		r.time.advance(3 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
 		const id = planned.value.rolloutId;
+		// SAFETY: the plan's own rollout id.
 		const snapshot = await r.orchestrator.get(id as RolloutId);
 		expect(snapshot?.status).toBe("failed");
 		expect(snapshot?.reasons.map((x) => x.code)).toContain(
@@ -199,6 +200,7 @@ describe("promoted: hobo-delivery-port", () => {
 		});
 		const ctx = context(time.now);
 		await engine.start(plan, ctx);
+		// SAFETY: literal test id.
 		const id = "rollout-noop" as RolloutId;
 		const live = await engine.advance(
 			id,

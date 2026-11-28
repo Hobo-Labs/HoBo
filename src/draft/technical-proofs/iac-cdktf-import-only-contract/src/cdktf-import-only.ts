@@ -335,6 +335,7 @@ function validateTerraformState<T>(state: T): TerraformState {
   }
 
   const validated: TerraformState =
+    // SAFETY: resources[] and instance attributes were parsed above.
     state as never;
   return validated;
 }
@@ -344,6 +345,7 @@ function validateResource<T>(resource: T): void {
     throw new CdktfStateError("invalid-resource", "state resources[] entries must be objects");
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const candidate = resource as JsonObject;
   if (!isJsonString(candidate.type) || candidate.type.length === 0) {
     throw new CdktfStateError("missing-resource-type", "state resource is missing type");
@@ -356,6 +358,7 @@ function validateResource<T>(resource: T): void {
   }
 
   candidate.instances.forEach((instance: JsonValue, index: number) => {
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     const instanceRecord = instance as JsonObject | null | undefined;
     if (!instanceRecord?.attributes || !isJsonObject(instanceRecord.attributes)) {
       throw new CdktfStateError(
@@ -363,6 +366,7 @@ function validateResource<T>(resource: T): void {
         `${candidate.type}.${candidate.name} instance ${index} is missing attributes`,
       );
     }
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     const attributes = instanceRecord.attributes as JsonObject;
     if (attributes.id === undefined || attributes.id === null || attributes.id === "") {
       throw new CdktfStateError(

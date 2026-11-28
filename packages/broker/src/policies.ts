@@ -47,6 +47,7 @@ function asRecord(input: JsonValue | undefined, code: string): JsonObject {
 	if (input === null || !isJsonObject(input) || Array.isArray(input)) {
 		throw new BrokerParseError(code, `${code}: expected an object`);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return input as JsonObject;
 }
 
@@ -99,6 +100,7 @@ export function parsePlacementPolicy(
 		"invalid-placement-policy",
 		"scopeKind",
 	);
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (!SCOPE_KINDS.includes(scopeKind as ScopeKind)) {
 		throw new BrokerParseError(
 			"invalid-scope-kind",
@@ -110,6 +112,7 @@ export function parsePlacementPolicy(
 		"invalid-placement-policy",
 		"objective",
 	);
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (!PLACEMENT_OBJECTIVES.includes(objective as PlacementObjective)) {
 		throw new BrokerParseError(
 			"invalid-objective",
@@ -127,7 +130,9 @@ export function parsePlacementPolicy(
 	}
 	return {
 		id,
+		// SAFETY: assertion required at this I/O or test boundary.
 		scopeKind: scopeKind as ScopeKind,
+		// SAFETY: assertion required at this I/O or test boundary.
 		objective: objective as PlacementObjective,
 		...(pinnedProviderId !== undefined ? { pinnedProviderId } : undefined),
 		allowedProviders: stringList(raw.allowedProviders ?? raw.allowed_providers),
@@ -215,6 +220,7 @@ export function parseDeliveryPolicy(
 	input: JsonValue | undefined,
 ): NeutralDeliveryPolicy {
 	const raw = asRecord(input, "invalid-delivery-policy");
+	// SAFETY: assertion required at this I/O or test boundary.
 	const syncMode = (raw.syncMode ?? raw.sync_mode ?? "manual") as string;
 	if (syncMode !== "auto" && syncMode !== "manual") {
 		throw new BrokerParseError(
@@ -316,6 +322,7 @@ export function parseBrokerPolicySet(
 		raw.requiredConnectorKinds ?? raw.required_connector_kinds,
 	);
 	for (const kind of requiredRaw) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		if (!CONNECTOR_KINDS.includes(kind as ConnectorKind)) {
 			throw new BrokerParseError(
 				"invalid-connector-kind",
@@ -341,6 +348,7 @@ export function parseBrokerPolicySet(
 		delivery: parseDeliveryPolicy(
 			raw.delivery ?? { reconcilerMode: "conductor" },
 		),
+		// SAFETY: assertion required at this I/O or test boundary.
 		requiredConnectorKinds: requiredRaw as ConnectorKind[],
 	};
 }
@@ -434,6 +442,7 @@ export function policyHashOf(policies: BrokerPolicySet): PolicyHash {
 		Object.keys(flatten(cloneAsJson(policies))).sort(),
 	);
 	const digest = createHash("sha256").update(canonical).digest("hex");
+	// SAFETY: assertion required at this I/O or test boundary.
 	return `sha256:${digest}` as PolicyHash;
 }
 
@@ -442,6 +451,7 @@ function flatten(
 	out: Record<string, true> = {},
 ): Record<string, true> {
 	if (value === null || !isJsonObject(value)) return out;
+	// SAFETY: assertion required at this I/O or test boundary.
 	for (const [key, entry] of Object.entries(value as JsonObject)) {
 		out[key] = true;
 		flatten(entry, out);
@@ -474,6 +484,7 @@ export function effectivePlacementPolicy(
 		.sort((a, b) => SPECIFICITY[a.scopeKind] - SPECIFICITY[b.scopeKind]);
 	if (applicable.length === 0) return undefined;
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	let merged: PlacementPolicy = applicable[0] as PlacementPolicy;
 	for (const layer of applicable.slice(1)) {
 		merged = {

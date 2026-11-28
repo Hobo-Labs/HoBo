@@ -66,6 +66,7 @@ test("the wire form of an object does not depend on the order its members were w
 test("each type refuses what it is not", () => {
 	const valid = { id: "e", flag: true, names: ["a"] };
 	const errorsOf = (override: Record<string, EventJsonValue>) =>
+		// SAFETY: deliberately ill-typed bodies, as they would arrive from JSON.
 		validateEventBody(SCHEMA, { ...valid, ...override } as never).errors;
 	assert.deepEqual(errorsOf({ flag: "true" }), ["flag must be a boolean"]);
 	assert.deepEqual(errorsOf({ flag: 1 }), ["flag must be a boolean"]);

@@ -184,6 +184,7 @@ export function isBuildInput(
 function parseJson<T>(text: string | undefined, path: string): T | undefined {
 	if (text === undefined) return undefined;
 	try {
+		// SAFETY: repo-owned JSON; every field read below is optional and checked at use.
 		return JSON.parse(text) as T;
 	} catch (error) {
 		throw new Error(
@@ -200,6 +201,7 @@ export function isReleaseOciLayerNoise(path: string): boolean {
 	if (path.includes("/test/") || path.endsWith(".test.ts")) return true;
 	if (path.startsWith("docs/")) return true;
 	if (path.startsWith("scripts/test/")) return true;
+	// SAFETY: RELEASE_BUILD_INPUTS is a const string tuple; Array.includes requires readonly string[] to accept a general path.
 	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
 	const declaredExtra = EXTRA_BUILD_INPUTS.has(path);
 	if (
@@ -401,6 +403,7 @@ export function orderedImageIds(ids: Iterable<string>): string[] {
 	const all = [...ids];
 	return [
 		...RELEASE_IMAGE_ORDER.filter((id) => all.includes(id)),
+		// SAFETY: Readonly widening preserves the tuple while allowing arbitrary manifest ids.
 		...all.filter(
 			(id) => !(RELEASE_IMAGE_ORDER as readonly string[]).includes(id),
 		),

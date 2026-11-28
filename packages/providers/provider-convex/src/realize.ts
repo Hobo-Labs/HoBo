@@ -60,6 +60,7 @@ export function realizeResourcePlan(plan: ResourcePlan) {
 			deployment: "${resources.deployment.outputs.deploymentName}",
 			...(plan.options?.length
 				? {
+						// SAFETY: option blocks are JSON-serializable at this driver boundary.
 						options: JSON.parse(JSON.stringify(plan.options)) as JsonValue,
 					}
 				: undefined),

@@ -91,6 +91,7 @@ describe("run-to-collect engine (S1-12b)", () => {
 
 	it("rejects a target without a define function", () => {
 		expect(() =>
+			// SAFETY: assertion required at this I/O or test boundary.
 			collectBindleManifest({
 				bindleId: "broken",
 				componentHost: COMPONENT_HOST,

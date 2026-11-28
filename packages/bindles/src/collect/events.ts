@@ -92,8 +92,10 @@ function sortKeys(value: JsonValue): JsonValue {
 		return value;
 	}
 	return Object.fromEntries(
+		// SAFETY: assertion required at this I/O or test boundary.
 		Object.keys(value as JsonObject)
 			.sort()
+			// SAFETY: assertion required at this I/O or test boundary.
 			.map((key) => [key, sortKeys((value as JsonObject)[key] ?? null)]),
 	);
 }

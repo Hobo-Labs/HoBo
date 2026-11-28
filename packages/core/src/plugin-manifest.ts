@@ -142,6 +142,7 @@ export function isPluginPackageJson(value: JsonValue | undefined): boolean {
 		isJsonObject(value) &&
 		value !== null &&
 		!Array.isArray(value) &&
+		// SAFETY: assertion required at this I/O or test boundary.
 		(value as JsonObject).hobo !== undefined
 	);
 }

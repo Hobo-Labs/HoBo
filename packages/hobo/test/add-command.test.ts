@@ -31,6 +31,7 @@ function envelope(stdout: string): any {
 describe("createAddCommand", () => {
 	it("installs the local provider and registry then lists it", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -62,6 +63,7 @@ describe("createAddCommand", () => {
 
 	it("is idempotent when the provider is already installed", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -73,6 +75,7 @@ describe("createAddCommand", () => {
 
 	it("rejects an unknown provider and lists what is available", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -84,6 +87,7 @@ describe("createAddCommand", () => {
 
 	it("requires a provider argument", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -105,6 +109,7 @@ describe("createAddCommand", () => {
 			createProviderFromPorts("pg-local", ["database"]),
 		);
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -185,6 +190,7 @@ describe("createAddCommand", () => {
 
 	it("bootstrapDefaultProviders records register+approve facts idempotently", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 
 		const defaults: RegistrableProvider[] = [
@@ -202,7 +208,9 @@ describe("createAddCommand", () => {
 
 	it("reports unavailable when no runtime is wired", async () => {
 		const result = await createAddCommand().run({
+			// SAFETY: assertion required at this I/O or test boundary.
 			context: { cwd: "/tmp", projectDir: "/tmp" } as CliContext,
+			// SAFETY: assertion required at this I/O or test boundary.
 			flags: { cwd: "/tmp" } as never,
 			args: ["local"],
 			verb: "add",

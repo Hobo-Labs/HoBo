@@ -279,6 +279,7 @@ export async function startServer(): Promise<FileServer> {
 		},
 	);
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	// SAFETY: listen(0, host) binds a TCP socket, so address() is an AddressInfo.
 	const { port } = server.address() as AddressInfo;
 	return {
 		origin: `http://127.0.0.1:${port}`,

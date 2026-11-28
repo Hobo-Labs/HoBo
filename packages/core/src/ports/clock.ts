@@ -168,18 +168,22 @@ export class NondeterministicClockError extends Error {
 }
 
 export function parseIsoInstant(value: string): IsoInstant {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return isoTimestamp(value, "instant", ClockParseError) as IsoInstant;
 }
 
 export function parseTimerId(value: string): TimerId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "timerId", ClockParseError) as TimerId;
 }
 
 export function parseScheduleId(value: string): ScheduleId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "scheduleId", ClockParseError) as ScheduleId;
 }
 
 export function parseFireId(value: string): FireId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "fireId", ClockParseError) as FireId;
 }
 

@@ -57,6 +57,7 @@ export type ViewDeps = Readonly<{
 type Route<K extends CdReadRoute["kind"]> = Extract<CdReadRoute, { kind: K }>;
 
 function asCampId(campId: string): CampId {
+	// SAFETY: Camp ids here come from records the modules wrote (node camp_ids, decision groups).
 	return campId as CampId;
 }
 
@@ -156,6 +157,7 @@ async function findFreight(
 	d: ViewDeps,
 	idOrAlias: string,
 ): Promise<FreightRecord | undefined> {
+	// SAFETY: a lookup key only; an unknown id simply finds nothing.
 	const byId = await d.cd.freight.get(idOrAlias as FreightId);
 	return byId ?? (await d.cd.freight.getByAlias(idOrAlias));
 }
@@ -171,6 +173,7 @@ export async function freightTimeline(
 			`no Freight with id or alias ${r.idOrAlias}`,
 			r.idOrAlias,
 		);
+	// SAFETY: the ledger returned this record, so its id is a recorded FreightId.
 	const id = freight.freightId as FreightId;
 	const entries: TimelineEntry[] = [
 		{

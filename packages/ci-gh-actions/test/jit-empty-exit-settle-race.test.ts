@@ -65,6 +65,7 @@ describe("jit empty exit settle race", () => {
 		});
 		const settle = vi.fn(async () => lease);
 		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: reconcile uses get(), transition(), settle(), and withdrawQueuedJob().
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
@@ -162,6 +163,7 @@ describe("jit empty exit settle race", () => {
 			createdAt: "2026-11-10T19:30:00.000Z",
 		});
 		const settle = vi.fn(async () => lease);
+		// SAFETY: reconcile uses get(), transition(), settle(), and withdrawQueuedJob().
 		const store = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),

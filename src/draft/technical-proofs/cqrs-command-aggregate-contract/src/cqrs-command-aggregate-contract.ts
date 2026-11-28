@@ -278,6 +278,7 @@ export function createCommandRuntime(): CommandRuntime {
     }
 
     const emitted: readonly EventEnvelope<Event>[] =
+      // SAFETY: pending envelopes were appended on this stream during execute.
       structuredClone(pending) as never;
     return {
       commandType: normalized.type,
@@ -456,6 +457,7 @@ function foldStream<Input, State, Event extends DomainEvent, Value>(
 ): State {
   let state = structuredClone(definition.initialState);
   for (const event of events) {
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     const folded: Event = structuredClone(event) as never;
     state = definition.fold(state, folded);
   }

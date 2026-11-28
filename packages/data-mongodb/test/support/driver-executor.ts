@@ -64,10 +64,12 @@ function toBson(value: MongoValue): Document {
 }
 
 function fromBson(value: Document): MongoValue {
+	// SAFETY: canonical EJSON.serialize returns plain JSON by construction.
 	return EJSON.serialize({ value }, { relaxed: false }).value as MongoValue;
 }
 
 function documentFromBson(value: Document): MongoDocument {
+	// SAFETY: a BSON document serializes to a JSON object, never a scalar.
 	return fromBson(value) as MongoDocument;
 }
 

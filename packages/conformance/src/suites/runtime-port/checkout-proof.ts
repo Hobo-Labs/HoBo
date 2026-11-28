@@ -22,6 +22,7 @@ export async function proveCheckoutDurability(
 	);
 
 	const cart = actorHost.state(`cart:${runId}`, {
+		// SAFETY: assertion to `[] as string[]` is required at this boundary.
 		initialState: { reservedItems: [] as string[] },
 		fold: (
 			state: { reservedItems: string[] },
@@ -69,6 +70,7 @@ export async function proveCheckoutDurability(
 			[
 				{
 					type: "checkout.PaymentCaptured",
+					// SAFETY: assertion to `message.body as { cents: number }` is required at this boundary.
 					data: { cents: (message.body as { cents: number }).cents },
 				},
 			],
@@ -90,6 +92,7 @@ export async function proveCheckoutDurability(
 
 	const live = await eventStore.fold(streamId, {
 		initialState: checkoutInitialState(runId),
+		// SAFETY: assertion to `checkoutHandlers() as FoldHandlers< ReturnType<typeof checkoutInitialState> >` is required at this boundary.
 		handlers: checkoutHandlers() as FoldHandlers<
 			ReturnType<typeof checkoutInitialState>
 		>,
@@ -116,6 +119,7 @@ function checkoutInitialState(runId: string) {
 	return {
 		runId,
 		status: "pending",
+		// SAFETY: assertion to `[] as string[]` is required at this boundary.
 		reservedItems: [] as string[],
 		chargedCents: 0,
 		duplicateCharges: 0,
@@ -170,6 +174,7 @@ function foldCheckoutEvents(events: EventEnvelope[], runId: string) {
 	let state = checkoutInitialState(runId);
 
 	for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
+		// SAFETY: assertion to `event.type as keyof typeof handlers` is required at this boundary.
 		const handler = handlers[event.type as keyof typeof handlers] as
 			| ((state: CheckoutState, event: EventEnvelope) => CheckoutState)
 			| undefined;

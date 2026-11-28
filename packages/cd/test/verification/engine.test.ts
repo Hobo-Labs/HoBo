@@ -90,6 +90,7 @@ async function expectReplayMatches(store: MemoryEventStore) {
 	expect(ids.length).toBeGreaterThan(0);
 	for (const streamId of ids) {
 		const id = streamId.slice("cd-verification-".length);
+		// SAFETY: stream ids are minted by the engine from VerificationIds.
 		const replay = await replayVerificationFromStore(
 			store,
 			id as Parameters<typeof replayVerificationFromStore>[1],

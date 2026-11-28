@@ -21,6 +21,7 @@ describe("branded id parsing", () => {
 	});
 
 	it.each(["", null, undefined, 7])("rejects the topic name %s", (value) => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => parseTopicName(value as string)).toThrow(MessagingParseError);
 	});
 });
@@ -87,6 +88,7 @@ describe("tenant scoping", () => {
 	});
 
 	it.each(["", null, undefined])("rejects the tenant %s", (tenant) => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => tenantScopedTopicName(tenant as string, "orders")).toThrow(
 			MessagingParseError,
 		);
@@ -345,6 +347,7 @@ describe("parseMessagingSpec", () => {
 });
 
 describe("assertDeliverySupported", () => {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const capabilities = {
 		deliveryGuarantees: ["at-least-once", "at-most-once"],
 	} as never;
@@ -370,6 +373,7 @@ describe("assertDeliverySupported", () => {
 	it("refuses everything when the backend supports nothing", () => {
 		expect(() =>
 			assertDeliverySupported(
+				// SAFETY: assertion required at this I/O or test boundary.
 				{ deliveryGuarantees: [] } as never,
 				"at-least-once",
 			),

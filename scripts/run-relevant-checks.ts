@@ -269,7 +269,9 @@ function rootPackageJsonScriptsOnlyChanged() {
 	if (!beforeRaw || !fs.existsSync("package.json")) return false;
 
 	try {
+		// SAFETY: package.json is committed repo JSON; scripts key is compared by stableJson.
 		const before = JSON.parse(beforeRaw) as { scripts?: JsonValue };
+		// SAFETY: working-tree package.json is the same manifest family as HEAD.
 		const after = JSON.parse(fs.readFileSync("package.json", "utf8")) as {
 			scripts?: JsonValue;
 		};

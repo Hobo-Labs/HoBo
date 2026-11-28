@@ -23,6 +23,7 @@ const PACT_URL = new URL(
 );
 
 export function loadExecutorPact(): JsonObject {
+	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	const pact = JSON.parse(readFileSync(PACT_URL, "utf8")) as JsonValue;
 	if (!isJsonObject(pact)) throw new Error("the pact must be a JSON object");
 	return pact;

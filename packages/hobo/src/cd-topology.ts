@@ -30,6 +30,7 @@ const TOPOLOGY_CONTRACT_VERSION: Yard["contract"] = "hobo.topology-objects/v1";
 export const CD_MANAGEMENT_LABEL = "hobo.cd/management";
 
 export function campIdOf(yardName: string, campId: string): CampId {
+	// SAFETY: the Yard-scoped id placement and the journal use for a Camp.
 	return `${yardName}/${campId}` as CampId;
 }
 
@@ -213,6 +214,7 @@ function parseYard(item: unknown, at: string): CdTopologyYard {
 	try {
 		parsed = fromJson(
 			CdTopologyYardSchema,
+			// SAFETY: a JSON round trip; fromJson parses the result.
 			JSON.parse(JSON.stringify(item ?? null)) as ProtoJson,
 			{ ignoreUnknownFields: true },
 		);
@@ -236,6 +238,7 @@ function parseYard(item: unknown, at: string): CdTopologyYard {
 function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 	let parsed: CdTopologyCamp;
 	try {
+		// SAFETY: fromJson parses and rejects anything that is not the schema's JSON form.
 		parsed = fromJson(CdTopologyCampSchema, (item ?? null) as ProtoJson);
 	} catch (error) {
 		throw invalid(at, error);

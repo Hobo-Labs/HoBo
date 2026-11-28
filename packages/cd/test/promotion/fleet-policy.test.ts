@@ -402,7 +402,9 @@ describe("fleet and policy (D20–D25)", () => {
 		};
 		const aggregate = createFanoutAggregateGate({
 			tenant: "acme",
+			// SAFETY: test fixture; the value is the shape the port declares.
 			fanout: fanout as FanoutController,
+			// SAFETY: test fixture; the value is the shape the port declares.
 			placement: placement as PlacementEngine,
 			topology,
 			rails,
@@ -413,6 +415,7 @@ describe("fleet and policy (D20–D25)", () => {
 		const h = harness({ aggregate });
 		h.freight.add("f1");
 		const result = await h.service.promote(
+			// SAFETY: test fan-out id literal.
 			{
 				freightId: fid("f1"),
 				targets: [camp("c-1")],
@@ -433,6 +436,7 @@ describe("fleet and policy (D20–D25)", () => {
 	it("a fan-out request without the aggregate gate composed is refused (fail closed)", async () => {
 		const h = harness();
 		h.freight.add("f1");
+		// SAFETY: test fan-out id literal.
 		const result = await h.service.promote(
 			{
 				freightId: fid("f1"),

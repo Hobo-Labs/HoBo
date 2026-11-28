@@ -51,6 +51,7 @@ describe("GitHub organization app setup", () => {
 			projectDir: "/tmp/hobo-ci",
 			whatIf: false,
 			yes: false,
+			// SAFETY: prepareGithubConnection reads only run.emitProgress.
 			run: run as CommandRunInput,
 		};
 		const result = await prepareGithubConnection(input, {

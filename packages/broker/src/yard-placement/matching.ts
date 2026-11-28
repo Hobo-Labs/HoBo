@@ -29,6 +29,7 @@ export function matchYard(
 		readonly economicCosts?: ReadonlyMap<string, number>;
 	},
 ): YardMatchDecision {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(request.requestedLayout) as ContentHash;
 	const candidates: YardCandidateDecision[] = inventory.yards
 		.map((yard) => {
@@ -292,6 +293,7 @@ function compareCandidates(
 		"hardCapabilities",
 	];
 	for (const key of keys) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		if (sa[key] !== sb[key]) return Number(sb[key]) - Number(sa[key]);
 	}
 	if (objective === "min-cost") {

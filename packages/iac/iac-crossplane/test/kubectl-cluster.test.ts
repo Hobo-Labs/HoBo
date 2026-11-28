@@ -38,6 +38,7 @@ describe("createKubectlCrossplaneCluster gating", () => {
 		try {
 			cluster.verifyReachable();
 		} catch (error) {
+			// SAFETY: `expect((error as CrossplaneClusterUnavailableError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as CrossplaneClusterUnavailableError).code).toBe(
 				KUBECTL_UNAVAILABLE,
 			);

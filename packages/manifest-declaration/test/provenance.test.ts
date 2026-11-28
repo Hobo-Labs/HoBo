@@ -44,11 +44,13 @@ describe("fixture provenance", () => {
 	}
 
 	it("the hello-bindle intents match the manifest fixture they are lowered from", () => {
+		// SAFETY: this is the repository-owned hello-bindle manifest fixture.
 		const manifest = JSON.parse(
 			readFileSync(
 				`${REPO_ROOT}packages/cloud/test/fixtures/hello-bindle.manifest.json`,
 				"utf8",
 			),
+			// SAFETY: this fixture is the repository-owned manifest shape under test.
 		) as { resources: Record<string, { bind?: string[] }> };
 
 		const helloBindle = EXISTING_INTENTS.filter((entry) =>

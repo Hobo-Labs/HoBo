@@ -222,6 +222,7 @@ export function parseOpenApiJson(value: JsonValue | undefined): ApiSpecResult {
 		baseUrl: isObject(firstServer) ? text(firstServer.url) : "",
 		operations,
 	};
+	// SAFETY: the brand is conferred here and nowhere else; every check passed.
 	return { ok: true, api: description as ParsedApiSpec };
 }
 
@@ -236,5 +237,6 @@ export function parseOpenApi(source: string): ApiSpecResult {
 			})),
 		};
 	}
+	// SAFETY: yaml's toJS yields plain JSON-shaped data; refined just below.
 	return parseOpenApiJson(document.toJS() as JsonValue);
 }

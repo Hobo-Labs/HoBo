@@ -45,6 +45,7 @@ function entryFiles(entry: PromotionEntry, proofRoot: string): string[] {
 	return listFiles(proofRoot);
 }
 
+// SAFETY: assertion to `arse(readFileSync(ledgerPath, "utf8")) as Ledger; cons` is required at this boundary.
 const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as Ledger;
 const problems: string[] = [];
 

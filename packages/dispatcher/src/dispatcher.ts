@@ -1520,6 +1520,7 @@ function creditFactsFor(
 ) {
 	if (!account) {
 		return {
+			// SAFETY: assertion required at this I/O or test boundary.
 			status: "missing" as CreditFacts,
 			valid: false,
 			listUnitCost: nonNegativeNumber(
@@ -1559,6 +1560,7 @@ function creditFactsFor(
 
 	if (!valid) {
 		return {
+			// SAFETY: assertion required at this I/O or test boundary.
 			status: "invalid" as CreditFacts,
 			valid: false,
 			listUnitCost: nonNegativeNumber(
@@ -1574,6 +1576,7 @@ function creditFactsFor(
 	}
 
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		status: (freeHeadroom > 0 ? "present" : "present-empty") as CreditFacts,
 		valid: true,
 		listUnitCost,

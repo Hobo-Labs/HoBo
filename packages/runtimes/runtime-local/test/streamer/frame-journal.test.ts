@@ -34,6 +34,7 @@ async function take(
 ) {
 	const seen: string[] = [];
 	for await (const frame of journal.attachReader(parseSeq(fromSeq))) {
+		// SAFETY: the journal is constructed with a string chunk type.
 		seen.push(frame.chunk as string);
 		if (seen.length === count) break;
 	}

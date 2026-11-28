@@ -91,6 +91,7 @@ export function defineWorkflow<A, R>(
 	}
 	return Object.freeze({
 		name: input.name,
+		// SAFETY: assertion to ` Set([ ...DURABILITY_CAPABILITIES, ...(input.capabilities ?? []), ]) as ReadonlySet<Capability>, ` is required at this boundary.
 		capabilities: new Set([
 			...DURABILITY_CAPABILITIES,
 			...(input.capabilities ?? []),
@@ -1314,6 +1315,7 @@ export function createWorkflowEngine(
 									assertReplayConsistent();
 									return host
 										.state<S>(actorKey, {
+											// SAFETY: assertion to `, ` is required at this boundary.
 											initialState: {} as S,
 											fold: (current) => current,
 										})

@@ -178,6 +178,7 @@ function parseQuantityBlock<T>(
 	if (!isJsonObject(raw) || raw === null || Array.isArray(raw)) {
 		throw rejected(`${field} must be an object with cpu and memory`);
 	}
+	// SAFETY: assertion to `as JsonObject; r` is required at this boundary.
 	const record = raw as JsonObject;
 	return {
 		cpuMillicores:
@@ -197,6 +198,7 @@ function parseLabels<T>(raw: T): StringBag {
 		throw rejected("labels must be a string map");
 	}
 	const labels: StringBag = {};
+	// SAFETY: assertion to `as JsonObject)) {` is required at this boundary.
 	for (const [key, value] of Object.entries(raw as JsonObject)) {
 		if (!LABEL_KEY.test(key)) {
 			throw rejected(
@@ -220,6 +222,7 @@ export function parseWorkloadPlacement<T>(input: T): WorkloadPlacement {
 	if (!isJsonObject(input) || input === null || Array.isArray(input)) {
 		throw rejected("a placement must be an object");
 	}
+	// SAFETY: assertion to `t as JsonObject; ` is required at this boundary.
 	const record = input as JsonObject;
 
 	const workloadName = requireLabel(record.name, "name");

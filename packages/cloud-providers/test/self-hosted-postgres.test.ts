@@ -103,6 +103,7 @@ describe("verdicts", () => {
 			railway: "railway:service",
 		} as const;
 		for (const [provider, target] of Object.entries(expected)) {
+			// SAFETY: keys of `expected` are assessed provider ids by construction.
 			const result = verdictOf(provider as keyof typeof expected);
 			expect(result.verdict, provider).toBe("can");
 			expect(result.resourceClass, provider).toBe(target);
@@ -210,6 +211,7 @@ describe("verdicts", () => {
 			railway: ["docs.railway.com"],
 		} as const;
 		for (const [provider, hosts] of Object.entries(domains)) {
+			// SAFETY: keys of `domains` are assessed provider ids by construction.
 			const forms =
 				SELF_HOST_SOURCES[provider as keyof typeof domains].hostForms;
 			expect(forms?.length, provider).toBeGreaterThan(0);

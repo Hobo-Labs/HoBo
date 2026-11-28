@@ -29,6 +29,7 @@ interface Plan {
 	readonly verifyRun: number;
 }
 
+// SAFETY: the plan is written by the test that spawns this process, from the Plan interface.
 const plan = JSON.parse(process.env.FAKE_AI_BDD ?? "{}") as Plan;
 const [command = "", ...rest] = process.argv.slice(2);
 appendFileSync(
@@ -38,6 +39,7 @@ appendFileSync(
 
 function writeReport(run: RunPlan): string | undefined {
 	if (run.report === undefined) return undefined;
+	// SAFETY: the plan names one of the committed report fixtures, or a test's edit of one.
 	const report = JSON.parse(readFileSync(run.report, "utf8")) as {
 		runId: string;
 		startedAt: string;

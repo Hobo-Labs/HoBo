@@ -118,6 +118,7 @@ export function parseUsagePermissionInput(raw: JsonValue): ParsedUsagePermission
     throw new TypeError("permission manifest input must be an object");
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const input = raw as Partial<UsagePermissionInput>;
   if (!isJsonString(input.bindle) || input.bindle.length === 0) {
     throw new TypeError("bindle must be a non-empty string");
@@ -140,6 +141,7 @@ function parseResourcePermissionInput(raw: JsonValue): ResourcePermissionInput {
     throw new TypeError("resource permission input must be an object");
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const resource = raw as Partial<ResourcePermissionInput>;
   for (const key of ["kind", "name", "port"] as const) {
     if (!isJsonString(resource[key]) || resource[key].length === 0) {
@@ -160,8 +162,11 @@ function parseResourcePermissionInput(raw: JsonValue): ResourcePermissionInput {
   }
 
   const result: ResourcePermissionInput = {
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     kind: resource.kind as string,
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     name: resource.name as string,
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     port: resource.port as string,
     catalogVerbs: resource.catalogVerbs,
     observedCalls: resource.observedCalls ?? [],

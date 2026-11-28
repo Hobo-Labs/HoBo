@@ -39,6 +39,7 @@ function normalize(raw: RespWireValue, depth = 0): RedisValue {
 	if (isJsonString(raw) || isJsonNumber(raw)) return raw;
 	if (raw instanceof Uint8Array) return new TextDecoder().decode(raw);
 	if (Array.isArray(raw) && depth < 16) {
+		// SAFETY: Array.isArray narrowed a RespWireValue, whose only array arm is RespWireValue[].
 		const items = raw as readonly RespWireValue[];
 		return items.map((item) => normalize(item, depth + 1));
 	}
@@ -60,6 +61,7 @@ export function createRespExecutor(options: RespExecutorOptions): RespExecutor {
 		async execute(command: RedisCommand): Promise<RedisReply> {
 			const [verb, ...args] = command;
 			try {
+				// SAFETY: ioredis decodes every RESP reply into strings, integers, nulls, buffers, or arrays of them; normalize re-checks and throws on anything else.
 				const raw = (await client.call(verb, args)) as RespWireValue;
 				return { kind: "value", value: normalize(raw) };
 			} catch (error) {

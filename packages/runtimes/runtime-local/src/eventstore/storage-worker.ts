@@ -73,6 +73,7 @@ interface CodedError {
 }
 
 function serializeError(error: Error): SerializedWorkerError {
+	// SAFETY: worker errors may carry a string `code` at this boundary.
 	const coded = error as CodedError;
 	const code = isJsonString(coded.code) ? coded.code : undefined;
 	return {
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
 	if (!parentPort) {
 		throw new Error("storage-worker must run as a worker thread");
 	}
+	// SAFETY: assertion to `workerData as { dbPath: string; partitionId?: string }` is required at this boundary.
 	const data = workerData as { dbPath: string; partitionId?: string };
 	const driver = createNodeSqliteDriver({ path: data.dbPath });
 	const journal = new SqliteJournal(driver, {
@@ -178,6 +180,7 @@ async function main(): Promise<void> {
 				default: {
 					const _x: never = msg;
 					port.postMessage({
+						// SAFETY: assertion to `msg as { id: string }` is required at this boundary.
 						id: (msg as { id: string }).id,
 						ok: false,
 						error: {

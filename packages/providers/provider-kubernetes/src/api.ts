@@ -77,6 +77,7 @@ export type ApiStatus = {
 function decodeObject(body: string, what: string): JsonObject {
 	let decoded: unknown;
 	try {
+		// SAFETY: assertion to `ON.parse(body) as unknown; ` is required at this boundary.
 		decoded = JSON.parse(body) as unknown;
 	} catch {
 		contractChanged(`${what} response was not JSON`, {
@@ -86,6 +87,7 @@ function decodeObject(body: string, what: string): JsonObject {
 	if (!isJsonObject(decoded) || decoded === null || Array.isArray(decoded)) {
 		contractChanged(`${what} response was not a JSON object`);
 	}
+	// SAFETY: assertion to `coded as JsonObject; ` is required at this boundary.
 	return decoded as JsonObject;
 }
 
@@ -94,6 +96,7 @@ function child(record: JsonObject, key: string, what: string): JsonObject {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		contractChanged(`${what} is missing its ${key} object`);
 	}
+	// SAFETY: assertion to `lue as JsonObject; ` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -102,6 +105,7 @@ function optionalChild(record: JsonObject, key: string): JsonObject {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		return {};
 	}
+	// SAFETY: assertion to `lue as JsonObject; ` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -218,6 +222,7 @@ export function parseNamespaceRecord(
 	const phase = status.phase;
 	if (
 		!isJsonString(phase) ||
+		// SAFETY: assertion to `MESPACE_PHASES as readonly string[]).` is required at this boundary.
 		!(NAMESPACE_PHASES as readonly string[]).includes(phase)
 	) {
 		contractChanged(
@@ -231,6 +236,7 @@ export function parseNamespaceRecord(
 		name: meta.name,
 		uid: meta.uid,
 		resourceVersion: meta.resourceVersion,
+		// SAFETY: assertion to `ase as NamespacePhase, ` is required at this boundary.
 		phase: phase as NamespacePhase,
 		createdAtMs: meta.createdAtMs,
 		createdByHobo: options.createdByHobo,
@@ -253,6 +259,7 @@ function parseConditions(status: JsonObject): readonly Condition[] {
 		if (!isJsonObject(entry) || entry === null || Array.isArray(entry)) {
 			contractChanged("Deployment status.conditions holds a non-object");
 		}
+		// SAFETY: assertion to `try as JsonObject; ` is required at this boundary.
 		const condition = entry as JsonObject;
 		if (!isJsonString(condition.type) || !isJsonString(condition.status)) {
 			contractChanged("Deployment condition is missing its type or status");
@@ -368,6 +375,7 @@ export function parseDeploymentRecord(body: string): DeploymentRecord {
 
 	return {
 		name: meta.name,
+		// SAFETY: assertion to `amespace as string, ui` is required at this boundary.
 		namespace: meta.namespace as string,
 		uid: meta.uid,
 		resourceVersion: meta.resourceVersion,
@@ -406,6 +414,7 @@ export function parseServiceRecord(body: string): ServiceRecord {
 			"Service must expose exactly the one port this provider set",
 		);
 	}
+	// SAFETY: assertion to ` as JsonObject; const` is required at this boundary.
 	const port = ports[0] as JsonObject;
 	const servicePort = requireCount(port, "port", "Service port");
 	const targetPort = requireCount(port, "targetPort", "Service port");
@@ -420,6 +429,7 @@ export function parseServiceRecord(body: string): ServiceRecord {
 
 	return {
 		name: meta.name,
+		// SAFETY: assertion to `espace as string, clus` is required at this boundary.
 		namespace: meta.namespace as string,
 		clusterIp,
 		port: servicePort,

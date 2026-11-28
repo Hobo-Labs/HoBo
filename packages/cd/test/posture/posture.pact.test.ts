@@ -86,6 +86,7 @@ async function qualify(h: PostureHarness, freightId: string) {
 		name: "rail-eu",
 		nodes: [{ name: "shadow", campIds: [PROD], policyMode: PolicyMode.INFORM }],
 	});
+	// SAFETY: toJson of a message is a JSON object.
 	await h.store.put(
 		CD_STREAMS.pipeline("rail-eu"),
 		CD_EVENTS.PipelineApplied,
@@ -99,6 +100,7 @@ async function qualify(h: PostureHarness, freightId: string) {
 		verificationId: "v",
 		qualifiedAt: new Date(T0).toISOString(),
 	});
+	// SAFETY: toJson of a message is a JSON object.
 	await h.store.put(
 		CD_STREAMS.freight(freightId),
 		CD_EVENTS.FreightQualified,

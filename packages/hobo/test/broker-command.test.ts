@@ -62,6 +62,7 @@ function runContext(
 	flags: Record<string, string>,
 	args: string[] = ["resolve"],
 ) {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return {
 		args,
 		flags: { ...stationFlags(dir), ...flags },
@@ -89,6 +90,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		);
 		expect(result.ok).toBe(true);
 		expect(result.code).toBe("HOBO_BROKER_RESOLVED");
+		// SAFETY: assertion required at this I/O or test boundary.
 		const receipt = (result.data as { receipt: { placements: unknown[] } })
 			.receipt;
 		expect(receipt.placements).toHaveLength(1);
@@ -119,6 +121,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 	it("broker up with no cloud config registers this machine as a local provider host", async () => {
 		const bare = await mkdtemp(join(tmpdir(), "hobo-broker-bare-"));
 		const command = createBrokerCommand({ catalog });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await command.run({
 			args: ["up"],
 			flags: { cwd: bare, ...stationFlags(bare) },
@@ -127,6 +130,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		} as never);
 		expect(result.ok).toBe(true);
 		expect(result.code).toBe("HOBO_BROKER_UP");
+		// SAFETY: assertion required at this I/O or test boundary.
 		const data = result.data as {
 			catalog: string;
 			receipt: {
@@ -167,6 +171,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			}),
 		);
 		const command = createBrokerCommand({ catalog });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await command.run({
 			args: ["up"],
 			flags: { cwd: project, ...stationFlags(project) },
@@ -174,11 +179,13 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			emitProgress: () => {},
 		} as never);
 		expect(result.ok).toBe(true);
-		const receipt = (
-			result.data as {
-				receipt: { placements: Array<{ resourceId: string }> };
-			}
-		).receipt;
+		const receipt =
+			// SAFETY: assertion required at this I/O or test boundary.
+			(
+				result.data as {
+					receipt: { placements: Array<{ resourceId: string }> };
+				}
+			).receipt;
 		expect(receipt.placements.map((p) => p.resourceId).sort()).toEqual([
 			"api",
 			"media",
@@ -188,6 +195,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 	it("broker config --init scaffolds, then config validates and summarizes", async () => {
 		const project = await mkdtemp(join(tmpdir(), "hobo-broker-cfg-"));
 		const command = createBrokerCommand({ catalog });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const init = await command.run({
 			args: ["config"],
 			flags: { cwd: project, init: true },
@@ -197,6 +205,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		expect(init.ok).toBe(true);
 		expect(init.code).toBe("HOBO_BROKER_CONFIG_INIT");
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const summary = await command.run({
 			args: ["config"],
 			flags: { cwd: project },
@@ -205,11 +214,13 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		} as never);
 		expect(summary.ok).toBe(true);
 		expect(summary.status).toBe("config_valid");
+		// SAFETY: assertion required at this I/O or test boundary.
 		const config = (summary.data as { config: JsonObject }).config;
 		expect(config.catalog).toBe("local-host");
 		expect(config.policyEngine).toBe("builtin");
 		expect(String(config.policyHash)).toMatch(/^sha256:/);
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await command.run({
 			args: ["config"],
 			flags: { cwd: project, init: true },
@@ -256,6 +267,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				}),
 			}),
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const summary = await command.run({
 			args: ["config"],
 			flags: { cwd: project },
@@ -264,10 +276,12 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		} as never);
 		expect(summary.status).toBe("config_valid");
 		expect(
+			// SAFETY: assertion required at this I/O or test boundary.
 			(summary.data as { config: { policyEngine: string } }).config
 				.policyEngine,
 		).toBe("opa");
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const up = await command.run({
 			args: ["up"],
 			flags: { cwd: project, ...stationFlags(project) },
@@ -283,6 +297,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		const matrix = await command.run(runContext({}, ["matrix"]));
 		expect(matrix.ok).toBe(true);
 		expect(
+			// SAFETY: assertion required at this I/O or test boundary.
 			(matrix.data as { matrix: unknown[] }).matrix.length,
 		).toBeGreaterThan(10);
 

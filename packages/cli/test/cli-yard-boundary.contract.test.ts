@@ -124,6 +124,7 @@ function interaction(
 }
 
 describe("CLI <-> Yard boundary pact", () => {
+	// SAFETY: `const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {` is required at this I/O or test boundary.
 	const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 		consumer: { name: string };
 		provider: { name: string };

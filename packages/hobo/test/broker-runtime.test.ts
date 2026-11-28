@@ -33,6 +33,7 @@ describe("embedded broker-runtime", () => {
 		const init = await cli.run(["yard", "init", "--home", hoboHome, "--json"], {
 			cwd: hoboHome,
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(init.stdout) as {
 			ok: boolean;
 			data: {
@@ -125,6 +126,7 @@ describe("embedded broker-runtime", () => {
 		const up = await cli.run(["up", "--home", hoboHome, "--json"], {
 			cwd: helloBindleDir,
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(up.stdout) as {
 			ok: boolean;
 			code: string;

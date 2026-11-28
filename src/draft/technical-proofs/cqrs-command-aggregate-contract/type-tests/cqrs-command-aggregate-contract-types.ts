@@ -32,6 +32,7 @@ const open: CommandDefinition<TicketInput, TicketState, TicketEvent, OpenTicketR
     "Ticket.Open",
     {
       key: (input) => `ticket:${input.id}`,
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       initialState: { opened: false } as TicketState,
       fold(state: TicketState, event: TicketEvent): TicketState {
         if (event.type === "ticket.Opened") {

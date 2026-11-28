@@ -25,6 +25,7 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
+		// SAFETY: JSON.parse returns a JSON value for valid JSON text.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;

@@ -175,6 +175,7 @@ function invoke(fn: TrainableFn, input: FuzzValue): FuzzValue | undefined {
 
 function isThenable(value: FuzzValue | undefined): boolean {
 	if (!value || Object(value) !== value) return false;
+	// SAFETY: Object identity above establishes the non-null object contract.
 	const objectValue = value as object;
 	return Object.getPrototypeOf(objectValue) !== null && "then" in objectValue;
 }
@@ -201,6 +202,7 @@ function mutateSeeds(
 			continue;
 		}
 		if (seed.input && Object(seed.input) === seed.input) {
+			// SAFETY: this branch establishes an object input before spreading it.
 			out.push({ ...(seed.input as object), extra: true });
 			out.push({});
 			out.push({ constructor: { admin: true } });
@@ -225,6 +227,7 @@ function stable(
 	if (kind === "[object BigInt]") return `${String(value)}n`;
 	if (kind === "[object Symbol]") return String(value);
 	if (kind === "[object Function]") {
+		// SAFETY: callable values expose the standard optional function name.
 		return `fn:${(value as { name?: string }).name ?? "anonymous"}`;
 	}
 	if (kind === "[object Number]") {
@@ -239,6 +242,7 @@ function stable(
 			return kind;
 		}
 	}
+	// SAFETY: Object identity above establishes the WeakSet object contract.
 	const objectValue = value as object;
 	if (seen.has(objectValue)) return '"[Cycle]"';
 	seen.add(objectValue);
@@ -258,6 +262,7 @@ function stable(
 	if (Array.isArray(value)) {
 		return `[${value.map((entry) => stable(entry, seen)).join(",")}]`;
 	}
+	// SAFETY: this non-array object is traversed as a property dictionary.
 	const rec = value as Record<string, FuzzValue>;
 	return `{${Object.keys(rec)
 		.sort()

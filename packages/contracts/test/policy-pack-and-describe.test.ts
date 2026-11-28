@@ -43,6 +43,7 @@ function ruleReturning(
 }
 
 function rank(effect: string): number {
+	// SAFETY: EFFECT_RANK is total for every PolicyEffect used by this helper.
 	return EFFECT_RANK.get(effect) as number;
 }
 
@@ -91,8 +92,12 @@ describe("evaluatePolicyPack", () => {
 
 	it("drops packId and packVersion on the way into the Policy IR", () => {
 		const result = evaluatePolicyPack({ request: REQUEST });
-		expect((result.decision.evidence as JsonObject).packId).toBeUndefined();
 		expect(
+			// SAFETY: evidence is a parsed JsonObject from the policy decision.
+			(result.decision.evidence as JsonObject).packId,
+		).toBeUndefined();
+		expect(
+			// SAFETY: evidence is a parsed JsonObject from the policy decision.
 			(result.decision.evidence as JsonObject).packVersion,
 		).toBeUndefined();
 		expect(result.decision.evidence.inputHash).toMatch(/^sha256:/u);
@@ -190,6 +195,7 @@ describe("evaluatePolicyPack", () => {
 				rules: [
 					{
 						id: "truthy",
+						// SAFETY: this invalid return deliberately tests strict predicate matching.
 						when: () => "yes" as never,
 						decide: () => ({ effect: "deny", reason: "no" }),
 					},
@@ -313,6 +319,7 @@ describe("evaluatePolicyPack", () => {
 				id: "p",
 				version: "1",
 				rules: [
+					// SAFETY: this invalid effect deliberately tests unknown-effect ranking.
 					ruleReturning("weird", "quarantine" as never),
 					ruleReturning("d", "deny"),
 				],
@@ -371,6 +378,7 @@ describe("describeContractEffects", () => {
 	it("serializes the effect manifest as JSON the caller can re-parse", () => {
 		const described = describeContractEffects(createBoundaryContract());
 		expect(() => JSON.parse(described.effectManifestJson)).not.toThrow();
+		// SAFETY: JSON.parse is checked above and the manifest contract requires contractId.
 		const manifest = JSON.parse(described.effectManifestJson) as {
 			contractId: string;
 		};

@@ -81,6 +81,7 @@ export class AcceptanceReportError extends Error {
 
 export function reportDigestOf(bytes: Uint8Array): ReportDigest {
 	const hex = createHash("sha256").update(bytes).digest("hex");
+	// SAFETY: a sha256 hex digest is 64 lowercase hex digits, the whole ReportDigest invariant.
 	return `sha256:${hex}` as ReportDigest;
 }
 
@@ -296,6 +297,7 @@ export function parseAiBddRunReport(bytes: Uint8Array): AcceptanceEvidence {
 		throw new AcceptanceReportError(issues);
 	}
 	return Object.freeze({
+		// SAFETY: readRunId returned it only after RUN_ID_RE matched, the whole AiBddRunId invariant.
 		runId: runId as AiBddRunId,
 		reportDigest: reportDigestOf(bytes),
 		startedAt,

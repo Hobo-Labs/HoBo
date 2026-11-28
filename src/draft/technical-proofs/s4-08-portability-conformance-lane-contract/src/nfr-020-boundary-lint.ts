@@ -87,6 +87,7 @@ export function parseWorkspaceEdge(input: JsonValue): WorkspaceEdge {
     throw new Error("workspace edge must be an object");
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const record = input as JsonObject;
   const from = record.from;
   const to = record.to;

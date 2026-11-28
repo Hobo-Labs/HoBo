@@ -26,5 +26,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 }
 
 export function parseJsonText(text: string): JsonValue {
+	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }

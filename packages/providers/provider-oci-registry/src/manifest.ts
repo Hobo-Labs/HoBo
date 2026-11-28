@@ -68,6 +68,7 @@ export function parseManifest(
 ): ParsedManifest {
 	let value: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return unparseable("manifest is not JSON");
@@ -121,6 +122,7 @@ export function parseManifest(
 export function parseReferrers(text: string): readonly Descriptor[] {
 	let value: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		value = JSON.parse(text) as JsonValue;
 	} catch {
 		return unparseable("referrers response is not JSON");

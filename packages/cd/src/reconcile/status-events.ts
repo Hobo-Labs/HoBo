@@ -72,6 +72,7 @@ export function observationJson(
 	observation: ReconcileObservationRecord,
 ): JsonObject {
 	const json = toJson(ReconcileObservationRecordSchema, observation);
+	// SAFETY: toJson of a message is always a JSON object.
 	return json as JsonObject;
 }
 

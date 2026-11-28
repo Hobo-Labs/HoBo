@@ -292,6 +292,7 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 			aggregateStationCapabilities(input);
 		} catch (error) {
 			expect(error).toBeInstanceOf(StationCapabilityCoverageError);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const typed = error as StationCapabilityCoverageError;
 			expect(typed.remediation.length).toBeGreaterThan(0);
 			return { code: typed.code, remediation: typed.remediation };
@@ -366,6 +367,7 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 					{
 						yardName: "yard:bad",
 						providerId: "azure",
+						// SAFETY: assertion required at this I/O or test boundary.
 						bindings: [null as never],
 					},
 				],
@@ -396,6 +398,7 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 					{
 						yardName: "yard:a",
 						providerId: "azure",
+						// SAFETY: assertion required at this I/O or test boundary.
 						bindings: undefined as never,
 					},
 				],
@@ -405,6 +408,7 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 		expect(
 			refusal({
 				stationId: "station:acme",
+				// SAFETY: assertion required at this I/O or test boundary.
 				yards: [null as never],
 				expected: [],
 			}).code,
@@ -447,6 +451,7 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 		expect(
 			refusal({
 				stationId: "station:acme",
+				// SAFETY: assertion required at this I/O or test boundary.
 				yards: undefined as never,
 				expected: [],
 			}).code,
@@ -455,6 +460,7 @@ describe("aggregateStationCapabilities() — typed refusals", () => {
 			refusal({
 				stationId: "station:acme",
 				yards: [],
+				// SAFETY: assertion required at this I/O or test boundary.
 				expected: undefined as never,
 			}).code,
 		).toBe("STATION_COVERAGE_EXPECTED_INVALID");

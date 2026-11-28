@@ -139,6 +139,7 @@ describe("I11 neutral core scan", () => {
 				.map((spec) => `${relative(packageRoot, file)} → ${spec}`),
 		);
 		expect(offenders).toEqual([]);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const manifest = JSON.parse(
 			readFileSync(join(packageRoot, "package.json"), "utf8"),
 		) as {

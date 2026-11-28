@@ -254,6 +254,7 @@ describe("impact-classifier shadow comparison", () => {
 				stdio: ["pipe", "pipe", "ignore"],
 			},
 		);
+		// SAFETY: the CLI's own output contract, asserted right below.
 		const parsed = JSON.parse(out) as { meaningfulPaths: string[] };
 		assert.deepEqual(parsed.meaningfulPaths, ["packages/core/src/a.ts"]);
 	});

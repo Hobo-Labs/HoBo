@@ -225,6 +225,7 @@ export function validateBetaPilotReleaseCandidateEvidence(record: JsonValue) {
     return { ok: false, errors: ["beta pilot release-candidate evidence record is required"] };
   }
 
+  // SAFETY: `const value = record as Partial<BetaPilotReleaseCandidateEvidenceRecord>;` is required at this I/O or test boundary.
   const value = record as Partial<BetaPilotReleaseCandidateEvidenceRecord>;
 
   if (value.issue !== "HOBO-470") errors.push("issue must be HOBO-470");

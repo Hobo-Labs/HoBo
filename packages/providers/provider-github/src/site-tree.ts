@@ -87,6 +87,7 @@ export function parseStaticSiteTree(
 		);
 	let doc: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this artifact boundary.
 		doc = JSON.parse(
 			new TextDecoder("utf-8", { fatal: true }).decode(bytes),
 		) as JsonValue;

@@ -91,6 +91,7 @@ describe("conformance case parsing", () => {
 		assert.throws(
 			() =>
 				parseConformanceCases(
+					// SAFETY: `[...CASES, CASES[1] as PackConformanceCase],` is required at this I/O or test boundary.
 					[...CASES, CASES[1] as PackConformanceCase],
 					manifest,
 				),

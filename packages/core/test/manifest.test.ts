@@ -46,12 +46,14 @@ describe("CapabilityManifestBundle", () => {
 		try {
 			parseCapabilityManifestBundle(raw);
 		} catch (error) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as ManifestParseError).path).toBe("auth.issuer");
 		}
 	});
 
 	it("rejects unknown properties in closed shapes", () => {
 		const bundle = validManifestBundle();
+		// SAFETY: assertion required at this I/O or test boundary.
 		(bundle.index as JsonObject).extra = true;
 
 		expect(() => parseCapabilityManifestBundle(bundle)).toThrow(

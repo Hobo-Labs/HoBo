@@ -4,6 +4,7 @@ const file = process.env.ACTIVE_RESOURCES_FILE ?? "";
 const write = process.stdout.write.bind(process.stdout);
 let reported = false;
 
+// SAFETY: a wrapper with write's own signature; every argument goes through to it unchanged.
 process.stdout.write = ((...args: Parameters<typeof write>) => {
 	const written = write(...args);
 	if (!reported && String(args[0]).includes('"outcome"')) {

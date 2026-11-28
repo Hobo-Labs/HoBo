@@ -34,6 +34,7 @@ function registrationSource(
 ): string | undefined {
 	let source: string | undefined;
 	for (const event of events) {
+		// SAFETY: the event store persists JSON; the guards below refine it.
 		const data = event.data as JsonValue;
 		if (
 			event.type === "provider.Registered" &&
@@ -179,11 +180,13 @@ export async function runRegistryAdd(
 	const base = registerProviderFact(provider);
 	const registered = {
 		...base,
+		// SAFETY: registerProviderFact builds an object body; the stamp is added.
 		data: { ...(base.data as object), source: MANIFEST_SOURCE },
 	};
 	const storedRow = registryCatalogProjection
 		.query(registryCatalogProjection.fold(events))
 		.find((row) => row.providerId === provider.id);
+	// SAFETY: registerProviderFact builds this body with a manifestIndexDigest.
 	const newDigest = (base.data as { manifestIndexDigest: string })
 		.manifestIndexDigest;
 	const registrationChanged =

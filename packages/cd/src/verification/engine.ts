@@ -87,6 +87,7 @@ function verificationId(
 			]),
 		)
 		.digest("hex");
+	// SAFETY: a VerificationId is any stable token; this one is content-derived.
 	return `ver-${digest.slice(0, 32)}` as VerificationId;
 }
 
@@ -167,6 +168,7 @@ export function createVerificationEngine(
 		})) {
 			const data = jsonOf(entry.event.data);
 			if (isJsonObject(data) && isJsonString(data.verificationId)) {
+				// SAFETY: read back from a Started body this engine wrote.
 				ids.add(data.verificationId as VerificationId);
 			}
 		}

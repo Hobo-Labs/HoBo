@@ -20,6 +20,7 @@ import {
 function handOff(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
+		// SAFETY: the preparation fixture reads only these two output flags.
 		flags: { json: false, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
@@ -28,6 +29,7 @@ function handOff(): PrepareInput {
 		whatIf: false,
 		yes: false,
 		handOff: true,
+		// SAFETY: prepareGithubConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 	};
 }

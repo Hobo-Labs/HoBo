@@ -15,6 +15,7 @@ function errorCode(
 ): string | undefined {
 	if (error == null) return undefined;
 	if (!("code" in error)) return undefined;
+	// SAFETY: `in` established `code`; tag check parses the string conflict signal.
 	const code = (error as ErrorSignal).code;
 	return isJsonString(code) ? code : undefined;
 }

@@ -60,12 +60,15 @@ describe("streamer-port pact", () => {
 			throw new Error("expected backpressure");
 		} catch (error) {
 			expect(error).toBeInstanceOf(StreamerBackpressureError);
+			// SAFETY: assertion to `error as StreamerBackpressureError` is required at this boundary.
 			expect((error as StreamerBackpressureError).code).toBe(
 				"STREAMER_BACKPRESSURE",
 			);
+			// SAFETY: assertion to `error as StreamerBackpressureError` is required at this boundary.
 			expect((error as StreamerBackpressureError).runId).toBe(
 				backpressureRunId,
 			);
+			// SAFETY: assertion to `error as StreamerBackpressureError` is required at this boundary.
 			expect((error as StreamerBackpressureError).bufferLimit).toBe(2);
 		}
 
@@ -80,7 +83,9 @@ describe("streamer-port pact", () => {
 			throw new Error("expected closed");
 		} catch (error) {
 			expect(error).toBeInstanceOf(StreamerClosedError);
+			// SAFETY: assertion to `error as StreamerClosedError` is required at this boundary.
 			expect((error as StreamerClosedError).code).toBe("STREAMER_CLOSED");
+			// SAFETY: assertion to `error as StreamerClosedError` is required at this boundary.
 			expect((error as StreamerClosedError).runId).toBe(closedRunId);
 		}
 	});

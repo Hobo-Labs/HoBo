@@ -51,6 +51,7 @@ describe("equivalence harness", () => {
 				events,
 				initialState: { total: 0 },
 				fold: (state, currentEvent) => ({
+					// SAFETY: assertion to `currentEvent.data as { amount: number }` is required at this boundary.
 					total: state.total + (currentEvent.data as { amount: number }).amount,
 				}),
 			}),
@@ -83,6 +84,7 @@ function deterministicLedgerFold(
 		...state.byStream,
 		[currentEvent.streamId]:
 			(state.byStream[currentEvent.streamId] ?? 0) +
+			// SAFETY: assertion to `currentEvent.data as { cents: number }` is required at this boundary.
 			(currentEvent.data as { cents: number }).cents,
 	};
 	const nextSeq = {
@@ -140,6 +142,7 @@ function emptyLedger() {
 }
 
 function sortObject<T extends Record<string, number>>(value: T): T {
+	// SAFETY: assertion to `Object.fromEntries( Object.entries(value).sort(([left], [right]) => left.localeCompare(right)), ) as T` is required at this boundary.
 	return Object.fromEntries(
 		Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
 	) as T;

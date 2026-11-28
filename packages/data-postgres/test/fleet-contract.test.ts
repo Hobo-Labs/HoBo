@@ -50,6 +50,7 @@ type Pact = {
 	readonly interactions: readonly Interaction[];
 };
 
+// SAFETY: the pact is this package's own checked-in contract with this shape.
 const pact = JSON.parse(
 	readFileSync(
 		fileURLToPath(

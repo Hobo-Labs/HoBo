@@ -115,6 +115,7 @@ export async function signalActor(
 	actorKey: string,
 	message: JsonValue,
 ): Promise<void> {
+	// SAFETY: assertion to ``actors.${actorType}` as string & { readonly __brand: "TopicName"; }` is required at this boundary.
 	const topic = `actors.${actorType}` as string & {
 		readonly __brand: "TopicName";
 	};

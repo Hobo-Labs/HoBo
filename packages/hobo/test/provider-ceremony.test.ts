@@ -68,6 +68,7 @@ function input(whatIf = false): CommandRunInput {
 		verb: "up",
 		flags: { whatIf },
 	};
+	// SAFETY: the ceremony reads only emitProgress, flags.whatIf, verb and args.
 	return run as CommandRunInput;
 }
 

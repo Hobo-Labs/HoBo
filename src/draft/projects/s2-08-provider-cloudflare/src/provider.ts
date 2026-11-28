@@ -14,6 +14,7 @@ export interface ProviderCloudflareDraft {
 export function createProviderCloudflareDraft(options: { colos?: string[] } = {}): ProviderCloudflareDraft {
   const colos = options.colos ?? ["WNAM", "ENAM", "WEUR"];
   const publishedManifest = publishCapabilityManifest({ colos });
+  // SAFETY: publishCapabilityManifest emits this schema and the capabilities field is an array of port records.
   const capabilities = JSON.parse(publishedManifest["/.well-known/capability-manifest/capabilities.json"]) as {
     capabilities: Array<{ port: string }>;
   };

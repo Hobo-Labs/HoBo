@@ -121,6 +121,7 @@ describeConcern("gatekeeper", {
 				pack: packName = "none",
 				...rest
 			} = ask;
+			// SAFETY: assertion required at this I/O or test boundary.
 			const result = evaluateGatekeeper({
 				request: REQUEST,
 				deployedState: { contracts: [DEPLOYED] },

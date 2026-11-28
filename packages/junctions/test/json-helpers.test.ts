@@ -185,6 +185,7 @@ describe("cloning across the document boundary", () => {
 		const source = { nested: { value: 1 } };
 		const clone = cloneAsJson(source);
 		expect(clone).not.toBe(source);
+		// SAFETY: the clone of an object literal is an object.
 		expect((clone as { nested: unknown }).nested).not.toBe(source.nested);
 	});
 

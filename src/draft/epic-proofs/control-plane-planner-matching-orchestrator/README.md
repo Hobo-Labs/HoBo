@@ -96,3 +96,5 @@ This package ships the architecture-guard evidence required by
 ## Cascade reconciliation (83d9b5c92)
 
 The `self-host-bootstrap-saga-contract` technical proof refresh is absorbed without changing deterministic planner or orchestration evidence.
+
+The `SAFETY:` type-assertion notes restored from main in `adopt-in-place-contract`, `author-time-capability-feedback-contract`, `camp-mapping-sugar-compiler`, `capability-negotiation-contract`, `control-plane-event-schema-contract`, `delta-set-apply-reconcile-contract`, `deployment-plan-ir-contract`, `deployment-view-saga-graph-contract`, `dispatcher-maximize-credits-contract`, `drift-detection-loop-contract`, `driver-dispatch-routing-contract`, `matching-engine-skeleton-contract`, `matching-specificity-vectors`, `planner-dag-skeleton-contract`, `provider-port-contract`, `region-objective-ranking-contract`, `resource-definition-driver-contract`, `resourceactor-reconcile-loop-contract`, `self-host-bootstrap-ordering-spike`, `self-host-bootstrap-saga-contract` are absorbed without changing this rollup's evidence.

@@ -56,6 +56,7 @@ async function planned(
 }
 
 function rid(plan: RolloutPlanRecord): RolloutId {
+	// SAFETY: test reads the plan's own rollout id.
 	return plan.rolloutId as RolloutId;
 }
 

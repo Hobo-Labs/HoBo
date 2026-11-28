@@ -36,6 +36,7 @@ export function isJsonArray(
 
 export function parseJsonValue(text: string): JsonValue {
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return null;

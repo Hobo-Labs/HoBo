@@ -39,6 +39,7 @@ export function createCollectCommand(
 				`hobo collect: running resource collection on ${target.bindleId}`,
 			);
 			const result = collectBindleManifest(target);
+			// SAFETY: `const manifestValue = JSON.parse(` is required at this I/O or test boundary.
 			const manifestValue = JSON.parse(
 				serializeManifest(result.manifest),
 			) as JsonObject;

@@ -73,6 +73,7 @@ function tryRestorePlanCache(head: string): boolean {
 	if (!CACHE_DIR || !GITHUB_OUTPUT) return false;
 	const manifest = join(CACHE_DIR, "manifest.json");
 	try {
+		// SAFETY: manifest.json is written by savePlanCache in this script as { head: string }.
 		const parsed = JSON.parse(readFileSync(manifest, "utf8")) as {
 			head?: string;
 		};

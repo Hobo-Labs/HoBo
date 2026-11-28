@@ -425,6 +425,7 @@ export function validateEmission(emission: RealizeEmission | undefined): Validat
 
 export function wireBuildOutputs(emission: RealizeEmission, imageRefs: Record<string, string>): RealizeEmission {
   const imageRefByArtifact = new Map(Object.entries(imageRefs));
+  // SAFETY: `const iac = replaceBuildRefs(cloneAsJson(emission.iac), imageRefByArtifact) as IacProgram | undefined` is required at this I/O or test boundary.
   const iac = (emission.iac === undefined
     ? undefined
     : replaceBuildRefs(cloneAsJson(emission.iac), imageRefByArtifact)) as IacProgram | undefined;

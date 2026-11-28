@@ -62,6 +62,7 @@ function fixturesOf(definition: string, kind: "valid" | "invalid"): string[] {
 
 function docOf(fixture: string): ReportDoc {
 	const text = readFileSync(join(RECORDS, fixture), "utf8");
+	// SAFETY: every fixture under test/fixtures/records is a JSON object (the vet tests read each one).
 	return JSON.parse(text) as ReportDoc;
 }
 

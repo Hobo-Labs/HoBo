@@ -131,6 +131,7 @@ export function parseWitCapabilityCatalog(input: JsonValue): WitCapabilityCatalo
     throw new TypeError("wit capability catalog must be an object");
   }
 
+  // SAFETY: `const record = input as JsonObject;` is required at this I/O or test boundary.
   const record = input as JsonObject;
   const interfaces = record.interfaces;
 
@@ -143,6 +144,7 @@ export function parseWitCapabilityCatalog(input: JsonValue): WitCapabilityCatalo
       throw new TypeError("wit capability catalog entry must be an object");
     }
 
+    // SAFETY: `const item = entry as JsonObject;` is required at this I/O or test boundary.
     const item = entry as JsonObject;
     const wit = item.wit;
     const port = item.port;

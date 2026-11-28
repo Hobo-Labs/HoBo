@@ -175,6 +175,7 @@ async function importTrainables(projectRoot: string): Promise<{
 	const moduleUrl = pathToFileURL(
 		join(projectRoot, "src/_generated/trainables.ts"),
 	).href;
+	// SAFETY: `return (await import(moduleUrl)) as Awaited<` is required at this I/O or test boundary.
 	return (await import(moduleUrl)) as Awaited<
 		ReturnType<typeof importTrainables>
 	>;

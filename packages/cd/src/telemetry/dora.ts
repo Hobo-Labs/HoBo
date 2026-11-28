@@ -119,6 +119,7 @@ export function computeReconcileLag(
 
 function parse<D extends DescMessage>(schema: D, event: EventEnvelope) {
 	try {
+		// SAFETY: event-store bodies are JSON; fromJson parses or throws.
 		const data = event.data as JsonValue;
 		return fromJson(schema, data, { ignoreUnknownFields: true });
 	} catch {

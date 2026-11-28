@@ -22,6 +22,7 @@ export function projectYardSnapshot(
 ): ManagementResult<YardProjectionSnapshot> {
 	const stationId = resolveDefaultStationId(ctx, input.stationId);
 	if (!stationId) {
+		// SAFETY: this failure result is returned through the typed yard projection API.
 		return errResult("station required for yard projection", {
 			code: "station-missing",
 			remediation: ["hobo station init"],
@@ -29,6 +30,7 @@ export function projectYardSnapshot(
 	}
 	const state = ctx.loadStationState(stationId);
 	if (!state) {
+		// SAFETY: this failure result is returned through the typed yard projection API.
 		return errResult(`station not found: ${stationId}`, {
 			code: "station-missing",
 			remediation: ["hobo station init"],

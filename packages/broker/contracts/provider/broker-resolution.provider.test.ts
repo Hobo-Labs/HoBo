@@ -85,8 +85,10 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 
 			const expectedReceipt = interaction.response.body.receipt;
 			if (expectedReceipt !== undefined) {
+				// SAFETY: assertion required at this I/O or test boundary.
 				const receipt = response.body.receipt as JsonObject;
 				expect(receipt.requestId).toBe(expectedReceipt.requestId);
+				// SAFETY: assertion required at this I/O or test boundary.
 				const placements = receipt.placements as Array<JsonObject>;
 				expect(placements[0]?.providerId).toBe(
 					expectedReceipt.placements[0].providerId,
@@ -94,6 +96,7 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 			}
 			const expectedRejection = interaction.response.body.rejection;
 			if (expectedRejection !== undefined) {
+				// SAFETY: assertion required at this I/O or test boundary.
 				const rejection = response.body.rejection as {
 					reasons: Array<JsonObject>;
 				};
@@ -104,9 +107,12 @@ describe("HoBo Broker resolve surface — provider verification of the pact", ()
 					expectedRejection.reasons[0].code,
 				);
 			}
-			const expectedTypes = (
-				interaction.response.body.events as Array<{ type: string }>
-			).map((event) => event.type);
+			const expectedTypes =
+				// SAFETY: assertion required at this I/O or test boundary.
+				(interaction.response.body.events as Array<{ type: string }>).map(
+					(event) => event.type,
+				);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const actualTypes = (response.body.events as Array<{ type: string }>).map(
 				(event) => event.type,
 			);

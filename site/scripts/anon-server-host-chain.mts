@@ -66,6 +66,7 @@ export async function readOpenpouchCooldown(
 ): Promise<OpenpouchCooldown | null> {
 	try {
 		const raw = await readFile(filePath, "utf8");
+		// SAFETY: assertion required at this I/O boundary.
 		const parsed = JSON.parse(raw) as Partial<OpenpouchCooldown>;
 		if (Object.prototype.toString.call(parsed.until) !== "[object Number]" || parsed.until <= Date.now()) {
 			return null;

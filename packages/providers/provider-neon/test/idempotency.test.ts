@@ -110,6 +110,7 @@ describe("create idempotency and adoption", () => {
 		try {
 			await retry.createDatabase({ ref: "hobo-test", idempotencyKey: KEY });
 		} catch (error) {
+			// SAFETY: value was established by the surrounding parse or typed constructor.
 			code = (error as NeonProviderError).code;
 		}
 		expect(code).toBe("PROVIDER_OPERATION_AMBIGUOUS");

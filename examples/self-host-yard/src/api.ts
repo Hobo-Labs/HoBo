@@ -83,6 +83,7 @@ export async function statusApi(request: Request): Promise<Response> {
 		let incident: IncidentReport;
 		try {
 			const body = await request.json();
+			// SAFETY: request JSON is untyped; parseIncidentReport is the boundary.
 			incident = parseIncidentReport(body as JsonValue);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

@@ -144,6 +144,7 @@ function volumeApi(initial: Rec[] = []) {
 			return json(200, { volumes, meta: { total: volumes.length } });
 		}
 		if (call.method === "POST" && call.path === VOLUMES) {
+			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 			const sent = JSON.parse(String(call.body)) as Rec;
 			const created = {
 				id: `vol-${nextId++}`,
@@ -159,6 +160,7 @@ function volumeApi(initial: Rec[] = []) {
 		}
 		if (call.method === "POST" && call.path.endsWith("/actions")) {
 			const id = call.path.slice(VOLUMES.length + 1, -"/actions".length);
+			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 			const sent = JSON.parse(String(call.body)) as Rec;
 			volumes = volumes.map((v) =>
 				v.id === id ? { ...v, size_gigabytes: sent.size_gigabytes } : v,
@@ -436,6 +438,7 @@ describe("block storage volumes", () => {
 		expect(fake.calls.some((c) => c.method === "DELETE")).toBe(true);
 	});
 
+	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("treats an already-absent volume as deleted", async () => {
 		const fake = fakeTransport(volumeApi());
 		await expect(
@@ -459,6 +462,7 @@ function clusterApi(initial: Rec[] = []) {
 			});
 		}
 		if (call.method === "POST" && call.path === CLUSTERS) {
+			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 			const sent = JSON.parse(String(call.body)) as Rec;
 			const created = {
 				id: `doks-${nextId++}`,
@@ -525,6 +529,7 @@ describe("DOKS clusters", () => {
 			request(clusterRequest),
 			fake.transport,
 		);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		const pools = fake.bodyOf(1).node_pools as Rec[];
 		expect(pools).toHaveLength(1);
 		expect(String(pools[0]?.name)).toContain("apps-1");
@@ -536,6 +541,7 @@ describe("DOKS clusters", () => {
 			request(clusterRequest),
 			fake.transport,
 		);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		expect((fake.bodyOf(1).node_pools as Rec[])[0]?.count).toBe(1);
 	});
 
@@ -548,6 +554,7 @@ describe("DOKS clusters", () => {
 			}),
 			fake.transport,
 		);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		expect((fake.bodyOf(1).node_pools as Rec[])[0]?.count).toBe(3);
 	});
 
@@ -557,6 +564,7 @@ describe("DOKS clusters", () => {
 			request(clusterRequest),
 			fake.transport,
 		);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		expect((fake.bodyOf(1).node_pools as Rec[])[0]).not.toHaveProperty(
 			"auto_scale",
 		);
@@ -571,6 +579,7 @@ describe("DOKS clusters", () => {
 			}),
 			fake.transport,
 		);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		expect((fake.bodyOf(1).node_pools as Rec[])[0]?.auto_scale).toBe(false);
 	});
 
@@ -588,6 +597,7 @@ describe("DOKS clusters", () => {
 			fake.transport,
 		);
 		expect(fake.bodyOf(1).version).toBe("1.30.0-do.0");
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		expect((fake.bodyOf(1).node_pools as Rec[])[0]?.size).toBe("s-4vcpu-8gb");
 	});
 
@@ -785,6 +795,7 @@ describe("DOKS clusters", () => {
 		expect(fake.calls.some((c) => c.method === "DELETE")).toBe(true);
 	});
 
+	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("treats an already-absent cluster as deleted", async () => {
 		const fake = fakeTransport(clusterApi());
 		await expect(

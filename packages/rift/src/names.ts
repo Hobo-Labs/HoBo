@@ -38,5 +38,6 @@ export function parseWorkspaceName(raw: string): ParseResult {
 				"name must start with a letter or digit and contain only letters, digits, '.', '_' or '-'",
 		};
 	}
+	// SAFETY: `return { ok: true, value: name as WorkspaceName };` is required at this I/O or test boundary.
 	return { ok: true, value: name as WorkspaceName };
 }

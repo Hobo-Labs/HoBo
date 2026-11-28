@@ -46,6 +46,7 @@ export interface OrderRow {
 }
 
 function inspectEventData(data: EventEnvelope["data"]): Inspectable {
+	// SAFETY: EventEnvelope.data is JSON at the store boundary; callers tag-check fields.
 	return data as Inspectable;
 }
 

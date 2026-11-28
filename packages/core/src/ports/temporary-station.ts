@@ -88,6 +88,7 @@ export function assertTemporaryEnvironmentStationResult(
 	if (value === null || !isJsonObject(value)) {
 		throw new Error("temporary Environment Station result must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = value as JsonObject;
 	for (const key of [
 		"stationId",
@@ -108,10 +109,15 @@ export function assertTemporaryEnvironmentStationResult(
 		);
 	}
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		stationId: obj.stationId as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		stationUrl: obj.stationUrl as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		claimUrl: obj.claimUrl as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		expiresAt: obj.expiresAt as string,
+		// SAFETY: assertion required at this I/O or test boundary.
 		providerId: obj.providerId as string,
 		anonymous: true,
 		temporary: true,

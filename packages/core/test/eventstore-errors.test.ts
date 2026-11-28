@@ -56,6 +56,7 @@ describe("parseEventPosition / parseFenceToken", () => {
 					parse(-1n);
 					expect.unreachable("a negative bigint must be refused");
 				} catch (error) {
+					// SAFETY: parse(-1n) above establishes the parser error type.
 					const parseError = error as EventStoreParseError;
 					expect(parseError.expected).toBe("non-negative bigint");
 					expect(parseError.path).toBe(defaultPath);
@@ -98,6 +99,7 @@ describe("parseEventPosition / parseFenceToken", () => {
 					parse(-1, "commit.after");
 					expect.unreachable("expected a refusal");
 				} catch (error) {
+					// SAFETY: parse(-1, ...) above establishes the parser error type.
 					expect((error as EventStoreParseError).path).toBe("commit.after");
 				}
 			});
@@ -117,12 +119,14 @@ describe("parseSubscriptionId / parsePartitionId", () => {
 				parseSubscriptionId(bad);
 				expect.unreachable("expected a refusal");
 			} catch (error) {
+				// SAFETY: parseSubscriptionId(bad) above establishes the parser error type.
 				expect((error as EventStoreParseError).path).toBe("subscriptionId");
 			}
 			try {
 				parsePartitionId(bad);
 				expect.unreachable("expected a refusal");
 			} catch (error) {
+				// SAFETY: parsePartitionId(bad) above establishes the parser error type.
 				expect((error as EventStoreParseError).path).toBe("partitionId");
 			}
 		}

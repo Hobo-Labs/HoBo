@@ -17,6 +17,7 @@ export function stagePlanId(
 	campId: CampId,
 	percent: number,
 ): RoutingPlanId {
+	// SAFETY: a RoutingPlanId is any non-empty token; parseRoutingPlan re-checks it below.
 	return `${rolloutId}:${campId}:p${percent}` as RoutingPlanId;
 }
 

@@ -91,6 +91,7 @@ export function createResourceIdentityLedger(input: JsonValue): ResourceIdentity
     );
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const record = input as JsonObject;
   const bindleName = requireNonEmptyString(record.bindleName, "bindleName");
   if (record.artifactOwner !== "hobo-collector") {
@@ -343,6 +344,7 @@ function parseDependency(context: BuilderContext, value: DependencyRef): Resourc
     return value;
   }
 
+  // SAFETY: descriptors and foreign bags are inspected for ownerBindleId only.
   const bag: { ownerBindleId?: JsonValue } = value as never;
   if (isResourceDescriptor(value) && bag.ownerBindleId !== context.ownerBindleId) {
     throw new ClosureBuilderResourceError(
@@ -375,6 +377,7 @@ function parseResourceIdentityLedgerEntry(input: JsonValue): ResourceIdentityLed
       "resource identity ledger entry must be an object",
     );
   }
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const record = input as JsonObject;
   if (
     record.identitySource !== "hobo-generated" ||
@@ -477,6 +480,7 @@ function isResourceDescriptor<T>(value: T): boolean {
 function deepFreeze<T>(value: T): T {
   if (Array.isArray(value)) {
     value.forEach(deepFreeze);
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     return Object.freeze(value) as T;
   }
   if (isJsonObject(value) && value !== null) {

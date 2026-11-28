@@ -160,6 +160,7 @@ describe.skipIf(cue === undefined)("posture.cue", () => {
 		for (const { event } of h.store.all) {
 			const definition = BODY_DEFINITION.get(event.type);
 			if (!definition) continue;
+			// SAFETY: bodies are JSON by construction.
 			expect(
 				vet(definition, event.data as JsonValue),
 				`${event.type} ${JSON.stringify(event.data)}`,

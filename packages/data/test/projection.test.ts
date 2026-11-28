@@ -99,6 +99,7 @@ describe("defineProjection read-model fold", () => {
 			on: {
 				"order.Placed": (_row, event) => {
 					sawFrozenEvent = Object.isFrozen(event);
+					// SAFETY: EventEnvelope.data is JSON at the store boundary.
 					const data = event.data as Inspectable;
 					if (!isJsonObject(data)) {
 						throw new TypeError("order event data must be an object");

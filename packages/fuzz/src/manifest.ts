@@ -90,6 +90,7 @@ export function hasPrototypePollution(
 	seen: WeakSet<object> = new WeakSet(),
 ): boolean {
 	if (!value || Object(value) !== value) return false;
+	// SAFETY: Object identity above establishes the WeakSet object contract.
 	const objectValue = value as object;
 	if (seen.has(objectValue)) return false;
 	seen.add(objectValue);
@@ -99,6 +100,7 @@ export function hasPrototypePollution(
 	) {
 		return true;
 	}
+	// SAFETY: Object identity above proves this is a non-null object; Object.values reads its properties.
 	return Object.values(value).some((entry) =>
 		hasPrototypePollution(entry, seen),
 	);

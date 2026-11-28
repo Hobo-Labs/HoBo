@@ -121,6 +121,7 @@ describe("refusals before the journal is touched", () => {
 
 	it("refuses a non-string key", () => {
 		const acquire = host().acquire;
+		// SAFETY: the test subject is the runtime parse of a non-string key at the host I/O boundary.
 		const key = 7 as string;
 		expect(() => acquire(key, { holderId: "a" })).toThrow(
 			/key must be a non-empty string/u,
@@ -135,6 +136,7 @@ describe("refusals before the journal is touched", () => {
 
 	it("refuses a missing request object rather than dereferencing it", () => {
 		const acquire = host().acquire;
+		// SAFETY: missing request object is the I/O-boundary case acquire must refuse.
 		const request = undefined as { holderId: string };
 		expect(() => acquire("order:1", request)).toThrow(
 			/holderId must be a non-empty string/u,
@@ -143,6 +145,7 @@ describe("refusals before the journal is touched", () => {
 
 	it("refuses a non-string holder id", () => {
 		const acquire = host().acquire;
+		// SAFETY: non-string holderId is the I/O-boundary case acquire must refuse.
 		const holderId = 1 as string;
 		expect(() => acquire("order:1", { holderId })).toThrow(TypeError);
 	});

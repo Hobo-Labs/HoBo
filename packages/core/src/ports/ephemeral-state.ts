@@ -97,6 +97,7 @@ export function parseEphemeralKey(value: string): EphemeralKey {
 			value.length > 64 ? `${value.slice(0, 61)}...` : value,
 		);
 	}
+	// SAFETY: the brand is applied only after the shape check above.
 	return value as EphemeralKey;
 }
 
@@ -112,6 +113,7 @@ export function parseEphemeralVersion(value: string): EphemeralVersion {
 			value.slice(0, EPHEMERAL_STATE_MAX_VERSION_LENGTH),
 		);
 	}
+	// SAFETY: the brand is applied only after the shape check above.
 	return value as EphemeralVersion;
 }
 
@@ -127,6 +129,7 @@ export function parseEphemeralTtlMs(value: number): EphemeralTtlMs {
 			Number.isFinite(value) ? value : String(value),
 		);
 	}
+	// SAFETY: the brand is applied only after the range check above.
 	return value as EphemeralTtlMs;
 }
 

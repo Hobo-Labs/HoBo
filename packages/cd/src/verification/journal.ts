@@ -78,8 +78,11 @@ function decodeStarted<D>(
 		spec = undefined;
 	}
 	return {
+		// SAFETY: ids are read back from the stream this engine wrote.
 		id: text(data.verificationId) as VerificationId,
+		// SAFETY: as above.
 		freightId: text(data.freightId) as FreightId,
+		// SAFETY: as above.
 		campId: text(data.campId) as CampId,
 		cohortAware: data.cohortAware === true,
 		spec,

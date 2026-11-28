@@ -47,6 +47,7 @@ export function registerBuildCommand(registry: {
 }): void {
   registry.register("build", {
     async run(input) {
+      // SAFETY: `const request = input as BuildRequest;` is required at this I/O or test boundary.
       const request = input as BuildRequest;
       return runBuild(request);
     },

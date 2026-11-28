@@ -88,6 +88,7 @@ const ordersFold: ProjectionFold = {
 		event: EventEnvelope,
 		read,
 	): Promise<readonly RecordMutation[]> {
+		// SAFETY: test events carry the JSON bodies appended below.
 		const data = event.data as { id: string; total?: string };
 		const key = encodeRecordKey(
 			ORDERS,
@@ -295,6 +296,7 @@ describe("rebuild-and-swap", () => {
 
 describe("log-pivot", () => {
 	const toEvents = (change: ChangeEnvelope): readonly PivotEvent[] => {
+		// SAFETY: the canonical key of the orders schema is a one-element array.
 		const [id] = JSON.parse(change.key) as [string];
 		return change.op === "delete" || change.record === undefined
 			? [{ streamId: `order:${id}`, type: "order.Removed", data: { id } }]
@@ -314,6 +316,7 @@ describe("log-pivot", () => {
 	const pivotFold: ProjectionFold = {
 		name: "orders-pivot",
 		project(event: EventEnvelope): readonly RecordMutation[] {
+			// SAFETY: pivot events carry the bodies `toEvents` built above.
 			const data = event.data as {
 				id: string;
 				status?: string;

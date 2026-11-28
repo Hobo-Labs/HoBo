@@ -86,6 +86,7 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
+			// SAFETY: test double; positions come from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);

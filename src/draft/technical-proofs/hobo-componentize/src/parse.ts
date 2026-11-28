@@ -20,6 +20,7 @@ export function parseComponentizeSpec(raw: JsonValue): ComponentizeSpec {
     throw new Error("componentize.invalid_spec: expected object");
   }
 
+  // SAFETY: `const value = raw as JsonObject;` is required at this I/O or test boundary.
   const value = raw as JsonObject;
   const name = readString(value, "name");
   const sourceRoot = readString(value, "sourceRoot");
@@ -57,6 +58,7 @@ function parseToolchainPin(raw: JsonValue): ToolchainPin {
     throw new Error("componentize.invalid_spec: toolchain required");
   }
 
+  // SAFETY: `const value = raw as JsonObject;` is required at this I/O or test boundary.
   const value = raw as JsonObject;
   const toolchain = Object.freeze({
     jco: readString(value, "jco"),
@@ -66,6 +68,7 @@ function parseToolchainPin(raw: JsonValue): ToolchainPin {
   });
 
   for (const [key, expected] of Object.entries(PINNED_TOOLCHAIN)) {
+    // SAFETY: `const actual = toolchain[key as keyof ToolchainPin];` is required at this I/O or test boundary.
     const actual = toolchain[key as keyof ToolchainPin];
     if (actual !== expected) {
       throw new Error(`componentize.toolchain_skew: ${key} expected ${expected} got ${actual}`);
@@ -122,6 +125,7 @@ function pkgVersion(name: string): string {
     ...name.split("/"),
   );
   const packageJsonPath = join(packageRoot, "package.json");
+  // SAFETY: `const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {` is required at this I/O or test boundary.
   const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
     name?: string;
     version?: string;

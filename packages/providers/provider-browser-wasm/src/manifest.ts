@@ -129,6 +129,7 @@ function decodeJsonObject(body: Uint8Array, what: string): JsonObject {
 	const text = decodeText(body);
 	let decoded: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		decoded = JSON.parse(text) as JsonValue;
 	} catch {
 		contractChanged(`${what} was not JSON`, {

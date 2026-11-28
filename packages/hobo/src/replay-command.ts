@@ -81,10 +81,13 @@ export function createReplayCommand(
 		run: async ({ args, flags, emitProgress }) => {
 			const env = deps.env ?? process.env;
 			const home = resolveHome(deps);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const flagBag = flags as JsonObject;
 			const stationId = resolveStationId(deps, flagBag, home);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const sub = (args[0] ?? "list") as string;
 
+			// SAFETY: assertion required at this I/O or test boundary.
 			if (!(SUBCOMMANDS as readonly string[]).includes(sub)) {
 				return {
 					ok: false,

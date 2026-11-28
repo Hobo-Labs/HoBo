@@ -33,6 +33,7 @@ describe("parsePactDocument", () => {
       parsePactDocument({ ...validPact, consumer: { name: "bad-name" } });
     } catch (error) {
       expect(error).toBeInstanceOf(PactParseError);
+      // SAFETY: assertion to `expect((error as PactParseError).issues.some((issue) => issue.includes("consumer` is required at this boundary.
       expect((error as PactParseError).issues.some((issue) => issue.includes("consumer.name"))).toBe(
         true,
       );
@@ -43,6 +44,7 @@ describe("parsePactDocument", () => {
     try {
       parsePactDocument({ ...validPact, interactions: [] });
     } catch (error) {
+      // SAFETY: assertion to `expect((error as PactParseError).issues).toContain("interactions must be non-emp` is required at this boundary.
       expect((error as PactParseError).issues).toContain("interactions must be non-empty");
     }
   });
@@ -54,6 +56,7 @@ describe("parsePactDocument", () => {
         metadata: { pactSpecification: { version: "2.0.0" } },
       });
     } catch (error) {
+      // SAFETY: assertion to `expect((error as PactParseError).issues).toContain(` is required at this boundary.
       expect((error as PactParseError).issues).toContain(
         'metadata.pactSpecification.version must be "3.0.0"',
       );
@@ -73,6 +76,7 @@ describe("parsePactDocument", () => {
         ],
       });
     } catch (error) {
+      // SAFETY: assertion to `expect((error as PactParseError).issues.some((issue) => issue.includes("method")` is required at this boundary.
       expect((error as PactParseError).issues.some((issue) => issue.includes("method"))).toBe(true);
     }
   });
@@ -90,6 +94,7 @@ describe("parsePactDocument", () => {
         ],
       });
     } catch (error) {
+      // SAFETY: assertion to `expect((error as PactParseError).issues.some((issue) => issue.includes("path")))` is required at this boundary.
       expect((error as PactParseError).issues.some((issue) => issue.includes("path"))).toBe(true);
     }
   });
@@ -107,6 +112,7 @@ describe("parsePactDocument", () => {
         ],
       });
     } catch (error) {
+      // SAFETY: assertion to `expect((error as PactParseError).issues.some((issue) => issue.includes("status")` is required at this boundary.
       expect((error as PactParseError).issues.some((issue) => issue.includes("status"))).toBe(true);
     }
   });
@@ -121,6 +127,7 @@ describe("parsePactDocument", () => {
       });
       expect.fail("expected parse error");
     } catch (error) {
+      // SAFETY: assertion to `const issues = (error as PactParseError).issues;` is required at this boundary.
       const issues = (error as PactParseError).issues;
       expect(issues.length).toBeGreaterThanOrEqual(4);
     }

@@ -45,6 +45,7 @@ describe("Bindle connectors", () => {
 		expect(() =>
 			bindle("bad-connector", (b) => {
 				const search = b.connector(sample);
+				// SAFETY: assertion required at this I/O or test boundary.
 				search.allow("admin" as "search");
 				return { api: b.api() };
 			}),

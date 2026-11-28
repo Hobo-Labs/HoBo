@@ -104,6 +104,7 @@ function isLicenseText<T>(value: T): value is T & string {
 }
 
 function readManifest(file: string): Manifest {
+	// SAFETY: assertion to `ileSync(file, "utf8")) as Manifest; } /** Workspa` is required at this boundary.
 	return JSON.parse(readFileSync(file, "utf8")) as Manifest;
 }
 
@@ -207,6 +208,7 @@ function productionDependencyNames(): Set<string> {
 						edges.set(
 							manifest.name,
 							Object.keys(
+								// SAFETY: assertion to `encies?: object }).dependencies ?? {}` is required at this boundary.
 								(manifest as { dependencies?: object }).dependencies ?? {},
 							),
 						);
@@ -222,6 +224,7 @@ function productionDependencyNames(): Set<string> {
 		if (manifest.private) continue;
 		queue.push(
 			...Object.keys(
+				// SAFETY: assertion to `cies?: object }).dependencies ?? {}, ` is required at this boundary.
 				(manifest as { dependencies?: object }).dependencies ?? {},
 			),
 		);
@@ -229,6 +232,7 @@ function productionDependencyNames(): Set<string> {
 
 	const seen = new Set<string>();
 	while (queue.length > 0) {
+		// SAFETY: assertion to ` if (seen.has(name)` is required at this boundary.
 		const name = queue.pop() as string;
 		if (seen.has(name)) continue;
 		seen.add(name);

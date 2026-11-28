@@ -164,12 +164,15 @@ export function api<const Bindings extends BindingMap = BindingMap>(
 } {
   const handle = createHandle("api", name, options);
   for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"] as const) {
+    // SAFETY: HTTP method keys are attached to the handle host at this contract edge.
     const host: TriggerHandleHost = handle as never;
     host[method.toLowerCase()] = (path: string, handler: Handler<Bindings>) => {
+      // SAFETY: HTTP handlers are stored erased at the trigger registry edge.
       const registered: Handler = handler as Handler;
       return registerHttpRoute(handle, method, path, registered);
     };
   }
+  // SAFETY: assertion to `return Object.freeze(handle) as ResourceHandle<"api"> & {` is required at this boundary.
   return Object.freeze(handle) as ResourceHandle<"api"> & {
     get(path: string, handler: Handler<Bindings>): TriggerEdge;
     post(path: string, handler: Handler<Bindings>): TriggerEdge;
@@ -329,6 +332,7 @@ function createHandle<K extends string>(
     kind,
     name,
     stableId: `${kind}:${name}`,
+    // SAFETY: assertion to `port: PORT_BY_KIND[kind as keyof typeof PORT_BY_KIND],` is required at this boundary.
     port: PORT_BY_KIND[kind as keyof typeof PORT_BY_KIND],
     durableEvents: options.durableEvents ?? true,
     bindings: Object.fromEntries(
@@ -337,6 +341,7 @@ function createHandle<K extends string>(
         {
           port: target.port,
           resource: target.name,
+          // SAFETY: assertion to `clientType: target.clientType ?? CLIENT_TYPE_BY_KIND[target.kind as keyof typeof` is required at this boundary.
           clientType: target.clientType ?? CLIENT_TYPE_BY_KIND[target.kind as keyof typeof CLIENT_TYPE_BY_KIND],
         },
       ]),
@@ -344,6 +349,7 @@ function createHandle<K extends string>(
     triggers: [],
     permissions: new Set(),
     routeKeys: new Set(),
+    // SAFETY: assertion to `clientType: CLIENT_TYPE_BY_KIND[kind as keyof typeof CLIENT_TYPE_BY_KIND],` is required at this boundary.
     clientType: CLIENT_TYPE_BY_KIND[kind as keyof typeof CLIENT_TYPE_BY_KIND],
   };
   return handle;
@@ -523,6 +529,7 @@ function durableRuntimeFor(handler: Handler | WorkflowHandler) {
 }
 
 function omitEmpty<T>(value: T) {
+  // SAFETY: Object.entries erases T at this object-bag boundary.
   const entries: Array<[string, JsonValue]> = Object.entries(value as never);
   return Object.fromEntries(
     entries.filter(([, entry]) => {
@@ -538,7 +545,9 @@ function omitEmpty<T>(value: T) {
 }
 
 function omitUndefined<T>(value: T): T {
+  // SAFETY: Object.entries erases T at this object-bag boundary.
   const entries: Array<[string, JsonValue | undefined]> = Object.entries(value as never);
+  // SAFETY: filtered entries reconstruct T after dropping undefined fields.
   const omitted: T = Object.fromEntries(entries.filter(([, entry]) => entry !== undefined)) as T;
   return omitted;
 }

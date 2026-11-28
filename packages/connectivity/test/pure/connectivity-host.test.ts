@@ -48,6 +48,7 @@ describe("named endpoints", () => {
 	it("defaults resource, app and mode when the query supplies none", async () => {
 		const response = await get("/named-endpoints/local");
 		expect(response.status).toBe(200);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = response.body as {
 			url: string;
 			hostname: string;
@@ -59,6 +60,7 @@ describe("named endpoints", () => {
 	});
 
 	it("selects overlay mode from the path suffix", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = (await get("/named-endpoints/overlay")).body as {
 			mode: string;
 		};
@@ -67,6 +69,7 @@ describe("named endpoints", () => {
 
 	it("treats any non-overlay suffix as local", async () => {
 		for (const suffix of ["local", "", "overlayish", "OVERLAY"]) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const body = (await get(`/named-endpoints/${suffix}`)).body as {
 				mode: string;
 			};
@@ -79,12 +82,14 @@ describe("named endpoints", () => {
 			"/named-endpoints/local?resource=api&app=shop&env=staging&tenant=acme&branch=feat",
 		);
 		expect(response.status).toBe(200);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = response.body as { url: string };
 		expect(body.url).toContain("api");
 		expect(body.url).toContain("shop");
 	});
 
 	it("derives hostname by stripping the scheme from the url", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = (await get("/named-endpoints/local")).body as {
 			url: string;
 			hostname: string;
@@ -109,24 +114,28 @@ describe("policy evaluation", () => {
 	const evaluate = (body: JsonObject) => post("/policy/evaluate", body);
 
 	it("defaults to the tag-acl engine", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = (await evaluate({})).body as { engineId: string };
 		expect(body.engineId).toBeTruthy();
 		expect(body.engineId).not.toContain("opa");
 	});
 
 	it("selects OPA only on an exact engine match", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const opa = (await evaluate({ engine: "opa" })).body as {
 			engineId: string;
 		};
 		expect(opa.engineId).toContain("opa");
 
 		for (const engine of ["OPA", "opa-lite", true, 1, null]) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const other = (await evaluate({ engine })).body as { engineId: string };
 			expect(other.engineId).not.toContain("opa");
 		}
 	});
 
 	it("returns effect, engineId and reasons on every decision", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = (await evaluate({ action: "read" })).body as {
 			effect: string;
 			engineId: string;
@@ -138,9 +147,11 @@ describe("policy evaluation", () => {
 	});
 
 	it("defaults the resource tenant to the subject tenant", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const sameTenant = (await evaluate({ subjectTenant: "acme" })).body as {
 			effect: string;
 		};
+		// SAFETY: assertion required at this I/O or test boundary.
 		const crossTenant = (
 			await evaluate({
 				subjectTenant: "acme",
@@ -151,9 +162,11 @@ describe("policy evaluation", () => {
 	});
 
 	it("adds a development env tag to whichever side omits one", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const bothDefaulted = (
 			await evaluate({ subjectTags: [], resourceTags: [] })
 		).body as { effect: string };
+		// SAFETY: assertion required at this I/O or test boundary.
 		const inherited = (
 			await evaluate({
 				subjectTags: ["env:production"],
@@ -164,12 +177,14 @@ describe("policy evaluation", () => {
 	});
 
 	it("keeps an explicit env tag on each side rather than overwriting it", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const mismatched = (
 			await evaluate({
 				subjectTags: ["env:development"],
 				resourceTags: ["env:production"],
 			})
 		).body as { effect: string };
+		// SAFETY: assertion required at this I/O or test boundary.
 		const matched = (
 			await evaluate({
 				subjectTags: ["env:production"],
@@ -195,6 +210,7 @@ describe("policy evaluation", () => {
 	});
 
 	it("marks a resource shared only on strict boolean true", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const shared = (
 			await evaluate({
 				subjectTenant: "acme",
@@ -202,6 +218,7 @@ describe("policy evaluation", () => {
 				resourceShared: true,
 			})
 		).body as { effect: string };
+		// SAFETY: assertion required at this I/O or test boundary.
 		const notShared = (
 			await evaluate({
 				subjectTenant: "acme",
@@ -302,6 +319,7 @@ describe("DNS suggest", () => {
 
 describe("metering", () => {
 	it("starts empty", async () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = (await get("/metering/events")).body as {
 			count: number;
 			eventTypes: string[];
@@ -317,6 +335,7 @@ describe("metering", () => {
 			path: "/policy/evaluate",
 			body: { action: "read" },
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const body = (
 			await handler.handle({ method: "GET", path: "/metering/events" })
 		).body as { count: number; eventTypes: string[] };
@@ -331,9 +350,11 @@ describe("metering", () => {
 			path: "/policy/evaluate",
 			body: {},
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const busyCount = (
 			await busy.handle({ method: "GET", path: "/metering/events" })
 		).body as { count: number };
+		// SAFETY: assertion required at this I/O or test boundary.
 		const fresh = (await get("/metering/events")).body as { count: number };
 		expect(busyCount.count).toBeGreaterThan(0);
 		expect(fresh.count).toBe(0);

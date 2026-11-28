@@ -112,6 +112,7 @@ describe("createRuntimeLocalQueueClock queue", () => {
 
 		finishHandler?.();
 		await inFlight;
+		// SAFETY: assertion to `"msg-1" as never` is required at this boundary.
 		runtime.queue.simulateRedelivery("msg-1" as never);
 		await runtime.queue.handle(queue, async (message) => {
 			effects.push(`charged:${message.idempotencyKey}`);
@@ -150,6 +151,7 @@ describe("createRuntimeLocalQueueClock queue", () => {
 	it("throws QueueLeaseLostError on unknown message complete", () => {
 		const runtime = createRuntimeLocalQueueClock();
 		expect(() =>
+			// SAFETY: assertion to `"lease-1" as never` is required at this boundary.
 			runtime.queue.complete("msg-missing" as never, "lease-1" as never),
 		).toThrow(QueueLeaseLostError);
 	});

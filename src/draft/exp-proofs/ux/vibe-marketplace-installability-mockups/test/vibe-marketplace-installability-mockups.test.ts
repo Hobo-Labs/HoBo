@@ -113,6 +113,7 @@ test("mockups cite accepted HOBO-577 quickstart fixture ids", () => {
 });
 
 test("architecture Pact and CUE fixtures align with the parsed proof", () => {
+  // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
   const pact = JSON.parse(
     readFileSync(
       new URL(

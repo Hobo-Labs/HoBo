@@ -17,6 +17,7 @@ import type {
 export type { RecipePlacementTerm, RecipeTerm } from "./recipe-terms-source.js";
 
 export const RECIPE_TERMS: readonly RecipeTerm[] = Object.freeze(
+	// SAFETY: generate-recipe-terms writes RecipeTermsArtifact JSON consumed here.
 	(artifact as RecipeTermsArtifact).recipes,
 );
 

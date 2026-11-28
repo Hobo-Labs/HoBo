@@ -57,6 +57,7 @@ interface Interaction {
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// SAFETY: the pact file is a JSON document checked in beside this test.
 const pact = JSON.parse(
 	readFileSync(
 		path.join(here, "..", "contracts", "pacts", "sqlite-dual-run.pact.json"),

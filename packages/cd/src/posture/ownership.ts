@@ -164,6 +164,7 @@ export function applyPostureFixes(
 			let parameters: JsonObject = isJsonObject(current) ? current : {};
 			for (const fix of fixes)
 				parameters = setPath(parameters, fix.field.split("."), fix.value);
+			// SAFETY: a JSON object built from JSON scalars and objects is a plan realization-parameter object.
 			return { ...r, realizationParameters: parameters as Parameters };
 		}),
 	};

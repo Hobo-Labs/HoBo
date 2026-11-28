@@ -297,6 +297,7 @@ export function isExactProtoMessage<Desc extends DescMessage>(
 export function parseJson(text: string): JsonValue | undefined {
 	if (!isSupportedPricingRealm()) return undefined;
 	try {
+		// SAFETY: JSON.parse produces only JSON values; message parsers refine them next.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;

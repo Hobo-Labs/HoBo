@@ -30,6 +30,7 @@ export async function verifiedBlob(
 	digest: string,
 ): Promise<"missing" | "corrupt" | Uint8Array> {
 	if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) return "missing";
+	// SAFETY: the pattern above proves the digest form.
 	const bytes = await artifacts.get(digest as Digest);
 	if (!bytes) return "missing";
 	return digestOf(bytes) === digest ? bytes : "corrupt";

@@ -51,6 +51,7 @@ async function silentRepo(): Promise<string> {
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	tarpit = { server, sockets };
+	// SAFETY: listen(0, host) binds a TCP socket, so address() is an AddressInfo.
 	const { port } = server.address() as AddressInfo;
 	return `http://127.0.0.1:${port}/o/r.git`;
 }

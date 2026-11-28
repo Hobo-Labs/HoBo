@@ -108,6 +108,7 @@ function parseManifest(data: Uint8Array): JsonObject {
 		reject("npm tarball package.json exceeds 1 MiB");
 	let value: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this tarball boundary.
 		value = JSON.parse(
 			new TextDecoder("utf-8", { fatal: true }).decode(data),
 		) as JsonValue;

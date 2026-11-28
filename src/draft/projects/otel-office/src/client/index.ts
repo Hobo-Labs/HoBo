@@ -89,6 +89,7 @@ async function submitDraft(): Promise<void> {
 		body: JSON.stringify(draft),
 	});
 	if (!res.ok) {
+		// SAFETY: `const body = (await res.json()) as { reasons?: string[]; error?: string };` is required at this I/O or test boundary.
 		const body = (await res.json()) as { reasons?: string[]; error?: string };
 		alert(`layout rejected:\n${(body.reasons ?? [body.error ?? "unknown"]).join("\n")}`);
 		draft = structuredClone(currentLayout());
@@ -138,12 +139,14 @@ function rerouteCorridor(layout: OfficeLayout, junctionId: string, waypoints: Ti
 
 async function bootstrap(): Promise<OfficeState> {
 	const res = await fetch("/state");
+	// SAFETY: `return (await res.json()) as OfficeState;` is required at this I/O or test boundary.
 	return (await res.json()) as OfficeState;
 }
 
 function connect(onTick: () => void): void {
 	const source = new EventSource("/events");
 	source.addEventListener("snapshot", (message) => {
+		// SAFETY: `office = JSON.parse((message as MessageEvent<string>).data) as OfficeState;` is required at this I/O or test boundary.
 		office = JSON.parse((message as MessageEvent<string>).data) as OfficeState;
 		onTick();
 	});
@@ -157,6 +160,7 @@ function connect(onTick: () => void): void {
 	]) {
 		source.addEventListener(type, (message) => {
 			if (office === undefined) return;
+			// SAFETY: `const event = JSON.parse((message as MessageEvent<string>).data) as AgentEvent;` is required at this I/O or test boundary.
 			const event = JSON.parse((message as MessageEvent<string>).data) as AgentEvent;
 			if (event.type === "tick") void refresh(onTick);
 		});
@@ -301,6 +305,7 @@ function render(canvas: HTMLCanvasElement, stationBar: HTMLElement): void {
 		}
 	}
 
+	// SAFETY: `for (const packet of Object.values(office.packets) as Packet[]) {` is required at this I/O or test boundary.
 	for (const packet of Object.values(office.packets) as Packet[]) {
 		if (!campIds.has(packet.fromCampId) || !campIds.has(packet.toCampId)) continue;
 		const pos = renderPos.get(`packet:${packet.id}`) ?? {
@@ -419,6 +424,7 @@ async function refreshPanel(): Promise<void> {
 		closePanel();
 		return;
 	}
+	// SAFETY: `const data = (await res.json()) as ActivityResponse;` is required at this I/O or test boundary.
 	const data = (await res.json()) as ActivityResponse;
 	const { character, activity } = data;
 	const logRows = activity.logs
@@ -521,6 +527,7 @@ function attachCamera(canvas: HTMLCanvasElement): void {
 }
 
 async function start(): Promise<void> {
+	// SAFETY: `const canvas = document.getElementById("office") as HTMLCanvasElement | null;` is required at this I/O or test boundary.
 	const canvas = document.getElementById("office") as HTMLCanvasElement | null;
 	const stationBar = document.getElementById("stations");
 	const muteToggle = document.getElementById("mute");

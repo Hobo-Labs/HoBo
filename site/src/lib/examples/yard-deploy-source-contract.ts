@@ -54,6 +54,7 @@ const PROVIDER_IMPORTS = {
 
 export function providerImportForTarget(targetId: string): ProviderImportSpec {
 	if (Object.hasOwn(PROVIDER_IMPORTS, targetId)) {
+		// SAFETY: hasOwn narrowed targetId to a known PROVIDER_IMPORTS key.
 		return PROVIDER_IMPORTS[targetId as keyof typeof PROVIDER_IMPORTS];
 	}
 	const exportName = targetId.replace(/-([a-z])/gu, (_, c: string) => c.toUpperCase());

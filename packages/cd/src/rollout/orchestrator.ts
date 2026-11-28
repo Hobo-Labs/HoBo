@@ -164,6 +164,7 @@ export function rolloutIdFor(
 		),
 		offerings: input.offerings.map((list) => [...list].sort()),
 	});
+	// SAFETY: a RolloutId is any stable token; this one is content-derived.
 	return `rollout-${hash.slice(0, 32)}` as RolloutId;
 }
 
@@ -349,6 +350,7 @@ export function createRolloutOrchestrator(
 	}
 
 	function rollbackDeltaId(state: RolloutLedgerState, campId: string): DeltaId {
+		// SAFETY: a DeltaId is any stable token; this one is derived from the rollout and Camp.
 		return `delta-rollback-${digest({ rolloutId: state.rolloutId, campId }).slice(0, 24)}` as DeltaId;
 	}
 
@@ -490,7 +492,8 @@ export function createRolloutOrchestrator(
 			const predecessor =
 				current.predecessorSetId === ""
 					? undefined
-					: await d.desired.get(current.predecessorSetId as SetId);
+					: // SAFETY: a Set record's predecessor id is a SetId by contract.
+						await d.desired.get(current.predecessorSetId as SetId);
 			if (!predecessor)
 				return [
 					await append(
@@ -1375,6 +1378,7 @@ export function createRolloutOrchestrator(
 								type: CD_EVENTS.RolloutLowered,
 								data: loweredBody({
 									plan,
+									// SAFETY: the promotion's Freight id (FreightId by contract).
 									freightId: promotion.freightId as FreightId,
 									windows: input.windows,
 									obligations: input.obligations,
@@ -1403,6 +1407,7 @@ export function createRolloutOrchestrator(
 		},
 
 		async run(plan, ctx) {
+			// SAFETY: the plan record's rollout id (RolloutId by contract).
 			const rolloutId = plan.rolloutId as RolloutId;
 			const started = await exclusive(
 				rolloutId,
@@ -1472,6 +1477,7 @@ export function createRolloutOrchestrator(
 					filter: { type },
 				}))
 					if (entry.event.streamId.startsWith(prefix))
+						// SAFETY: the stream id is `cd-rollout-<rolloutId>` by construction.
 						ids.add(entry.event.streamId.slice(prefix.length) as RolloutId);
 			for (const rolloutId of [...ids].sort()) {
 				if (terminal.has(rolloutId)) continue;

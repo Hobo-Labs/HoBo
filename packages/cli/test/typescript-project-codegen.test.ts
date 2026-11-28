@@ -43,6 +43,7 @@ void result; void service; void echoed;
 `,
 			);
 			await compile(root);
+			// SAFETY: the test compiled these local generated modules and knows their fixture exports.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -147,6 +148,7 @@ void result; void service; void echoed;
 				{ engine: createTypeScriptProjectCodegenEngine() },
 			);
 			await compile(root);
+			// SAFETY: fixture exports are compiled above and invoked via their generated module names.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -180,6 +182,7 @@ void result; void service; void echoed;
 			const engine = createTypeScriptProjectCodegenEngine();
 			await runCodegen({ projectRoot: root, check: false }, { engine });
 			await compile(root);
+			// SAFETY: the fixture's default export is an actual Bindle with an api HTTP entrypoint.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -233,6 +236,7 @@ void result; void service; void echoed;
 				await readFile(join(root, ".hobo/generated/other-tool.json"), "utf8"),
 			).toContain("other");
 			await compile(root);
+			// SAFETY: fixture handler returns the generated model's literal boolean.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as { app: { "source/app.ts": { run(): boolean } } };

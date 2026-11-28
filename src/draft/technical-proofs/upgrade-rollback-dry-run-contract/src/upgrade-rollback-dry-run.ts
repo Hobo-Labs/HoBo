@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
+
 export const UPGRADE_DRY_RUN_FIXTURES = Object.freeze({
   cleanUpgrade: Object.freeze({
     id: "clean-upgrade",
@@ -223,6 +224,7 @@ function parseUpgradeDryRunRequest(input: JsonValue) {
     throw new Error("dry-run contract does not execute live migration, rollback, provider mutation, or support automation");
   }
 
+  // SAFETY: `return input as {` is required at this I/O or test boundary.
   return input as {
     id: string;
     compatibility: { result: string };

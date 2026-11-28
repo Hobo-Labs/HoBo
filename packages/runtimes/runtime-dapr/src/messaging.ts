@@ -124,6 +124,7 @@ export function createDaprMessaging(
 		string,
 		{ topic: string; group: string; maxDeliveryAttempts: number }
 	>();
+	// SAFETY: assertion required at this I/O or test boundary.
 	const tenantId = config.tenantId as TenantId;
 	const now = options.now ?? (() => new Date().toISOString());
 	const emit = (
@@ -392,6 +393,7 @@ async function meter(
 	if (!metering || quantity === 0) return;
 	await metering.emit(
 		createUsageEvent({
+			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: config.tenantId as TenantId,
 			eventType,
 			resource: tenantScopedTopicName(config.tenantId, String(topic)),

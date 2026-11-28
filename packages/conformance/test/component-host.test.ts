@@ -80,6 +80,7 @@ describe("component-host portability suite", () => {
 				hostKind: "runtime-local",
 				hostVersion: "wasmtime/45.0.0",
 			});
+			// SAFETY: assertion to `error as ComponentHostPlanningError` is required at this boundary.
 			expect((error as ComponentHostPlanningError).expectedVersions).toContain(
 				"wasmtime/46.0.1",
 			);
@@ -96,8 +97,10 @@ describe("component-host portability suite", () => {
 			response: { ok: true, value: "wasi:wrong-key" },
 		});
 		runtimeLocal.roundTripWasiInterface =
+			// SAFETY: assertion to `wrongRoundTrip as typeof runtimeLocal.roundTripWasiInterface` is required at this boundary.
 			wrongRoundTrip as typeof runtimeLocal.roundTripWasiInterface;
 		inContainer.roundTripWasiInterface =
+			// SAFETY: assertion to `wrongRoundTrip as typeof inContainer.roundTripWasiInterface` is required at this boundary.
 			wrongRoundTrip as typeof inContainer.roundTripWasiInterface;
 
 		const report = await runComponentHostConformance({

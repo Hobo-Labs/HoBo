@@ -131,5 +131,6 @@ export async function drive(
 export const freightB = freightIdOf("sha256:bbbb");
 
 export function idOf(status: Readonly<{ fanoutId: string }>): FanoutId {
+	// SAFETY: fan-out ids in status records are minted by fanoutIdFor.
 	return status.fanoutId as FanoutId;
 }

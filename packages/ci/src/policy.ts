@@ -406,6 +406,7 @@ export function parseCiPolicy(json: string): ParsedCiPolicy {
 	Object.freeze(policy.pool);
 	Object.freeze(policy.budget);
 	Object.freeze(policy.routing);
+	// SAFETY: all dependent invariants are established above and the record is frozen.
 	return Object.freeze(policy) as ParsedCiPolicy;
 }
 

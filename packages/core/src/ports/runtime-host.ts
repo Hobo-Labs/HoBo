@@ -66,6 +66,7 @@ export function isHoboRuntimeHostKind(
 ): value is HoboRuntimeHostKind {
 	return (
 		isJsonString(value) &&
+		// SAFETY: assertion required at this I/O or test boundary.
 		(HOBO_RUNTIME_HOST_KINDS as readonly string[]).includes(value)
 	);
 }

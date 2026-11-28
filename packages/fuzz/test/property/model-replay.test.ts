@@ -97,6 +97,7 @@ describe("replay reproduces the live fingerprint", () => {
 describe("command dispatch", () => {
 	function drive(model: ControlModel, commands: unknown[]) {
 		for (const command of commands) {
+			// SAFETY: generated test commands intentionally cross the model boundary.
 			model.applyCommand(command as never);
 		}
 	}
@@ -109,6 +110,7 @@ describe("command dispatch", () => {
 		drive(model, [{ kind: "snapshot" }]);
 		model.createBindle(TENANT, "b3", "sha256:c");
 
+		// SAFETY: rollback is a valid command shape exercised by this test.
 		const verdict = model.applyCommand({
 			kind: "rollback",
 			tenantId: TENANT,
@@ -121,6 +123,7 @@ describe("command dispatch", () => {
 		const model = new ControlModel();
 		model.createBindle(TENANT, "b1", "sha256:a");
 		expect(
+			// SAFETY: rollback is a valid command shape exercised by this test.
 			model.applyCommand({ kind: "rollback", tenantId: TENANT } as never),
 		).toBeUndefined();
 	});
@@ -128,6 +131,7 @@ describe("command dispatch", () => {
 	it("returns undefined for the commands that produce no verdict", () => {
 		const model = new ControlModel();
 		expect(
+			// SAFETY: createBindle is a valid command shape exercised by this test.
 			model.applyCommand({
 				kind: "createBindle",
 				tenantId: TENANT,
@@ -135,8 +139,10 @@ describe("command dispatch", () => {
 				manifestHash: "sha256:a",
 			} as never),
 		).toBeUndefined();
+		// SAFETY: snapshot is a valid command shape exercised by this test.
 		expect(model.applyCommand({ kind: "snapshot" } as never)).toBeUndefined();
 		expect(
+			// SAFETY: destroy is a valid command shape exercised by this test.
 			model.applyCommand({
 				kind: "destroy",
 				tenantId: TENANT,

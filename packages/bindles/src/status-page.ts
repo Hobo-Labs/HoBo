@@ -47,6 +47,7 @@ export function readStatusPageConfig(
 ): StatusPageBindleConfig | null {
 	for (const annotation of annotations) {
 		if (!isStatusPageAnnotation(annotation)) continue;
+		// SAFETY: assertion required at this I/O or test boundary.
 		const config = annotation.config as JsonObject;
 		return Object.freeze({
 			enabled: config.enabled !== false,

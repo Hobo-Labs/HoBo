@@ -19,6 +19,7 @@ describe("parseBrowserStorageRequest", () => {
 	});
 
 	it("keeps the operation's own fields", () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const parsed = parseBrowserStorageRequest({
 			id: "r1",
 			op: "append",

@@ -13,6 +13,7 @@ const fixture = await loadDeployFixture();
 
 const services = Object.entries(fixture.referenceApp.services);
 for (const [serviceId, serviceConfig] of services) {
+	// SAFETY: assertion to `serviceConfig as { strategy: string }` is required at this boundary.
 	const config = serviceConfig as { strategy: string };
 	assert.ok(STRATEGY_KINDS.includes(config.strategy));
 	const strategy = selectStrategyForService(config);

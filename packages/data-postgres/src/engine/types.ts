@@ -203,6 +203,7 @@ function everyNumberFinite(value: JsonValue): boolean {
 function parseJson(text: string, field: string): JsonValue {
 	let parsed: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		parsed = JSON.parse(text) as JsonValue;
 	} catch (cause) {
 		throw new DataCoreError("INVALID_RECORD", "stored JSON does not parse", {

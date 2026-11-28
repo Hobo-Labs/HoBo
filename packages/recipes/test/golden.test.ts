@@ -54,6 +54,7 @@ function readOrWrite(name: string, actual: TopologySnapshot): TopologySnapshot {
 		return actual;
 	}
 	const parsed = JSON.parse(readFileSync(path, "utf8"));
+	// SAFETY: golden files are JSON snapshots of TopologySnapshot.
 	return parsed as TopologySnapshot;
 }
 
@@ -105,9 +106,11 @@ describe("golden resolutions", () => {
 	for (const recipe of STANDARD_SOLUTION_RECIPES) {
 		it(`${recipe.id} resolves to its recorded topology and offer`, () => {
 			const { golden, actual, offer } = resolutionOf(recipe);
+			// SAFETY: assertion to `JSON.parse(JSON.stringify(actual)) as unknown` is required at this boundary.
 			expect(JSON.parse(JSON.stringify(actual)) as unknown).toEqual(golden);
 
 			const goldenOffer = readOrWrite(fileNameFor(recipe, "offer"), offer);
+			// SAFETY: assertion to `JSON.parse(JSON.stringify(offer)) as unknown` is required at this boundary.
 			expect(JSON.parse(JSON.stringify(offer)) as unknown).toEqual(goldenOffer);
 		});
 	}

@@ -40,6 +40,7 @@ function invalid(message: string, field: string): never {
 }
 
 function isChangeOp(value: string): value is ChangeOp {
+	// SAFETY: membership test against the closed tuple of change operations.
 	return (CHANGE_OPS as readonly string[]).includes(value);
 }
 

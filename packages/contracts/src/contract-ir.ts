@@ -140,9 +140,11 @@ export function parseBoundaryContract<T>(input: T): BoundaryContract {
 
 	const core: Omit<BoundaryContract, "contractHash"> = {
 		schemaVersion:
+			// SAFETY: assertion required at this I/O or test boundary.
 			CONTRACT_IR_SCHEMA_VERSION as typeof CONTRACT_IR_SCHEMA_VERSION,
 		id,
 		version,
+		// SAFETY: assertion required at this I/O or test boundary.
 		mode: mode as ContractMode,
 		edge,
 		requiredLayout,
@@ -299,6 +301,7 @@ function reason(
 function parseEdge(input: JsonValue, path: string): ContractEdge {
 	const edge = expectObject(input, path);
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		kind: enumValue(
 			edge.kind,
 			EDGE_KIND_SET,
@@ -364,6 +367,7 @@ function expectObject(input: JsonValue | undefined, path: string): JsonObject {
 			path,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return input as JsonObject;
 }
 

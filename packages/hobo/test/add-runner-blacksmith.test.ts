@@ -20,6 +20,7 @@ function envelope(stdout: string): any {
 describe("hobo add runner-blacksmith (fast-runner catalog entry)", () => {
 	it("installs both execution-host ports next to runner-github", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 

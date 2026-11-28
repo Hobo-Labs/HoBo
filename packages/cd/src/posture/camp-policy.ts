@@ -255,6 +255,7 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 			);
 			if (prior) return { ok: true, value: prior.binding };
 			const nowMs = ctx.now();
+			// SAFETY: FreightRecord ids are the Freight content digests.
 			if (
 				input.mode === PolicyMode.ENFORCE &&
 				!(await shadowSatisfied(

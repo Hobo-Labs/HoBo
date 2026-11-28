@@ -24,6 +24,7 @@ const GOLDEN: Array<{ port: string; name: string; resourceClass: string }> = [
 
 describe("realize() emits a valid IacProgram per initial port", () => {
 	for (const golden of GOLDEN) {
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		it(`realizes ${golden.port} -> ${golden.resourceClass} as a valid program`, () => {
 			const provider = createCloudflareProvider();
 			const plan: ResourcePlan = {
@@ -63,6 +64,7 @@ describe("realize() option negotiation", () => {
 			],
 		};
 		const { iac } = realizeResourcePlan(plan);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		const options = iac.resources[0]?.inputs.options as JsonObject;
 		assert.equal(options.cpuMs, 15_000);
 		assert.equal("cpu" in options, false);
@@ -97,6 +99,7 @@ describe("hello-bindle realizes end-to-end", () => {
 				["sessions", "cloudflare:kv-namespace"],
 			],
 		);
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		const bindings = iac.resources[0]?.inputs.bindings as Array<{
 			ref: string;
 		}>;

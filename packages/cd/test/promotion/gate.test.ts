@@ -136,6 +136,7 @@ class Shadow implements ShadowRecorder {
 		const binding = await this.policy.binding(campId);
 		if (!binding || binding.candidateRailDigest === "") return undefined;
 		return {
+			// SAFETY: test fixture; the value is the shape the port declares.
 			railDigest: binding.candidateRailDigest as Digest,
 			policyPack: packFor(binding.candidateRailDigest),
 		};
@@ -342,6 +343,7 @@ describe("deploy gate (gatekeeper.ts)", () => {
 		).toMatch(/Change the declaration of web/);
 		const changes = await s.gate.evaluate(
 			input(freight, "prod-1", [
+				// SAFETY: test fixture; the value is the shape the port declares.
 				{ resource: "web", kind: ChangeKind.UPDATE } as never,
 			]),
 			s.ctx,
@@ -419,6 +421,7 @@ describe("deploy gate (gatekeeper.ts)", () => {
 	it("refuses Freight whose provenance is not verified (trust)", async () => {
 		const s = setup();
 		const freight = s.freights.add("f1", {
+			// SAFETY: test fixture; the value is the shape the port declares.
 			provenance: [{ statementDigest: digest("aa"), verified: false } as never],
 		});
 		const verdict = await s.gate.evaluate(input(freight), s.ctx);

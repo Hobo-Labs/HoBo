@@ -59,6 +59,7 @@ export function parseAdoProject(json: string): ParsedAdoProject {
 	Object.freeze(project.runnerArgv);
 	Object.freeze(project.bootstrapArgv);
 	Object.freeze(project.demands);
+	// SAFETY: strict protobuf parsing, dependent constraints and frozen nested fields refine the generated record.
 	return Object.freeze(project) as ParsedAdoProject;
 }
 

@@ -683,6 +683,7 @@ describe("isolated container controller reconcile", () => {
 			createdAt: NOW,
 		});
 		const abort = vi.fn(async () => {});
+		// SAFETY: reconcile() only calls get() and abortIsolatedAndRequeue(); this stub implements both.
 		const relayStore = {
 			get: async (id: string) => (id === stuck.id ? stuck : undefined),
 			abortIsolatedAndRequeue: abort,
@@ -695,6 +696,7 @@ describe("isolated container controller reconcile", () => {
 			remove: vi.fn(),
 			isRunning: vi.fn(),
 		};
+		// SAFETY: reconcile() does not call github in this scenario.
 		const github = jitRunnerDeregisterGithub();
 		const early = createIsolatedContainerController({
 			store: relayStore,
@@ -729,6 +731,7 @@ describe("isolated container controller reconcile", () => {
 	it("force-stop settle does not requeue when the reserved job already completed", async () => {
 		const lease = runningLease({ actualJobId: 100 });
 		const settle = vi.fn(async () => lease);
+		// SAFETY: force-stop reconcile uses get(), transition(), and settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
@@ -742,6 +745,7 @@ describe("isolated container controller reconcile", () => {
 			remove: vi.fn(async () => undefined),
 			isRunning: vi.fn(async () => true),
 		};
+		// SAFETY: force-stop reconcile uses getJob(), not github.request().
 		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "completed", lease.runnerName),
@@ -764,6 +768,7 @@ describe("isolated container controller reconcile", () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 999 });
 		const settle = vi.fn(async () => lease);
 		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: force-stop reconcile uses get(), transition(), settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
@@ -778,6 +783,7 @@ describe("isolated container controller reconcile", () => {
 			remove: vi.fn(async () => undefined),
 			isRunning: vi.fn(async () => true),
 		};
+		// SAFETY: force-stop reconcile uses getJob(), not github.request().
 		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),
@@ -801,6 +807,7 @@ describe("isolated container controller reconcile", () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const settle = vi.fn(async () => lease);
 		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: force-stop reconcile uses get(), transition(), settle(); this stub implements those methods.
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
@@ -815,6 +822,7 @@ describe("isolated container controller reconcile", () => {
 			remove: vi.fn(async () => undefined),
 			isRunning: vi.fn(async () => true),
 		};
+		// SAFETY: force-stop reconcile uses getJob(), not github.request().
 		const github = jitRunnerDeregisterGithub();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),
@@ -837,6 +845,7 @@ describe("isolated container controller reconcile", () => {
 	it("does not abort a running lease when docker inspect fails", async () => {
 		const lease = runningLease({ jobId: 100, actualJobId: 0 });
 		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
+		// SAFETY: non-forced reconcile only calls get() and abortIsolatedAndRequeue().
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			abortIsolatedAndRequeue,
@@ -851,6 +860,7 @@ describe("isolated container controller reconcile", () => {
 				throw new Error("inspect timed out");
 			}),
 		};
+		// SAFETY: non-forced reconcile never touches GitHub.
 		const github = jitRunnerDeregisterGithub();
 		const controller = createIsolatedContainerController({
 			store: relayStore,
@@ -881,6 +891,7 @@ describe("isolated container controller reconcile", () => {
 		const settle = vi.fn(async () => lease);
 		const abortIsolatedAndRequeue = vi.fn(async () => undefined);
 		const work = workRoot ? workDirectory() : undefined;
+		// SAFETY: reconcile() uses get(), transition(), settle(), and abortIsolatedAndRequeue().
 		const relayStore = {
 			get: async (id: string) => (id === lease.id ? lease : undefined),
 			transition: transitionFor(lease),
@@ -1083,6 +1094,7 @@ describe("isolated container controller reconcile", () => {
 	it("withdraws local demand when the runner exited without taking the job", async () => {
 		const s = markerScenario(vi.fn(async () => true));
 		const withdrawQueuedJob = vi.fn(async () => true);
+		// SAFETY: optional withdraw hook on the HostedRelay store surface.
 		s.store.withdrawQueuedJob = withdrawQueuedJob;
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(s.lease.jobId, "queued"),

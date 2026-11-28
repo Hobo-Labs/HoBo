@@ -141,6 +141,8 @@ function fixture() {
 			if (!terminated) throw new Error("termination unknown");
 		},
 	};
+	// SAFETY: this fixture supplies the exact store operations exercised by the
+	// gate and enforces a matching actor fence before each in-memory commit.
 	const gate = createDurableLifecycleGate(options as never);
 	return {
 		gate,
@@ -195,6 +197,8 @@ describe("durable application lifecycle gate", () => {
 						...f.options.scope,
 						[field]: `${f.options.scope[field]}${suffix}`,
 					};
+					// SAFETY: the fixture supplies the same fenced store as the valid case;
+					// this call tests only the malformed scope identity.
 					expect(() =>
 						createDurableLifecycleGate({ ...f.options, scope } as never),
 					).toThrow();

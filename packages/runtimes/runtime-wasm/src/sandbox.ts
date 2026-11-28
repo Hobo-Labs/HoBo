@@ -320,6 +320,7 @@ function resolveJcoTool(): JcoTool {
 	const pkgJson = join(dirname(binPath), "..", "package.json");
 	if (existsSync(pkgJson)) {
 		try {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const pkg = JSON.parse(readFileSync(pkgJson, "utf8")) as {
 				version?: string;
 			};

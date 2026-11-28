@@ -155,6 +155,7 @@ function refreshBundle(
 		earliest === undefined
 			? (() => {
 					const { earliestDeadline: _dropped, ...rest } = withDeadline;
+					// SAFETY: `return rest as ClaimBundle;` is required at this I/O or test boundary.
 					return rest as ClaimBundle;
 				})()
 			: { ...withDeadline, earliestDeadline: earliest };

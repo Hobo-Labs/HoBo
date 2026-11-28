@@ -106,6 +106,7 @@ export async function checkSkillsConformance(
 				seen.set(parsed.name, dirent.name);
 			}
 		} catch (error) {
+			// SAFETY: caught values may be non-Error, so message access is guarded by the fallback.
 			issues.push({
 				skill: dirent.name,
 				code: "unparseable",

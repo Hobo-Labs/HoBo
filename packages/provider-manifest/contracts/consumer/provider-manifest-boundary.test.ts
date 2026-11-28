@@ -15,6 +15,7 @@ type Interaction = {
 	readonly response: { readonly status: number; readonly body: JsonObject };
 };
 
+// SAFETY: the pact file is authored in this package; its shape is fixed here.
 const pact = JSON.parse(
 	readFileSync(
 		fileURLToPath(

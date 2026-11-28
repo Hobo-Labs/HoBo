@@ -63,6 +63,7 @@ export function digestOf(value: JsonValue): `sha256:${string}` {
 }
 
 export function parseJsonText(text: string): JsonValue {
+	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }
 

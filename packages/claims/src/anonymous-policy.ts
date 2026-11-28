@@ -78,6 +78,7 @@ export const DEFAULT_ANONYMOUS_POLICY: AnonymousPolicy = Object.freeze({
 	maxSingleFileBytes: 5 * 1024 * 1024,
 	sponsorBudgetMinorUnits: 50_000,
 	minPollIntervalMs: 2_000,
+	// SAFETY: `allowedBootstrapClasses: Object.freeze([` is required at this I/O or test boundary.
 	allowedBootstrapClasses: Object.freeze([
 		"public-anonymous",
 		"anonymous-claimable",
@@ -85,7 +86,9 @@ export const DEFAULT_ANONYMOUS_POLICY: AnonymousPolicy = Object.freeze({
 		"capability-token",
 		"local",
 	] as const) as readonly BootstrapClass[],
+	// SAFETY: `disabledProviders: Object.freeze([] as string[]),` is required at this I/O or test boundary.
 	disabledProviders: Object.freeze([] as string[]),
+	// SAFETY: `disabledRecipes: Object.freeze([] as string[]),` is required at this I/O or test boundary.
 	disabledRecipes: Object.freeze([] as string[]),
 });
 

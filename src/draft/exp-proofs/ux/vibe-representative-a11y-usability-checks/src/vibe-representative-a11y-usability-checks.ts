@@ -419,6 +419,7 @@ export function parseVibeRepresentativeA11yUsabilityChecks(
     throw new VibeRepresentativeChecksParseError(validation.errors);
   }
 
+  // SAFETY: `return checks as ParsedVibeRepresentativeA11yUsabilityChecks;` is required at this I/O or test boundary.
   return checks as ParsedVibeRepresentativeA11yUsabilityChecks;
 }
 

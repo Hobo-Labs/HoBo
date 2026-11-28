@@ -556,6 +556,7 @@ export function entriesToClone(
 	return list(source).filter((entry) => {
 		if (entry === RIFT_DIR) return false;
 		if (copyAll) return true;
+		// SAFETY: `return !REGENERABLE.includes(entry as (typeof REGENERABLE)[number]);` is required at this I/O or test boundary.
 		return !REGENERABLE.includes(entry as (typeof REGENERABLE)[number]);
 	});
 }
@@ -715,6 +716,7 @@ function claimHolderAlive(path: string): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
+		// SAFETY: `return (error as NodeJS.ErrnoException).code === "EPERM";` is required at this I/O or test boundary.
 		return (error as NodeJS.ErrnoException).code === "EPERM";
 	}
 }

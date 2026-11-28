@@ -9,6 +9,7 @@ export function parseInterfaceId(raw: string): InterfaceId {
 	if (!INTERFACE_ID_PATTERN.test(raw)) {
 		throw new Error(`component_host.invalid_interface_id: ${raw}`);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return raw as InterfaceId;
 }
 

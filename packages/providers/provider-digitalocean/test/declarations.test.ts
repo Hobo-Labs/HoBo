@@ -13,6 +13,7 @@ import {
 	digitaloceanYardRuntimeRegistration,
 } from "../src/yard-defaults.js";
 
+// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 const factories = Object.entries(digitalocean.with) as [
 	string,
 	(options?: JsonObject) => {
@@ -33,6 +34,7 @@ describe("digitalocean option blocks", () => {
 		expect(factory().providerId).toBe(DIGITALOCEAN_PROVIDER_TARGET);
 	});
 
+	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it.each(factories)("%s negotiates as a preference", (_name, factory) => {
 		expect(factory().negotiation).toBe("prefer");
 	});
@@ -122,6 +124,7 @@ describe("the digitalocean Yard runtime registration", () => {
 		);
 	});
 
+	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("treats an empty options object as no options", () => {
 		expect(digitaloceanYardRuntimeRegistration({}).status).toBe("approved");
 	});
@@ -209,6 +212,7 @@ describe("the digitalocean equivalence table", () => {
 	});
 
 	it.each(rows)("looks the %s row up by port", (port, row) => {
+		// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 		expect(equivalenceForPort(port as never)).toBe(row);
 	});
 

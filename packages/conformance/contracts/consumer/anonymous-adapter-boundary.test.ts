@@ -44,6 +44,7 @@ describe("anonymous conformance adapter boundary", () => {
 
 	it("sends the request each recorded case actually declares", () => {
 		for (const interaction of pact.interactions) {
+			// SAFETY: assertion to `teraction.request.path as keyof typeof SUITES];` is required at this boundary.
 			const suite = SUITES[interaction.request.path as keyof typeof SUITES];
 			const caseId = interaction.request.body.caseId;
 			const declared = suite.cases.find((suiteCase) => suiteCase.id === caseId);
@@ -54,6 +55,7 @@ describe("anonymous conformance adapter boundary", () => {
 
 	it("passes each recorded response through the real judge", async () => {
 		for (const interaction of pact.interactions) {
+			// SAFETY: assertion to `teraction.request.path as keyof typeof SUITES];` is required at this boundary.
 			const suite = SUITES[interaction.request.path as keyof typeof SUITES];
 			const caseId = String(interaction.request.body.caseId);
 

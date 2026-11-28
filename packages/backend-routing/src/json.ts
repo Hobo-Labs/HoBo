@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 export function parseJournalJson(text: string): JsonValue {
+	// SAFETY: JSON.parse can only return JSON values and throws for malformed text.
 	return JSON.parse(text) as JsonValue;
 }
 

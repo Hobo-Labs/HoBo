@@ -108,7 +108,12 @@ test("mock mode serves PACT examples when no live route exists (offline dev)", a
 	const router = createBoundaryRouter();
 	const payments = router
 		.boundary<Charge, Receipt>("payments")
-		.mock(PAYMENTS_CONTRACT.examples as never);
+		// SAFETY: assertion to `TS_CONTRACT.examples as never); c` is required at this boundary.
+		// SAFETY: assertion to `TS_CONTRACT.examples as never); c` is required at this boundary.
+		.mock(
+			// SAFETY: pact examples are the mock table at this test boundary.
+			PAYMENTS_CONTRACT.examples as never,
+		);
 
 	const matched = await payments.call({ orderId: "o-1", amount: 42 });
 	assert.equal(matched.status, "charged");

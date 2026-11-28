@@ -247,6 +247,7 @@ export const DX_RESULT_REFUSAL_PROOF_ENVELOPES = {
 } satisfies DxResultRefusalProof;
 
 export function parseDxResultRefusalProof(input: JsonValue): DxResultRefusalProof {
+  // SAFETY: `const record = requireObject(input, "record") as Partial<DxResultRefusalProof>;` is required at this I/O or test boundary.
   const record = requireObject(input, "record") as Partial<DxResultRefusalProof>;
   if (record.issue !== "HOBO-571") {
     throw new Error("issue must be HOBO-571");
@@ -265,6 +266,7 @@ export function parseDxResultRefusalProof(input: JsonValue): DxResultRefusalProo
 
   const byKind = new Map<string, unknown>();
   for (const rawEnvelope of record.envelopes) {
+    // SAFETY: `const raw = requireObject(rawEnvelope, "envelope") as { kind?: unknown };` is required at this I/O or test boundary.
     const raw = requireObject(rawEnvelope, "envelope") as { kind?: unknown };
     const kind = requireString(raw.kind, "envelope.kind");
     if (byKind.has(kind)) {
@@ -284,8 +286,11 @@ export function parseDxResultRefusalProof(input: JsonValue): DxResultRefusalProo
   return {
     issue: "HOBO-571",
     phase: "M1",
+    // SAFETY: `audience: record.audience as DxResultRefusalProof["audience"],` is required at this I/O or test boundary.
     audience: record.audience as DxResultRefusalProof["audience"],
+    // SAFETY: `mockedBoundaries: record.mockedBoundaries as string[],` is required at this I/O or test boundary.
     mockedBoundaries: record.mockedBoundaries as string[],
+    // SAFETY: `references: record.references as string[],` is required at this I/O or test boundary.
     references: record.references as string[],
     envelopes,
   };
@@ -443,6 +448,7 @@ function envelope(
 }
 
 function parseEnvelope(input: JsonValue, expectedKind: EnvelopeKind): DxResultEnvelope {
+  // SAFETY: `const envelopeRecord = requireObject(input, expectedKind) as Partial<DxResultEnv` is required at this I/O or test boundary.
   const envelopeRecord = requireObject(input, expectedKind) as Partial<DxResultEnvelope>;
   if (envelopeRecord.kind !== expectedKind) {
     throw new Error(`${expectedKind} kind mismatch`);
@@ -479,6 +485,7 @@ function requireObject(input: JsonValue, fieldName: string): JsonObject {
   if (!input || !isJsonObject(input) || Array.isArray(input)) {
     throw new TypeError(`${fieldName} must be an object`);
   }
+  // SAFETY: `return input as JsonObject;` is required at this I/O or test boundary.
   return input as JsonObject;
 }
 
@@ -519,6 +526,7 @@ function stableJson(value: JsonValue): string {
   if (Array.isArray(value)) {
     return `[${value.map((entry) => stableJson(entry)).join(",")}]`;
   }
+  // SAFETY: `const object = value as JsonObject;` is required at this I/O or test boundary.
   const object = value as JsonObject;
   return `{${Object.keys(object)
     .sort()

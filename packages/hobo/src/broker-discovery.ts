@@ -45,6 +45,7 @@ export function parseBrokerDiscoveryDocument(
 			"HOBO_DISCOVERY_INVALID",
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	if (obj.schemaVersion !== BROKER_DISCOVERY_SCHEMA) {
 		throw new BrokerDiscoveryError(
@@ -79,6 +80,7 @@ export function parseBrokerDiscoveryDocument(
 				"HOBO_DISCOVERY_INVALID",
 			);
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		return m as BrokerAuthMethod;
 	});
 	const supportsAnonymous =

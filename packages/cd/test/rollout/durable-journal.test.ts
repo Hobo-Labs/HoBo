@@ -66,6 +66,7 @@ afterEach(() => {
 });
 
 function campId(id: string): CampId {
+	// SAFETY: test Camp ids are opaque strings.
 	return id as CampId;
 }
 
@@ -123,6 +124,7 @@ async function promote(
 	if (!opened.ok) throw new Error(`open ${id} refused`);
 	const applied = await w.desired.apply(
 		{
+			// SAFETY: the Delta id this test just opened.
 			deltaId: id as DeltaId,
 			gateDecisionId: `gate-${id}`,
 			resolved,
@@ -145,6 +147,7 @@ async function report(
 	status: ReconcileStatus,
 	reasons: readonly ReasonRecord[] = [],
 ) {
+	// SAFETY: test reconciler ids are opaque strings.
 	const reconcilerId = "rec-1" as ReconcilerId;
 	const claimed = await w.transport.claim({
 		reconcilerId,
@@ -224,6 +227,7 @@ describe("rollout on a durable SQLite journal", () => {
 		if (!planned.ok) throw new Error("plan refused");
 		const ran = await w.orchestrator.run(planned.value, ctx);
 		expect(ran.status).not.toBe("failed");
+		// SAFETY: the plan record carries the rollout id plan() minted.
 		const rolloutId = planned.value.rolloutId as RolloutId;
 		for (let i = 0; i < 20; i += 1) {
 			const snapshot = await w.orchestrator.get(rolloutId);
@@ -241,6 +245,7 @@ describe("rollout on a durable SQLite journal", () => {
 			(r) => r.code === "rollback-delta-opened",
 		);
 		expect(opened).toBeDefined();
+		// SAFETY: the reason's subject is the rollback Delta id.
 		const rollback = await w.desired.get((opened?.subject ?? "") as DeltaId);
 		expect(rollback?.intent).toBe("rollback");
 		expect(rollback?.freightId).toBe(PREVIOUS);
@@ -283,6 +288,7 @@ describe("rollout on a durable SQLite journal", () => {
 			ctx,
 		);
 		if (!planned.ok) throw new Error("plan refused");
+		// SAFETY: the plan record carries the rollout id plan() minted.
 		const rolloutId = planned.value.rolloutId as RolloutId;
 		const drive = async (minutes: number) => {
 			for (let i = 0; i < minutes; i += 1) {
@@ -337,6 +343,7 @@ describe("rollout on a durable SQLite journal", () => {
 		expect(opened.ok ? [] : opened.reasons.map((r) => r.code)).toEqual([]);
 		const restored = await p.w.desired.apply(
 			{
+				// SAFETY: the Delta id this test just opened.
 				deltaId: restoreId as DeltaId,
 				gateDecisionId: "gate-restore",
 				resolved: after,

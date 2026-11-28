@@ -14,6 +14,7 @@ type Fixture = { scenarios: Record<string, Stage6DrillScenario> };
 
 let fixturePromise: Promise<Fixture> | undefined;
 function fixture(): Promise<Fixture> {
+  // SAFETY: assertion to `adDrillFixture() as Promise<Fixture>; ` is required at this boundary.
   fixturePromise ??= loadDrillFixture() as Promise<Fixture>;
   return fixturePromise;
 }

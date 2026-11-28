@@ -112,6 +112,7 @@ describe("can-trail denies a custody path that does not cover the named pattern"
 		);
 		const result = evaluateCanTrail({
 			trail: trail("offline-copy"),
+			// SAFETY: a verdict as recorded before `roles` existed, arriving as JSON evidence.
 			policyVerdict: legacy as CanTrailPolicyVerdict,
 		});
 		assert.equal(result.ok, false);
@@ -122,6 +123,7 @@ describe("can-trail denies a custody path that does not cover the named pattern"
 		for (const roles of ["source", [1, 2], [""], { source: true }, null]) {
 			const result = evaluateCanTrail({
 				trail: trail(),
+				// SAFETY: deliberately not the declared record — evidence that crossed a process boundary.
 				policyVerdict: JSON.parse(
 					JSON.stringify({
 						ok: true,

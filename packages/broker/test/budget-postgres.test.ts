@@ -275,10 +275,12 @@ describe.skipIf(!URL)(
 											}
 											return result;
 										};
+									// SAFETY: preserve the existing client's properties; only query is intercepted.
 									return connection[method as keyof typeof connection];
 								},
 							});
 						};
+					// SAFETY: preserve the existing Pool's properties; only connect is intercepted.
 					return target[key as keyof typeof target];
 				},
 			});
@@ -343,10 +345,12 @@ describe.skipIf(!URL)(
 											if (expired) lateSql.push(text);
 											return connection.query(text, values);
 										};
+									// SAFETY: preserve the real client's properties, intercepting only query.
 									return connection[method as keyof typeof connection];
 								},
 							});
 						};
+					// SAFETY: preserve the real Pool's properties, intercepting only connect.
 					return target[key as keyof typeof target];
 				},
 			});

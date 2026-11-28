@@ -151,5 +151,6 @@ export const departs = (s: Setup, campId: string) =>
 export function failoverIdOf(
 	record: Readonly<{ failoverId: string }> | undefined,
 ): FailoverId {
+	// SAFETY: failover ids in records are minted by failoverIdFor.
 	return (record?.failoverId ?? "") as FailoverId;
 }

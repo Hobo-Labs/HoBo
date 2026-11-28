@@ -58,6 +58,7 @@ export function statusEventsFor(
 	observation: ReconcileObservationRecord,
 	idempotencyPrefix: string,
 ): readonly EventInput[] {
+	// SAFETY: toJson of a message is always a JSON object.
 	const body = toJson(
 		ReconcileObservationRecordSchema,
 		observation,
@@ -246,6 +247,7 @@ export function createFeedJournal(
 			filter: { streamId: stream },
 		}))
 			last = position;
+		// SAFETY: positions come from the journal.
 		return last as EventPosition;
 	}
 

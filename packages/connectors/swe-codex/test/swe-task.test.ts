@@ -39,6 +39,7 @@ function harness(
 ) {
 	let agent: TranscriptAcpAgent | undefined;
 	return {
+		// SAFETY: assertion to `agent as TranscriptAcpAgent` is required at this boundary.
 		agent: () => agent as TranscriptAcpAgent,
 		run: () =>
 			runSweTask({

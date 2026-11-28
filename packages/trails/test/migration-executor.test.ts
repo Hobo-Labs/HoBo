@@ -86,6 +86,7 @@ test("milestone: full expand→backfill→contract completes with the migration.
 
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
+	// SAFETY: the SELECT fixes the returned row columns.
 	const rows = (
 		db.prepare("SELECT id, requester_ref FROM checkout ORDER BY id").all() as {
 			id: string;
@@ -123,6 +124,7 @@ test("milestone: a consumer still on the old shape BLOCKS contract; the dual win
 
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
+	// SAFETY: the SELECT fixes the returned row columns.
 	const rows = db
 		.prepare("SELECT id, email, requester_ref FROM checkout ORDER BY id")
 		.all() as { id: string; email: string; requester_ref: string }[];

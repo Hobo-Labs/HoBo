@@ -49,6 +49,7 @@ export function createWrpcLinkLayer(options: {
   const codec =
     "codec" in transport && isJsonObject(transport.codec) ? transport.codec : undefined;
   const namedCodec: { name?: JsonValue } =
+    // SAFETY: transport.codec is a host codec bag when present.
     codec as never;
   const codecName = isJsonString(namedCodec.name) ? namedCodec.name : "unknown";
 

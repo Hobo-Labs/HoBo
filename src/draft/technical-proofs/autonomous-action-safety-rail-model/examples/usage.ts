@@ -24,6 +24,7 @@ assert.ok(cue.includes("#AutonomousActionSafetyRailModelRecord"));
 assert.ok(cue.includes('"design-record" | "contract-test"'));
 console.log("schema pair: proto record+enum mirrored by CUE definitions");
 
+// SAFETY: assertion to `const pact = JSON.parse(read("architecture/pacts/autonomous_action_safety_rail_m` is required at this boundary.
 const pact = JSON.parse(read("architecture/pacts/autonomous_action_safety_rail_model.pact.json")) as {
 	consumer: { name: string };
 	provider: { name: string };

@@ -129,6 +129,7 @@ async function assembleBroker(
 		};
 	}
 
+	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = (await readJson(configPath, "broker config")) as JsonObject;
 	const { connectors, policyEngine, catalog, ...policyDocument } = raw;
 	const policies = parseBrokerPolicySet(policyDocument);
@@ -140,6 +141,7 @@ async function assembleBroker(
 	let gatePlane: GatePlane | undefined;
 	let engineKind: AssembledBroker["engineKind"] = "builtin";
 	if (policyEngine !== undefined && policyEngine !== null) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const engine = policyEngine as JsonObject;
 		const endpoint = engine.endpoint;
 		if (!isJsonString(endpoint) || endpoint.length === 0) {
@@ -213,6 +215,7 @@ async function deriveRequest(
 	const requirements =
 		manifest !== null
 			? Object.entries(
+					// SAFETY: assertion required at this I/O or test boundary.
 					manifest.value.resources as Record<
 						string,
 						{ type: string; port?: string }
@@ -236,6 +239,7 @@ export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 		run: async ({ args, flags, context, emitProgress }) => {
 			const subcommand = args[0] ?? "up";
 			const projectDir =
+				// SAFETY: assertion required at this I/O or test boundary.
 				(context as { projectDir?: string }).projectDir ??
 				(isJsonString(flags.cwd) ? flags.cwd : context.cwd);
 

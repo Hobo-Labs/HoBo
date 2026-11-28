@@ -64,6 +64,7 @@ export function parseRecipeId(input: string): ParsedRecipeId {
 			);
 		}
 	}
+	// SAFETY: assertion to `input as RecipeId` is required at this boundary.
 	return { id: input as RecipeId, slug, major: Number(versionMatch[1]) };
 }
 

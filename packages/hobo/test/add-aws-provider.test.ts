@@ -32,6 +32,7 @@ const LEDGER_BINDLE = {
 describe("hobo add aws (composed catalog entry)", () => {
 	it("installs+approves aws, then plan matches database to @hobo/provider-aws", async () => {
 		const runtime = createDefaultYardRuntime();
+		// SAFETY: assertion required at this I/O or test boundary.
 		openStores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 

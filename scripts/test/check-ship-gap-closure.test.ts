@@ -44,9 +44,11 @@ describe("check-ship-gap-closure", () => {
 	});
 
 	it("product CLI bin is only on @hobo/hobo (dual-bin resolved)", () => {
+		// SAFETY: assertion to `JSON.parse( readFileSync(join(root, "packages/cli/package.json"), "utf8"), ) as { bin?: unknown }` is required at this boundary.
 		const cli = JSON.parse(
 			readFileSync(join(root, "packages/cli/package.json"), "utf8"),
 		) as { bin?: unknown };
+		// SAFETY: assertion to `JSON.parse( readFileSync(join(root, "packages/hobo/package.json"), "utf8"), ) as { bin?: { hobo?: string } }` is required at this boundary.
 		const hobo = JSON.parse(
 			readFileSync(join(root, "packages/hobo/package.json"), "utf8"),
 		) as { bin?: { hobo?: string } };

@@ -177,6 +177,7 @@ describe("createFetchTransport", () => {
 			});
 			expect.unreachable("a dropped request must throw");
 		} catch (error) {
+			// SAFETY: value was established by the surrounding parse or typed constructor.
 			expect((error as NeonProviderError).code).toBe(
 				"PROVIDER_OPERATION_AMBIGUOUS",
 			);

@@ -60,6 +60,7 @@ describe("firecrawl-research", () => {
 
 		const factory = injected.entrypoint("api");
 		expect(factory).toBeTypeOf("function");
+		// SAFETY: assertion to `factory?.(runtime) as ( request: Request, ) => Promise<Response>` is required at this boundary.
 		const handler = factory?.(runtime) as (
 			request: Request,
 		) => Promise<Response>;
@@ -86,6 +87,7 @@ describe("firecrawl-research", () => {
 			stationId: "station:developer",
 			connections: { resolve },
 		});
+		// SAFETY: assertion to `definition.entrypoint("api")?.(runtime) as ( request: Request, ) => Promise<Response>` is required at this boundary.
 		const handler = definition.entrypoint("api")?.(runtime) as (
 			request: Request,
 		) => Promise<Response>;

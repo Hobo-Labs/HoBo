@@ -38,10 +38,12 @@ describe("bindleScope", () => {
 	});
 
 	it.each(["", null, undefined, 42])("rejects the name %s", (name) => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => bindleScope(name as string, () => {})).toThrow(TypeError);
 	});
 
 	it("rejects a non-function builder", () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => bindleScope("app", undefined as never)).toThrow(
 			/builder must be a function/u,
 		);
@@ -94,6 +96,7 @@ describe("bindleScope", () => {
 	it("rejects a toDescriptor that does not return an object", () => {
 		expect(() =>
 			bindleScope("app", (b) => {
+				// SAFETY: assertion required at this I/O or test boundary.
 				b.use({ toDescriptor: () => "nope" as never });
 			}),
 		).toThrow(/must be descriptor objects/u);
@@ -102,6 +105,7 @@ describe("bindleScope", () => {
 	it("rejects a toDescriptor returning an array", () => {
 		expect(() =>
 			bindleScope("app", (b) => {
+				// SAFETY: assertion required at this I/O or test boundary.
 				b.use({ toDescriptor: () => [] as never });
 			}),
 		).toThrow(/must be descriptor objects/u);
@@ -165,6 +169,7 @@ describe("provider-specific fields are refused", () => {
 		expect(() =>
 			bindleScope("app", (b) => {
 				b.use({
+					// SAFETY: assertion required at this I/O or test boundary.
 					toDescriptor: () => ({ ...descriptor(), provider: "aws" }) as never,
 				});
 			}),
@@ -207,6 +212,7 @@ describe("assertNoProviderSpecificFields, used directly", () => {
 		"string",
 		42,
 	])("ignores the non-object %s", (value) => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect(() => assertNoProviderSpecificFields(value as never)).not.toThrow();
 	});
 

@@ -87,6 +87,7 @@ export class TriggerDispatcher {
         this.#wireQueueWorker(edge);
         break;
       default:
+        // SAFETY: assertion to `throw new Error(unsupported trigger kind: ${(edge as TriggerEdge).kind});` is required at this boundary.
         throw new Error(`unsupported trigger kind: ${(edge as TriggerEdge).kind}`);
     }
   }
@@ -107,6 +108,7 @@ export class TriggerDispatcher {
         });
         this.#emitFired(edge, true);
         if (result && isJsonObject(result) && "status" in result) {
+          // SAFETY: assertion to `return result as HttpResponse;` is required at this boundary.
           return result as HttpResponse;
         }
         return { status: 200, body: result };

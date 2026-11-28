@@ -74,6 +74,7 @@ function run(
 				reject(new Error(`the fixture ended (${code ?? ended}) unready`));
 				return;
 			}
+			// SAFETY: the fixture writes a JSON array of directory names.
 			const made = JSON.parse(readFileSync(report, "utf8")) as string[];
 			const notices = stderr
 				.split("\n")

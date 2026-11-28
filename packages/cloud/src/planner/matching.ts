@@ -290,6 +290,7 @@ export function matchResource(
 			},
 		};
 	}
+	// SAFETY: `const winner = ranked[0] as ResourceDefinition;` is required at this I/O or test boundary.
 	const winner = ranked[0] as ResourceDefinition;
 	const region =
 		criteria !== undefined

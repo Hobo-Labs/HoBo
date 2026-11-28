@@ -192,6 +192,7 @@ export function validateLaunchSiteDemoAlphaEvidence(record: JsonValue) {
     return { ok: false, errors: ["launch-site demo alpha evidence record is required"] };
   }
 
+  // SAFETY: `const value = record as Partial<LaunchSiteDemoAlphaEvidenceRecord>;` is required at this I/O or test boundary.
   const value = record as Partial<LaunchSiteDemoAlphaEvidenceRecord>;
 
   if (value.issue !== "HOBO-458") {

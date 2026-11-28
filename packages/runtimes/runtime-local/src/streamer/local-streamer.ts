@@ -58,10 +58,12 @@ export function createLocalStreamer(
 				bufferLimit,
 				openedAt: new Date(0).toISOString(),
 			});
+			// SAFETY: assertion to `journal as FrameJournal<unknown>` is required at this boundary.
 			runs.set(runId, journal as FrameJournal<unknown>);
 			return toRunHandle(journal);
 		},
 		getRun<TChunk = unknown>(runId: RunId) {
+			// SAFETY: assertion to `getJournal(runs, runId) as FrameJournal<TChunk>` is required at this boundary.
 			const journal = getJournal(runs, runId) as FrameJournal<TChunk>;
 			if (foldLifecycleStatus(journal.lifecycleEvents) !== "open") {
 				throw new Error(`streamer run is not open: ${runId}`);
@@ -102,6 +104,7 @@ function toRunHandle<TChunk>(
 			return {
 				stream: streamName,
 				async write(chunk: T) {
+					// SAFETY: writable stream chunks match the journal TChunk at this boundary.
 					journal.write(streamName, chunk as never);
 				},
 			};

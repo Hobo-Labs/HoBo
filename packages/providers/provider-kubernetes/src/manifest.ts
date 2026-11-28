@@ -64,6 +64,7 @@ export function publishCapabilityManifest(
 	const providerId = input.providerId ?? KUBERNETES_PROVIDER_ID;
 	const regions = input.regions ?? DEFAULT_REGIONS;
 	const ports = input.ports ?? Object.keys(EQUIVALENCE_CLASSES);
+	// SAFETY: equivalence-class keys are the InitialCapabilityPort set.
 	const declaredPorts = ports as InitialCapabilityPort[];
 	const capabilitiesDocument = {
 		schema: CAPABILITIES_SCHEMA,

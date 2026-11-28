@@ -131,6 +131,7 @@ export function cloneStore<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
+	// SAFETY: JSON round-trip preserves the caller-owned store snapshot type.
 	return cloned as T;
 }
 
@@ -148,6 +149,7 @@ export function appendTrace(
 	store: QueueClockStore,
 	event: ClockTraceEntry,
 ): void {
+	// SAFETY: assertion to `deepFreeze({ ...event }) as ClockTraceEntry` is required at this boundary.
 	store.trace.push(deepFreeze({ ...event }) as ClockTraceEntry);
 }
 

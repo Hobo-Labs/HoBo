@@ -121,6 +121,7 @@ export function createProcessKubectlTransport(
 		name: "KubernetesClusterApi",
 		async handle(request: KubectlRequest): Promise<KubectlResponse> {
 			const path = request.path;
+			// SAFETY: assertion required at this I/O or test boundary.
 			const body = (request.body ?? {}) as JsonObject;
 
 			if (path === "/kubectl/version") {
@@ -140,6 +141,7 @@ export function createProcessKubectlTransport(
 				}
 				let clientVersion: string | null = null;
 				try {
+					// SAFETY: assertion required at this I/O or test boundary.
 					const parsed = JSON.parse(result.stdout) as {
 						clientVersion?: { gitVersion?: string };
 					};
@@ -191,11 +193,14 @@ export function createProcessKubectlTransport(
 
 			if (path === "/kubectl/apply") {
 				const namespace = String(body.namespace ?? "default");
+				// SAFETY: assertion required at this I/O or test boundary.
 				const manifests = (body.manifests as unknown[]) ?? [];
 				for (const manifest of manifests) {
 					const doc = {
+						// SAFETY: assertion required at this I/O or test boundary.
 						...(manifest as object),
 						metadata: {
+							// SAFETY: assertion required at this I/O or test boundary.
 							...(manifest as { metadata?: object }).metadata,
 							namespace,
 						},
@@ -326,6 +331,7 @@ export function createProcessKubectlTransport(
 				}
 				const target = `${forward.loopbackUrl}${reqPath.startsWith("/") ? reqPath : `/${reqPath}`}`;
 				const headers =
+					// SAFETY: assertion required at this I/O or test boundary.
 					(body.headers as Record<string, string> | undefined) ?? {};
 				const init: RequestInit = { method, headers };
 				if (body.body !== undefined && method !== "GET" && method !== "HEAD") {

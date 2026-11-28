@@ -263,6 +263,7 @@ describe("a data step may name its migration pattern", () => {
 								mode: "bulk",
 								transformId: "t",
 								checksum: `sha256:${"a".repeat(64)}`,
+								// SAFETY: deliberately outside the union to exercise the parser's refusal.
 								pattern: "copy-and-hope" as "offline-copy",
 							},
 						},

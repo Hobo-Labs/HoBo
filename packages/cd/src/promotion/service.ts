@@ -177,14 +177,17 @@ function stagesFor(
 }
 
 function asCamp(id: string): CampId {
+	// SAFETY: Camp ids in promotion records were parsed as Camp ids at request time.
 	return id as CampId;
 }
 
 function asFreight(id: string): FreightId {
+	// SAFETY: Freight ids in promotion records were checked against the ledger at request time.
 	return id as FreightId;
 }
 
 function asSet(id: string): SetId {
+	// SAFETY: Set ids come from SetRecord.predecessor_set_id or the caller's toSetId.
 	return id as SetId;
 }
 
@@ -193,18 +196,22 @@ function scopedDeltaId(scope: string, deltaId: string): string {
 }
 
 function asDelta(id: string): DeltaId {
+	// SAFETY: Delta ids in saga facts were minted by the SetResolver.
 	return id as DeltaId;
 }
 
 function asRollout(id: string): RolloutId {
+	// SAFETY: rollout ids in saga facts come from RolloutOrchestrator.plan.
 	return id as RolloutId;
 }
 
 function asVerification(id: string): VerificationId {
+	// SAFETY: verification ids in saga facts come from VerificationEngine.start.
 	return id as VerificationId;
 }
 
 function asPromotion(id: string): PromotionId {
+	// SAFETY: promotion ids are minted by ids.ts.
 	return id as PromotionId;
 }
 

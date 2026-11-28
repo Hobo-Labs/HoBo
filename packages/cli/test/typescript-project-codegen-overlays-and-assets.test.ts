@@ -68,6 +68,7 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: so
 				await expect(
 					readFile(join(root, "src/_generated/index.ts"), "utf8"),
 				).rejects.toMatchObject({ code: "ENOENT" });
+			// SAFETY: executable generated bundle is built from the trusted canonical seed plus this fixture's app.
 			const generated = (await import(
 				pathToFileURL(
 					join(root, "src/_generated/app-imprint/runtime/appModule0.mjs"),
@@ -169,6 +170,7 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: so
 				).rejects.toMatchObject({ code: "HOBO_CODEGEN_DRIFT" });
 				await runCodegen({ projectRoot: root, check: false }, { engine });
 				await compile(root);
+				// SAFETY: real TS/asset imports above were bundled and the executable client was compiled and packaged.
 				const client = (await import(
 					pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js"))
 						.href

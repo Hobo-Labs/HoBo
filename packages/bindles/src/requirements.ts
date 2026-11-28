@@ -39,8 +39,11 @@ export type BindleRequirementsHash = `sha256:${string}`;
 
 export function emptyBindleRequirements(): BindleRequirements {
 	return Object.freeze({
+		// SAFETY: assertion required at this I/O or test boundary.
 		require: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		prefer: Object.freeze([] as string[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		runtimes: Object.freeze([] as string[]),
 		labels: Object.freeze({}),
 	});

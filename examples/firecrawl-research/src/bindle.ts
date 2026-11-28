@@ -30,6 +30,7 @@ function defaultFirecrawlClient(options: { apiKey: string }): FirecrawlClient {
 	return {
 		async search(query, searchOptions) {
 			const result = await client.search(query, searchOptions);
+			// SAFETY: handler only JSON-serializes the SDK search payload.
 			return result as FirecrawlSearchResult;
 		},
 	};

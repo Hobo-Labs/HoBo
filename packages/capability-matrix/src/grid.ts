@@ -40,5 +40,6 @@ const COORDINATE_INDEX: ReadonlyMap<CapabilityMatrixCellKey, number> = new Map(
 );
 
 export function coordinateIndex(key: string): number {
+	// SAFETY: callers receive -1 for keys outside the closed coordinate vocabulary.
 	return COORDINATE_INDEX.get(key as CapabilityMatrixCellKey) ?? -1;
 }

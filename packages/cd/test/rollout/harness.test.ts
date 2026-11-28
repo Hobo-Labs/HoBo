@@ -18,6 +18,7 @@ import { clock, context, MemoryEventStore, TENANT } from "./fakes.js";
 
 const ID = "rollout-h1";
 const rolloutId = (): RolloutId => {
+	// SAFETY: literal test id.
 	return ID as RolloutId;
 };
 

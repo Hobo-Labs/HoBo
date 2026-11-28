@@ -111,6 +111,7 @@ describe("membrane failure semantics (S1-23)", () => {
 		}
 
 		expect(caught).toBeInstanceOf(DeadlineExceededError);
+		// SAFETY: assertion to `caught as DeadlineExceededError` is required at this boundary.
 		expect((caught as DeadlineExceededError).kind).toBe("cancelled");
 		expect(classifyToRuntimeError(caught).tag).toBe("cancelled");
 		expect(layer.events.some((event) => event.type === "link.Called")).toBe(
@@ -143,7 +144,9 @@ describe("membrane failure semantics (S1-23)", () => {
 		}
 
 		expect(caught).toBeInstanceOf(MembraneBackpressureError);
+		// SAFETY: assertion to `caught as MembraneBackpressureError` is required at this boundary.
 		expect((caught as MembraneBackpressureError).kind).toBe("retryable");
+		// SAFETY: assertion to `caught as MembraneBackpressureError` is required at this boundary.
 		expect((caught as MembraneBackpressureError).retryable).toBe(true);
 		expect(classifyToRuntimeError(caught).tag).toBe("retryable");
 
@@ -171,7 +174,9 @@ describe("membrane failure semantics (S1-23)", () => {
 		}
 
 		expect(caught).toBeInstanceOf(AmbiguousCommitError);
+		// SAFETY: assertion to `caught as AmbiguousCommitError` is required at this boundary.
 		expect((caught as AmbiguousCommitError).kind).toBe("ambiguous-commit");
+		// SAFETY: assertion to `caught as AmbiguousCommitError` is required at this boundary.
 		expect((caught as AmbiguousCommitError).ambiguousCommit).toBe(true);
 		expect(classifyToRuntimeError(caught).tag).toBe("ambiguous-commit");
 	});

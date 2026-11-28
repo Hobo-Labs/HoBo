@@ -101,9 +101,11 @@ function parseSeqVector(value: JsonValue | undefined) {
 }
 
 function parseMode(value: JsonValue | undefined): ReplayMode {
+	// SAFETY: assertion to `value as ReplayMode` is required at this boundary.
 	if (!isJsonString(value) || !MODES.has(value as ReplayMode)) {
 		throw new ReplayParseError('mode must be "live" or "replay"');
 	}
+	// SAFETY: assertion to `value as ReplayMode` is required at this boundary.
 	return value as ReplayMode;
 }
 
@@ -128,6 +130,7 @@ function stringArray(value: JsonValue | undefined, field: string): string[] {
 	if (!Array.isArray(value) || value.some((entry) => !isJsonString(entry))) {
 		throw new ReplayParseError(`${field} must be a string array`);
 	}
+	// SAFETY: assertion to `Object.freeze([...value]) as string[]` is required at this boundary.
 	return Object.freeze([...value]) as string[];
 }
 
@@ -142,5 +145,6 @@ function expectObject(value: JsonValue | undefined, label: string): JsonObject {
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		throw new ReplayParseError(`${label} must be an object`);
 	}
+	// SAFETY: assertion to `value as JsonObject` is required at this boundary.
 	return value as JsonObject;
 }

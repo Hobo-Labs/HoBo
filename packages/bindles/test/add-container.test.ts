@@ -9,6 +9,7 @@ function container() {
 
 describe("the handle a container starts as", () => {
 	it("carries the image onto the manifest resource, not onto the handle", () => {
+		// SAFETY: the handle contract intentionally keeps image off the public handle.
 		expect("image" in container()).toBe(false);
 		const resource = container().manifest();
 		expect(resource.image).toBe("ghcr.io/example/api:1");
@@ -16,6 +17,7 @@ describe("the handle a container starts as", () => {
 
 	it("declares a build spec defaulting to wasm-on-oci", () => {
 		const resource = container().manifest();
+		// SAFETY: the manifest builder owns this JSON build object shape.
 		expect(resource.build).toMatchObject({
 			provider: "hobo:build",
 			source: "ghcr.io/example/api:1",
@@ -45,6 +47,7 @@ describe("the handle a container starts as", () => {
 	it("refuses a bind target that is not a declared resource handle", () => {
 		for (const target of [{ name: "db" }, undefined, null, "db", 7]) {
 			expect(() =>
+				// SAFETY: invalid values are deliberately injected to test the boundary.
 				addContainer("api", "img", { bind: { db: target } as never }),
 			).toThrow(BindReferenceError);
 		}
@@ -231,6 +234,7 @@ describe("withBindMount", () => {
 	it("honours an explicit read-only mount", () => {
 		const handle = container();
 		handle.withBindMount?.("./config", "/etc/app", true);
+		// SAFETY: bind-mount annotations expose the tested readOnly field shape.
 		expect(
 			(handle.annotations.bindMounts as { readOnly: boolean }[])[0]?.readOnly,
 		).toBe(true);
@@ -253,6 +257,7 @@ describe("withArgs", () => {
 
 	it("flattens a nested array argument", () => {
 		const handle = container();
+		// SAFETY: the invalid nested array is deliberately injected to test flattening.
 		handle.withArgs?.(["--a", "--b"] as never, "--c");
 		expect(handle.annotations.args).toEqual(["--a", "--b", "--c"]);
 	});
@@ -301,14 +306,17 @@ describe("withLifetime", () => {
 	it("refuses any other lifetime, naming the resource", () => {
 		const handle = container();
 		for (const lifetime of ["ephemeral", "forever", "", "SESSION"]) {
+			// SAFETY: invalid values are deliberately injected to test rejection.
 			expect(() => handle.withLifetime?.(lifetime as never)).toThrow(
 				BindReferenceError,
 			);
 		}
 		try {
+			// SAFETY: invalid values are deliberately injected to test rejection.
 			handle.withLifetime?.("ephemeral" as never);
 			expect.unreachable("an unknown lifetime must be refused");
 		} catch (error) {
+			// SAFETY: this catch follows the BindReferenceError assertion above.
 			expect((error as BindReferenceError).message).toContain(
 				"session, persistent",
 			);
@@ -317,6 +325,7 @@ describe("withLifetime", () => {
 
 	it("does not record a lifetime it refused", () => {
 		const handle = container();
+		// SAFETY: invalid values are deliberately injected to test rejection.
 		expect(() => handle.withLifetime?.("ephemeral" as never)).toThrow();
 		expect(handle.annotations.lifetime).toBeUndefined();
 	});
@@ -341,6 +350,7 @@ describe("waitFor and waitForCompletion", () => {
 
 	it("accepts a handle as well as a name", () => {
 		const handle = container();
+		// SAFETY: a component handle is deliberately passed through the boundary.
 		handle.waitFor?.(addContainer("db", "postgres:16") as never);
 		expect(handle.annotations.waitFor).toEqual([{ to: "db", until: "ready" }]);
 	});
@@ -355,6 +365,7 @@ describe("waitFor and waitForCompletion", () => {
 	it("refuses a dependency that is neither a name nor a handle", () => {
 		const handle = container();
 		for (const dependency of [undefined, null, 7, {}, { name: 7 }, []]) {
+			// SAFETY: invalid values are deliberately injected to test rejection.
 			expect(() => handle.waitFor?.(dependency as never)).toThrow(
 				BindReferenceError,
 			);
@@ -381,6 +392,7 @@ describe("waitFor and waitForCompletion", () => {
 			handle.waitForCompletion?.("bad name");
 			expect.unreachable("a malformed dependency must be refused");
 		} catch (error) {
+			// SAFETY: this catch follows the BindReferenceError assertion above.
 			expect((error as BindReferenceError).message).toMatch(
 				/resources\.api\.waitForCompletion|waitForCompletion/u,
 			);
@@ -391,6 +403,7 @@ describe("waitFor and waitForCompletion", () => {
 describe("withDnsRecord", () => {
 	it("refuses, because DNS is Yard-level", () => {
 		const handle = container();
+		// SAFETY: invalid values are deliberately injected to test rejection.
 		expect(() => handle.withDnsRecord?.({} as never)).toThrow(
 			BindReferenceError,
 		);
@@ -399,9 +412,11 @@ describe("withDnsRecord", () => {
 	it("says where DNS does belong", () => {
 		const handle = container();
 		try {
+			// SAFETY: invalid values are deliberately injected to test rejection.
 			handle.withDnsRecord?.({} as never);
 			expect.unreachable("DNS must be refused here");
 		} catch (error) {
+			// SAFETY: this catch follows the Error assertion above.
 			expect((error as Error).message).toContain("Yard-level");
 		}
 	});

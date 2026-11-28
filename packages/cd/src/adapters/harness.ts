@@ -287,6 +287,7 @@ export function createHarnessRolloutEngine(
 		const state = instance.engine.get(instance.internalId);
 		if (!state)
 			return {
+				// SAFETY: echo of the caller's rollout id.
 				rolloutId: rolloutId as RolloutId,
 				status: "failed",
 				stageIndex: 0,
@@ -299,6 +300,7 @@ export function createHarnessRolloutEngine(
 			state.status === "running" || state.status === "awaiting_approval";
 		const hold = live ? instance.hold : undefined;
 		return {
+			// SAFETY: echo of the caller's rollout id.
 			rolloutId: rolloutId as RolloutId,
 			status: hold ? holdStatus(hold) : STATUS[state.status],
 			stageIndex: state.stageIndex,
@@ -328,6 +330,7 @@ export function createHarnessRolloutEngine(
 
 	function unknown(rolloutId: string): RolloutSnapshot {
 		return {
+			// SAFETY: echo of the caller's rollout id.
 			rolloutId: rolloutId as RolloutId,
 			status: "failed",
 			stageIndex: 0,

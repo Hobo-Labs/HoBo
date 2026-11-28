@@ -540,6 +540,7 @@ export function createCdEventsProjector(
 			skipped += 1;
 			return [];
 		}
+		// SAFETY: toJson of a generated message is a JSON object.
 		const content = toJson(rule.schema, record) as JsonObject;
 		const subjectId = rule.subjectId(content) || event.streamId;
 		const type = hoboEventType(rule.subject, rule.predicate);

@@ -101,6 +101,7 @@ describe("usage-inferred permissions", () => {
       throw new Error("expected PermissionContractError");
     } catch (error) {
       expect(error).toBeInstanceOf(PermissionContractError);
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       expect((error as PermissionContractError).code).toBe("capability.allow-widens-usage");
     }
   });

@@ -41,6 +41,7 @@ type Interaction = Readonly<{
 	matchingRules: Readonly<Record<string, string>>;
 }>;
 
+// SAFETY: the pact file is a checked-in JSON fixture read at the test boundary.
 const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 	consumer: { name: string };
 	provider: { name: string };
@@ -69,6 +70,7 @@ const BINDLE_V2 = parseManifest({
 });
 
 const DEPLOYMENT = "pact-cd";
+// SAFETY: `hobo up` uses the deployment id as the deployment Camp id by default.
 const CAMP = DEPLOYMENT as CampId;
 
 let stores: RuntimeLocalEventStore[] = [];

@@ -48,6 +48,7 @@ function projectRequirement(
 			body[key],
 		]),
 	);
+	// SAFETY: requiredProfiles is present and the projection retains only input keys.
 	return projected as CapabilityRequirementInput;
 }
 
@@ -62,6 +63,7 @@ function fixturesFromJsonl(relative: string): readonly Fixture[] {
 	for (const [index, line] of lines.entries()) {
 		const trimmed = line.trim();
 		if (trimmed === "" || trimmed.startsWith("#")) continue;
+		// SAFETY: committed JSONL fixtures follow the selection-case shape.
 		const parsed = JSON.parse(trimmed) as {
 			name?: string;
 			input?: readonly { requirement?: JsonObject }[];
@@ -81,6 +83,7 @@ function fixturesFromJsonl(relative: string): readonly Fixture[] {
 
 function fixturesFromPact(relative: string): readonly Fixture[] {
 	const found: Fixture[] = [];
+	// SAFETY: committed PACT fixtures follow the interaction shape projected here.
 	const pact = JSON.parse(repoFile(relative)) as {
 		interactions?: readonly {
 			description?: string;
@@ -100,6 +103,7 @@ function fixturesFromPact(relative: string): readonly Fixture[] {
 	return found;
 }
 
+// SAFETY: the committed inventory declares the consumed PACT paths.
 const PACT_INVENTORY = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL("../contracts/pact-inventory.json", import.meta.url)),
@@ -282,6 +286,7 @@ const GOLDEN_OFFERS = [
 ] as const;
 
 const goldenRegistryDigests = GOLDEN_OFFERS.map((name) => {
+	// SAFETY: committed golden offers declare their registry digest.
 	const offer = JSON.parse(
 		repoFile(`packages/recipes/test/golden/${name}.offer.json`),
 	) as { profileRegistryDigest?: string };

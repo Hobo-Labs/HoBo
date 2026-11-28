@@ -3,7 +3,9 @@ import { runAiBdd, stopRunningAiBdd } from "../../src/ai-bdd-process.js";
 const [signalArg, graceArg, commandArg, nextArg] = process.argv.slice(2);
 const signal = signalArg === "SIGINT" ? "SIGINT" : "SIGTERM";
 const graceMs = Number(graceArg);
+// SAFETY: the test that spawns this passes two JSON arrays of strings.
 const command = JSON.parse(commandArg ?? "[]") as string[];
+// SAFETY: as above.
 const next = JSON.parse(nextArg ?? "[]") as string[];
 
 let ready = (): void => undefined;

@@ -190,6 +190,7 @@ type Envelope = {
 };
 
 function envelopeOf(stdout: string): Envelope {
+	// SAFETY: the CLI writes one JSON envelope on stdout; parsed at the test boundary.
 	return JSON.parse(stdout) as Envelope;
 }
 
@@ -203,6 +204,7 @@ async function campSets(store: RuntimeLocalEventStore, campId: string) {
 	const sets = [];
 	for await (const event of store.read(`cd-camp-${campId}`))
 		if (event.type === CD_EVENTS.SetCreated)
+			// SAFETY: set.Created bodies are SetRecord protobuf JSON.
 			sets.push(fromJson(SetRecordSchema, event.data as ProtoJson));
 	return sets;
 }
@@ -220,6 +222,7 @@ describe("hobo up declares desired state (D13)", () => {
 			const before = await journal(store);
 			const preview = await cli.run(["up", "--what-if", "--json"], { cwd });
 			expect(preview.exitCode).toBe(0);
+			// SAFETY: the CLI emits its JSON envelope at this test boundary.
 			const up = JSON.parse(preview.stdout) as {
 				data: { changes: { converged: boolean } };
 			};
@@ -228,6 +231,7 @@ describe("hobo up declares desired state (D13)", () => {
 				cwd,
 			});
 			expect(downPreview.exitCode).toBe(0);
+			// SAFETY: the CLI emits its JSON envelope at this test boundary.
 			const down = JSON.parse(downPreview.stdout) as {
 				data: { wouldDestroy: string[] };
 			};

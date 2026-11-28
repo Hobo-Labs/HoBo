@@ -31,6 +31,7 @@ function productIdsFrom(namespace: NamespaceObject): Set<string> {
 		} catch {
 			return;
 		}
+		// SAFETY: slot factories return parsed binding objects by contract.
 		const record = produced as SlotBinding;
 		if (record.contract !== "hobo.slot-binding/v1") return;
 		if (record.productId !== undefined) found.add(record.productId);
@@ -63,11 +64,13 @@ describe("namespace reaches everything its catalog declares", () => {
 	for (const { name, ns } of NAMESPACES) {
 		it(`${name}: every catalog productId has a reachable factory`, () => {
 			const catalogProducts = new Set(
+				// SAFETY: every namespace in NAMESPACES exposes the shared Yard contract.
 				(ns as { Yard: () => { bindings: readonly { productId?: string }[] } })
 					.Yard()
 					.bindings.map((row) => row.productId)
 					.filter((id): id is string => id !== undefined),
 			);
+			// SAFETY: provider namespaces are closed string-keyed export objects.
 			const reachable = productIdsFrom(ns as NamespaceObject);
 			const unreachable = [...catalogProducts]
 				.filter((id) => !reachable.has(id))
@@ -95,11 +98,13 @@ describe("namespace reaches everything its catalog declares", () => {
 			"dynamodbDocument",
 		]) {
 			expect(
+				// SAFETY: these names are the closed regression vocabulary above.
 				(aws as Record<string, SlotFactory>)[factory],
 				`aws.${factory} must be reachable from @hobo/cloud-providers`,
 			).toBeTypeOf("function");
 		}
 		expect(
+			// SAFETY: `ecs.service` is the nested factory exported by the namespace.
 			(aws as { ecs?: { service?: SlotFactory } }).ecs?.service,
 		).toBeTypeOf("function");
 	});

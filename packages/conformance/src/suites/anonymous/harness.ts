@@ -209,6 +209,7 @@ export function requireRecord<T>(
 	if (value === null || !isJsonObject(value) || Array.isArray(value)) {
 		throw new AnonymousConformanceError(caseId, `${field} must be an object`);
 	}
+	// SAFETY: assertion to `value as JsonObject` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -281,12 +282,17 @@ export function requireMember<TValue, T extends string>(
 	field: string,
 	allowed: readonly T[],
 ): T {
-	if (!isJsonString(value) || !(allowed as readonly string[]).includes(value)) {
+	if (
+		!isJsonString(value) ||
+		// SAFETY: assertion to `allowed as readonly string[]` is required at this boundary.
+		!(allowed as readonly string[]).includes(value)
+	) {
 		throw new AnonymousConformanceError(
 			caseId,
 			`${field} must be one of ${allowed.join(", ")}`,
 		);
 	}
+	// SAFETY: allowed-member parse restores the closed string union.
 	return value as never;
 }
 

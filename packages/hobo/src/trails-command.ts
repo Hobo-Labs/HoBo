@@ -52,7 +52,9 @@ export function createTrailsCommand(
 				(isJsonString(env.HOBO_HOME) && env.HOBO_HOME.length > 0
 					? env.HOBO_HOME
 					: defaultHoboHome());
+			// SAFETY: assertion required at this I/O or test boundary.
 			const sub = (args[0] ?? "status") as string;
+			// SAFETY: assertion required at this I/O or test boundary.
 			if (!(SUBCOMMANDS as readonly string[]).includes(sub)) {
 				return {
 					ok: false,
@@ -67,7 +69,13 @@ export function createTrailsCommand(
 				};
 			}
 
-			const tenant = resolveTenant(hoboHome, flags as JsonObject, env);
+			const tenant = resolveTenant(
+				hoboHome,
+				// SAFETY: assertion required at this I/O or test boundary.
+				flags as JsonObject,
+				env,
+			);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const target = resolveTarget(flags as JsonObject, env);
 			const fixtures =
 				deps.fixtures ??

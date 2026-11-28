@@ -61,6 +61,7 @@ describe("createInspectCommand", () => {
 	it("renders the DeploymentView after a real `hobo up` on the same runtime", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -88,6 +89,7 @@ describe("createInspectCommand", () => {
 	it("renders the TopologyView app graph via `inspect graph` after a real `hobo up`", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -113,6 +115,7 @@ describe("createInspectCommand", () => {
 				),
 			).toBe(true);
 
+			// SAFETY: assertion required at this I/O or test boundary.
 			const edges = inspect.data.graph.edges as Array<{
 				from: string;
 				to: string;
@@ -132,6 +135,7 @@ describe("createInspectCommand", () => {
 				).length,
 			).toBeGreaterThanOrEqual(2);
 
+			// SAFETY: assertion required at this I/O or test boundary.
 			for (const node of inspect.data.graph.nodes as Array<{
 				kind: string;
 				lifecycle?: string;
@@ -146,6 +150,7 @@ describe("createInspectCommand", () => {
 	it("reports no graph history for a project that has never deployed", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -162,6 +167,7 @@ describe("createInspectCommand", () => {
 	it("reports no history for a project that has never deployed", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -176,7 +182,9 @@ describe("createInspectCommand", () => {
 
 	it("reports unavailable when no runtime is wired", async () => {
 		const result = await createInspectCommand().run({
+			// SAFETY: assertion required at this I/O or test boundary.
 			context: { cwd: "/tmp", projectDir: "/tmp" } as CliContext,
+			// SAFETY: assertion required at this I/O or test boundary.
 			flags: { cwd: "/tmp" } as never,
 			args: [],
 			verb: "inspect",

@@ -555,6 +555,7 @@ describe.skipIf(!LIVE_URL)("PostgreSQL engine binding — live", () => {
 			};
 			writeFileSync(FIXTURE_PATH, `${JSON.stringify(recorded, null, "\t")}\n`);
 		}
+		// SAFETY: the fixture file is this repository's own recorded document.
 		const fixture = JSON.parse(
 			readFileSync(FIXTURE_PATH, "utf8"),
 		) as RecordedPgOutput;

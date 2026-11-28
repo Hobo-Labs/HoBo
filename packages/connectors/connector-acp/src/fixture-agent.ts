@@ -21,7 +21,9 @@ export function createFixtureAcpAgent(
 	const action = options.action ?? "logs:tail";
 	const sessionId = options.sessionId ?? "sess-fixture-1";
 	const observed = {
+		// SAFETY: assertion to `s string[], ` is required at this boundary.
 		refusals: [] as string[],
+		// SAFETY: assertion to `s string[], ` is required at this boundary.
 		toolRuns: [] as string[],
 		cancelled: false,
 	};

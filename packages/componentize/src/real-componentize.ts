@@ -167,6 +167,7 @@ async function probeToolchain(
 		const module = await (importModule
 			? importModule()
 			: import(COMPONENTIZE_JS_SPECIFIER));
+		// SAFETY: `const componentize = (module as { componentize?: unknown }).componentize;` is required at this I/O or test boundary.
 		const componentize = (module as { componentize?: unknown }).componentize;
 		if (!(componentize instanceof Function)) {
 			return {
@@ -175,6 +176,7 @@ async function probeToolchain(
 			};
 		}
 		const impl: RealComponentizeImpl = async (sourcePath, opts) => {
+			// SAFETY: `const output = (await componentize({` is required at this I/O or test boundary.
 			const output = (await componentize({
 				sourcePath,
 				witPath: opts.witPath,

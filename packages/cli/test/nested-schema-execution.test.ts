@@ -31,6 +31,7 @@ async function emittedValidator(): Promise<Validator> {
 		reportDiagnostics: true,
 	});
 	expect(result.diagnostics).toEqual([]);
+	// SAFETY: the imported module is the compiler output of our executable validator source.
 	return (await import(
 		`data:text/javascript;base64,${Buffer.from(result.outputText).toString("base64")}`
 	)) as Validator;

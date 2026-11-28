@@ -25,6 +25,7 @@ const goldenPath = join(
 const SOURCE = "/hobo/cd/acme";
 
 function render(events: readonly CdEvent[]): string {
+	// SAFETY: CdEvent is a JSON-shaped record.
 	return `${events.map((e) => canonicalJson(e as never)).join("\n")}\n`;
 }
 

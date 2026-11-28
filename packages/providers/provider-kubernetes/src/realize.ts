@@ -56,6 +56,7 @@ export function mergeKubernetesOptions(
 	options: ResourcePlan["options"] = [],
 ): JsonObject {
 	const merged: JsonObject = {};
+	// SAFETY: assertion to `tions as TypedOptionBlock[]) ` is required at this boundary.
 	for (const block of options as TypedOptionBlock[]) {
 		if (block.providerId !== PROVIDER_TARGET) {
 			continue;
@@ -141,6 +142,7 @@ export function realizeResourcePlans(
 	}
 	const resources = plans.map((plan) => buildResource(plan, true));
 	const deploymentId = options.deploymentId ?? "hello-bindle-kubernetes";
+	// SAFETY: assertion to `sources[0] as IacResource; ` is required at this boundary.
 	const first = resources[0] as IacResource;
 	const iac: IacProgram = {
 		apiVersion: IAC_PROGRAM_API_VERSION,

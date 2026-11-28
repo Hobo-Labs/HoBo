@@ -33,6 +33,7 @@ Given(
 		for (const [serviceId, serviceConfig] of Object.entries(
 			this.fixture.referenceApp.services,
 		)) {
+			// SAFETY: assertion to `serviceConfig as { strategy: string }` is required at this boundary.
 			const config = serviceConfig as { strategy: string };
 			assert.ok(
 				STRATEGY_KINDS.includes(config.strategy),

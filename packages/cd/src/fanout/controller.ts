@@ -120,6 +120,7 @@ export function fanoutIdFor(
 	node: string,
 	idempotencyKey: string,
 ): FanoutId {
+	// SAFETY: a FanoutId is minted only here, from a deterministic digest.
 	return `fanout-${sha256Hex(tenant, pipeline, node, idempotencyKey).slice(0, 32)}` as FanoutId;
 }
 
@@ -128,14 +129,17 @@ export function campKey(fanoutId: string, campId: string): string {
 }
 
 function asCamp(id: string): CampId {
+	// SAFETY: Camp ids in fan-out records come from a recorded placement decision.
 	return id as CampId;
 }
 
 function asFreight(id: string): FreightId {
+	// SAFETY: the Freight id was checked usable against the ledger at start.
 	return id as FreightId;
 }
 
 function asPromotion(id: string): PromotionId {
+	// SAFETY: promotion ids are recorded from PromotionService results.
 	return id as PromotionId;
 }
 
@@ -438,6 +442,7 @@ export function createFanoutController(
 				idempotencyKey: campKey(view.fanoutId, slot.campId),
 				pipeline: view.pipeline,
 				node: view.node,
+				// SAFETY: fan-out ids are minted by fanoutIdFor.
 				fanoutId: view.fanoutId as FanoutId,
 				intent: "promote",
 			},

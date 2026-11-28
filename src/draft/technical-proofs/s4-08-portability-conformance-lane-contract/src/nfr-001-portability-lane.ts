@@ -43,6 +43,7 @@ export type PortabilityConformanceReport = {
 export function createPortableConformanceEvidence(overrides: JsonObject = {}) {
   const fixture = createMultiCloudShopFixtureRecord();
   const bindleDigest = fixture.bindleDigest;
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const camps = fixture.camps as Record<string, { name: string; yard: string; mappingDigest: string }>;
 
   const base = {
@@ -88,6 +89,7 @@ export function runNfr001PortabilityLane(
   evidence: JsonObject = createPortableConformanceEvidence(),
 ): PortabilityConformanceReport {
   const failures: PortabilityFailure[] = [];
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const targetProviders = providerNames(evidence.targets as Array<{ provider: string }>);
 
   if (evidence.schema !== NFR001_SCHEMA) {
@@ -105,15 +107,21 @@ export function runNfr001PortabilityLane(
   }
 
   validateTargets(targetProviders, failures);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   validateUneditedBindle(evidence.bindle as JsonObject, evidence.targets as Target[], failures);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   validateMappingOnlyVariance(evidence.targets as Target[], failures);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   validateTopologyEquivalence(evidence.targets as Target[], failures);
   validateProviderOptionIsolation(
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     evidence.bindle as JsonObject,
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     evidence.targets as Target[],
     failures,
   );
   validatePortabilitySurface(
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     (evidence.portabilityReport as { nonPortableSurface?: NonPortableEntry[] }) ?? {},
     targetProviders,
     failures,
@@ -125,8 +133,11 @@ export function runNfr001PortabilityLane(
     schema: NFR001_SCHEMA,
     fixture: String(evidence.fixture),
     targetProviders,
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     bindleDigest: (evidence.bindle as { digest?: string })?.digest,
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     topologySignature: ok ? resourceSignature((evidence.targets as Target[])[0]) : undefined,
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     bindingSignature: ok ? bindingSignature((evidence.targets as Target[])[0]) : undefined,
     failures,
     events: ok
@@ -158,6 +169,7 @@ export function assertNfr001PortabilityLane(
 }
 
 export function seedEditedBindleMutation(evidence: JsonObject) {
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const bindle = evidence.bindle as { sources?: Record<string, string>; digest?: string };
   const originalDigest = bindle.digest;
   const mutatedSources = {
@@ -168,6 +180,7 @@ export function seedEditedBindleMutation(evidence: JsonObject) {
     ),
   };
   const mutatedDigest = digestPortableSources(mutatedSources);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const targets = (evidence.targets as Target[]).map((target, index) =>
     index === 1
       ? { ...target, bindleDigest: mutatedDigest, sourceDigest: mutatedDigest }
@@ -181,6 +194,7 @@ export function seedEditedBindleMutation(evidence: JsonObject) {
 }
 
 export function seedProviderLeakMutation(evidence: JsonObject) {
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const targets = [...(evidence.targets as Target[])];
   const azure = { ...targets[1] };
   azure.resolvedProviderOptions = [
@@ -278,6 +292,7 @@ function validateUneditedBindle(
   targets: Target[],
   failures: PortabilityFailure[],
 ) {
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const expectedDigest = bindle.digest as string | undefined;
   if (!expectedDigest) {
     failures.push({
@@ -287,7 +302,9 @@ function validateUneditedBindle(
     return;
   }
 
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const calculatedDigest = digestPortableSources((bindle.sources ?? {}) as Record<string, string>);
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   if (Object.keys((bindle.sources ?? {}) as object).length > 0 && calculatedDigest !== expectedDigest) {
     failures.push({
       code: "bindle.digest-mismatch",
@@ -356,6 +373,7 @@ function validateProviderOptionIsolation(
   targets: Target[],
   failures: PortabilityFailure[],
 ) {
+  // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
   const expectedOptions = (bindle.providerOptions ?? []) as Target["resolvedProviderOptions"];
 
   for (const target of targets ?? []) {

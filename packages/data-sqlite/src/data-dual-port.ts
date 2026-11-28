@@ -125,6 +125,7 @@ export function createSqliteDataDualPort(
 				return Object.freeze({
 					...(tenant === undefined ? { tenant: row.tenant } : undefined),
 					id: String(row.record?.id ?? ""),
+					// SAFETY: the tag check proves a JSON object before it is spread.
 					...(tagOf.call(doc) === "[object Object]"
 						? (doc as JsonObject)
 						: undefined),

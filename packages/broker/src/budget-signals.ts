@@ -132,7 +132,9 @@ export function foldBudgetSignals(
 			event.type === BUDGET_EVENTS.Recovered ||
 			event.type === BUDGET_EVENTS.StateReset
 		) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const key = (event.data as BudgetSignalData | undefined)?.signalKey;
+			// SAFETY: event kinds above identify the recorded budget-signal contract.
 			const data = event.data as BudgetSignalData | undefined;
 			if (
 				identity &&
@@ -176,6 +178,7 @@ export function foldBudgetSignals(
 			continue;
 		}
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const data = (event.data ?? {}) as JsonObject;
 		if (tenantId !== null && data.tenantId !== tenantId) continue;
 		if (

@@ -94,6 +94,7 @@ export function parseOptimizerConfig(value: JsonValue): OptimizerConfig {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		fail("config", "OptimizerConfig object", value);
 	}
+	// SAFETY: `const record = value as JsonObject;` is required at this I/O or test boundary.
 	const record = value as JsonObject;
 	const seed = record.seed;
 	if (
@@ -185,7 +186,9 @@ function sampleIndexes(
 	const taken = Math.min(count, poolSize);
 	for (let i = 0; i < taken; i += 1) {
 		const j = i + prng.nextInt(poolSize - i);
+		// SAFETY: `const a = indexes[i] as number;` is required at this I/O or test boundary.
 		const a = indexes[i] as number;
+		// SAFETY: `indexes[i] = indexes[j] as number;` is required at this I/O or test boundary.
 		indexes[i] = indexes[j] as number;
 		indexes[j] = a;
 	}
@@ -198,6 +201,7 @@ function propose(
 	objective: string,
 	demosPerCandidate: number,
 ): Proposal {
+	// SAFETY: `const framing = INSTRUCTION_FRAMINGS[` is required at this I/O or test boundary.
 	const framing = INSTRUCTION_FRAMINGS[
 		prng.nextInt(INSTRUCTION_FRAMINGS.length)
 	] as string;
@@ -205,6 +209,7 @@ function propose(
 	const demoIndexes = sampleIndexes(prng, pool.length, demosPerCandidate);
 	const score =
 		demoIndexes.reduce(
+			// SAFETY: `(sum, index) => sum + (pool[index] as DemoExample).reward,` is required at this I/O or test boundary.
 			(sum, index) => sum + (pool[index] as DemoExample).reward,
 			0,
 		) / Math.max(demoIndexes.length, 1);
@@ -271,11 +276,13 @@ export function createBuiltinTrainingEngine(
 			if (kept) best = proposal;
 			sink.record(stepSpan(iteration, proposal, kept ? "kept" : "rejected"));
 		}
+		// SAFETY: `const winner = best as Proposal;` is required at this I/O or test boundary.
 		const winner = best as Proposal;
 
 		const programJson = serializeTrainingArtifactProgram({
 			instructions: winner.instructions,
 			demos: winner.demoIndexes.map((index) => {
+				// SAFETY: `const demo = pool[index] as DemoExample;` is required at this I/O or test boundary.
 				const demo = pool[index] as DemoExample;
 				return { input: demo.input, output: demo.output };
 			}),

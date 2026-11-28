@@ -23,6 +23,7 @@ export function serializeConfigManifest(manifest: ConfigManifest): string {
 }
 
 export function scanSerializedManifestForValues(manifest: JsonValue, values: string[]): string[] {
+  // SAFETY: assertion to `const serialized = serializeConfigManifest(manifest as ConfigManifest);` is required at this boundary.
   const serialized = serializeConfigManifest(manifest as ConfigManifest);
   return values.filter((value) => value && serialized.includes(String(value)));
 }
@@ -56,6 +57,7 @@ function sortObject(value: JsonValue): JsonValue {
     return value;
   }
   return Object.fromEntries(
+    // SAFETY: assertion to `Object.entries(value as JsonObject)` is required at this boundary.
     Object.entries(value as JsonObject)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, nested]) => [key, sortObject(nested)]),

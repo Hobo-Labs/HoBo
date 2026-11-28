@@ -323,6 +323,7 @@ export async function runCiRuns(input: {
 			throw new CiRunUsage("Select a GitHub repository as owner/name.");
 		if (!Object.hasOwn(supported, command))
 			throw new CiRunUsage("Use hobo ci list, inspect, logs, grep, or rerun.");
+		// SAFETY: own-key check above narrows the external subcommand to this fixed table.
 		const allowed = supported[command as keyof typeof supported];
 		for (const key of Object.keys(options)) {
 			if (!allowed.includes(key))

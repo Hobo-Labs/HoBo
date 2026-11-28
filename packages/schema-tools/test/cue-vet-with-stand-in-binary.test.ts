@@ -76,6 +76,7 @@ function dataModelPackage(fixtures: {
 		mkdirSync(dir, { recursive: true });
 		for (const name of names) writeFileSync(join(dir, name), "{}\n");
 	}
+	// SAFETY: the vet reads exactly the package fields supplied above.
 	return {
 		root,
 		pkg: {

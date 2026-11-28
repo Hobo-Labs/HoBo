@@ -113,6 +113,7 @@ export function createFakeEventStore(): FakeStore {
 					data: structuredClone(input.data ?? {}),
 				};
 				if (input.meta !== undefined) envelope.meta = input.meta;
+				// SAFETY: test fake mints monotonically increasing positions.
 				const at = position as EventPosition;
 				log.push({ position: at, event: envelope });
 				appended.push(envelope);
@@ -233,6 +234,7 @@ export function createFakeArtifactStore(): FakeArtifactStore {
 		},
 		async *list() {
 			for (const digest of blobs.keys()) {
+				// SAFETY: blob keys are sha256 digests minted by put().
 				yield digest as Digest;
 			}
 		},
@@ -266,10 +268,12 @@ export function createRecordingTelemetry(): RecordingTelemetry {
 }
 
 export function deltaId(id: string): DeltaId {
+	// SAFETY: test Delta ids are opaque strings; the ledger parses them.
 	return id as DeltaId;
 }
 
 export function setId(id: string): SetId {
+	// SAFETY: test Set ids are opaque strings; the reader looks them up.
 	return id as SetId;
 }
 
@@ -292,6 +296,7 @@ export function asDesiredStateError(
 export function reverseTopLevelKeys(
 	resolved: ResolvedDeploymentSet,
 ): ResolvedDeploymentSet {
+	// SAFETY: only key order changes; every member keeps its value and type.
 	return Object.fromEntries(
 		Object.entries(resolved).reverse(),
 	) as ResolvedDeploymentSet;
@@ -315,6 +320,7 @@ export function reverseObjectKeys(
 	resolved: ResolvedDeploymentSet,
 ): ResolvedDeploymentSet {
 	const document: JsonValue = JSON.parse(JSON.stringify(resolved));
+	// SAFETY: only key order changes; the JSON round trip keeps every value.
 	const reordered: ResolvedDeploymentSet = JSON.parse(
 		JSON.stringify(reverseKeys(document, false)),
 	);
@@ -333,6 +339,7 @@ export function ctxAt(
 export const T0 = Date.parse("2026-11-12T00:00:00.000Z");
 
 export function camp(id: string): CampId {
+	// SAFETY: test Camp ids are opaque strings.
 	return id as CampId;
 }
 

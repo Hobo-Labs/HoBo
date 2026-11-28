@@ -63,6 +63,7 @@ function readPackages(): readonly ProviderPackage[] {
 		.map((entry) => join(PROVIDERS_ROOT, entry.name))
 		.filter((directory) => existsSync(join(directory, "package.json")))
 		.map((directory) => {
+			// SAFETY: a workspace package.json is a JSON object with a name.
 			const manifest = JSON.parse(
 				readFileSync(join(directory, "package.json"), "utf8"),
 			) as { name: string };
@@ -154,6 +155,7 @@ describe("I14: realization path plus traffic profile", () => {
 					expect(row.traffic.remediation.trim()).not.toBe("");
 					return;
 				}
+				// SAFETY: the named export is a TrafficRoutingProviderProfile record.
 				const profile = module.get(
 					row.traffic.profileExport,
 				) as TrafficRoutingProviderProfile;
@@ -163,6 +165,7 @@ describe("I14: realization path plus traffic profile", () => {
 					),
 				).toEqual(JSON.parse(JSON.stringify(profile)));
 				if (!row.coverageExport) return;
+				// SAFETY: the named export is the package's HostingCoverage document.
 				const coverage = module.get(row.coverageExport) as {
 					contract: string;
 					providerId: string;

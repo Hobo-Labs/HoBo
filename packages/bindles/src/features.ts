@@ -237,6 +237,7 @@ function stableStringify(value: JsonValue): string {
 	if (Array.isArray(value)) {
 		return `[${value.map(stableStringify).join(",")}]`;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = value as JsonObject;
 	const keys = Object.keys(obj).sort();
 	return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k] ?? null)}`).join(",")}}`;

@@ -7,6 +7,7 @@ const [url = "", sha = ""] = process.argv.slice(2);
 const mark = process.env.PROBE_MARK ?? "";
 const kill = process.kill.bind(process);
 let groupKills = 0;
+// SAFETY: same parameters and result as process.kill; the wrapper only counts the call.
 process.kill = ((pid: number, signal?: string | number) => {
 	if (pid < 0 && signal === "SIGKILL") groupKills += 1;
 	return kill(pid, signal);

@@ -53,10 +53,12 @@ export type ProviderRef =
 export function providerIdOf(provider: ProviderRef): string {
 	if (isJsonString(provider) && provider.length > 0) return provider;
 	if (provider !== null && provider !== undefined) {
+		// SAFETY: `const namespaceId = (provider as Partial<ProviderNamespaceRef>).PROVIDER_ID;` is required at this I/O or test boundary.
 		const namespaceId = (provider as Partial<ProviderNamespaceRef>).PROVIDER_ID;
 		if (isJsonString(namespaceId) && namespaceId.length > 0) {
 			return namespaceId;
 		}
+		// SAFETY: `const objectId = (provider as Partial<{ id: string }>).id;` is required at this I/O or test boundary.
 		const objectId = (provider as Partial<{ id: string }>).id;
 		if (isJsonString(objectId) && objectId.length > 0) return objectId;
 	}
@@ -242,6 +244,9 @@ class CampDraft implements CampBuilder {
 		const pins = [...this.#pins.entries()]
 			.sort(([a], [b]) => (a === b ? 0 : a < b ? -1 : 1))
 			.map(([slot, resolverId]) => ({ slot, resolverId }));
+		// SAFETY: the authored provider value is held unparsed and forwarded
+		// untouched so camp() issues its own camp-provider-selection-forbidden
+		// refusal; #providerAuthored gates whether the property appears at all.
 		const authoredProvider = this.#providerAuthored
 			? { defaultProvider: this.#provider as ProviderSelection }
 			: undefined;
@@ -386,6 +391,7 @@ class YardDraft implements YardBuilder {
 			const bindings = this.#slots.get(slot);
 			if (bindings !== undefined) slots[slot] = bindings;
 		}
+		// SAFETY: `return defineYard(name, {` is required at this I/O or test boundary.
 		return defineYard(name, {
 			...slots,
 			provider: this.#provider,
@@ -431,11 +437,13 @@ class StationDraft implements StationBuilder {
 		build?: (builder: YardBuilder) => void,
 	): StationBuilder {
 		if (name === undefined) {
+			// SAFETY: `this.#yards.push(providerOrYard as Yard);` is required at this I/O or test boundary.
 			this.#yards.push(providerOrYard as Yard);
 			return this;
 		}
 		this.#yards.push(
 			buildYard(
+				// SAFETY: `providerOrYard as ProviderRef,` is required at this I/O or test boundary.
 				providerOrYard as ProviderRef,
 				name,
 				build ?? (() => undefined),

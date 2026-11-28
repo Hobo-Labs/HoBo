@@ -71,10 +71,12 @@ export const STATION: PrincipalRef = { kind: "service", id: "station-eu" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
 export function camp(id: string): CampId {
+	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
 export function promotion(id: string): PromotionId {
+	// SAFETY: test fixture ids are literal promotion ids.
 	return id as PromotionId;
 }
 
@@ -148,6 +150,7 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = structuredClone(input.meta);
+			// SAFETY: test double; positions are minted from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -315,6 +318,7 @@ export function railFreight(
 }
 
 export function freightId(record: FreightRecord): FreightId {
+	// SAFETY: test fixture.
 	return record.freightId as FreightId;
 }
 
@@ -536,6 +540,7 @@ export async function observe(
 	const observation = toJson(ReconcileObservationRecordSchema, record);
 	return store.put(CD_STREAMS.campStatus(campId), CD_EVENTS.StatusObserved, {
 		schema: "hobo.cd.reconcile-status/v1",
+		// SAFETY: toJson of a message is a JSON object.
 		observation: observation as JsonObject,
 	});
 }

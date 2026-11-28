@@ -27,6 +27,7 @@ export function parseProvenanceBundle(
 	let bundle: JsonValue;
 	try {
 		data = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+		// SAFETY: JSON.parse yields a JSON value at this artifact boundary.
 		bundle = JSON.parse(data) as JsonValue;
 	} catch {
 		return reject("npm provenance bundle is not UTF-8 JSON");
@@ -65,6 +66,7 @@ function dsseStatement(bundle: JsonObject): JsonObject {
 		return reject("npm provenance bundle carries no DSSE envelope");
 	let statement: JsonValue;
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this artifact boundary.
 		statement = JSON.parse(
 			Buffer.from(envelope.payload, "base64").toString("utf8"),
 		) as JsonValue;

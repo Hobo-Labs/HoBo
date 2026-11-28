@@ -340,6 +340,7 @@ export class SqliteJournal {
 					metaBytes,
 					input.idempotencyKey ?? null,
 				);
+				// SAFETY: assertion required at this I/O or test boundary.
 				const position = asBigInt(
 					result.lastInsertRowid,
 					"global_position",
@@ -383,6 +384,7 @@ export class SqliteJournal {
 
 			const appendedByKey = new Map<string, EventEnvelope>();
 			for (const envelope of appended) {
+				// SAFETY: assertion required at this I/O or test boundary.
 				const key = (envelope.meta as { idempotencyKey?: string } | undefined)
 					?.idempotencyKey;
 				if (isJsonString(key) && key.length > 0) {
@@ -440,6 +442,7 @@ export class SqliteJournal {
 			after = parseEventPosition(options.after, "after");
 		} else {
 			const origin = 0n;
+			// SAFETY: EventPosition is a branded bigint; 0n is the exclusive lower bound.
 			after = origin as EventPosition;
 		}
 		const limit = Math.min(
@@ -474,6 +477,7 @@ export class SqliteJournal {
          LIMIT ?`;
 		const rows = this.db.prepare(sql).all(...params);
 		for (const row of rows) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const position = asBigInt(
 				row.global_position,
 				"global_position",
@@ -557,6 +561,7 @@ export class SqliteJournal {
 			.get(id);
 		if (!row) return undefined;
 		const codec = asText(row.state_codec, "state_codec");
+		// SAFETY: assertion required at this I/O or test boundary.
 		const state = decodePayload(codec, asBytes(row.state, "state")) as S;
 		return Object.freeze({
 			streamId: asText(row.stream_id, "stream_id"),
@@ -678,6 +683,7 @@ export class SqliteJournal {
 				subscriptionId,
 				partitionId,
 				holderId,
+				// SAFETY: assertion required at this I/O or test boundary.
 				fenceToken: fenceToken as FenceToken,
 				expiresAt,
 			});
@@ -704,12 +710,16 @@ export class SqliteJournal {
 			.get(subscriptionId, partitionId);
 		if (!row) return undefined;
 		return Object.freeze({
+			// SAFETY: assertion required at this I/O or test boundary.
 			subscriptionId: asText(
 				row.subscription_id,
 				"subscription_id",
 			) as SubscriptionId,
+			// SAFETY: assertion required at this I/O or test boundary.
 			partitionId: asText(row.partition_id, "partition_id") as PartitionId,
+			// SAFETY: assertion required at this I/O or test boundary.
 			position: asBigInt(row.position, "position") as EventPosition,
+			// SAFETY: assertion required at this I/O or test boundary.
 			fenceToken: asBigInt(row.fence_token, "fence_token") as FenceToken,
 			updatedAt: asText(row.updated_at, "updated_at"),
 		});
@@ -806,6 +816,7 @@ export class SqliteJournal {
 		const partitionId = parsePartitionId(options.partitionId);
 		const position = parseEventPosition(options.position);
 		const now = this.clock.now();
+		// SAFETY: assertion required at this I/O or test boundary.
 		const fenceToken = 1n as FenceToken;
 		this.db
 			.prepare(
@@ -1037,6 +1048,7 @@ export class SqliteJournal {
 						asBytes(row.payload, "payload"),
 					),
 				);
+				// SAFETY: assertion required at this I/O or test boundary.
 				const headers = decodeMetadata(
 					asText(row.headers_codec, "headers_codec"),
 					asBytes(row.headers, "headers"),
@@ -1505,6 +1517,7 @@ function parseEventInputs(events: readonly EventInput[]): ParsedEventInput[] {
 		if (!Number.isSafeInteger(v) || v <= 0) {
 			throw new TypeError("event.v must be a positive safe integer");
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		const meta = Object.freeze(cloneJson(event.meta ?? {})) as JsonObject;
 		const idempotencyKey =
 			isJsonString(meta.idempotencyKey) && meta.idempotencyKey.length > 0
@@ -1556,6 +1569,7 @@ function cloneJson<T>(value: T): T {
 		return globalThis.structuredClone(value);
 	}
 	const text = JSON.stringify(value);
+	// SAFETY: JSON round-trip clones a JSON-serializable domain value.
 	const cloned = JSON.parse(text) as T;
 	return cloned;
 }

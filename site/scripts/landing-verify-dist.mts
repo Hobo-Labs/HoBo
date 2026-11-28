@@ -446,6 +446,7 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 }
 
 const server = await serve(DIST, PORT);
+// SAFETY: a server listening on a TCP port always reports an AddressInfo.
 const { port } = server.address() as AddressInfo;
 const origin = `http://127.0.0.1:${port}`;
 let browser: Browser | null = null;

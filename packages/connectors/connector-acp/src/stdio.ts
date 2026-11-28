@@ -79,6 +79,7 @@ export async function connectAcpAgentOverStdio(
 		input: Writable.toWeb(child.stdin),
 		output: Readable.toWeb(child.stdout),
 	};
+	// SAFETY: Node web streams satisfy the ACP SDK ndJsonStream pair.
 	const pair = rawPair as NdJsonPair;
 	const stream = sdk.ndJsonStream(pair.input, pair.output);
 	const connection = new sdk.ClientSideConnection(

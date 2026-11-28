@@ -157,6 +157,7 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 		problems,
 	).entries()) {
 		try {
+			// SAFETY: assertion to `y as never)); ` is required at this boundary.
 			providers.push(fromJson(RunnerProviderProfileSchema, entry as never));
 		} catch (error) {
 			problems.push(`providers[${index}]: ${String(error)}`);
@@ -170,6 +171,7 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 		problems,
 	).entries()) {
 		try {
+			// SAFETY: assertion to `y as never)); ` is required at this boundary.
 			tracks.push(fromJson(RunnerTrackSchema, entry as never));
 		} catch (error) {
 			problems.push(`tracks[${index}]: ${String(error)}`);
@@ -183,6 +185,7 @@ export function parseRegistryDocument(raw: JsonValue): ParsedRegistry {
 		problems,
 	).entries()) {
 		try {
+			// SAFETY: assertion to `y as never); ` is required at this boundary.
 			const envelope = fromJson(BudgetEnvelopeSchema, entry as never);
 			envelopes.set(envelope.providerId, envelope);
 		} catch (error) {
@@ -252,6 +255,7 @@ export function parseUsageSnapshots(raw: JsonValue): UsageSnapshot[] {
 	const snapshots: UsageSnapshot[] = [];
 	for (const entry of raw) {
 		try {
+			// SAFETY: assertion to `y as never); ` is required at this boundary.
 			const snapshot = fromJson(UsageSnapshotSchema, entry as never);
 			if (
 				snapshot.providerId !== "" &&

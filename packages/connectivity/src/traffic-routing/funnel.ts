@@ -54,6 +54,7 @@ export function createFunnelTrafficRouting(
 				applied.set(plan.planId, {
 					plan,
 					result,
+					// SAFETY: assertion required at this I/O or test boundary.
 					primary: backends[0] as BackendRef,
 				});
 				await meter(options.metering, plan, "deny");
@@ -69,12 +70,14 @@ export function createFunnelTrafficRouting(
 				applied.set(plan.planId, {
 					plan,
 					result,
+					// SAFETY: assertion required at this I/O or test boundary.
 					primary: backends[0] as BackendRef,
 				});
 				await meter(options.metering, plan, "deny");
 				return result;
 			}
 
+			// SAFETY: assertion required at this I/O or test boundary.
 			const primary = primaryBackend(rule as RoutingRule);
 			if (!primary?.endpoint || !isLocalFunnelTarget(primary.endpoint)) {
 				const result = resultFor(
@@ -86,6 +89,7 @@ export function createFunnelTrafficRouting(
 				applied.set(plan.planId, {
 					plan,
 					result,
+					// SAFETY: assertion required at this I/O or test boundary.
 					primary: primary as BackendRef,
 				});
 				await meter(options.metering, plan, "deny");
@@ -251,6 +255,7 @@ function primaryBackend(rule: RoutingRule): BackendRef | null {
 	);
 	const candidates = local.length > 0 ? local : [...rule.backends];
 	if (candidates.length === 0) return null;
+	// SAFETY: assertion required at this I/O or test boundary.
 	return [...candidates].sort(
 		(left, right) => (right.weight ?? 1) - (left.weight ?? 1),
 	)[0] as BackendRef;

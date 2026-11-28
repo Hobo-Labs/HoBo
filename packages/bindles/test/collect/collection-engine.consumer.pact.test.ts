@@ -70,6 +70,7 @@ function targetFor(interaction: CollectInteraction): CollectionTarget {
 }
 
 describe("collection boundary pact", () => {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 		consumer: { name: string };
 		provider: { name: string };

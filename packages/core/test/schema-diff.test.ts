@@ -182,6 +182,7 @@ describe("parseSchemaIr", () => {
 			parseSchemaIr(ir([table({ columns: [] })]));
 			throw new Error("expected a parse refusal");
 		} catch (error) {
+			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as SchemaIrParseError).code).toBe(
 				"HOBO_CORE_SCHEMA_IR_PARSE",
 			);

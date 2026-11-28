@@ -487,6 +487,7 @@ function sortedBy<T>(entries: readonly T[], selector: (entry: T) => string): T[]
 }
 
 function clone<T>(value: T): T {
+  // SAFETY: `return JSON.parse(JSON.stringify(value)) as T;` is required at this I/O or test boundary.
   return JSON.parse(JSON.stringify(value)) as T;
 }
 

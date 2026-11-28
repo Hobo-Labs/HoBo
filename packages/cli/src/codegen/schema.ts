@@ -311,6 +311,7 @@ function parserForExamples(): RuntimeSchemaParser {
 			target: ts.ScriptTarget.ES2022,
 		},
 	}).outputText;
+	// SAFETY: this script is our own constant emitted validator; schemas and examples are arguments, never code.
 	exampleParser = new Script(
 		`(function(exports) { ${compiled}; return exports.parseValue; })({})`,
 	).runInThisContext() as RuntimeSchemaParser;
@@ -374,6 +375,7 @@ function mergeExampleObjects(left: JsonObject, right: JsonObject): JsonObject {
 }
 
 export function serializedSchema(schema: CodegenFieldSchema): JsonValue {
+	// SAFETY: protobuf JSON is the schema's JSON wire contract.
 	return toJson(CodegenFieldSchemaSchema, schema) as JsonValue;
 }
 

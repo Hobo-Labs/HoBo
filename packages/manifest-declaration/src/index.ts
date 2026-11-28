@@ -301,6 +301,7 @@ function asObject<T>(value: T, path: string): UnparsedRecord {
 			`expected an object, got ${describe(value)}`,
 		);
 	}
+	// SAFETY: the tag check above excludes null, arrays, primitives, and exotic objects.
 	return value as UnparsedRecord;
 }
 
@@ -337,6 +338,7 @@ function requireNonEmptyString(value: UnparsedValue, path: string): string {
 	if (value === "") {
 		throw new ResourceIntentError(path, "must not be empty");
 	}
+	// SAFETY: the string tag check above establishes the runtime string representation.
 	return value as string;
 }
 
@@ -377,12 +379,14 @@ function requireMember<T extends string>(
 			`expected a string, got ${describe(value)}`,
 		);
 	}
+	// SAFETY: the string tag check makes this cast a string before membership is checked.
 	if (!allowed.includes(value as T)) {
 		throw new ResourceIntentError(
 			path,
 			`${JSON.stringify(value)} is not one of ${allowed.join(" | ")}`,
 		);
 	}
+	// SAFETY: the string tag check and closed-vocabulary membership check establish T.
 	return value as T;
 }
 
@@ -487,6 +491,7 @@ function parseCriteria(
 				`expected an integer, got ${JSON.stringify(count)}`,
 			);
 		}
+		// SAFETY: the number tag and integer checks establish the numeric count.
 		const numericCount = count as number;
 		if (numericCount < 1) {
 			throw new ResourceIntentError(
@@ -570,6 +575,7 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 	if (region !== undefined) result.region = region;
 	if (placement !== undefined) result.placement = placement;
 	if (cadence !== undefined) result.cadence = cadence;
+	// SAFETY: every property was parsed above and the unique brand is never observable at runtime.
 	return Object.freeze(result) as ParsedResourceIntent;
 }
 

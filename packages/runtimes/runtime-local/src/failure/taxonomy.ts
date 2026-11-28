@@ -25,6 +25,7 @@ export function isRuntimeErrorKind(
 ): value is RuntimeErrorKind {
 	return (
 		isJsonString(value) &&
+		// SAFETY: assertion to `E_ERROR_KINDS as readonly string[]).incl` is required at this boundary.
 		(RUNTIME_ERROR_KINDS as readonly string[]).includes(value)
 	);
 }
@@ -162,6 +163,7 @@ export function classifyToRuntimeError(error: Error): RuntimeErrorVariant {
 		readonly retryable?: JsonValue;
 		readonly status?: JsonValue;
 	}
+	// SAFETY: membrane errors carry optional code/reason bags at this boundary.
 	const record = error as ErrorBag;
 	const code = isJsonString(record.code) ? record.code.toLowerCase() : "";
 	const membrane = isJsonString(record.membrane)

@@ -117,13 +117,16 @@ export function createCapabilityProfileRegistry(
 		const stack: { id: ProfileId; index: number }[] = [{ id: root, index: 0 }];
 		colour.set(root, GREY);
 		while (stack.length > 0) {
+			// SAFETY: stack length is checked above, so the top frame exists.
 			const frame = stack[stack.length - 1] as { id: ProfileId; index: number };
+			// SAFETY: every stack frame was pushed from a parsed profile key.
 			const node = parsed.get(frame.id) as ParsedCapabilityProfile;
 			if (frame.index >= node.refines.length) {
 				colour.set(frame.id, BLACK);
 				stack.pop();
 				continue;
 			}
+			// SAFETY: frame.index is bounded by node.refines.length above.
 			const next = node.refines[frame.index] as ProfileId;
 			frame.index += 1;
 			const state = colour.get(next);
@@ -148,6 +151,7 @@ export function createCapabilityProfileRegistry(
 		const seen = new Set<ProfileId>();
 		const queue: ProfileId[] = [id];
 		while (queue.length > 0) {
+			// SAFETY: queue length is checked above, so a queued profile exists.
 			const current = queue.shift() as ProfileId;
 			if (seen.has(current)) continue;
 			seen.add(current);

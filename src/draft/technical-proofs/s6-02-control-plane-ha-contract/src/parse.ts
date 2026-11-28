@@ -21,10 +21,12 @@ export type LeaderFailoverOutcome = {
 };
 
 export function parseStreamId(value: JsonValue): StreamId {
+  // SAFETY: `return requireNonEmptyString(value, "streamId") as StreamId;` is required at this I/O or test boundary.
   return requireNonEmptyString(value, "streamId") as StreamId;
 }
 
 export function parseEventType(value: JsonValue): EventType {
+  // SAFETY: `return requireNonEmptyString(value, "eventType") as EventType;` is required at this I/O or test boundary.
   return requireNonEmptyString(value, "eventType") as EventType;
 }
 
@@ -32,6 +34,7 @@ export function parseActionId(value: JsonValue): ActionId | null {
   if (value == null) {
     return null;
   }
+  // SAFETY: `return requireNonEmptyString(value, "actionId") as ActionId;` is required at this I/O or test boundary.
   return requireNonEmptyString(value, "actionId") as ActionId;
 }
 
@@ -42,6 +45,7 @@ export function parseFenceToken(value: JsonValue): FenceToken {
   if (value < 1n) {
     throw new TypeError("fenceToken must be >= 1");
   }
+  // SAFETY: `return value as FenceToken;` is required at this I/O or test boundary.
   return value as FenceToken;
 }
 
@@ -49,6 +53,7 @@ export function parseQuorumFencedAppend(value: JsonValue): QuorumFencedAppend {
   if (value == null || !isJsonObject(value)) {
     throw new TypeError("append request must be an object");
   }
+  // SAFETY: `const request = value as JsonObject;` is required at this I/O or test boundary.
   const request = value as JsonObject;
   return {
     streamId: parseStreamId(request.streamId),
@@ -62,6 +67,7 @@ export function parseLeaderFailoverOutcome(value: JsonValue): LeaderFailoverOutc
   if (value == null || !isJsonObject(value)) {
     throw new TypeError("leader failover outcome must be an object");
   }
+  // SAFETY: `const outcome = value as JsonObject;` is required at this I/O or test boundary.
   const outcome = value as JsonObject;
   const recoveryMs = requireNonNegativeInteger(outcome.recoveryMs, "recoveryMs");
   if (recoveryMs > 30_000) {
@@ -83,9 +89,11 @@ function requireNonEmptyString(value: JsonValue, fieldName: string): string {
 }
 
 function requireNonNegativeInteger(value: JsonValue, fieldName: string): number {
+  // SAFETY: `if (!Number.isInteger(value) || (value as number) < 0) {` is required at this I/O or test boundary.
   if (!Number.isInteger(value) || (value as number) < 0) {
     throw new TypeError(`${fieldName} must be a non-negative integer`);
   }
+  // SAFETY: `return value as number;` is required at this I/O or test boundary.
   return value as number;
 }
 

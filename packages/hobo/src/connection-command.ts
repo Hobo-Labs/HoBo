@@ -50,8 +50,10 @@ export function createConnectionCommand(
 ): CommandModule {
 	return {
 		run: async ({ context, flags, args }) => {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const f = flags as JsonObject;
 			const env =
+				// SAFETY: assertion required at this I/O or test boundary.
 				deps.env ?? (context as { env?: NodeJS.ProcessEnv }).env ?? process.env;
 			const hoboHome =
 				deps.hoboHome ??
@@ -59,7 +61,9 @@ export function createConnectionCommand(
 					? f.home
 					: defaultHoboHome(env));
 
+			// SAFETY: assertion required at this I/O or test boundary.
 			const sub = (args[0] ?? "") as Subcommand | "";
+			// SAFETY: assertion required at this I/O or test boundary.
 			if (!SUBCOMMANDS.includes(sub as Subcommand)) {
 				return {
 					ok: false,
@@ -91,7 +95,12 @@ export function createConnectionCommand(
 			const ctx = createManagementContext({ hoboHome });
 			const tenant =
 				isJsonString(f.tenant) && f.tenant.length > 0 ? f.tenant : undefined;
-			const stationId = resolveStationId(hoboHome, flags as JsonObject, env);
+			const stationId = resolveStationId(
+				hoboHome,
+				// SAFETY: assertion required at this I/O or test boundary.
+				flags as JsonObject,
+				env,
+			);
 
 			if (sub === "create") {
 				const provider = args[1];

@@ -1,6 +1,7 @@
 import type { ReplayDivergenceRecord, ReplayMode, ReplayReport } from "./types.js";
 import { isJsonString, isJsonNumber, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
+
 const HEX64 = /^[0-9a-f]{64}$/;
 const MODES = new Set<ReplayMode>(["live", "replay"]);
 
@@ -77,9 +78,11 @@ function parseSeqVector(value: JsonValue) {
 }
 
 function parseMode(value: JsonValue): ReplayMode {
+  // SAFETY: assertion to `if (!isJsonString(value) || !MODES.has(value as ReplayMode)) {` is required at this boundary.
   if (!isJsonString(value) || !MODES.has(value as ReplayMode)) {
     throw new ReplayParseError('mode must be "live" or "replay"');
   }
+  // SAFETY: assertion to `return value as ReplayMode;` is required at this boundary.
   return value as ReplayMode;
 }
 
@@ -116,5 +119,6 @@ function expectObject(value: JsonValue, label: string): JsonObject {
   if (!value || !isJsonObject(value)) {
     throw new ReplayParseError(`${label} must be an object`);
   }
+  // SAFETY: assertion to `return value as JsonObject;` is required at this boundary.
   return value as JsonObject;
 }

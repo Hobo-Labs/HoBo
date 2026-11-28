@@ -81,6 +81,7 @@ export function createArtifactJournal(
 
 	return {
 		recordStored(artifact, ctx) {
+			// SAFETY: the store only journals digests it computed itself.
 			const digest = artifact.digest as Digest;
 			const record = create(ArtifactStoredRecordSchema, {
 				artifact,

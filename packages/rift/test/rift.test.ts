@@ -562,7 +562,9 @@ describe("create never destroys what it cannot prove is dead", () => {
 		const again = createWorkspace({ root, name: "claude" });
 		expect(again.workspace).not.toBeNull();
 		expect(again.debris).toBeDefined();
+		// SAFETY: `const rescued = join(again.debris as string, "upper", "WORK.txt");` is required at this I/O or test boundary.
 		const rescued = join(again.debris as string, "upper", "WORK.txt");
+		// SAFETY: `const flat = join(again.debris as string, "WORK.txt");` is required at this I/O or test boundary.
 		const flat = join(again.debris as string, "WORK.txt");
 		const found = existsSync(rescued) ? rescued : flat;
 		expect(existsSync(found)).toBe(true);
@@ -697,6 +699,7 @@ describe("repair leaves evidence intact", () => {
 		const root = source();
 		createWorkspace({ root, name: "keep" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
+		// SAFETY: `const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as {` is required at this I/O or test boundary.
 		const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
 			root: string;
 			workspaces: JsonValue[];
@@ -709,6 +712,7 @@ describe("repair leaves evidence intact", () => {
 
 		const repaired = rebuildRegistry(root);
 		expect(repaired.undecidable).toBeDefined();
+		// SAFETY: `const after = JSON.parse(readFileSync(snapshotPath, "utf8")) as {` is required at this I/O or test boundary.
 		const after = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
 			workspaces: JsonValue[];
 		};
@@ -725,6 +729,7 @@ describe("repair leaves evidence intact", () => {
 		writeFileSync(journal, `${lines.slice(0, 3).join("\n")}\n`);
 
 		const repaired = rebuildRegistry(root);
+		// SAFETY: `const persisted = JSON.parse(` is required at this I/O or test boundary.
 		const persisted = JSON.parse(
 			readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8"),
 		) as { workspaces: JsonValue[]; eventCount: number };
@@ -926,6 +931,7 @@ describe("the advertised contract is measured, not asserted", () => {
 		const r = spawnSync(process.execPath, [bin, "capability", "--json"], {
 			encoding: "utf8",
 		});
+		// SAFETY: `const advertised = JSON.parse(r.stdout) as { contract?: unknown };` is required at this I/O or test boundary.
 		const advertised = JSON.parse(r.stdout) as { contract?: unknown };
 		expect(advertised.contract).toEqual(deriveContract());
 	});

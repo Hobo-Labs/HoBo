@@ -226,6 +226,7 @@ export function applyResilienceProfile<T>(input: {
 				const delayMs = retry ? computeDelay(retry, attempt) : 0;
 				const never =
 					profile.neverRetry.includes(
+						// SAFETY: assertion required at this I/O or test boundary.
 						failure.failureClass as
 							| "policy.Decided"
 							| "terminal"
@@ -467,6 +468,7 @@ function parseNeverRetry(
 				`invalid neverRetry entry: ${String(v)}`,
 			);
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		out.push(v as "policy.Decided" | "terminal" | "cancellation");
 	}
 	for (const d of defaults) {
@@ -479,6 +481,7 @@ function expectObject(input: JsonValue, _label: string): JsonObject {
 	if (input === null || !isJsonObject(input) || Array.isArray(input)) {
 		throw new ResilienceValidationError("expected-object", "expected object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return input as JsonObject;
 }
 
@@ -493,21 +496,25 @@ function nonEmpty(input: JsonValue, field: string): string {
 }
 
 function positiveInt(input: JsonValue, field: string): number {
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (!Number.isSafeInteger(input) || (input as number) <= 0) {
 		throw new ResilienceValidationError(
 			"expected-positive-int",
 			`${field} must be a positive integer`,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return input as number;
 }
 
 function nonNegInt(input: JsonValue, field: string): number {
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (!Number.isSafeInteger(input) || (input as number) < 0) {
 		throw new ResilienceValidationError(
 			"expected-nonneg-int",
 			`${field} must be a non-negative integer`,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return input as number;
 }

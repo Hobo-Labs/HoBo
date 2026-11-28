@@ -29,6 +29,7 @@ function run(): BoundaryRun {
 		.split("\n")
 		.find((entry) => entry.trim().startsWith("{"));
 	assert.ok(line, `no JSON report in output: ${result.stdout}${result.stderr}`);
+	// SAFETY: assertion to `.parse(line) as Report }; ` is required at this boundary.
 	return { status: result.status, report: JSON.parse(line) as Report };
 }
 

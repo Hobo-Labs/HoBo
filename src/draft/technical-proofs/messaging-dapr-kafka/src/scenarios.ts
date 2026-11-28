@@ -53,11 +53,13 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 	const topic = parseTopicName("orders");
 	await bus.ensureTopic({
 		name: topic,
+		// SAFETY: `tenantId: tenantId as TenantId,` is required at this I/O or test boundary.
 		tenantId: tenantId as TenantId,
 		delivery: "exactly-once",
 	});
 	await bus.publish(topic, { orderId: "o1", amount: 10 }, { key: "o1" });
 	await bus.publish(topic, { orderId: "o2", amount: 5 }, { key: "o2" });
+	// SAFETY: `const batch = await bus.consume(topic, "workers" as never, {` is required at this I/O or test boundary.
 	const batch = await bus.consume(topic, "workers" as never, {
 		maxMessages: 10,
 	});
@@ -67,6 +69,7 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 		published: 2,
 		consumed: batch.length,
 		events: bus.events().map((e) => e.type),
+		// SAFETY: `fidelity: (bus as { fidelity: "simulated" | "live" }).fidelity,` is required at this I/O or test boundary.
 		fidelity: (bus as { fidelity: "simulated" | "live" }).fidelity,
 	};
 }
@@ -87,6 +90,7 @@ export async function runDaprKafkaPath(tenantId = "acme"): Promise<{
 	const yaml = bundle.generateKafkaPubsubYaml("fromBinding:kafka-bootstrap");
 	const topic = parseTopicName("orders");
 	await bundle.messaging.publish(topic, { orderId: "d1" });
+	// SAFETY: `const batch = await bundle.messaging.consume(topic, "g" as never);` is required at this I/O or test boundary.
 	const batch = await bundle.messaging.consume(topic, "g" as never);
 	return {
 		yaml,

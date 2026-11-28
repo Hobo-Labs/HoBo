@@ -25,6 +25,7 @@ export function parseBrokerEnvironment(
 			"invalid-environment: expected an object",
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const raw = input as JsonObject;
 	const environmentId = raw.environmentId ?? raw.environment_id;
 	if (!isJsonString(environmentId) || environmentId.length === 0) {
@@ -89,6 +90,7 @@ export function foldBrokerEnvironments(
 ): BrokerEnvironment[] {
 	const rows = new Map<string, BrokerEnvironment>();
 	for (const event of events) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const data = (event.data ?? {}) as JsonObject;
 		const environmentId = data.environmentId;
 		if (!isJsonString(environmentId) || environmentId.length === 0) continue;

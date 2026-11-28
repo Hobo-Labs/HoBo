@@ -36,6 +36,7 @@ describe("bare-metal yard e2e", () => {
 			["yard", "init", "--home", hoboHome, "--port", "4100", "--json"],
 			{ cwd: hoboHome },
 		);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(init.stdout) as {
 			ok: boolean;
 			code: string;
@@ -47,6 +48,7 @@ describe("bare-metal yard e2e", () => {
 		expect(envelope.data.config.name).toBe("local");
 		expect(envelope.data.config.defaultPort).toBe(4100);
 		expect(
+			// SAFETY: assertion required at this I/O or test boundary.
 			(envelope.data.config as { componentHost?: string }).componentHost,
 		).toMatch(/^(local|wasm|oci|cloud-native)$/);
 
@@ -71,6 +73,7 @@ describe("bare-metal yard e2e", () => {
 		expect(topology.camps).toHaveLength(1);
 		expect(topology.camps[0]?.derivedProviderId).toBe("local");
 		expect(topology.camps[0]?.labels.bindle).toBe("hello-bindle");
+		// SAFETY: assertion required at this I/O or test boundary.
 		expect((topology.camps[0] as { bindle?: unknown }).bindle).toBeUndefined();
 	});
 
@@ -143,6 +146,7 @@ describe("bare-metal yard e2e", () => {
 				["dev", "--once", "--port", "0", "--cwd", helloBindleDir, "--json"],
 				{ cwd: helloBindleDir },
 			);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				ok: boolean;
 				code: string;

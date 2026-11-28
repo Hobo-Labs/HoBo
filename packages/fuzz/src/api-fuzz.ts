@@ -97,6 +97,7 @@ function fail(status: number, code: string): FuzzResponse {
 
 function asRecord(value: FuzzValue | undefined): Record<string, FuzzValue> {
 	if (!value || Object(value) !== value || Array.isArray(value)) return {};
+	// SAFETY: Object identity and the array exclusion establish a record input.
 	return value as Record<string, FuzzValue>;
 }
 
@@ -106,5 +107,6 @@ function stringField(
 ): string | undefined {
 	const value = record[key];
 	if (value?.constructor !== String || value.length === 0) return undefined;
+	// SAFETY: String constructor identity establishes the primitive string contract.
 	return value as string;
 }

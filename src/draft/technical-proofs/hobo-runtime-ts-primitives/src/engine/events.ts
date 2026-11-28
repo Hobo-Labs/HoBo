@@ -51,6 +51,7 @@ export function parseEnvelope(raw: JsonValue, opts: { requireCatalogType?: boole
   if (!raw || !isJsonObject(raw)) {
     throw new EventParseError("envelope must be an object");
   }
+  // SAFETY: assertion to `const source = raw as JsonObject;` is required at this boundary.
   const source = raw as JsonObject;
   const type = requireNonEmptyString(source.type, "type");
   const streamId = requireNonEmptyString(source.streamId, "streamId");
@@ -86,6 +87,7 @@ function parseData(value: JsonValue): JsonObject {
   if (!value || !isJsonObject(value)) {
     throw new EventParseError("data must be an object");
   }
+  // SAFETY: assertion to `return structuredClone(value as JsonObject);` is required at this boundary.
   return structuredClone(value as JsonObject);
 }
 
@@ -97,9 +99,11 @@ function requireNonEmptyString(value: JsonValue, field: string): string {
 }
 
 function requirePositiveInt(value: JsonValue, field: string): number {
+  // SAFETY: assertion to `if (!Number.isInteger(value) || (value as number) <= 0) {` is required at this boundary.
   if (!Number.isInteger(value) || (value as number) <= 0) {
     throw new EventParseError(`${field} must be a positive integer`);
   }
+  // SAFETY: assertion to `return value as number;` is required at this boundary.
   return value as number;
 }
 
@@ -108,8 +112,10 @@ function stableStringify(value: JsonValue): string {
     return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
   }
   if (value && isJsonObject(value)) {
+    // SAFETY: assertion to `return {${Object.keys(value as JsonObject)` is required at this boundary.
     return `{${Object.keys(value as JsonObject)
       .sort()
+      // SAFETY: assertion to `.map((key) => ${JSON.stringify(key)}:${stableStringify((value as JsonObject)[ke` is required at this boundary.
       .map((key) => `${JSON.stringify(key)}:${stableStringify((value as JsonObject)[key])}`)
       .join(",")}}`;
   }

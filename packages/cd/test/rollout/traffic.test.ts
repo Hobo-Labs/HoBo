@@ -85,6 +85,7 @@ class MemoryRoutingPort implements TrafficRoutingPort {
 }
 
 const rollout = (): RolloutId => {
+	// SAFETY: literal test id.
 	return "rollout-t" as RolloutId;
 };
 

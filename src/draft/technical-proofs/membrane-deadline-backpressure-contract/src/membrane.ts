@@ -299,6 +299,7 @@ export class MembraneDeadlineBackpressure {
       }
       if (
         error instanceof DeadlineExceededError ||
+        // SAFETY: assertion to `(error as { code?: string })?.code === "deadline-exceeded"` is required at this boundary.
         (error as { code?: string })?.code === "deadline-exceeded"
       ) {
         throw error;

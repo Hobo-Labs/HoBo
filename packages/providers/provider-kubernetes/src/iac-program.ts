@@ -87,7 +87,9 @@ function assertOutputReference<T>(
 	if (!match) {
 		throw new Error(`invalid output reference ${value}`);
 	}
+	// SAFETY: assertion to `match[1] as string` is required at this boundary.
 	const resourceName = match[1] as string;
+	// SAFETY: assertion to `match[2] as string` is required at this boundary.
 	const outputName = match[2] as string;
 	const resource = resources.get(resourceName);
 	if (!resource?.outputs.includes(outputName)) {
@@ -104,6 +106,7 @@ function collectValues<T>(value: T): JsonValue[] {
 	if (!value || !isJsonObject(value)) {
 		return [cloneAsJson(value)];
 	}
+	// SAFETY: assertion to `value as JsonObject` is required at this boundary.
 	return Object.values(value as JsonObject).flatMap((child) =>
 		collectValues(child),
 	);

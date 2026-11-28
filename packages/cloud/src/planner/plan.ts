@@ -119,6 +119,7 @@ function dependencyOrder(intents: ResourceIntent[]): string[] | undefined {
 		.sort();
 	const order: string[] = [];
 	while (ready.length > 0) {
+		// SAFETY: `const next = ready.shift() as string;` is required at this I/O or test boundary.
 		const next = ready.shift() as string;
 		order.push(next);
 		for (const child of (dependents.get(next) ?? []).sort()) {

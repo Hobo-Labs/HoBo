@@ -8,6 +8,7 @@ describe("shipOpenSaasViaTemporaryAccounts", () => {
 			stationId: "st-1",
 			pageUrl: "http://127.0.0.1:4321/HoBo/examples/",
 			root: "examples/wasp-opensaas/app",
+			// SAFETY: inline fetch double returns Temporary Accounts JSON.
 			fetchImpl: (async () =>
 				new Response(
 					JSON.stringify({
@@ -44,6 +45,7 @@ describe("shipOpenSaasViaTemporaryAccounts", () => {
 				stationId: "st-1",
 				pageUrl: "http://127.0.0.1:4321/HoBo/examples/",
 				root: "examples/wasp-opensaas/app",
+				// SAFETY: inline fetch double returns Temporary Accounts JSON.
 				fetchImpl: (async () =>
 					new Response(
 						JSON.stringify({
@@ -66,6 +68,7 @@ describe("shipOpenSaasViaTemporaryAccounts", () => {
 			stationId: "st-1",
 			pageUrl: "http://127.0.0.1:4321/HoBo/examples/",
 			root: "examples/wasp-opensaas/app",
+			// SAFETY: inline fetch double returns Temporary Accounts JSON.
 			fetchImpl: (async () =>
 				new Response(
 					JSON.stringify({

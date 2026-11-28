@@ -406,6 +406,7 @@ describe("a cutover fence that is gone is not quietly raised again", () => {
 
 describe("a hold after fence-and-flip is a fact", () => {
 	const toEvents = (change: ChangeEnvelope): readonly PivotEvent[] => {
+		// SAFETY: the canonical key of the orders schema is a one-element array.
 		const [id] = JSON.parse(change.key) as [string];
 		return change.op === "delete" || change.record === undefined
 			? [{ streamId: `order:${id}`, type: "order.Removed", data: { id } }]
@@ -420,6 +421,7 @@ describe("a hold after fence-and-flip is a fact", () => {
 	const fold: ProjectionFold = {
 		name: "orders-pivot",
 		project(event: EventEnvelope): readonly RecordMutation[] {
+			// SAFETY: pivot events carry the bodies `toEvents` built above.
 			const data = event.data as { id: string; total?: string };
 			const record = parseCanonicalRecord(ORDERS, {
 				id: data.id,
@@ -633,6 +635,7 @@ describe("a hold after fence-and-flip is a fact", () => {
 		const lossy: ProjectionFold = {
 			name: "orders-pivot",
 			project(event) {
+				// SAFETY: pivot events carry the bodies `toEvents` built above.
 				const data = event.data as { id: string };
 				return Number(data.id.slice(2)) % 2 === 1
 					? []
@@ -684,6 +687,7 @@ describe("rebuild-and-swap verifies only a sink that has reached the log head", 
 		const fold: ProjectionFold = {
 			name: "orders-projection",
 			project(event) {
+				// SAFETY: test events carry the JSON bodies appended above.
 				const data = event.data as { id: string };
 				return [
 					upsertMutation(
@@ -767,6 +771,7 @@ describe("a run holds on a verdict that does not cover the copies it creates", (
 				staged,
 				{},
 				{
+					// SAFETY: a verdict as it would arrive from evidence recorded before `roles` existed.
 					policy: () => legacy as PolicyVerdict,
 				},
 			),

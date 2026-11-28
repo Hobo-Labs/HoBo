@@ -43,6 +43,7 @@ async function loadOpenSaasBindle(): Promise<{
 			>;
 		};
 	};
+	// SAFETY: OpenSaaS Bindle module is loaded from the examples tree at this boundary.
 	const mod = (await import(
 		path.join(REPO_ROOT, "examples/try-site/apps/opensaas/app.ts")
 	)) as OpenSaasBindleModule;
@@ -566,6 +567,7 @@ const server = createServer(async (req, res) => {
 			homeStationId?: string;
 		};
 		try {
+			// SAFETY: assertion required at this I/O boundary.
 			body = JSON.parse(raw) as typeof body;
 		} catch {
 			sendJson(res, 400, { error: "invalid JSON body" });
@@ -608,6 +610,7 @@ const server = createServer(async (req, res) => {
 			bindleWebApp?: BindleWebAppRef;
 		};
 		try {
+			// SAFETY: assertion required at this I/O boundary.
 			body = JSON.parse(raw) as typeof body;
 		} catch {
 			sendJson(res, 400, { error: "invalid JSON body" });

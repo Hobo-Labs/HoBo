@@ -148,6 +148,7 @@ export async function runResilienceFaultInjection(input: {
 	const failureMap = new Map((input.failures ?? []).map((f) => [f.attempt, f]));
 
 	const result = await applyResilienceProfile({
+		// SAFETY: assertion required at this I/O or test boundary.
 		profile: profile as ResilienceProfile,
 		now: () => "2026-07-27T00:00:00.000Z",
 		op: (attempt) => {

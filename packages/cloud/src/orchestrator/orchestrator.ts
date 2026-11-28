@@ -488,9 +488,11 @@ export async function runOrchestrator(
 			(e) =>
 				e.seq > epochStart &&
 				e.type === CLOUD_EVENTS.ResourceFailed &&
+				// SAFETY: `(e.data as { crossedNoGoThreshold?: boolean }).crossedNoGoThreshold,` is required at this I/O or test boundary.
 				(e.data as { crossedNoGoThreshold?: boolean }).crossedNoGoThreshold,
 		);
 		if (failed) {
+			// SAFETY: `const data = failed.data as { resourceId: string; reason: string };` is required at this I/O or test boundary.
 			const data = failed.data as { resourceId: string; reason: string };
 			triggeringFailure = { resourceId: data.resourceId, reason: data.reason };
 			break;
@@ -737,6 +739,7 @@ export async function runOrchestrator(
 	const allProvisioned = declaredConverged() && unprunable.length === 0;
 	if (allProvisioned && changedSinceLastDeployed(events)) {
 		const lastSeq =
+			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
 		await emit(

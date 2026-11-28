@@ -139,6 +139,7 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 	if (raw === null || !isJsonObject(raw)) {
 		throw new TypeError("hobo profile must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	if (obj.schemaVersion !== HOBO_PROFILE_SCHEMA) {
 		throw new TypeError(
@@ -159,6 +160,7 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 			: undefined),
 	};
 	if (obj.defaultStation !== undefined && obj.defaultStation !== null) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const ds = obj.defaultStation as JsonObject;
 		if (!isJsonString(ds.id) || ds.id.length === 0) {
 			throw new TypeError("hobo profile.defaultStation.id required");
@@ -171,6 +173,7 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 		});
 	}
 	if (obj.session !== undefined && obj.session !== null) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const s = obj.session as JsonObject;
 		const principal = parsePrincipal(s.principal);
 		if (!isJsonString(s.tenant) || s.tenant.length === 0) {
@@ -203,8 +206,10 @@ function parsePrincipal(raw: JsonValue | undefined): PrincipalRef {
 	if (raw === null || !isJsonObject(raw)) {
 		throw new TypeError("principal must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	const kinds: PrincipalKind[] = ["user", "agent", "service", "system"];
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (!isJsonString(obj.kind) || !(kinds as string[]).includes(obj.kind)) {
 		throw new TypeError("principal.kind invalid");
 	}
@@ -212,6 +217,7 @@ function parsePrincipal(raw: JsonValue | undefined): PrincipalRef {
 		throw new TypeError("principal.id required");
 	}
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		kind: obj.kind as PrincipalKind,
 		id: obj.id,
 		...(obj.delegatedBy !== undefined

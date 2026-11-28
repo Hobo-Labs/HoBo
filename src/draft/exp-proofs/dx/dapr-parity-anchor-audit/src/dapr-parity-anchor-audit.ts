@@ -56,6 +56,7 @@ function extractMappingRows(markdown: string): DaprParityRow[] {
       throw new Error(`missing parity status marker for ${feature}`);
     }
 
+    // SAFETY: `const status = statusMatch[1] as DaprParityRow["status"];` is required at this I/O or test boundary.
     const status = statusMatch[1] as DaprParityRow["status"];
     const rowText = `${equivalent} ${notes}`;
     const designAnchors = [...rowText.matchAll(DESIGN_ANCHOR_PATTERN)].map((anchor) => anchor[0]);

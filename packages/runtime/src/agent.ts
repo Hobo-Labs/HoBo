@@ -32,6 +32,7 @@ export function agent<A, R>(
 
 	for (const tool of tools) {
 		toolRegistry[tool.name] = (value: JsonValue) => {
+			// SAFETY: agent tools accept JSON-cloned input at this boundary.
 			return tool.run(value as never);
 		};
 		grantedCapabilities.push(toolCapability(tool.name));

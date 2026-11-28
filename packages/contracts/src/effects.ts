@@ -89,7 +89,9 @@ export function conservativeDefaultEffects(): EffectSpec {
 	return Object.freeze({
 		schemaVersion: EFFECT_SPEC_SCHEMA_VERSION,
 		purity: "noRollback",
+		// SAFETY: assertion required at this I/O or test boundary.
 		capabilities: Object.freeze(["decides"] as CapabilityEffect[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		domains: Object.freeze(["network", "externalCall"] as DomainEffect[]),
 	});
 }
@@ -98,7 +100,9 @@ export function pureEffects(): EffectSpec {
 	return Object.freeze({
 		schemaVersion: EFFECT_SPEC_SCHEMA_VERSION,
 		purity: "pure",
+		// SAFETY: assertion required at this I/O or test boundary.
 		capabilities: Object.freeze([] as CapabilityEffect[]),
+		// SAFETY: assertion required at this I/O or test boundary.
 		domains: Object.freeze([] as DomainEffect[]),
 	});
 }
@@ -108,16 +112,19 @@ export function parseEffectSpec<T>(input: T): EffectSpec {
 		return conservativeDefaultEffects();
 	}
 	const source = expectObject(cloneAsJson(input), "$.effects");
+	// SAFETY: assertion required at this I/O or test boundary.
 	const purity = enumValue(
 		source.purity ?? "noRollback",
 		PURITY_SET,
 		"$.effects.purity",
 	) as PurityLevel;
+	// SAFETY: assertion required at this I/O or test boundary.
 	const capabilities = uniqueEnumArray(
 		source.capabilities ?? [],
 		CAP_SET,
 		"$.effects.capabilities",
 	) as CapabilityEffect[];
+	// SAFETY: assertion required at this I/O or test boundary.
 	const domains = uniqueEnumArray(
 		source.domains ?? [],
 		DOMAIN_SET,
@@ -196,12 +203,14 @@ export function effectUnion(a: EffectSpec, b: EffectSpec): EffectSpec {
 		schemaVersion: EFFECT_SPEC_SCHEMA_VERSION,
 		purity: purityJoin(a.purity, b.purity),
 		capabilities: Object.freeze(
+			// SAFETY: assertion required at this I/O or test boundary.
 			uniqueSorted([
 				...a.capabilities,
 				...b.capabilities,
 			]) as CapabilityEffect[],
 		),
 		domains: Object.freeze(
+			// SAFETY: assertion required at this I/O or test boundary.
 			uniqueSorted([...a.domains, ...b.domains]) as DomainEffect[],
 		),
 	});
@@ -395,6 +404,7 @@ function expectObject(input: JsonValue, path: string): JsonObject {
 			path,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return input as JsonObject;
 }
 

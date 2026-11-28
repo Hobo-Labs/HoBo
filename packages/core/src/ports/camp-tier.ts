@@ -139,6 +139,7 @@ export const DEFAULT_CAMP_TIERS: readonly CampTier[] = Object.freeze([
 export function isCampTier(value: JsonValue | undefined): value is CampTier {
 	return (
 		isJsonString(value) &&
+		// SAFETY: assertion required at this I/O or test boundary.
 		(CAMP_TIER_ORDER as readonly string[]).includes(value)
 	);
 }

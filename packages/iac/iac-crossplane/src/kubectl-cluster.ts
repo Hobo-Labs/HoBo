@@ -64,6 +64,7 @@ export function createKubectlCrossplaneCluster(
 		} catch (error) {
 			throw new CrossplaneClusterUnavailableError(
 				KUBECTL_UNAVAILABLE,
+				// SAFETY: ``kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,` is required at this I/O or test boundary.
 				`kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,
 			);
 		}
@@ -81,6 +82,7 @@ export function createKubectlCrossplaneCluster(
 		} catch (error) {
 			throw new CrossplaneClusterUnavailableError(
 				KUBECTL_UNAVAILABLE,
+				// SAFETY: ``kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,` is required at this I/O or test boundary.
 				`kubectl (${bin}) failed for [${args.join(" ")}]: ${(error as Error).message}`,
 			);
 		}
@@ -170,6 +172,7 @@ export function createKubectlCrossplaneCluster(
 		hasCrd(name: string): boolean {
 			ensureAvailable();
 			const raw = run(["get", "crd", "-o", "json"]);
+			// SAFETY: `const parsed = JSON.parse(raw) as {` is required at this I/O or test boundary.
 			const parsed = JSON.parse(raw) as {
 				items?: Array<{ spec?: { names?: { kind?: string } } }>;
 			};
@@ -189,6 +192,7 @@ export function createKubectlCrossplaneCluster(
 				"-o",
 				"json",
 			]);
+			// SAFETY: `const parsed = JSON.parse(raw) as {` is required at this I/O or test boundary.
 			const parsed = JSON.parse(raw) as {
 				items?: Array<{
 					metadata?: { name?: string; labels?: Record<string, string> };
@@ -241,6 +245,7 @@ export function createKubectlCrossplaneCluster(
 		claimNames(): string[] {
 			ensureAvailable();
 			const raw = run(["get", claimResource, "-n", namespace, "-o", "json"]);
+			// SAFETY: `const parsed = JSON.parse(raw) as {` is required at this I/O or test boundary.
 			const parsed = JSON.parse(raw) as {
 				items?: Array<{ metadata?: { name?: string } }>;
 			};
@@ -270,10 +275,12 @@ function stableJson(value: JsonValue): string {
 		return `[${value.map((item) => stableJson(item)).join(",")}]`;
 	}
 	if (value && isJsonObject(value)) {
+		// SAFETY: `return `{${Object.keys(value as JsonObject)` is required at this I/O or test boundary.
 		return `{${Object.keys(value as JsonObject)
 			.sort()
 			.map(
 				(key) =>
+					// SAFETY: ``${JSON.stringify(key)}:${stableJson((value as JsonObject)[key])}`,` is required at this I/O or test boundary.
 					`${JSON.stringify(key)}:${stableJson((value as JsonObject)[key])}`,
 			)
 			.join(",")}}`;

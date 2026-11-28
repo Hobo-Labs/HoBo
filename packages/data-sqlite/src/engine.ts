@@ -238,6 +238,7 @@ export function createSchemaPort(
 		},
 		verify(violationsQuery: string): readonly JsonObject[] {
 			return Object.freeze(
+				// SAFETY: SQL result rows are JSON-shaped evidence records.
 				prepareSole(host.connection(), violationsQuery).all() as JsonObject[],
 			);
 		},

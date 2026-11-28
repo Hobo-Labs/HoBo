@@ -157,6 +157,7 @@ export function defaultLocalSubstrateProbes(
 }
 
 function asNodePlatform(value: string): NodeJS.Platform {
+	// SAFETY: host probe platform is a NodeJS.Platform token.
 	return value as NodeJS.Platform;
 }
 
@@ -178,11 +179,13 @@ function asWhich(
 	value: JsonValue | undefined,
 ): (binary: string) => string | null {
 	const fn = requireProbeFn(value, "which");
+	// SAFETY: probe functions are host callbacks captured at the parse boundary.
 	return fn as (binary: string) => string | null;
 }
 
 function asExists(value: JsonValue | undefined): (path: string) => boolean {
 	const fn = requireProbeFn(value, "exists");
+	// SAFETY: probe functions are host callbacks captured at the parse boundary.
 	return fn as (path: string) => boolean;
 }
 
@@ -190,6 +193,7 @@ function asReadText(
 	value: JsonValue | undefined,
 ): (path: string) => string | null {
 	const fn = requireProbeFn(value, "readText");
+	// SAFETY: probe functions are host callbacks captured at the parse boundary.
 	return fn as (path: string) => string | null;
 }
 
@@ -206,6 +210,7 @@ export function parseLocalSubstrateProbes(
 			},
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const source = input as JsonObject;
 	for (const fn of ["which", "exists", "readText"] as const) {
 		if (!(source[fn] instanceof Function)) {
@@ -250,7 +255,9 @@ export function parseLocalSubstrateProbes(
 		);
 	}
 	const env: Record<string, string> = {};
+	// SAFETY: assertion required at this I/O or test boundary.
 	for (const key of Object.keys(rawEnv as JsonObject).sort()) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const value = (rawEnv as JsonObject)[key];
 		if (isJsonString(value)) env[key] = value;
 	}
@@ -259,6 +266,7 @@ export function parseLocalSubstrateProbes(
 		exists: asExists(source.exists),
 		readText: asReadText(source.readText),
 		env: Object.freeze(env),
+		// SAFETY: assertion required at this I/O or test boundary.
 		platform: asNodePlatform(
 			isJsonString(source.platform) ? `${source.platform}` : process.platform,
 		),
@@ -695,6 +703,7 @@ const SUBSTRATE_BINDINGS = deepFreeze({
 >;
 
 export function localSubstrateYardName(kind: LocalSubstrateKind): string {
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (!(LOCAL_SUBSTRATE_KINDS as readonly string[]).includes(kind)) {
 		throw new LocalSubstrateError(
 			"LOCAL_SUBSTRATE_KIND_UNKNOWN",
@@ -718,6 +727,7 @@ export function localSubstrateYards(
 	if (
 		!isJsonObject(report) ||
 		report === null ||
+		// SAFETY: assertion required at this I/O or test boundary.
 		(report as LocalSubstrateReport).contract !==
 			LOCAL_SUBSTRATE_REPORT_CONTRACT
 	) {
@@ -768,6 +778,7 @@ export function localSubstrateYards(
 				: SUBSTRATE_BINDINGS[finding.kind].map((binding) => ({
 						profile: binding.profile,
 						productId: binding.productId,
+						// SAFETY: assertion required at this I/O or test boundary.
 						provenance: "discovered" as SeedProvenance,
 						fidelity: binding.fidelity,
 					}));

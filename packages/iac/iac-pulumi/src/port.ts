@@ -25,5 +25,9 @@ const pulumiPortDescriptor = createPortDescriptor({
 if (pulumiPortDescriptor.kind !== "provider") {
 	throw new Error("iac-pulumi port must be a provider port");
 }
+// SAFETY: the guard above establishes `kind === "provider"`. `PortDescriptor`
+// is one interface rather than a discriminated union, so narrowing the property
+// does not narrow the object -- this assertion is where the guard's result is
+// recorded, and it cannot outlive the check that precedes it.
 export const IAC_PULUMI_PORT: ProviderPort =
 	pulumiPortDescriptor as ProviderPort;

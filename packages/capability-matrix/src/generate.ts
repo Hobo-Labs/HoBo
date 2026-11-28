@@ -91,6 +91,7 @@ function compareExclusions(
 }
 
 function isRealizationKind(value: string): value is RealizationKind {
+	// SAFETY: REALIZATION_KINDS is the closed runtime vocabulary for this field.
 	return (REALIZATION_KINDS as readonly string[]).includes(value);
 }
 

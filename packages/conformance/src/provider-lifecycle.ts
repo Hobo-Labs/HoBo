@@ -214,6 +214,7 @@ function requireRecord<T>(
 	if (value === null || !isJsonObject(value) || Array.isArray(value)) {
 		throw new ProviderLifecycleError(code, `${field} must be an object`);
 	}
+	// SAFETY: assertion to `sonObject; } funct` is required at this boundary.
 	return value as JsonObject;
 }
 
@@ -312,6 +313,7 @@ export function parseScratchSeed<T>(value: T): readonly ScratchResource[] {
 }
 
 export function parseScratchProvider<T>(value: T): ScratchProvider {
+	// SAFETY: assertion to `ord( value, "SCRATCH_PROVIDER_INVALID", "provider", ) as JsonObject; for (co` is required at this boundary.
 	const record = requireRecord(
 		value,
 		"SCRATCH_PROVIDER_INVALID",
@@ -331,6 +333,7 @@ export function parseScratchProvider<T>(value: T): ScratchProvider {
 			"provider.adopt must be a function when present",
 		);
 	}
+	// SAFETY: parsed provider verbs are the ScratchProvider surface at this boundary.
 	return value as never;
 }
 

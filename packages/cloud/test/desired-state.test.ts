@@ -46,6 +46,7 @@ function freshStore(): RuntimeLocalEventStore {
 }
 
 function loadPlan(): DeploymentPlan {
+	// SAFETY: fixture JSON is a DeploymentPlan by construction.
 	return JSON.parse(
 		readFileSync(
 			fileURLToPath(

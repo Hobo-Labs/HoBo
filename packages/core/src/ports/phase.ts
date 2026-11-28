@@ -94,6 +94,7 @@ export function parseDeploymentPhase(
 ): DeploymentPhase {
 	if (
 		!isJsonString(value) ||
+		// SAFETY: assertion required at this I/O or test boundary.
 		!(DEPLOYMENT_PHASES as readonly string[]).includes(value)
 	) {
 		throw new PhaseParseError(
@@ -103,6 +104,7 @@ export function parseDeploymentPhase(
 			`phase: expected ${DEPLOYMENT_PHASES.join(" | ")}; a deployment phase is never defaulted because the wrong default silently admits request state into instance state`,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as DeploymentPhase;
 }
 
@@ -110,6 +112,7 @@ export function parsePhaseScope(value: JsonValue | undefined): PhaseScope {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		throw new PhaseParseError("phaseScope", "object", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const source = value as JsonObject;
 	for (const key of Object.keys(source)) {
 		if (key !== "phase" && key !== "dev") {
@@ -140,6 +143,7 @@ export function parsePhaseScopeFromEnv(
 	const rawDev = env[HOBO_DEV_ENV];
 	if (
 		rawDev !== undefined &&
+		// SAFETY: assertion required at this I/O or test boundary.
 		!(HOBO_DEV_VALUES as readonly string[]).includes(rawDev)
 	) {
 		throw new PhaseParseError(
@@ -158,9 +162,11 @@ export function parsePhaseScopeFromEnv(
 export function phaseForCapability(
 	capability: PhaseScopedCapability,
 ): DeploymentPhase {
-	const phase = (
-		CAPABILITY_PHASES as Readonly<Record<string, DeploymentPhase | undefined>>
-	)[capability];
+	const phase =
+		// SAFETY: assertion required at this I/O or test boundary.
+		(
+			CAPABILITY_PHASES as Readonly<Record<string, DeploymentPhase | undefined>>
+		)[capability];
 	if (phase === undefined) {
 		throw new PhaseParseError(
 			"capability",

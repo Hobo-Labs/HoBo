@@ -68,6 +68,7 @@ const DUPLICATE_TABLE = "42P07";
 const UNIQUE_VIOLATION = "23505";
 
 function parseJsonText(text: string): JsonValue {
+	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;
 }
 

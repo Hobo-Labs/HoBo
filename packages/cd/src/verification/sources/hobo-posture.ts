@@ -22,6 +22,7 @@ export const POSTURE_SERIES = Object.freeze({
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 function railDigest(value: string): Digest | undefined {
+	// SAFETY: matched against the Digest pattern.
 	return DIGEST.test(value) ? (value as Digest) : undefined;
 }
 

@@ -27,8 +27,10 @@ const sloBurn = (id: string, overrides: JsonObject = {}) => ({
 	labels: {
 		sloName: "checkout-api",
 		severity: "page",
+		// SAFETY: `window: (overrides.window as string) ?? "fast-burn",` is required at this I/O or test boundary.
 		window: (overrides.window as string) ?? "fast-burn",
 	},
+	// SAFETY: `metric: { burnRate: (overrides.burnRate as number) ?? 10, remainingBudgetRatio: ` is required at this I/O or test boundary.
 	metric: { burnRate: (overrides.burnRate as number) ?? 10, remainingBudgetRatio: 0.1 },
 });
 
@@ -126,6 +128,7 @@ assert.deepEqual(
 	inhibited.deliveries.map((delivery: { alertFingerprints: string[] }) => delivery.alertFingerprints.length),
 	[1],
 );
+// SAFETY: `const inhibitedEntry = Object.values(replayAlertEvents(inhibited.events).explana` is required at this I/O or test boundary.
 const inhibitedEntry = Object.values(replayAlertEvents(inhibited.events).explanations).find(
 	(entry: { status: string }) => entry.status === "inhibited",
 ) as { status: string; reason: string };

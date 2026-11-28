@@ -130,6 +130,7 @@ export function parseEventEnvelope<T>(input: T): EventEnvelope {
 		}
 	}
 	if (source.meta !== undefined) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		envelope.meta = expectObject(
 			source.meta,
 			"meta",

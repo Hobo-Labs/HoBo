@@ -30,6 +30,7 @@ export function decodeJsonColumn(
 		}
 	}
 	try {
+		// SAFETY: the column holds JSON text this store wrote; a parse failure is reported below.
 		return JSON.parse(text(row, column)) as JsonValue;
 	} catch {
 		throw new EventStoreError(

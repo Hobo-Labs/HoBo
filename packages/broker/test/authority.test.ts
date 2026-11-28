@@ -158,6 +158,7 @@ describe("hosted authority surface (HTTP)", () => {
 				body: JSON.stringify(baseRequest),
 			});
 			expect(resolved.status).toBe(200);
+			// SAFETY: assertion required at this I/O or test boundary.
 			const body = (await resolved.json()) as {
 				outcome: string;
 				receipt: { placements: Array<{ providerId: string }> };

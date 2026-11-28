@@ -131,6 +131,7 @@ describe("publicContext", () => {
 	});
 
 	it("normalizes an absent identity to null", () => {
+		// SAFETY: deliberately malformed identity exercises the projection's missing-field fallback.
 		expect(
 			publicContext({ ...CONTEXT, identity: undefined } as never).identity,
 		).toBeNull();

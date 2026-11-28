@@ -15,6 +15,7 @@ export type ConvexWebAppMeta = {
 const convexWebAppMetadata = new WeakMap<object, ConvexWebAppMeta>();
 
 const METADATA_SYMBOL =
+	// SAFETY: `(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");` is required at this I/O or test boundary.
 	(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 
 export function convexApp(root: string): new () => object {

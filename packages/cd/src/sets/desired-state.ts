@@ -120,6 +120,7 @@ function readOptions(
 }
 
 function asCampId(value: string): CampId {
+	// SAFETY: brand applied to a camp id taken from a parsed record.
 	return value as CampId;
 }
 
@@ -208,7 +209,11 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	async function resolved(set: SetRecord): Promise<CanonicalResolvedSet> {
 		const attributes = { "hobo.cd.camp": set.campId };
 		try {
-			const bytes = await d.artifacts.get(set.resolvedSetDigest as Digest);
+			// SAFETY: a parsed Set carries a sha256 digest.
+			const bytes = await d.artifacts.get(
+				// SAFETY: a parsed Set carries a sha256:<64 hex> digest.
+				set.resolvedSetDigest as Digest,
+			);
 			if (bytes === undefined) {
 				throw new DesiredStateError(
 					"resolved-set-missing",
@@ -723,6 +728,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	function getById(
 		id: SetId | DeltaId,
 	): Promise<SetRecord | DeltaRecord | undefined> {
+		// SAFETY: the set_ prefix is reserved for Set ids (checkDelta refuses it for Deltas).
 		return id.startsWith("set_")
 			? getSet(id as SetId)
 			: getDelta(id as DeltaId);

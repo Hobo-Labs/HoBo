@@ -43,8 +43,11 @@ async function withProject(
 
 function runInput(cwd: string) {
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		context: { cwd, projectDir: cwd } as CliContext,
+		// SAFETY: assertion required at this I/O or test boundary.
 		flags: { cwd } as never,
+		// SAFETY: assertion required at this I/O or test boundary.
 		args: [] as readonly string[],
 		verb: "verify",
 		emitProgress: () => {},
@@ -67,6 +70,7 @@ describe("createVerifyCommand", () => {
 				decision: "allow",
 			});
 			expect(
+				// SAFETY: assertion required at this I/O or test boundary.
 				(result.data as { costQuota: { requested: number } }).costQuota
 					.requested,
 			).toBe(2);

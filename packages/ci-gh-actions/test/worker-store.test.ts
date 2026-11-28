@@ -66,6 +66,7 @@ describe("worker store plan", () => {
 		expect(() =>
 			resolveWorkerStorePlan({ HOBO_CI_STORE: "neon" }, "/h"),
 		).toThrow();
+		// SAFETY: deliberately not an admission, to prove the guard refuses it.
 		expect(() => resolveWorkerStorePlan({}, "/h", "both" as "pull")).toThrow();
 		expect(() =>
 			resolveWorkerStorePlan({ HOBO_CI_JOB_POLL_MS: "1000" }, "/h"),

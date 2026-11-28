@@ -32,6 +32,7 @@ function jsonBody<T>(value: T): JsonObject {
 }
 
 function brandedPolicyHash(value: string): PolicyHash {
+	// SAFETY: receipt parse already proved a non-empty policy hash string.
 	return value as PolicyHash;
 }
 

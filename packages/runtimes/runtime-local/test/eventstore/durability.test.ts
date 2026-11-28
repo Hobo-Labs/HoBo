@@ -77,22 +77,26 @@ describe("runtime-local EventStore durability", () => {
 			appendOptions(0),
 		);
 		const live = await store.fold("durability:fold", {
+			// SAFETY: assertion to `[] as string[]` is required at this boundary.
 			initialState: { items: [] as string[] },
 			handlers: {
 				"cart.ItemAdded": (state, event) => ({
 					items: [
 						...state.items,
+						// SAFETY: assertion to `event.data as { sku?: string }` is required at this boundary.
 						String((event.data as { sku?: string }).sku ?? ""),
 					],
 				}),
 			},
 		});
 		const replay = await store.fold("durability:fold", {
+			// SAFETY: assertion to `[] as string[]` is required at this boundary.
 			initialState: { items: [] as string[] },
 			handlers: {
 				"cart.ItemAdded": (state, event) => ({
 					items: [
 						...state.items,
+						// SAFETY: assertion to `event.data as { sku?: string }` is required at this boundary.
 						String((event.data as { sku?: string }).sku ?? ""),
 					],
 				}),

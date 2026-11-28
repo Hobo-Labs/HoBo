@@ -167,6 +167,7 @@ type InflateWithInfo = (
 	options: Readonly<{ info: true }>,
 ) => ReturnType<typeof inflateSync> &
 	Readonly<{ engine: Readonly<{ bytesWritten: number }> }>;
+// SAFETY: @types/node does not model the documented `info: true` overload.
 const inflateWithInfo = inflateSync as InflateWithInfo;
 
 type Inflated = Readonly<{ data: Uint8Array; consumed: number }>;

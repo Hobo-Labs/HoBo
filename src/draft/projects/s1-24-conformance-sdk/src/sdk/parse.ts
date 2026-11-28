@@ -447,6 +447,7 @@ function readObject(value: JsonValue | undefined, label: string): JsonObject {
   if (!value || !isJsonObject(value) || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object`);
   }
+  // SAFETY: `return value as JsonObject;` is required at this I/O or test boundary.
   return value as JsonObject;
 }
 

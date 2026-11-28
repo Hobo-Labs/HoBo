@@ -82,6 +82,7 @@ describe("runtime-local hobo:scheduler port", () => {
 			importInterface: SCHEDULER_PORT,
 		});
 
+		// SAFETY: assertion to `(await table.callWithHandle(handle, "every", { scheduleId: "nightly", everyMs: 1_000, })) as { scheduleId: string; dedup` is required at this boundary.
 		const registered = (await table.callWithHandle(handle, "every", {
 			scheduleId: "nightly",
 			everyMs: 1_000,

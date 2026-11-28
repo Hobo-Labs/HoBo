@@ -534,6 +534,7 @@ export function matchCapabilityRequirement(
 		};
 	}
 
+	// SAFETY: `const winner = byId.get(` is required at this I/O or test boundary.
 	const winner = byId.get(
 		result.winner.definitionId,
 	) as ResourceDefinitionVNext;

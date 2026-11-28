@@ -83,6 +83,7 @@ function statusFor(result: CicdResult | undefined): OtelSpan["status"] {
 
 function parse(event: EventEnvelope) {
 	try {
+		// SAFETY: event-store bodies are JSON; fromJson parses or throws.
 		const data = event.data as JsonValue;
 		return fromJson(PromotionRecordSchema, data, { ignoreUnknownFields: true });
 	} catch {
@@ -100,6 +101,7 @@ function placement(
 	campId: string,
 	into: Map<string, string>,
 ): void {
+	// SAFETY: the Camp id comes from a recorded PromotionRecord target.
 	const ref = locate?.(campId as CampId);
 	if (ref?.stationId) into.set(HOBO_ATTR.stationId, ref.stationId);
 	if (ref?.yardId) into.set(HOBO_ATTR.yardId, ref.yardId);

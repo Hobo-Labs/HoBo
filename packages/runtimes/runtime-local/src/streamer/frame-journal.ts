@@ -143,6 +143,7 @@ export function createFrameJournal<TChunk>(options: {
 		},
 		close(result: StreamerRunResult) {
 			if (closed) {
+				// SAFETY: assertion to `closeResult as StreamerRunResult` is required at this boundary.
 				return closeResult as StreamerRunResult;
 			}
 

@@ -32,6 +32,7 @@ export function actor<S, M extends MessageMap<S>>(
   name: string,
   def: { state: () => S; on: M },
 ): ActorRef<S, M> {
+  // SAFETY: actor definitions are stored erased at the registry edge.
   const stored: StoredActorDef = def as never;
   actorDefinitions.set(name, stored);
   return {

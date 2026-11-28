@@ -85,6 +85,7 @@ function readTotal(output: string, noun: string): number | undefined {
 }
 
 function readBudget(): Budget {
+	// SAFETY: assertion to `arse(readFileSync(BUDGET_PATH, "utf8")) as Budget; } f` is required at this boundary.
 	return JSON.parse(readFileSync(BUDGET_PATH, "utf8")) as Budget;
 }
 

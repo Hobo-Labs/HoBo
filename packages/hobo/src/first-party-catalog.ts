@@ -151,6 +151,7 @@ export const FIRST_PARTY_CANDIDATES: readonly SelectionCandidate[] =
 				id: definition.id,
 				providerId: definition.providerId,
 				port: definition.port,
+				// SAFETY: assertion required at this I/O or test boundary.
 				semantics: definition.semantics as never,
 			}),
 		),

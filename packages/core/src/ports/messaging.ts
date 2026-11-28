@@ -264,10 +264,12 @@ const DELIVERY_SET = new Set<DeliveryGuarantee>([
 ]);
 
 export function parseTopicName(value: string): TopicName {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "topic", MessagingParseError) as TopicName;
 }
 
 export function parseConsumerGroupId(value: string): ConsumerGroupId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"consumerGroup",
@@ -276,6 +278,7 @@ export function parseConsumerGroupId(value: string): ConsumerGroupId {
 }
 
 export function parseMessagingMessageId(value: string): MessagingMessageId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"messageId",
@@ -284,6 +287,7 @@ export function parseMessagingMessageId(value: string): MessagingMessageId {
 }
 
 export function parseMessagingLeaseId(value: string): MessagingLeaseId {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"leaseId",
@@ -292,6 +296,7 @@ export function parseMessagingLeaseId(value: string): MessagingLeaseId {
 }
 
 export function parseSubscriptionName(value: string): SubscriptionName {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(
 		value,
 		"subscription",
@@ -302,13 +307,18 @@ export function parseSubscriptionName(value: string): SubscriptionName {
 export function parseDeliveryGuarantee(
 	value: JsonValue | undefined,
 ): DeliveryGuarantee {
-	if (!isJsonString(value) || !DELIVERY_SET.has(value as DeliveryGuarantee)) {
+	if (
+		!isJsonString(value) ||
+		// SAFETY: assertion required at this I/O or test boundary.
+		!DELIVERY_SET.has(value as DeliveryGuarantee)
+	) {
 		throw new MessagingParseError(
 			"delivery",
 			"at-least-once|exactly-once|at-most-once",
 			value,
 		);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as DeliveryGuarantee;
 }
 
@@ -337,8 +347,10 @@ export function tenantScopedTopicName(
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(topic, "topic", MessagingParseError);
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return name as TopicName;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return `${tenant}.${name}` as TopicName;
 }
 
@@ -349,8 +361,10 @@ export function tenantScopedConsumerGroup(
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(group, "consumerGroup", MessagingParseError);
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		return name as ConsumerGroupId;
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return `${tenant}.${name}` as ConsumerGroupId;
 }
 
@@ -358,10 +372,12 @@ export function parseTopicSpec(input: JsonValue | undefined): TopicSpec {
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("topicSpec", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const delivery = parseDeliveryGuarantee(src.delivery ?? "at-least-once");
 	const spec: TopicSpec = {
 		name: parseTopicName(String(src.name ?? "")),
+		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -394,6 +410,7 @@ export function parseSubscriptionSpec(
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("subscriptionSpec", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const delivery = parseDeliveryGuarantee(src.delivery ?? "at-least-once");
 	const max = positiveInteger(
@@ -407,6 +424,7 @@ export function parseSubscriptionSpec(
 		consumerGroup: parseConsumerGroupId(
 			String(src.consumerGroup ?? src.consumer_group ?? ""),
 		),
+		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",
@@ -431,6 +449,7 @@ export function parseMessagingSpec(
 	if (!input || !isJsonObject(input)) {
 		throw new MessagingParseError("messagingSpec", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const src = input as JsonObject;
 	const topics = Array.isArray(src.topics)
 		? src.topics.map((t) => parseTopicSpec(t))
@@ -440,6 +459,7 @@ export function parseMessagingSpec(
 		: [];
 	return deepFreeze({
 		id: nonEmptyString(String(src.id ?? ""), "id", MessagingParseError),
+		// SAFETY: assertion required at this I/O or test boundary.
 		tenantId: nonEmptyString(
 			String(src.tenantId ?? src.tenant_id ?? ""),
 			"tenantId",

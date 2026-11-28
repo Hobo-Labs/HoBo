@@ -200,6 +200,7 @@ describe("bindle()", () => {
 		const builderKeyFor = (factory: string): string =>
 			factory.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 		bindle("catalog-coverage", (b) => {
+			// SAFETY: assertion required at this I/O or test boundary.
 			const builder = b as JsonObject;
 			for (const row of CATALOG_ROWS) {
 				expect(
@@ -245,6 +246,7 @@ describe("bindle()", () => {
 
 describe("declared components (Plan 2 Syntax 0)", () => {
 	const METADATA_SYMBOL =
+		// SAFETY: assertion required at this I/O or test boundary.
 		(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 	const COMPONENT_METADATA = Symbol.for("hobo.component.metadata");
 
@@ -277,6 +279,7 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 
 		const entry = definition.entrypoint("api");
 		expect(entry instanceof Function).toBe(true);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const instance = entry?.() as { instance: number };
 		expect(instance.instance).toBe(1);
 		expect(Object.keys(definition.resources.api).includes("handler")).toBe(
@@ -298,6 +301,7 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 	it("undecorated classes pass through as plain handlers (no instantiation)", () => {
 		class NotAComponent {}
 		const definition = bindle("shop", (b) => ({
+			// SAFETY: assertion required at this I/O or test boundary.
 			api: b.api(NotAComponent as BindleEntrypoint),
 		}));
 		expect(definition.entrypoint("api")).toBe(NotAComponent);
@@ -333,6 +337,7 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 
 	it("instantiates @trainable classes bound to b.web", () => {
 		const METADATA_SYMBOL =
+			// SAFETY: assertion required at this I/O or test boundary.
 			(Symbol as { metadata?: symbol }).metadata ??
 			Symbol.for("Symbol.metadata");
 		const TRAINABLE_METADATA = Symbol.for("hobo.trainable.metadata");
@@ -347,6 +352,7 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 		const definition = bindle((b) => ({
 			web: b.web(Hello),
 		}));
+		// SAFETY: assertion required at this I/O or test boundary.
 		const instance = definition.entrypoint("web")?.() as Hello;
 		expect(instance).toBeInstanceOf(Hello);
 		expect(instance.greet("Bo")).toBe("Hello, Bo!");

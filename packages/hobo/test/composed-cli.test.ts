@@ -57,6 +57,7 @@ interface Envelope {
 }
 
 function envelope(stdout: string): Envelope {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return JSON.parse(stdout) as Envelope;
 }
 
@@ -69,6 +70,7 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 	it("login -> collect -> plan -> up -> down never fall back to the shell stub", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
@@ -122,6 +124,7 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 	it("hobo dev serves the hello-bindle offline via the default DevRuntime (not a stub)", async () => {
 		await withProject(async (cwd) => {
 			const runtime = createDefaultYardRuntime();
+			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({
 				yardRuntime: runtime,

@@ -56,6 +56,7 @@ function parseArgument(
 		value !== undefined &&
 		(Array.isArray(value) || tag === "[object Object]")
 	) {
+		// SAFETY: only the array/plain-object representation enters recursive JSON parsing.
 		const container = value as JsonValue[] | JsonObject;
 		if (ancestors.has(container))
 			throw new SdkDeclarationError("runbook", path, "must be acyclic JSON");

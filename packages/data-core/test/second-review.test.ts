@@ -830,6 +830,7 @@ interface RecordedJournals {
 	readonly inPlaceEvolve: { readonly facts: readonly MigrationFact[] };
 }
 
+// SAFETY: the committed fixture has this layout; it is what the 65a46a72 executors appended.
 const RECORDED = JSON.parse(
 	readFileSync(
 		path.join(import.meta.dirname, "fixtures", "journal-65a46a72.json"),

@@ -42,8 +42,11 @@ async function withProject(
 
 function runInput(cwd: string) {
 	return {
+		// SAFETY: assertion required at this I/O or test boundary.
 		context: { cwd, projectDir: cwd } as CliContext,
+		// SAFETY: assertion required at this I/O or test boundary.
 		flags: { cwd } as never,
+		// SAFETY: assertion required at this I/O or test boundary.
 		args: [] as readonly string[],
 		verb: "can-deploy",
 		emitProgress: () => {},
@@ -116,6 +119,7 @@ describe("createCanDeployCommand", () => {
 			expect(result.status).toBe("breaking");
 			expect(result.code).toBe("HOBO_CANNOT_DEPLOY");
 			expect(
+				// SAFETY: assertion required at this I/O or test boundary.
 				(result.data as { reasons: unknown[] }).reasons.length,
 			).toBeGreaterThan(0);
 			expect(Array.isArray(result.remediation)).toBe(true);

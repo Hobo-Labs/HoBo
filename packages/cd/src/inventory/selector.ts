@@ -68,6 +68,7 @@ export function parseSelector(
 		}
 	}
 	if (reasons.length > 0) return { ok: false, reasons };
+	// SAFETY: every field was checked above; the brand records that.
 	return { ok: true, value: selector as ParsedSelector };
 }
 

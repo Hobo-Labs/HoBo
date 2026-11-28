@@ -121,6 +121,7 @@ export async function runTrafficShifterConformance<TCtx>(
 			},
 			unknownPlanHasNoStatus: async () => {
 				const shifter = await harness.create();
+				// SAFETY: a branded id the shifter never saw; the brand only marks provenance.
 				const unknown = "plan-never-applied" as RoutingPlanId;
 				const status = await shifter.status(harness.campId, unknown);
 				check(

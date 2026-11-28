@@ -110,6 +110,7 @@ export function ensureCharacter(
 	const campId = attrs["hobo.camp"] ?? "default";
 	const serviceName = attrs["service.name"] ?? "unknown-service";
 	const primitiveName = attrs["hobo.primitive"] ?? "bindle";
+	// SAFETY: `PRIMITIVES[primitiveName as keyof PrimitiveKindByName]` is guarded by Object.hasOwn at this boundary.
 	const kind =
 		(Object.hasOwn(PRIMITIVES, primitiveName)
 			? PRIMITIVES[primitiveName as keyof PrimitiveKindByName]

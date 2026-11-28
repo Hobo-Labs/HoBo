@@ -16,6 +16,7 @@ export function parseVercelBlobNamespace(value: string): VercelBlobNamespace {
 			`a Blob namespace is 1..${NAMESPACE_MAX} characters of lower-case letters, digits, '-' and '_', in '/'-separated segments`,
 		);
 	}
+	// SAFETY: the brand is applied only after the pattern check above.
 	return value as VercelBlobNamespace;
 }
 

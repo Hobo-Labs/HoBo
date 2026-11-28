@@ -36,6 +36,7 @@ export function providerFromManifest(
 	manifest: ParsedProviderManifest,
 ): ManifestProvider {
 	const published = toCapabilityManifest(manifest);
+	// SAFETY: toCostDocument builds `facts` as an array of the shape above.
 	const facts = toCostDocument(manifest).facts as readonly CostFact[];
 	const mappings = manifest.capabilities?.mappings ?? [];
 	const capabilities: ManifestCapability[] = [];

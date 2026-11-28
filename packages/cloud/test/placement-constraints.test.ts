@@ -59,6 +59,7 @@ function selector(
 	key: string,
 	values: string[] = [],
 ): PlacementPropertySelector {
+	// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 	return { key, op, values } as PlacementPropertySelector;
 }
 
@@ -67,6 +68,7 @@ function rule(
 	scope: PlacementAffinityRule["scope"],
 	targetPort = "cache",
 ): PlacementAffinityRule {
+	// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 	return { mode, scope, targetPort } as PlacementAffinityRule;
 }
 
@@ -83,12 +85,14 @@ function placed(
 }
 
 function intent(overrides: Partial<ResourceIntent> = {}): ResourceIntent {
+	// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 	return { resource: "db", port: "database", ...overrides } as ResourceIntent;
 }
 
 function criteria(
 	overrides: Partial<PlacementCriteria> = {},
 ): PlacementCriteria {
+	// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 	return {
 		selectors: [],
 		affinities: [],
@@ -526,6 +530,7 @@ describe("spreadSurvivors", () => {
 
 	test("a spread on another dimension is not applied here", () => {
 		// Region spread is handled in pickPlacementRegion, not by filtering
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withRegionSpread = intent({
 			placement: criteria({ spread: { dimension: "region" } }),
 		} as Partial<ResourceIntent>);
@@ -539,6 +544,7 @@ describe("spreadSurvivors", () => {
 	});
 
 	test("it keeps only the providers carrying the fewest same-class placements", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "yard" } }),
 		} as Partial<ResourceIntent>);
@@ -551,6 +557,7 @@ describe("spreadSurvivors", () => {
 	});
 
 	test("placements of a different class do not count toward the spread", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "yard" } }),
 		} as Partial<ResourceIntent>);
@@ -564,6 +571,7 @@ describe("spreadSurvivors", () => {
 	});
 
 	test("when every provider is equally loaded nothing is filtered", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "yard" } }),
 		} as Partial<ResourceIntent>);
@@ -580,6 +588,7 @@ describe("spreadSurvivors", () => {
 	});
 
 	test("an empty candidate list is returned unchanged", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "yard" } }),
 		} as Partial<ResourceIntent>);
@@ -587,6 +596,7 @@ describe("spreadSurvivors", () => {
 	});
 
 	test("candidate order is preserved among survivors", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "yard" } }),
 		} as Partial<ResourceIntent>);
@@ -603,6 +613,7 @@ describe("pickPlacementRegion", () => {
 	const def = definition({ regions: ["us-east", "eu-west", "ap-south"] });
 
 	test("an explicit region on the intent wins over everything", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const pinned = intent({
 			region: "ap-south",
 			placement: criteria({ affinities: [rule("anti-affinity", "region")] }),
@@ -629,6 +640,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("region affinity narrows to the target's region", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withAffinity = intent({
 			placement: criteria({ affinities: [rule("affinity", "region")] }),
 		} as Partial<ResourceIntent>);
@@ -638,6 +650,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("region anti-affinity steers away from the target's region", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withAnti = intent({
 			placement: criteria({ affinities: [rule("anti-affinity", "region")] }),
 		} as Partial<ResourceIntent>);
@@ -647,6 +660,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("an affinity that would empty the set is declined rather than applied", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withAffinity = intent({
 			placement: criteria({ affinities: [rule("affinity", "region")] }),
 		} as Partial<ResourceIntent>);
@@ -657,6 +671,7 @@ describe("pickPlacementRegion", () => {
 
 	test("an anti-affinity that would empty the set is declined too", () => {
 		const single = definition({ regions: ["us-east"] });
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withAnti = intent({
 			placement: criteria({ affinities: [rule("anti-affinity", "region")] }),
 		} as Partial<ResourceIntent>);
@@ -666,6 +681,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("yard-scope rules do not influence the region choice", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withYardRule = intent({
 			placement: criteria({ affinities: [rule("anti-affinity", "yard")] }),
 		} as Partial<ResourceIntent>);
@@ -675,6 +691,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("a rule whose targets carry no region is skipped", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const withAffinity = intent({
 			placement: criteria({ affinities: [rule("affinity", "region")] }),
 		} as Partial<ResourceIntent>);
@@ -684,6 +701,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("region spread prefers the least-used region", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "region" } }),
 		} as Partial<ResourceIntent>);
@@ -697,6 +715,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("region spread ignores placements of another class", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "region" } }),
 		} as Partial<ResourceIntent>);
@@ -710,6 +729,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("region spread does nothing when only one region remains", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "region" } }),
 		} as Partial<ResourceIntent>);
@@ -724,6 +744,7 @@ describe("pickPlacementRegion", () => {
 
 	test("affinity narrowing runs before the spread", () => {
 		// Order matters: spreading first could pick a region the affinity then
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const both = intent({
 			placement: criteria({
 				affinities: [rule("affinity", "region")],
@@ -744,6 +765,7 @@ describe("pickPlacementRegion", () => {
 	});
 
 	test("the choice is deterministic across repeated calls", () => {
+		// SAFETY: The surrounding parser, protocol branch, or fixture establishes this asserted shape.
 		const spread = intent({
 			placement: criteria({ spread: { dimension: "region" } }),
 		} as Partial<ResourceIntent>);

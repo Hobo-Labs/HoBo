@@ -7,6 +7,7 @@ import {
 	HostingQuoteSchema,
 } from "../../src/index.js";
 
+// SAFETY: this hand-authored test fixture is parsed by the generated wire parsers below.
 const pact = JSON.parse(
 	readFileSync(
 		new URL("../pacts/broker_hosting_budget.pact.json", import.meta.url),

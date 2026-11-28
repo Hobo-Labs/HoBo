@@ -49,6 +49,8 @@ describe("install ids and component hosts", () => {
 	});
 
 	it("falls through to cloud-native for an unrecognised host", () => {
+		// SAFETY: deliberately outside ComponentHostKind; only a value that
+		// bypassed the type reaches the last arm, and this pins what it does.
 		expect(hostToRuntimeInstallId("something-else" as never)).toBe(
 			"runtime-cloud-native",
 		);
@@ -172,6 +174,7 @@ describe("selecting a factory by install id", () => {
 	});
 
 	it("silently yields cloud-native for an id it does not recognise", () => {
+		// SAFETY: deliberately outside RuntimeInstallId, for the reason above.
 		expect(
 			createRuntimeInstallableFactory("runtime-nonesuch" as never)().id,
 		).toBe(RUNTIME_PROVIDER_IDS["cloud-native"]);

@@ -258,6 +258,7 @@ export function createPipelineController(
 				subjectOf(freight.manifest.subject) !== subject
 			)
 				continue;
+			// SAFETY: ids in FreightRecord are recorded `sha256:` Freight ids (FreightLedger).
 			const id = freight.freightId as FreightId;
 			const promoted = new Map(promotedAt.get(freight.freightId) ?? []);
 			out.push({
@@ -315,6 +316,7 @@ export function createPipelineController(
 	): Promise<boolean> {
 		if (!deps.windows) return true;
 		for (const target of targets) {
+			// SAFETY: targets are Camp ids from the applied pipeline or a placement decision.
 			const campId = target as CampId;
 			const topology = await deps.topology.camp(campId);
 			const evaluation = await deps.windows.evaluate({
@@ -348,7 +350,9 @@ export function createPipelineController(
 			return;
 		}
 		const promote: PromoteRequest = {
+			// SAFETY: freightId comes from a FreightRecord the ledger returned.
 			freightId: freightId as FreightId,
+			// SAFETY: targets are Camp ids from the applied pipeline or a placement decision.
 			targets: targets.map((target) => target as CampId),
 			idempotencyKey: key,
 			pipeline: pipeline.name,
@@ -412,6 +416,7 @@ export function createPipelineController(
 			{
 				pipeline: pipeline.name,
 				node: node.name,
+				// SAFETY: freightId comes from a FreightRecord the ledger returned.
 				freightId: freightId as FreightId,
 				decision: decision.value,
 				fanout: fanoutWithDefaults(node),
@@ -496,6 +501,7 @@ export function createPipelineController(
 			);
 		}
 		if (!stable) return;
+		// SAFETY: stable is a Freight id the ledger or fan-out controller recorded.
 		if (!(await deps.freight.isUsable(stable as FreightId))) return;
 		const fanouts = isPlaced(node)
 			? await deps.fanout.list({ pipeline: pipeline.name, node: node.name })
@@ -516,6 +522,7 @@ export function createPipelineController(
 		);
 		for (const campId of [...new Set(domain)].sort()) {
 			if (settled.has(campId) || busy.has(campId)) continue;
+			// SAFETY: campId comes from the applied pipeline or a recorded placement decision.
 			const history = await deps.promotions.list({ campId: campId as CampId });
 			if (history.some((promotion) => !TERMINAL.has(promotion.state))) continue;
 			if (

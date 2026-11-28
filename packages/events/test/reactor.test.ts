@@ -11,6 +11,7 @@ interface OrderRow {
 	totalCents: number;
 }
 
+// SAFETY: the order.Placed read-set contract supplies orderId and totalCents.
 const openOrders = defineMaterialization<OrderRow[]>({
 	name: "openOrders",
 	readSet: ["order.Placed"],

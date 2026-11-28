@@ -102,6 +102,7 @@ export function createPublicDnsManager(options: {
 					"managedBy=hobo requires dns.public.zone and a concrete DnsProvider",
 				);
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			await provider.upsert(input.tenantId as TenantId, zone, suggested);
 			if (metering) {
 				await metering.emit(

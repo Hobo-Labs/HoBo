@@ -24,6 +24,7 @@ describe("scripted agent drives plan -> up through the MCP server", () => {
 				status: string;
 				data: { planHash: string };
 			}
+			// SAFETY: CLI --json envelope for plan carries status + planHash.
 			const planOut = plan.output as PlanOutput;
 			expect(planOut.status).toBe("ok");
 			expect(planOut.data.planHash).toMatch(/^sha256:/);
@@ -35,6 +36,7 @@ describe("scripted agent drives plan -> up through the MCP server", () => {
 				status: string;
 				data: { provisioned: string[]; progress: Array<{ type: string }> };
 			}
+			// SAFETY: CLI --json envelope for up carries provisioned + progress.
 			const upOut = up.output as UpOutput;
 			expect(upOut.status).toBe("deployed");
 			expect(upOut.data.provisioned).toEqual(["assets", "service", "sessions"]);

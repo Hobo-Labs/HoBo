@@ -73,6 +73,7 @@ export class TrailRunService {
 			target: input.target,
 			state: "planned",
 			percent: 0,
+			// SAFETY: the aggregate owns and mutates this private string list.
 			completedSteps: Object.freeze([] as string[]),
 			identityLinked: input.identityLinked === true,
 			junctionOk: true,

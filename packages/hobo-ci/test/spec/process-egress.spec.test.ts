@@ -28,6 +28,7 @@ describe("SPEC process egress: every fetch in the process honours the proxy", ()
 			close: () =>
 				new Promise<void>((resolve) => target.close(() => resolve())),
 		});
+		// SAFETY: target has just started listening on an IPv4 TCP socket.
 		const { port } = target.address() as AddressInfo;
 		applyEgressToProcess({ HTTPS_PROXY: proxy.url(), NO_PROXY: "" });
 		await fetch(`https://127.0.0.1:${port}/api/v1/database`, {

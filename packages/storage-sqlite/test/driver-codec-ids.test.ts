@@ -218,6 +218,7 @@ describe("payload codecs", () => {
 	});
 
 	it("refuses an unknown codec on the way in and on the way out", () => {
+		// SAFETY: `encodePayload("gzip-v1" as PayloadCodec, { a: 1 })` is required at this I/O or test boundary.
 		const encoding = (): Uint8Array =>
 			encodePayload("gzip-v1" as PayloadCodec, { a: 1 });
 		expect(encoding).toThrowError(UnsupportedCodecError);

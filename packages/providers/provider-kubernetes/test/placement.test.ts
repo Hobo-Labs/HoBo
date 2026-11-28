@@ -64,6 +64,7 @@ describe("parseWorkloadPlacement", () => {
 		const error = rejects({ ...VALID, name: "Try_Site" });
 
 		expect(isKubernetesProviderError(error)).toBe(true);
+		// SAFETY: assertion to `error as { code: string }` is required at this boundary.
 		expect((error as { code: string }).code).toBe("PLACEMENT_REJECTED");
 	});
 
@@ -83,6 +84,7 @@ describe("parseWorkloadPlacement", () => {
 			limits: { cpu: "250m", memory: "256Mi" },
 		});
 
+		// SAFETY: assertion to `error as { message: string }` is required at this boundary.
 		expect((error as { message: string }).message).toContain(
 			"cpu limit is below the cpu request",
 		);
@@ -94,6 +96,7 @@ describe("parseWorkloadPlacement", () => {
 			labels: { "app.kubernetes.io/managed-by": "someone-else" },
 		});
 
+		// SAFETY: assertion to `error as { message: string }` is required at this boundary.
 		expect((error as { message: string }).message).toContain(
 			"owned by this provider",
 		);
@@ -122,6 +125,7 @@ describe("kubernetes.with.workload", () => {
 
 describe("renderDeploymentManifest", () => {
 	it("drops every capability and mounts no service account token", () => {
+		// SAFETY: assertion to `renderDeploymentManifest( parseWorkloadPlacement(VALID), ) as { spec: { template: { spec: { automountServiceAccountToken` is required at this boundary.
 		const manifest = renderDeploymentManifest(
 			parseWorkloadPlacement(VALID),
 		) as {

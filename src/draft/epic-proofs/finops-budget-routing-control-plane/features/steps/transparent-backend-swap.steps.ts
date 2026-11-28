@@ -34,6 +34,7 @@ function policyDecision(): PolicyDecision {
 function listen(server: Server): Promise<string> {
 	return new Promise((resolve) => {
 		server.listen(0, "127.0.0.1", () => {
+			// SAFETY: assertion to `er.address() as AddressInfo; ` is required at this boundary.
 			const { port } = server.address() as AddressInfo;
 			resolve(`http://127.0.0.1:${port}`);
 		});
@@ -273,6 +274,7 @@ When("a budget threshold crossing reaches the routing control loop", async () =>
 				assert.ok(world.traffic, "traffic stream not started");
 				await world.traffic.waitForAdditional(5);
 				if (unhealthyAt !== undefined) return percent < unhealthyAt;
+				// SAFETY: assertion to `d.backendBUrl as string); ` is required at this boundary.
 				const probe = await fetch(world.backendBUrl as string);
 				return probe.status === 200;
 			},

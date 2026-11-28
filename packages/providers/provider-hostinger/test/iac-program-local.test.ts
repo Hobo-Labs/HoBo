@@ -40,6 +40,10 @@ function program(overrides: Partial<IacProgram> = {}): IacProgram {
 
 function documentProgram(overrides: ProgramFields): IacProgram {
 	const document = { ...program(), ...overrides };
+	// SAFETY: the guard is the parse boundary for programs that crossed a
+	// document boundary, so these cases hand it what the type forbids (a
+	// foreign version, no resource list). It re-checks every field it relies on
+	// before trusting the declared type.
 	return document as IacProgram;
 }
 

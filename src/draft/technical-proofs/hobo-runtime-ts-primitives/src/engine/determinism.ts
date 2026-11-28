@@ -9,6 +9,7 @@ export interface DeterministicContext {
 export function createDeterministicContext(seed: string, startInstant = "2026-06-26T00:00:00.000Z"): DeterministicContext {
   let nowMs = Date.parse(startInstant);
 
+  // SAFETY: assertion to `return Object.freeze({` is required at this boundary.
   return Object.freeze({
     seed,
     now() {

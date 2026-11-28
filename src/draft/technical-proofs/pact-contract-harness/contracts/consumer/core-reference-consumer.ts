@@ -19,6 +19,7 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
     throw new CoreContractSurfaceParseError("response body must be an object");
   }
 
+  // SAFETY: assertion to `const record = body as JsonObject;` is required at this boundary.
   const record = body as JsonObject;
   if (record.schemaVersion !== "hobo.core/v1") {
     throw new CoreContractSurfaceParseError(`unsupported schemaVersion: ${String(record.schemaVersion)}`);
@@ -27,6 +28,7 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
   const eventMappings = record.eventMappings;
   if (
     !isJsonObject(eventMappings) ||
+    // SAFETY: assertion to `(eventMappings as JsonObject).cloudEventSpecversion !== "1.0"` is required at this boundary.
     (eventMappings as JsonObject).cloudEventSpecversion !== "1.0"
   ) {
     throw new CoreContractSurfaceParseError("invalid eventMappings.cloudEventSpecversion");
@@ -35,6 +37,7 @@ export function parseCoreContractSurface(body: JsonValue): CoreContractSurface {
   const publicSurface = record.publicSurface;
   if (
     !isJsonObject(publicSurface) ||
+    // SAFETY: assertion to `(publicSurface as JsonObject).ok !== true` is required at this boundary.
     (publicSurface as JsonObject).ok !== true
   ) {
     throw new CoreContractSurfaceParseError("invalid publicSurface.ok");
@@ -84,11 +87,13 @@ export async function fetchUnsupportedSchemaError(
     throw new Error("error response body must be an object");
   }
 
+  // SAFETY: assertion to `const error = (body as JsonObject).error;` is required at this boundary.
   const error = (body as JsonObject).error;
   if (!isJsonObject(error)) {
     throw new Error("error envelope missing");
   }
 
+  // SAFETY: assertion to `const record = error as JsonObject;` is required at this boundary.
   const record = error as JsonObject;
   if (!isJsonString(record.code) || !isJsonString(record.message)) {
     throw new Error("error envelope must include code and message");

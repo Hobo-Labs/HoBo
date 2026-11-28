@@ -46,6 +46,7 @@ export function observeQueue(
 			(parent) => parent !== entry.number && numbers.has(parent),
 		);
 	});
+	// SAFETY: every invariant named by the brand was checked or established above.
 	return Object.freeze(snapshot) as ObservedQueue;
 }
 

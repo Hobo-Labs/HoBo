@@ -42,6 +42,7 @@ function loadPact(name: string): readonly Interaction[] {
 		path.join(here, "..", "contracts", "pacts", name),
 		"utf8",
 	);
+	// SAFETY: the pact file is a JSON document checked in beside this test.
 	const pact = JSON.parse(text) as { interactions: Interaction[] };
 	assert.ok(pact.interactions.length > 0);
 	return pact.interactions;
@@ -57,6 +58,7 @@ const ORDERS: DatasetSchema = parseDatasetSchema({
 });
 
 function mutations(raw: JsonValue | undefined): RecordMutation[] {
+	// SAFETY: pact bodies list mutations in the wire form the contract records.
 	return (
 		raw as {
 			tenant: string;
@@ -99,13 +101,17 @@ describe("pact: migration selector", () => {
 			const engines = [body.source, body.target].filter(
 				(name): name is string => name !== undefined && name !== null,
 			);
+			// SAFETY: pact bodies carry the constraint and estimate records as recorded.
 			const constraints = body.constraints as {
 				maxWriteFreezeMs: number;
 				requiredRollback: RollbackPosture;
 			};
+			// SAFETY: pact bodies carry the constraint and estimate records as recorded.
 			const estimates = body.estimates as { flipMs?: number; copyMs?: number };
 			const decision = selectMigrationPattern({
+				// SAFETY: the pact records a member of the closed authority union.
 				authority: body.authority as Authority,
+				// SAFETY: the pact records a member of the closed change union.
 				change: body.change as ChangeKind,
 				...(body.source === undefined
 					? undefined

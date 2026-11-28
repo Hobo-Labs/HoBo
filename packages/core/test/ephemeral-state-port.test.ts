@@ -18,6 +18,7 @@ import {
 	parseIncrementBy,
 } from "../src/index.js";
 
+// SAFETY: every property read throws, so no member of the empty target is ever used as a port method.
 const untouched: EphemeralStatePort = new Proxy({} as EphemeralStatePort, {
 	get() {
 		throw new Error("the helper reached the port before refusing its input");

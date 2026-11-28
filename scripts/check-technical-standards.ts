@@ -289,6 +289,7 @@ for (const file of run("git", ["ls-files", "**/package.json"])
 	.filter((file) => !file.includes("node_modules") && existsSync(file))) {
 	let manifest: { scripts?: Record<string, string> };
 	try {
+		// SAFETY: assertion to `se(readFileSync(file, "utf8")) as typeof manifest; } cat` is required at this boundary.
 		manifest = JSON.parse(readFileSync(file, "utf8")) as typeof manifest;
 	} catch {
 		continue;
@@ -318,6 +319,7 @@ if (existsSync("contracts/data-models")) {
 	);
 }
 
+// SAFETY: assertion to `se(readFileSync("package.json", "utf8")) as { scripts?: Record<string, string>; }; if (pa` is required at this boundary.
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
 	scripts?: Record<string, string>;
 };

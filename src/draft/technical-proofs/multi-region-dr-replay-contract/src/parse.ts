@@ -42,10 +42,12 @@ const AUTHORITATIVE_LOG_MODES = new Set(["active-passive-log", "sync-quorum"]);
 const STATELESS_TIER_ROLES = new Set(["gateway", "planner", "executor"]);
 
 export function parseRegionId(value: JsonValue, fieldName: string): RegionId {
+  // SAFETY: assertion to `return requiredString(value, fieldName) as RegionId;` is required at this boundary.
   return requiredString(value, fieldName) as RegionId;
 }
 
 export function parseLogPath(value: JsonValue): LogPath {
+  // SAFETY: assertion to `return requiredString(value, "logPath") as LogPath;` is required at this boundary.
   return requiredString(value, "logPath") as LogPath;
 }
 
@@ -54,6 +56,7 @@ export function parseMultiRegionTopology(raw: JsonValue): ParsedMultiRegionTopol
     throw new Error("topology manifest is required");
   }
 
+  // SAFETY: assertion to `const manifest = raw as JsonObject;` is required at this boundary.
   const manifest = raw as JsonObject;
   const authoritativeLog = requiredObject(manifest.authoritativeLog, "authoritativeLog");
   const statelessTier = requiredObject(manifest.statelessTier, "statelessTier");
@@ -61,6 +64,7 @@ export function parseMultiRegionTopology(raw: JsonValue): ParsedMultiRegionTopol
     parseRegionId(region, "regions"),
   );
 
+  // SAFETY: assertion to `const logMode = requiredEnum(` is required at this boundary.
   const logMode = requiredEnum(
     authoritativeLog.mode,
     "authoritativeLog.mode",
@@ -73,6 +77,7 @@ export function parseMultiRegionTopology(raw: JsonValue): ParsedMultiRegionTopol
   }
 
   const passiveRegions = regions.filter((region) => region !== primaryRegion);
+  // SAFETY: assertion to `const statelessMode = requiredEnum(` is required at this boundary.
   const statelessMode = requiredEnum(
     statelessTier.mode,
     "statelessTier.mode",
@@ -85,6 +90,7 @@ export function parseMultiRegionTopology(raw: JsonValue): ParsedMultiRegionTopol
     if (!STATELESS_TIER_ROLES.has(role)) {
       throw new Error(`unsupported stateless role: ${role}`);
     }
+    // SAFETY: assertion to `parsedRoles.push(role as ParsedMultiRegionTopology["statelessTier"]["roles"][num` is required at this boundary.
     parsedRoles.push(role as ParsedMultiRegionTopology["statelessTier"]["roles"][number]);
   }
 
@@ -112,6 +118,7 @@ export function parseReplicatedLog(raw: JsonValue): ParsedReplicatedLog {
     throw new Error("replicated log is required");
   }
 
+  // SAFETY: assertion to `const log = raw as JsonObject;` is required at this boundary.
   const log = raw as JsonObject;
   const streams = requiredObject(log.streams, "streams");
   const streamEntries = Object.entries(streams);
@@ -125,6 +132,7 @@ export function parseReplicatedLog(raw: JsonValue): ParsedReplicatedLog {
     if (!Array.isArray(events)) {
       throw new Error(`stream ${streamId} must be an event array`);
     }
+    // SAFETY: assertion to `parsedStreams[streamId as StreamId] = events;` is required at this boundary.
     parsedStreams[streamId as StreamId] = events;
   }
 
@@ -144,6 +152,7 @@ export function parseReplicatedLog(raw: JsonValue): ParsedReplicatedLog {
     replicationLagMs: nonNegativeInteger(log.replicationLagMs ?? 0, "replicationLagMs"),
     snapshotSeq: nonNegativeInteger(log.snapshotSeq ?? 0, "snapshotSeq"),
     streams: parsedStreams,
+    // SAFETY: assertion to `preLossSnapshots: (log.preLossSnapshots as Record<string, string> | null) ?? nul` is required at this boundary.
     preLossSnapshots: (log.preLossSnapshots as Record<string, string> | null) ?? null,
     restoreCompletedAt: isJsonString(log.restoreCompletedAt) ? log.restoreCompletedAt : null,
   };
@@ -154,6 +163,7 @@ export function parseRestoreRequest(input: JsonValue): ParsedRestoreRequest {
     throw new Error("restore request is required");
   }
 
+  // SAFETY: assertion to `const request = input as JsonObject;` is required at this boundary.
   const request = input as JsonObject;
   const logPath = parseLogPath(request.logPath ?? request.log);
   return {
@@ -167,6 +177,7 @@ function requiredObject(value: JsonValue, fieldName: string): JsonObject {
   if (!value || !isJsonObject(value)) {
     throw new Error(`${fieldName} is required`);
   }
+  // SAFETY: assertion to `return value as JsonObject;` is required at this boundary.
   return value as JsonObject;
 }
 

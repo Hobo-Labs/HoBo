@@ -156,6 +156,7 @@ export function failoverIdFor(
 	node: string,
 	key: string,
 ): FailoverId {
+	// SAFETY: a FailoverId is minted only here, from a deterministic digest.
 	return `failover-${sha256Hex(tenant, campId, pipeline, node, key).slice(0, 32)}` as FailoverId;
 }
 
@@ -164,6 +165,7 @@ function rebalanceStream(rebalanceId: string): string {
 }
 
 function asCamp(id: string): CampId {
+	// SAFETY: Camp ids in failover records come from inventory or a placement decision.
 	return id as CampId;
 }
 
@@ -717,6 +719,7 @@ export function createFailoverController(
 		if (view.fact.purged || f.purge === PurgeMode.NEVER) return true;
 		const result = await d.promotions.promote(
 			{
+				// SAFETY: the Freight id was recorded from the node's qualified Freight.
 				freightId: f.freightId as FreightId,
 				targets: [asCamp(f.fromCampId)],
 				idempotencyKey: `failover:${f.failoverId}:purge`,
@@ -805,7 +808,8 @@ export function createFailoverController(
 		const promotion =
 			f.promotionId === ""
 				? undefined
-				: await d.promotions.get(f.promotionId as PromotionId);
+				: // SAFETY: promotion ids are recorded from PromotionService results.
+					await d.promotions.get(f.promotionId as PromotionId);
 		if (
 			f.state === FailoverState.REPLACING ||
 			f.state === FailoverState.VERIFYING

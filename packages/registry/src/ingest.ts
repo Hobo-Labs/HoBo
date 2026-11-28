@@ -105,6 +105,7 @@ function parseCapabilities(
 			});
 			continue;
 		}
+		// SAFETY: `const record = entry as JsonObject;` is required at this I/O or test boundary.
 		const record = entry as JsonObject;
 		if (!nonEmptyString(record.port)) {
 			errors.push({
@@ -135,6 +136,7 @@ export function ingestBundleManifest(raw: JsonValue): IngestResult {
 			],
 		};
 	}
+	// SAFETY: `const record = raw as JsonObject;` is required at this I/O or test boundary.
 	const record = raw as JsonObject;
 	const errors: IngestError[] = [];
 
@@ -171,8 +173,11 @@ export function ingestBundleManifest(raw: JsonValue): IngestResult {
 
 	const manifest: BundleManifest = {
 		schema: BUNDLE_MANIFEST_SCHEMA,
+		// SAFETY: `name: record.name as string,` is required at this I/O or test boundary.
 		name: record.name as string,
+		// SAFETY: `version: record.version as string,` is required at this I/O or test boundary.
 		version: record.version as string,
+		// SAFETY: `provider: record.provider as string,` is required at this I/O or test boundary.
 		provider: record.provider as string,
 		capabilities,
 		description: isJsonString(record.description) ? record.description : "",

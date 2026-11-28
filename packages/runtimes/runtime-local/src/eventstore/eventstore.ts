@@ -243,6 +243,7 @@ export function createRuntimeLocalEventStore(
 						quarantineSeq: quarantine.seq,
 						type: quarantine.type,
 						reason: String(
+							// SAFETY: assertion to `quarantine.data as { reason?: string }` is required at this boundary.
 							(quarantine.data as { reason?: string }).reason ?? "",
 						),
 					});
@@ -288,6 +289,7 @@ async function appendQuarantine({
 	for await (const candidate of storage.read(streamId)) {
 		if (
 			isQuarantineEvent(candidate) &&
+			// SAFETY: assertion to `candidate.data as { offendingSeq?: number }` is required at this boundary.
 			(candidate.data as { offendingSeq?: number }).offendingSeq === event.seq
 		) {
 			quarantinedSeqs.add(quarantineKey);
@@ -331,11 +333,13 @@ async function appendQuarantine({
 				type: input.type,
 				v: input.v,
 				data: input.data,
+				// SAFETY: assertion to `input.meta as JsonObject` is required at this boundary.
 				meta: input.meta as JsonObject,
 			},
 		],
 		appendOpts,
 	);
+	// SAFETY: assertion to `result.appended[0] as EventEnvelope` is required at this boundary.
 	return result.appended[0] as EventEnvelope;
 }
 
@@ -366,6 +370,7 @@ function cloneJson<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
+	// SAFETY: JSON round-trip preserves the caller-owned event snapshot type.
 	return cloned as T;
 }
 

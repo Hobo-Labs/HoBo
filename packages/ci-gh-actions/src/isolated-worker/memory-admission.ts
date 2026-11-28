@@ -173,6 +173,7 @@ export function createWorkerMemoryAdmission(
 
 	function launchingLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries the occupancy fields `leaseOccupiesWorkerResources` reads.
 			const full = lease as Lease;
 			return leaseOccupiesWorkerResources(full);
 		});
@@ -180,6 +181,7 @@ export function createWorkerMemoryAdmission(
 
 	function admittedMemoryLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries the occupancy fields worker memory reads.
 			const full = lease as Lease;
 			return leaseOccupiesWorkerMemory(full);
 		});
@@ -250,6 +252,7 @@ export function createWorkerMemoryAdmission(
 
 	function unlaunchedReservedLeases(activeLeases: readonly MemoryLease[]) {
 		return activeLeases.filter((lease) => {
+			// SAFETY: MemoryLease carries reserved/sandbox fields for unlaunched detection.
 			const full = lease as Lease;
 			return (
 				full.state === "reserved" && !full.sandboxName && !full.sandboxSessionId

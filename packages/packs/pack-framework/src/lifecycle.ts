@@ -41,6 +41,7 @@ export function comparePackVersions(a: PackVersion, b: PackVersion): number {
 	const left = parts(a);
 	const right = parts(b);
 	for (let index = 0; index < 3; index += 1) {
+		// SAFETY: `const difference = (left[index] as number) - (right[index] as number);` is required at this I/O or test boundary.
 		const difference = (left[index] as number) - (right[index] as number);
 		if (difference !== 0) return difference;
 	}

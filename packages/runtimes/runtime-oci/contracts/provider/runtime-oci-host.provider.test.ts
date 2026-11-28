@@ -44,6 +44,7 @@ describe("runtime-oci-host provider verification", () => {
 			name: "RuntimeOciHost",
 			async handle(request) {
 				if (request.path === "/runtime-host/ensure") {
+					// SAFETY: assertion required at this I/O or test boundary.
 					const body = (request.body ?? {}) as { hoboHome?: string };
 					const result = await host.ensure({
 						hoboHome: body.hoboHome ?? "/tmp/hobo-home",

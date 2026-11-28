@@ -64,6 +64,7 @@ export function mergeLakebedOptions(
 		if (Object.prototype.toString.call(inner) !== "[object Object]") {
 			continue;
 		}
+		// SAFETY: lakebed option payloads are JSON at this merge boundary.
 		Object.assign(merged, inner as JsonObject);
 	}
 	return merged;

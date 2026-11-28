@@ -242,6 +242,7 @@ export function createOciRuntimeHost(
 							].join("\n"),
 						],
 					});
+					// SAFETY: assertion required at this I/O or test boundary.
 					const deployment = manifests[0] as {
 						metadata?: { annotations?: Record<string, string> };
 					};

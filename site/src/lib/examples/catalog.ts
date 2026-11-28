@@ -103,6 +103,7 @@ function importAppModule(appPath: string): Promise<ExampleAppModule> {
 		register();
 		tsLoaderRegistered = true;
 	}
+	// SAFETY: example app modules expose Bindle `default` plus optional try-runtime JSON.
 	const loaded = import(
 		/* @vite-ignore */ pathToFileURL(appPath).href,
 	) as Promise<ExampleAppModule>;
@@ -215,6 +216,7 @@ function extractBindleWebApp(
 			if (annotation.option !== "webapp" || annotation.provider !== "hobo") {
 				continue;
 			}
+			// SAFETY: Bindle annotation config is a JSON bag at this parse boundary.
 			const config = annotation.config as JsonObject;
 			const framework = config.framework;
 			const root = config.root;
@@ -237,6 +239,7 @@ function extractBindleContainers(
 			if (annotation.option !== "dependency" || annotation.provider !== "hobo") {
 				continue;
 			}
+			// SAFETY: Bindle annotation config is a JSON bag at this parse boundary.
 			const config = annotation.config as JsonObject;
 			const image = config.image;
 			if (isJsonString(image) && image.length > 0) {
@@ -628,5 +631,6 @@ function oneOf<const T extends readonly string[]>(
 
 function isMissingFile(error: Error): boolean {
 	if (!("code" in error)) return false;
+	// SAFETY: Node fs errors that carry `code` are ErrnoException at this boundary.
 	return (error as NodeErrno).code === "ENOENT";
 }

@@ -23,6 +23,7 @@ export function parseSchemaName<T>(value: T, path = "schema"): SchemaName {
 		);
 	}
 	const name: string = value;
+	// SAFETY: the pattern and reserved-name checks above are the brand's definition.
 	return name as SchemaName;
 }
 

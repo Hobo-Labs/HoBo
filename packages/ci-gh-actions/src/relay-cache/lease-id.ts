@@ -44,6 +44,7 @@ function generationOf(value: number): number {
 }
 
 export function relayJobKey(job: RelayJobIdentity): RelayJobKey {
+	// SAFETY: the brand is applied only after every part is range-checked.
 	return `${positive(job.repositoryId, "repository id")}:${positive(job.jobId, "job id")}:${positive(job.runAttempt, "run attempt")}` as RelayJobKey;
 }
 
@@ -65,6 +66,7 @@ export function relayLeaseId(
 ): RelayLeaseId {
 	const key = relayJobKey(job);
 	const g = generationOf(generation);
+	// SAFETY: a UUIDv5 under the fixed namespace is the lease id's whole shape.
 	return uuidV5(
 		RELAY_LEASE_NAMESPACE,
 		g > 0 ? `${key}:g${g}` : key,

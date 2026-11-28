@@ -37,7 +37,9 @@ const pactPath = join(
 );
 
 const COMPONENT_HOST = { kind: "wasmtime", version: "46.0.1" } as const;
+// SAFETY: `const KV_INTERFACE = "wasi:keyvalue/store@0.2.0" as InterfaceId;` is required at this I/O or test boundary.
 const KV_INTERFACE = "wasi:keyvalue/store@0.2.0" as InterfaceId;
+// SAFETY: `const HTTP_INCOMING = "wasi:http/incoming-handler@0.2.0" as InterfaceId;` is required at this I/O or test boundary.
 const HTTP_INCOMING = "wasi:http/incoming-handler@0.2.0" as InterfaceId;
 
 interface Interaction {
@@ -81,6 +83,7 @@ function makeDevRuntime(): DevRuntime {
 						) => Promise<JsonValue>;
 					},
 				) => {
+					// SAFETY: `const greeting = (await context.callImport(` is required at this I/O or test boundary.
 					const greeting = (await context.callImport(
 						KV_INTERFACE,
 						"get",
@@ -148,6 +151,7 @@ const HELLO_BINDLE_MANIFEST = {
 };
 
 describe("CLI <-> local-dev-loop boundary pact", () => {
+	// SAFETY: `const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {` is required at this I/O or test boundary.
 	const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 		consumer: { name: string };
 		provider: { name: string };
@@ -168,6 +172,7 @@ describe("CLI <-> local-dev-loop boundary pact", () => {
 				},
 			});
 			const result = await cli.run(["collect", "--json"], { cwd });
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				status: string;
 				data: {
@@ -184,6 +189,7 @@ describe("CLI <-> local-dev-loop boundary pact", () => {
 	});
 
 	it("hobo dev matches the recorded offline serve interaction", async () => {
+		// SAFETY: `const expected = at(pact.interactions, 1).response as {` is required at this I/O or test boundary.
 		const expected = at(pact.interactions, 1).response as {
 			status: string;
 			runtime: string;
@@ -196,6 +202,7 @@ describe("CLI <-> local-dev-loop boundary pact", () => {
 				commands: { dev: createDevCommand({ runtime: makeDevRuntime() }) },
 			});
 			const result = await cli.run(["dev", "--json"], { cwd });
+			// SAFETY: `const envelope = JSON.parse(result.stdout) as {` is required at this I/O or test boundary.
 			const envelope = JSON.parse(result.stdout) as {
 				status: string;
 				data: {

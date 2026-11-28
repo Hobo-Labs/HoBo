@@ -261,6 +261,7 @@ export function createWrpcLinkLayer(options: {
 										componentId,
 										importInterface: parsedInterface,
 										operation,
+										// SAFETY: assertion to `deadlineIso as string` is required at this boundary.
 										deadline: deadlineIso as string,
 										deadlineMs,
 										observedNowMs: startedAtMs,

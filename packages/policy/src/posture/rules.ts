@@ -231,6 +231,7 @@ function parseClause<T>(
 			"semver-gte needs a semantic version",
 			`${path}.value`,
 		);
+	// SAFETY: op was checked against the operator set and every other branch returned above.
 	return Object.freeze({ field, op: op as "eq", value });
 }
 
@@ -338,11 +339,13 @@ function parseRule<T>(
 		id,
 		pack,
 		phase: "observe" as const,
+		// SAFETY: checked against POSTURE_EFFECTS above.
 		effect: effect as PostureEffect,
 		kinds,
 		classifications,
 		require: Object.freeze(require),
 		forbid: Object.freeze(forbid),
+		// SAFETY: checked against POSTURE_SEVERITIES above.
 		severity: severity as PostureSeverity,
 		controls,
 		fix: Object.freeze(

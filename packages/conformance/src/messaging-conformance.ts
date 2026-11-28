@@ -83,6 +83,7 @@ async function provesPublishConsumeAck(
 	const topic = parseTopicName("conf-orders");
 	await bus.ensureTopic({
 		name: topic,
+		// SAFETY: assertion to `"conf" as TenantId` is required at this boundary.
 		tenantId: "conf" as TenantId,
 		delivery: "at-least-once",
 	});
@@ -118,6 +119,7 @@ async function provesDeadLetterMaxAttempts(
 		name: "s" as never,
 		topic,
 		consumerGroup: parseConsumerGroupId("dlq"),
+		// SAFETY: assertion to `"conf" as TenantId` is required at this boundary.
 		tenantId: "conf" as TenantId,
 		delivery: "at-least-once" as const,
 		maxDeliveryAttempts: 2,

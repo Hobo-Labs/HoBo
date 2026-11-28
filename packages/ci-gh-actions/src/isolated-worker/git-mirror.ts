@@ -40,6 +40,7 @@ export function resolveGitMirrorRoot(
 	} catch (error: unknown) {
 		if (!(error instanceof Error)) throw error;
 		if (!("code" in error)) throw error;
+		// SAFETY: only `mkdirSync` is in try; its failures are Node system errors with string `code`.
 		const code = (error as Error & { code: string }).code;
 		if (code === "EACCES" || code === "EROFS" || code === "EPERM")
 			return tryRoot(fallback);

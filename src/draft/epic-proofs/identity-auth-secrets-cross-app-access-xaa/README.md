@@ -100,3 +100,5 @@ This package ships the architecture-guard evidence required by
 ## Cascade reconciliation (83d9b5c92)
 
 The secretless-config, static-key, SVID, token-broker, token-replay, and workload-attestation technical proof refreshes are absorbed without changing identity or secretless resolution behavior.
+
+The `SAFETY:` type-assertion notes restored from main in `connector-runtime-broker-contract`, `hobo-principal-ref-contract`, `static-key-escape-hatch-contract` are absorbed without changing this rollup's evidence.

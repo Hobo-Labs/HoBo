@@ -113,6 +113,7 @@ function parseFactType(type: Inspectable): string {
 
 function isDurableEventStore(store: EventStore): store is DurableEventStore {
 	if (!("commit" in store)) return false;
+	// SAFETY: DurableEventStore is the EventStore subtype that exposes commit(); tag check proves it is callable.
 	const commit = (store as DurableEventStore).commit;
 	return hasFunctionTag(commit);
 }

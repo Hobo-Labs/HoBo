@@ -247,6 +247,7 @@ export function validateBetaPilotGaHandoffEvidence(record: JsonValue) {
     return { ok: false, errors: ["beta pilot GA handoff evidence record is required"] };
   }
 
+  // SAFETY: `const value = record as Partial<BetaPilotGaHandoffEvidenceRecord>;` is required at this I/O or test boundary.
   const value = record as Partial<BetaPilotGaHandoffEvidenceRecord>;
   const evidence = Array.isArray(value.evidence) ? value.evidence : [];
   const blockers = Array.isArray(value.blockers) ? value.blockers : [];

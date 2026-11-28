@@ -312,6 +312,7 @@ export function parseComponentSpec(input: JsonValue): ComponentSpec {
 			`must match ${ID_PATTERN} (got "${id}")`,
 		);
 	}
+	// SAFETY: every field is parsed immediately above, and the optional description is added only after parsing.
 	const result: ParsedComponent = {
 		id,
 		label: expectString(raw.label, "component.label"),
@@ -359,6 +360,7 @@ export function parseIncidentRecord(input: JsonValue): IncidentRecord {
 			"resolved incidents must carry resolvedAt",
 		);
 	}
+	// SAFETY: every field is parsed immediately above, and resolvedAt is added only after the state invariant.
 	const result: ParsedIncident = {
 		id,
 		title: expectString(raw.title, "incident.title"),

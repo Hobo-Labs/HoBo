@@ -118,6 +118,7 @@ export async function executeDataMigration(
 ): Promise<DataMigrationResult> {
 	const { policy, replayErasures, journal } = options;
 	const result = await runInPlaceEvolve({
+		// SAFETY: the two port shapes are identical except that Trails' JSON type also admits `undefined`, which a JSON evidence row never contains.
 		port: options.port as EngineSchemaApplyPort,
 		plan: options.plan,
 		compatGate: options.compatGate,
@@ -128,6 +129,7 @@ export async function executeDataMigration(
 		...(journal === undefined
 			? undefined
 			: {
+					// SAFETY: the two journals differ only in that Trails' JSON type also admits `undefined`, which a journaled fact never contains.
 					journal: journal as EngineMigrationJournal,
 				}),
 	});

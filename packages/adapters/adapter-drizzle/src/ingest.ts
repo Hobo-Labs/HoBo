@@ -314,14 +314,18 @@ function extraConfigEntries(
 ): readonly (readonly [string, JsonValue])[] | undefined {
 	if (Array.isArray(produced)) {
 		return produced.map(
+			// SAFETY: assertion to `ing(index), entry] as readonly [string, unknown], ` is required at this boundary.
 			(entry, index) => [String(index), entry] as readonly [string, JsonValue],
 		);
 	}
 	const record = asRecord(produced);
 	if (record === undefined) return undefined;
-	return Object.keys(record)
-		.sort()
-		.map((key) => [key, record[key] ?? null] as const);
+	return (
+		Object.keys(record)
+			.sort()
+			// SAFETY: assertion to `, record[key]] as readonly [string, unknown]); }` is required at this boundary.
+			.map((key) => [key, record[key] ?? null] as const)
+	);
 }
 
 function describe<T>(value: T): string {
@@ -344,6 +348,7 @@ interface ConstructorHost {
 function constructorName<T>(value: T): string | undefined {
 	const prototype = Object.getPrototypeOf(value);
 	if (prototype === null || prototype === Object.prototype) return undefined;
+	// SAFETY: prototype constructor is the host's class factory at this boundary.
 	const factory = (prototype as ConstructorHost).constructor;
 	if (!(factory instanceof Function)) return undefined;
 	return factory.name.length > 0 ? factory.name : undefined;

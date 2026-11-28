@@ -45,6 +45,7 @@ const PACT_SOURCE = JSON.parse(
 	),
 );
 
+// SAFETY: PACT_SOURCE is the repository-owned Pact schema under test.
 const PACT = PACT_SOURCE as {
 	consumer: { name: string };
 	provider: { name: string };
@@ -82,6 +83,7 @@ describe("hobo-resource-intent-declaration (provider contract)", () => {
 				thrown = error;
 			}
 			expect(thrown).toBeInstanceOf(ResourceIntentError);
+			// SAFETY: the preceding assertion verifies the caught value is ResourceIntentError.
 			const error = thrown as ResourceIntentError;
 			expect(error.code).toBe(interaction.response.body.code);
 			expect(error.path).toBe(interaction.response.body.path);

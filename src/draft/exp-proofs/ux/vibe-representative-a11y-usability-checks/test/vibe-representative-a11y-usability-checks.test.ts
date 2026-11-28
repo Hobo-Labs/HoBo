@@ -139,6 +139,7 @@ describe("vibe representative accessibility and usability checks", () => {
       () =>
         parseVibeRepresentativeA11yUsabilityChecks({
           ...VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS,
+          // SAFETY: `sourceIssues: ["HOBO-577"] as never,` is required at this I/O or test boundary.
           sourceIssues: ["HOBO-577"] as never,
         }),
       VibeRepresentativeChecksParseError,
@@ -148,6 +149,7 @@ describe("vibe representative accessibility and usability checks", () => {
       () =>
         parseVibeRepresentativeA11yUsabilityChecks({
           ...VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS,
+          // SAFETY: `proofModeLabels: ["live"] as never,` is required at this I/O or test boundary.
           proofModeLabels: ["live"] as never,
         }),
       VibeRepresentativeChecksParseError,
@@ -204,6 +206,7 @@ describe("vibe representative accessibility and usability checks", () => {
   });
 
   it("keeps Pact and CUE boundary artifacts aligned with parsed representative checks", () => {
+    // SAFETY: `const pact = JSON.parse(` is required at this I/O or test boundary.
     const pact = JSON.parse(
       readFileSync(
         new URL(
@@ -219,6 +222,7 @@ describe("vibe representative accessibility and usability checks", () => {
     };
 
     const parsed = parseVibeRepresentativeA11yUsabilityChecks(
+      // SAFETY: `pact.interactions[0].response.body as typeof VIBE_REPRESENTATIVE_A11Y_USABILITY_` is required at this I/O or test boundary.
       pact.interactions[0].response.body as typeof VIBE_REPRESENTATIVE_A11Y_USABILITY_CHECKS,
     );
     assert.deepEqual(

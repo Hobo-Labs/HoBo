@@ -256,6 +256,7 @@ function seededUnit(input: string): number {
 }
 
 function stableObject<T extends JsonObject>(value: T): T {
+	// SAFETY: assertion to `Object.fromEntries( Object.entries(value).sort(([left], [right]) => left.localeCompare(right)), ) as T` is required at this boundary.
 	return Object.fromEntries(
 		Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
 	) as T;
@@ -265,6 +266,7 @@ function clone<T>(value: T): T {
 	if (structuredClone instanceof Function) {
 		return structuredClone(value);
 	}
+	// SAFETY: assertion to `JSON.parse(JSON.stringify(value)) as T` is required at this boundary.
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 

@@ -88,3 +88,5 @@ This package ships the architecture-guard evidence required by
 ## Cascade reconciliation (83d9b5c92)
 
 The `slsa-provenance-certification-contract` technical proof refresh is absorbed without changing build provenance or conformance evidence.
+
+The `SAFETY:` type-assertion notes restored from main in `component-host-conformance-suite`, `hobo-componentize-contract`, `hobo-core-contract`, `hobo-wit-toolchain-contract`, `signed-artifact-publish-install-contract`, `slsa-provenance-certification-contract` are absorbed without changing this rollup's evidence.

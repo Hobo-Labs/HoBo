@@ -237,6 +237,7 @@ describe("offer and evidence agreement", () => {
 
 describe("receipt signing surface", () => {
 	it("covers guest evidence in the canonical signing payload", () => {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const guest = parseGuestResolutionEvidence(
 			evidence(),
 		) as GuestResolutionEvidence;
@@ -245,6 +246,7 @@ describe("receipt signing surface", () => {
 			requestId: "req-1",
 			brokerId: "broker-1",
 			catalogHash: DIGEST_A,
+			// SAFETY: assertion required at this I/O or test boundary.
 			policyHash: DIGEST_B as ResolutionReceipt["policyHash"],
 			placementPolicyId: "default",
 			placements: [

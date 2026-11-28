@@ -29,6 +29,7 @@ describe("anon-server-host-chain cooldown", () => {
 		dirs.push(dir);
 		const file = path.join(dir, "cooldown.json");
 		await writeOpenpouchCooldown("429 rate limit", 60_000, file);
+		// SAFETY: assertion required at this I/O boundary.
 		const raw = JSON.parse(await readFile(file, "utf8")) as { until: number };
 		expect(raw.until).toBeGreaterThan(Date.now());
 		const active = await readOpenpouchCooldown(file);

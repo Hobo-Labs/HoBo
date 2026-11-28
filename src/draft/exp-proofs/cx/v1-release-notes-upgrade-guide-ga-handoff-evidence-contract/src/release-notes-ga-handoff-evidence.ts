@@ -281,6 +281,7 @@ export function validateReleaseNotesGaHandoffEvidence(record: JsonValue) {
     return { ok: false, errors: ["release notes GA handoff evidence record is required"] };
   }
 
+  // SAFETY: `const value = record as Partial<ReleaseNotesGaHandoffEvidenceRecord>;` is required at this I/O or test boundary.
   const value = record as Partial<ReleaseNotesGaHandoffEvidenceRecord>;
   const evidence = Array.isArray(value.evidence) ? value.evidence : [];
   const blockers = Array.isArray(value.blockers) ? value.blockers : [];

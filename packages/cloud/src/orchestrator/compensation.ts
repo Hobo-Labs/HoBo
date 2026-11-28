@@ -206,6 +206,7 @@ export async function runCompensation(
 			reason: triggeringFailure.reason,
 		};
 		const lastSeq =
+			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
 		await emit(deps.store, stream, [deploymentTransitionStarted(transition)], {

@@ -52,6 +52,7 @@ describe("package surface", () => {
 			"onDelete",
 		]);
 		expect(HOBO_PROVIDER_GITHUB_PACKAGE).toBe("@hobo/provider-github");
+		// SAFETY: package.json is a checked-in manifest with a name and dependencies.
 		const manifest = JSON.parse(
 			readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 		) as { name: string; dependencies: Record<string, string> };

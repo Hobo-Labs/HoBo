@@ -89,6 +89,7 @@ function refusalOf(fn: () => void): Refusal {
 		fn();
 		return { code: "NO_THROW", message: "" };
 	} catch (error) {
+		// SAFETY: `const failure = error as { code?: string; message?: string };` is required at this I/O or test boundary.
 		const failure = error as { code?: string; message?: string };
 		return { code: failure.code ?? "NO_CODE", message: failure.message ?? "" };
 	}
@@ -134,6 +135,7 @@ describe("parseYardBindings treats rows as a set", () => {
 				fc.nat(),
 				fc.nat(),
 				(rows, pickSeed, insertSeed) => {
+					// SAFETY: `const source = rows[pickSeed % rows.length] as YardBindingInput;` is required at this I/O or test boundary.
 					const source = rows[pickSeed % rows.length] as YardBindingInput;
 					const duplicate: YardBindingInput = {
 						...source,

@@ -53,6 +53,7 @@ export function createConformanceSuite(
 			...cloneData(definition.coverage),
 			requiredFunctions,
 		}),
+		// SAFETY: assertion to `Object.freeze(cases) as SuiteCase[]` is required at this boundary.
 		cases: Object.freeze(cases) as SuiteCase[],
 	});
 }

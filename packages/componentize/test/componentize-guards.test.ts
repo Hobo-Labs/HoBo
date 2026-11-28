@@ -51,6 +51,7 @@ async function messageOf(fn: () => Promise<BuildResult>): Promise<string> {
 }
 
 function build(root: string, overrides: BuildOverrides = {}) {
+	// SAFETY: test overrides intentionally exercise missing and drifted toolchain fields.
 	return componentizeHelloBindle({
 		sourceRoot: root,
 		sourceDateEpoch: EPOCH,

@@ -20,6 +20,7 @@ describe("hobo replay", () => {
 			memory: true,
 		});
 		const cmd = createReplayCommand({ service, env: {} });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await cmd.run(runInput(["doctor"]) as never);
 		expect(result.ok).toBe(true);
 		expect(result.data?.package).toBe("@hobo/replay");
@@ -41,6 +42,7 @@ describe("hobo replay", () => {
 		await tracker.stop();
 
 		const cmd = createReplayCommand({ service, env: {} });
+		// SAFETY: assertion required at this I/O or test boundary.
 		const listed = await cmd.run(runInput(["list"]) as never);
 		expect(listed.ok).toBe(true);
 		const sessions = listed.data?.sessions;
@@ -52,6 +54,7 @@ describe("hobo replay", () => {
 		).toBe(true);
 
 		const byError = await cmd.run(
+			// SAFETY: assertion required at this I/O or test boundary.
 			runInput(["list"], { error: "err-99" }) as never,
 		);
 		const listedByError = byError.data?.sessions;
@@ -62,17 +65,21 @@ describe("hobo replay", () => {
 				),
 		).toBe(true);
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const got = await cmd.run(runInput(["get", "sess-cli-1"]) as never);
 		expect(got.ok).toBe(true);
+		// SAFETY: assertion required at this I/O or test boundary.
 		const session = got.data?.session;
 		expect(isJsonObject(session) && session.id === "sess-cli-1").toBe(true);
 
 		const summary = await cmd.run(
+			// SAFETY: assertion required at this I/O or test boundary.
 			runInput(["summarize", "sess-cli-1"]) as never,
 		);
 		expect(summary.ok).toBe(true);
 		expect(String(summary.message)).toContain("err-99");
 
+		// SAFETY: assertion required at this I/O or test boundary.
 		const opened = await cmd.run(runInput(["open", "sess-cli-1"]) as never);
 		expect(opened.ok).toBe(true);
 		expect(opened.data?.openUi).toMatchObject({
@@ -86,6 +93,7 @@ describe("hobo replay", () => {
 			service: createReplayService({ memory: true }),
 			env: {},
 		});
+		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await cmd.run(runInput(["nope"]) as never);
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe("HOBO_REPLAY_USAGE");

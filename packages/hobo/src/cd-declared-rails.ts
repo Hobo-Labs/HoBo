@@ -99,6 +99,7 @@ function parseRail(
 		activationStatus: "active",
 		...(delivery !== undefined ? { delivery } : undefined),
 	});
+	// SAFETY: createRail returns a sha256 content digest.
 	const railDigest = rail.contentHash as Digest;
 	return Object.freeze({
 		entry: Object.freeze({
@@ -106,6 +107,7 @@ function parseRail(
 			railDigest,
 			stationId: rail.stationId,
 			status: "active",
+			// SAFETY: createRail parsed delivery as a JSON object.
 			...(rail.delivery !== undefined
 				? { delivery: rail.delivery as JsonObject }
 				: undefined),

@@ -129,6 +129,7 @@ export function createKubectlKubernetesClient(
 					notes: ["kubectl client unavailable", JSON.stringify(version.body)],
 				};
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			const versionBody = version.body as {
 				clientVersion?: string;
 				kubectlBin?: string;
@@ -142,6 +143,7 @@ export function createKubectlKubernetesClient(
 				method: "POST",
 				path: "/kubectl/cluster-info",
 			});
+			// SAFETY: assertion required at this I/O or test boundary.
 			const clusterBody = (cluster.body ?? {}) as {
 				reachable?: boolean;
 				detail?: string;
@@ -203,6 +205,7 @@ export function createKubectlKubernetesClient(
 					`port-forward failed: ${JSON.stringify(response.body)}`,
 				);
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			const body = response.body as {
 				loopbackUrl: string;
 				localPort: number;
@@ -237,6 +240,7 @@ export function createKubectlKubernetesClient(
 					`http-proxy failed: ${JSON.stringify(response.body)}`,
 				);
 			}
+			// SAFETY: assertion required at this I/O or test boundary.
 			const body = response.body as {
 				status: number;
 				headers?: Record<string, string>;

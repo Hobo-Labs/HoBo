@@ -139,6 +139,7 @@ const ordersFold: ProjectionFold = {
 	name: "orders-projection",
 	async project(event, read): Promise<readonly RecordMutation[]> {
 		if (!ORDER_EVENTS.has(event.type)) return [];
+		// SAFETY: the order events appended by this file carry these JSON bodies.
 		const data = event.data as { id: string; status?: string; total?: string };
 		const { key } = order(data.id, "-", "0");
 		if (event.type === "order.Recorded") {
@@ -239,6 +240,7 @@ describe("event-log patterns on the real event store and real SQLite engines", (
 		const log = eventStore("log");
 		const target = sqlite("projected");
 		const toEvents = (change: ChangeEnvelope): readonly PivotEvent[] => {
+			// SAFETY: the canonical key of the orders schema is a one-element array.
 			const [id] = JSON.parse(change.key) as [string];
 			return change.op === "delete" || change.record === undefined
 				? [{ streamId: `order:${id}`, type: "order.Removed", data: { id } }]

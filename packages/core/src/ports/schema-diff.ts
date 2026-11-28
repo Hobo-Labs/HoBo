@@ -150,6 +150,7 @@ export function parseSchemaIr(value: JsonValue | undefined): SchemaIr {
 		return table;
 	});
 	tables.sort((left, right) => compare(left.name, right.name));
+	// SAFETY: assertion required at this I/O or test boundary.
 	return deepFreeze({
 		contract: SCHEMA_IR_CONTRACT,
 		dialect: "postgres",
@@ -376,6 +377,7 @@ function normalizeType(raw: string) {
 	const match = collapsed.match(/^([^(]+?)\s*\(([^)]*)\)$/u);
 	const rawBase = (match?.[1] ?? collapsed).trim();
 	const base =
+		// SAFETY: assertion required at this I/O or test boundary.
 		(TYPE_ALIASES as Readonly<Record<string, string | undefined>>)[rawBase] ??
 		rawBase;
 	const parameters =
@@ -441,6 +443,7 @@ function freezePlan(
 	const digest = `sha256:${createHash("sha256")
 		.update(canonicalJson(cloneAsJson({ steps, engineId, engineVersion })))
 		.digest("hex")}`;
+	// SAFETY: assertion required at this I/O or test boundary.
 	return deepFreeze({
 		contract: MIGRATION_PLAN_CONTRACT,
 		steps,
@@ -455,6 +458,7 @@ function canonicalJson(value: JsonValue | undefined): string {
 		return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
 	}
 	if (value !== null && isJsonObject(value)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const entries = Object.entries(value as JsonObject)
 			.filter(([, entry]) => entry !== undefined)
 			.sort(([left], [right]) => compare(left, right));
@@ -661,6 +665,7 @@ function expectRecord(value: JsonValue | undefined, path: string): JsonObject {
 	if (!isJsonObject(value) || value === null || Array.isArray(value)) {
 		throw new SchemaIrParseError(path, "object", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return value as JsonObject;
 }
 

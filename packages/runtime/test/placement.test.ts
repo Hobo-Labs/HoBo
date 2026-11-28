@@ -16,6 +16,7 @@ function stubHost(label: string): ActorHost {
 		state() {
 			return {
 				append: () => ({ streamId: "s", seq: 1, fenceToken: 1n }),
+				// SAFETY: assertion to `{} as never` is required at this boundary.
 				read: () => ({ streamId: "s", seq: 0, state: {} as never }),
 			};
 		},

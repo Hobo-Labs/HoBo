@@ -207,6 +207,7 @@ export function installSdkTarballsIntoApp(
 			const raw: unknown = JSON.parse(
 				readFileSync(join(pkgDir, "package.json"), "utf8"),
 			);
+			// SAFETY: npm pack always includes `name` in package/package.json.
 			const manifest = raw as TarballManifest;
 			if (!manifest.name || manifest.name !== entry.public) {
 				throw new Error(

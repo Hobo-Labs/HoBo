@@ -83,6 +83,7 @@ export async function shopApi(request: Request): Promise<Response> {
 		let order: OrderRequest;
 		try {
 			const body = await request.json();
+			// SAFETY: request JSON is untyped; parseOrderRequest is the boundary.
 			order = parseOrderRequest(body as JsonValue);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

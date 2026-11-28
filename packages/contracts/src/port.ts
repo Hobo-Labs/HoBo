@@ -12,6 +12,7 @@ const contractEngineDescriptor = createPortDescriptor({
 	interface: CONTRACT_ENGINE_INTERFACE,
 	stability: "preview",
 });
+// SAFETY: createPortDescriptor brands this seam as a ProviderPort.
 const contractEnginePort = contractEngineDescriptor as ProviderPort;
 export const CONTRACT_ENGINE_PORT: ProviderPort = contractEnginePort;
 
@@ -21,5 +22,6 @@ const gatekeeperDescriptor = createPortDescriptor({
 	interface: GATEKEEPER_INTERFACE,
 	stability: "preview",
 });
+// SAFETY: createPortDescriptor brands this seam as a ProviderPort.
 const gatekeeperPort = gatekeeperDescriptor as ProviderPort;
 export const GATEKEEPER_PORT: ProviderPort = gatekeeperPort;

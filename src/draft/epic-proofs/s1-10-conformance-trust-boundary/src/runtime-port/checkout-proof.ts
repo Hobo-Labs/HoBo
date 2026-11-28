@@ -13,6 +13,7 @@ export async function proveCheckoutDurability(backend: RuntimeDurabilityBackend)
   );
 
   const cart = actorHost.state(`cart:${runId}`, {
+    // SAFETY: assertion to `[] as string[]` is required at this boundary.
     initialState: { reservedItems: [] as string[] },
     fold: (state: { reservedItems: string[] }, event: { type: string; sku?: string }) =>
       event.type === "cart.ItemReserved"
@@ -88,6 +89,7 @@ function checkoutInitialState(runId: string) {
   return {
     runId,
     status: "pending",
+    // SAFETY: assertion to `[] as string[]` is required at this boundary.
     reservedItems: [] as string[],
     chargedCents: 0,
     duplicateCharges: 0,
@@ -125,8 +127,10 @@ function foldCheckoutEvents(events: Array<{ type: string; seq: number; data?: Js
   let state = checkoutInitialState(runId);
 
   for (const event of [...events].sort((left, right) => left.seq - right.seq)) {
+    // SAFETY: assertion to `event.type as keyof typeof handlers` is required at this boundary.
     const handler = handlers[event.type as keyof typeof handlers];
     if (handler) {
+      // SAFETY: assertion to `event as never` is required at this boundary.
       state = handler(state, event as never);
     }
   }

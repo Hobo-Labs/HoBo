@@ -43,6 +43,7 @@ async function runCommand(
 				env,
 			},
 			(error, stdout, stderr) => {
+				// SAFETY: `if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {` is required at this I/O or test boundary.
 				if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {
 					reject(new Error(`command not found: ${command}`));
 					return;

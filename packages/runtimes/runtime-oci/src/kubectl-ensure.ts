@@ -50,6 +50,7 @@ function tryKubectl(bin: string): { version: string } | null {
 		return m?.[1] ? { version: m[1] } : { version: "0.0.0" };
 	}
 	try {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const j = JSON.parse(r.stdout) as {
 			clientVersion?: { gitVersion?: string };
 		};

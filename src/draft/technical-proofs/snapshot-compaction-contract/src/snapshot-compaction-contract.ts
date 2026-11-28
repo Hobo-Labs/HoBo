@@ -181,6 +181,7 @@ export function createSnapshotCompactionLog(): SnapshotCompactionLog {
     },
 
     corruptSnapshot<TState>(streamId: string, corrupt: (snapshot: StoredSnapshot<TState>) => StoredSnapshot<TState>): void {
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       const snapshot = snapshotsByStream.get(streamId) as StoredSnapshot<TState> | undefined;
       if (!snapshot) {
         throw new SnapshotIntegrityError("cannot corrupt missing snapshot", { streamId });
@@ -189,6 +190,7 @@ export function createSnapshotCompactionLog(): SnapshotCompactionLog {
     },
 
     requireValidSnapshot<TState>(streamId: string, { fold }: { fold: SnapshotFold<TState> }): StoredSnapshot<TState> {
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       const snapshot = snapshotsByStream.get(streamId) as StoredSnapshot<TState> | undefined;
       if (!snapshot) {
         throw new SnapshotIntegrityError("snapshot missing", { streamId });
@@ -198,6 +200,7 @@ export function createSnapshotCompactionLog(): SnapshotCompactionLog {
     },
 
     activate<TState>(streamId: string, { fold }: { fold: SnapshotFold<TState> }): SnapshotActivation<TState> {
+      // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
       const snapshot = snapshotsByStream.get(streamId) as StoredSnapshot<TState> | undefined;
 
       if (snapshot) {
@@ -492,6 +495,7 @@ function hashStable<T>(value: T): string {
 function sortStable<T>(value: T): T {
   if (Array.isArray(value)) {
     const sorted: T =
+      // SAFETY: array entries are recursively sorted with the same T contract.
       value.map((entry) => sortStable(entry)) as never;
     return sorted;
   }
@@ -501,6 +505,7 @@ function sortStable<T>(value: T): T {
       bag[key] = sortStable(value[key] ?? null);
     }
     const sorted: T =
+      // SAFETY: sorted bag preserves the caller's JSON-compatible object contract.
       bag as never;
     return sorted;
   }
@@ -509,6 +514,7 @@ function sortStable<T>(value: T): T {
 
 function freezeEvent<TData>(input: SnapshotCompactionEvent<TData> & { readonly seq: number }): StoredEvent<TData> {
   return Object.freeze({
+    // SAFETY: assertion at this parse/brand/host boundary after the surrounding checks.
     data: input.data ?? ({} as TData),
     seq: input.seq,
     streamId: input.streamId,

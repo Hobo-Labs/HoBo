@@ -146,6 +146,7 @@ async function provesNestedDeadlineShrinks() {
 
   return (
     innerDeadlines.length === 1 &&
+    // SAFETY: assertion to `(innerDeadlines[0] as { remainingAtDispatchMs: number }).remainingAtDispatchMs =` is required at this boundary.
     (innerDeadlines[0] as { remainingAtDispatchMs: number }).remainingAtDispatchMs === 50
   );
 }

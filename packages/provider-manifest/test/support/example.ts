@@ -31,13 +31,16 @@ export function example(): ParsedProviderManifest {
 type Json = { [key: string]: JsonValue };
 
 export function exampleJson(): Json {
+	// SAFETY: a message's JSON form is always an object.
 	return structuredClone(toJson(ProviderManifestSchema, example())) as Json;
 }
 
 export function at(value: JsonValue | undefined, ...path: (string | number)[]) {
 	let current: JsonValue | undefined = value;
 	for (const key of path) {
+		// SAFETY: test-only traversal of a document whose shape the test wrote.
 		current = (current as Record<string | number, JsonValue>)[key];
 	}
+	// SAFETY: callers mutate the object they navigated to.
 	return current as Json;
 }

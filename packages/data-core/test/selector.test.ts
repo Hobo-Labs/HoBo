@@ -754,6 +754,7 @@ describe("selectMigrationPattern", () => {
 	test("a verdict that names no roles at all — evidence from before the field existed — covers nothing", () => {
 		const { roles: _roles, ...legacy } = OK;
 		const decision = selectMigrationPattern(
+			// SAFETY: a verdict deserialised from older evidence has no `roles`; the gate must not trust the static type.
 			request({ verdict: legacy as SelectionRequest["verdict"] }),
 		);
 		assert.equal(decision.selected, undefined);

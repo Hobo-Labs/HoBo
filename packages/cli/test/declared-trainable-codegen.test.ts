@@ -944,6 +944,7 @@ async function importTrainables(projectRoot: string): Promise<{
 	const moduleUrl = pathToFileURL(
 		join(projectRoot, "src/_generated/trainables.ts"),
 	).href;
+	// SAFETY: the generated trainables module exports these bindings; the test reads them back.
 	return (await import(moduleUrl)) as Awaited<
 		ReturnType<typeof importTrainables>
 	>;

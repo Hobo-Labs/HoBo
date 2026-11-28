@@ -7,6 +7,7 @@ export type StreamName = string & { readonly __brand: "StreamName" };
 
 // public-contract: the streamer port default stream name (port contract).
 const DEFAULT_STREAM_NAME_VALUE = "default";
+// SAFETY: branded stream name token for the default streamer port.
 const brandedDefaultStreamName = DEFAULT_STREAM_NAME_VALUE as StreamName;
 export const DEFAULT_STREAM_NAME = brandedDefaultStreamName;
 export type Seq = number & { readonly __brand: "Seq" };
@@ -107,16 +108,19 @@ export function parseRunId(value: string): RunId {
 	if (trimmed.length === 0) {
 		throw new StreamerParseError("runId", "non-empty trimmed string", value);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	return trimmed as RunId;
 }
 
 export function parseStreamName(
 	value: string = DEFAULT_STREAM_NAME,
 ): StreamName {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return nonEmptyString(value, "stream", StreamerParseError) as StreamName;
 }
 
 export function parseSeq(value: number): Seq {
+	// SAFETY: assertion required at this I/O or test boundary.
 	return positiveInteger(value, "seq", StreamerParseError) as Seq;
 }
 

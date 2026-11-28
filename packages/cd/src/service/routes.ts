@@ -110,6 +110,7 @@ export function parsePathName(raw: string, subject: string): Outcome<PathName> {
 			subject,
 		);
 	}
+	// SAFETY: the checks above are exactly the PathName invariant.
 	return { ok: true, value: value as PathName };
 }
 
@@ -127,6 +128,7 @@ function parseEnum<E extends number>(
 	const found = schema.values.find(
 		(v) => v.number !== 0 && (v.name === upper || v.localName === upper),
 	);
+	// SAFETY: `found` is a value of the enum schema E was instantiated with.
 	return found === undefined ? undefined : (found.number as E);
 }
 
@@ -198,7 +200,8 @@ const DIGEST = /^sha256:[0-9a-f]{1,64}$/;
 
 export function parseDigest(raw: string, subject: string): Outcome<Digest> {
 	return DIGEST.test(raw)
-		? { ok: true, value: raw as Digest }
+		? // SAFETY: DIGEST matched, which is the Digest invariant.
+			{ ok: true, value: raw as Digest }
 		: serviceRefusal(
 				"query-invalid",
 				`${subject} must be a sha256:<hex> digest`,
@@ -224,6 +227,7 @@ export function parsePosition(raw: string): Outcome<EventPosition> {
 			"last-event-id",
 		);
 	}
+	// SAFETY: a non-negative decimal within 64 bits is a valid EventPosition.
 	return { ok: true, value: value as EventPosition };
 }
 
@@ -257,10 +261,12 @@ function optional<T>(
 
 function asFanout(name: PathName): FanoutId {
 	const raw: string = name;
+	// SAFETY: a parsed PathName satisfies the FanoutId invariant (non-empty, printable, no slash).
 	return raw as FanoutId;
 }
 
 function asCamp(o: Outcome<PathName>): Outcome<CampId> {
+	// SAFETY: a parsed PathName satisfies the CampId invariant (non-empty, printable, no slash).
 	return o as Outcome<CampId>;
 }
 

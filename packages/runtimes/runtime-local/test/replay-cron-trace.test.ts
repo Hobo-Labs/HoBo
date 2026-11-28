@@ -183,6 +183,7 @@ describe("cron traces it refuses", () => {
 				order: 99,
 			},
 		];
+		// SAFETY: the fixture builds a wire-shaped trace entry.
 		expect(() => replayClockTrace(invented as never)).toThrow(
 			/diverged from live trace/,
 		);
@@ -196,6 +197,7 @@ describe("cron traces it refuses", () => {
 		const renumbered = trace.map((entry) =>
 			entry.type === "cron.fired" ? { ...entry, occurrence: 1 } : entry,
 		);
+		// SAFETY: the fixture builds a wire-shaped trace entry.
 		expect(() => replayClockTrace(renumbered as never)).toThrow(
 			NondeterministicClockError,
 		);
@@ -209,6 +211,7 @@ describe("cron traces it refuses", () => {
 		const edited = trace.map((entry) =>
 			entry.type === "cron.scheduled" ? { ...entry, everyMs: 2_000 } : entry,
 		);
+		// SAFETY: the fixture builds a wire-shaped trace entry.
 		expect(() => replayClockTrace(edited as never)).toThrow(
 			NondeterministicClockError,
 		);

@@ -153,8 +153,10 @@ Then(
   (code: string) => {
     const error = world.planningError;
     assert.ok(error instanceof ComponentHostPlanningError, "planning must throw the typed error");
+    // SAFETY: assertion to `r as ComponentHostPlanningError & { code: string }).co` is required at this boundary.
     assert.equal((error as ComponentHostPlanningError & { code: string }).code, code);
     assert.deepEqual(
+      // SAFETY: assertion to `r as ComponentHostPlanningError & { expectedVersions: string[] }).ex` is required at this boundary.
       (error as ComponentHostPlanningError & { expectedVersions: string[] }).expectedVersions,
       ["wasmtime/46.0.1"],
       "the error names the manifest-pinned versions",

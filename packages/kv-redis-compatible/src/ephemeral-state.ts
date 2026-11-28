@@ -100,6 +100,7 @@ function asArray(raw: RedisValue, operation: string): readonly RedisValue[] {
 	if (!Array.isArray(raw)) {
 		throw contract(`ephemeral ${operation} expected an array reply`);
 	}
+	// SAFETY: Array.isArray narrowed a RedisValue, whose only array arm is RedisValue[].
 	return raw as readonly RedisValue[];
 }
 

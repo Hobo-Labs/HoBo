@@ -45,6 +45,7 @@ function symbolValue<T>(
 	symbol: symbol,
 ): JsonValue | ExtraConfigBuilder | undefined {
 	if (value === null || value === undefined) return undefined;
+	// SAFETY: drizzle hosts carry well-known registry symbols at this boundary.
 	const bag: SymbolBag = value as never;
 	return bag[symbol];
 }
@@ -53,10 +54,12 @@ function ownSymbolsOf<T>(value: T): readonly symbol[] {
 	const seen: symbol[] = [];
 	let cursor: object | null = null;
 	if (value !== null && value !== undefined) {
+		// SAFETY: drizzle hosts are objects walked for registry symbols.
 		cursor = value as never;
 	}
 	while (cursor !== null && cursor !== Object.prototype) {
 		seen.push(...Object.getOwnPropertySymbols(cursor));
+		// SAFETY: prototype walk stays on object hosts at this drizzle boundary.
 		cursor = Object.getPrototypeOf(cursor) as object | null;
 	}
 	return seen;
@@ -103,6 +106,7 @@ export function extraConfigBuilder<T>(
 ): ExtraConfigBuilder | undefined {
 	const builder = symbolValue(table, DRIZZLE_EXTRA_CONFIG_BUILDER_SYMBOL);
 	if (!(builder instanceof Function)) return undefined;
+	// SAFETY: extra-config builder is the ExtraConfigBuilder callback at this boundary.
 	return builder as ExtraConfigBuilder;
 }
 

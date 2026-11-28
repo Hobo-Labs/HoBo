@@ -115,6 +115,7 @@ export function simulateGovernedDeploy(options: {
     status: 200,
   });
 
+  // SAFETY: assertion to `ents.at(-1)?.payload?.liveUrl as string; ` is required at this boundary.
   const liveUrl = events.at(-1)?.payload?.liveUrl as string;
 
   return Object.freeze({
@@ -279,6 +280,7 @@ export function simulateGatekeeperBlock(options: {
     status: "blocked" as const,
     events,
     blocked: true,
+    // SAFETY: assertion to `ts.find((event) => event.type === "deployment.PlanRejected")?.payload ?.reason as string, ` is required at this boundary.
     explainableReason: events.find((event) => event.type === "deployment.PlanRejected")?.payload
       ?.reason as string,
   });

@@ -24,6 +24,7 @@ test("slow provider exceeds caller deadline with typed transient classification"
         get: async (_payload, context) => {
           context.signal.addEventListener(
             "abort",
+            // SAFETY: assertion to `() => cancellations.push((context.signal.reason as { code: string }).code),` is required at this boundary.
             () => cancellations.push((context.signal.reason as { code: string }).code),
             { once: true },
           );

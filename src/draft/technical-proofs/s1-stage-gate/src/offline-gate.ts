@@ -102,6 +102,7 @@ export function installOfflineGuard(enabled: boolean): () => void {
   }
 
   const originalConnect = net.Socket.prototype.connect;
+  // SAFETY: `net.Socket.prototype.connect = function patchedConnect(...args: JsonValue[]) {` is required at this I/O or test boundary.
   net.Socket.prototype.connect = function patchedConnect(..._args: JsonValue[]) {
     throw new Error("HOBO_OFFLINE_GUARD blocked network socket");
   } as typeof net.Socket.prototype.connect;

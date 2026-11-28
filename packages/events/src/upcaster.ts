@@ -415,6 +415,7 @@ export function validateEventBody(
 	if (!body || Object(body) !== body || Array.isArray(body)) {
 		return { ok: false, errors: ["event body must be an object"] };
 	}
+	// SAFETY: the preceding guard excludes null, primitives, and arrays.
 	const record = body as EventBody;
 	const declared = new Set(schema.fields.map((field) => field.name));
 	for (const field of schema.fields) {
@@ -426,6 +427,7 @@ export function validateEventBody(
 		}
 		if (
 			field.type === "u32" &&
+			// SAFETY: Number.isInteger proves this schema-declared value is numeric.
 			(!Number.isInteger(value) || Number(value) < 0)
 		) {
 			errors.push(`${field.name} must be a non-negative integer`);
@@ -468,6 +470,7 @@ export function encodeEventBody(
 		const value = body[field.name];
 		if (value === undefined) continue;
 		if (field.type === "string") {
+			// SAFETY: schema validation immediately above accepts only string values here.
 			const bytes = Buffer.from(value as string, "utf8");
 			chunks.push(
 				encodeVarint((field.tag << 3) | 2),
@@ -481,6 +484,7 @@ export function encodeEventBody(
 			continue;
 		}
 		if (field.type === "strings") {
+			// SAFETY: schema validation immediately above accepts only string lists here.
 			for (const item of value as readonly string[]) {
 				const bytes = Buffer.from(item, "utf8");
 				chunks.push(
@@ -492,6 +496,7 @@ export function encodeEventBody(
 			continue;
 		}
 		if (field.type === "json") {
+			// SAFETY: schema validation immediately above accepts only JSON objects here.
 			const bytes = Buffer.from(
 				canonicalJson(value as EventJsonObject),
 				"utf8",
@@ -503,6 +508,7 @@ export function encodeEventBody(
 			);
 			continue;
 		}
+		// SAFETY: schema validation immediately above accepts only u32 values here.
 		chunks.push(encodeVarint(field.tag << 3), encodeVarint(value as number));
 	}
 	return Buffer.concat(chunks);
@@ -550,6 +556,7 @@ export function decodeEventBody(schema: EventBodySchema, bytes: Buffer) {
 			).toString("utf8");
 			offset += length.value;
 			if (field.type === "json") {
+				// SAFETY: a json field's wire form is the canonical text of a JSON object, checked by the validator after decoding.
 				decoded[field.name] = JSON.parse(text) as EventJsonObject;
 				continue;
 			}
@@ -585,6 +592,7 @@ function readVarint(bytes: Buffer, startOffset: number) {
 	let value = 0;
 	let shift = 0;
 	for (let offset = startOffset; offset < bytes.length; offset += 1) {
+		// SAFETY: the loop bound guarantees a byte exists at this offset.
 		const byte = bytes[offset] as number;
 		value += (byte & 0x7f) * 2 ** shift;
 		if ((byte & 0x80) === 0) {
@@ -623,6 +631,7 @@ function message(error: ThrownValue): string {
 }
 
 function deepClone<T>(value: T): T {
+	// SAFETY: JSON round-tripping preserves the caller's cloneable T shape.
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -640,6 +649,7 @@ function canonicalJson(value: CanonicalValue): string {
 		return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
 	}
 	if (value && Object(value) === value) {
+		// SAFETY: the object branch guarantees an object suitable for keyed traversal.
 		const record = value as { readonly [key: string]: CanonicalValue };
 		return `{${Object.keys(record)
 			.sort()

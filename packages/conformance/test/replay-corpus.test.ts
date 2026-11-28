@@ -59,6 +59,7 @@ describe("replay==live production corpus (S1-16)", () => {
 				index === corpus.events.length - 1
 					? {
 							...event,
+							// SAFETY: assertion to `event.data as object` is required at this boundary.
 							data: { ...(event.data as object), message: "mutated" },
 						}
 					: event,

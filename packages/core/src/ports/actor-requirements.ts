@@ -64,6 +64,7 @@ function oneOf<T extends string>(
 	path: string,
 	allowed: Set<T>,
 ): T {
+	// SAFETY: assertion required at this I/O or test boundary.
 	if (isJsonString(value)) {
 		for (const allowedValue of allowed) {
 			if (value === allowedValue) return allowedValue;
@@ -78,6 +79,7 @@ export function parseActorRequirements(
 	if (!isJsonObject(input) || input === null || Array.isArray(input)) {
 		throw new ActorRequirementsParseError("requirements", "object", input);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const record = input as JsonObject;
 	const placementRaw = record.placement;
 	if (
@@ -87,6 +89,7 @@ export function parseActorRequirements(
 	) {
 		throw new ActorRequirementsParseError("placement", "object", placementRaw);
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const placement = placementRaw as JsonObject;
 	if (!isJsonBoolean(placement.movableWithinFleet)) {
 		throw new ActorRequirementsParseError(

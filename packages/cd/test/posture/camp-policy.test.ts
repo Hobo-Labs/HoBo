@@ -73,6 +73,7 @@ async function qualifyOnInform(
 			},
 		],
 	});
+	// SAFETY: toJson of a message is a JSON object.
 	await h.store.put(
 		CD_STREAMS.pipeline("rail-eu"),
 		CD_EVENTS.PipelineApplied,
@@ -89,6 +90,7 @@ async function qualifyOnInform(
 	await h.store.put(
 		CD_STREAMS.freight(freight.freightId),
 		CD_EVENTS.FreightQualified,
+		// SAFETY: toJson of a message is a JSON object.
 		toJson(FreightQualifiedRecordSchema, qualified) as JsonObject,
 	);
 }
@@ -189,6 +191,7 @@ describe("CampPolicy: inform then enforce", () => {
 		await h.store.put(
 			CD_STREAMS.freight(freight.freightId),
 			CD_EVENTS.FreightApproved,
+			// SAFETY: toJson of a message is a JSON object.
 			toJson(FreightApprovedRecordSchema, approval(T0 - 1)) as JsonObject,
 		);
 		const expired = await h.policy.bind(
@@ -204,6 +207,7 @@ describe("CampPolicy: inform then enforce", () => {
 		await h.store.put(
 			CD_STREAMS.freight(freight.freightId),
 			CD_EVENTS.FreightApproved,
+			// SAFETY: toJson of a message is a JSON object.
 			toJson(FreightApprovedRecordSchema, approval(T0 + HOUR)) as JsonObject,
 		);
 		const approved = await h.policy.bind(

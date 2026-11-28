@@ -113,6 +113,7 @@ function refine(record: PostgresStoreConfigRecord): PostgresStoreConfig {
 		),
 		applicationName,
 	};
+	// SAFETY: every field above was parsed or range-checked; that is the brand.
 	return Object.freeze(config) as PostgresStoreConfig;
 }
 
@@ -121,6 +122,7 @@ export function parsePostgresStoreConfig(
 ): PostgresStoreConfig {
 	let record: PostgresStoreConfigRecord;
 	try {
+		// SAFETY: fromJson validates every field against the generated schema.
 		record = fromJson(PostgresStoreConfigRecordSchema, input as JsonValue);
 	} catch (error) {
 		throw new StoragePostgresError(

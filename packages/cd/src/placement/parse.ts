@@ -244,6 +244,7 @@ export function parsePlacement(
 		);
 	}
 	if (reasons.length > 0) return { ok: false, reasons };
+	// SAFETY: every field was checked above; the brand records that.
 	return {
 		ok: true,
 		value: create(PlacementRecordSchema, placement) as ParsedPlacement,
@@ -315,6 +316,7 @@ export function parseScoreSnapshot(
 		);
 	}
 	if (reasons.length > 0) return { ok: false, reasons };
+	// SAFETY: every field was checked above; the brand records that.
 	return {
 		ok: true,
 		value: create(ScoreSnapshotRecordSchema, snapshot) as ParsedScoreSnapshot,

@@ -80,6 +80,7 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: am
 			).toEqual([]);
 			program.emit();
 			await packageTypeScriptAppArtifacts(root, join(root, "out"));
+			// SAFETY: local generated modules were compiled above; the runtime helpers are reexports of the production engines.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -202,6 +203,7 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: am
 			const engine = await selectTypeScriptProjectCodegenEngine(root);
 			await runCodegen({ projectRoot: root, check: false }, { engine });
 			await compile(root);
+			// SAFETY: generated client compiles from these actual project-local implementations above.
 			const generated = (await import(
 				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
 			)) as {
@@ -310,6 +312,7 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: am
 				root,
 				join(workspace, "out/apps/shop"),
 			);
+			// SAFETY: this client was compiled from the fixture and its actual sibling dependency was bundled above.
 			const generated = (await import(
 				pathToFileURL(
 					join(workspace, "out/apps/shop/src/_generated/app-imprint/app.js"),

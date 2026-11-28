@@ -137,6 +137,7 @@ describe("emitSql toolchain gate", () => {
 			expect.unreachable("emitSql must refuse without a wired toolchain");
 		} catch (error) {
 			expect(error).toBeInstanceOf(DrizzleAdapterError);
+			// SAFETY: assertion to `error as DrizzleAdapterError` is required at this boundary.
 			const remediation = (error as DrizzleAdapterError).remediation;
 			expect(remediation.toLowerCase()).toContain(expected.toLowerCase());
 		}

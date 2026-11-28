@@ -242,6 +242,7 @@ export function getPattern(id: MigrationPatternId): MigrationPattern {
 export function isMigrationPatternId(
 	value: string,
 ): value is MigrationPatternId {
+	// SAFETY: membership test against the closed tuple of pattern ids.
 	return (MIGRATION_PATTERNS as readonly string[]).includes(value);
 }
 

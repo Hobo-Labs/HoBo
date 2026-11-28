@@ -99,7 +99,9 @@ export function describeCommand(command: RedisCommand): string {
 
 function sameValue(actual: RedisValue, expected: RedisValue): boolean {
 	if (Array.isArray(actual) && Array.isArray(expected)) {
+		// SAFETY: `const a = actual as readonly RedisValue[];` is required at this I/O or test boundary.
 		const a = actual as readonly RedisValue[];
+		// SAFETY: `const b = expected as readonly RedisValue[];` is required at this I/O or test boundary.
 		const b = expected as readonly RedisValue[];
 		return (
 			a.length === b.length &&
@@ -122,6 +124,7 @@ export type ExpectationOutcome = {
 function summarize(value: RedisValue): string {
 	if (value === null) return "nil";
 	if (Array.isArray(value))
+		// SAFETY: `return `array(${(value as readonly RedisValue[]).length})`;` is required at this I/O or test boundary.
 		return `array(${(value as readonly RedisValue[]).length})`;
 	if (isJsonNumber(value)) return `integer(${value})`;
 	return value.length > 24

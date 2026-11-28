@@ -31,6 +31,7 @@ type Interaction = {
 	};
 };
 
+// SAFETY: value was established by the surrounding parse or typed constructor.
 const contract = JSON.parse(
 	readFileSync(
 		fileURLToPath(
@@ -125,6 +126,7 @@ describe("create-db process boundary contract", () => {
 				await client.create({ idempotencyKey: "hobo-prisma-contract-02" });
 				expect.unreachable("a contracted failure must throw");
 			} catch (error) {
+				// SAFETY: value was established by the surrounding parse or typed constructor.
 				expect((error as PrismaProviderError).code).toBe(
 					item.response.mapsToHoboCode,
 				);

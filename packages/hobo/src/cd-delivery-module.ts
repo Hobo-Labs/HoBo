@@ -77,6 +77,7 @@ function parseRecords<D extends DescMessage>(
 	return value.map((item, index) => {
 		if (isMessage(item, schema)) return item;
 		try {
+			// SAFETY: fromJson parses and rejects anything that is not the schema's JSON form.
 			return fromJson(schema, item as ProtoJson);
 		} catch (error) {
 			throw new TypeError(
@@ -91,7 +92,8 @@ export function parseDeliveryModule(
 ): DeliveryModuleOutcome {
 	const root =
 		typeof exports.default === "object" && exports.default !== null
-			? (exports.default as Record<string, unknown>)
+			? // SAFETY: a default export object carries the same named members.
+				(exports.default as Record<string, unknown>)
 			: exports;
 	const known = new Set<string>([
 		...Object.keys(DELIVERY_MODULE_EXPORTS),
@@ -157,8 +159,10 @@ export const defaultModuleImporter: ModuleImporter = async (path) => {
 	const url = pathToFileURL(path).href;
 	if (/\.(c|m)?ts$/.test(path)) {
 		const { tsImport } = await import("tsx/esm/api");
+		// SAFETY: a module namespace object.
 		return (await tsImport(url, import.meta.url)) as Record<string, unknown>;
 	}
+	// SAFETY: a module namespace object.
 	return (await import(url)) as Record<string, unknown>;
 };
 
@@ -182,6 +186,7 @@ export async function loadDeliveryFile(
 					message: `${file} must hold a JSON object`,
 					remediation: INVALID_REMEDIATION,
 				};
+			// SAFETY: checked to be a non-array object above.
 			exports = parsed as Record<string, unknown>;
 		} else {
 			exports = await (options.importModule ?? defaultModuleImporter)(path);

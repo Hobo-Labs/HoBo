@@ -117,8 +117,10 @@ describe("the wire schema covers the declared shape", () => {
 				line,
 			);
 			if (match === null) continue;
+			// SAFETY: the second capture group is present because the regex matched this line.
 			const scalarType = match[2] as string;
 			if (!scalarTypes.has(scalarType)) continue;
+			// SAFETY: the first capture group is present because the regex matched this line.
 			optionalScalars.push(match[1] as string);
 		}
 

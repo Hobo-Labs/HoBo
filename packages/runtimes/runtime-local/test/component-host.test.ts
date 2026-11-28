@@ -75,6 +75,7 @@ describe("runtime-local component host", () => {
 							"handle",
 							request,
 						);
+						// SAFETY: outgoing handler returns HTTP fields at this test boundary.
 						const upstream = raw as UpstreamHttp;
 						return {
 							status: upstream.status,

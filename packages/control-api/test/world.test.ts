@@ -46,6 +46,7 @@ async function json(
 	});
 	return {
 		status: res.status,
+		// SAFETY: fetch JSON is parsed at this test I/O boundary.
 		body: (await res.json()) as JsonObject,
 	};
 }
@@ -97,6 +98,7 @@ describe("@hobo/control-api world read model", () => {
 		const snap = await json(server.url, "/v1/world/snapshot");
 		expect(snap.status).toBe(200);
 		expect(snap.body.ok).toBe(true);
+		// SAFETY: the world snapshot endpoint returns the declared WorldEnvelope.
 		const data = snap.body.data as WorldEnvelope;
 		expect(data.demo).toBe(false);
 		expect(data.seed).toBeNull();
@@ -114,7 +116,9 @@ describe("@hobo/control-api world read model", () => {
 		}
 		const snapA = await json(a.url, "/v1/world/snapshot");
 		const snapB = await json(b.url, "/v1/world/snapshot");
+		// SAFETY: the world snapshot endpoint returns the declared WorldEnvelope.
 		const dataA = snapA.body.data as WorldEnvelope;
+		// SAFETY: the world snapshot endpoint returns the declared WorldEnvelope.
 		const dataB = snapB.body.data as WorldEnvelope;
 		expect(dataA.demo).toBe(true);
 		expect(dataA.seed).toBe(7);
@@ -133,10 +137,12 @@ describe("@hobo/control-api world read model", () => {
 		});
 		expect(ingest.status).toBe(200);
 		expect(ingest.body.ok).toBe(true);
+		// SAFETY: the ingest response contract contains an accepted count.
 		const accepted = (ingest.body.data as { accepted: number }).accepted;
 		expect(accepted).toBeGreaterThanOrEqual(2);
 
 		const snap = await json(server.url, "/v1/world/snapshot");
+		// SAFETY: the world snapshot endpoint returns the declared WorldEnvelope.
 		const data = snap.body.data as WorldEnvelope;
 		expect(data.world.characters["station-a/orders-api"]?.name).toBe(
 			"orders-api",

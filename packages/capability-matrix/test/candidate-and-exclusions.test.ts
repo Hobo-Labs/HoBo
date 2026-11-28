@@ -31,6 +31,7 @@ import {
 function candidate(
 	overrides: Partial<CapabilityMatrixCandidate> = {},
 ): CapabilityMatrixCandidate {
+	// SAFETY: callers may override only fields from the known candidate shape.
 	return {
 		primitive: "data",
 		runtime: "oci",
@@ -227,6 +228,7 @@ describe("claims that reach no cell", () => {
 				{
 					profileId: "data.postgres/v1",
 					versionRange: ">=1",
+					// SAFETY: this test deliberately injects an invalid realization.
 					realization: "magic" as never,
 					conformanceRef: "suite",
 					conformance: "pass",
@@ -284,6 +286,7 @@ describe("claims that reach no cell", () => {
 					conformance: "pass",
 				},
 			],
+			// SAFETY: this test deliberately injects an invalid runtime model.
 			runtimeModels: ["oci", "quantum" as never],
 		});
 		const matrix = generateCapabilityMatrix(

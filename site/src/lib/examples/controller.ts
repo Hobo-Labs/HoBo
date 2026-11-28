@@ -1380,6 +1380,7 @@ function renderYardSelect(
 	type YardSelectElement = HTMLSelectElement & {
 		_yardState?: YardSelectState;
 	};
+	// SAFETY: the yard picker stores prior selection on the select element instance.
 	const selectState = select as YardSelectElement;
 	const picker =
 		select.closest<HTMLElement>("[data-yard-picker]") ??

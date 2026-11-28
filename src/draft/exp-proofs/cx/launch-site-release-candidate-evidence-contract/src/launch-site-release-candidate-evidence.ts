@@ -261,6 +261,7 @@ export function validateLaunchSiteReleaseCandidateEvidence(record: JsonValue) {
     return { ok: false, errors: ["launch-site release-candidate evidence record is required"] };
   }
 
+  // SAFETY: `const value = record as Partial<LaunchSiteReleaseCandidateEvidenceRecord>;` is required at this I/O or test boundary.
   const value = record as Partial<LaunchSiteReleaseCandidateEvidenceRecord>;
   const evidence = Array.isArray(value.evidence) ? value.evidence : [];
   const blockers = Array.isArray(value.blockers) ? value.blockers : [];
@@ -379,5 +380,6 @@ export function assertLaunchSiteReleaseCandidateEvidence(
     throw new Error(`launch-site release-candidate evidence invalid:\n${result.errors.join("\n")}`);
   }
 
+  // SAFETY: `return record as LaunchSiteReleaseCandidateEvidenceRecord;` is required at this I/O or test boundary.
   return record as LaunchSiteReleaseCandidateEvidenceRecord;
 }

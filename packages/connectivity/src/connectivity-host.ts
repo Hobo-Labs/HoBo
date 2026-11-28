@@ -133,6 +133,7 @@ async function handlePolicy(
 	tagEngine: ReturnType<typeof createTagAclPolicyEngine>,
 	opaEngine: ReturnType<typeof createOpaPolicyEngine>,
 ): Promise<ConnectivityHostResponse> {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const body = (request.body ?? {}) as JsonObject;
 	const engineKind = body.engine === "opa" ? "opa" : "tag-acl";
 	const subjectTenant = String(body.subjectTenant ?? "local");
@@ -189,6 +190,7 @@ async function handleDnsReconcile(
 	request: ConnectivityHostRequest,
 	dns: ReturnType<typeof createPublicDnsManager>,
 ): Promise<ConnectivityHostResponse> {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const body = (request.body ?? {}) as JsonObject;
 	try {
 		const result = await dns.reconcileEntrypoint({
@@ -217,6 +219,7 @@ async function handleDnsSuggest(
 	request: ConnectivityHostRequest,
 	dns: ReturnType<typeof createPublicDnsManager>,
 ): Promise<ConnectivityHostResponse> {
+	// SAFETY: assertion required at this I/O or test boundary.
 	const body = (request.body ?? {}) as JsonObject;
 	try {
 		const suggested = await dns.suggestEntrypoint({

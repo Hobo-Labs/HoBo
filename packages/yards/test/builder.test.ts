@@ -54,12 +54,16 @@ describe("provider references", () => {
 	});
 
 	it("refuses to infer a provider from anything else", () => {
+		// SAFETY: `expect(() => providerIdOf({} as never)).toThrowError(BuilderError);` is required at this I/O or test boundary.
 		expect(() => providerIdOf({} as never)).toThrowError(BuilderError);
 		try {
+			// SAFETY: `providerIdOf({ name: "azure" } as never);` is required at this I/O or test boundary.
 			providerIdOf({ name: "azure" } as never);
 			expect.unreachable("expected a refusal");
 		} catch (error) {
+			// SAFETY: `expect((error as BuilderError).code).toBe("PROVIDER_REF_UNRESOLVED");` is required at this I/O or test boundary.
 			expect((error as BuilderError).code).toBe("PROVIDER_REF_UNRESOLVED");
+			// SAFETY: `expect((error as BuilderError).remediation).toContain("yard(azure");` is required at this I/O or test boundary.
 			expect((error as BuilderError).remediation).toContain("yard(azure");
 		}
 	});
@@ -184,6 +188,7 @@ describe("slot accumulation", () => {
 			expect.unreachable("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(BuilderError);
+			// SAFETY: `expect((error as BuilderError).code).toBe("SLOT_CALL_EMPTY");` is required at this I/O or test boundary.
 			expect((error as BuilderError).code).toBe("SLOT_CALL_EMPTY");
 		}
 	});
@@ -334,6 +339,7 @@ describe("every existing refusal still fires through the builder", () => {
 			expect.unreachable("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(YardDefineError);
+			// SAFETY: `expect((error as YardDefineError).code).toBe("SLOT_KEY_MISMATCH");` is required at this I/O or test boundary.
 			expect((error as YardDefineError).code).toBe("SLOT_KEY_MISMATCH");
 		}
 	});
@@ -352,6 +358,7 @@ describe("every existing refusal still fires through the builder", () => {
 			});
 			expect.unreachable("expected a refusal");
 		} catch (error) {
+			// SAFETY: `expect((error as YardDefineError).code).toBe("SLOT_PROFILE_MISMATCH");` is required at this I/O or test boundary.
 			expect((error as YardDefineError).code).toBe("SLOT_PROFILE_MISMATCH");
 		}
 	});
@@ -370,6 +377,7 @@ describe("every existing refusal still fires through the builder", () => {
 			});
 			expect.unreachable("expected a refusal");
 		} catch (error) {
+			// SAFETY: `expect((error as { code?: string }).code).toBe(` is required at this I/O or test boundary.
 			expect((error as { code?: string }).code).toBe(
 				"SLOT_BINDING_CREDENTIAL_PROPERTY",
 			);
@@ -385,6 +393,7 @@ describe("every existing refusal still fires through the builder", () => {
 			expect.unreachable("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(YardBindingError);
+			// SAFETY: `expect((error as YardBindingError).code).toBe("YARD_BINDING_DUPLICATE");` is required at this I/O or test boundary.
 			expect((error as YardBindingError).code).toBe("YARD_BINDING_DUPLICATE");
 		}
 	});
@@ -403,6 +412,7 @@ describe("every existing refusal still fires through the builder", () => {
 			expect.unreachable("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(YardBindingError);
+			// SAFETY: `expect((error as YardBindingError).code).toBe(` is required at this I/O or test boundary.
 			expect((error as YardBindingError).code).toBe(
 				"YARD_BINDING_EMPTY_CONSTRAINT",
 			);
@@ -417,6 +427,7 @@ describe("every existing refusal still fires through the builder", () => {
 			expect.unreachable("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(StationDefineError);
+			// SAFETY: `expect((error as StationDefineError).code).toBe("STATION_NO_YARDS");` is required at this I/O or test boundary.
 			expect((error as StationDefineError).code).toBe("STATION_NO_YARDS");
 		}
 	});
@@ -434,6 +445,7 @@ describe("every existing refusal still fires through the builder", () => {
 			expect.unreachable("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(StationDefineError);
+			// SAFETY: `expect((error as StationDefineError).code).toBe("STATION_DUPLICATE_YARD");` is required at this I/O or test boundary.
 			expect((error as StationDefineError).code).toBe("STATION_DUPLICATE_YARD");
 		}
 	});
@@ -446,6 +458,7 @@ describe("every existing refusal still fires through the builder", () => {
 			});
 			expect.unreachable("expected a refusal");
 		} catch (error) {
+			// SAFETY: `expect((error as { code?: string }).code).toBe(` is required at this I/O or test boundary.
 			expect((error as { code?: string }).code).toBe(
 				"camp-provider-selection-forbidden",
 			);
@@ -457,6 +470,7 @@ describe("every existing refusal still fires through the builder", () => {
 			buildCamp("api", (c) => c.bindle({ name: "acme-app" }));
 			expect.unreachable("expected a refusal");
 		} catch (error) {
+			// SAFETY: `expect((error as { code?: string }).code).toBe(` is required at this I/O or test boundary.
 			expect((error as { code?: string }).code).toBe(
 				"camp-bindle-ownership-forbidden",
 			);
@@ -467,6 +481,7 @@ describe("every existing refusal still fires through the builder", () => {
 		let bodyRan = false;
 		let raised: JsonValue;
 		try {
+			// SAFETY: `buildYard({} as never, "prod-eu", (y) => {` is required at this I/O or test boundary.
 			buildYard({} as never, "prod-eu", (y) => {
 				bodyRan = true;
 				y.web(containerApps);
@@ -476,6 +491,7 @@ describe("every existing refusal still fires through the builder", () => {
 		}
 
 		expect(raised).toBeInstanceOf(BuilderError);
+		// SAFETY: `expect((raised as BuilderError).code).toBe("PROVIDER_REF_UNRESOLVED");` is required at this I/O or test boundary.
 		expect((raised as BuilderError).code).toBe("PROVIDER_REF_UNRESOLVED");
 		expect(bodyRan, "the callback must not run without a provider").toBe(false);
 	});

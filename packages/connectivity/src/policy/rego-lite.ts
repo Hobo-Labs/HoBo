@@ -77,6 +77,7 @@ export function parseRegoLiteDocument(raw: JsonValue): RegoLiteDocument {
 	if (raw === null || !isJsonObject(raw)) {
 		throw new TypeError("rego-lite document must be an object");
 	}
+	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	if (!Array.isArray(obj.rules)) {
 		throw new TypeError("rego-lite.rules must be an array");
@@ -85,6 +86,7 @@ export function parseRegoLiteDocument(raw: JsonValue): RegoLiteDocument {
 		if (!r || !isJsonObject(r)) {
 			throw new TypeError(`rego-lite.rules[${i}] must be an object`);
 		}
+		// SAFETY: assertion required at this I/O or test boundary.
 		const rule = r as JsonObject;
 		if (rule.effect !== "allow" && rule.effect !== "deny") {
 			throw new TypeError(`rego-lite.rules[${i}].effect must be allow|deny`);

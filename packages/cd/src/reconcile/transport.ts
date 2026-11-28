@@ -76,10 +76,12 @@ function typedCodeOf(error: unknown): string {
 }
 
 function asPosition(value: bigint): EventPosition {
+	// SAFETY: positions come from the journal or from a committed checkpoint.
 	return value as EventPosition;
 }
 
 function asFence(value: bigint): FenceToken {
+	// SAFETY: fence tokens are minted by the journal's subscription lease.
 	return value as FenceToken;
 }
 

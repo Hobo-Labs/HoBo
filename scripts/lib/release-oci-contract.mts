@@ -34,6 +34,7 @@ export function loadReleaseOciManifest(root: string): ReleaseOciManifest {
 	const raw: unknown = JSON.parse(
 		readFileSync(join(root, OCI_IMAGES_MANIFEST), "utf8"),
 	);
+	// SAFETY: `release/oci-images.json` is repo-owned; vitest manifest contract rejects drift.
 	return raw as ReleaseOciManifest;
 }
 

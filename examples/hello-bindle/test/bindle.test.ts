@@ -142,6 +142,7 @@ describe("hello-bindle", () => {
 	});
 
 	it("bindle entrypoints resolve through @hobo/adapter-hono", async () => {
+		// SAFETY: assertion to `ntrypoint("api")?.() as typeof api.fetch; const bo` is required at this boundary.
 		const handler = definition.entrypoint("api")?.() as typeof api.fetch;
 		const body = await (
 			await handler(new Request("http://local/hello?name=A"))

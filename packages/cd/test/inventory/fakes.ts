@@ -53,6 +53,7 @@ export const STATION: PrincipalRef = { kind: "service", id: "station-eu" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
 export function camp(id: string): CampId {
+	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
@@ -122,6 +123,7 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = structuredClone(input.meta);
+			// SAFETY: test double; positions are minted here from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);

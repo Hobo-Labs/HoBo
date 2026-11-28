@@ -175,6 +175,7 @@ describe("exclusion ordering", () => {
 				{
 					profileId: "unregistered/v1",
 					versionRange: ">=1",
+					// SAFETY: this test deliberately injects an invalid realization.
 					realization: "sorcery" as never,
 					conformanceRef: "s",
 					conformance: "pass",
@@ -313,6 +314,7 @@ describe("deriveCoverageVerdict", () => {
 		> = {},
 	) {
 		const empty = { available: [], unavailable: [] };
+		// SAFETY: each returned bucket has the fixture's known bucket shape.
 		return {
 			native: empty,
 			pack: empty,

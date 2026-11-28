@@ -38,7 +38,9 @@ import {
 import { openCdStore } from "../src/cd-store.js";
 import { imageAt, runnerHostResolvedSet } from "./fixtures/runner-host-fake.js";
 
+// SAFETY: runner fleet Camp ids (hobo-ci-runners/<host id>) and one outside it.
 const BOX = "hobo-ci-runners/box" as CampId;
+// SAFETY: as above.
 const RELEASE = "hobo-release/oci-candidate" as CampId;
 const TARGET = imageAt("2");
 const ctx: CdContext = {
@@ -176,10 +178,12 @@ describe("the runner-host planner offering", () => {
 		expect(providers.map((provider) => provider.id)).toEqual(["self-hosted"]);
 		const [capability] = providers[0]?.capabilities ?? [];
 		expect(capability?.port).toBe(RUNNER_HOST_PRODUCT_ID);
+		// SAFETY: minimal planner requests; satisfies reads only port and features.
 		expect(capability?.satisfies({ port: "compute" } as never)).toEqual({
 			kind: "none",
 		});
 		expect(
+			// SAFETY: as above.
 			capability?.satisfies({ port: RUNNER_HOST_PRODUCT_ID } as never),
 		).toEqual({ kind: "full" });
 		expect(runnerHostPlannerProviders([camp(RELEASE, "self-hosted")])).toEqual(

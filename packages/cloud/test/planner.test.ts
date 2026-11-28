@@ -71,6 +71,7 @@ describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 
+		// SAFETY: `const golden = fixture("golden-plan.json") as DeploymentPlan;` is required at this I/O or test boundary.
 		const golden = fixture("golden-plan.json") as DeploymentPlan;
 		expect(JSON.parse(canonicalPlanJson(result.plan))).toEqual(
 			JSON.parse(canonicalPlanJson(golden)),

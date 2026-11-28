@@ -27,15 +27,18 @@ type JsonValue =
 	| JsonObject;
 type JsonObject = Record<string, JsonValue>;
 
+// SAFETY: JSON.stringify/parse round-trips the generated matrix as JSON.
 const VALID = JSON.parse(
 	JSON.stringify(generateCapabilityMatrix(matrixInput())),
 ) as JsonObject;
 
 function clone(): JsonObject {
+	// SAFETY: VALID is a generated JSON matrix and clone preserves that shape.
 	return JSON.parse(JSON.stringify(VALID)) as JsonObject;
 }
 
 function firstPopulatedCellIndex(matrix: JsonObject): number {
+	// SAFETY: matrix is a generated matrix with a cells array.
 	const cells = matrix.cells as Array<{ candidates: JsonValue[] }>;
 	return cells.findIndex((cell) => cell.candidates.length > 0);
 }
@@ -44,7 +47,9 @@ function expectRefusal(run: () => void, match: RegExp): Error {
 	try {
 		run();
 	} catch (error) {
+		// SAFETY: every refusal path throws an Error.
 		expect((error as Error).message).toMatch(match);
+		// SAFETY: the caught refusal is the Error just asserted above.
 		return error as Error;
 	}
 	expect.unreachable(`expected a refusal matching ${match}`);
@@ -102,6 +107,7 @@ describe("shape refusals", () => {
 
 	it("refuses an empty string inside a list where an identifier is required", () => {
 		const bad = clone();
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			candidates: Array<JsonObject>;
 		}>;
@@ -130,6 +136,7 @@ describe("shape refusals", () => {
 	it("refuses a non-boolean availability flag", () => {
 		const bad = clone();
 		const index = firstPopulatedCellIndex(bad);
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			candidates: Array<JsonObject>;
 		}>;
@@ -142,6 +149,7 @@ describe("shape refusals", () => {
 	it("refuses an unknown vocabulary member", () => {
 		const bad = clone();
 		const index = firstPopulatedCellIndex(bad);
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			candidates: Array<JsonObject>;
 		}>;
@@ -159,6 +167,7 @@ describe("ordering and uniqueness refusals", () => {
 	function withBucketIds(ids: string[]): JsonObject {
 		const bad = clone();
 		const index = firstPopulatedCellIndex(bad);
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			buckets: Record<string, { available: string[]; unavailable: string[] }>;
 		}>;
@@ -199,6 +208,7 @@ describe("ordering and uniqueness refusals", () => {
 
 	it("refuses a definition listed as both available and unavailable", () => {
 		const bad = clone();
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			buckets: Record<string, { available: string[]; unavailable: string[] }>;
 		}>;
@@ -223,6 +233,7 @@ describe("cross-field consistency refusals", () => {
 	it("refuses a candidate filed under the wrong cell", () => {
 		const bad = clone();
 		const index = firstPopulatedCellIndex(bad);
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			key: string;
 			candidates: Array<JsonObject>;
@@ -239,6 +250,7 @@ describe("cross-field consistency refusals", () => {
 	it("refuses a primitive or runtime outside the Bindle vocabulary", () => {
 		const bad = clone();
 		const index = firstPopulatedCellIndex(bad);
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			candidates: Array<JsonObject>;
 		}>;
@@ -253,6 +265,7 @@ describe("cross-field consistency refusals", () => {
 
 	it("refuses bucket ids that no candidate in the cell accounts for", () => {
 		const bad = clone();
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			candidates: JsonValue[];
 			buckets: Record<string, { available: string[]; unavailable: string[] }>;
@@ -271,6 +284,7 @@ describe("cross-field consistency refusals", () => {
 
 	it("refuses a verdict that does not follow from the buckets", () => {
 		const bad = clone();
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			verdict: string;
 			candidates: JsonValue[];
@@ -300,13 +314,16 @@ describe("error shape", () => {
 			() => parseCapabilityMatrix(bad),
 			/evaluatedAtMs/u,
 		);
+		// SAFETY: expectRefusal returns the parser's structured error.
 		expect((error as { code?: string }).code).toBe("INVALID_CAPABILITY_MATRIX");
+		// SAFETY: expectRefusal returns the parser's structured error.
 		expect((error as { path?: string }).path).toContain("evaluatedAtMs");
 	});
 
 	it("uses a distinct code for an unknown vocabulary member", () => {
 		const bad = clone();
 		const index = firstPopulatedCellIndex(bad);
+		// SAFETY: clone() returns the generated matrix shape under test.
 		const cells = bad.cells as Array<{
 			candidates: Array<JsonObject>;
 		}>;
@@ -317,6 +334,7 @@ describe("error shape", () => {
 			() => parseCapabilityMatrix(bad),
 			/not a Bindle primitive/u,
 		);
+		// SAFETY: expectRefusal returns the parser's structured error.
 		expect((error as { code?: string }).code).toBe("UNKNOWN_VOCABULARY");
 	});
 });

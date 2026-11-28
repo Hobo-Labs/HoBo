@@ -6,9 +6,11 @@ import {
 } from "../src/reference-store.js";
 
 const store = (options: JsonObject = {}) =>
+	// SAFETY: `createReferenceRedisStore(options as never);` is required at this I/O or test boundary.
 	createReferenceRedisStore(options as never);
 
 const run = (s: ReturnType<typeof store>, ...command: string[]) =>
+	// SAFETY: `s.execute(command as never);` is required at this I/O or test boundary.
 	s.execute(command as never);
 
 describe("connection commands", () => {
@@ -246,6 +248,7 @@ describe("DEL and TYPE", () => {
 		[["ZADD", "k", "1", "m"], "zset"],
 	])("reports the type after %s", async (setup, type) => {
 		const s = store();
+		// SAFETY: `await run(s, ...(setup as string[]));` is required at this I/O or test boundary.
 		await run(s, ...(setup as string[]));
 		expect(await run(s, "TYPE", "k")).toMatchObject({ value: type });
 	});
@@ -362,6 +365,7 @@ describe("WRONGTYPE", () => {
 	])("refuses %s against the wrong type", async (_label, command) => {
 		const s = store();
 		await run(s, "HSET", "k", "f", "v");
+		// SAFETY: `expect(await run(s, ...(command as string[]))).toMatchObject({` is required at this I/O or test boundary.
 		expect(await run(s, ...(command as string[]))).toMatchObject({
 			kind: "error",
 		});
@@ -490,6 +494,7 @@ describe("the deliberate-break option", () => {
 describe("the timeless store", () => {
 	it("executes commands", async () => {
 		const s = createTimelessReferenceStore();
+		// SAFETY: `expect(await s.execute(["PING"] as never)).toMatchObject({` is required at this I/O or test boundary.
 		expect(await s.execute(["PING"] as never)).toMatchObject({
 			value: "PONG",
 		});

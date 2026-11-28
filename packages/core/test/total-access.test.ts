@@ -31,6 +31,7 @@ describe("must", () => {
 			must(undefined);
 			expect.unreachable("must(undefined) has to throw");
 		} catch (error) {
+			// SAFETY: must(undefined) above establishes the caught error as Error.
 			expect((error as Error).message).toBe("missing required value");
 		}
 	});
@@ -40,6 +41,7 @@ describe("must", () => {
 			must(undefined, "");
 			expect.unreachable("must(undefined) has to throw");
 		} catch (error) {
+			// SAFETY: must(undefined, "") above establishes the caught error as Error.
 			expect((error as Error).message).toBe("missing required value");
 		}
 	});

@@ -26,6 +26,7 @@ export async function runReplayEqualsLiveGate(eventLogPath: string): Promise<Rep
 
   return Object.freeze({
     seq: result.seq,
+    // SAFETY: `state: result.state as JsonObject,` is required at this I/O or test boundary.
     state: result.state as JsonObject,
   });
 }
@@ -91,6 +92,7 @@ function emptyFoldState() {
     compensationExercised: false,
     totalBootMs: 0,
     orderId: "",
+    // SAFETY: `seq: {} as Record<string, number>,` is required at this I/O or test boundary.
     seq: {} as Record<string, number>,
   };
 }

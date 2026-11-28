@@ -14,6 +14,7 @@ const pactPath = join(
 
 describe("CLI command registry pact", () => {
 	it("lists canonical verbs required by the cli-mcp boundary", () => {
+		// SAFETY: `const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {` is required at this I/O or test boundary.
 		const pact = JSON.parse(readFileSync(pactPath, "utf8")) as {
 			consumer: { name: string };
 			provider: { name: string };

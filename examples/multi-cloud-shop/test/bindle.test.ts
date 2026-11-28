@@ -37,12 +37,14 @@ describe("multi-cloud-shop", () => {
 		const boundApi = definition.entrypoint("api");
 		expect(boundApi).toBeTypeOf("function");
 
+		// SAFETY: assertion to `boundApi?.() as typeof shopApi` is required at this boundary.
 		const fetch = boundApi?.() as typeof shopApi;
 		const response = await fetch(
 			new Request("http://multi-cloud-shop.test/products"),
 		);
 		expect(response.status).toBe(200);
 
+		// SAFETY: assertion to `JSON.parse( await readFile( new URL("../contracts/pacts/web-to-api.pact.json", import.meta.url), "utf8", ), ) as { inter` is required at this boundary.
 		const pact = JSON.parse(
 			await readFile(
 				new URL("../contracts/pacts/web-to-api.pact.json", import.meta.url),

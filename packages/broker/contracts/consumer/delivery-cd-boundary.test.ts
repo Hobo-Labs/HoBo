@@ -25,6 +25,7 @@ function receipt(requestId: string): ResolutionReceipt {
 		requestId,
 		brokerId: "broker:yard-1",
 		catalogHash: "sha256:catalog-abc",
+		// SAFETY: assertion required at this I/O or test boundary.
 		policyHash: "sha256:policy-abc" as PolicyHash,
 		placementPolicyId: "pp-bindle",
 		placements: [],
@@ -41,6 +42,7 @@ describe("broker → CD promotion boundary (consumer side of the pact)", () => {
 		const plane = createReconcilerDeliveryPlane({
 			requestPromotion: async (request) => {
 				seen = JSON.parse(JSON.stringify(request));
+				// SAFETY: assertion required at this I/O or test boundary.
 				return interaction.response as DeliveryPromotionResult;
 			},
 		});
@@ -61,6 +63,7 @@ describe("broker → CD promotion boundary (consumer side of the pact)", () => {
 		const plane = createReconcilerDeliveryPlane({
 			requestPromotion: async (request) => {
 				expect(request).toMatchObject(interaction.request);
+				// SAFETY: assertion required at this I/O or test boundary.
 				return interaction.response as DeliveryPromotionResult;
 			},
 		});

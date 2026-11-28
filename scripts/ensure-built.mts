@@ -5,6 +5,7 @@ if (process.env["TURBO_HASH"]) {
 	process.exit(0);
 }
 
+// SAFETY: assertion to `.parse(readFileSync("package.json", "utf8")) as { name?: string; }; co` is required at this boundary.
 const manifest = JSON.parse(readFileSync("package.json", "utf8")) as {
 	name?: string;
 };

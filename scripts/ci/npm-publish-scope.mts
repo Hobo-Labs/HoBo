@@ -37,6 +37,7 @@ export function assertNpmScopeMapAllowlist(map: ScopeMap): void {
 
 export function loadNpmScopeMap(): ScopeMap {
 	const parsed: unknown = JSON.parse(readFileSync(mapPath, "utf8"));
+	// SAFETY: `release/npm-scope-map.json` is repo-owned release metadata; contract tests pin every row.
 	const map = parsed as ScopeMap;
 	assertNpmScopeMapAllowlist(map);
 	return map;
@@ -148,6 +149,7 @@ function main(): void {
 		process.exit(2);
 	}
 	const manifest = JSON.parse(readFileSync(inPath, "utf8"));
+	// SAFETY: CLI passes a workspace package.json path; parse boundary is the publish staging step.
 	const staged = applyScopeToManifest(manifest as PackageJson);
 	writeFileSync(outPath, `${JSON.stringify(staged, null, "\t")}\n`, "utf8");
 }

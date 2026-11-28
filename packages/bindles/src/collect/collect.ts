@@ -180,6 +180,7 @@ export function collectBindleManifest(
 function collectBindKeys(manifest: ManifestV1): string[] {
 	const keys: string[] = [];
 	for (const [id, resource] of Object.entries(manifest.value.resources)) {
+		// SAFETY: assertion required at this I/O or test boundary.
 		const bindings = (resource as { bindings?: JsonObject }).bindings;
 		if (bindings && isJsonObject(bindings)) {
 			for (const alias of Object.keys(bindings)) {

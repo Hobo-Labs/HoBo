@@ -31,6 +31,7 @@ export function honoEntrypoint(app: HonoFetchApp): BindleHttpEntrypoint {
 
 export function isHonoFetchApp<T>(value: T): value is T & HonoFetchApp {
 	if (!isJsonObject(value) || !("fetch" in value)) return false;
+	// SAFETY: Hono apps expose fetch on the host object at this boundary.
 	const host: HonoFetchApp = value as never;
 	return host.fetch instanceof Function;
 }

@@ -77,6 +77,7 @@ describe("defineRubric", () => {
 			criteria: [{ id: "c", weight: 1, kind: "boolean" as const }],
 		};
 		const bad = [
+			// SAFETY: this deliberate invalid input exercises the parser boundary.
 			undefined as never,
 			{ ...base, id: "" },
 			{ ...base, passThreshold: 1.2 },
@@ -94,6 +95,7 @@ describe("defineRubric", () => {
 				criteria: [
 					{
 						...base.criteria[0],
+						// SAFETY: this deliberate invalid input exercises the parser boundary.
 						kind: "vibes" as never,
 					},
 				],
@@ -267,6 +269,7 @@ describe("scoreRubric", () => {
 			[...passingObservations().slice(0, 2), { passed: true }],
 		];
 		for (const observations of cases) {
+			// SAFETY: these cases intentionally contain malformed observations.
 			expect(() => scoreRubric(rubric, observations as never)).toThrow(
 				ObservationParseError,
 			);
@@ -275,6 +278,7 @@ describe("scoreRubric", () => {
 
 	it("rejects rubrics that did not come from defineRubric", () => {
 		expect(() =>
+			// SAFETY: this deliberately bypasses the parsed Rubric boundary.
 			scoreRubric({ id: "raw", passThreshold: 1, criteria: [] } as never, []),
 		).toThrow(RubricParseError);
 	});
@@ -384,6 +388,7 @@ describe("evaluatePromotionGate", () => {
 			PromotionGateParseError,
 		);
 		expect(() =>
+			// SAFETY: this deliberately bypasses the parsed report boundary.
 			evaluatePromotionGate({ rubricReport: { ok: true } as never }),
 		).toThrow(PromotionGateParseError);
 		expect(() =>

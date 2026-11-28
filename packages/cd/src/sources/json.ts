@@ -26,6 +26,7 @@ export function isList<T>(value: T): value is T & JsonValue[] {
 
 export function parseJson(text: string): JsonValue | undefined {
 	try {
+		// SAFETY: JSON.parse yields a JSON value at this document boundary.
 		return JSON.parse(text) as JsonValue;
 	} catch {
 		return undefined;

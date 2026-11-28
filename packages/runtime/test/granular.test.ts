@@ -27,6 +27,7 @@ interface DecoratorBag {
 }
 
 function decoratorContext<T>(bag: DecoratorBag): T {
+	// SAFETY: TC39 decorator context bag at this test boundary.
 	return bag as never;
 }
 

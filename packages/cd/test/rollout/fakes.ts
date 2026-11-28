@@ -70,10 +70,12 @@ export const MINUTE = 60_000;
 export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 
 export function camp(id: string): CampId {
+	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
 }
 
 export function fid(id: string): FreightId {
+	// SAFETY: test fixture ids are literal Freight ids.
 	return id as FreightId;
 }
 
@@ -145,6 +147,7 @@ export class MemoryEventStore implements DurableEventStore {
 				data: structuredClone(input.data),
 			};
 			if (input.meta) envelope.meta = input.meta;
+			// SAFETY: test double; positions come from a monotonic counter.
 			const position = BigInt(this.nextId) as EventPosition;
 			this.nextId += 1;
 			stream.push(envelope);
@@ -304,6 +307,7 @@ export class FakeVerification implements VerificationEngine {
 		input: Parameters<VerificationEngine["start"]>[0],
 	): Promise<VerificationId> {
 		const call = this.started.filter((s) => s.campId === input.campId).length;
+		// SAFETY: test double ids.
 		const id = `ver-${input.campId}-${call}` as VerificationId;
 		this.started.push({
 			id,
@@ -445,6 +449,7 @@ export class FakeDesired implements DesiredStateReader, DeltaLedger {
 		return id ? this.sets.get(id) : undefined;
 	}
 	async get(id: SetId | DeltaId): Promise<never> {
+		// SAFETY: the double serves both get overloads (Set and Delta ids never collide in tests).
 		return (this.sets.get(id) ?? this.deltas.get(id)) as never;
 	}
 	async history(): Promise<readonly SetRecord[]> {

@@ -11,6 +11,7 @@ type StationBrokerGlobal = typeof globalThis & {
 };
 
 function stationBrokerGlobal(): StationBrokerGlobal {
+	// SAFETY: we only read/write HOBO_STATION_BROKER_URL on globalThis.
 	return globalThis as StationBrokerGlobal;
 }
 

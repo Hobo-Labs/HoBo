@@ -254,6 +254,7 @@ export function validateReleaseNotesReleaseCandidateEvidence(record: JsonValue) 
     return { ok: false, errors: ["release notes release-candidate evidence record is required"] };
   }
 
+  // SAFETY: `const value = record as Partial<ReleaseNotesReleaseCandidateEvidenceRecord>;` is required at this I/O or test boundary.
   const value = record as Partial<ReleaseNotesReleaseCandidateEvidenceRecord>;
   const evidence = Array.isArray(value.evidence) ? value.evidence : [];
   const blockers = Array.isArray(value.blockers) ? value.blockers : [];

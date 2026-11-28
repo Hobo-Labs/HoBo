@@ -41,6 +41,7 @@ type Recorded = Readonly<{
 
 const fixtureDir = join(import.meta.dirname, "fixtures", "ci-health");
 function load(name: string): Recorded {
+	// SAFETY: the fixture files are written in the Recorded shape above.
 	return JSON.parse(readFileSync(join(fixtureDir, name), "utf8")) as Recorded;
 }
 const clear = load("clear-window.json");
@@ -470,6 +471,7 @@ async function runMain(
 		return {
 			code,
 			calls,
+			// SAFETY: main writes the HealthReport it built, as JSON.
 			report: JSON.parse(readFileSync(reportPath, "utf8")) as HealthReport,
 			log: lines.join("\n"),
 		};
@@ -487,7 +489,10 @@ type SentIssue = Readonly<{
 function issuesOpened(calls: readonly Call[]): SentIssue[] {
 	return calls
 		.filter((call) => call.method === "POST" && call.url.endsWith("/issues"))
-		.map((call) => JSON.parse(call.body) as SentIssue);
+		.map(
+			// SAFETY: raiseIssues sends a SentIssue as the JSON body.
+			(call) => JSON.parse(call.body) as SentIssue,
+		);
 }
 
 function largestWindow(count: number): Recorded {
