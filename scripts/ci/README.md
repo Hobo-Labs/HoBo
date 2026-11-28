@@ -39,6 +39,18 @@ GitHub-hosted runner with nothing installed and imports no package source, only
 reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
 (ADR-0181); see [the route action](../../.github/actions/route-runner/README.md).
 
+## Merge queue reaper
+
+When an entry leaves the merge queue (a check timeout, a conflict), GitHub
+deletes its `gh-readonly-queue/...` branch but leaves that entry's
+`merge_group` runs queued. Their jobs keep their place in the fleet's queue,
+take each `hobo-trunk` runner that frees up oldest first, and the live
+entries' route jobs time out behind them. `merge-queue-reaper.mts`, from
+`.github/workflows/merge-queue-reaper.yml` every five minutes on a
+GitHub-hosted runner with `actions: write`, cancels every pending
+`merge_group` run on a queue branch that no longer exists and is at least two
+minutes old. A manual dispatch is a dry run unless `dry-run` is false.
+
 ## Fleet service release images
 
 `push-release-service-image.mts` publishes the HoBo Fleet service images
