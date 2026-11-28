@@ -75,6 +75,7 @@ import {
 	parseWorkerStopMode,
 	type RepositoryRunnersView,
 	ROUTING_SLIP_SAMPLE_MS,
+	ROUTING_SLIP_STATE_LOG_MS,
 	type RunnerJobsSeen,
 	readAvailableMemoryMb,
 	readBoxMemberSettings,
@@ -94,6 +95,7 @@ import {
 	resolveWorkerStorePlan,
 	retireRepositoryVariables,
 	routingEnvironmentNamesSet,
+	routingSlipIssuerStateFields,
 	routingSlipLeader,
 	runnerRoutingLabels,
 	runningAsControllerRelease,
@@ -1656,6 +1658,17 @@ try {
 		: undefined;
 	slipTimer?.unref();
 	void slipIssuer?.tick();
+	const slipStateTimer = slipIssuer
+		? setInterval(
+				() =>
+					log(
+						"hobo_ci_slip_issuer_state",
+						routingSlipIssuerStateFields(slipIssuer.state()),
+					),
+				ROUTING_SLIP_STATE_LOG_MS,
+			)
+		: undefined;
+	slipStateTimer?.unref();
 
 	let shutdownOnce: Promise<void> | undefined;
 	let runningWorkerContainers = 0;
@@ -1679,6 +1692,7 @@ try {
 			}
 			// No more slips: the last one expires on its own (ADR-0181).
 			if (slipTimer) clearInterval(slipTimer);
+			if (slipStateTimer) clearInterval(slipStateTimer);
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"

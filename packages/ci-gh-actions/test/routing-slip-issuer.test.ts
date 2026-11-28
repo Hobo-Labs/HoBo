@@ -424,6 +424,88 @@ describe("the issuer (ADR-0181, decisions 1-2)", () => {
 		expect(ran).toBe(1);
 	});
 
+	it("a pass stuck on the leader, the decision or a write times out and a later tick writes", async () => {
+		const never = <T>() => new Promise<T>(() => undefined);
+		const cases: {
+			step: string;
+			overrides: (api: ReturnType<typeof gitApi>) => {
+				leader?: () => Promise<boolean>;
+				decide?: () => Promise<RoutingSlipClasses>;
+				github?: GithubTransport;
+			};
+		}[] = [
+			{
+				step: "leader",
+				overrides: () => {
+					let calls = 0;
+					return {
+						leader: () => (++calls === 1 ? never() : Promise.resolve(true)),
+					};
+				},
+			},
+			{
+				step: "decide",
+				overrides: () => {
+					let calls = 0;
+					return {
+						decide: () => (++calls === 1 ? never() : Promise.resolve(decide())),
+					};
+				},
+			},
+			{
+				step: "write",
+				overrides: (api) => {
+					let calls = 0;
+					return {
+						github: {
+							request: (...args) =>
+								++calls === 1 ? never() : api.transport.request(...args),
+						},
+					};
+				},
+			},
+		];
+		for (const { step, overrides } of cases) {
+			const api = gitApi();
+			const events: { event: string; step?: unknown }[] = [];
+			const slips = issuer(api, {
+				...overrides(api),
+				passDeadlineMs: step === "write" ? 200 : 20,
+				requestTimeoutMs: 10_000,
+				log: (event, fields) => events.push({ event, step: fields.step }),
+			});
+			await slips.tick();
+			expect(
+				events.filter((entry) => entry.event === "hobo_ci_slip_tick_timeout"),
+			).toEqual([{ event: "hobo_ci_slip_tick_timeout", step }]);
+			expect(slips.state().lastOutcome).toBe(`timeout:${step}`);
+			expect(api.commits()).toHaveLength(0);
+			api.clock.now = NOW + 10_000;
+			await slips.tick();
+			expect(api.commits()).toHaveLength(1);
+			expect(slips.state()).toEqual({
+				leading: true,
+				lastWriteAtMs: NOW + 10_000,
+				lastOutcome: "written",
+			});
+		}
+	});
+
+	it("a GitHub request that never answers fails the write on its own timeout", async () => {
+		const api = gitApi();
+		const result = await writeRoutingSlipCommit(
+			{ request: () => new Promise<Response>(() => undefined) },
+			{
+				installationId: 7,
+				repository: REPOSITORY,
+				message: "{}",
+				requestTimeoutMs: 20,
+			},
+		);
+		expect(result).toEqual({ ok: false, status: 598, step: "tree" });
+		expect(api.calls).toHaveLength(0);
+	});
+
 	it("writes nothing while disabled or with no leader to be found", async () => {
 		const api = gitApi();
 		await issuer(api, { enabled: () => false }).tick();
