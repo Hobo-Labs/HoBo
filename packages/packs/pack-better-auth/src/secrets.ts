@@ -20,6 +20,21 @@ export interface BetterAuthSigningSecretWire {
 
 const MIN_SIGNING_SECRET_LENGTH = 32;
 
+const CANONICAL_UTC_INSTANT =
+	/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/u;
+
+function wireRecordContainsMaterial(
+	wire: BetterAuthSigningSecretWire,
+	material: string,
+): boolean {
+	return (
+		wire.secretRef.includes(material) ||
+		wire.secretScheme.includes(material) ||
+		wire.secretsPortId.includes(material) ||
+		wire.resolvedAtIso.includes(material)
+	);
+}
+
 function refuse(
 	code: BetterAuthBundlePlanError["code"],
 	message: string,
@@ -69,6 +84,20 @@ export async function wireBetterAuthSigningSecret(
 			"align BetterAuthBundlePortRefs.signingSecretRef with the parsed config locator before broker resolution",
 		);
 	}
+	if (secretsPort.id.length === 0) {
+		refuse(
+			"BETTER_AUTH_BUNDLE_PORT_INVALID",
+			"camp secrets port id is empty",
+			"bind a SecretsPort whose id is a non-empty identifier",
+		);
+	}
+	if (options.now !== undefined && !CANONICAL_UTC_INSTANT.test(options.now)) {
+		refuse(
+			"BETTER_AUTH_BUNDLE_PORT_INVALID",
+			"signing secret wire timestamp is not a canonical UTC instant",
+			"omit now, or pass an instant formatted YYYY-MM-DDTHH:mm:ss.sssZ",
+		);
+	}
 	const name = campSecretNameFromBetterAuthRef(ref, options.campAuthority);
 	const access = await secretsPort.access(name);
 	if (access.status !== "ok") {
@@ -83,7 +112,7 @@ export async function wireBetterAuthSigningSecret(
 		refuse(
 			"BETTER_AUTH_SIGNING_SECRET_WEAK",
 			"brokered signing secret is missing or shorter than the minimum length",
-			`provision at least ${MIN_SIGNING_SECRET_LENGTH} bytes of signing material in custody; never author the value inline`,
+			`provision at least ${MIN_SIGNING_SECRET_LENGTH} characters of signing material in custody; never author the value inline`,
 		);
 	}
 	const wire = Object.freeze({
@@ -92,6 +121,13 @@ export async function wireBetterAuthSigningSecret(
 		secretsPortId: secretsPort.id,
 		resolvedAtIso: options.now ?? new Date().toISOString(),
 	});
+	if (wireRecordContainsMaterial(wire, material)) {
+		refuse(
+			"BETTER_AUTH_SIGNING_SECRET_EXPOSED",
+			"brokered signing material would appear on the locator-only wire record",
+			"choose signing material that is absent from the locator, the secrets port id, and the wire timestamp",
+		);
+	}
 	requireNoPlaintextConformance({
 		agentContext: wire,
 		events: {
