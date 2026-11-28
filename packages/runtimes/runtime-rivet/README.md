@@ -269,3 +269,7 @@ The actor uses the provider-neutral SQLite topic receipt journal from
 
 The bounded topic models and reducer model tests are shared with the
 provider-neutral runtime.
+
+The separate-process topic harness exercises paired concurrent publishes,
+consumer claims, lease expiry and compaction races at a pre-dispatch barrier.
+It does not claim to inject faults inside the SQLite transaction.
